@@ -13,6 +13,20 @@ const HANDLE_PX: f32 = 7.0;
 /// How near the centre of rotation the pointer grabs it, screen pixels.
 const PIVOT_PX: f32 = 8.0;
 
+/// `p` turned about `from` onto the nearest multiple of `step_deg`,
+/// keeping how far it reaches along that direction (Ctrl while drawing
+/// lines and curves).
+pub fn constrain_from(from: Point, p: Point, step_deg: f64) -> Point {
+    let d = p - from;
+    if d.hypot() < 1e-9 || !(d.x.is_finite() && d.y.is_finite()) {
+        return p;
+    }
+    let step = step_deg.max(0.1).to_radians();
+    let a = (d.y.atan2(d.x) / step).round() * step;
+    let dir = Vec2::new(a.cos(), a.sin());
+    from + dir * d.dot(dir).max(0.0)
+}
+
 /// The skew a side handle in rotate mode makes when dragged by `d` (page
 /// millimetres): the top and bottom handles slant the selection sideways,
 /// the left and right ones up or down. The opposite side stays put (with
@@ -160,6 +174,16 @@ impl App {
             && self
                 .rotation_center()
                 .is_some_and(|c| self.view.to_screen(c).distance(screen) <= PIVOT_PX)
+    }
+
+    /// Where the next node of the curve being drawn goes for the pointer
+    /// at `p`: with `ctrl` in steps of the constrain angle from the last
+    /// node.
+    pub fn curve_point(&self, p: Point, ctrl: bool) -> Point {
+        match self.curve.as_ref().and_then(|c| c.nodes.last()) {
+            Some((last, _)) if ctrl => constrain_from(*last, p, self.settings.constrain_angle),
+            _ => p,
+        }
     }
 
     /// The pointer is over the document palette.
@@ -378,7 +402,7 @@ impl App {
             Tool::ThreePointRectangle | Tool::ThreePointEllipse | Tool::ThreePointCurve => {
                 self.three_point_input(response, p)
             }
-            Tool::Freehand => self.freehand_input(response, p),
+            Tool::Freehand => self.freehand_input(response, p, mods),
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
                 self.curve_input(response, p, mods)
             }
@@ -879,8 +903,24 @@ impl App {
         }
     }
 
-    fn freehand_input(&mut self, response: &Response, p: Point) {
+    fn freehand_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        // A click, then another: a straight line between them (Ctrl keeps
+        // it to steps of the constrain angle); Esc drops the first click.
+        if response.clicked_by(PointerButton::Primary) && self.tool == Tool::Freehand {
+            let p = self.curve_point(self.snap_point(p), mods.ctrl);
+            let c = self.curve.get_or_insert_with(|| CurveInProgress {
+                nodes: Vec::new(),
+                smooth: false,
+                dragging_handle: false,
+            });
+            c.nodes.push((p, None));
+            if c.nodes.len() >= 2 {
+                self.finish_curve();
+            }
+            return;
+        }
         if response.drag_started_by(PointerButton::Primary) {
+            self.curve = None;
             self.drag = Drag::Freehand { points: vec![p] };
         }
         if response.dragged_by(PointerButton::Primary) {
@@ -899,8 +939,20 @@ impl App {
     /// Bezier/Pen: click places a cusp node, click-and-drag pulls out a
     /// smooth handle. Polyline and 2-point line place straight segments.
     /// Double-click or Enter finishes; clicking the start node closes.
-    fn curve_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
+    fn curve_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
+        // Ctrl: the new node in steps of the constrain angle from the last
+        // one (a dragged handle, from its node).
+        let handle_from = self
+            .curve
+            .as_ref()
+            .filter(|c| c.dragging_handle)
+            .and_then(|c| c.nodes.last().map(|n| n.0));
+        let p = match handle_from {
+            Some(node) if mods.ctrl => constrain_from(node, p, self.settings.constrain_angle),
+            Some(_) => p,
+            None => self.curve_point(p, mods.ctrl),
+        };
         let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen | Tool::BSpline);
         if response.double_clicked_by(PointerButton::Primary) {
             self.finish_curve();

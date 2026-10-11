@@ -292,10 +292,14 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         _ => {}
     }
     if let Some(c) = &app.curve {
+        // The pointer as the next node would take it (Ctrl: in steps of
+        // the constrain angle).
+        let ctrl = painter.ctx().input(|i| i.modifiers.ctrl);
         let preview = if c.dragging_handle {
             None
         } else {
             app.pointer_page
+                .map(|p| app.curve_point(app.snap_point(p), ctrl))
         };
         let path = c.path(preview);
         for (pts, _) in flatten(&path, view) {

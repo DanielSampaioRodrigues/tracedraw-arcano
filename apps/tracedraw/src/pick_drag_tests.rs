@@ -583,3 +583,93 @@ fn objects_dropped_on_the_document_palette_give_their_colours() {
         .palette
         .contains(&tracedraw_core::Color::rgb8(200, 30, 30)));
 }
+
+fn click_at(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
+    frame(ctx, app, vec![Event::PointerMoved(at)], mods);
+    frame(
+        ctx,
+        app,
+        vec![button(at, true, PointerButton::Primary, mods)],
+        mods,
+    );
+    frame(
+        ctx,
+        app,
+        vec![button(at, false, PointerButton::Primary, mods)],
+        mods,
+    );
+    // Past the double-click time, so the next click is a click of its own.
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    frame(ctx, app, Vec::new(), mods);
+}
+
+fn last_path(app: &App) -> tracedraw_core::BezPath {
+    app.doc()
+        .all_layers()
+        .flat_map(|l| &l.shapes)
+        .filter_map(|s| match &s.kind {
+            ShapeKind::Path { .. } => Some(s.page_path()),
+            _ => None,
+        })
+        .last()
+        .expect("a curve")
+}
+
+#[test]
+fn ctrl_keeps_lines_to_the_constrain_angle() {
+    use crate::interaction::constrain_from;
+    let o = Point::new(0.0, 0.0);
+    // 5 degrees off the horizontal comes back to it, at the same reach
+    // along it.
+    let p = constrain_from(o, Point::new(10.0, 5f64.to_radians().tan() * 10.0), 15.0);
+    assert!(p.y.abs() < 1e-9 && (p.x - 10.0).abs() < 1e-9, "{p:?}");
+    // 40 degrees goes to 45.
+    let a = 40f64.to_radians();
+    let p = constrain_from(o, Point::new(a.cos() * 10.0, a.sin() * 10.0), 15.0);
+    assert!((p.y.atan2(p.x).to_degrees() - 45.0).abs() < 1e-9);
+    assert_eq!(constrain_from(o, o, 15.0), o);
+
+    // Freehand: two clicks make a straight line; with Ctrl a level one.
+    let (ctx, mut app, _id) = setup();
+    app.set_tool(Tool::Freehand);
+    let a = app.view.to_screen(Point::new(100.0, 100.0));
+    let b = app.view.to_screen(Point::new(160.0, 104.0));
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    click_at(&ctx, &mut app, b, Modifiers::CTRL);
+    let path = last_path(&app);
+    let pts: Vec<Point> = path
+        .elements()
+        .iter()
+        .filter_map(|e| match e {
+            tracedraw_core::geometry::PathEl::MoveTo(p)
+            | tracedraw_core::geometry::PathEl::LineTo(p) => Some(*p),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pts.len(), 2, "{pts:?}");
+    assert!((pts[0].y - pts[1].y).abs() < 1e-6, "level: {pts:?}");
+    assert!(pts[1].x > pts[0].x + 50.0);
+
+    // Polyline: Ctrl keeps the next segment to 15 degree steps.
+    app.set_tool(Tool::Polyline);
+    let a = app.view.to_screen(Point::new(100.0, 150.0));
+    let b = app.view.to_screen(Point::new(150.0, 196.0));
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    click_at(&ctx, &mut app, b, Modifiers::CTRL);
+    app.finish_curve();
+    let path = last_path(&app);
+    let pts: Vec<Point> = path
+        .elements()
+        .iter()
+        .filter_map(|e| match e {
+            tracedraw_core::geometry::PathEl::MoveTo(p)
+            | tracedraw_core::geometry::PathEl::LineTo(p) => Some(*p),
+            _ => None,
+        })
+        .collect();
+    let d = pts[1] - pts[0];
+    assert!(
+        (d.y.atan2(d.x).to_degrees() - 45.0).abs() < 1e-6,
+        "45 degrees: {pts:?}"
+    );
+}

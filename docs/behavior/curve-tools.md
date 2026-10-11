@@ -10,6 +10,10 @@ meets the start) `Path` objects with the toolbox defaults.
   are simplified with a tolerance of `max(0.15, 1.2 / zoom)` mm (so a
   zoomed-in drawing keeps more detail) and fitted with smooth cubic
   segments (`geometry::smooth_path`).
+- A click, then another click: a straight line between them, previewed
+  to the pointer after the first click; Ctrl keeps it to steps of the
+  constrain angle (15 degrees by default); Esc drops the first click; a
+  drag in between draws freehand instead.
 
 ## Bezier, Pen and B-spline
 
@@ -20,12 +24,16 @@ meets the start) `Path` objects with the toolbox defaults.
   clicking the first node (within 5 screen pixels, once the curve has
   three nodes) closes the curve.
 - Snapping applies to every placed node.
+- Ctrl: the next node goes in steps of the constrain angle from the last
+  one (keeping how far the pointer reaches along that direction), and a
+  dragged handle in such steps around its node; the preview follows.
 
 ## Polyline and 2-point line
 
 - Polyline: clicks add straight segments (no smooth handles);
   double-click or Enter finishes. 2-point line: the second click
-  finishes the segment at once.
+  finishes the segment at once. Ctrl keeps each segment to steps of the
+  constrain angle.
 
 ## 3-point curve
 

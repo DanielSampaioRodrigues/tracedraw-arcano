@@ -11,6 +11,9 @@ full, row-by-row status.
   corner, Ctrl keeps a move straight, a right click during a drag leaves
   the original, Space drops a copy, Esc cancels; in rotate mode the side
   handles skew and the centre of rotation can be moved.
+- Curves: Ctrl keeps lines and Bezier nodes to steps of the constrain
+  angle; with Freehand a click and then another click draw a straight
+  line.
 - Drag a colour from the palette onto an object: inside it fills it, on
   its outline it colours the outline; onto the document palette it joins
   it.
