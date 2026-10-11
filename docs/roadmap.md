@@ -33,6 +33,7 @@ Status tracked in `docs/features.md`.
 - PDF export (vector, CMYK, separations), EPS, AI (PDF-based), bitmaps
 - Print to PDF, print preview, print merge
 - PDF/X-1a, X-3 and X-4 output (done)
+- Publish to PDF with document information, bookmarks and password protection (AES-256); protected PDFs of every revision open (done; see `behavior/publish-to-pdf.md`)
 - `.cdr` write (RIFF version 12 layout; reads back here and in another public reader) (done)
 
 ## M4 Platform (done)

@@ -17,7 +17,7 @@ Export dialog.
 | PNG, WebP, GIF | resolution (36 to 2400 dpi, presets 72, 96, 150, 300), transparent background; WebP also quality |
 | JPEG | resolution, quality (1 to 100) |
 | BMP, TIFF, PSD | resolution |
-| PDF | standard (PDF 1.4, PDF/X-1a, PDF/X-3, PDF/X-4), bleed, output condition for PDF/X |
+| PDF | standard (PDF 1.4, PDF/X-1a, PDF/X-3, PDF/X-4), bleed, output condition for PDF/X; the author, subject and keywords come from the drawing's properties (File > Publish to PDF has bookmarks and protection, see `publish-to-pdf.md`) |
 | SVG, EPS, AI, DXF, HTML, EMF, WMF, PLT | none |
 
 - Bitmap formats show the size in pixels: the page (or selection) size

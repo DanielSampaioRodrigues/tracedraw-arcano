@@ -56,6 +56,49 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
+/// Protection for a written PDF: a password to open it, a password for
+/// the permissions and the permissions to deny (a comma-separated list of
+/// print, hq-print, copy, modify, annotate, forms, assemble and
+/// accessibility). Nothing set: no protection.
+fn pdf_security(
+    open: Option<String>,
+    owner: Option<String>,
+    deny: Option<String>,
+) -> Option<tracedraw_io::pdf_crypt::Security> {
+    let open = open.unwrap_or_default();
+    let owner = owner.unwrap_or_default();
+    if open.is_empty() && owner.is_empty() {
+        return None;
+    }
+    let mut p = tracedraw_io::pdf_crypt::Permissions::default();
+    if !owner.is_empty() {
+        for item in deny.unwrap_or_default().split(',') {
+            match item.trim().to_ascii_lowercase().as_str() {
+                "print" => p.print = false,
+                "hq-print" => p.print_high_quality = false,
+                "copy" => p.copy = false,
+                "modify" => p.modify = false,
+                "annotate" => p.annotate = false,
+                "forms" => p.fill_forms = false,
+                "assemble" => p.assemble = false,
+                "accessibility" => p.accessibility = false,
+                "" => {}
+                other => eprintln!("warning: unknown permission {other}"),
+            }
+        }
+    }
+    let owner = if owner.is_empty() {
+        open.clone()
+    } else {
+        owner
+    };
+    Some(tracedraw_io::pdf_crypt::Security {
+        user_password: open,
+        owner_password: owner,
+        permissions: p,
+    })
+}
+
 fn load(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
@@ -66,8 +109,14 @@ fn load(
             .map_err(|e| e.to_string())
     } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-        let imported =
-            tracedraw_io::pdf_import::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
+        // TRACEDRAW_PASSWORD opens a protected file.
+        let password = std::env::var("TRACEDRAW_PASSWORD").unwrap_or_default();
+        let imported = tracedraw_io::pdf_import::parse_with_password(
+            &bytes,
+            &mut tracedraw_core::id::IdSource::default(),
+            &password,
+        )
+        .map_err(|e| e.to_string())?;
         for w in &imported.warnings {
             eprintln!("warning: {w}");
         }
@@ -391,6 +440,8 @@ fn main() -> ExitCode {
             } else if output.to_ascii_lowercase().ends_with(".pdf") {
                 // TRACEDRAW_PDFX=x1a|x3|x4 selects a PDF/X level; TRACEDRAW_ICC
                 // names the output profile and TRACEDRAW_BLEED the bleed in mm.
+                // TRACEDRAW_PDF_BOOKMARKS=1 adds a bookmark per page; the
+                // TRACEDRAW_PDF_*PASSWORD and _DENY variables protect it.
                 let standard = match std::env::var("TRACEDRAW_PDFX")
                     .unwrap_or_default()
                     .to_ascii_lowercase()
@@ -413,6 +464,14 @@ fn main() -> ExitCode {
                         .unwrap_or(0.0),
                     title: None,
                     flatten_dpi: 300.0,
+                    bookmarks: std::env::var("TRACEDRAW_PDF_BOOKMARKS")
+                        .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "no" | "false")),
+                    security: pdf_security(
+                        std::env::var("TRACEDRAW_PDF_OPEN_PASSWORD").ok(),
+                        std::env::var("TRACEDRAW_PDF_OWNER_PASSWORD").ok(),
+                        std::env::var("TRACEDRAW_PDF_DENY").ok(),
+                    ),
+                    ..Default::default()
                 };
                 std::fs::write(output, tracedraw_io::pdf::document_to_pdf_with(&doc, &opts))
                     .map_err(tracedraw_io::Error::from)
@@ -469,5 +528,29 @@ fn main() -> ExitCode {
             }
         }
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pdf_protection_comes_from_the_environment_values() {
+        assert!(pdf_security(None, None, Some("print".into())).is_none());
+        // A password to open it only: everything allowed, one password.
+        let s = pdf_security(Some("open".into()), None, Some("print".into())).expect("set");
+        assert_eq!(
+            (s.user_password.as_str(), s.owner_password.as_str()),
+            ("open", "open")
+        );
+        assert!(s.permissions.print);
+        // A permissions password with what to deny.
+        let s =
+            pdf_security(None, Some("boss".into()), Some("print, Copy,forms".into())).expect("set");
+        assert!(s.user_password.is_empty());
+        assert_eq!(s.owner_password, "boss");
+        assert!(!s.permissions.print && !s.permissions.copy && !s.permissions.fill_forms);
+        assert!(s.permissions.modify && s.permissions.accessibility);
     }
 }

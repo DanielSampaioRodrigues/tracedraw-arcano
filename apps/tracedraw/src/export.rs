@@ -12,7 +12,7 @@ use tracedraw_core::{
 };
 
 /// Document limited to the selection or the current page, for exports.
-fn export_document(app: &App, st: &ExportState) -> (Document, Rect) {
+pub(crate) fn export_document(app: &App, st: &ExportState) -> (Document, Rect) {
     let doc = app.engine.document();
     if st.selection_only {
         let bounds = app.selection_bounds().unwrap_or(app.page_rect());
@@ -55,21 +55,14 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 ("pdf", 3) => PdfStandard::X4,
                 _ => PdfStandard::None,
             };
-            let profile = if standard == PdfStandard::None {
-                None
-            } else {
-                let p = app.settings.color.cmyk_profile_path.trim().to_string();
-                (!p.is_empty())
-                    .then(|| crate::files::read(&p).ok())
-                    .flatten()
-            };
             let opts = PdfOptions {
                 standard,
-                output_profile: profile,
+                output_profile: pdfx_profile(app, standard),
                 output_condition: st.output_condition.clone(),
                 bleed_mm: if ext == "pdf" { st.bleed_mm } else { 0.0 },
                 title: Some(app.document_title().trim_end_matches('*').to_string()),
                 flatten_dpi: st.dpi.max(72.0),
+                ..Default::default()
             };
             let pdf = tracedraw_io::pdf::document_to_pdf_with(&doc, &opts);
             crate::files::write(path, pdf).map_err(|e| e.to_string())?;
@@ -150,6 +143,18 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
         "status.exported",
         &[("path", &path.display().to_string())],
     ))
+}
+
+/// The output intent's profile for a PDF/X file: the CMYK profile picked
+/// under Colour Management, when there is one and it can be read.
+pub(crate) fn pdfx_profile(app: &App, standard: tracedraw_io::pdf::PdfStandard) -> Option<Vec<u8>> {
+    if standard == tracedraw_io::pdf::PdfStandard::None {
+        return None;
+    }
+    let p = app.settings.color.cmyk_profile_path.trim().to_string();
+    (!p.is_empty())
+        .then(|| crate::files::read(&p).ok())
+        .flatten()
 }
 
 fn write_raster(pm: &tiny_skia::Pixmap, path: &Path, ext: &str, quality: u8) -> Result<(), String> {

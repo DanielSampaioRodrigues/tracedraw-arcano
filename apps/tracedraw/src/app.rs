@@ -2666,6 +2666,11 @@ impl App {
     }
 
     pub fn open_path(&mut self, path: PathBuf) {
+        self.open_path_with_password(path, "");
+    }
+
+    /// Open `path`; `password` opens a protected PDF (empty: none).
+    pub fn open_path_with_password(&mut self, path: PathBuf, password: &str) {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -2848,64 +2853,69 @@ impl App {
                     (doc2, opened_objects("DXF", n))
                 })
         } else if ext == "pdf" || ext == "ai" {
-            crate::files::read(&path)
-                .map_err(|e| e.to_string())
+            use tracedraw_io::pdf_import::ImportError;
+            let parsed = crate::files::read(&path)
+                .map_err(|e| ImportError::Failed(e.to_string()))
                 .and_then(|bytes| {
-                    tracedraw_io::pdf_import::parse(
+                    tracedraw_io::pdf_import::parse_with_password(
                         &bytes,
                         &mut tracedraw_core::id::IdSource::default(),
+                        password,
                     )
-                })
-                .map(|imported| {
-                    let title = path
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(App::untitled_name);
-                    for w in &imported.warnings {
-                        log::warn!("pdf: {w}");
+                });
+            if matches!(parsed, Err(ImportError::NeedsPassword)) {
+                self.ask_pdf_password(path, false, !password.is_empty());
+                return;
+            }
+            parsed.map_err(|e| e.to_string()).map(|imported| {
+                let title = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(App::untitled_name);
+                for w in &imported.warnings {
+                    log::warn!("pdf: {w}");
+                }
+                let pages = imported.pages.len();
+                let n: usize = imported.pages.iter().map(|p| p.shapes.len()).sum();
+                let title = imported.title.clone().unwrap_or(title);
+                let first = imported
+                    .pages
+                    .first()
+                    .map(|p| p.size)
+                    .unwrap_or(tracedraw_core::document::paper::A4);
+                let mut doc2 = App::localized_document(title, first);
+                let layer_name = doc2.pages[0].layers[0].name.clone();
+                doc2.pages.clear();
+                let mut ids = tracedraw_core::id::IdSource::default();
+                for (i, p) in imported.pages.into_iter().enumerate() {
+                    let pid = ids.page();
+                    let lid = ids.layer();
+                    let mut layer = tracedraw_core::document::Layer::new(lid, layer_name.clone());
+                    for s in p.shapes {
+                        layer.shapes.push(reid_with(s, &mut ids));
                     }
-                    let pages = imported.pages.len();
-                    let n: usize = imported.pages.iter().map(|p| p.shapes.len()).sum();
-                    let title = imported.title.clone().unwrap_or(title);
-                    let first = imported
-                        .pages
-                        .first()
-                        .map(|p| p.size)
-                        .unwrap_or(tracedraw_core::document::paper::A4);
-                    let mut doc2 = App::localized_document(title, first);
-                    let layer_name = doc2.pages[0].layers[0].name.clone();
-                    doc2.pages.clear();
-                    let mut ids = tracedraw_core::id::IdSource::default();
-                    for (i, p) in imported.pages.into_iter().enumerate() {
-                        let pid = ids.page();
-                        let lid = ids.layer();
-                        let mut layer =
-                            tracedraw_core::document::Layer::new(lid, layer_name.clone());
-                        for s in p.shapes {
-                            layer.shapes.push(reid_with(s, &mut ids));
-                        }
-                        doc2.pages.push(tracedraw_core::document::Page {
-                            id: pid,
-                            name: crate::i18n::trf("doc.page_n", &[("n", &(i + 1).to_string())]),
-                            size: p.size,
-                            layers: vec![layer],
-                            guides: Vec::new(),
-                            background: None,
-                        });
-                    }
-                    doc2.set_ids(ids);
-                    (
-                        doc2,
-                        crate::i18n::trf(
-                            "status.opened_pages",
-                            &[
-                                ("format", "PDF"),
-                                ("pages", &pages.to_string()),
-                                ("objects", &n.to_string()),
-                            ],
-                        ),
-                    )
-                })
+                    doc2.pages.push(tracedraw_core::document::Page {
+                        id: pid,
+                        name: crate::i18n::trf("doc.page_n", &[("n", &(i + 1).to_string())]),
+                        size: p.size,
+                        layers: vec![layer],
+                        guides: Vec::new(),
+                        background: None,
+                    });
+                }
+                doc2.set_ids(ids);
+                (
+                    doc2,
+                    crate::i18n::trf(
+                        "status.opened_pages",
+                        &[
+                            ("format", "PDF"),
+                            ("pages", &pages.to_string()),
+                            ("objects", &n.to_string()),
+                        ],
+                    ),
+                )
+            })
         } else if ext == "cdr" {
             Self::open_cdr(&path)
                 .map(|(doc, report)| {
@@ -3338,17 +3348,29 @@ impl App {
 
     /// Import the first page of a PDF or AI file into the active layer.
     pub fn import_pdf(&mut self, path: &std::path::Path) {
+        self.import_pdf_with_password(path, "");
+    }
+
+    /// [`App::import_pdf`] with the password of a protected file.
+    pub fn import_pdf_with_password(&mut self, path: &std::path::Path, password: &str) {
+        use tracedraw_io::pdf_import::ImportError;
         let Some(layer) = self.active_layer() else {
             return;
         };
         let parsed = crate::files::read(path)
-            .map_err(|e| e.to_string())
+            .map_err(|e| ImportError::Failed(e.to_string()))
             .and_then(|bytes| {
-                tracedraw_io::pdf_import::parse(
+                tracedraw_io::pdf_import::parse_with_password(
                     &bytes,
                     &mut tracedraw_core::id::IdSource::default(),
+                    password,
                 )
             });
+        if matches!(parsed, Err(ImportError::NeedsPassword)) {
+            self.ask_pdf_password(path.to_path_buf(), true, !password.is_empty());
+            return;
+        }
+        let parsed = parsed.map_err(|e| e.to_string());
         match parsed {
             Ok(imported) => {
                 let mut cmds = Vec::new();
@@ -3609,24 +3631,11 @@ impl App {
         }
     }
 
-    pub fn export_pdf(&mut self) {
-        crate::files::Dialog::new()
-            .add_filter("PDF (*.pdf)", &["pdf"])
-            .set_file_name("Graphic1.pdf")
-            .save_file(self, |app, path| app.export_pdf_to(path));
-    }
-
-    fn export_pdf_to(&mut self, path: PathBuf) {
-        let pdf = tracedraw_io::pdf::document_to_pdf(self.engine.document());
-        match crate::files::write(&path, pdf) {
-            Ok(()) => {
-                self.status =
-                    crate::i18n::trf("status.exported", &[("path", &path.display().to_string())])
-            }
-            Err(e) => {
-                self.status = crate::i18n::trf("status.export_failed", &[("e", &e.to_string())])
-            }
-        }
+    /// File > Publish to PDF: the dialog for the active drawing.
+    pub fn publish_pdf(&mut self) {
+        self.dialog = crate::ui::dialogs::Dialog::PublishPdf(Box::new(
+            crate::ui::publish_pdf::PublishState::new(self),
+        ));
     }
 
     // ----- view --------------------------------------------------------------

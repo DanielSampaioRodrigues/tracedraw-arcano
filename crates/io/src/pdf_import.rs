@@ -49,15 +49,45 @@ fn pdf_start(bytes: &[u8]) -> Option<usize> {
     bytes[..limit].windows(5).position(|w| w == b"%PDF-")
 }
 
-/// Parse a PDF (or an AI file with embedded PDF) into pages of shapes.
-pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<ImportedPdf, String> {
-    let start = pdf_start(bytes).ok_or_else(|| "not a PDF file".to_string())?;
-    let mut doc = PdfDoc::load_mem(&bytes[start..]).map_err(|e| format!("PDF: {e}"))?;
-    if doc.is_encrypted() {
-        if let Err(e) = doc.decrypt("") {
-            return Err(format!("PDF is encrypted: {e}"));
+/// Why a PDF could not be imported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportError {
+    /// The file is protected with a password to open it, and the password
+    /// given (none, or a wrong one) does not open it.
+    NeedsPassword,
+    Failed(String),
+}
+
+impl std::fmt::Display for ImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImportError::NeedsPassword => {
+                write!(f, "PDF is protected: the file needs a password to open")
+            }
+            ImportError::Failed(e) => write!(f, "{e}"),
         }
     }
+}
+
+impl From<String> for ImportError {
+    fn from(e: String) -> Self {
+        ImportError::Failed(e)
+    }
+}
+
+/// Parse a PDF (or an AI file with embedded PDF) into pages of shapes.
+pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<ImportedPdf, String> {
+    parse_with_password(bytes, ids, "").map_err(|e| e.to_string())
+}
+
+/// [`parse`] for a protected file, with its user or owner password.
+pub fn parse_with_password(
+    bytes: &[u8],
+    ids: &mut IdSource,
+    password: &str,
+) -> Result<ImportedPdf, ImportError> {
+    let start = pdf_start(bytes).ok_or_else(|| "not a PDF file".to_string())?;
+    let doc = load(&bytes[start..], password)?;
     let mut out = ImportedPdf::default();
     out.title = doc
         .trailer
@@ -71,7 +101,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<ImportedPdf, String> {
         .filter(|s| !s.trim().is_empty());
     let pages: Vec<lopdf::ObjectId> = doc.page_iter().collect();
     if pages.is_empty() {
-        return Err("PDF has no pages".into());
+        return Err(ImportError::Failed("PDF has no pages".into()));
     }
     for (index, page_id) in pages.iter().enumerate() {
         let mut imp = Importer {
@@ -88,6 +118,189 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<ImportedPdf, String> {
     }
     out.warnings.dedup();
     Ok(out)
+}
+
+// ----- Protected files ---------------------------------------------------
+//
+// The parser's own decryption is never used: the trailer's /Encrypt key is
+// renamed (same length, so every offset stays right) and the objects are
+// decrypted as they are read, with `pdf_crypt::Decryptor`.
+
+/// What the trailer's /Encrypt key is renamed to.
+const HIDDEN_ENCRYPT: &[u8] = b"/TDcrypt";
+
+/// `bytes` with every /Encrypt name (not /EncryptMetadata) renamed; `None`
+/// when there is none.
+fn hide_encryption(bytes: &[u8]) -> Option<Vec<u8>> {
+    const KEY: &[u8] = b"/Encrypt";
+    let ends_name = |c: u8| {
+        matches!(
+            c,
+            b' ' | b'\t'
+                | b'\r'
+                | b'\n'
+                | 0x0C
+                | 0
+                | b'/'
+                | b'<'
+                | b'>'
+                | b'['
+                | b']'
+                | b'('
+                | b')'
+                | b'{'
+                | b'}'
+                | b'%'
+        )
+    };
+    let mut out: Option<Vec<u8>> = None;
+    let mut i = 0;
+    while i + KEY.len() <= bytes.len() {
+        if bytes[i] == b'/' && &bytes[i..i + KEY.len()] == KEY {
+            let end = i + KEY.len();
+            if bytes.get(end).is_none_or(|c| ends_name(*c)) {
+                let o = out.get_or_insert_with(|| bytes.to_vec());
+                o[i..end].copy_from_slice(HIDDEN_ENCRYPT);
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The decryption under way while the parser reads a protected file.
+struct Pass {
+    decryptor: crate::pdf_crypt::Decryptor,
+    /// The /Encrypt dictionary's object, which is never encrypted.
+    encrypt: Option<lopdf::ObjectId>,
+    /// The objects of the object stream just read, which the parser hands
+    /// over next; their strings were decrypted with the stream.
+    members: std::collections::VecDeque<lopdf::ObjectId>,
+    /// Streams whose data the parser fills in after the filter.
+    late: Vec<lopdf::ObjectId>,
+}
+
+thread_local! {
+    static PASS: std::cell::RefCell<Option<Pass>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Clears the decryption state however the read ends.
+struct PassGuard;
+
+impl Drop for PassGuard {
+    fn drop(&mut self) {
+        PASS.with(|p| *p.borrow_mut() = None);
+    }
+}
+
+/// Parser filter of the first read: dictionaries only (no streams), to
+/// find the /Encrypt dictionary quickly.
+fn dictionaries_only(
+    id: lopdf::ObjectId,
+    object: &mut Object,
+) -> Option<(lopdf::ObjectId, Object)> {
+    matches!(object, Object::Dictionary(_)).then(|| (id, object.clone()))
+}
+
+/// Parser filter of the second read: every object decrypted as it is read.
+fn decrypt_as_read(id: lopdf::ObjectId, object: &mut Object) -> Option<(lopdf::ObjectId, Object)> {
+    PASS.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let Some(pass) = cell.as_mut() else {
+            return;
+        };
+        if pass.members.front() == Some(&id) {
+            pass.members.pop_front();
+            return;
+        }
+        pass.members.clear();
+        if pass.encrypt == Some(id) {
+            return;
+        }
+        pass.decryptor.decrypt_object(id, object);
+        if let Object::Stream(stream) = object {
+            if stream.content.is_empty() && stream.start_position.is_some() {
+                pass.late.push(id);
+            } else if stream.dict.has_type(b"ObjStm") {
+                if let Ok(objects) = lopdf::ObjectStream::new(&mut stream.clone()) {
+                    pass.members = objects.objects.keys().copied().collect();
+                }
+            }
+        }
+    });
+    // The parser keeps `object` for objects read from the file and the
+    // returned copy for objects from object streams.
+    Some((id, object.clone()))
+}
+
+/// Parse a PDF, decrypting it with `password` (empty: the file opens
+/// without one) when it is protected.
+fn load(bytes: &[u8], password: &str) -> Result<PdfDoc, ImportError> {
+    let Some(hidden) = hide_encryption(bytes) else {
+        return PdfDoc::load_mem(bytes).map_err(|e| ImportError::Failed(format!("PDF: {e}")));
+    };
+    let read = |filter: fn(lopdf::ObjectId, &mut Object) -> Option<(lopdf::ObjectId, Object)>| {
+        lopdf::Reader {
+            buffer: &hidden,
+            document: PdfDoc::new(),
+        }
+        .read(Some(filter))
+        .map_err(|e| ImportError::Failed(format!("PDF: {e}")))
+    };
+    let probe = read(dictionaries_only)?;
+    let hidden_key = &HIDDEN_ENCRYPT[1..];
+    let (encrypt, dict) = match probe.trailer.get(hidden_key) {
+        Ok(Object::Reference(r)) => match probe.get_dictionary(*r) {
+            Ok(d) => (Some(*r), d.clone()),
+            Err(_) => {
+                return Err(ImportError::Failed(
+                    "PDF: the encryption dictionary is missing".into(),
+                ))
+            }
+        },
+        Ok(Object::Dictionary(d)) => (None, d.clone()),
+        // The name was not the trailer's: a plain file.
+        _ => return PdfDoc::load_mem(bytes).map_err(|e| ImportError::Failed(format!("PDF: {e}"))),
+    };
+    let id = probe
+        .trailer
+        .get(b"ID")
+        .and_then(Object::as_array)
+        .ok()
+        .and_then(|a| a.first())
+        .and_then(|o| o.as_str().ok())
+        .map(<[u8]>::to_vec)
+        .unwrap_or_default();
+    drop(probe);
+    let decryptor =
+        crate::pdf_crypt::Decryptor::open(&dict, &id, password).map_err(|e| match e {
+            crate::pdf_crypt::OpenError::NeedsPassword => ImportError::NeedsPassword,
+            other => ImportError::Failed(format!("PDF is protected: {other}")),
+        })?;
+    let _guard = PassGuard;
+    PASS.with(|p| {
+        *p.borrow_mut() = Some(Pass {
+            decryptor,
+            encrypt,
+            members: Default::default(),
+            late: Vec::new(),
+        })
+    });
+    let mut doc = read(decrypt_as_read)?;
+    if let Some(pass) = PASS.with(|p| p.borrow_mut().take()) {
+        for id in pass.late {
+            if let Ok(Object::Stream(stream)) = doc.get_object_mut(id) {
+                pass.decryptor.decrypt_stream_data(id, stream);
+            }
+        }
+    }
+    doc.trailer.remove(hidden_key);
+    if let Some(e) = encrypt {
+        doc.objects.remove(&e);
+    }
+    Ok(doc)
 }
 
 /// Convert an imported PDF into a document (one page per PDF page).
@@ -3397,5 +3610,353 @@ mod tests {
         let mut ids = IdSource::default();
         assert!(parse(b"hello", &mut ids).is_err());
         assert!(parse(b"%PDF-1.4 garbage", &mut ids).is_err());
+    }
+
+    // ----- Protected files -----
+
+    /// Repeatable bytes in place of randomness.
+    fn fixed_random() -> crate::pdf_crypt::Random {
+        let mut n: u8 = 7;
+        Box::new(move |buf: &mut [u8]| {
+            for b in buf.iter_mut() {
+                n = n.wrapping_mul(29).wrapping_add(11);
+                *b = n;
+            }
+        })
+    }
+
+    /// A one-page file with a rectangle, a text run and a title, as the
+    /// other reader holds it, ready to be protected by it.
+    fn plain_for_protection() -> PdfDoc {
+        let font =
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+        let bytes = one_page(
+            "0 0 1 rg 10 10 50 30 re f BT /F1 12 Tf 20 60 Td (Hello) Tj ET",
+            "<< /Font << /F1 5 0 R >> >>",
+            &[font.to_string(), "<< /Title (Locked) >>".to_string()],
+        );
+        let mut doc = PdfDoc::load_mem(&bytes).expect("plain");
+        doc.trailer.set("Info", Object::Reference((6, 0)));
+        let id = Object::string_literal(b"0123456789abcdef".to_vec());
+        doc.trailer.set("ID", Object::Array(vec![id.clone(), id]));
+        doc
+    }
+
+    fn assert_unlocked(bytes: &[u8], title: &str) {
+        let mut ids = IdSource::default();
+        let imp = parse(bytes, &mut ids).expect("opens without a password");
+        assert_eq!(imp.title.as_deref(), Some(title));
+        let p = &imp.pages[0];
+        assert!(
+            p.shapes
+                .iter()
+                .any(|s| matches!(s.kind, ShapeKind::Path { .. } | ShapeKind::Rect { .. })),
+            "{:?}",
+            imp.warnings
+        );
+        let texts: Vec<&str> = p
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => Some(spans[0].text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, ["Hello"]);
+    }
+
+    #[test]
+    fn protected_files_of_every_revision_open_without_a_password() {
+        use lopdf::encryption::crypt_filters::{
+            Aes128CryptFilter, Aes256CryptFilter, CryptFilter, Rc4CryptFilter,
+        };
+        use lopdf::{EncryptionState, EncryptionVersion, Permissions as P};
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+        fn filters(f: Arc<dyn CryptFilter>) -> BTreeMap<Vec<u8>, Arc<dyn CryptFilter>> {
+            BTreeMap::from([(b"StdCF".to_vec(), f)])
+        }
+        // Files protected by another implementation of the standard, with
+        // an owner password and no user password: RC4 with 40 and 128-bit
+        // keys (revisions 2 and 3), RC4 and AES-128 crypt filters
+        // (revision 4) and AES-256 (revision 6). (Its revision 5 files
+        // lack /OE and /UE, so no reader can open them.)
+        fn versions<'a>(doc: &'a PdfDoc, key: &'a [u8]) -> Vec<EncryptionVersion<'a>> {
+            vec![
+                EncryptionVersion::V1 {
+                    document: doc,
+                    owner_password: "owner",
+                    user_password: "",
+                    permissions: P::default(),
+                },
+                EncryptionVersion::V2 {
+                    document: doc,
+                    owner_password: "owner",
+                    user_password: "",
+                    key_length: 128,
+                    permissions: P::default(),
+                },
+                EncryptionVersion::V4 {
+                    document: doc,
+                    encrypt_metadata: true,
+                    crypt_filters: filters(Arc::new(Rc4CryptFilter)),
+                    stream_filter: b"StdCF".to_vec(),
+                    string_filter: b"StdCF".to_vec(),
+                    owner_password: "owner",
+                    user_password: "",
+                    permissions: P::default(),
+                },
+                EncryptionVersion::V4 {
+                    document: doc,
+                    encrypt_metadata: true,
+                    crypt_filters: filters(Arc::new(Aes128CryptFilter)),
+                    stream_filter: b"StdCF".to_vec(),
+                    string_filter: b"StdCF".to_vec(),
+                    owner_password: "owner",
+                    user_password: "",
+                    permissions: P::default(),
+                },
+                EncryptionVersion::V5 {
+                    encrypt_metadata: true,
+                    crypt_filters: filters(Arc::new(Aes256CryptFilter)),
+                    file_encryption_key: key,
+                    stream_filter: b"StdCF".to_vec(),
+                    string_filter: b"StdCF".to_vec(),
+                    owner_password: "owner",
+                    user_password: "",
+                    permissions: P::default(),
+                },
+            ]
+        }
+        let key = [0x5Au8; 32];
+        let base = plain_for_protection();
+        let count = versions(&base, &key).len();
+        for n in 0..count {
+            let mut doc = base.clone();
+            let state = {
+                let version = versions(&doc, &key).swap_remove(n);
+                EncryptionState::try_from(version).expect("state")
+            };
+            doc.encrypt(&state).expect("encrypt");
+            let mut bytes = Vec::new();
+            doc.save_to(&mut bytes).expect("save");
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains("(Locked)"),
+                "version {n}"
+            );
+            assert_unlocked(&bytes, "Locked");
+        }
+    }
+
+    /// Our own writer's protected file of the same drawing: AES-256,
+    /// revision 6, with the given user password.
+    fn written_protected(user: &str) -> Vec<u8> {
+        let mut doc = plain_for_protection();
+        doc.trailer.remove(b"ID");
+        let mut plain = Vec::new();
+        doc.save_to(&mut plain).expect("save");
+        // Protect the objects with the writer's encryptor, as the PDF
+        // writer does.
+        let security = crate::pdf_crypt::Security {
+            user_password: user.into(),
+            owner_password: "owner".into(),
+            permissions: Default::default(),
+        };
+        let mut enc = crate::pdf_crypt::Encryptor::new(&security, fixed_random());
+        let font =
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+            stream("", "0 0 1 rg 10 10 50 30 re f BT /F1 12 Tf 20 60 Td (Hello) Tj ET"),
+            font.to_string(),
+            "<< /Title (Locked) >>".to_string(),
+        ];
+        let mut bodies: Vec<Vec<u8>> = objects
+            .iter()
+            .map(|o| enc.encrypt_object(o.as_bytes()))
+            .collect();
+        bodies.push(enc.dictionary.clone().into_bytes());
+        write_objects(&bodies, "/Root 1 0 R /Info 6 0 R /Encrypt 7 0 R")
+    }
+
+    /// Objects numbered from 1 with a classic cross-reference table.
+    fn write_objects(bodies: &[Vec<u8>], trailer: &str) -> Vec<u8> {
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, b) in bodies.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+            out.extend_from_slice(b);
+            out.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", bodies.len() + 1).as_bytes(),
+        );
+        for o in offsets {
+            out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} {trailer} >>\nstartxref\n{xref}\n%%EOF\n",
+                bodies.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    #[test]
+    fn our_protected_files_open_unless_they_need_a_password() {
+        // Restricted permissions only: it opens.
+        assert_unlocked(&written_protected(""), "Locked");
+        // A password to open it: a clear error, not garbage.
+        let mut ids = IdSource::default();
+        let locked = written_protected("secret");
+        let err = parse(&locked, &mut ids).expect_err("needs a password");
+        assert!(err.contains("password"), "{err}");
+        // With either password it opens.
+        for password in ["secret", "owner"] {
+            let imp = parse_with_password(&locked, &mut ids, password).expect("opens");
+            assert_eq!(imp.title.as_deref(), Some("Locked"));
+        }
+        assert_eq!(
+            parse_with_password(&locked, &mut ids, "wrong").map(|_| ()),
+            Err(ImportError::NeedsPassword)
+        );
+    }
+
+    #[test]
+    fn damaged_protection_is_an_error_not_a_panic() {
+        let good = written_protected("");
+        let find = |needle: &[u8]| good.windows(needle.len()).position(|w| w == needle);
+        // Same-length edits, so every offset stays right: a hexadecimal
+        // string cut to `keep` digits (the rest blanks), or one name or
+        // number swapped for another.
+        let blank = |entry: &str, keep: usize| -> Vec<u8> {
+            let at = find(entry.as_bytes()).expect("entry") + entry.len();
+            let end = at + good[at..].iter().position(|b| *b == b'>').expect("end");
+            let mut out = good.clone();
+            for b in &mut out[at + 1 + keep..end] {
+                *b = b' ';
+            }
+            out
+        };
+        let swap = |from: &str, to: &str| -> Vec<u8> {
+            assert_eq!(from.len(), to.len());
+            let at = find(from.as_bytes()).expect("entry");
+            let mut out = good.clone();
+            out[at..at + to.len()].copy_from_slice(to.as_bytes());
+            out
+        };
+        let cases = [
+            blank("/Perms ", 2),
+            blank("/UE ", 4),
+            blank("/OE ", 0),
+            blank("/O ", 6),
+            blank("/U ", 6),
+            swap("/R 6", "/R 9"),
+            swap("/V 5", "/V 7"),
+            swap("/CFM /AESV3", "/CFM /AESV9"),
+            swap("/Filter /Standard", "/Filter /Standarx"),
+        ];
+        for (n, bytes) in cases.iter().enumerate() {
+            assert_eq!(bytes.len(), good.len(), "case {n}");
+            let mut ids = IdSource::default();
+            // Each opens or fails; the /Perms check is not needed to open.
+            let result = parse(bytes, &mut ids);
+            if n == 0 {
+                assert!(result.is_ok(), "{result:?}");
+            } else {
+                assert!(result.is_err(), "case {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn object_streams_of_protected_files_are_decrypted() {
+        let security = crate::pdf_crypt::Security {
+            user_password: String::new(),
+            owner_password: "owner".into(),
+            permissions: Default::default(),
+        };
+        let mut enc = crate::pdf_crypt::Encryptor::new(&security, fixed_random());
+        // Catalog, page tree and page packed in object stream 4.
+        let members = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 5 0 R /Resources << >> >>",
+        ];
+        let mut header = String::new();
+        let mut body = String::new();
+        for (i, m) in members.iter().enumerate() {
+            header.push_str(&format!("{} {} ", i + 1, body.len()));
+            body.push_str(m);
+            body.push('\n');
+        }
+        let packed = stream(
+            &format!("/Type /ObjStm /N 3 /First {}", header.len()),
+            &format!("{header}{body}"),
+        );
+        let bodies = [
+            enc.encrypt_object(packed.as_bytes()),
+            enc.encrypt_object(stream("", "0 0 1 rg 10 10 50 30 re f").as_bytes()),
+            enc.encrypt_object(b"<< /Title (Packed) >>"),
+            enc.dictionary.clone().into_bytes(),
+        ];
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, b) in bodies.iter().enumerate() {
+            offsets.push(out.len() as u32);
+            out.extend_from_slice(format!("{} 0 obj\n", i + 4).as_bytes());
+            out.extend_from_slice(b);
+            out.extend_from_slice(b"\nendobj\n");
+        }
+        // A cross-reference stream: free 0, objects 1 to 3 in stream 4,
+        // 4 to 7 in the file, then itself (8).
+        let xref = out.len() as u32;
+        let row = |kind: u8, a: u32, b: u16| {
+            let mut r = vec![kind];
+            r.extend_from_slice(&a.to_be_bytes());
+            r.extend_from_slice(&b.to_be_bytes());
+            r
+        };
+        let mut rows = row(0, 0, 65535);
+        for i in 0..3 {
+            rows.extend(row(2, 4, i));
+        }
+        for o in &offsets {
+            rows.extend(row(1, *o, 0));
+        }
+        rows.extend(row(1, xref, 0));
+        out.extend_from_slice(
+            format!(
+                "8 0 obj\n<< /Type /XRef /Size 9 /W [1 4 2] /Root 1 0 R /Info 6 0 R /Encrypt 7 0 R /Length {} >>\nstream\n",
+                rows.len()
+            )
+            .as_bytes(),
+        );
+        out.extend_from_slice(&rows);
+        out.extend_from_slice(
+            format!("\nendstream\nendobj\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+        let mut ids = IdSource::default();
+        let imp = parse(&out, &mut ids).expect("opens");
+        assert_eq!(imp.title.as_deref(), Some("Packed"));
+        assert_eq!(imp.pages.len(), 1);
+        assert_eq!(imp.pages[0].shapes.len(), 1, "{:?}", imp.warnings);
+    }
+
+    #[test]
+    fn only_trailer_encrypt_names_are_hidden() {
+        let bytes = b"<< /Encrypt 5 0 R /EncryptMetadata false >> (/Encrypt)/Encrypt";
+        let hidden = hide_encryption(bytes).expect("renamed");
+        assert_eq!(
+            hidden,
+            b"<< /TDcrypt 5 0 R /EncryptMetadata false >> (/TDcrypt)/TDcrypt".to_vec()
+        );
+        assert!(hide_encryption(b"<< /EncryptMetadata true >>").is_none());
     }
 }

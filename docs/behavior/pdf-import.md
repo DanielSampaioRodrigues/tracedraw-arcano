@@ -50,10 +50,52 @@ Soft masks on groups (`SMask` in ExtGState), blend modes, transfer
 functions, optional content visibility, JPX and CCITT images (grey box
 and skipped respectively), PostScript calculator functions (linear
 approximation), embedded font programs (text uses the installed font of
-the same name, so widths can differ). Encrypted files open when the user
-password is empty.
+the same name, so widths can differ).
+
+## Protected files
+
+Files protected by the standard security handler open in every revision
+(2 to 6): RC4 with 40 to 128-bit keys, RC4 and AES-128 crypt filters,
+and AES-256 (revisions 5 and 6), with strings and streams decrypted as
+they are read, object streams and cross-reference streams included.
+
+- A file that opens without a password (only its permissions are
+  protected) opens at once.
+- A file with a password to open it asks for it (Protected PDF: the
+  file's name, a masked field, OK and Cancel); the user or the owner
+  password opens it. A wrong one asks again and says so; Cancel leaves
+  it closed and says why in the status bar. Import asks the same way.
+- On the command line `TRACEDRAW_PASSWORD` gives the password.
+- Other security handlers (certificates) are refused with a message.
+
+How: the parser never decrypts. The trailer's `/Encrypt` key is renamed
+(same length, so the offsets hold), a first read takes only the
+dictionaries to find the encryption dictionary, the key comes from the
+password (algorithms 2 and 6 for revisions 2 to 4: MD5 of the padded
+password, `/O`, `/P` and the file ID, 50 more rounds from revision 3,
+and the `/U` check; algorithm 2.A for 5 and 6: the owner's `/O` and
+`/OE` first, then `/U` and `/UE`), and a second read decrypts each
+object as it comes in (per-object keys from MD5 of the key, the object
+number and generation, and `sAlT` for AES-128; the file key as it is for
+AES-256). The members of an object stream are not decrypted again;
+cross-reference streams, metadata that is not encrypted, streams with
+their own crypt filter and signature contents are left alone.
 
 ## Checks
+
+- `pdf_import::tests::protected_files_of_every_revision_open_without_a_password`:
+  files protected by another implementation with revisions 2, 3, 4 (RC4
+  and AES-128) and 6.
+- `pdf_import::tests::our_protected_files_open_unless_they_need_a_password`
+- `pdf_import::tests::object_streams_of_protected_files_are_decrypted`
+- `pdf_import::tests::damaged_protection_is_an_error_not_a_panic`
+- `pdf_crypt::tests::rc4_matches_the_published_vectors`,
+  `what_is_encrypted_decrypts_again`,
+  `revision_5_files_open_with_either_password`
+- `ui::pdf_password::tests::protected_pdfs_ask_for_their_password`
+- Checked by hand: files protected by an independent PDF tool in
+  revisions 2, 3, 4, 5 and 6, with and without object streams, convert to
+  the same SVG as the unprotected file.
 
 - A page with `MediaBox [0 0 200 100]` gives a 70.56 x 35.28 mm page.
 - `1 0 0 RG 0 0 1 rg 4 w ... B` gives a blue fill with a red 1.41 mm

@@ -18,6 +18,13 @@ roxmltree = "0.21"
 web-time = "1"
 zip.workspace = true
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# PDF password protection (AES-256, revision 6) and its random keys;
+# reading protected files also needs RC4 keys made with MD5.
+aes = "0.8"
+cbc = "0.1"
+sha2 = "0.10"
+md5 = { package = "md-5", version = "0.10" }
+getrandom = "0.3"
 
 # lopdf draws random numbers (getrandom 0.3); in a browser they come from
 # JavaScript (see .cargo/config.toml for the matching cfg).

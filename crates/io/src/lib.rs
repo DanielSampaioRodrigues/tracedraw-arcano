@@ -8,6 +8,7 @@ pub mod eps;
 pub mod eps_import;
 pub mod html;
 pub mod pdf;
+pub mod pdf_crypt;
 pub mod pdf_import;
 pub mod plt;
 pub mod psd;

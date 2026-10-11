@@ -66,12 +66,25 @@ pub struct PdfOptions {
     pub title: Option<String>,
     /// Flattening resolution for X-1a/X-3 transparency.
     pub flatten_dpi: f64,
+    /// Document information: author, subject and keywords.
+    pub author: Option<String>,
+    pub subject: Option<String>,
+    pub keywords: Option<String>,
+    /// A bookmark per page (its name) that goes to the top of the page.
+    pub bookmarks: bool,
+    /// Open the bookmarks panel when the file opens.
+    pub show_bookmarks: bool,
+    /// Password protection (AES-256). PDF/X files are never protected:
+    /// the standards forbid it.
+    pub security: Option<crate::pdf_crypt::Security>,
 }
 
 struct Pdf {
     objects: Vec<Vec<u8>>,
     cmyk_only: bool,
     allow_alpha: bool,
+    /// The /Encrypt dictionary's object, once the file is protected.
+    encrypt_id: Option<usize>,
 }
 
 impl Pdf {
@@ -111,6 +124,16 @@ impl Pdf {
         v.extend_from_slice(b"\nendstream");
         self.add(v)
     }
+    /// Protect the file: every object's strings and streams encrypted, the
+    /// /Encrypt dictionary added (and named in the trailer).
+    fn encrypt(&mut self, security: &crate::pdf_crypt::Security, random: crate::pdf_crypt::Random) {
+        let mut enc = crate::pdf_crypt::Encryptor::new(security, random);
+        for body in self.objects.iter_mut() {
+            *body = enc.encrypt_object(body);
+        }
+        let dict = std::mem::take(&mut enc.dictionary);
+        self.encrypt_id = Some(self.add_str(dict));
+    }
     fn finish_with(self, version: &str, info_id: Option<usize>) -> Vec<u8> {
         use std::io::Write;
         let mut out = format!("%PDF-{version}\n").into_bytes();
@@ -137,9 +160,12 @@ impl Pdf {
             let h2 = fnv1a(&out, 0x84222325cbf29ce4);
             format!("<{h1:016x}{h2:016x}> <{h1:016x}{h2:016x}>")
         };
-        let info = info_id
+        let mut info = info_id
             .map(|i| format!(" /Info {i} 0 R"))
             .unwrap_or_default();
+        if let Some(e) = self.encrypt_id {
+            info.push_str(&format!(" /Encrypt {e} 0 R"));
+        }
         let _ = write!(
             out,
             "trailer\n<< /Size {} /Root 1 0 R{info} /ID [{id}] >>\nstartxref\n{xref}\n%%EOF\n",
@@ -205,6 +231,25 @@ fn pdf_date() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     format!("D:{y:04}{m:02}{d:02}{h:02}{mi:02}{sec:02}Z")
+}
+
+/// A text string: a literal string for plain ASCII, otherwise UTF-16BE
+/// with a byte order mark (so any script survives).
+fn pdf_text_any(s: &str) -> String {
+    if s.chars().all(|c| (c as u32) < 128) {
+        return pdf_text(s);
+    }
+    let mut out = String::from("<FEFF");
+    for unit in s
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect::<String>()
+        .encode_utf16()
+    {
+        let _ = write!(out, "{unit:04X}");
+    }
+    out.push('>');
+    out
 }
 
 fn pdf_text(s: &str) -> String {
@@ -852,6 +897,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         objects: Vec::new(),
         cmyk_only: std_.cmyk_only(),
         allow_alpha: !std_.flatten(),
+        encrypt_id: None,
     };
     pdf.add_str(String::new()); // 1: catalog, filled at the end
     pdf.add_str(String::new()); // 2: pages
@@ -985,10 +1031,27 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
     let date = pdf_date();
     let mut info = format!(
         "<< /Title {} /Creator (TraceDraw) /Producer (TraceDraw) /CreationDate {} /ModDate {}",
-        pdf_text(&title),
+        pdf_text_any(&title),
         pdf_text(&date),
         pdf_text(&date)
     );
+    // Author, subject and keywords: the options', else the document's
+    // properties; an empty value leaves the entry out.
+    let pick = |given: &Option<String>, own: &str| -> String {
+        given.as_deref().unwrap_or(own).trim().to_string()
+    };
+    let author = pick(&opts.author, &doc.metadata.author);
+    let subject = pick(&opts.subject, &doc.metadata.subject);
+    let keywords = pick(&opts.keywords, &doc.metadata.keywords);
+    for (key, value) in [
+        ("Author", &author),
+        ("Subject", &subject),
+        ("Keywords", &keywords),
+    ] {
+        if !value.is_empty() {
+            let _ = write!(info, " /{key} {}", pdf_text_any(value));
+        }
+    }
     if std_ != PdfStandard::None {
         let _ = write!(
             info,
@@ -1002,6 +1065,49 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
     info.push_str(" >>");
     let info_id = pdf.add_str(info);
     let mut catalog = String::from("<< /Type /Catalog /Pages 2 0 R");
+    // Bookmarks: one per page, in page order, each to the page's top.
+    if opts.bookmarks && !page_ids.is_empty() {
+        let outlines = pdf.add_str(String::new());
+        let first = pdf.objects.len() + 1;
+        let n = page_ids.len();
+        for (i, (page, &page_id)) in doc.pages.iter().zip(&page_ids).enumerate() {
+            let id = first + i;
+            let name = page.name.trim();
+            let title = if name.is_empty() {
+                format!("Page {}", i + 1)
+            } else {
+                name.to_string()
+            };
+            let top = (page.size.height + 2.0 * bleed) * MM_PT;
+            let mut item = format!(
+                "<< /Title {} /Parent {outlines} 0 R /Dest [{page_id} 0 R /XYZ 0 {} null]",
+                pdf_text_any(&title),
+                f(top)
+            );
+            if i > 0 {
+                let _ = write!(item, " /Prev {} 0 R", id - 1);
+            }
+            if i + 1 < n {
+                let _ = write!(item, " /Next {} 0 R", id + 1);
+            }
+            item.push_str(" >>");
+            pdf.add_str(item);
+        }
+        pdf.objects[outlines - 1] = format!(
+            "<< /Type /Outlines /First {first} 0 R /Last {} 0 R /Count {n} >>",
+            first + n - 1
+        )
+        .into_bytes();
+        let _ = write!(catalog, " /Outlines {outlines} 0 R");
+        if opts.show_bookmarks {
+            catalog.push_str(" /PageMode /UseOutlines");
+        }
+    }
+    let security = opts.security.as_ref().filter(|_| std_ == PdfStandard::None);
+    if security.is_some() {
+        // AES-256 (revision 6) came with PDF 1.7, extension level 8.
+        catalog.push_str(" /Extensions << /ADBE << /BaseVersion /1.7 /ExtensionLevel 8 >> >>");
+    }
     if std_ != PdfStandard::None {
         let condition = if opts.output_condition.trim().is_empty() {
             "CGATS TR 001".to_string()
@@ -1022,13 +1128,44 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         ));
         let _ = write!(catalog, " /OutputIntents [{intent} 0 R]");
         // XMP metadata (required by X-4, harmless elsewhere).
-        let xmp = xmp_packet(&title, std_, &date);
+        let xmp = xmp_packet(
+            &XmpText {
+                title: &title,
+                author: &author,
+                subject: &subject,
+                keywords: &keywords,
+            },
+            std_,
+            &date,
+        );
         let meta = pdf.stream("/Type /Metadata /Subtype /XML", xmp.as_bytes());
         let _ = write!(catalog, " /Metadata {meta} 0 R");
     }
     catalog.push_str(" >>");
     pdf.objects[0] = catalog.into_bytes();
-    pdf.finish_with(std_.version(), Some(info_id))
+    match security {
+        Some(sec) => {
+            let random: crate::pdf_crypt::Random = Box::new(|buf: &mut [u8]| {
+                if getrandom::fill(buf).is_err() {
+                    // No system randomness: a time-seeded generator.
+                    let mut x = web_time::SystemTime::now()
+                        .duration_since(web_time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64)
+                        .unwrap_or(0x9E37_79B9_7F4A_7C15)
+                        | 1;
+                    for b in buf.iter_mut() {
+                        x ^= x << 13;
+                        x ^= x >> 7;
+                        x ^= x << 17;
+                        *b = (x >> 32) as u8;
+                    }
+                }
+            });
+            pdf.encrypt(sec, random);
+            pdf.finish_with("1.7", Some(info_id))
+        }
+        None => pdf.finish_with(std_.version(), Some(info_id)),
+    }
 }
 
 /// Channel count of an ICC profile from its colour space signature.
@@ -1040,7 +1177,15 @@ fn icc_channels(icc: &[u8]) -> u32 {
     }
 }
 
-fn xmp_packet(title: &str, std_: PdfStandard, date: &str) -> String {
+/// The document information the XMP packet repeats.
+struct XmpText<'a> {
+    title: &'a str,
+    author: &'a str,
+    subject: &'a str,
+    keywords: &'a str,
+}
+
+fn xmp_packet(text: &XmpText, std_: PdfStandard, date: &str) -> String {
     let esc = |s: &str| {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")
@@ -1072,8 +1217,26 @@ fn xmp_packet(title: &str, std_: PdfStandard, date: &str) -> String {
     let _ = write!(
         x,
         "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:pdfxid=\"http://www.npes.org/pdfx/ns/id/\" xmlns:pdfx=\"http://ns.adobe.com/pdfx/1.3/\">\n<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">{}</rdf:li></rdf:Alt></dc:title>\n<xmp:CreatorTool>TraceDraw</xmp:CreatorTool>\n<xmp:CreateDate>{iso}</xmp:CreateDate>\n<xmp:ModifyDate>{iso}</xmp:ModifyDate>\n<pdf:Producer>TraceDraw</pdf:Producer>\n<pdf:Trapped>False</pdf:Trapped>\n",
-        esc(title)
+        esc(text.title)
     );
+    // The same author, subject and keywords as the document information.
+    if !text.author.is_empty() {
+        let _ = writeln!(
+            x,
+            "<dc:creator><rdf:Seq><rdf:li>{}</rdf:li></rdf:Seq></dc:creator>",
+            esc(text.author)
+        );
+    }
+    if !text.subject.is_empty() {
+        let _ = writeln!(
+            x,
+            "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">{}</rdf:li></rdf:Alt></dc:description>",
+            esc(text.subject)
+        );
+    }
+    if !text.keywords.is_empty() {
+        let _ = writeln!(x, "<pdf:Keywords>{}</pdf:Keywords>", esc(text.keywords));
+    }
     if !version.is_empty() {
         let _ = write!(x, "<pdfxid:GTS_PDFXVersion>{version}</pdfxid:GTS_PDFXVersion>\n<pdfx:GTS_PDFXVersion>{version}</pdfx:GTS_PDFXVersion>\n");
     }
@@ -1377,6 +1540,172 @@ mod pdfx_tests {
         let text = String::from_utf8_lossy(&document_to_pdf_with(&doc, &opts)).into_owned();
         assert!(text.contains("/DestOutputProfile"));
         assert!(text.contains("/N 4"));
+    }
+
+    fn two_pages() -> Document {
+        let mut doc = doc_with_transparent_rect();
+        doc.pages[0].name = "Cover".into();
+        let mut ids = doc.ids().clone();
+        let mut second = doc.pages[0].clone();
+        second.id = ids.page();
+        second.name = "\u{65E5}\u{672C}".into();
+        doc.set_ids(ids);
+        doc.pages.push(second);
+        doc
+    }
+
+    #[test]
+    fn bookmarks_name_every_page_and_can_open_the_panel() {
+        let opts = PdfOptions {
+            bookmarks: true,
+            show_bookmarks: true,
+            author: Some("Ighor".into()),
+            keywords: Some("poster, test".into()),
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&two_pages(), &opts);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("/Type /Outlines") && text.contains("/Count 2"));
+        assert!(text.contains("/Title (Cover)"));
+        // Non-Latin names as UTF-16 with a byte order mark.
+        assert!(text.contains("/Title <FEFF65E5672C>"));
+        assert!(text.contains("/PageMode /UseOutlines"));
+        assert!(text.contains("/Author (Ighor)") && text.contains("/Keywords (poster, test)"));
+        // An independent reader finds two bookmarks.
+        let parsed = lopdf::Document::load_mem(&bytes).expect("parse");
+        let outlines = parsed
+            .get_outlines(None, None, &mut Default::default())
+            .ok()
+            .flatten();
+        assert_eq!(outlines.map(|o| o.len()).unwrap_or(0), 2);
+        // Without the option: no outline.
+        let plain = String::from_utf8_lossy(&document_to_pdf(&two_pages())).into_owned();
+        assert!(!plain.contains("/Outlines"));
+    }
+
+    #[test]
+    fn protected_files_open_with_their_passwords_only() {
+        let security = crate::pdf_crypt::Security {
+            user_password: "open sesame".into(),
+            owner_password: "owner".into(),
+            permissions: crate::pdf_crypt::Permissions {
+                copy: false,
+                ..Default::default()
+            },
+        };
+        let opts = PdfOptions {
+            security: Some(security.clone()),
+            title: Some("Secret plan".into()),
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&two_pages(), &opts);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(text.starts_with("%PDF-1.7"));
+        assert!(text.contains("/Encrypt ") && text.contains("/R 6"));
+        assert!(!text.contains("Secret plan"));
+        // Another implementation of the standard accepts either password
+        // and refuses a wrong one or a swapped role.
+        let doc = lopdf::Document::load_mem(&bytes).expect("parse");
+        assert!(doc.is_encrypted());
+        assert!(doc.authenticate_raw_user_password(b"open sesame").is_ok());
+        assert!(doc.authenticate_raw_owner_password(b"owner").is_ok());
+        assert!(doc.authenticate_raw_user_password(b"wrong").is_err());
+        assert!(doc.authenticate_raw_owner_password(b"open sesame").is_err());
+        assert!(doc.clone().decrypt("wrong").is_err());
+        // With the owner password it decrypts everything: the document
+        // information and the page content.
+        let mut d = doc.clone();
+        d.decrypt("owner").expect("decrypt");
+        let info = d
+            .trailer
+            .get(b"Info")
+            .and_then(lopdf::Object::as_reference)
+            .and_then(|id| d.get_dictionary(id))
+            .expect("info");
+        let title = info
+            .get(b"Title")
+            .and_then(lopdf::Object::as_str)
+            .expect("title");
+        assert_eq!(title, b"Secret plan");
+        let page = *d.get_pages().values().next().expect("page");
+        let content =
+            String::from_utf8_lossy(&d.get_page_content(page).expect("content")).into_owned();
+        assert!(content.contains(" rg") && content.contains(" l\n"));
+        // The user password unwraps the same file key from /UE, and /Perms
+        // decrypts with it to the permissions. (That reader's own check of
+        // /Perms is not usable, so it is done here as the standard says.)
+        let state = lopdf::encryption::EncryptionState::decode(&doc, b"owner").expect("state");
+        let key = state.file_encryption_key().to_vec();
+        assert_eq!(key.len(), 32);
+        let enc = doc.get_encrypted().expect("encrypt dictionary");
+        let string = |name: &[u8]| {
+            enc.get(name)
+                .and_then(lopdf::Object::as_str)
+                .expect("entry")
+                .to_vec()
+        };
+        let (u, ue, perms) = (string(b"U"), string(b"UE"), string(b"Perms"));
+        let wrap = crate::pdf_crypt::hash_r6(b"open sesame", &u[40..48], &[]);
+        let mut unwrapped = ue.clone();
+        {
+            use aes::cipher::{BlockDecryptMut, KeyIvInit};
+            let mut dec =
+                cbc::Decryptor::<aes::Aes256>::new_from_slices(&wrap, &[0u8; 16]).expect("cbc");
+            for block in unwrapped.chunks_exact_mut(16) {
+                dec.decrypt_block_mut(aes::cipher::generic_array::GenericArray::from_mut_slice(
+                    block,
+                ));
+            }
+        }
+        assert_eq!(unwrapped, key);
+        let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(&perms);
+        {
+            use aes::cipher::{BlockDecrypt, KeyInit};
+            aes::Aes256::new_from_slice(&key)
+                .expect("aes")
+                .decrypt_block(&mut block);
+        }
+        let p = security.permissions.p_value();
+        assert_eq!(&block[..4], &p.to_le_bytes());
+        assert_eq!(&block[8..12], b"Tadb");
+        assert!(!state
+            .permissions()
+            .contains(lopdf::encryption::Permissions::COPYABLE));
+        assert!(state
+            .permissions()
+            .contains(lopdf::encryption::Permissions::PRINTABLE));
+        // PDF/X files are never protected.
+        let opts = PdfOptions {
+            security: Some(security),
+            standard: PdfStandard::X4,
+            ..Default::default()
+        };
+        let text = String::from_utf8_lossy(&document_to_pdf_with(&two_pages(), &opts)).into_owned();
+        assert!(!text.contains("/Encrypt"));
+    }
+
+    #[test]
+    fn document_properties_fill_the_information_and_the_xmp() {
+        let mut doc = two_pages();
+        doc.metadata.author = "Ana".into();
+        doc.metadata.subject = "Spring sale".into();
+        doc.metadata.keywords = "sale, poster".into();
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).into_owned();
+        assert!(text.contains("/Author (Ana)") && text.contains("/Subject (Spring sale)"));
+        assert!(text.contains("/Keywords (sale, poster)"));
+        // An empty value given in the options leaves the entry out; PDF/X
+        // repeats the rest in its metadata.
+        let opts = PdfOptions {
+            author: Some(String::new()),
+            standard: PdfStandard::X4,
+            ..Default::default()
+        };
+        let text = String::from_utf8_lossy(&document_to_pdf_with(&doc, &opts)).into_owned();
+        assert!(!text.contains("/Author") && !text.contains("<dc:creator>"));
+        assert!(text.contains(
+            "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">Spring sale</rdf:li>"
+        ));
+        assert!(text.contains("<pdf:Keywords>sale, poster</pdf:Keywords>"));
     }
 
     #[test]

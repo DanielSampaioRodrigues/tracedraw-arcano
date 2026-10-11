@@ -336,7 +336,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         )
         .clicked()
         {
-            app.export_pdf();
+            app.publish_pdf();
         }
         std_sep(ui);
         if doc {

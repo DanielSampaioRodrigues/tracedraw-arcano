@@ -3688,6 +3688,7 @@ dependencies = [
  "js-sys",
  "kurbo",
  "log",
+ "lopdf",
  "qrcode",
  "rfd",
  "serde",
@@ -3748,12 +3749,16 @@ dependencies = [
 name = "tracedraw-io"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "base64",
+ "cbc",
  "flate2",
  "getrandom 0.3.4",
  "image",
  "lopdf",
+ "md-5",
  "roxmltree 0.21.1",
+ "sha2",
  "thiserror 2.0.21",
  "tiny-skia",
  "tracedraw-core",

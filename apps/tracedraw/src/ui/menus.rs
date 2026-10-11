@@ -695,7 +695,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     if item(ui, "menu.file.publish_to_pdf", "", doc) {
-        app.export_pdf();
+        app.publish_pdf();
     }
     sep(ui);
     sub(ui, "menu.file.print_merge", |ui| {

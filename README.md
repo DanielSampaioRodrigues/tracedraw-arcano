@@ -222,6 +222,11 @@ MCP server all go through it, so anything a click can do, a script can do.
 tracedraw-cli convert poster.cdr poster.pdf
 TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
 
+# A PDF with a bookmark per page that cannot be printed or copied
+# without its permissions password
+TRACEDRAW_PDF_BOOKMARKS=1 TRACEDRAW_PDF_OWNER_PASSWORD=boss \
+  TRACEDRAW_PDF_DENY=print,copy tracedraw-cli convert brochure.cdr brochure.pdf
+
 # Look inside a .cdr: the chunk tree, and what the reader made of it
 tracedraw-cli inspect drawing.cdr
 tracedraw-cli info drawing.cdr

@@ -26,7 +26,7 @@ it, live in `docs/cdr-format.md` and in the pages of `docs/behavior/`.
 |---|---|
 | `.cdr` | Publicly available, unofficial format notes describing the RIFF chunks, the ZIP containers and the coordinate units; inspection of files owned by the author with `tracedraw-cli inspect` and a hex viewer; round trips of files TraceDraw writes, read back by TraceDraw and by another open-source reader. The libcdr documentation was consulted only to confirm layouts; none of its code (MPL 2.0) was ported. |
 | SVG | The W3C SVG 1.1 and SVG 2 specifications. |
-| PDF, AI (PDF-compatible) | ISO 32000 (PDF 1.7) and the PDF/X standards. |
+| PDF, AI (PDF-compatible) | ISO 32000 (PDF 1.7 and 2.0) and the PDF/X standards. Password protection follows ISO 32000-2 section 7.6 (standard security handler, revisions 2 to 6); RC4 follows its published description and test vectors. Other PDF libraries and tools were used only to check files: as test oracles that open, protect or check them, never as code to port. |
 | EPS, PostScript | The public PostScript language reference and the EPSF specification. |
 | DXF | The publicly available DXF reference. |
 | PSD | The publicly available PSD file format specification. |
@@ -45,3 +45,4 @@ it, live in `docs/cdr-format.md` and in the pages of `docs/behavior/`.
 | 2026-10-09 | Page origin at the page centre, objects stored front to back, bitmaps with a crop outline, the document palette in `color/docPalette.xml`, one byte per character in text from version 17 | a real banner file owned by the author (format version 21, not committed) |
 | 2026-10-09 | Groups, text fitted to a path, paragraph spacing and indents, custom arrowhead outlines | public format notes; marked "assumed" in `docs/cdr-format.md` until a file confirms them |
 | 2026-10-09 | Writing the version 12 RIFF layout (pages, layers, shapes, groups, text, bitmaps, fills, outlines, transparency, clipped bitmaps as crop paths) | the same notes; verified by round trip and by another open-source reader rendering the written files |
+| 2026-10-11 | PDF password protection: the standard security handler, revision 6 for writing (AES-256 file key, `/U` `/UE` `/O` `/OE` `/Perms`, algorithm 2.B hash, `/P` bits) and revisions 2 to 6 for reading (algorithms 1, 1.A, 2, 2.A, 4 to 6, crypt filters, object streams) | ISO 32000-2 section 7.6; checked against files protected and read by independent open-source tools |

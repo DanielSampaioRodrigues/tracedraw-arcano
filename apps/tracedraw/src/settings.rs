@@ -139,6 +139,9 @@ pub struct Settings {
     /// File > Preflight: the checks to run and their thresholds.
     #[serde(default)]
     pub preflight: crate::preflight::PreflightPrefs,
+    /// File > Publish to PDF: the choices used last (never the passwords).
+    #[serde(default)]
+    pub publish_pdf: crate::ui::publish_pdf::PublishPrefs,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -536,6 +539,7 @@ impl Default for Settings {
             window_size: [0.0, 0.0],
             time_tracker: TimeTrackerPrefs::default(),
             preflight: crate::preflight::PreflightPrefs::default(),
+            publish_pdf: crate::ui::publish_pdf::PublishPrefs::default(),
         }
     }
 }

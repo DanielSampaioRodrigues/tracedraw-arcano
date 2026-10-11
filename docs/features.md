@@ -186,7 +186,8 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Export for Web and Office presets | works |
 | Export dialog with a preview, the size in pixels and an estimated file size (see `behavior/export.md`) | works |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
-| Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations | works (see `behavior/pdf-import.md`) |
+| Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations; protected files of every revision (RC4, AES-128, AES-256), asking for the password when one is needed | works (see `behavior/pdf-import.md`) |
+| Publish to PDF dialog: pages (all, current, selection), PDF/X level, bleed, title, author, subject and keywords, a bookmark per page, password protection (AES-256: a password to open, a password for the permissions to print, copy and change) | works (see `behavior/publish-to-pdf.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
 | Import EPS and PostScript (interpreter: paths, images, text, clips, shadings, patterns, prologs) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
