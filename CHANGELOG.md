@@ -4,6 +4,13 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
+  app (the windowing layer delivers them as clipboard events, not as
+  key presses, so they did nothing); Ctrl+Shift+V pastes in the middle
+  of the view.
+
 ## 0.4.0 (2026-10-11)
 
 The Pick and Shape tools now behave as the keys and the pointer lead

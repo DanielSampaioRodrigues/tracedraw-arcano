@@ -89,6 +89,21 @@ pub fn skew_transform(
     })
 }
 
+/// Whether `events` hold a copy, a cut and a paste request (the forms the
+/// windowing layer gives Ctrl+C, Ctrl+X and Ctrl+V).
+fn clipboard_events(events: &[egui::Event]) -> (bool, bool, bool) {
+    let mut out = (false, false, false);
+    for e in events {
+        match e {
+            egui::Event::Copy => out.0 = true,
+            egui::Event::Cut => out.1 = true,
+            egui::Event::Paste(_) => out.2 = true,
+            _ => {}
+        }
+    }
+    out
+}
+
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
         self.hit_test_where(p, |_| false)
@@ -1832,14 +1847,23 @@ impl App {
         // With the Shape tool and nodes selected, the segments between
         // them are copied, cut or duplicated.
         let segments = shape_tool && !self.node_selection.is_empty();
-        if pressed(Key::C, cmd) && !(segments && self.copy_segments()) {
+        // The windowing layer turns Ctrl+C, Ctrl+X and Ctrl+V (and
+        // Ctrl+Insert, Shift+Delete and Shift+Insert) into copy, cut and
+        // paste events instead of key presses; a paste event comes only
+        // while the system clipboard holds text, which a copy here puts
+        // there. Either form counts, once per frame.
+        let (copy_event, cut_event, paste_event) = clipboard_events(&input.events);
+        let shift_held = input.modifiers.shift;
+        if (pressed(Key::C, cmd) || copy_event) && !(segments && self.copy_segments()) {
             self.copy_with_system();
         }
-        if pressed(Key::X, cmd) && !(segments && self.cut_segments()) {
+        if (pressed(Key::X, cmd) || cut_event) && !(segments && self.cut_segments()) {
             self.cut();
         }
-        if pressed(Key::V, cmd) {
+        if pressed(Key::V, cmd) || (paste_event && !shift_held) {
             self.paste_any();
+        } else if paste_event && shift_held {
+            self.paste_in_view();
         }
         if pressed(Key::D, cmd) && !(segments && self.duplicate_segments()) {
             self.duplicate();
@@ -1865,7 +1889,7 @@ impl App {
         if pressed(Key::R, cmd) {
             self.repeat_last();
         }
-        if pressed(Key::V, cmd | Modifiers::SHIFT) {
+        if pressed(Key::V, cmd | Modifiers::SHIFT) && !paste_event {
             self.paste_in_view();
         }
         if pressed(Key::M, cmd) {

@@ -1375,3 +1375,55 @@ fn a_moved_centre_of_rotation_is_kept_with_the_object() {
     app.new_document();
     assert!(app.pivots.single.is_empty());
 }
+
+/// The windowing layer delivers Ctrl+C, Ctrl+X and Ctrl+V as copy, cut
+/// and paste events (a paste only while the system clipboard holds text),
+/// never as key presses: those events copy, cut and paste objects.
+#[test]
+fn copy_cut_and_paste_events_work_on_objects() {
+    let (ctx, mut app, id) = setup();
+    let n = shape_count(&app);
+    frame(&ctx, &mut app, vec![Event::Copy], Modifiers::COMMAND);
+    assert!(app.clipboard.is_some());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Paste("<svg/>".into())],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(shape_count(&app), n + 1);
+    let copy = app.selection[0];
+    assert_ne!(copy, id);
+    // One paste per frame, even if a key press comes along with it.
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            key(egui::Key::V, Modifiers::COMMAND),
+            Event::Paste("x".into()),
+        ],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(shape_count(&app), n + 2);
+    // Cut takes the selection away; paste brings it back.
+    frame(&ctx, &mut app, vec![Event::Cut], Modifiers::COMMAND);
+    assert_eq!(shape_count(&app), n + 1);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Paste("x".into())],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(shape_count(&app), n + 2);
+    // With Shift held the paste lands in the middle of the view.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Paste("x".into())],
+        Modifiers::COMMAND | Modifiers::SHIFT,
+    );
+    assert_eq!(shape_count(&app), n + 3);
+    let view = app.view.visible_page_rect(app.canvas_rect).center();
+    let b = app.selection_bounds().expect("bounds");
+    assert!((b.center() - view).hypot() < 1e-6);
+}
