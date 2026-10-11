@@ -102,6 +102,54 @@ into it (`ui::field::tests`).
   Nodes, Reduce Nodes with the Curve smoothness slider); toggles are drawn
   pressed while on. The full list is in `shape-tool.md`.
 
+## Moving the bars
+
+The toolbox, the colour palette, the standard toolbar, the property bar
+and the status bar move (`ui/bars.rs`).
+
+| Bar | Places | First place |
+|---|---|---|
+| Toolbox | top, bottom, left, right, floating | left |
+| Colour palette | top, bottom, left, right, floating | bottom |
+| Standard toolbar | top, bottom, floating | top |
+| Property bar | top, bottom, floating | top |
+| Status bar | top, bottom | bottom |
+
+- A docked bar starts with a grip: a column of grey dots 9 px wide (a
+  row of dots 9 px high on a bar that runs down a side). The pointer
+  shows the move cursor over it.
+- Dragging a grip shows where the bar will go as a light blue band with a
+  blue frame: within 56 px of an edge the bar can take, the band along
+  that edge; elsewhere, the window the bar floats in, with its title
+  under the pointer. Releasing puts the bar there, also when the pointer
+  has left the window (the last place it was seen counts). A bar that
+  cannot float, the status bar, goes to the nearer of its two edges.
+- The status bar keeps the outer band: other bars dock inside it, and the
+  band shown while dragging leaves it out. Along the top the bars come
+  below the menu bar.
+- A floating bar is a small window with a grey border and a shadow: an
+  18 px title with the bar's name at 11 px and a close button, then the
+  bar. Dragging the title moves it (near an edge it docks), a double
+  click puts the bar back at its first place, and the close button hides
+  it (Window > Toolbars shows it again). The floating toolbox is a grid
+  two buttons wide whose flyouts open to its right; the floating palette
+  is one row 460 px wide.
+- The palette on a side is a column: the swatches run downwards, the
+  arrows sit at its ends and the document palette is the column beside
+  it; the expanded palette opens beside the column (below a palette
+  along the top). The toolbox along the top or the bottom is a row with
+  its flyouts opening below or above it.
+- Right-clicking a grip, an empty part of a toolbar or of the status bar,
+  or a floating bar's title opens the bar's menu: the places the bar can
+  take (a dot at the current one), the five bars with a check at each
+  one shown, Lock Toolbars and Reset Bar Positions. Window > Toolbars
+  has the colour palette, Lock Toolbars and Reset Bar Positions too.
+- Lock Toolbars hides the grips, stops every drag and greys the places in
+  the menu. Reset Bar Positions puts every bar at its first place and
+  shows it; the lock stays as it was.
+- The layout and the lock are kept in the preferences (`bars`); older
+  preferences without it start with the first places.
+
 ## Checks
 
 - `ui::propbar::tests::the_object_origin_picks_corners_edges_and_centre`
@@ -110,3 +158,10 @@ into it (`ui::field::tests`).
 - `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`
 - `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`
   draws every tool's bar.
+- `ui::bars::tests::a_dropped_bar_docks_at_the_nearest_edge_or_floats`
+- `ui::bars::tests::bars_only_go_where_they_can`
+- `ui::bars::tests::the_drop_zone_leaves_the_status_bar_outside`
+- `ui::bars::tests::reset_brings_every_bar_back_and_keeps_the_lock`
+- `ui::bars::tests::the_layout_survives_the_preferences`
+- `raster::tests::a_canvas_that_moves_renders_again`: moving a bar moves
+  the drawing window; the drawing is rendered again for its new place.

@@ -56,9 +56,44 @@ pub fn tool_tooltip(ui: &mut Ui, tool: Tool) {
     ui.label(egui::RichText::new(tr(&format!("tooldesc.{}", tool.id()))).size(12.0));
 }
 
-pub fn toolbox(app: &mut App, ui: &mut Ui) {
-    ui.spacing_mut().item_spacing = Vec2::new(0.0, 1.0);
-    ui.add_space(2.0);
+/// Buttons per row in a floating toolbox.
+pub const FLOATING_COLUMNS: usize = 2;
+
+/// The width of a floating toolbox's grid of buttons.
+pub fn floating_width() -> f32 {
+    FLOATING_COLUMNS as f32 * Tokens::TOOL_BUTTON + (FLOATING_COLUMNS - 1) as f32
+}
+
+/// The toolbox, docked at `dock`: a row along the top or the bottom, a
+/// column on a side, or floating as a grid two buttons wide.
+pub fn toolbox(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
+    use crate::ui::bars::Dock;
+    match dock {
+        Dock::Top | Dock::Bottom => {
+            ui.horizontal(|ui| tools(app, ui, dock));
+        }
+        Dock::Floating => {
+            ui.set_max_width(floating_width());
+            ui.horizontal_wrapped(|ui| tools(app, ui, dock));
+        }
+        Dock::Left | Dock::Right => tools(app, ui, dock),
+    }
+}
+
+fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
+    use crate::ui::bars::{Bar, Dock};
+    let horizontal = dock.horizontal();
+    let floating = dock == Dock::Floating;
+    ui.spacing_mut().item_spacing = if floating {
+        Vec2::new(1.0, 1.0)
+    } else if horizontal {
+        Vec2::new(1.0, 0.0)
+    } else {
+        Vec2::new(0.0, 1.0)
+    };
+    if !floating {
+        crate::ui::bars::grip(app, ui, Bar::Toolbox, horizontal);
+    }
     let size = Vec2::new(Tokens::TOOL_BUTTON, Tokens::TOOL_BUTTON);
     for (gi, group) in GROUPS.iter().enumerate() {
         if !group_visible(app, gi) {
@@ -160,32 +195,76 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
             }
         }
         if app.flyout_open == Some(gi) {
-            flyout(app, ui, gi, rect);
+            flyout(app, ui, gi, rect, dock);
         }
-        if GROUP_BREAKS.contains(&gi) {
-            ui.add_space(2.0);
-            let (r, _) =
-                ui.allocate_exact_size(Vec2::new(Tokens::TOOL_BUTTON, 1.0), Sense::hover());
+        if GROUP_BREAKS.contains(&gi) && floating {
+            // A line across the grid, on a row of its own.
+            ui.end_row();
+            let (r, _) = ui.allocate_exact_size(Vec2::new(floating_width(), 3.0), Sense::hover());
             ui.painter().hline(
                 r.x_range().shrink(4.0),
                 r.center().y,
                 Stroke::new(1.0, Tokens::BORDER),
             );
+            ui.end_row();
+        } else if GROUP_BREAKS.contains(&gi) {
+            ui.add_space(2.0);
+            if horizontal {
+                let (r, _) =
+                    ui.allocate_exact_size(Vec2::new(1.0, Tokens::TOOL_BUTTON), Sense::hover());
+                ui.painter().vline(
+                    r.center().x,
+                    r.y_range().shrink(4.0),
+                    Stroke::new(1.0, Tokens::BORDER),
+                );
+            } else {
+                let (r, _) =
+                    ui.allocate_exact_size(Vec2::new(Tokens::TOOL_BUTTON, 1.0), Sense::hover());
+                ui.painter().hline(
+                    r.x_range().shrink(4.0),
+                    r.center().y,
+                    Stroke::new(1.0, Tokens::BORDER),
+                );
+            }
             ui.add_space(2.0);
         }
     }
-    quick_customize(app, ui);
+    if floating {
+        ui.end_row();
+    }
+    quick_customize(app, ui, horizontal);
 }
 
-/// The flyout of group `gi`, opened beside its button.
-fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect) {
+/// The flyout of group `gi`, opened beside its button: to the right of a
+/// toolbox on the left or floating, to the left of one on the right,
+/// below one along the top and above one along the bottom.
+fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::bars::Dock) {
+    use crate::ui::bars::Dock;
     let Some(group) = GROUPS.get(gi) else {
         return;
     };
-    let pos = button.right_top() + Vec2::new(2.0, 0.0);
+    let (pos, pivot) = match dock {
+        Dock::Right => (
+            button.left_top() - Vec2::new(2.0, 0.0),
+            egui::Align2::RIGHT_TOP,
+        ),
+        Dock::Top => (
+            button.left_bottom() + Vec2::new(0.0, 2.0),
+            egui::Align2::LEFT_TOP,
+        ),
+        Dock::Bottom => (
+            button.left_top() - Vec2::new(0.0, 2.0),
+            egui::Align2::LEFT_BOTTOM,
+        ),
+        Dock::Left | Dock::Floating => (
+            button.right_top() + Vec2::new(2.0, 0.0),
+            egui::Align2::LEFT_TOP,
+        ),
+    };
     let shown = app.toolbox_last.get(gi).copied().unwrap_or(group.tools[0]);
     let mut close = false;
     let area = egui::Area::new(egui::Id::new(("flyout", gi)))
+        .pivot(pivot)
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .fade_in(false)
@@ -278,18 +357,31 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect) {
         (away, click)
     });
     // Moving onto another toolbox button keeps a flyout open (it switches).
-    let over_toolbox = ui
-        .input(|i| i.pointer.latest_pos())
-        .is_some_and(|p| p.x <= button.max.x + 2.0 && p.x >= button.min.x - 4.0);
+    let over_toolbox = ui.input(|i| i.pointer.latest_pos()).is_some_and(|p| {
+        if dock == Dock::Floating {
+            // The grid: any button of the floating toolbox.
+            let reach = Tokens::TOOL_BUTTON + 4.0;
+            p.x <= button.max.x + reach && p.x >= button.min.x - reach
+        } else if dock.horizontal() {
+            p.y <= button.max.y + 2.0 && p.y >= button.min.y - 4.0
+        } else {
+            p.x <= button.max.x + 2.0 && p.x >= button.min.x - 4.0
+        }
+    });
     if close || clicked_elsewhere || (away && !over_toolbox) {
         app.flyout_open = None;
     }
 }
 
 /// The "+" at the end of the toolbox: tick the flyouts to show.
-fn quick_customize(app: &mut App, ui: &mut Ui) {
+fn quick_customize(app: &mut App, ui: &mut Ui, horizontal: bool) {
     ui.add_space(4.0);
-    ui.vertical_centered(|ui| {
+    let layout = if horizontal {
+        egui::Layout::left_to_right(egui::Align::Center)
+    } else {
+        egui::Layout::top_down(egui::Align::Center)
+    };
+    ui.with_layout(layout, |ui| {
         ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
         ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
         ui.menu_button(

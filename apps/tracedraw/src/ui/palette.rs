@@ -44,16 +44,64 @@ pub enum Row {
 
 /// The default palette row.
 pub fn palette_row(app: &mut App, ui: &mut Ui) {
-    row(app, ui, Row::Main);
+    row(app, ui, Row::Main, false);
 }
 
 /// The document palette row.
 pub fn document_palette_row(app: &mut App, ui: &mut Ui) {
-    row(app, ui, Row::Document);
+    row(app, ui, Row::Document, false);
 }
 
-/// The colours a row shows, with their names (the document palette borrows
-/// names from the open palettes).
+/// The default palette as a column (docked on the left or the right).
+pub fn palette_column(app: &mut App, ui: &mut Ui) {
+    row(app, ui, Row::Main, true);
+}
+
+/// The document palette as a column.
+pub fn document_palette_column(app: &mut App, ui: &mut Ui) {
+    row(app, ui, Row::Document, true);
+}
+
+/// A strip's geometry: the row's design (left to right, the swatches
+/// along it, 25 px across) laid along x for a row or along y for a
+/// column.
+#[derive(Clone, Copy)]
+struct Axis {
+    vertical: bool,
+    origin: Pos2,
+}
+
+impl Axis {
+    /// The rectangle `len` long and `thick` across, starting `along` the
+    /// strip and `across` from its edge.
+    fn rect(&self, along: f32, across: f32, len: f32, thick: f32) -> Rect {
+        if self.vertical {
+            Rect::from_min_size(
+                pos2(self.origin.x + across, self.origin.y + along),
+                vec2(thick, len),
+            )
+        } else {
+            Rect::from_min_size(
+                pos2(self.origin.x + along, self.origin.y + across),
+                vec2(len, thick),
+            )
+        }
+    }
+
+    fn point(&self, along: f32, across: f32) -> Pos2 {
+        self.rect(along, across, 0.0, 0.0).min
+    }
+
+    /// A vector `along` the strip and `across` it.
+    fn vec(&self, along: f32, across: f32) -> egui::Vec2 {
+        if self.vertical {
+            vec2(across, along)
+        } else {
+            vec2(along, across)
+        }
+    }
+}
+
 fn colors_of(app: &App, which: Row) -> Vec<(String, Color)> {
     match which {
         Row::Main => app.palette.clone(),
@@ -112,36 +160,62 @@ pub fn visible_slots(width: f32) -> usize {
     ((width - LEAD - TAIL - 1.0) / STRIDE).floor().max(1.0) as usize
 }
 
-fn row(app: &mut App, ui: &mut Ui, which: Row) {
-    let (rect, bg) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
+    let size = if vertical {
+        vec2(ROW_H, ui.available_height())
+    } else {
+        vec2(ui.available_width(), ROW_H)
+    };
+    let (rect, bg) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter_at(rect);
+    let ax = Axis {
+        vertical,
+        origin: pos2(rect.left().round(), rect.top().round()),
+    };
+    let len = if vertical {
+        rect.height()
+    } else {
+        rect.width()
+    }
+    .round();
     let mut px = Pixels::default();
-    let x0 = rect.left().round();
-    let top = rect.top().round();
-    px.rect(
-        Rect::from_min_size(pos2(x0, top), vec2(rect.width(), 1.0)),
-        LINE,
-    );
-    let frame_top = top + 2.0;
-    // Grip: dots in a zigzag.
-    for i in 0..5 {
-        let y = frame_top + 1.0 + 4.0 * i as f32;
-        px.dot(x0 + 3.0, y, GRIP);
-        px.dot(x0 + 7.0, y, GRIP);
-        px.dot(x0 + 5.0, y + 2.0, GRIP);
+    px.rect(ax.rect(0.0, 0.0, len, 1.0), LINE);
+    // Swatch frames start 2 px from the strip's edge.
+    const EDGE: f32 = 2.0;
+    // Grip: dots in a zigzag; dragging it moves the palette. Locked bars
+    // show no grip, and a floating palette moves by its title.
+    let floating =
+        app.settings.bars.dock(crate::ui::bars::Bar::Palette) == crate::ui::bars::Dock::Floating;
+    if !app.settings.bars.locked && !floating {
+        for i in 0..5 {
+            let c = EDGE + 1.0 + 4.0 * i as f32;
+            let a = ax.point(3.0, c);
+            px.dot(a.x, a.y, GRIP);
+            let b = ax.point(7.0, c);
+            px.dot(b.x, b.y, GRIP);
+            let m = ax.point(5.0, c + 2.0);
+            px.dot(m.x, m.y, GRIP);
+        }
     }
     px.paint(&painter);
+    crate::ui::bars::grip_zone(
+        app,
+        ui,
+        crate::ui::bars::Bar::Palette,
+        ax.rect(0.0, 0.0, 11.0, ROW_H),
+        which as u8,
+    );
 
     let colors = colors_of(app, which);
     let no_color = app.settings.palette.show_no_color;
     let count = colors.len() + usize::from(no_color);
-    let slots = visible_slots(rect.width());
+    let slots = visible_slots(len);
     let max_scroll = count.saturating_sub(slots);
     let scroll = (*scroll_of(app, which)).min(max_scroll);
     *scroll_of(app, which) = scroll;
 
     // The palette menu button.
-    let menu_rect = Rect::from_min_size(pos2(x0 + 13.0, frame_top), vec2(15.0, 22.0));
+    let menu_rect = ax.rect(13.0, EDGE, 15.0, 22.0);
     let menu_resp = ui.interact(
         menu_rect,
         ui.id().with(("palette_menu", which as u8)),
@@ -150,9 +224,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     let c = menu_rect.center();
     painter.add(egui::epaint::PathShape::convex_polygon(
         vec![
-            pos2(c.x - 2.0, c.y - 4.5),
-            pos2(c.x + 3.0, c.y + 0.5),
-            pos2(c.x - 2.0, c.y + 5.5),
+            c + ax.vec(-2.0, -4.5),
+            c + ax.vec(3.0, 0.5),
+            c + ax.vec(-2.0, 5.5),
         ],
         MENU_ARROW,
         Stroke::NONE,
@@ -169,7 +243,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
         .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
 
     // The eyedropper: only the document palette takes new colours.
-    let drop_rect = Rect::from_min_size(pos2(x0 + 34.0, frame_top + 2.0), vec2(18.0, 18.0));
+    let drop_rect = ax.rect(34.0, EDGE + 2.0, 18.0, 18.0);
     let can_sample = which == Row::Document && app.has_document();
     let drop_resp = ui.interact(
         drop_rect,
@@ -215,16 +289,15 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     }
 
     // Scroll arrows.
-    let left = Rect::from_min_size(pos2(x0 + 58.0, frame_top), vec2(16.0, 22.0));
-    if chevron(app, ui, left, -1, scroll > 0, which) {
+    let left = ax.rect(58.0, EDGE, 16.0, 22.0);
+    if chevron(app, ui, left, -1, scroll > 0, which, vertical) {
         *scroll_of(app, which) = scroll.saturating_sub(1);
     }
-    let right_edge = rect.right().round();
-    let right = Rect::from_min_size(pos2(right_edge - 49.0, frame_top), vec2(16.0, 22.0));
-    if chevron(app, ui, right, 1, scroll < max_scroll, which) {
+    let right = ax.rect(len - 49.0, EDGE, 16.0, 22.0);
+    if chevron(app, ui, right, 1, scroll < max_scroll, which, vertical) {
         *scroll_of(app, which) = (scroll + 1).min(max_scroll);
     }
-    let expand = Rect::from_min_size(pos2(right_edge - 29.0, frame_top), vec2(18.0, 22.0));
+    let expand = ax.rect(len - 29.0, EDGE, 18.0, 22.0);
     let expand_resp = ui
         .interact(
             expand,
@@ -236,6 +309,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
         &painter,
         expand.center(),
         if count > 0 { ARROW_ON } else { ARROW_OFF },
+        vertical,
     );
     ui.ctx()
         .data_mut(|d| d.insert_temp(egui::Id::new(("palette_expand_rect", which as u8)), expand));
@@ -248,14 +322,19 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     }
 
     // The swatches.
-    let sx = x0 + LEAD;
-    ui.ctx()
-        .data_mut(|d| d.insert_temp(egui::Id::new(("palette_strip", which as u8)), pos2(sx, top)));
+    let strip = ax.point(LEAD, 0.0);
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(egui::Id::new(("palette_strip", which as u8)), strip);
+        d.insert_temp(
+            egui::Id::new(("palette_strip_vertical", which as u8)),
+            vertical,
+        );
+    });
     let shown = slots.min(count.saturating_sub(scroll));
     if shown == 0 {
-        if which == Row::Document {
+        if which == Row::Document && !vertical {
             painter.text(
-                pos2(sx + 8.0, frame_top + 11.0),
+                ax.point(LEAD + 8.0, EDGE + 11.0),
                 Align2::LEFT_CENTER,
                 tr("palette.document_hint"),
                 FontId::proportional(11.0),
@@ -266,7 +345,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     }
     let mut px = Pixels::default();
     px.rect(
-        Rect::from_min_size(pos2(sx, frame_top), vec2(shown as f32 * STRIDE + 1.0, 22.0)),
+        ax.rect(LEAD, EDGE, shown as f32 * STRIDE + 1.0, 22.0),
         FRAME,
     );
     px.paint(&painter);
@@ -297,9 +376,11 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     }
     for slot in 0..shown {
         let index = scroll + slot;
-        let cell = Rect::from_min_size(
-            pos2(sx + 1.0 + slot as f32 * STRIDE, frame_top + 1.0),
-            vec2(SWATCH, SWATCH),
+        let cell = ax.rect(
+            LEAD + 1.0 + slot as f32 * STRIDE,
+            EDGE + 1.0,
+            SWATCH,
+            SWATCH,
         );
         let color_index = if no_color {
             index.checked_sub(1)
@@ -309,9 +390,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
         let entry = color_index.and_then(|i| colors.get(i));
         swatch(app, ui, &painter, cell, entry, which, index, color_index);
     }
-    if which == Row::Document && shown < slots && colors.is_empty() {
+    if which == Row::Document && shown < slots && colors.is_empty() && !vertical {
         painter.text(
-            pos2(sx + shown as f32 * STRIDE + 9.0, frame_top + 11.0),
+            ax.point(LEAD + shown as f32 * STRIDE + 9.0, EDGE + 11.0),
             Align2::LEFT_CENTER,
             tr("palette.document_hint"),
             FontId::proportional(11.0),
@@ -440,17 +521,29 @@ fn shades_fired_id() -> egui::Id {
 
 /// A scroll chevron; returns true when clicked while enabled. Holding it
 /// keeps scrolling.
-fn chevron(app: &App, ui: &mut Ui, r: Rect, dir: i32, enabled: bool, which: Row) -> bool {
+#[allow(clippy::too_many_arguments)]
+fn chevron(
+    app: &App,
+    ui: &mut Ui,
+    r: Rect,
+    dir: i32,
+    enabled: bool,
+    which: Row,
+    vertical: bool,
+) -> bool {
     let id = ui.id().with(("palette_chevron", which as u8, dir));
     let resp = ui.interact(r, id, Sense::click());
     let color = if enabled { ARROW_ON } else { ARROW_OFF };
     let c = r.center();
     let d = dir as f32;
-    let pts = [
-        pos2(c.x - 2.5 * d, c.y - 5.0),
-        pos2(c.x + 2.5 * d, c.y),
-        pos2(c.x - 2.5 * d, c.y + 5.0),
-    ];
+    let at = |along: f32, across: f32| {
+        if vertical {
+            pos2(c.x + across, c.y + along)
+        } else {
+            pos2(c.x + along, c.y + across)
+        }
+    };
+    let pts = [at(-2.5 * d, -5.0), at(2.5 * d, 0.0), at(-2.5 * d, 5.0)];
     ui.painter().add(egui::epaint::PathShape::line(
         pts.to_vec(),
         Stroke::new(2.0, color),
@@ -481,13 +574,16 @@ fn chevron(app: &App, ui: &mut Ui, r: Rect, dir: i32, enabled: bool, which: Row)
     false
 }
 
-fn double_chevron(painter: &egui::Painter, c: Pos2, color: Color32) {
-    for dx in [-2.5f32, 2.5] {
-        let pts = vec![
-            pos2(c.x + dx - 2.0, c.y - 3.5),
-            pos2(c.x + dx + 1.5, c.y),
-            pos2(c.x + dx - 2.0, c.y + 3.5),
-        ];
+fn double_chevron(painter: &egui::Painter, c: Pos2, color: Color32, vertical: bool) {
+    let at = |along: f32, across: f32| {
+        if vertical {
+            pos2(c.x + across, c.y + along)
+        } else {
+            pos2(c.x + along, c.y + across)
+        }
+    };
+    for d in [-2.5f32, 2.5] {
+        let pts = vec![at(d - 2.0, -3.5), at(d + 1.5, 0.0), at(d - 2.0, 3.5)];
         painter.add(egui::epaint::PathShape::line(pts, Stroke::new(1.3, color)));
     }
 }
@@ -571,7 +667,17 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
         let id = egui::Id::new("palette_shades");
         let grid = shades(color);
         let side = 5.0 * STRIDE + 1.0;
-        let pos = pos2(anchor.x - side / 2.0, anchor.y - side - 6.0);
+        let screen = ctx.content_rect();
+        // Above the swatch, kept on the screen (a palette docked at the
+        // top or on a side has no room above some swatches).
+        let mut pos = pos2(anchor.x - side / 2.0, anchor.y - side - 6.0);
+        if pos.y < screen.top() {
+            pos.y = anchor.y + SWATCH + 6.0;
+        }
+        pos.x = pos.x.clamp(
+            screen.left(),
+            (screen.right() - side - 4.0).max(screen.left()),
+        );
         let mut picked = None;
         let area = egui::Area::new(id)
             .order(egui::Order::Foreground)
@@ -625,10 +731,37 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
         let strip = ctx
             .data(|d| d.get_temp::<Pos2>(egui::Id::new(("palette_strip", which as u8))))
             .unwrap_or(pos2(screen.left() + LEAD, screen.bottom() - 3.0 * ROW_H));
-        let cols = (((screen.right() - strip.x - 24.0) / STRIDE).floor() as usize).clamp(1, 33);
-        let rows = colors.len().div_ceil(cols).max(1);
-        let size = vec2(cols as f32 * STRIDE + 1.0, rows as f32 * STRIDE + 1.0);
-        let pos = pos2(strip.x - 7.0, (strip.y - size.y - 16.0).max(screen.top()));
+        let vertical = ctx
+            .data(|d| d.get_temp::<bool>(egui::Id::new(("palette_strip_vertical", which as u8))))
+            .unwrap_or(false);
+        let (cols, size, pos) = if vertical {
+            // Beside a column: towards the middle of the window.
+            let cols = 12usize;
+            let rows = colors.len().div_ceil(cols).max(1);
+            let size = vec2(cols as f32 * STRIDE + 1.0, rows as f32 * STRIDE + 1.0);
+            let x = if strip.x > screen.center().x {
+                strip.x - size.x - 24.0
+            } else {
+                strip.x + ROW_H + 8.0
+            };
+            let y = strip
+                .y
+                .min(screen.bottom() - size.y - 24.0)
+                .max(screen.top());
+            (cols, size, pos2(x, y))
+        } else {
+            let cols = (((screen.right() - strip.x - 24.0) / STRIDE).floor() as usize).clamp(1, 33);
+            let rows = colors.len().div_ceil(cols).max(1);
+            let size = vec2(cols as f32 * STRIDE + 1.0, rows as f32 * STRIDE + 1.0);
+            // Above the row, or below it when it is docked at the top.
+            let above = strip.y - size.y - 16.0;
+            let y = if above < screen.top() {
+                strip.y + ROW_H + 8.0
+            } else {
+                above
+            };
+            (cols, size, pos2(strip.x - 7.0, y))
+        };
         let mut picked = None;
         let area = egui::Area::new(id)
             .order(egui::Order::Foreground)

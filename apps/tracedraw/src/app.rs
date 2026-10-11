@@ -695,6 +695,8 @@ pub struct App {
     /// A right-button drag of the selection and the menu where it ended
     /// (see drop_menu.rs).
     pub right_drag: Option<crate::drop_menu::RightDrag>,
+    /// A bar being moved (see ui/bars.rs).
+    pub bar_drag: Option<crate::ui::bars::BarDrag>,
     pub drop_menu: Option<crate::drop_menu::DropMenu>,
     /// Objects docker: layers shown closed, groups shown open.
     pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
@@ -1227,6 +1229,7 @@ impl App {
             options_labels: false,
             navigator_open: false,
             right_drag: None,
+            bar_drag: None,
             drop_menu: None,
             objects_collapsed: Default::default(),
             objects_open_groups: Default::default(),

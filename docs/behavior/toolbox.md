@@ -23,6 +23,10 @@
   objects, Rectangle adds a page frame.
 - The "+" at the end lists every flyout with a check box to show or hide
   it (the Outline flyout is hidden by default) and Reset toolbox.
+- The toolbox starts docked on the left. Its grip (the dots above the
+  first button) drags it to another edge, where it is a column or a row,
+  or into a floating window two buttons wide (see "Moving the bars" in
+  `toolbars.md`). Flyouts open away from the edge the toolbox is on.
 
 ## Checks
 

@@ -1,7 +1,9 @@
 # Status bar
 
 The bar is 41 px under a 1 px `#D8D8D8` line, `#F4F4F4`, text 13 px.
-From the left:
+It sits at the bottom of the window, or at the top below the menu bar
+(right-click it for Dock at Top; see "Moving the bars" in
+`toolbars.md`). From the left:
 
 1. The settings button (a gear with a small corner arrow). Its menu
    chooses what the first field shows:

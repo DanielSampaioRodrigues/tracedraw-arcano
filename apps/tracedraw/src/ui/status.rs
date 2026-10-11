@@ -193,17 +193,32 @@ fn outline_text(app: &App, stroke: &Option<tracedraw_core::Stroke>) -> String {
 
 pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let full = ui.available_rect_before_wrap();
-    // The separator over the bar, the colour of the palette lines.
+    // The separator between the bar and the drawing window, the colour of
+    // the palette lines: over the bar at the bottom of the window, under
+    // it at the top.
+    let at_top = app.settings.bars.dock(crate::ui::bars::Bar::Status) == crate::ui::bars::Dock::Top;
     let top = full.top().round();
+    let line = if at_top {
+        (full.bottom() - 1.0).round()
+    } else {
+        top
+    };
     ui.painter().rect_filled(
-        Rect::from_min_size(Pos2::new(full.left(), top), Vec2::new(full.width(), 1.0)),
+        Rect::from_min_size(Pos2::new(full.left(), line), Vec2::new(full.width(), 1.0)),
         0.0,
         egui::Color32::from_gray(0xD8),
     );
-    let row = Rect::from_min_max(
-        Pos2::new(full.left() + 4.0, top + 1.0),
-        Pos2::new(full.right() - 4.0, full.bottom().max(top + BAR_H)),
-    );
+    let row = if at_top {
+        Rect::from_min_max(
+            Pos2::new(full.left() + 4.0, top),
+            Pos2::new(full.right() - 4.0, line),
+        )
+    } else {
+        Rect::from_min_max(
+            Pos2::new(full.left() + 4.0, top + 1.0),
+            Pos2::new(full.right() - 4.0, full.bottom().max(top + BAR_H)),
+        )
+    };
     ui.allocate_rect(full, Sense::hover());
     let painter = ui.painter_at(row);
     let cy = row.center().y;

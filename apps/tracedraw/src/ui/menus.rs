@@ -299,13 +299,22 @@ pub(crate) fn radio(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
     mark_item(ui, key, shortcut, Mark::Radio(on))
 }
 
+/// An exclusive item that can be unavailable (greyed, not clickable).
+pub(crate) fn radio_if(ui: &mut Ui, key: &str, shortcut: &str, on: bool, enabled: bool) -> bool {
+    mark_item_if(ui, key, shortcut, Mark::Radio(on), enabled)
+}
+
 fn mark_item(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark) -> bool {
-    let (r, _) = menu_row(ui, &tr(key), shortcut, true, mark);
+    mark_item_if(ui, key, shortcut, mark, true)
+}
+
+fn mark_item_if(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark, enabled: bool) -> bool {
+    let (r, _) = menu_row(ui, &tr(key), shortcut, enabled, mark);
     #[cfg(test)]
-    if replay::hit(key, true) {
+    if replay::hit(key, enabled) {
         return true;
     }
-    if r.clicked() {
+    if enabled && r.clicked() {
         ui.close();
         true
     } else {
@@ -1997,6 +2006,10 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.window.toolbar_toolbox", "", app.show_toolbox) {
             app.show_toolbox = !app.show_toolbox;
         }
+        let palette = app.settings.palette.show_palette;
+        if check(ui, "bars.palette", "", palette) {
+            app.settings.palette.show_palette = !palette;
+        }
         if check(
             ui,
             "menu.window.toolbar_status_bar",
@@ -2018,6 +2031,14 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             app.show_transform_toolbar,
         ) {
             app.show_transform_toolbar = !app.show_transform_toolbar;
+        }
+        sep(ui);
+        let locked = app.settings.bars.locked;
+        if check(ui, "bars.lock", "", locked) {
+            app.settings.bars.locked = !locked;
+        }
+        if item(ui, "bars.reset", "", true) {
+            crate::ui::bars::reset(app);
         }
     });
     sub(ui, "menu.window.color_palettes", |ui| {

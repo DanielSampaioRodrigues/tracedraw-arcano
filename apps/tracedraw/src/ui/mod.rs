@@ -4,6 +4,7 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
+pub mod bars;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;
 pub mod brand;
@@ -210,31 +211,70 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .resizable(false)
         .show_separator_line(false)
         .show(ui, |ui| menus::menu_bar(app, ui));
-    // The bands: a 35 px standard toolbar and a 52 px property bar, each
-    // closed by a light line (included in the sizes).
-    if app.show_standard_toolbar {
-        Panel::top("standard_toolbar")
-            .frame(Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
-                left: 4,
-                right: 4,
-                top: 2,
-                bottom: 2,
-            }))
-            .exact_size(36.0)
+    // The bars, where the layout puts them (see bars.rs). Outer panels
+    // come first: the status bar (at the very bottom, or right under the
+    // menu bar), then the toolbars, then the palettes and the toolbox.
+    let bars_layout = app.settings.bars.clone();
+    use bars::{Bar, Dock};
+    let side = |panel: Panel, size: f32| {
+        panel
+            .exact_size(size)
             .resizable(false)
-            .show(ui, |ui| toolbar::standard_toolbar(app, ui));
+            .show_separator_line(false)
+    };
+    let standard_frame = Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
+        left: 2,
+        right: 4,
+        top: 2,
+        bottom: 2,
+    });
+    let property_frame = Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
+        left: 2,
+        right: 4,
+        top: 8,
+        bottom: 8,
+    });
+    let standard = |app: &mut App, ui: &mut Ui| {
+        bars::background(app, ui, Bar::Standard);
+        ui.horizontal(|ui| {
+            bars::grip(app, ui, Bar::Standard, true);
+            toolbar::standard_toolbar(app, ui);
+        });
+    };
+    let property = |app: &mut App, ui: &mut Ui| {
+        bars::background(app, ui, Bar::Property);
+        ui.horizontal(|ui| {
+            bars::grip(app, ui, Bar::Property, true);
+            toolbar::property_bar(app, ui);
+        });
+    };
+    let status_dock = bars_layout.dock(Bar::Status);
+    let status_panel = |app: &mut App, ui: &mut Ui, panel: Panel| {
+        panel
+            .frame(Frame::new().fill(Tokens::PANEL))
+            .exact_size(status::BAR_H)
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                bars::background(app, ui, Bar::Status);
+                status::status_bar(app, ui)
+            });
+    };
+    if app.show_status_bar && status_dock == Dock::Top {
+        status_panel(app, ui, Panel::top("status_bar"));
     }
-    if app.show_property_bar {
-        Panel::top("property_bar")
-            .frame(Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
-                left: 4,
-                right: 4,
-                top: 8,
-                bottom: 8,
-            }))
-            .exact_size(53.0)
-            .resizable(false)
-            .show(ui, |ui| toolbar::property_bar(app, ui));
+    // The bands along the top: a 36 px standard toolbar and a 53 px
+    // property bar, each closed by a light line (included in the sizes).
+    if app.show_standard_toolbar && bars_layout.dock(Bar::Standard) == Dock::Top {
+        side(Panel::top("standard_toolbar"), 36.0)
+            .frame(standard_frame)
+            .show_separator_line(true)
+            .show(ui, |ui| standard(app, ui));
+    }
+    if app.show_property_bar && bars_layout.dock(Bar::Property) == Dock::Top {
+        side(Panel::top("property_bar"), 53.0)
+            .frame(property_frame)
+            .show_separator_line(true)
+            .show(ui, |ui| property(app, ui));
     }
     if app.show_text_toolbar {
         Panel::top("text_toolbar")
@@ -251,24 +291,70 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .frame(bar())
             .show(ui, |ui| toolbar::transform_toolbar(app, ui));
     }
-
-    if app.show_status_bar {
-        Panel::bottom("status_bar")
-            .frame(Frame::new().fill(Tokens::PANEL))
-            .exact_size(status::BAR_H)
-            .show_separator_line(false)
-            .show(ui, |ui| status::status_bar(app, ui));
+    if app.show_status_bar && status_dock == Dock::Bottom {
+        status_panel(app, ui, Panel::bottom("status_bar"));
+    }
+    if app.show_property_bar && bars_layout.dock(Bar::Property) == Dock::Bottom {
+        side(Panel::bottom("property_bar"), 53.0)
+            .frame(property_frame)
+            .show(ui, |ui| property(app, ui));
+    }
+    if app.show_standard_toolbar && bars_layout.dock(Bar::Standard) == Dock::Bottom {
+        side(Panel::bottom("standard_toolbar"), 36.0)
+            .frame(standard_frame)
+            .show(ui, |ui| standard(app, ui));
     }
 
+    // The palettes as columns on a side lie outermost; as rows they come
+    // after the dockers (below). The default palette lies next to the
+    // window, the document palette outside it.
+    let palette_frame = Frame::new().fill(Tokens::PANEL);
+    let palette_dock = bars_layout.dock(Bar::Palette);
+    let show_palette = app.settings.palette.show_palette;
+    let show_doc_palette = show_palette && app.settings.palette.show_document;
+    if matches!(palette_dock, Dock::Left | Dock::Right) {
+        let panel = |id: &'static str| {
+            if palette_dock == Dock::Left {
+                Panel::left(id)
+            } else {
+                Panel::right(id)
+            }
+        };
+        if show_doc_palette {
+            side(panel("document_palette"), palette::ROW_H)
+                .frame(palette_frame)
+                .show(ui, |ui| palette::document_palette_column(app, ui));
+        }
+        if show_palette {
+            side(panel("palette"), palette::ROW_H)
+                .frame(palette_frame)
+                .show(ui, |ui| palette::palette_column(app, ui));
+        }
+    }
+
+    // The toolbox: a column on a side, a row along the top or the bottom.
     if app.show_toolbox {
-        Panel::left("toolbox")
-            .exact_size(Tokens::TOOLBOX_WIDTH)
-            .frame(
-                Frame::new()
-                    .fill(Tokens::PANEL)
-                    .inner_margin(egui::Margin::symmetric(3, 0)),
-            )
-            .show(ui, |ui| toolbox::toolbox(app, ui));
+        let dock = bars_layout.dock(Bar::Toolbox);
+        let frame = Frame::new()
+            .fill(Tokens::PANEL)
+            .inner_margin(if dock.horizontal() {
+                egui::Margin::symmetric(0, 3)
+            } else {
+                egui::Margin::symmetric(3, 0)
+            });
+        // A row along the top or the bottom comes after the dockers.
+        let panel = match dock {
+            Dock::Left => Some(Panel::left("toolbox")),
+            Dock::Right => Some(Panel::right("toolbox")),
+            _ => None,
+        };
+        if let Some(panel) = panel {
+            panel
+                .exact_size(Tokens::TOOLBOX_WIDTH)
+                .resizable(false)
+                .frame(frame)
+                .show(ui, |ui| toolbox::toolbox(app, ui, dock));
+        }
     }
 
     // Right-to-left languages mirror the workspace: dockers sit on the left.
@@ -297,24 +383,48 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| dockers::dockers(app, ui));
     }
 
-    // Under the canvas: the default palette, then the document palette
-    // above the status bar.
-    let palette_frame = Frame::new().fill(Tokens::PANEL);
-    if app.settings.palette.show_document {
-        Panel::bottom("document_palette")
-            .frame(palette_frame)
-            .exact_size(palette::ROW_H)
+    if app.show_toolbox && bars_layout.dock(Bar::Toolbox).horizontal() {
+        let dock = bars_layout.dock(Bar::Toolbox);
+        let panel = if dock == Dock::Top {
+            Panel::top("toolbox")
+        } else {
+            Panel::bottom("toolbox")
+        };
+        panel
+            .exact_size(Tokens::TOOLBOX_WIDTH)
             .resizable(false)
-            .show_separator_line(false)
-            .show(ui, |ui| palette::document_palette_row(app, ui));
+            .frame(
+                Frame::new()
+                    .fill(Tokens::PANEL)
+                    .inner_margin(egui::Margin::symmetric(0, 3)),
+            )
+            .show(ui, |ui| toolbox::toolbox(app, ui, dock));
     }
-    Panel::bottom("palette")
-        .frame(palette_frame)
-        .exact_size(palette::ROW_H)
-        .resizable(false)
-        .show_separator_line(false)
-        .show(ui, |ui| palette::palette_row(app, ui));
+    // The palettes as rows under (or over) the drawing window.
+    if matches!(palette_dock, Dock::Bottom | Dock::Top) {
+        let panel = |id: &'static str| {
+            if palette_dock == Dock::Top {
+                Panel::top(id)
+            } else {
+                Panel::bottom(id)
+            }
+        };
+        if show_doc_palette {
+            side(panel("document_palette"), palette::ROW_H)
+                .frame(palette_frame)
+                .show(ui, |ui| palette::document_palette_row(app, ui));
+        }
+        if show_palette {
+            side(panel("palette"), palette::ROW_H)
+                .frame(palette_frame)
+                .show(ui, |ui| palette::palette_row(app, ui));
+        }
+    }
     palette::popups(app, &ctx);
+
+    // Floating bars over the window, and a bar being moved.
+    bars::floating_bars(app, &ctx);
+    bars::drag_overlay(app, &ctx, 24.0);
 
     // Document tabs above the rulers.
     Panel::top("document_tabs")

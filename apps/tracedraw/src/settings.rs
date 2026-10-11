@@ -73,6 +73,9 @@ pub struct Settings {
     /// Options > General: show the splash screen while TraceDraw starts.
     #[serde(default = "default_true")]
     pub show_splash: bool,
+    /// Where the toolbox, palette, toolbars and status bar sit.
+    #[serde(default)]
+    pub bars: crate::ui::bars::BarLayout,
     /// The main window as it was left: maximized, else its inner size in
     /// points ([0, 0] until the first exit).
     #[serde(default = "default_true")]
@@ -295,6 +298,8 @@ pub struct PalettePrefs {
     pub show_no_color: bool,
     /// The document palette row under the default palette.
     pub show_document: bool,
+    /// The default palette itself (Window > Toolbars, the bars' menu).
+    pub show_palette: bool,
 }
 
 impl Default for PalettePrefs {
@@ -304,6 +309,7 @@ impl Default for PalettePrefs {
             right_click_outline: true,
             show_no_color: true,
             show_document: true,
+            show_palette: true,
         }
     }
 }
@@ -474,6 +480,7 @@ impl Default for Settings {
             toolbox_hidden: Vec::new(),
             ui_scale: 0.0,
             show_splash: true,
+            bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,
             window_size: [0.0, 0.0],
         }

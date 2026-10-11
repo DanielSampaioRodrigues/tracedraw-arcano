@@ -12,12 +12,15 @@ pub struct Raster {
     key: Option<Key>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 struct Key {
     revision: u64,
     page: PageId,
     zoom: f32,
-    origin: egui::Pos2,
+    /// The page origin relative to the canvas: what the render uses. A
+    /// canvas that moves (a bar docked elsewhere) without changing size
+    /// still needs a new render when the view stays put.
+    offset: egui::Vec2,
     size: (u32, u32),
     preview: Option<(Vec<ShapeId>, [f64; 6])>,
     wireframe: bool,
@@ -52,7 +55,7 @@ impl Raster {
             revision,
             page,
             zoom: view.zoom,
-            origin: view.origin,
+            offset: view.origin - rect.min,
             size: (w, h),
             preview: preview.as_ref().map(|(s, t)| (s.clone(), t.as_coeffs())),
             wireframe,
@@ -98,5 +101,37 @@ impl Raster {
         }
         self.key = Some(key);
         self.texture.as_ref().map(|t| t.id())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracedraw_core::geometry::Size;
+
+    #[test]
+    fn a_canvas_that_moves_renders_again() {
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let page = doc.pages[0].id;
+        let view = View::default();
+        let mut raster = Raster::default();
+        let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(320.0, 200.0));
+        let draw = |raster: &mut Raster, rect: Rect| {
+            raster.texture(&ctx, &doc, page, &view, rect, None, 1, false, false, false)
+        };
+        assert!(draw(&mut raster, at(40.0, 160.0)).is_some());
+        let first = raster.key.clone();
+        // Same canvas, same view: the cached texture.
+        assert!(draw(&mut raster, at(40.0, 160.0)).is_some());
+        assert_eq!(raster.key, first);
+        // The canvas moves up by a bar's height and keeps its size: the
+        // page sits elsewhere inside it, so the key changes.
+        assert!(draw(&mut raster, at(40.0, 107.0)).is_some());
+        assert_ne!(raster.key, first);
+        assert_eq!(
+            raster.key.as_ref().map(|k| k.offset),
+            Some(view.origin - egui::pos2(40.0, 107.0))
+        );
     }
 }
