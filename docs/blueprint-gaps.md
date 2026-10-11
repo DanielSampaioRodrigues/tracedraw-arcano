@@ -50,13 +50,14 @@ exceptions, shown disabled so the layout stays complete:
 - Done since: groups (`grp ` lists, nested), text fitted to a path
   (from the frame flag and the sibling curve), line spacing, character
   spacing and indents from `stlt`, custom arrowhead outlines kept as
-  custom arrowheads, version 21 paragraph frames and inline run
-  colours.
+  custom arrowheads, version 21 inline run colours and embedded fonts
+  (EOT members of the ZIP container).
 - Still open in the reader: splines (0x26, layout not public), vector
   pattern (10) and PostScript (6) fills, text before version 7,
   single-byte code pages other than Windows-1252, tabs, bullets and drop
   caps from `stlt` (tables skipped by size), the `ftil` fill transform,
-  lenses and other effects. Layouts marked "assumed" in
+  lenses and other effects, fonts embedded with MicroType Express
+  compression. Layouts marked "assumed" in
   `cdr-format.md` (`bmpf`, `arrw`, the version 16+ style string content, the
   opacity direction, the alignment codes) have no file behind them yet.
 - Chunks with public descriptions: `vrsn`, `DISP`, `LIST cmpr`, `stlt`,

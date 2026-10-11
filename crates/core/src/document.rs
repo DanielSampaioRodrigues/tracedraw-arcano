@@ -1896,6 +1896,54 @@ pub struct Document {
     /// when the drawing's changes are undone.
     #[serde(default, skip_serializing_if = "TimeTracker::is_empty")]
     pub time_tracker: TimeTracker,
+    /// Font files the drawing carries (fonts embedded in the file it was
+    /// opened from), saved with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<DocumentFont>,
+}
+
+/// A font file a drawing carries, so its text keeps its letters where the
+/// font is not installed. The text engine loads it while the drawing is
+/// open when no installed font has its family and its licence allows use
+/// in documents. See docs/behavior/text.md.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentFont {
+    /// The family name the file it came from gives (for display; the text
+    /// engine reads the names in the font itself).
+    pub family: String,
+    /// The TrueType or OpenType file, shared between undo steps.
+    #[serde(with = "shared_bytes")]
+    pub data: std::sync::Arc<Vec<u8>>,
+}
+
+impl DocumentFont {
+    pub fn new(family: impl Into<String>, data: Vec<u8>) -> Self {
+        DocumentFont {
+            family: family.into(),
+            data: std::sync::Arc::new(data),
+        }
+    }
+}
+
+impl std::fmt::Debug for DocumentFont {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentFont")
+            .field("family", &self.family)
+            .field("bytes", &self.data.len())
+            .finish()
+    }
+}
+
+/// Shared binary data as base64 text, like bitmaps.
+mod shared_bytes {
+    use serde::{Deserializer, Serializer};
+    use std::sync::Arc;
+    pub fn serialize<S: Serializer>(v: &Arc<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+        super::png_bytes::serialize(v.as_slice(), s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Arc<Vec<u8>>, D::Error> {
+        super::png_bytes::deserialize(d).map(Arc::new)
+    }
 }
 
 /// The Time Tracker's records, saved with the drawing: its tasks and the
@@ -1993,6 +2041,7 @@ impl Document {
             },
             palette: Vec::new(),
             time_tracker: TimeTracker::default(),
+            fonts: Vec::new(),
         }
     }
 
@@ -2035,6 +2084,38 @@ impl Document {
         self.master
             .iter_mut()
             .chain(self.pages.iter_mut().flat_map(|p| &mut p.layers))
+    }
+
+    /// The font families the drawing's text uses, sorted: text on layers,
+    /// inside groups and clip frames, in table cells and in symbols.
+    pub fn font_families_used(&self) -> Vec<String> {
+        fn walk(s: &Shape, out: &mut std::collections::BTreeSet<String>) {
+            match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    out.extend(spans.iter().map(|sp| sp.font_family.clone()));
+                }
+                ShapeKind::Table(t) => {
+                    for c in &t.cells {
+                        out.extend(c.text.iter().map(|sp| sp.font_family.clone()));
+                    }
+                }
+                ShapeKind::Group { children } => children.iter().for_each(|c| walk(c, out)),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    walk(frame, out);
+                    contents.iter().for_each(|c| walk(c, out));
+                }
+                _ => {}
+            }
+        }
+        let mut out = std::collections::BTreeSet::new();
+        for s in self.all_layers().flat_map(|l| &l.shapes) {
+            walk(s, &mut out);
+        }
+        for sym in &self.symbols {
+            walk(&sym.shape, &mut out);
+        }
+        out.remove("");
+        out.into_iter().collect()
     }
 
     /// Layers drawn for a page, bottom to top: applicable master layers,
@@ -2771,5 +2852,63 @@ mod tests {
             Affine::rotate(0.5) * Affine::translate((3.0, 4.0)),
         );
         assert!(matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if k.fixed));
+    }
+
+    #[test]
+    fn carried_fonts_are_saved_and_shared_between_copies() {
+        let mut doc = Document::default();
+        // No fonts: nothing written, and older files load without them.
+        let json = doc.to_json().expect("json");
+        assert!(!json.contains("\"fonts\""));
+        assert!(Document::from_json(&json).expect("load").fonts.is_empty());
+        doc.fonts
+            .push(DocumentFont::new("Test Sans", vec![0, 1, 0, 0, 7, 8, 9]));
+        let back = Document::from_json(&doc.to_json().expect("json")).expect("load");
+        assert_eq!(back.fonts, doc.fonts);
+        // Copies (undo steps) share the bytes.
+        let copy = doc.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &copy.fonts[0].data,
+            &doc.fonts[0].data
+        ));
+        // Debug output names the font without dumping it.
+        let shown = format!("{:?}", doc.fonts[0]);
+        assert!(
+            shown.contains("Test Sans") && shown.contains("bytes: 7"),
+            "{shown}"
+        );
+        // Damaged base64 is an error, not a panic.
+        let bad = r#"{"family":"X","data":"@@not base64@@"}"#;
+        assert!(serde_json::from_str::<DocumentFont>(bad).is_err());
+    }
+
+    #[test]
+    fn the_families_used_include_nested_text_tables_and_symbols() {
+        let text = |id: u64, family: &str| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Text {
+                    spans: vec![TextSpan::new("a", family, 12.0)],
+                    origin: Point::ZERO,
+                    frame: None,
+                    align: Default::default(),
+                    para: Default::default(),
+                    on_path: None,
+                },
+            )
+        };
+        let mut doc = Document::default();
+        let group = Shape::new(
+            ShapeId(10),
+            ShapeKind::Group {
+                children: vec![text(11, "Inner"), text(12, "Top")],
+            },
+        );
+        doc.pages[0].layers[0].shapes = vec![text(1, "Top"), group];
+        doc.symbols.push(Symbol {
+            name: "s".into(),
+            shape: text(20, "In Symbol"),
+        });
+        assert_eq!(doc.font_families_used(), vec!["In Symbol", "Inner", "Top"]);
     }
 }

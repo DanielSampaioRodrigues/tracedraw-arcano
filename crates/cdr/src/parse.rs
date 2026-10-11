@@ -37,7 +37,7 @@ pub struct ParseReport {
 }
 
 impl ParseReport {
-    fn warn(&mut self, msg: impl Into<String>) {
+    pub(crate) fn warn(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
         if self.warnings.len() < 200 && !self.warnings.contains(&msg) {
             self.warnings.push(msg);
@@ -1165,7 +1165,10 @@ impl<'a> Ctx<'a> {
         }
         let parsed = parsed?;
         self.pending_on_path = parsed.on_path;
-        if frame.is_none() && (parsed.frame || kind_code == OBJ_PARAGRAPH_TEXT) {
+        // Artistic text (type 0x04) keeps its first baseline at the origin
+        // even when its text record has the frame layout (version 21; the
+        // object's box is then the box of its letters).
+        if frame.is_none() && kind_code == OBJ_PARAGRAPH_TEXT {
             // Version 16+: the frame is the object's box in its own space,
             // its width the columns of the object's style.
             match self.frame_from_hints(&hints) {
@@ -1464,13 +1467,13 @@ impl<'a> Ctx<'a> {
         (b.x0.is_finite() && b.y0.is_finite() && b.width() > 0.0 && b.height() > 0.0).then_some(b)
     }
 
-    /// A paragraph frame from the object's box and style (version 16+
-    /// files keep no frame size in the coordinates): the box taken back
-    /// through the object's transform gives the frame's place and height,
-    /// the style's columns its width when present. Only for transforms
-    /// that neither turn nor slant (a turned box is larger than the
-    /// frame). Seen in a version 21 file, where the box's width is the
-    /// column width times the transform's scale.
+    /// A paragraph frame from the object's box and style, for paragraph
+    /// text (type 0x06) whose coordinates hold no frame size: the box
+    /// taken back through the object's transform gives the frame's place
+    /// and height, the style's columns its width when present. Only for
+    /// transforms that neither turn nor slant (a turned box is larger
+    /// than the frame). Assumed from the version 21 layout (the style's
+    /// `frame` section); not yet seen in a file.
     fn frame_from_hints(&self, h: &FrameHints) -> Option<(Point, Size)> {
         let b = h.bbox?;
         let [a, bb, c, dd, _, _] = h.transform.as_coeffs();
@@ -3781,9 +3784,9 @@ mod tests {
     /// horizontal scale of 0.75 here) and the width of the columns in the
     /// object's style string; the run's colour from its inline fill.
     #[test]
-    fn version_21_paragraph_text_takes_its_frame_from_the_box_and_style() {
+    fn version_21_text_keeps_its_baseline_unless_it_is_paragraph_text() {
         let v = 21u16;
-        let mut t = u32s(&[0xffff_ffff]); // frame
+        let mut t = u32s(&[0xffff_ffff]); // frame layout
         t.extend_from_slice(&[0; 32]);
         t.extend_from_slice(&u16s(&[1700]));
         t.extend_from_slice(&[0; 3]);
@@ -3813,64 +3816,76 @@ mod tests {
         let json = r#"{"fill":{"type":"1"},"frame":{"columns":"600000,0"}}"#;
         let mut style = u32s(&[1, json.len() as u32]);
         style.extend_from_slice(json.as_bytes());
-        let mut coords = vec![0u8; 4];
-        coords.extend_from_slice(&i32s(&[0, 8]));
-        // On the page: the frame at x 10..55 (60 mm times 0.75) and y
+        // On the page: the box at x 10..55 (60 mm times 0.75) and y
         // 20..32, the transform's origin at (11, 22).
         let bbox = i32s(&[100_000, 320_000, 550_000, 200_000]);
-        let obj = list(
-            b"obj ",
-            &[
-                chunk(b"bbox", &bbox),
-                chunk(
-                    b"loda",
-                    &loda(
-                        OBJ_ARTISTIC_TEXT,
-                        &[(ARG_STYLE_STRING, style), (ARG_COORDS, coords)],
+        let read = |kind: u32, coords: Vec<u8>| {
+            let obj = list(
+                b"obj ",
+                &[
+                    chunk(b"bbox", &bbox),
+                    chunk(
+                        b"loda",
+                        &loda(
+                            kind,
+                            &[(ARG_STYLE_STRING, style.clone()), (ARG_COORDS, coords)],
+                        ),
                     ),
-                ),
-                chunk(
-                    b"trfd",
-                    &trfd(v, [0.75, 0.0, 110_000.0, 0.0, 1.0, 220_000.0]),
-                ),
-                chunk(b"txsm", &t),
+                    chunk(
+                        b"trfd",
+                        &trfd(v, [0.75, 0.0, 110_000.0, 0.0, 1.0, 220_000.0]),
+                    ),
+                    chunk(b"txsm", &t),
+                ]
+                .concat(),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
             ]
-            .concat(),
-        );
-        let body = [
-            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
-            list(b"page", &list(b"layr", &obj)),
-        ]
-        .concat();
-        let (doc, rep) = parse(&riff(b"CDRL", &body), v);
-        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
-        assert!(
-            !rep.warnings
-                .iter()
-                .any(|w| w.contains("frame") || w.contains("fill")),
-            "{:?}",
-            rep.warnings
-        );
-        let shape = first_shape(&doc);
-        match &shape.kind {
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDRL", &body), v);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            assert!(
+                !rep.warnings
+                    .iter()
+                    .any(|w| w.contains("frame") || w.contains("fill")),
+                "{:?}",
+                rep.warnings
+            );
+            first_shape(&doc).kind.clone()
+        };
+        // Artistic text (type 0x04): the first baseline starts at the
+        // origin of the coordinates (as in the file: 0 and 8 units); the
+        // box only bounds the letters.
+        match read(OBJ_ARTISTIC_TEXT, i32s(&[0, 8])) {
             ShapeKind::Text {
                 spans,
                 frame,
                 origin,
                 ..
             } => {
-                let f = frame.expect("frame");
-                assert!((f.width - 60.0).abs() < 1e-6, "{f:?}");
-                assert!((f.height - 12.0).abs() < 1e-6, "{f:?}");
-                // (10 - 11) / 0.75 and 20 - 22, in the object's own space.
-                assert!((origin.x - (-1.0 / 0.75)).abs() < 1e-6, "{origin:?}");
-                assert!((origin.y - (-2.0)).abs() < 1e-6, "{origin:?}");
+                assert_eq!(frame, None);
+                assert!(origin.x.abs() < 1e-6 && origin.y.abs() < 1e-3, "{origin:?}");
                 assert_eq!(spans[0].text, "Hi");
                 assert_eq!(spans[0].font_family, "Georgia");
                 assert_eq!(
                     spans[0].fill,
                     Some(Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)))
                 );
+            }
+            other => panic!("{other:?}"),
+        }
+        // Paragraph text (type 0x06) without a size in its coordinates:
+        // the frame is the box, as wide as the style's columns.
+        match read(OBJ_PARAGRAPH_TEXT, vec![0u8; 12]) {
+            ShapeKind::Text { frame, origin, .. } => {
+                let f = frame.expect("frame");
+                assert!((f.width - 60.0).abs() < 1e-6, "{f:?}");
+                assert!((f.height - 12.0).abs() < 1e-6, "{f:?}");
+                // (10 - 11) / 0.75 and 20 - 22, in the object's own space.
+                assert!((origin.x - (-1.0 / 0.75)).abs() < 1e-6, "{origin:?}");
+                assert!((origin.y - (-2.0)).abs() < 1e-6, "{origin:?}");
             }
             other => panic!("{other:?}"),
         }

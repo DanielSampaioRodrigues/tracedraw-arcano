@@ -110,6 +110,7 @@ impl App {
             self.swap_with_slot(self.active_doc);
         }
         self.page = doc.pages.first().map(|p| p.id).unwrap_or(self.page);
+        self.add_carried_fonts(&doc.fonts);
         self.engine = Engine::new(doc);
         self.engine
             .set_max_history(self.settings.undo_levels.max(1));
@@ -124,6 +125,14 @@ impl App {
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
         self.show_welcome = false;
+    }
+
+    /// Fonts a drawing carries serve its text (and the font lists) for the
+    /// rest of the session.
+    pub fn add_carried_fonts(&mut self, fonts: &[tracedraw_core::DocumentFont]) {
+        if !fonts.is_empty() && !tracedraw_text::fonts().add_document_fonts(fonts).is_empty() {
+            self.font_families = tracedraw_text::fonts().families();
+        }
     }
 
     /// Bring tab `i` to the front.
@@ -357,6 +366,49 @@ mod tests {
         app.after_close_question(true);
         assert!(app.quit_now);
         assert!(!app.has_document());
+    }
+
+    /// A drawing whose only text, inside a group, is set in `family`.
+    fn drawing_with_text_in(family: &str) -> Document {
+        let mut doc = Document::new(family, Size::new(100.0, 50.0));
+        let text = tracedraw_core::Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![tracedraw_core::TextSpan::new("Hi", family, 12.0)],
+                origin: tracedraw_core::geometry::Point::new(10.0, 10.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        doc.pages[0].layers[0]
+            .shapes
+            .push(tracedraw_core::Shape::new(
+                ShapeId(2),
+                ShapeKind::Group {
+                    children: vec![text],
+                },
+            ));
+        doc
+    }
+
+    #[test]
+    fn a_drawing_brings_its_fonts_along() {
+        let mut app = App::headless();
+        let mut doc = drawing_with_text_in("Selawik");
+        doc.fonts.push(tracedraw_core::DocumentFont::new(
+            "Selawik",
+            include_bytes!("../assets/fonts/Selawik-Regular.ttf").to_vec(),
+        ));
+        app.open_document(doc, None);
+        app.check_missing_fonts();
+        assert!(app.font_families.iter().any(|f| f == "Selawik"));
+        assert!(app.missing_fonts.is_empty(), "{:?}", app.missing_fonts);
+        // A font nobody brings is reported, inside a group too.
+        app.open_document(drawing_with_text_in("Nowhere Grotesk"), None);
+        app.check_missing_fonts();
+        assert_eq!(app.missing_fonts, vec!["Nowhere Grotesk".to_string()]);
     }
 
     #[test]

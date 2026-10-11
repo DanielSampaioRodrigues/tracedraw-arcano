@@ -128,6 +128,27 @@ end at the first full stop after 60 words and the text ends with a full
 stop. Artistic text and other objects are left alone; a text being
 edited is finished first. One undo step.
 
+## Fonts that come with a drawing
+
+A drawing can carry font files: the fonts embedded in a `.cdr` file it
+was opened from (see `docs/cdr-format.md`, Embedded fonts), saved with it
+in `.tdraw` files. When such a drawing opens (or a `.cdr` file is
+imported), each carried font whose family is not installed serves the
+text for the rest of the session and joins the font lists; an installed
+font of the same family wins, since an embedded copy may hold only the
+letters the drawing used. A font is used only when its licence allows
+use in documents (the OS/2 embedding bits: not "restricted", outlines
+allowed); others are skipped with a log line and their text falls back
+like any missing font. The Fonts docker marks carried families
+"embedded" under "Fonts in document". Saving a drawing as `.tdraw` adds
+the carried fonts its text uses (text imported or pasted from another
+drawing), so the file keeps its letters on machines without them.
+
+The missing-font check (status bar, Font Manager, preflight) looks at
+text everywhere in the drawing: on layers, in groups and clip frames,
+in table cells and in symbols; a family is missing when it is neither
+installed nor carried.
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
@@ -139,6 +160,12 @@ edited is finished first. One undo step.
 
 ## Checks
 
+- `documents::tests::a_drawing_brings_its_fonts_along`,
+  `tests::fonts_a_document_brings_are_loaded_once_unless_installed` and
+  `tests::a_font_licence_decides_whether_a_document_may_use_it` (text
+  crate), `container::tests::embedded_fonts_come_with_the_document` (cdr
+  crate) and `document::tests::carried_fonts_are_saved_and_shared_between_copies`
+  (core).
 - `text_frames::tests::scaling_paragraph_text_resizes_its_frame_and_keeps_the_letters`
 - `text_frames::tests::frames_show_dashed_and_follow_a_scale_being_dragged`
 - `text_frames::tests::a_frame_too_small_for_its_text_overflows`

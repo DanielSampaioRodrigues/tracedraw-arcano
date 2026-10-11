@@ -186,7 +186,11 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
                 )
                 .map_err(|e| e.to_string())
             } else {
-                tracedraw_io::save_native(app.engine.document(), &path).map_err(|e| e.to_string())
+                tracedraw_io::save_native(
+                    &tracedraw_text::fonts().with_carried_fonts(app.engine.document()),
+                    &path,
+                )
+                .map_err(|e| e.to_string())
             };
             r?;
             app.engine.mark_saved();

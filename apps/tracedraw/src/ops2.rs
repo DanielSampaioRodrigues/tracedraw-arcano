@@ -2123,21 +2123,16 @@ impl App {
 }
 
 impl App {
-    /// Fonts used by the document that are not installed (Font Manager,
+    /// Fonts used by the document (in groups, tables and symbols too) that
+    /// are neither installed nor carried by a drawing (Font Manager,
     /// missing-font substitution notice).
     pub fn check_missing_fonts(&mut self) {
-        let mut missing = Vec::new();
-        for s in self.doc().all_layers().flat_map(|l| &l.shapes) {
-            if let ShapeKind::Text { spans, .. } = &s.kind {
-                for sp in spans {
-                    if !self.font_families.contains(&sp.font_family)
-                        && !missing.contains(&sp.font_family)
-                    {
-                        missing.push(sp.font_family.clone());
-                    }
-                }
-            }
-        }
+        let missing: Vec<String> = self
+            .doc()
+            .font_families_used()
+            .into_iter()
+            .filter(|f| !self.font_families.contains(f))
+            .collect();
         if !missing.is_empty() {
             self.status = trf("status.missing_fonts", &[("f", &missing.join(", "))]);
         }

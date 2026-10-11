@@ -99,7 +99,19 @@ fn pdf_security(
     })
 }
 
+/// Read a document of any kind the CLI knows; the fonts it carries are
+/// loaded for its text.
 fn load(
+    path: &str,
+) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
+    let loaded = read_document(path)?;
+    if !loaded.0.fonts.is_empty() {
+        tracedraw_text::fonts().add_document_fonts(&loaded.0.fonts);
+    }
+    Ok(loaded)
+}
+
+fn read_document(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
     let lower = path.to_ascii_lowercase();
@@ -292,6 +304,9 @@ fn main() -> ExitCode {
                             p.layers.len(),
                             n
                         );
+                    }
+                    for f in &doc.fonts {
+                        println!("carries font: {} ({} bytes)", f.family, f.data.len());
                     }
                     if let Some(r) = report {
                         println!(

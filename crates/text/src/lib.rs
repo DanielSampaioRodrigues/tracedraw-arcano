@@ -8,9 +8,11 @@
 //! top of the frame at y = 0 for paragraph text. Y is up, as everywhere.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
-    document::{text_outline::TextRequest, ParagraphStyle, TextAlign, TextOnPath, TextSpan},
+    document::{
+        text_outline::TextRequest, DocumentFont, ParagraphStyle, TextAlign, TextOnPath, TextSpan,
+    },
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
 };
 
@@ -20,9 +22,16 @@ pub mod hyphen;
 pub const PT_MM: f64 = 25.4 / 72.0;
 
 pub struct FontSystem {
-    db: fontdb::Database,
+    /// Installed fonts, then the fonts documents brought (see
+    /// [`FontSystem::add_document_fonts`]).
+    db: RwLock<fontdb::Database>,
     faces: Mutex<HashMap<fontdb::ID, Arc<Vec<u8>>>>,
-    families: Vec<String>,
+    families: RwLock<Vec<String>>,
+    /// Families that came with documents, sorted.
+    document_families: RwLock<Vec<String>>,
+    /// The fonts documents brought that were loaded, with the families
+    /// each added.
+    carried: RwLock<Vec<(Vec<String>, DocumentFont)>>,
     cache: Mutex<HashMap<String, Arc<BezPath>>>,
 }
 
@@ -56,6 +65,22 @@ pub fn add_font_data(data: Vec<u8>) -> bool {
 /// The process-wide font system; loads system fonts on first use.
 pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
+}
+
+/// `data` is a font file (or collection) whose every face reads and
+/// allows use in documents: its licence (the OS/2 embedding bits) is not
+/// "restricted" and allows outlines, not just bitmaps.
+pub fn usable_in_documents(data: &[u8]) -> bool {
+    let n = ttf_parser::fonts_in_collection(data).unwrap_or(1).min(64);
+    let faces: Vec<ttf_parser::Face> = (0..n)
+        .filter_map(|i| ttf_parser::Face::parse(data, i).ok())
+        .collect();
+    !faces.is_empty()
+        && faces.len() == n as usize
+        && faces.iter().all(|f| {
+            f.permissions() != Some(ttf_parser::Permissions::Restricted)
+                && f.is_outline_embedding_allowed()
+        })
 }
 
 /// One shaped glyph, positioned relative to the pen of its line.
@@ -217,19 +242,140 @@ impl FontSystem {
             families.len()
         );
         FontSystem {
-            db,
+            db: RwLock::new(db),
             faces: Mutex::new(HashMap::new()),
-            families,
+            families: RwLock::new(families),
+            document_families: RwLock::new(Vec::new()),
+            carried: RwLock::new(Vec::new()),
             cache: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The font database to read (a lock poisoned by a panic elsewhere
+    /// still holds usable data).
+    fn db(&self) -> RwLockReadGuard<'_, fontdb::Database> {
+        self.db.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Load the fonts a document carries (fonts embedded in the file it
+    /// came from) for the rest of the session, so its text keeps its
+    /// letters. A font is used when its licence allows use in documents
+    /// (not "restricted", outlines allowed) and it brings a family that
+    /// is not installed: an installed font wins over an embedded copy,
+    /// which may hold only the letters the document needed. Returns the
+    /// families added.
+    pub fn add_document_fonts(&self, fonts: &[DocumentFont]) -> Vec<String> {
+        let mut added = Vec::new();
+        for f in fonts {
+            added.extend(self.add_document_font(f));
+        }
+        if !added.is_empty() {
+            // Outlines laid out with a substitute for these families.
+            if let Ok(mut c) = self.cache.lock() {
+                c.clear();
+            }
+            log::info!("document fonts loaded: {}", added.join(", "));
+        }
+        added
+    }
+
+    fn add_document_font(&self, font: &DocumentFont) -> Vec<String> {
+        if !usable_in_documents(&font.data) {
+            log::warn!(
+                "font {:?} carried by the document is not usable (damaged, or its licence does not allow it)",
+                font.family
+            );
+            return Vec::new();
+        }
+        let source = fontdb::Source::Binary(font.data.clone());
+        let mut probe = fontdb::Database::new();
+        probe.load_font_source(source.clone());
+        let mut names: Vec<String> = probe
+            .faces()
+            .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))
+            .collect();
+        names.sort();
+        names.dedup();
+        // Checked and loaded under one lock, so two documents bringing the
+        // same font load it once.
+        let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
+        let new: Vec<String> = names
+            .into_iter()
+            .filter(|n| !db.faces().any(|f| f.families.iter().any(|(m, _)| m == n)))
+            .collect();
+        if new.is_empty() {
+            return Vec::new();
+        }
+        if db.load_font_source(source).is_empty() {
+            return Vec::new();
+        }
+        drop(db);
+        let mut families = self.families.write().unwrap_or_else(|e| e.into_inner());
+        families.extend(new.iter().cloned());
+        families.sort();
+        families.dedup();
+        drop(families);
+        let mut doc = self
+            .document_families
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        doc.extend(new.iter().cloned());
+        doc.sort();
+        doc.dedup();
+        drop(doc);
+        self.carried
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((new.clone(), font.clone()));
+        new
+    }
+
+    /// `doc` carrying, besides its own fonts, the fonts other documents
+    /// brought for the families its text uses (text imported or pasted
+    /// from them), so the saved file keeps its letters where those fonts
+    /// are not installed.
+    pub fn with_carried_fonts<'d>(
+        &self,
+        doc: &'d tracedraw_core::Document,
+    ) -> std::borrow::Cow<'d, tracedraw_core::Document> {
+        let carried = self.carried.read().unwrap_or_else(|e| e.into_inner());
+        if carried.is_empty() {
+            return std::borrow::Cow::Borrowed(doc);
+        }
+        let mut add: Vec<DocumentFont> = Vec::new();
+        for family in doc.font_families_used() {
+            let Some((_, font)) = carried.iter().find(|(f, _)| f.contains(&family)) else {
+                continue;
+            };
+            let has = |f: &DocumentFont| Arc::ptr_eq(&f.data, &font.data) || f.data == font.data;
+            if !doc.fonts.iter().any(has) && !add.iter().any(has) {
+                add.push(font.clone());
+            }
+        }
+        if add.is_empty() {
+            return std::borrow::Cow::Borrowed(doc);
+        }
+        let mut out = doc.clone();
+        out.fonts.extend(add);
+        std::borrow::Cow::Owned(out)
+    }
+
+    /// The family came with a document (it is not installed).
+    pub fn is_document_family(&self, family: &str) -> bool {
+        self.document_families
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|f| f == family)
     }
 
     /// Raw file data and face index of the first installed family in
     /// `candidates`, for registering UI fallback fonts (scripts the bundled
     /// UI font lacks: CJK, Arabic, Devanagari, Bengali...).
     pub fn first_face_data(&self, candidates: &[&str]) -> Option<(String, Arc<Vec<u8>>, u32)> {
+        let db = self.db();
         for name in candidates {
-            let Some(id) = self.db.query(&fontdb::Query {
+            let Some(id) = db.query(&fontdb::Query {
                 families: &[fontdb::Family::Name(name)],
                 weight: fontdb::Weight::NORMAL,
                 stretch: fontdb::Stretch::Normal,
@@ -237,7 +383,7 @@ impl FontSystem {
             }) else {
                 continue;
             };
-            let got = self.db.with_face_data(id, |d, i| (Arc::new(d.to_vec()), i));
+            let got = db.with_face_data(id, |d, i| (Arc::new(d.to_vec()), i));
             if let Some((data, index)) = got {
                 return Some((name.to_string(), data, index));
             }
@@ -245,14 +391,22 @@ impl FontSystem {
         None
     }
 
-    /// Sorted list of family names available on this machine.
-    pub fn families(&self) -> &[String] {
-        &self.families
+    /// Sorted list of the family names available: those installed on
+    /// this machine and those documents brought.
+    pub fn families(&self) -> Vec<String> {
+        self.families
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Whether a family exists (missing fonts are substituted and reported).
     pub fn has_family(&self, family: &str) -> bool {
-        self.families.iter().any(|f| f == family)
+        self.families
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|f| f == family)
     }
 
     /// Pick a face for a span; falls back to a sans-serif, then to anything.
@@ -280,20 +434,18 @@ impl FontSystem {
             stretch: fontdb::Stretch::Normal,
             style,
         };
-        self.db
-            .query(&q)
-            .or_else(|| self.db.faces().next().map(|f| f.id))
+        let db = self.db();
+        db.query(&q).or_else(|| db.faces().next().map(|f| f.id))
     }
 
     fn face_data(&self, id: fontdb::ID) -> Option<(Arc<Vec<u8>>, u32)> {
         let mut cache = self.faces.lock().ok()?;
+        let db = self.db();
         if let Some(d) = cache.get(&id) {
-            let idx = self.db.face(id)?.index;
+            let idx = db.face(id)?.index;
             return Some((d.clone(), idx));
         }
-        let (data, idx) = self
-            .db
-            .with_face_data(id, |d, i| (Arc::new(d.to_vec()), i))?;
+        let (data, idx) = db.with_face_data(id, |d, i| (Arc::new(d.to_vec()), i))?;
         cache.insert(id, data.clone());
         Some((data, idx))
     }
@@ -1786,5 +1938,96 @@ mod tests {
             b.height() > b.width(),
             "vertical path should give tall text: {b:?}"
         );
+    }
+
+    /// The bundled interface font (SIL Open Font License).
+    const SELAWIK: &[u8] =
+        include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+
+    /// `data` with the OS/2 embedding bits set to `fs_type`.
+    fn with_fs_type(data: &[u8], fs_type: u16) -> Vec<u8> {
+        let mut out = data.to_vec();
+        let n = u16::from_be_bytes([data[4], data[5]]) as usize;
+        for i in 0..n {
+            let rec = 12 + 16 * i;
+            if &data[rec..rec + 4] == b"OS/2" {
+                let off = u32::from_be_bytes([
+                    data[rec + 8],
+                    data[rec + 9],
+                    data[rec + 10],
+                    data[rec + 11],
+                ]) as usize;
+                out[off + 8..off + 10].copy_from_slice(&fs_type.to_be_bytes());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_font_licence_decides_whether_a_document_may_use_it() {
+        // Editable (the bundled font), installable, preview and print.
+        assert!(usable_in_documents(SELAWIK));
+        assert!(usable_in_documents(&with_fs_type(SELAWIK, 0)));
+        assert!(usable_in_documents(&with_fs_type(SELAWIK, 4)));
+        // Restricted, or bitmaps only: not used.
+        assert!(!usable_in_documents(&with_fs_type(SELAWIK, 2)));
+        assert!(!usable_in_documents(&with_fs_type(SELAWIK, 0x0208)));
+        // Not a font, or a cut one.
+        assert!(!usable_in_documents(b"not a font at all"));
+        assert!(!usable_in_documents(&SELAWIK[..40]));
+        assert!(!usable_in_documents(&[]));
+    }
+
+    #[test]
+    fn fonts_a_document_brings_are_loaded_once_unless_installed() {
+        let f = fonts();
+        let installed = f.has_family("Selawik");
+        let font = DocumentFont::new("Selawik", SELAWIK.to_vec());
+        let added = f.add_document_fonts(std::slice::from_ref(&font));
+        // Added unless the machine has the font; usable either way.
+        assert_eq!(added.is_empty(), installed, "{added:?}");
+        assert!(f.has_family("Selawik"));
+        assert!(f.families().iter().any(|n| n == "Selawik"));
+        assert_eq!(f.is_document_family("Selawik"), !installed);
+        // A second document with the same font adds nothing.
+        assert!(f.add_document_fonts(std::slice::from_ref(&font)).is_empty());
+        // Text in that family is laid out with it.
+        let id = f.face_for("Selawik", false, false).expect("a face");
+        let db = f.db();
+        let face = db.face(id).expect("face info");
+        assert!(face.families.iter().any(|(n, _)| n == "Selawik"));
+        drop(db);
+        let mut s = span("Hello");
+        s.font_family = "Selawik".into();
+        assert!(f.outline(&[s]).glyphs > 0);
+        // A drawing using the family without carrying the font gets it
+        // when saved (unless the machine has it installed).
+        let mut doc = tracedraw_core::Document::default();
+        doc.pages[0].layers[0]
+            .shapes
+            .push(tracedraw_core::Shape::new(
+                tracedraw_core::ShapeId(1),
+                tracedraw_core::ShapeKind::Text {
+                    spans: vec![TextSpan::new("Hi", "Selawik", 12.0)],
+                    origin: Point::ZERO,
+                    frame: None,
+                    align: TextAlign::Left,
+                    para: ParagraphStyle::default(),
+                    on_path: None,
+                },
+            ));
+        let saved = f.with_carried_fonts(&doc);
+        assert_eq!(saved.fonts.len(), usize::from(!installed));
+        if !installed {
+            assert!(Arc::ptr_eq(&saved.fonts[0].data, &font.data));
+            // Once carried, nothing more is added.
+            let again = f.with_carried_fonts(&saved);
+            assert!(matches!(again, std::borrow::Cow::Borrowed(_)));
+        }
+        // A restricted or damaged font is refused.
+        let restricted = DocumentFont::new("Selawik", with_fs_type(SELAWIK, 2));
+        let junk = DocumentFont::new("Junk", vec![1, 2, 3]);
+        assert!(f.add_document_fonts(&[restricted, junk]).is_empty());
+        assert!(!f.has_family("Junk"));
     }
 }

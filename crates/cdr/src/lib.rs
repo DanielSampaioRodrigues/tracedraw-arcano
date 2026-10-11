@@ -19,6 +19,7 @@
 //! failure: opening a file must always yield a document.
 
 pub mod container;
+pub mod eot;
 pub mod parse;
 pub mod riff;
 mod text;
@@ -69,5 +70,10 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
         .into_iter()
         .map(|(_, c)| c)
         .collect();
+    let (fonts, notes) = container::embedded_fonts(bytes, &container);
+    doc_report.0.fonts = fonts;
+    for n in notes {
+        doc_report.1.warn(n);
+    }
     Ok(doc_report)
 }

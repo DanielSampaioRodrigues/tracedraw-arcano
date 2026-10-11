@@ -977,7 +977,11 @@ impl HostInner {
                 let data = match ext.as_str() {
                     "svg" => tracedraw_io::svg::page_to_svg(&self.doc, idx).into_bytes(),
                     "pdf" => tracedraw_io::pdf::document_to_pdf(&self.doc),
-                    "tdraw" => self.doc.to_json().map_err(|e| e.to_string())?.into_bytes(),
+                    "tdraw" => tracedraw_text::fonts()
+                        .with_carried_fonts(&self.doc)
+                        .to_json()
+                        .map_err(|e| e.to_string())?
+                        .into_bytes(),
                     "png" => {
                         let pm = tracedraw_render::render_page_image(&self.doc, self.page, 300.0)
                             .ok_or("render failed")?;

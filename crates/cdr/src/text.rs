@@ -403,8 +403,6 @@ pub(crate) struct TextParagraph {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Txsm {
-    /// Paragraph text (frame) rather than artistic text.
-    pub frame: bool,
     /// At least one frame is fitted to a path (the path itself is a
     /// sibling object in the same group).
     pub on_path: bool,
@@ -492,7 +490,6 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         return None;
     }
     let mut out = Txsm {
-        frame,
         on_path: any_on_path,
         paragraphs: Vec::new(),
     };
@@ -647,6 +644,8 @@ fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
 
 fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     let mut r = Reader::new(d, false);
+    // Not zero: the frame layout of the records below (artistic text has
+    // it too in version 21, with all bits set).
     let frame = r.u32()? != 0;
     r.skip(32);
     let layout = r.u16()?;
@@ -676,7 +675,6 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         return None;
     }
     let mut out = Txsm {
-        frame,
         on_path: any_on_path,
         paragraphs: Vec::new(),
     };
@@ -1256,10 +1254,10 @@ mod tests {
             r#"{"character":{"fill":{"type":"1","primaryColor":"CMYK255,USER,0,255,255,0,100,u"},
             "outline":{"behindFill":"0","width":"762"},
             "RTL":{"font":"Other","size":"9999999"},
-            "latin":{"font":"Kristen ITC","weight":"64","italic":"0","size":"128819"}},
+            "latin":{"font":"Example Script","weight":"64","italic":"0","size":"128819"}},
             "paragraph":{"interLineSpacing":"1200000","thinOverlineThickness":"45455","dblUnderline1Distance":"-90909"}}"#,
         );
-        assert_eq!(s.family.as_deref(), Some("Kristen ITC"));
+        assert_eq!(s.family.as_deref(), Some("Example Script"));
         assert!((s.size_pt.expect("size") - 36.5156).abs() < 1e-3);
         assert_eq!(s.bold, Some(false));
         assert_eq!(s.fill_id, None);

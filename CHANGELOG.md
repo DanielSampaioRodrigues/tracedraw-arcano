@@ -6,9 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
-- `.cdr` files from recent versions: paragraph text keeps its frame (it
-  was laid out as a single unframed line), and coloured runs of text take
-  their colour (the run colour is stored inline in those files).
+- `.cdr` files: fonts embedded in the file are used for its text when
+  they are not installed (and their licence allows it), so text keeps its
+  letters instead of falling back to another font; the drawing carries
+  them, saved in `.tdraw` files, and the Fonts docker marks them
+  "embedded". Coloured runs of text in files from recent versions take
+  their colour (stored inline in those files).
+- The missing-font check also looks at text inside groups, clip frames,
+  table cells and symbols.
 
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
   app (the windowing layer delivers them as clipboard events, not as

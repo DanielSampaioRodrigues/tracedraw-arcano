@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
+Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -94,6 +94,7 @@ Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
 | Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report | works |
+| Fonts carried by a drawing (embedded in an opened `.cdr`, saved in `.tdraw`): used for its text when not installed and the licence allows it | works (see `behavior/text.md`) |
 | Convert text to table and table to text | works |
 | Table: cell typing, Tab navigation, insert/delete rows and columns, merge/split, distribute; fill and border on the property bar | works |
 
@@ -181,7 +182,7 @@ Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Capability | Status |
 |---|---|
 | Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
-| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as clip frames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
+| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as clip frames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity, embedded fonts (EOT, not compressed) | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
 | MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`) |
 | Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |

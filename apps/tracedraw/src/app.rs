@@ -1341,7 +1341,7 @@ impl App {
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             overflow_cache: Default::default(),
             wireframe: false,
-            font_families: tracedraw_text::fonts().families().to_vec(),
+            font_families: tracedraw_text::fonts().families(),
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
             segment_spot: None,
@@ -1957,9 +1957,8 @@ impl App {
     }
 
     fn save_template_to(&mut self, path: PathBuf) {
-        let written = self
-            .engine
-            .document()
+        let written = tracedraw_text::fonts()
+            .with_carried_fonts(self.engine.document())
             .to_json()
             .map_err(|e| e.to_string())
             .and_then(|json| crate::files::write(&path, json).map_err(|e| e.to_string()));
@@ -3257,8 +3256,10 @@ impl App {
                 self.engine.document(),
             ))
         } else {
-            self.engine
-                .document()
+            // Fonts that came with other drawings go along (text imported
+            // or pasted from them).
+            tracedraw_text::fonts()
+                .with_carried_fonts(self.engine.document())
                 .to_json()
                 .map(String::into_bytes)
                 .map_err(|e| e.to_string())
@@ -3321,14 +3322,15 @@ impl App {
         };
         let mut saved = false;
         let mut jobs: Vec<(String, String)> = Vec::new();
+        let fonts = tracedraw_text::fonts();
         if self.has_document() && self.engine.is_dirty() {
-            if let Ok(json) = self.doc().to_json() {
+            if let Ok(json) = fonts.with_carried_fonts(self.doc()).to_json() {
                 jobs.push((self.backup_name(None), json));
             }
         }
         for (i, slot) in self.docs.iter().enumerate() {
             if i != self.active_doc && slot.engine.is_dirty() {
-                if let Ok(json) = slot.engine.document().to_json() {
+                if let Ok(json) = fonts.with_carried_fonts(slot.engine.document()).to_json() {
                     jobs.push((self.backup_name(Some(i)), json));
                 }
             }
@@ -3551,6 +3553,9 @@ impl App {
                 let Some(layer) = self.active_layer() else {
                     return;
                 };
+                // The imported text keeps its letters; saving the drawing
+                // carries the fonts along.
+                self.add_carried_fonts(&doc.fonts);
                 let mut cmds = Vec::new();
                 let mut ids = Vec::new();
                 for s in doc

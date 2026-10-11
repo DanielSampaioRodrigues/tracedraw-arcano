@@ -2081,31 +2081,21 @@ fn fonts(app: &mut App, ui: &mut Ui) {
         ui.text_edit_singleline(&mut app.font_filter);
     });
     let filter = app.font_filter.to_lowercase();
-    let used: std::collections::BTreeSet<String> = app
-        .doc()
-        .all_layers()
-        .flat_map(|l| &l.shapes)
-        .filter_map(|s| match &s.kind {
-            ShapeKind::Text { spans, .. } => Some(
-                spans
-                    .iter()
-                    .map(|sp| sp.font_family.clone())
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        })
-        .flatten()
-        .collect();
+    let used = app.doc().font_families_used();
     if !used.is_empty() {
         ui.strong(tr("docker.fonts_in_document"));
         for f in &used {
             let missing = !app.font_families.contains(f);
+            let carried = !missing && tracedraw_text::fonts().is_document_family(f);
             ui.horizontal(|ui| {
                 if ui.selectable_label(app.text_font == *f, f).clicked() {
                     app.apply_text_font(f);
                 }
                 if missing {
                     ui.colored_label(egui::Color32::from_rgb(200, 100, 0), tr("docker.missing"));
+                } else if carried {
+                    ui.weak(tr("docker.embedded"))
+                        .on_hover_text(tr("docker.embedded_hint"));
                 }
             });
         }

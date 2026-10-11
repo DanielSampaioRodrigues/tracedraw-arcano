@@ -178,6 +178,65 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
     None
 }
 
+/// Embedded members larger than this are skipped (fonts are far smaller;
+/// this keeps a damaged size from taking all memory).
+const MAX_EMBEDDED: u64 = 64 << 20;
+
+/// The fonts a ZIP file embeds: each `embed/embedding<n>` member holds a
+/// header of its own and then an EOT structure (see [`crate::eot`]).
+/// Returns the fonts, without repeats, and a note for each member that
+/// could not be read.
+pub fn embedded_fonts(
+    bytes: &[u8],
+    container: &Container,
+) -> (Vec<tracedraw_core::DocumentFont>, Vec<String>) {
+    let mut fonts: Vec<tracedraw_core::DocumentFont> = Vec::new();
+    let mut notes = Vec::new();
+    if container.kind == ContainerKind::Riff {
+        return (fonts, notes);
+    }
+    let cursor = std::io::Cursor::new(bytes);
+    let Ok(mut archive) = zip::ZipArchive::new(cursor) else {
+        return (fonts, notes);
+    };
+    let mut names: Vec<String> = archive
+        .file_names()
+        .filter(|n| n.to_ascii_lowercase().starts_with("embed/") && !n.ends_with('/'))
+        .map(String::from)
+        .collect();
+    names.sort();
+    for name in names {
+        let Ok(f) = archive.by_name(&name) else {
+            continue;
+        };
+        if f.size() > MAX_EMBEDDED {
+            notes.push(format!("embedded member {name} is too large, skipped"));
+            continue;
+        }
+        let mut member = Vec::new();
+        if f.take(MAX_EMBEDDED).read_to_end(&mut member).is_err() {
+            notes.push(format!("embedded member {name} could not be unpacked"));
+            continue;
+        }
+        let Some(at) = crate::eot::find(&member) else {
+            notes.push(format!(
+                "embedded member {name} holds no font that can be read"
+            ));
+            continue;
+        };
+        match member.get(at..).map(crate::eot::read) {
+            Some(Ok(font)) => {
+                if !fonts.iter().any(|f| f.data.as_slice() == font.data) {
+                    fonts.push(tracedraw_core::DocumentFont::new(font.family, font.data));
+                }
+            }
+            Some(Err(e)) => notes.push(format!("embedded font in {name}: {e}")),
+            None => {}
+        }
+    }
+    (fonts, notes)
+}
+
 /// The document palette of an version 14+ ZIP file (`color/docPalette.xml`):
 /// each `<color cs=".." name=".." tints=".."/>` with its name. CMYK, RGB
 /// and grey colours are read; other colour spaces are skipped.
@@ -344,5 +403,83 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(matches!(detect(b"hello world!"), Err(Error::NotCdr)));
+    }
+
+    /// The bundled interface font (SIL Open Font License).
+    const FONT: &[u8] = include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+
+    /// A ZIP file around a written RIFF stream, with extra members.
+    fn zip_file(members: &[(&str, Vec<u8>)]) -> Vec<u8> {
+        use std::io::Write;
+        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut w = zip::ZipWriter::new(&mut buf);
+            let opts = zip::write::SimpleFileOptions::default();
+            w.start_file("content/riffData.cdr", opts).expect("member");
+            w.write_all(&riff).expect("write");
+            for (name, data) in members {
+                w.start_file(*name, opts).expect("member");
+                w.write_all(data).expect("write");
+            }
+            w.finish().expect("zip");
+        }
+        buf.into_inner()
+    }
+
+    /// An `embed/` member: a header of its own, then the EOT structure.
+    fn embedding(font: &[u8], family: &str) -> Vec<u8> {
+        let mut m = vec![1, 0, 0, 0, 3, 8, 0, 0];
+        m.extend("Version 1.0".encode_utf16().flat_map(|u| u.to_le_bytes()));
+        m.extend_from_slice(&[0x5f; 300]);
+        m.extend(crate::eot::wrap(font, family, 0x1000_0000));
+        m
+    }
+
+    #[test]
+    fn embedded_fonts_come_with_the_document() {
+        let bytes = zip_file(&[
+            ("embed/embedding0", embedding(FONT, "Selawik")),
+            // The same font again, and a member that holds none.
+            ("embed/embedding1", embedding(FONT, "Selawik")),
+            ("embed/embedding2", b"nothing to see".to_vec()),
+        ]);
+        let (doc, report) = crate::open_bytes(&bytes, "fonts").expect("opens");
+        assert_eq!(doc.fonts.len(), 1);
+        assert_eq!(doc.fonts[0].family, "Selawik");
+        assert_eq!(doc.fonts[0].data.as_slice(), FONT);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("embedding2")),
+            "{:?}",
+            report.warnings
+        );
+        // Compressed fonts are named in the report and left out.
+        let mut c = embedding(FONT, "Selawik");
+        let at = crate::eot::find(&c).expect("eot");
+        c[at + 12] |= 4;
+        let (doc, report) =
+            crate::open_bytes(&zip_file(&[("embed/embedding0", c)]), "c").expect("opens");
+        assert!(doc.fonts.is_empty());
+        assert!(report.warnings.iter().any(|w| w.contains("compressed")));
+        // A RIFF file has no embedded members; the document still opens.
+        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        let (doc, _) = crate::open_bytes(&riff, "riff").expect("opens");
+        assert!(doc.fonts.is_empty());
+    }
+
+    #[test]
+    fn cut_or_damaged_font_members_never_stop_the_file_opening() {
+        let member = embedding(FONT, "Selawik");
+        for cut in [0, 1, 10, 100, 400, member.len() / 2, member.len() - 1] {
+            let bytes = zip_file(&[("embed/embedding0", member[..cut].to_vec())]);
+            let (doc, _) = crate::open_bytes(&bytes, "cut").expect("opens");
+            assert!(doc.fonts.is_empty(), "cut at {cut}");
+        }
+        let mut flipped = member.clone();
+        for i in (0..flipped.len()).step_by(97) {
+            flipped[i] ^= 0xa5;
+        }
+        let bytes = zip_file(&[("embed/embedding0", flipped)]);
+        assert!(crate::open_bytes(&bytes, "flip").is_ok());
     }
 }
