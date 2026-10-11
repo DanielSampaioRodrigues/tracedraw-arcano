@@ -1121,6 +1121,25 @@ mod tests {
     }
 
     #[test]
+    fn the_readme_example_draws_a_fan_of_bars() {
+        // The JavaScript shown in README.md, word for word.
+        let mut a = app();
+        run(
+            &mut a,
+            "for (let i = 0; i < 12; i++) {\n  const bar = ActiveLayer.CreateRectangle(80, 120, 60, 12, 3);\n  bar.Fill.ApplyUniformFill(Color.RGB(255, 60 + i * 15, 60));\n  bar.Rotate(i * 15);\n}",
+        )
+        .expect("script runs");
+        let shapes = &a.doc().pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 12);
+        // Each bar is a little more orange than the one before.
+        let green = |s: &tracedraw_core::Shape| match &s.fill {
+            tracedraw_core::Fill::Solid(c) => c.to_rgb8()[1],
+            _ => 0,
+        };
+        assert!(green(&shapes[11]) > green(&shapes[0]));
+    }
+
+    #[test]
     fn script_error_is_reported() {
         let mut a = app();
         let r = run(&mut a, "nosuchthing.foo();");

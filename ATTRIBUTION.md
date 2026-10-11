@@ -14,7 +14,7 @@ their packages; `cargo tree` lists them from `Cargo.lock`.
 | Hyphenation patterns | `crates/text/src/hyphen.rs` | Made for TraceDraw (a small Liang-style set) | MIT OR Apache-2.0 |
 | Interface translations | `apps/tracedraw/lang/*.toml` | Made for TraceDraw | MIT OR Apache-2.0 |
 | Sample drawing | `sample.tdraw` | Made for TraceDraw | MIT OR Apache-2.0 |
-| Screenshots | `docs/screenshots/` | TraceDraw itself, captured with `scripts/visual/` | MIT OR Apache-2.0 |
+| Screenshots | `docs/images/` | TraceDraw itself, captured with `scripts/visual/readme_shots.sh` from drawings made for TraceDraw by `apps/tracedraw-cli/examples/showcase.rs`; their text is set in Inter and Lora (SIL Open Font License 1.1), fonts installed on the capture machine and not bundled | MIT OR Apache-2.0 |
 
 Not bundled on purpose: licensed spot colour libraries, third-party
 clipart, templates, fonts other than the one above, and colour profiles

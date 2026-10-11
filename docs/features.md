@@ -154,7 +154,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Colour modes: 1-bit, grayscale, RGB, CMYK | works |
 | Bitmap colour mask | works |
 | Inflate bitmap: Auto Inflate Bitmap switch, Manually Inflate Bitmap (Inflate to pixels, Inflate by percent, Maintain aspect ratio) | works (see `behavior/bitmap-effects.md`) |
-| Bitmap tracing: quick, centreline, outline; presets; smoothing, detail, colour count | works |
+| Bitmap tracing: quick, centreline, outline; presets; smoothing, detail, colour count; before and after preview in the dialog (see `behavior/bitmap-tracing.md`) | works |
 | Edit bitmap in the system editor, linked bitmaps (update from link, break link) | works |
 
 ## 9. Layout and document
@@ -183,6 +183,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
+| Export dialog with a preview, the size in pixels and an estimated file size (see `behavior/export.md`) | works |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations | works (see `behavior/pdf-import.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |

@@ -541,6 +541,67 @@ pub fn thin(mask: &mut [bool], w: usize, h: usize) {
 }
 
 /// Map traced pixel-space paths into a rectangle (page mm, Y up).
+/// Draw traced shapes (pixel space, y down) into a transparent image of
+/// `w` x `h`: closed shapes filled with their colour, centrelines stroked
+/// `stroke_px` wide. The trace dialog previews a trace this way.
+pub fn render_traced(traced: &[Traced], w: u32, h: u32, stroke_px: f64) -> RgbaImage {
+    let Some(mut pm) = tiny_skia::Pixmap::new(w.max(1), h.max(1)) else {
+        return RgbaImage::new(w.max(1), h.max(1));
+    };
+    for t in traced {
+        let mut pb = tiny_skia::PathBuilder::new();
+        for el in t.path.elements() {
+            match *el {
+                tracedraw_core::geometry::PathEl::MoveTo(p) => pb.move_to(p.x as f32, p.y as f32),
+                tracedraw_core::geometry::PathEl::LineTo(p) => pb.line_to(p.x as f32, p.y as f32),
+                tracedraw_core::geometry::PathEl::QuadTo(a, p) => {
+                    pb.quad_to(a.x as f32, a.y as f32, p.x as f32, p.y as f32)
+                }
+                tracedraw_core::geometry::PathEl::CurveTo(a, b, p) => pb.cubic_to(
+                    a.x as f32, a.y as f32, b.x as f32, b.y as f32, p.x as f32, p.y as f32,
+                ),
+                tracedraw_core::geometry::PathEl::ClosePath => pb.close(),
+            }
+        }
+        let Some(path) = pb.finish() else {
+            continue;
+        };
+        let [r, g, b] = t.color.to_rgb8();
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(r, g, b, 255);
+        paint.anti_alias = true;
+        if t.closed {
+            pm.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::EvenOdd,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+        } else {
+            let stroke = tiny_skia::Stroke {
+                width: stroke_px.max(0.5) as f32,
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..Default::default()
+            };
+            pm.stroke_path(
+                &path,
+                &paint,
+                &stroke,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+        }
+    }
+    let mut out = RgbaImage::new(pm.width(), pm.height());
+    for (px, p) in out.pixels_mut().zip(pm.pixels()) {
+        let c = p.demultiply();
+        *px = image::Rgba([c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    out
+}
+
 pub fn to_rect(path: &BezPath, img_w: u32, img_h: u32, rect: Rect) -> BezPath {
     let sx = rect.width() / img_w.max(1) as f64;
     let sy = rect.height() / img_h.max(1) as f64;

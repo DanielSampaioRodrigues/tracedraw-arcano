@@ -153,6 +153,97 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
 }
 
 fn write_raster(pm: &tiny_skia::Pixmap, path: &Path, ext: &str, quality: u8) -> Result<(), String> {
+    let bytes = encode_raster(pm, ext, quality)?;
+    crate::files::write(path, bytes).map_err(|e| e.to_string())
+}
+
+/// True when the export format `ext` keeps transparency.
+pub fn keeps_alpha(ext: &str) -> bool {
+    matches!(ext, "png" | "webp" | "gif")
+}
+
+/// What the export will look like: the page (or the selection) of `st`
+/// rendered to fit `max_px` on its longer side, on a transparent
+/// background when the format keeps one, else on white.
+pub fn preview(app: &App, st: &ExportState, max_px: u32) -> Option<tiny_skia::Pixmap> {
+    let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+    let (doc, _) = export_document(app, st);
+    let page = doc.pages.first()?;
+    let longest = page.size.width.max(page.size.height).max(0.1);
+    let zoom = max_px.max(16) as f64 / longest;
+    let w = (page.size.width * zoom).ceil().max(1.0) as u32;
+    let h = (page.size.height * zoom).ceil().max(1.0) as u32;
+    let mut pm = tracedraw_render::render_page(
+        &doc,
+        page.id,
+        &tracedraw_render::RenderOptions {
+            width: w,
+            height: h,
+            view: tracedraw_render::ViewTransform {
+                zoom,
+                origin_x: 0.0,
+                origin_y: h as f64,
+            },
+            preview: None,
+            wireframe: false,
+            ..tracedraw_render::RenderOptions::default()
+        },
+    )?;
+    if !(st.transparent && keeps_alpha(ext)) {
+        let mut white = tiny_skia::Pixmap::new(w, h)?;
+        white.fill(tiny_skia::Color::WHITE);
+        white.draw_pixmap(
+            0,
+            0,
+            pm.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            tiny_skia::Transform::identity(),
+            None,
+        );
+        pm = white;
+    }
+    Some(pm)
+}
+
+/// About how many bytes the export of `st` takes: a vector format is
+/// written in memory; a bitmap format is estimated from `preview` (the
+/// output of [`preview`]) encoded the same way and scaled to the export's
+/// pixel count.
+pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) -> Option<usize> {
+    let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+    let (doc, bounds) = export_document(app, st);
+    match ext {
+        "svg" => Some(tracedraw_io::svg::page_to_svg(&doc, 0).len()),
+        "eps" => Some(tracedraw_io::eps::page_to_eps(&doc, 0).len()),
+        "pdf" | "ai" => Some(tracedraw_io::pdf::document_to_pdf(&doc).len()),
+        "png" | "jpg" | "bmp" | "tif" | "webp" | "gif" | "psd" => {
+            let enc = if ext == "psd" { "tif" } else { ext };
+            let bytes = encode_raster(preview, enc, st.quality).ok()?.len() as f64;
+            let full = (bounds.width() / 25.4 * st.dpi) * (bounds.height() / 25.4 * st.dpi);
+            let shown = (preview.width() as f64 * preview.height() as f64).max(1.0);
+            let pages = if st.all_pages && !st.selection_only {
+                doc.pages.len().max(1) as f64
+            } else {
+                1.0
+            };
+            Some((bytes * full / shown * pages) as usize)
+        }
+        _ => None,
+    }
+}
+
+/// A byte count for people: "820 KB", "1.4 MB".
+pub fn human_size(bytes: usize) -> String {
+    let b = bytes as f64;
+    if b < 1000.0 * 1024.0 {
+        format!("{:.0} KB", (b / 1024.0).max(1.0))
+    } else {
+        format!("{:.1} MB", b / (1024.0 * 1024.0))
+    }
+}
+
+/// Encode a rendered page in the bitmap format `ext`.
+fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u8>, String> {
     let (w, h) = (pm.width(), pm.height());
     let mut rgba = Vec::with_capacity((w * h * 4) as usize);
     for p in pm.pixels() {
@@ -188,7 +279,7 @@ fn write_raster(pm: &tiny_skia::Pixmap, path: &Path, ext: &str, quality: u8) -> 
             .write_to(&mut out, format)
             .map_err(|e| e.to_string())?,
     }
-    crate::files::write(path, out.into_inner()).map_err(|e| e.to_string())
+    Ok(out.into_inner())
 }
 
 /// Print: build a PDF with the print options and open it in the system
@@ -806,6 +897,47 @@ fn replace_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_export_preview_shows_the_page_and_estimates_the_size() {
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 100.0, 60.0),
+            radius: 0.0,
+            corners: None,
+        });
+        // PNG at 300 dpi: an A4 preview keeps the page's proportions.
+        let st = ExportState {
+            format: 2,
+            dpi: 300.0,
+            ..ExportState::default()
+        };
+        let pm = preview(&app, &st, 200).expect("preview");
+        assert_eq!(pm.height(), 200);
+        assert!((pm.width() as f64 - 200.0 * 210.0 / 297.0).abs() <= 1.0);
+        let png = estimated_size(&app, &st, &pm).expect("estimate");
+        assert!(png > 0);
+        // The same page at 72 dpi is estimated smaller.
+        let small = ExportState {
+            dpi: 72.0,
+            ..st.clone()
+        };
+        assert!(estimated_size(&app, &small, &pm).unwrap_or(usize::MAX) < png);
+        // A vector format is measured, not estimated.
+        let svg = ExportState {
+            format: 0,
+            ..st.clone()
+        };
+        assert!(estimated_size(&app, &svg, &pm).is_some());
+        assert!(keeps_alpha("png") && !keeps_alpha("jpg"));
+    }
+
+    #[test]
+    fn sizes_read_in_kilobytes_and_megabytes() {
+        assert_eq!(human_size(10), "1 KB");
+        assert_eq!(human_size(820 * 1024), "820 KB");
+        assert_eq!(human_size(3 * 1024 * 1024 + 400 * 1024), "3.4 MB");
+    }
 
     #[test]
     fn csv_parses_headers_and_rows() {

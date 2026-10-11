@@ -17,6 +17,15 @@
 | Remove background | on | auto or colour |
 | Merge adjacent same-colour objects | off | |
 
+## Dialog preview
+
+The Trace Bitmap dialog opens with the bitmap before and its trace after,
+side by side (200 points each, a checkerboard behind transparency). The
+trace is worked out on a copy of the bitmap at most 240 pixels on its
+longer side, again whenever a setting changes: closed regions filled with
+their colours, centrelines stroked. Preview still counts the curves of the
+full trace.
+
 ## Algorithm (outline mode)
 
 1. Quantise colours with median cut to `n` colours, after a 3x3 median

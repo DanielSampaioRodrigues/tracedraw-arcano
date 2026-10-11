@@ -1687,6 +1687,137 @@ fn document_properties(app: &mut App, ctx: &Context, close: &mut bool) {
 
 // ----- Export ------------------------------------------------------------------
 
+/// The export preview, cached until the drawing or the export settings
+/// change, with the estimated file size.
+#[derive(Clone)]
+struct ExportPreview {
+    key: u64,
+    texture: Option<egui::TextureHandle>,
+    size: (u32, u32),
+    bytes: Option<usize>,
+}
+
+/// What the export preview depends on.
+fn export_preview_key(app: &App, st: &ExportState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    app.engine.revision().hash(&mut h);
+    app.page.raw().hash(&mut h);
+    st.format.hash(&mut h);
+    st.transparent.hash(&mut h);
+    st.selection_only.hash(&mut h);
+    st.all_pages.hash(&mut h);
+    st.quality.hash(&mut h);
+    st.dpi.to_bits().hash(&mut h);
+    if st.selection_only {
+        for id in &app.selection {
+            id.raw().hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+/// Draw the preview box (`size` points) and return the estimated size.
+fn export_preview_box(app: &App, ui: &mut Ui, st: &ExportState, size: egui::Vec2) -> Option<usize> {
+    let id = egui::Id::new("export_preview");
+    let key = export_preview_key(app, st);
+    let cached = ui
+        .ctx()
+        .data(|d| d.get_temp::<ExportPreview>(id))
+        .filter(|p| p.key == key);
+    let preview = match cached {
+        Some(p) => p,
+        None => {
+            let px = (size.x.max(size.y) * ui.ctx().pixels_per_point()).round() as u32;
+            let pm = crate::export::preview(app, st, px);
+            let bytes = pm
+                .as_ref()
+                .and_then(|pm| crate::export::estimated_size(app, st, pm));
+            let texture = pm.as_ref().map(|pm| {
+                let pixels: Vec<egui::Color32> = pm
+                    .pixels()
+                    .iter()
+                    .map(|p| {
+                        egui::Color32::from_rgba_premultiplied(
+                            p.red(),
+                            p.green(),
+                            p.blue(),
+                            p.alpha(),
+                        )
+                    })
+                    .collect();
+                let image = egui::ColorImage {
+                    size: [pm.width() as usize, pm.height() as usize],
+                    source_size: egui::vec2(pm.width() as f32, pm.height() as f32),
+                    pixels,
+                };
+                ui.ctx()
+                    .load_texture("export_preview", image, egui::TextureOptions::LINEAR)
+            });
+            let p = ExportPreview {
+                key,
+                texture,
+                size: pm
+                    .as_ref()
+                    .map(|pm| (pm.width(), pm.height()))
+                    .unwrap_or((1, 1)),
+                bytes,
+            };
+            ui.ctx().data_mut(|d| d.insert_temp(id, p.clone()));
+            p
+        }
+    };
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 0.0, egui::Color32::from_gray(0xE6));
+    if let Some(tex) = &preview.texture {
+        let (w, h) = (preview.size.0.max(1) as f32, preview.size.1.max(1) as f32);
+        let scale = ((rect.width() - 16.0) / w).min((rect.height() - 16.0) / h);
+        let img = egui::Rect::from_center_size(rect.center(), egui::vec2(w * scale, h * scale));
+        // A checkerboard behind a transparent export.
+        let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+        if st.transparent && crate::export::keeps_alpha(ext) {
+            let cell = 8.0;
+            let mut y = img.top();
+            let mut row = 0;
+            while y < img.bottom() {
+                let mut x = img.left();
+                let mut col = row % 2;
+                while x < img.right() {
+                    let c = if col % 2 == 0 { 0xFF } else { 0xD9 };
+                    let r = egui::Rect::from_min_max(
+                        egui::pos2(x, y),
+                        egui::pos2((x + cell).min(img.right()), (y + cell).min(img.bottom())),
+                    );
+                    painter.rect_filled(r, 0.0, egui::Color32::from_gray(c));
+                    x += cell;
+                    col += 1;
+                }
+                y += cell;
+                row += 1;
+            }
+        }
+        painter.add(egui::epaint::RectShape::filled(
+            img.translate(egui::vec2(2.0, 3.0)),
+            0.0,
+            egui::Color32::from_black_alpha(40),
+        ));
+        painter.image(
+            tex.id(),
+            img,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)),
+        egui::StrokeKind::Inside,
+    );
+    preview.bytes
+}
+
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {
     window(
         ctx,
@@ -1697,88 +1828,110 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
         },
     )
     .show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(tr("dialog.format"));
-            egui::ComboBox::from_id_salt("exp_fmt")
-                .selected_text(EXPORT_FORMATS[st.format].0)
-                .show_ui(ui, |ui| {
-                    for (i, (n, _)) in EXPORT_FORMATS.iter().enumerate() {
-                        if ui.selectable_label(st.format == i, *n).clicked() {
-                            st.format = i;
-                        }
-                    }
+        ui.horizontal_top(|ui| {
+            let estimate = export_preview_box(app, ui, st, egui::vec2(260.0, 300.0));
+            ui.add_space(14.0);
+            ui.vertical(|ui| {
+                ui.set_width(300.0);
+                ui.horizontal(|ui| {
+                    ui.label(tr("dialog.format"));
+                    egui::ComboBox::from_id_salt("exp_fmt")
+                        .selected_text(EXPORT_FORMATS[st.format].0)
+                        .show_ui(ui, |ui| {
+                            for (i, (n, _)) in EXPORT_FORMATS.iter().enumerate() {
+                                if ui.selectable_label(st.format == i, *n).clicked() {
+                                    st.format = i;
+                                }
+                            }
+                        });
                 });
-        });
-        let raster = (2..=7).contains(&st.format) || st.format == 15;
-        if raster {
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.resolution"));
-                ui.add(
-                    egui::DragValue::new(&mut st.dpi)
-                        .range(36.0..=2400.0)
-                        .suffix(" dpi"),
-                );
-                for d in [72.0, 96.0, 150.0, 300.0] {
-                    if ui.small_button(format!("{d:.0}")).clicked() {
-                        st.dpi = d;
-                    }
-                }
-            });
-            if st.format == 2 || st.format == 6 || st.format == 7 {
-                ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"));
-            }
-            if st.format == 3 || st.format == 6 {
-                ui.add(crate::ui::Rail(
-                    egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")),
-                ));
-            }
-            let b = if st.selection_only {
-                app.selection_bounds().unwrap_or(app.page_rect())
-            } else {
-                app.page_rect()
-            };
-            ui.label(format!(
-                "{} x {} px",
-                (b.width() / 25.4 * st.dpi).round(),
-                (b.height() / 25.4 * st.dpi).round()
-            ));
-        }
-        if st.format == 1 {
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.pdf_standard"));
-                egui::ComboBox::from_id_salt("pdf_standard")
-                    .selected_text(PDF_STANDARDS[st.pdf_standard.min(3)])
-                    .show_ui(ui, |ui| {
-                        for (i, n) in PDF_STANDARDS.iter().enumerate() {
-                            ui.selectable_value(&mut st.pdf_standard, i, *n);
+                let raster = (2..=7).contains(&st.format) || st.format == 15;
+                if raster {
+                    ui.horizontal(|ui| {
+                        ui.label(tr("dialog.resolution"));
+                        ui.add(
+                            egui::DragValue::new(&mut st.dpi)
+                                .range(36.0..=2400.0)
+                                .suffix(" dpi"),
+                        );
+                        for d in [72.0, 96.0, 150.0, 300.0] {
+                            if ui.small_button(format!("{d:.0}")).clicked() {
+                                st.dpi = d;
+                            }
                         }
                     });
+                    if st.format == 2 || st.format == 6 || st.format == 7 {
+                        ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"));
+                    }
+                    if st.format == 3 || st.format == 6 {
+                        ui.add(crate::ui::Rail(
+                            egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")),
+                        ));
+                    }
+                    let b = if st.selection_only {
+                        app.selection_bounds().unwrap_or(app.page_rect())
+                    } else {
+                        app.page_rect()
+                    };
+                    ui.label(
+                        egui::RichText::new(trf(
+                            "dialog.export_pixels",
+                            &[
+                                ("w", &format!("{}", (b.width() / 25.4 * st.dpi).round())),
+                                ("h", &format!("{}", (b.height() / 25.4 * st.dpi).round())),
+                            ],
+                        ))
+                        .color(Tokens::TEXT_DIM),
+                    );
+                }
+                if st.format == 1 {
+                    ui.horizontal(|ui| {
+                        ui.label(tr("dialog.pdf_standard"));
+                        egui::ComboBox::from_id_salt("pdf_standard")
+                            .selected_text(PDF_STANDARDS[st.pdf_standard.min(3)])
+                            .show_ui(ui, |ui| {
+                                for (i, n) in PDF_STANDARDS.iter().enumerate() {
+                                    ui.selectable_value(&mut st.pdf_standard, i, *n);
+                                }
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(tr("dialog.bleed"));
+                        ui.add(
+                            egui::DragValue::new(&mut st.bleed_mm)
+                                .range(0.0..=50.0)
+                                .speed(0.5)
+                                .suffix(" mm"),
+                        );
+                    });
+                    if st.pdf_standard > 0 {
+                        ui.horizontal(|ui| {
+                            ui.label(tr("dialog.output_condition"));
+                            ui.text_edit_singleline(&mut st.output_condition);
+                        });
+                        ui.label(
+                            egui::RichText::new(tr("dialog.pdfx_profile_note"))
+                                .color(Tokens::TEXT_DIM)
+                                .size(11.0),
+                        );
+                    }
+                }
+                ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"));
+                if !st.selection_only && st.format != 1 && st.format != 11 {
+                    ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
+                }
+                if let Some(bytes) = estimate {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(trf(
+                            "dialog.export_estimate",
+                            &[("size", &crate::export::human_size(bytes))],
+                        ))
+                        .color(Tokens::TEXT_DIM),
+                    );
+                }
             });
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.bleed"));
-                ui.add(
-                    egui::DragValue::new(&mut st.bleed_mm)
-                        .range(0.0..=50.0)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                );
-            });
-            if st.pdf_standard > 0 {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.output_condition"));
-                    ui.text_edit_singleline(&mut st.output_condition);
-                });
-                ui.label(
-                    egui::RichText::new(tr("dialog.pdfx_profile_note"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
-        }
-        ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"));
-        if !st.selection_only && st.format != 1 && st.format != 11 {
-            ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
-        }
+        });
         if ok_cancel(ui, close) {
             let (name, ext) = EXPORT_FORMATS[st.format];
             let _ = name;
@@ -1916,6 +2069,25 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
 
 fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut bool) {
     window(ctx, tr("dialog.trace")).show(ctx, |ui| {
+        // Before and after: the bitmap and its trace, worked out on a small
+        // copy whenever the settings change.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", st.settings).hash(&mut h);
+            h.finish()
+        };
+        let settings = st.settings.clone();
+        crate::ui::bitmap_preview::before_after(ui, app, key, 200.0, |img, _| {
+            let traced = crate::trace::trace(img, &settings);
+            crate::trace::render_traced(
+                &traced,
+                img.width(),
+                img.height(),
+                crate::trace::last_stroke_width_px(),
+            )
+        });
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             for p in [
                 crate::trace::Preset::Technical,

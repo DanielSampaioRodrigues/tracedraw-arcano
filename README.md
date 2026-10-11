@@ -1,212 +1,342 @@
-# TraceDraw
+<p align="center">
+  <img src="assets/icon/tracedraw-256.png" alt="TraceDraw" width="120">
+</p>
 
-**An open-source vector illustration editor in pure Rust.** Pages, master
-layers, curves, text with a full paragraph engine, tables, symbols, every
-fill type (uniform, gradient, pattern, texture, mesh), live effects
-(contour, blend, distort, envelope, perspective, extrude, bevel, block
-shadow, lens, transparency), clip frame, bitmap effects and tracing, a
-clean-room `.cdr` reader and writer, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT, TXT/RTF/DOCX import, SVG/PDF/EPS/DXF/EMF/WMF/PLT/PSD export, JavaScript
-automation, a user interface in twelve languages, and a desktop workspace
-built for people who already know how a professional vector editor is laid
-out: menu bar, property bar, toolbox with flyouts, thirty-five panels, colour
-palette, rulers and a page navigator.
+<h1 align="center">TraceDraw</h1>
 
-No Electron, no webview, no runtime: a single native binary (egui/eframe)
-for Windows, macOS and Linux, a command-line tool for batch conversion,
-and the same editor compiled to WebAssembly for the browser
-(https://igtoth.github.io/tracedraw/).
+<p align="center">
+  <b>Vector illustration, layout and print work in a free, open-source editor written entirely in Rust.</b><br>
+  Curves and nodes, artistic and paragraph text, live effects, every kind of fill, bitmaps and <code>.cdr</code> files,<br>
+  in one native program for Windows, macOS and Linux, and in the browser.
+</p>
 
-Status: **beta**. `docs/features.md` lists every capability with its
-state and is the measure of progress; `docs/blueprint-gaps.md` lists
-what is still open.
+<p align="center">
+  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-b7410e?style=flat-square&logo=rust">
+  <img alt="Windows, macOS, Linux and the browser" src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Web-native-1f6fc5?style=flat-square">
+  <img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-444444?style=flat-square">
+  <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-2f9e6b?style=flat-square">
+  <img alt="12 interface languages" src="https://img.shields.io/badge/interface-12%20languages-7b5cff?style=flat-square">
+</p>
 
-## Highlights
+<p align="center">
+  <a href="https://github.com/igtoth/tracedraw/releases"><b>Download</b></a> &middot;
+  <a href="https://igtoth.github.io/tracedraw/">Open it in the browser</a> &middot;
+  <a href="docs/features.md">Feature status</a> &middot;
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
 
-- **Document model**: multi-page documents, layers and master layers (all,
-  odd, even), guides (horizontal, vertical, angled), rectangles, ellipses
-  (pie, arc), polygons and stars, spirals, graph paper, action lines,
-  common shapes, Bezier curves, artistic and paragraph text, text on a
-  path, tables, groups, clip frame containers, symbols, bitmaps, page
-  backgrounds, metadata.
-- **Fills**: uniform in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ and
-  registration; gradient fills with any number of stops (linear, radial,
-  conical, square); two-colour and bitmap patterns; procedural textures;
-  mesh fills; area fill of enclosed regions.
-- **Outlines**: width or hairline, caps, corners, dash patterns,
-  arrowheads, calligraphic nib, behind-fill, scale-with-object, overprint.
-- **Tools** (62, one icon each): Pick, Freehand Pick, Free Transform, Shape
-  with full node editing (cusp, smooth, symmetrical, add, delete, join,
-  break, extract, close, reduce, align, line and curve conversion, elastic
-  mode), Smooth, Smear, Twirl, Attract, Repel, Smudge, Roughen, Crop,
-  Knife, Segment Delete, Eraser, Zoom, Pan, Freehand, 2-Point Line,
-  Bezier, Pen, B-Spline, Polyline, 3-Point Curve, Shape Recognition,
-  Sketch, Brush Strokes (preset, brush, sprayer, calligraphic,
-  expression), Rectangle and 3-Point Rectangle, Ellipse and 3-Point
-  Ellipse, Polygon, Star, Spiral, Common Shapes, Action Lines, Graph Paper,
-  Text, Table, five dimension tools, three connectors, Drop Shadow,
-  Contour, Blend, Distort, Envelope, Extrude, Block Shadow, Transparency,
-  two eyedroppers, Interactive Fill, Area Fill, Mesh Fill, Outline Pen
-  and Outline Colour.
-- **Text**: rustybuzz shaping from the system's fonts, paragraph layout
-  with wrapping, justification, leading, indents, tabs, columns, bullets,
-  drop caps, hyphenation, tracking, baseline shift, OpenType features,
-  fit to frame, wrap around objects, spell check, find and replace,
-  glyph browser, font manager with missing-font substitution.
-- **Effects and colour**: live effects editable from their panels,
-  eleven lens types, transparency with merge modes, colour styles and
-  harmonies, object styles, palettes and palette manager, proof colours,
-  separations.
-- **Bitmaps**: import of PNG, JPEG, BMP, GIF, TIFF, WebP; convert to
-  bitmap; 98 bitmap effects in fifteen groups, each with its dialog,
-  kept editable in the Properties panel's FX list; colour modes; colour
-  mask; inflate; bitmap tracing (quick, centreline, outline, presets).
-- **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
-  containers, compressed streams, format versions 7 through 21) and writer
-  (version 12 layout), SVG, SVGZ,
-  PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX import,
-  SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF,
-  BMP and TIFF export,
-  print to PDF, print merge from CSV, templates.
-- **Automation**: JavaScript (boa) with an `Application`, `ActiveDocument`,
-  `ActivePage`, `ActiveLayer`, `Shapes`, `Shape`, `Fill`, `Outline` and
-  `Color` object model; macro recording produces scripts. `tracedraw
-  --mcp` serves the same editor to AI agents over the Model Context
-  Protocol (open, edit through scripts, inspect, export, save, undo).
-- **Workspace**: welcome screen, document tabs, context-sensitive property
-  bar, thirty-five panels, context menus, colour palette, rulers, guides,
-  snapping (grid, pixel, baseline, guidelines, objects, page, dynamic),
-  page sorter, full-screen preview, five workspaces, customisable
-  shortcuts, Options dialog, settings persisted per user.
-- **Languages**: English, Chinese (Simplified), Hindi, Spanish, French,
-  Arabic (right-to-left layout), Bengali, Russian, Portuguese (Brazil),
-  Indonesian, German and Japanese, with system fallback fonts for every
-  script.
+<br>
 
-## Screenshots
+<p align="center">
+  <img src="docs/images/tracedraw-hero.jpg" alt="TraceDraw with an illustrated poster of a lake at dusk: the title is selected, the property bar shows its font, size and alignment, and the Objects panel lists the five layers and their named objects" width="100%">
+  <br>
+  <sub>A poster drawn on five layers, its title selected, every object named in the Objects panel.</sub>
+</p>
 
-| | |
-|---|---|
-| ![Welcome screen](docs/screenshots/welcome.png) | ![File menu](docs/screenshots/file-menu.png) |
-| ![Fills](docs/screenshots/fills.png) | ![Clip to Frame](docs/screenshots/clip-frame.png) |
-| ![Shape tools](docs/screenshots/shape-tools.png) | ![Effects menu](docs/screenshots/effects-menu.png) |
-| ![Context menu, Portuguese](docs/screenshots/context-menu-pt-br.png) | ![Chinese interface](docs/screenshots/welcome-zh-cn.png) |
-| ![Document Options](docs/screenshots/document-options.png) | |
+<p align="center">
+  <a href="#features">Features</a> &middot;
+  <a href="#everything-in-the-box">Everything in the box</a> &middot;
+  <a href="#cdr-files-read-and-written-independently">.cdr files</a> &middot;
+  <a href="#made-to-be-automated">Automation</a> &middot;
+  <a href="#under-the-hood">Under the hood</a> &middot;
+  <a href="#get-started">Get started</a> &middot;
+  <a href="#downloads">Downloads</a>
+</p>
 
-Captured with the headless driver in `scripts/visual/`.
+<br>
 
-## Install
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <h3>A full desktop workspace</h3>
+      Menu bar, context-sensitive property bar, toolbox with flyouts, 35 dockable panels, colour palette, rulers, guides and a page navigator, all set out for long working sessions.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Native and light</h3>
+      One program per platform built with egui, a CPU renderer for exact output and no runtime to install. No Electron, no web view; the same code runs in the browser as WebAssembly.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Opens your files</h3>
+      A clean-room <code>.cdr</code> reader for format versions 7 to 21 and a writer, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Ready for scripts and agents</h3>
+      Every change is a command with undo, so the same engine answers the window, the command line, JavaScript and an MCP server.
+    </td>
+  </tr>
+</table>
 
-Installers are built by GitHub Actions on every push to `main` and
-published on the Releases page: the **Nightly build** pre-release always
-holds the installers of the latest commit, and `v*` tags get a versioned
-release:
+<br>
 
-| Platform | File |
-|---|---|
-| Windows | `tracedraw-<version>-windows-x86_64-setup.exe` (Inno Setup) and a portable zip |
-| macOS | `tracedraw-<version>-macos-arm64.dmg`, `-macos-x86_64.dmg` (unsigned: right-click, Open) |
-| Linux | `.deb`, `.AppImage`, tarball |
+## Features
 
-Packaging sources live in `packaging/`. The browser version needs no
-install: https://igtoth.github.io/tracedraw/ (or serve
-`tracedraw-<version>-web.zip` from any web server; see
-`docs/behavior/web.md`).
+Every screenshot is TraceDraw itself, captured headless by
+`scripts/visual/readme_shots.sh` from drawings made from scratch by
+`apps/tracedraw-cli/examples/showcase.rs`.
 
-## Build from source
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-curves.jpg" alt="A leaf drawn with smooth curves; the Shape tool has every node selected, showing the handles, and the property bar shows the node buttons" width="100%">
+      <br>
+      <sub>The Shape tool on a leaf, every node selected with its handles.</sub>
+      <h3>Curves you can shape</h3>
+      Draw with Freehand, Bezier, Pen, B-Spline, Polyline and 3-Point Curve, then work the nodes: cusp, smooth and symmetrical, add, delete, join, break, extract, reduce, align, line to curve and back, and an elastic mode that moves a whole run of nodes.
+      <br><br>
+      Shaping tools (weld, trim, intersect, simplify, front and back minus), Smear, Twirl, Attract, Repel and Roughen, Knife, Eraser, Crop and Segment Delete reshape the rest.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-effects.jpg" alt="A page of six live effects (Blend, Contour, Extrude, Drop Shadow, Envelope and Distort) with the blend selected and the Blend panel open on the right" width="100%">
+      <br>
+      <sub>Six live effects on one page; the blend's steps and accelerations in its panel.</sub>
+      <h3>Effects that stay live</h3>
+      Blend, Contour, Extrude, Drop Shadow, Block Shadow, Envelope, Distort, Perspective, Bevel, Symmetry, eleven Lens types and Transparency with merge modes. Each one is kept with its object and stays editable from its panel or the property bar: change the steps of a contour, send a blend along a path, move an envelope's nodes.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-type.jpg" alt="A page of type at 100 percent: a headline, two columns of justified paragraph text with drop caps and hyphenation, and the Text panel with character and paragraph settings" width="100%">
+      <br>
+      <sub>Two justified columns with drop caps and hyphenation, and the Text panel.</sub>
+      <h3>Type that sets properly</h3>
+      Artistic text for headlines and paragraph text in frames: columns, justification, hyphenation, indents, tabs, bullets, drop caps, leading and tracking, text wrapped round objects, fit to frame and text on a path. Shaping comes from the system's fonts, OpenType features included.
+      <br><br>
+      Spell check, find and replace, a glyph browser and a font manager that substitutes missing fonts keep long documents in order.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-fills.jpg" alt="Eight tiles filled with uniform, linear, radial, conical, square, pattern, texture and mesh fills; the Interactive Fill tool shows the gradient's handles on the linear tile" width="100%">
+      <br>
+      <sub>Eight fill types; the Interactive Fill tool editing a gradient on the object.</sub>
+      <h3>Every kind of fill</h3>
+      Uniform colour in RGB, CMYK, Gray, HSB, HSL, Lab and YIQ; gradient fills with any number of stops (linear, radial, conical, square); two-colour, bitmap and vector patterns; procedural textures; mesh fills; and Area Fill for closed regions. The Interactive Fill and Mesh Fill tools edit them right on the object.
+      <br><br>
+      Outlines take widths, dashes, arrowheads, calligraphic nibs, caps and corners.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-bitmaps.jpg" alt="The poster placed as a bitmap with the Swirl dialog open, showing the bitmap before and after the effect" width="100%">
+      <br>
+      <sub>Effects &rsaquo; Distort &rsaquo; Swirl, previewed before and after.</sub>
+      <h3>Bitmaps, too</h3>
+      Place PNG, JPEG, BMP, GIF, TIFF and WebP images, or turn vectors into a bitmap, then use 98 bitmap effects in fifteen groups, each with its own dialog and a before and after preview. Effects stay in the object's list in the Properties panel, where they can be changed, hidden or removed.
+      <br><br>
+      Colour modes, a colour mask, straighten, crop and resample complete the set.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-trace.jpg" alt="The Trace Bitmap dialog with the Clipart preset: the bitmap before and its traced curves after, with the detail, smoothing and colour settings" width="100%">
+      <br>
+      <sub>Trace Bitmap with the Clipart preset: the bitmap and the curves it becomes.</sub>
+      <h3>From pixels to curves</h3>
+      Trace Bitmap turns images into editable curves: Quick Trace in one click, outline tracing in up to 256 colours with background removal, centreline tracing for drawings, and eight presets from technical illustration to high quality image. The dialog previews the trace before it is made.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-export.jpg" alt="The Export dialog set to PNG at 300 dpi: a preview of the page, a transparent background option, the size in pixels and an estimated file size" width="100%">
+      <br>
+      <sub>Export as PNG with a preview, the size in pixels and an estimated file size.</sub>
+      <h3>Out in any format</h3>
+      SVG, PDF (with PDF/X-1a, X-3 and X-4 and bleed), EPS, AI, DXF, EMF, WMF, HPGL, PSD and HTML, and PNG, JPEG, WebP, GIF, BMP and TIFF at any resolution. The Export dialog previews the result and estimates its size.
+      <br><br>
+      Print goes through a PDF; Print Merge fills a design from a CSV file.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-languages.jpg" alt="The page of type in TraceDraw with the interface in Japanese: menus, property bar, Text panel and status bar" width="100%">
+      <br>
+      <sub>The same page with the interface in Japanese.</sub>
+      <h3>In your language</h3>
+      English, Chinese (Simplified), Hindi, Spanish, French, Arabic with a right-to-left layout, Bengali, Russian, Portuguese (Brazil), Indonesian, German and Japanese, with system fonts found for every script. Options &rsaquo; Global switches the language at once.
+    </td>
+  </tr>
+</table>
+
+<br>
+
+## Everything in the box
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h4>62 tools</h4>
+      Pick &middot; Freehand Pick &middot; Free Transform &middot; Shape &middot; Smooth &middot; Smear &middot; Twirl &middot; Attract &middot; Repel &middot; Smudge &middot; Roughen &middot; Crop &middot; Knife &middot; Segment Delete &middot; Eraser &middot; Zoom &middot; Pan &middot; Freehand &middot; 2-Point Line &middot; Bezier &middot; Pen &middot; B-Spline &middot; Polyline &middot; 3-Point Curve &middot; Shape Recognition &middot; Sketch &middot; Brush Strokes (preset, brush, sprayer, calligraphic, expression) &middot; Rectangle and 3-Point Rectangle &middot; Ellipse and 3-Point Ellipse &middot; Polygon &middot; Star &middot; Spiral &middot; Common Shapes &middot; Action Lines &middot; Graph Paper &middot; Text &middot; Table &middot; five dimension tools &middot; three connectors &middot; Drop Shadow &middot; Contour &middot; Blend &middot; Distort &middot; Envelope &middot; Extrude &middot; Block Shadow &middot; Transparency &middot; two eyedroppers &middot; Interactive Fill &middot; Area Fill &middot; Mesh Fill &middot; Outline Pen &middot; Outline Colour
+    </td>
+    <td width="33%" valign="top">
+      <h4>35 panels</h4>
+      Properties &middot; Objects &middot; Hints &middot; Transformations &middot; Undo &middot; Align and Distribute &middot; Shaping &middot; Step and Repeat &middot; Text &middot; Glyphs &middot; Colour &middot; Colour Styles &middot; Object Styles &middot; Find and Replace &middot; Scripts &middot; Palettes &middot; Lens &middot; Blend &middot; Contour &middot; Envelope &middot; Extrude &middot; Bevel &middot; Brush Strokes &middot; Bitmap Mask &middot; Object Data &middot; Links &middot; Symbols &middot; Pages &middot; Guidelines &middot; Fonts &middot; Corners &middot; Join Curves &middot; Coordinates &middot; Vector Mosaic &middot; Picture Mosaic
+    </td>
+    <td width="33%" valign="top">
+      <h4>Documents and pages</h4>
+      Multi-page documents with a page sorter, layers and master layers (all, odd or even pages), guides at any angle, grids, snapping to objects, page, grid, baseline, guidelines and pixels, dynamic guides, page backgrounds, bleed, tables, symbols, clip frames and metadata. Several drawings open in tabs; auto-backup keeps unsaved work.
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <h4>Colour</h4>
+      Colour models from RGB and CMYK to Lab, registration colour, colour styles and harmonies, palettes and a palette manager, a document palette, ICC colour management with rendering intents, proof colours, overprint simulation and separations.
+    </td>
+    <td width="33%" valign="top">
+      <h4>Formats</h4>
+      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 7 to 21), SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
+      <br><br>
+      Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code>, SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
+    </td>
+    <td width="33%" valign="top">
+      <h4>The everyday essentials</h4>
+      Undo and redo with a history panel &middot; duplicate, clone and step and repeat &middot; align, distribute and order &middot; object and colour styles &middot; find and replace &middot; customisable shortcuts and workspaces &middot; an interface size setting &middot; Options with every preference &middot; a splash screen and a welcome screen with recent drawings and templates.
+    </td>
+  </tr>
+</table>
+
+<br>
+
+## .cdr files, read and written independently
+
+TraceDraw's `.cdr` support lives in its own crate (`crates/cdr`), written
+from public format notes and from files we own, never from decompiled
+programs or other implementations. `CLEANROOM.md` records where each piece
+of format knowledge comes from and when; `docs/cdr-format.md` records what
+is confirmed and what is still assumed.
+
+- **Containers of every generation:** RIFF files with compressed chunk
+  streams (versions 7 to 13), ZIP packages (14 and 15) and the split
+  streams of 16 and later.
+- **What comes across:** pages, layers, master layers, rectangles,
+  ellipses, polygons and stars, curves, artistic and paragraph text,
+  groups, bitmaps, uniform and gradient fills, outlines and more; what
+  the reader cannot map yet is counted and reported, never silently
+  dropped.
+- **Writing back:** drawings save as `.cdr` (a version 12 layout) as well as
+  in TraceDraw's own JSON format.
+- **Never crashes on a file:** `tracedraw-cli stress` runs mutation tests
+  against the reader, and opening any file always yields a document.
+
+## Made to be automated
+
+Every menu item, tool and panel builds a command for one engine, with undo
+and redo. The window, the command line, the JavaScript object model and the
+MCP server all go through it, so anything a click can do, a script can do.
 
 ```sh
-cargo run --release -p tracedraw                 # empty A4 document
-cargo run --release -p tracedraw -- file.cdr     # open a file
-cargo run --release -p tracedraw-cli -- convert in.cdr out.pdf
-cargo test --workspace
+# Convert between any format TraceDraw opens and any it writes
+tracedraw-cli convert poster.cdr poster.pdf
+TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
+
+# Look inside a .cdr: the chunk tree, and what the reader made of it
+tracedraw-cli inspect drawing.cdr
+tracedraw-cli info drawing.cdr
+
+# Serve the editor to an AI agent over the Model Context Protocol
+tracedraw --mcp
 ```
 
-Rust 1.80 or newer. On Linux the app needs X11 or Wayland, libxkbcommon
-and Mesa.
+The Scripts panel runs JavaScript against an object model of documents,
+pages, layers and shapes, and records macros as scripts:
 
-## Architecture
-
-```text
-crates/core       document model, commands, undo engine, geometry (kurbo),
-                  node editing, shaping, effects, styles, colour   (no UI deps)
-crates/cdr        .cdr reader: container, RIFF walker, object parser
-crates/text       font discovery (fontdb), shaping (rustybuzz), outlines
-crates/render     CPU rasteriser (tiny-skia): fills, outlines, effects
-crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT and text
-                  imports, SVG, PDF, EPS, DXF, EMF, WMF, PLT, PSD and HTML writers
-apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
-apps/tracedraw-cli  inspect, info, convert, icc, stress
-docs/             architecture, decisions, behaviour notes, format notes,
-                  feature status, acceptance criteria, roadmap
+```js
+// A fan of twelve rounded bars, each a little more orange.
+for (let i = 0; i < 12; i++) {
+  const bar = ActiveLayer.CreateRectangle(80, 120, 60, 12, 3);
+  bar.Fill.ApplyUniformFill(Color.RGB(255, 60 + i * 15, 60));
+  bar.Rotate(i * 15);
+}
 ```
 
-Every user-visible change is a `Command` applied through the engine, which
-is what gives undo/redo, the CLI and automation the same code path. See
-`docs/architecture.md` for the full picture and `docs/decisions.md` for
-the choices behind it.
+See [`docs/behavior/mcp.md`](docs/behavior/mcp.md) for the MCP tools.
+
+## Under the hood
+
+- **Engine first:** a plain-data document model and a command engine in
+  `crates/core`, with no interface code; the egui desktop app is a thin
+  shell over it. The layering between crates is checked in review.
+- **One renderer:** a CPU rasteriser on tiny-skia draws the canvas, the
+  exports and the previews, so what is on screen is what comes out.
+- **Real text:** fonts from the system through fontdb, shaping with
+  rustybuzz, a paragraph engine of its own.
+- **Runs in the browser:** the whole editor compiles to WebAssembly.
+- **Clean-room:** format support from public notes and owned files only;
+  no proprietary code or assets.
+- **Tested:** more than 500 tests, including format round trips,
+  malformed-input tests, effect geometry and interface drawing, plus
+  headless visual checks that drive the real app.
+
+## Get started
+
+```sh
+git clone https://github.com/igtoth/tracedraw
+cd tracedraw
+cargo run --release -p tracedraw                  # the editor
+cargo run --release -p tracedraw -- drawing.cdr   # open a file
+cargo test --workspace                            # the test suite
+```
+
+A recent stable Rust (CI builds with 1.97). On Linux the editor needs X11
+or Wayland, libxkbcommon and Mesa.
+
+New contributors and AI agents: start with [`AGENTS.md`](AGENTS.md), then
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and the pages in [`docs/`](docs/).
+
+> [!IMPORTANT]
+> **Status: beta.** Most of what a vector editor is expected to do is in
+> place and covered by tests, but TraceDraw is young: expect rough edges,
+> some formats and effects that are close in look rather than identical,
+> and gaps listed in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md).
+> [`docs/features.md`](docs/features.md) is the honest, row-by-row picture.
+> Issues with a sample file and a screenshot are the most helpful.
+
+## Downloads
+
+Every push to `main` builds installers with GitHub Actions and publishes
+them as the **Nightly build** pre-release; `v*` tags get a versioned
+release. `<version>` in the file names is the version number.
+
+| Platform | Files |
+|---|---|
+| Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` |
+| macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
+| Linux (x86_64) | `.deb`, `tracedraw-<version>-linux-x86_64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` |
+| Web | `tracedraw-<version>-web.zip` for any static server, or [the hosted version](https://igtoth.github.io/tracedraw/) |
+
+Each download includes `tracedraw-cli` next to the editor. Packaging sources
+are in [`packaging/`](packaging/); the browser build is described in
+[`docs/behavior/web.md`](docs/behavior/web.md).
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| `docs/architecture.md` | crates, data flow, units, rendering, text |
-| `docs/decisions.md` | stack, rendering, text, PDF, colour, licensing |
-| `docs/features.md` | every capability and its status |
-| `docs/behavior/` | exact behaviour, defaults and formulas per tool; `web.md` for the browser version |
-| `docs/acceptance.md` | measurable acceptance criteria and performance targets |
-| `docs/i18n.md` | user interface languages |
-| `docs/blueprint-gaps.md` | what is still open |
-| `docs/cdr-format.md` | what the `.cdr` reader assumes and what is confirmed |
-| `docs/roadmap.md` | milestones |
-| `AGENTS.md` | rules for contributors and AI agents |
-| `CONTRIBUTING.md` | how to contribute: clean contributions and sign-off |
-| `CLEANROOM.md` | where the knowledge of every file format comes from |
-| `ATTRIBUTION.md` | bundled third-party assets and their licenses |
+| [`docs/features.md`](docs/features.md) | every capability and its status |
+| [`docs/behavior/`](docs/behavior/) | defaults, shortcuts and formulas, tool by tool |
+| [`docs/architecture.md`](docs/architecture.md) | crates, data flow, units, rendering, text |
+| [`docs/decisions.md`](docs/decisions.md) | the choices behind the stack |
+| [`docs/acceptance.md`](docs/acceptance.md) | measurable acceptance criteria |
+| [`docs/cdr-format.md`](docs/cdr-format.md) | what the `.cdr` reader assumes and what is confirmed |
+| [`docs/i18n.md`](docs/i18n.md) | interface languages |
+| [`docs/roadmap.md`](docs/roadmap.md) | milestones |
+| [`CLEANROOM.md`](CLEANROOM.md) | where the knowledge of every file format comes from |
+| [`ATTRIBUTION.md`](ATTRIBUTION.md) | bundled assets and their licenses |
 
-## Shortcuts
+---
 
-| Action | Keys |
-|---|---|
-| Pick / Shape / Zoom / Pan | Space, F10, Z, H |
-| Freehand / Bezier / Rectangle / Ellipse / Polygon / Text | F5, B, F6, F7, Y, F8 |
-| Interactive Fill / Eyedropper | G, flyout |
-| Zoom to page / fit / selected | Shift+F4 / F4 / Shift+F2 |
-| Undo / Redo | Ctrl+Z / Ctrl+Shift+Z |
-| Group / Ungroup / Convert to curves | Ctrl+G / Ctrl+U / Ctrl+Q |
-| Combine / Break apart | Ctrl+L / Ctrl+K |
-| Cut / Copy / Paste / Duplicate | Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+D |
-| Order: front / back / forward / back one | Shift+Home / Shift+End / Ctrl+PgUp / Ctrl+PgDn |
-| Align left/right/top/bottom/centre | L, R, T, B, E, C, P with a selection |
-| Nudge | Arrows (Shift = 10x) |
-| Open / Save / Import / Export | Ctrl+O / Ctrl+S / Ctrl+I / Ctrl+E |
-| Options | Ctrl+J |
+## License and credits
 
-## Credits
+TraceDraw is dual-licensed under [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at your option.
+Copyright &copy; 2026 Ighor Toth and the TraceDraw contributors.
 
-TraceDraw is written by Ighor Toth with Claude Code, Anthropic's AI
-coding assistant, as co-author: every commit that Claude Code helped
-write names it in a `Co-Authored-By` line, and the About box says so
-too.
+Written by Ighor Toth with Claude Code, Anthropic's AI coding assistant,
+as co-author: commits it helped write carry a `Co-Authored-By` line, and
+the About box says so too.
 
-## Notices
+Bundled fonts, icons and other assets keep their own open licenses; each
+is listed with its author, source and license in
+[ATTRIBUTION.md](ATTRIBUTION.md). Every drawing in the screenshots was made
+for TraceDraw.
 
-TraceDraw is an independent open-source project. It is not affiliated
-with, sponsored by or endorsed by any other software vendor. Trademarks
-and product names belong to their owners; file format names such as
-`.cdr`, `.ai`, `.psd` or `.pdf` are used only to describe the files
-TraceDraw can read and write.
-
-The file format support is a clean-room implementation: it was written
-from public format notes and from inspecting files, never from
-decompiled programs or code of other implementations. `CLEANROOM.md`
-records where each piece of format knowledge comes from. The bundled
-assets are original or openly licensed and listed in `ATTRIBUTION.md`.
-Licensed colour libraries and third-party content libraries are
-deliberately not included; see `docs/decisions.md`.
-
-The software is provided "as is", without warranty of any kind, as the
-licenses below state.
-
-## License
-
-MIT or Apache-2.0, at your option.
+<sub>TraceDraw is an independent open-source project, not affiliated with,
+sponsored by or endorsed by any other software vendor. Trademarks and
+product names belong to their owners; file format names such as
+<code>.cdr</code>, <code>.ai</code>, <code>.psd</code> and <code>.pdf</code>
+are used only to describe the files TraceDraw reads and writes. The
+software is provided "as is", without warranty of any kind, as the
+licenses state.</sub>
