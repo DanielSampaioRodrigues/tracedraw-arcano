@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 168, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 169, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -219,6 +219,7 @@ Counts: works 168, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Shortcuts of your own for every menu command (Options > Customization > Commands: search, press the keys, conflicts named, shown in the menus) | works (see `behavior/shortcuts.md`) |
 | Workspace export and import (`.tdws`: shortcuts, bars and toolbox, palette options, appearance; part by part) and the bars shown kept across restarts | works (see `behavior/workspaces.md`) |
 | Reset all settings: Options > Global, F8 while starting, `--reset-settings` (see `behavior/about-and-startup.md`) | works |
+| Shelf: objects kept for any drawing and after restarts (Add Selection, Add to Shelf on the object menu), placed by double click or by dragging onto the page, renamed, reordered and removed; symbols become objects, linked styles go along (see `behavior/shelf.md`) | works |
 | Time Tracker: tasks per drawing saved in `.tdraw` files, a clock that stops after a set time without input, toolbar with the active task, its time and the total, dialog to add, rename, delete and edit tasks (time, start, finish), CSV and text export | works (see `behavior/time-tracker.md`) |
 
 ## 12. Print and prepress
@@ -237,7 +238,7 @@ Counts: works 168, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 |---|---|
 | Menu bar, standard toolbar (icons, Open/Undo/Redo lists, zoom box, view toggles, Snap Off, Snap To, Launch), property bar (stacked fields, page bar, object bar with object origin, shape parts, outline part, zoom bar), toolbox with flyouts, rulers, document tabs, bottom palette, panel tab strip, navigator, status bar | works |
 | Icons | painted vector icons, one per tool, close in style; not pixel-identical |
-| Panels (35): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic | works |
+| Panels (36): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic, Shelf | works |
 | Welcome Screen with tabs | works |
 | About box with the banner, icon, facts (author, license, source code, co-author) and copyright; opens from the Welcome Screen too (see `behavior/about-and-startup.md`) | works |
 | Splash screen while starting (artwork, status, progress), then the main window maximized or at its kept size; can be turned off (see `behavior/about-and-startup.md`) | works |

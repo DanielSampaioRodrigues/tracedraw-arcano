@@ -157,9 +157,6 @@ pub struct Settings {
     /// imports.
     #[serde(default)]
     pub workspace_parts: crate::workspace_file::WorkspaceParts,
-    /// The browser version told this browser it is a demo.
-    #[serde(default)]
-    pub web_demo_seen: bool,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -609,7 +606,6 @@ impl Default for Settings {
             defaults: crate::defaults::DefaultsPrefs::default(),
             shown_bars: None,
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
-            web_demo_seen: false,
         }
     }
 }

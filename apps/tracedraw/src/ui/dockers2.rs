@@ -58,6 +58,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Coordinates => crate::ui::coords_docker::coordinates(app, ui),
         DockerTab::VectorMosaic => crate::ui::vector_mosaic_docker::vector_mosaic(app, ui),
         DockerTab::PictureMosaic => crate::ui::picture_mosaic_docker::picture_mosaic(app, ui),
+        DockerTab::Shelf => crate::ui::shelf_docker::shelf(app, ui),
         _ => {}
     }
 }

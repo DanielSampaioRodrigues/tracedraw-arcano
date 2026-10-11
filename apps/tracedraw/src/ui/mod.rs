@@ -34,6 +34,7 @@ pub mod preview;
 pub mod propbar;
 pub mod publish_pdf;
 pub mod rulers;
+pub mod shelf_docker;
 pub mod status;
 pub mod straighten_dialog;
 pub mod tabs;

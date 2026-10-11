@@ -791,6 +791,8 @@ pub struct App {
     /// Thumbnails of recent drawings loaded for the Welcome Screen (none
     /// when a drawing has no thumbnail).
     pub recent_thumbs: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
+    /// The Shelf docker's items, kept across drawings and sessions.
+    pub shelf: crate::shelf::Shelf,
     pub shaping_keep_source: bool,
     pub shaping_keep_target: bool,
     pub color_model: usize,
@@ -962,10 +964,11 @@ pub enum DockerTab {
     Coordinates,
     VectorMosaic,
     PictureMosaic,
+    Shelf,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 35] = [
+    pub const ALL: [DockerTab; 36] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1001,6 +1004,7 @@ impl DockerTab {
         DockerTab::Coordinates,
         DockerTab::VectorMosaic,
         DockerTab::PictureMosaic,
+        DockerTab::Shelf,
     ];
 
     /// i18n key of the docker's title.
@@ -1041,6 +1045,7 @@ impl DockerTab {
             DockerTab::Coordinates => "docker.coordinates",
             DockerTab::VectorMosaic => "docker.vector_mosaic",
             DockerTab::PictureMosaic => "docker.picture_mosaic",
+            DockerTab::Shelf => "docker.shelf",
         }
     }
 
@@ -1270,6 +1275,7 @@ impl App {
             pending_command: None,
             last_auto_backup: None,
             recent_thumbs: Default::default(),
+            shelf: Default::default(),
             page_size_all: true,
             object_origin: (1, 1),
             scale_locked: false,
@@ -1397,15 +1403,10 @@ impl App {
         app
     }
 
-    /// The first time a browser opens the browser version: a message with
-    /// what the demo leaves out and an OK button (then remembered in the
-    /// browser's storage with the other preferences).
+    /// Each time the browser version opens: a message with what the demo
+    /// leaves out, the link to the desktop app and an OK button (the
+    /// loading page says no more than that TraceDraw is loading).
     pub fn show_web_demo_notice(&mut self) {
-        if self.settings.web_demo_seen {
-            return;
-        }
-        self.settings.web_demo_seen = true;
-        self.settings.save();
         self.dialog = crate::ui::dialogs::Dialog::WebDemo;
     }
 
@@ -3969,14 +3970,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_browser_demo_message_shows_once() {
+    fn the_browser_demo_message_shows_at_every_visit() {
         let mut app = App::headless();
-        app.settings.web_demo_seen = false;
         app.show_web_demo_notice();
         assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::WebDemo));
+        // OK closes it; the next visit (a new App) shows it again.
         app.dialog = crate::ui::dialogs::Dialog::None;
-        app.show_web_demo_notice();
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+        let mut next = App::headless();
+        next.show_web_demo_notice();
+        assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::WebDemo));
     }
 
     #[test]

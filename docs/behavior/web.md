@@ -28,11 +28,12 @@ browsers refuse to load modules from `file://`).
 The browser version is for trying TraceDraw without installing it, and
 tells the visitor what that means and where the desktop app is:
 
-- The first time a browser opens it, a message says it is a demo, with
-  an OK button (remembered in the browser's storage).
-- The loading page says it is the browser demo, slower on heavy work and
-  limited to the fonts that come with it, with a link to the desktop
-  downloads (`https://github.com/igtoth/tracedraw/releases/latest`).
+- The loading page only says "Loading TraceDraw...". Each time the page
+  opens, once TraceDraw is up, a message says it is a demo, slower on
+  heavy work and limited to the fonts that come with it, with an OK
+  button. The desktop downloads
+  (`https://github.com/igtoth/tracedraw/releases/latest`) are linked
+  from the Welcome Screen and the menu bar.
 - The Welcome Screen's Get Started page shows the same in place of the
   recent documents (a browser keeps none), with a "Download the desktop
   app" button.

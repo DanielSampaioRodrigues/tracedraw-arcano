@@ -4,6 +4,15 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- Interface size 100 % now draws menus, bars and text as large as other
+  programs at 100 % (a quarter smaller than in 0.3.0 on a monitor the
+  system scales by 125 %); drawings keep their real size at zoom 100 %.
+- Shelf panel: keep objects for any drawing and after restarts, place
+  them by double click or by dragging onto the page (Window > Dockers >
+  Shelf, or Add to Shelf on the object menu).
+
 ## 0.3.0 (2026-10-11)
 
 The first release meant for everyone to try. It is an alpha: real
