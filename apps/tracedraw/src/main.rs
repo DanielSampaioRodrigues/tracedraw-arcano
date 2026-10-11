@@ -35,6 +35,7 @@ mod fx;
 mod grammar;
 mod guides;
 mod i18n;
+mod imposition;
 mod interaction;
 mod interaction2;
 mod kind_nodes;

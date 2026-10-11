@@ -289,58 +289,23 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     if !st.all_pages {
         doc.pages.retain(|p| p.id == app.page);
     }
-    let bleed = if st.bleed {
-        doc.metadata.bleed.max(0.0)
-    } else {
-        0.0
-    };
-    let marks = st.crop_marks || st.registration_marks;
-    let margin = if marks { 8.0 } else { 0.0 } + bleed;
-    // Scale and place every page's content into a (possibly larger) sheet.
+    let options = print_layout(app, st, &doc);
+    let mut doc = crate::imposition::impose(&doc, &options);
     for page in doc.pages.iter_mut() {
-        let scale = if st.fit_to_page {
-            1.0
-        } else {
-            st.scale / 100.0
-        };
-        let base = page.size;
-        let sheet = Size::new(
-            base.width * scale + 2.0 * margin,
-            base.height * scale + 2.0 * margin,
-        );
-        let mut t = Affine::translate((margin, margin)) * Affine::scale(scale);
-        if st.mirror {
-            t = Affine::translate((sheet.width, 0.0))
-                * Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
-                * t;
-        }
+        let w = page.size.width;
         for layer in page.layers.iter_mut() {
             for s in layer.shapes.iter_mut() {
-                s.transform = t * s.transform;
+                // Emulsion down: the whole sheet, marks too, mirrored.
+                if st.mirror {
+                    s.transform = Affine::translate((w, 0.0))
+                        * Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+                        * s.transform;
+                }
                 if st.invert {
                     invert_colors(s);
                 }
             }
         }
-        if marks {
-            let id = tracedraw_core::ShapeId(0);
-            let mut marks_shape = tracedraw_core::Shape::new(
-                id,
-                ShapeKind::Path {
-                    path: crop_marks(sheet, margin, bleed, st.registration_marks),
-                    closed: false,
-                },
-            );
-            marks_shape.fill = tracedraw_core::Fill::None;
-            marks_shape.stroke = Some(tracedraw_core::Stroke::new(
-                tracedraw_core::Color::Registration,
-                0.1,
-            ));
-            if let Some(l) = page.layers.last_mut() {
-                l.shapes.push(marks_shape);
-            }
-        }
-        page.size = sheet;
     }
     let pdf = if st.separations {
         separations_pdf(&doc)
@@ -366,62 +331,86 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     ))
 }
 
-fn invert_colors(s: &mut tracedraw_core::Shape) {
-    use tracedraw_core::{Color, Fill};
-    let inv = |c: Color| {
-        let [r, g, b] = c.to_rgb8();
-        Color::rgb8(255 - r, 255 - g, 255 - b)
+/// The print layout for the Print dialog's settings: the imposition, the
+/// sheet, the bleed and the marks.
+pub fn print_layout(app: &App, st: &PrintState, doc: &Document) -> crate::imposition::Options {
+    let bleed = if st.bleed {
+        doc.metadata.bleed.max(0.0)
+    } else {
+        0.0
     };
-    if let Fill::Solid(c) = s.fill {
-        s.fill = Fill::Solid(inv(c));
-    }
-    if let Some(st) = &mut s.stroke {
-        st.color = inv(st.color);
-    }
-    if let ShapeKind::Group { children } = &mut s.kind {
-        for c in children {
-            invert_colors(c);
-        }
+    let tz = crate::time_tracker::local_zone();
+    crate::imposition::Options {
+        layout: st.layout(),
+        sheet: st.sheet_size(),
+        gutter: st.gutter.max(0.0),
+        bleed,
+        scale: if st.fit_to_page {
+            1.0
+        } else {
+            st.scale / 100.0
+        },
+        marks: crate::imposition::Marks {
+            crop: st.crop_marks,
+            registration: st.registration_marks,
+            color_bars: st.color_bars,
+            densitometer: st.densitometer,
+            page_info: st.page_info,
+        },
+        title: app.document_name(),
+        when: crate::time_tracker::date_time(crate::time_tracker::unix_now(), &tz),
     }
 }
 
-fn crop_marks(sheet: Size, margin: f64, bleed: f64, registration: bool) -> tracedraw_core::BezPath {
-    let mut p = tracedraw_core::BezPath::new();
-    let len = 5.0;
-    let gap = bleed + 1.0;
-    let (x0, y0, x1, y1) = (margin, margin, sheet.width - margin, sheet.height - margin);
-    for (x, y, dx, dy) in [
-        (x0, y0, -1.0, -1.0),
-        (x1, y0, 1.0, -1.0),
-        (x1, y1, 1.0, 1.0),
-        (x0, y1, -1.0, 1.0),
-    ] {
-        p.move_to((x + dx * gap, y));
-        p.line_to((x + dx * (gap + len), y));
-        p.move_to((x, y + dy * gap));
-        p.line_to((x, y + dy * (gap + len)));
-    }
-    if registration {
-        let r = 2.0;
-        for (cx, cy) in [
-            (sheet.width / 2.0, margin / 2.0),
-            (sheet.width / 2.0, sheet.height - margin / 2.0),
-            (margin / 2.0, sheet.height / 2.0),
-            (sheet.width - margin / 2.0, sheet.height / 2.0),
-        ] {
-            p.extend(tracedraw_core::geometry::ellipse_path(Rect::new(
-                cx - r,
-                cy - r,
-                cx + r,
-                cy + r,
-            )));
-            p.move_to((cx - r * 1.5, cy));
-            p.line_to((cx + r * 1.5, cy));
-            p.move_to((cx, cy - r * 1.5));
-            p.line_to((cx, cy + r * 1.5));
+/// Map every colour of `s` and what it holds through `f`: fills of every
+/// kind, outlines, character fills, groups and clip frames.
+pub fn map_colors(
+    s: &mut tracedraw_core::Shape,
+    f: &dyn Fn(tracedraw_core::Color) -> tracedraw_core::Color,
+) {
+    fn fill(
+        x: &mut tracedraw_core::Fill,
+        f: &dyn Fn(tracedraw_core::Color) -> tracedraw_core::Color,
+    ) {
+        use tracedraw_core::{Fill, Pattern};
+        match x {
+            Fill::Solid(c) => *c = f(*c),
+            Fill::Fountain(g) => g.stops.iter_mut().for_each(|s| s.color = f(s.color)),
+            Fill::Mesh(m) => m.nodes.iter_mut().for_each(|n| n.color = f(n.color)),
+            Fill::Pattern(Pattern::TwoColor { front, back, .. }) => {
+                *front = f(*front);
+                *back = f(*back);
+            }
+            _ => {}
         }
     }
-    p
+    fill(&mut s.fill, f);
+    if let Some(st) = &mut s.stroke {
+        st.color = f(st.color);
+    }
+    match &mut s.kind {
+        ShapeKind::Group { children } => children.iter_mut().for_each(|c| map_colors(c, f)),
+        ShapeKind::ClipFrame { frame, contents } => {
+            map_colors(frame, f);
+            contents.iter_mut().for_each(|c| map_colors(c, f));
+        }
+        ShapeKind::Text { spans, .. } => {
+            for sp in spans.iter_mut() {
+                if let Some(x) = &mut sp.fill {
+                    fill(x, f);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn invert_colors(s: &mut tracedraw_core::Shape) {
+    use tracedraw_core::Color;
+    map_colors(s, &|c: Color| {
+        let [r, g, b] = c.to_rgb8();
+        Color::rgb8(255 - r, 255 - g, 255 - b)
+    });
 }
 
 /// Colour separations: one grayscale page per ink (C, M, Y, K) per page,
@@ -443,24 +432,27 @@ fn separations_pdf(doc: &Document) -> Vec<u8> {
             let mut ids = sep.ids().clone();
             p.id = ids.page();
             sep.set_ids(ids);
+            let coverage = move |c: Color| -> Color {
+                // Registration prints on every plate.
+                if matches!(c, Color::Registration) {
+                    return Color::Gray { v: 0.0 };
+                }
+                let v = match c.convert_to("CMYK") {
+                    Color::Cmyk { c, m, y, k } => [c, m, y, k][ink],
+                    _ => 0.0,
+                };
+                Color::Gray { v: 1.0 - v }
+            };
             for layer in p.layers.iter_mut() {
                 for s in layer.shapes.iter_mut() {
-                    let coverage = |c: Color| -> Color {
-                        let cm = c.convert_to("CMYK");
-                        let v = match cm {
-                            Color::Cmyk { c, m, y, k } => [c, m, y, k][ink],
-                            _ => 0.0,
-                        };
-                        Color::Gray { v: 1.0 - v }
-                    };
-                    if let Some(c) = s.fill.preview_color() {
-                        if !matches!(s.fill, Fill::None) {
-                            s.fill = Fill::Solid(coverage(c));
+                    // Fills the separations cannot split show as their
+                    // average colour.
+                    if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
+                        if let Some(c) = s.fill.preview_color() {
+                            s.fill = Fill::Solid(c);
                         }
                     }
-                    if let Some(st) = &mut s.stroke {
-                        st.color = coverage(st.color);
-                    }
+                    map_colors(s, &coverage);
                 }
             }
             sep.pages.push(p);
@@ -930,6 +922,103 @@ mod tests {
         };
         assert!(estimated_size(&app, &svg, &pm).is_some());
         assert!(keeps_alpha("png") && !keeps_alpha("jpg"));
+    }
+
+    #[test]
+    fn colours_are_mapped_inside_groups_frames_and_text() {
+        use tracedraw_core::{document::TextSpan, Color, Fill, Rect, Shape, ShapeId};
+        let red = Color::Rgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+        };
+        let mut inner = Shape::new(
+            ShapeId(2),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        inner.fill = Fill::Solid(red);
+        let mut span = TextSpan::new("a", "Inter", 10.0);
+        span.fill = Some(Fill::Solid(red));
+        let text = Shape::new(
+            ShapeId(3),
+            ShapeKind::Text {
+                spans: vec![span],
+                origin: tracedraw_core::Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        let group = Shape::new(
+            ShapeId(4),
+            ShapeKind::Group {
+                children: vec![inner, text],
+            },
+        );
+        let frame = Shape::new(
+            ShapeId(5),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 2.0, 2.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let mut clip = Shape::new(
+            ShapeId(1),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![group],
+            },
+        );
+        let green = Color::Gray { v: 0.5 };
+        map_colors(&mut clip, &|_| green);
+        let ShapeKind::ClipFrame { contents, frame } = &clip.kind else {
+            panic!("clip frame");
+        };
+        assert_eq!(frame.stroke.as_ref().map(|s| s.color), Some(green));
+        let ShapeKind::Group { children } = &contents[0].kind else {
+            panic!("group");
+        };
+        assert_eq!(children[0].fill, Fill::Solid(green));
+        let ShapeKind::Text { spans, .. } = &children[1].kind else {
+            panic!("text");
+        };
+        assert_eq!(spans[0].fill, Some(Fill::Solid(green)));
+    }
+
+    #[test]
+    fn the_print_dialog_settings_make_the_layout() {
+        let mut app = App::headless();
+        let mut st = PrintState {
+            layout_kind: 3,
+            cols: 4,
+            rows: 0,
+            sheet: 2,
+            landscape: true,
+            crop_marks: true,
+            ..Default::default()
+        };
+        let o = print_layout(&app, &st, app.doc());
+        assert_eq!(
+            o.layout,
+            crate::imposition::Layout::Repeat { cols: 4, rows: 1 }
+        );
+        assert_eq!(o.sheet, Some(Size::new(297.0, 210.0)));
+        assert!(o.marks.crop && !o.marks.registration);
+        // Bleed only when asked for, from the document.
+        let mut meta = app.doc().metadata.clone();
+        meta.bleed = 3.0;
+        app.run(tracedraw_core::Command::SetMetadata { metadata: meta });
+        assert_eq!(print_layout(&app, &st, app.doc()).bleed, 0.0);
+        st.bleed = true;
+        assert_eq!(print_layout(&app, &st, app.doc()).bleed, 3.0);
+        st.sheet = 0;
+        assert_eq!(print_layout(&app, &st, app.doc()).sheet, None);
     }
 
     #[test]

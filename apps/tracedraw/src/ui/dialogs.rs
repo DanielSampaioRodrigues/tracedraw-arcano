@@ -99,8 +99,106 @@ pub struct PrintState {
     pub bleed: bool,
     pub mirror: bool,
     pub invert: bool,
+    pub color_bars: bool,
+    pub densitometer: bool,
+    pub page_info: bool,
+    /// Layout: 0 as in the document, 1 n-up, 2 booklet, 3 step and repeat.
+    pub layout_kind: usize,
+    pub cols: u32,
+    pub rows: u32,
+    /// The sheet: an index into [`SHEETS`] (0 fits the sheet to the pages).
+    pub sheet: usize,
+    pub landscape: bool,
+    /// Space between pages on the sheet, mm.
+    pub gutter: f64,
     /// What the preflight found when the dialog opened.
     pub preflight: Option<Vec<crate::preflight::Issue>>,
+}
+
+/// The sheets the Print dialog offers: fitted to the pages, then paper
+/// sizes (portrait, mm).
+pub const SHEETS: [(&str, Option<Size>); 9] = [
+    ("print.sheet_fit", None),
+    (
+        "A5",
+        Some(Size {
+            width: 148.0,
+            height: 210.0,
+        }),
+    ),
+    (
+        "A4",
+        Some(Size {
+            width: 210.0,
+            height: 297.0,
+        }),
+    ),
+    (
+        "A3",
+        Some(Size {
+            width: 297.0,
+            height: 420.0,
+        }),
+    ),
+    (
+        "SRA3",
+        Some(Size {
+            width: 320.0,
+            height: 450.0,
+        }),
+    ),
+    (
+        "A2",
+        Some(Size {
+            width: 420.0,
+            height: 594.0,
+        }),
+    ),
+    (
+        "Letter",
+        Some(Size {
+            width: 215.9,
+            height: 279.4,
+        }),
+    ),
+    (
+        "Legal",
+        Some(Size {
+            width: 215.9,
+            height: 355.6,
+        }),
+    ),
+    (
+        "Tabloid",
+        Some(Size {
+            width: 279.4,
+            height: 431.8,
+        }),
+    ),
+];
+
+impl PrintState {
+    /// The imposition chosen.
+    pub fn layout(&self) -> crate::imposition::Layout {
+        use crate::imposition::Layout;
+        let (cols, rows) = (self.cols.clamp(1, 20), self.rows.clamp(1, 20));
+        match self.layout_kind {
+            1 => Layout::NUp { cols, rows },
+            2 => Layout::Booklet,
+            3 => Layout::Repeat { cols, rows },
+            _ => Layout::AsIs,
+        }
+    }
+
+    /// The sheet size, turned for landscape; `None` fits it to the pages.
+    pub fn sheet_size(&self) -> Option<Size> {
+        let s = SHEETS.get(self.sheet).and_then(|(_, s)| *s)?;
+        Some(if self.landscape {
+            Size::new(s.height, s.width)
+        } else {
+            s
+        })
+    }
 }
 
 impl Default for PrintState {
@@ -116,6 +214,15 @@ impl Default for PrintState {
             bleed: false,
             mirror: false,
             invert: false,
+            color_bars: false,
+            densitometer: false,
+            page_info: false,
+            layout_kind: 0,
+            cols: 2,
+            rows: 2,
+            sheet: 0,
+            landscape: false,
+            gutter: 5.0,
             preflight: None,
         }
     }
@@ -1963,32 +2070,180 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
     });
 }
 
+/// Print > Layout: the imposition, the sheet and the gap between pages,
+/// with a sketch of the first sheet.
+fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
+    ui.strong(tr("print.layout"));
+    ui.vertical(|ui| {
+        ui.vertical(|ui| {
+            egui::Grid::new("print_layout")
+                .num_columns(2)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label(tr("print.imposition"));
+                    let kinds = [
+                        "print.layout_as_is",
+                        "print.layout_n_up",
+                        "print.layout_booklet",
+                        "print.layout_repeat",
+                    ];
+                    egui::ComboBox::from_id_salt("print_layout_kind")
+                        .selected_text(tr(kinds[st.layout_kind.min(3)]))
+                        .width(170.0)
+                        .show_ui(ui, |ui| {
+                            for (i, k) in kinds.iter().enumerate() {
+                                ui.selectable_value(&mut st.layout_kind, i, tr(k));
+                            }
+                        });
+                    ui.end_row();
+                    if matches!(st.layout_kind, 1 | 3) {
+                        ui.label(tr("print.grid"));
+                        ui.horizontal(|ui| {
+                            ui.add(egui::DragValue::new(&mut st.cols).range(1..=20));
+                            ui.label("x");
+                            ui.add(egui::DragValue::new(&mut st.rows).range(1..=20));
+                        });
+                        ui.end_row();
+                    }
+                    ui.label(tr("print.sheet"));
+                    ui.horizontal(|ui| {
+                        let name = |i: usize| {
+                            let (n, _) = SHEETS[i.min(SHEETS.len() - 1)];
+                            if i == 0 {
+                                tr(n)
+                            } else {
+                                n.to_string()
+                            }
+                        };
+                        egui::ComboBox::from_id_salt("print_sheet")
+                            .selected_text(name(st.sheet))
+                            .width(120.0)
+                            .show_ui(ui, |ui| {
+                                for i in 0..SHEETS.len() {
+                                    ui.selectable_value(&mut st.sheet, i, name(i));
+                                }
+                            });
+                        ui.add_enabled(
+                            st.sheet > 0,
+                            egui::Checkbox::new(&mut st.landscape, tr("print.landscape")),
+                        );
+                    });
+                    ui.end_row();
+                    if matches!(st.layout_kind, 1 | 3) {
+                        ui.label(tr("print.gutter"));
+                        ui.add(
+                            egui::DragValue::new(&mut st.gutter)
+                                .range(0.0..=50.0)
+                                .speed(0.5)
+                                .suffix(" mm"),
+                        );
+                        ui.end_row();
+                    }
+                });
+        });
+        ui.add_space(8.0);
+        // A sketch of the first sheet and the sheet count.
+        let mut doc_pages: Vec<Size> = app.doc().pages.iter().map(|p| p.size).collect();
+        if !st.all_pages {
+            doc_pages = vec![app.page_size()];
+        }
+        let options = crate::export::print_layout(app, st, app.doc());
+        let plan = crate::imposition::plan(&doc_pages, &options);
+        ui.vertical_centered(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(220.0, 180.0), egui::Sense::hover());
+            if let Some(sheet) = plan.first() {
+                let k = (r.width() / sheet.size.width as f32)
+                    .min(r.height() / sheet.size.height as f32);
+                let w = sheet.size.width as f32 * k;
+                let h = sheet.size.height as f32 * k;
+                let o = r.center() - egui::vec2(w / 2.0, h / 2.0);
+                let p = ui.painter();
+                p.rect(
+                    egui::Rect::from_min_size(o, egui::vec2(w, h)),
+                    0.0,
+                    egui::Color32::WHITE,
+                    egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+                    egui::StrokeKind::Inside,
+                );
+                for c in &sheet.cells {
+                    // Sheet y runs up; the sketch's down.
+                    let cell = egui::Rect::from_min_max(
+                        egui::pos2(o.x + c.trim.x0 as f32 * k, o.y + h - c.trim.y1 as f32 * k),
+                        egui::pos2(o.x + c.trim.x1 as f32 * k, o.y + h - c.trim.y0 as f32 * k),
+                    );
+                    let fill = if c.page.is_some() {
+                        egui::Color32::from_rgb(0xDD, 0xEB, 0xF7)
+                    } else {
+                        egui::Color32::from_gray(0xF0)
+                    };
+                    p.rect(
+                        cell,
+                        0.0,
+                        fill,
+                        egui::Stroke::new(1.0, Tokens::ACCENT),
+                        egui::StrokeKind::Inside,
+                    );
+                    if let Some(n) = c.page {
+                        p.text(
+                            cell.center(),
+                            egui::Align2::CENTER_CENTER,
+                            (n + 1).to_string(),
+                            egui::FontId::proportional(11.0),
+                            Tokens::TEXT,
+                        );
+                    }
+                }
+            }
+            ui.label(
+                egui::RichText::new(trf("print.sheets", &[("n", &plan.len().to_string())]))
+                    .color(Tokens::TEXT_DIM),
+            );
+        });
+    });
+}
+
 fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut bool) {
     window(ctx, tr("dialog.print")).show(ctx, |ui| {
         ui.label(egui::RichText::new(tr("dialog.print_hint")).color(Tokens::TEXT_DIM));
-        ui.horizontal(|ui| {
-            ui.label(tr("dialog.copies"));
-            ui.add(egui::DragValue::new(&mut st.copies).range(1..=999));
+        // Pages and prepress on the left, the layout on the right.
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(250.0);
+                ui.horizontal(|ui| {
+                    ui.label(tr("dialog.copies"));
+                    ui.add(egui::DragValue::new(&mut st.copies).range(1..=999));
+                });
+                ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
+                    if !st.fit_to_page {
+                        ui.add(
+                            egui::DragValue::new(&mut st.scale)
+                                .range(1.0..=1000.0)
+                                .suffix(" %"),
+                        );
+                    }
+                });
+                ui.separator();
+                ui.strong(tr("dialog.prepress"));
+                ui.checkbox(&mut st.separations, tr("dialog.separations"));
+                ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
+                ui.checkbox(&mut st.crop_marks, tr("dialog.crop_marks"));
+                ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
+                ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
+                ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
+                ui.checkbox(&mut st.page_info, tr("print.page_info_mark"));
+                ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
+                ui.checkbox(&mut st.invert, tr("dialog.invert"));
+            });
+            // Space, not a separator: a separator here would take all
+            // the height there is.
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(310.0);
+                print_layout_fields(app, ui, st);
+            });
         });
-        ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
-            if !st.fit_to_page {
-                ui.add(
-                    egui::DragValue::new(&mut st.scale)
-                        .range(1.0..=1000.0)
-                        .suffix(" %"),
-                );
-            }
-        });
-        ui.separator();
-        ui.strong(tr("dialog.prepress"));
-        ui.checkbox(&mut st.separations, tr("dialog.separations"));
-        ui.checkbox(&mut st.crop_marks, tr("dialog.crop_marks"));
-        ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
-        ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
-        ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
-        ui.checkbox(&mut st.invert, tr("dialog.invert"));
         ui.separator();
         // Preflight: what the checks find, and the way to the list.
         let issues = st

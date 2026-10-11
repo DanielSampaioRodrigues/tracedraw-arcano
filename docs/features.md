@@ -219,7 +219,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 
 | Capability | Status |
 |---|---|
-| Print (PDF to the system viewer), copies, range, bleed marks | works |
+| Print (PDF to the system viewer), copies, range, bleed; imposition (as in document, several pages per sheet, booklet, step and repeat) on fitted or paper sheets; printers' marks (crop marks at every cut, registration targets, colour bars, densitometer scale, page information), mirror and invert of the whole sheet | works (see `behavior/printing.md`) |
 | Print preview | works |
 | Print merge from CSV (create/load, edit, perform) | works |
 | Separations and overprint simulation | works |
