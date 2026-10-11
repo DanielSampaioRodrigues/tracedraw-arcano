@@ -292,7 +292,7 @@ release. `<version>` in the file names is the version number.
 
 | Platform | Files |
 |---|---|
-| Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` |
+| Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (not signed yet: if SmartScreen warns, More info > Run anyway) |
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
 | Linux (x86_64) | `.deb`, `tracedraw-<version>-linux-x86_64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` |
 | Web | `tracedraw-<version>-web.zip` for any static server, or [the hosted version](https://igtoth.github.io/tracedraw/) |
@@ -300,6 +300,27 @@ release. `<version>` in the file names is the version number.
 Each download includes `tracedraw-cli` next to the editor. Packaging sources
 are in [`packaging/`](packaging/); the browser build is described in
 [`docs/behavior/web.md`](docs/behavior/web.md).
+
+## Code signing policy
+
+Windows releases are built from this repository by GitHub Actions
+([`build.yml`](.github/workflows/build.yml)) and nowhere else. A signing
+request is made only for a version tag, and only after an approver
+accepts it. Free code signing provided by
+[SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org) (not in effect yet: until the
+project is accepted, the downloads are unsigned). How the build signs is
+described in [`docs/code-signing.md`](docs/code-signing.md).
+
+| Role | Members |
+|---|---|
+| Committers and reviewers | [Ighor Toth](https://github.com/igtoth) |
+| Approvers | [Ighor Toth](https://github.com/igtoth) |
+
+Privacy policy: this program will not transfer any information to other
+networked systems unless specifically requested by the user or the person
+installing or operating it. TraceDraw opens web pages (help, the project's
+pages) in your browser only when you choose to.
 
 ## Documentation
 
@@ -313,6 +334,7 @@ are in [`packaging/`](packaging/); the browser build is described in
 | [`docs/cdr-format.md`](docs/cdr-format.md) | what the `.cdr` reader assumes and what is confirmed |
 | [`docs/i18n.md`](docs/i18n.md) | interface languages |
 | [`docs/roadmap.md`](docs/roadmap.md) | milestones |
+| [`docs/code-signing.md`](docs/code-signing.md) | signing the Windows downloads and the Microsoft Store package |
 | [`CLEANROOM.md`](CLEANROOM.md) | where the knowledge of every file format comes from |
 | [`ATTRIBUTION.md`](ATTRIBUTION.md) | bundled assets and their licenses |
 

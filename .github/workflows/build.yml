@@ -73,6 +73,82 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} -p tracedraw -p tracedraw-cli
 
+      # Windows code signing, see docs/code-signing.md. Release builds (v*
+      # tags) are signed once a provider is set up in the repository's
+      # secrets and variables; builds of main too when the SIGN_NIGHTLY
+      # variable is "true". Azure Artifact Signing wins when both are set.
+      # Without a provider the files stay unsigned, as before.
+      - name: Signing provider
+        id: signing
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          HAS_AZURE: ${{ secrets.AZURE_CLIENT_SECRET != '' }}
+          HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+          SIGN_NIGHTLY: ${{ vars.SIGN_NIGHTLY }}
+        run: |
+          provider=none
+          if [[ "$GITHUB_EVENT_NAME" == push && ( "$GITHUB_REF" == refs/tags/v* || "$SIGN_NIGHTLY" == true ) ]]; then
+            if [[ "$HAS_AZURE" == true ]]; then
+              provider=azure
+            elif [[ "$HAS_SIGNPATH" == true ]]; then
+              provider=signpath
+            fi
+          fi
+          echo "provider=$provider" >> "$GITHUB_OUTPUT"
+          echo "Windows code signing: $provider" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign the programs (Azure Artifact Signing)
+        if: steps.signing.outputs.provider == 'azure'
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\tracedraw.exe
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\tracedraw-cli.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TraceDraw
+          description-url: https://github.com/igtoth/tracedraw
+
+      - name: Programs to sign (SignPath)
+        id: unsigned-programs
+        if: steps.signing.outputs.provider == 'signpath'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-programs
+          path: |
+            target/${{ matrix.target }}/release/tracedraw.exe
+            target/${{ matrix.target }}/release/tracedraw-cli.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign the programs (SignPath)
+        if: steps.signing.outputs.provider == 'signpath'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: programs
+          github-artifact-id: ${{ steps.unsigned-programs.outputs.artifact-id }}
+          wait-for-completion: true
+          # A release waits for its approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-programs
+
+      - name: Use the signed programs (SignPath)
+        if: steps.signing.outputs.provider == 'signpath'
+        shell: pwsh
+        run: Copy-Item signed-programs\*.exe "target\${{ matrix.target }}\release\" -Force
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -81,6 +157,65 @@ jobs:
           $src = "target\${{ matrix.target }}\release"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DVersion=${{ steps.ver.outputs.version }} /DSrcDir="$PWD\$src" packaging\windows\tracedraw.iss
           Compress-Archive -Path "$src\tracedraw.exe","$src\tracedraw-cli.exe",README.md,LICENSE-MIT,LICENSE-APACHE -DestinationPath "dist\tracedraw-${{ steps.ver.outputs.version }}-windows-x86_64-portable.zip"
+
+      # The Microsoft Store package (the Store signs it). Attached to the
+      # release once the Store identity variables are set; until then a
+      # check package is built and not published.
+      - name: Store package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_NAME: ${{ vars.MSIX_PUBLISHER_NAME }}
+        run: packaging\windows\build-msix.ps1 -Version "${{ steps.ver.outputs.version }}" -SrcDir "target\${{ matrix.target }}\release"
+
+      - name: Sign the installer (Azure Artifact Signing)
+        if: steps.signing.outputs.provider == 'azure'
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TraceDraw Setup
+          description-url: https://github.com/igtoth/tracedraw
+
+      - name: Installer to sign (SignPath)
+        id: unsigned-installer
+        if: steps.signing.outputs.provider == 'signpath'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: dist/*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign the installer (SignPath)
+        if: steps.signing.outputs.provider == 'signpath'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installer
+
+      - name: Use the signed installer (SignPath)
+        if: steps.signing.outputs.provider == 'signpath'
+        shell: pwsh
+        run: Copy-Item signed-installer\*-setup.exe dist\ -Force
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -208,5 +343,5 @@ jobs:
           target_commitish: ${{ github.sha }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           make_latest: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
-          body: ${{ !startsWith(github.ref, 'refs/tags/v') && format('Installers built from {0} on main. Replaced on every push.', github.sha) || '' }}
+          body: ${{ !startsWith(github.ref, 'refs/tags/v') && format('Installers built from {0} on main. Replaced on every push. Code signing policy at https://github.com/{1}#code-signing-policy', github.sha, github.repository) || format('Code signing policy at https://github.com/{0}#code-signing-policy', github.repository) }}
           generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
