@@ -293,9 +293,12 @@ jobs:
           cp assets/icon/tracedraw-256.png site/icon-256.png
           (cd site && zip -r "../dist/tracedraw-${{ steps.ver.outputs.version }}-web.zip" .)
 
+      # The browser version is a demo on the project's page, not a
+      # download: the folder is kept with the run only (its name does not
+      # match the release's tracedraw-* artifacts).
       - uses: actions/upload-artifact@v4
         with:
-          name: tracedraw-web
+          name: web-demo-site
           path: dist/*
           if-no-files-found: error
 

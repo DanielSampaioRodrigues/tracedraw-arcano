@@ -1,10 +1,12 @@
 # Browser version
 
 The same editor compiled to WebAssembly (`wasm32-unknown-unknown`) and
-drawn with WebGL 2 by eframe. It is published to GitHub Pages by CI and
-attached to every release as `tracedraw-<version>-web.zip` (a static
-folder: serve it from any web server; opening `index.html` from disk
-does not work because browsers refuse to load modules from `file://`).
+drawn with WebGL 2 by eframe, as a demo to try TraceDraw without
+installing it. CI publishes it to GitHub Pages; it is not one of the
+release downloads. Each run keeps the folder as the `web-demo-site`
+artifact (`tracedraw-<version>-web.zip`, a static folder: serve it from
+any web server; opening `index.html` from disk does not work because
+browsers refuse to load modules from `file://`).
 
 ## What differs from the desktop
 
@@ -26,6 +28,8 @@ does not work because browsers refuse to load modules from `file://`).
 The browser version is for trying TraceDraw without installing it, and
 tells the visitor what that means and where the desktop app is:
 
+- The first time a browser opens it, a message says it is a demo, with
+  an OK button (remembered in the browser's storage).
 - The loading page says it is the browser demo, slower on heavy work and
   limited to the fonts that come with it, with a link to the desktop
   downloads (`https://github.com/igtoth/tracedraw/releases/latest`).
