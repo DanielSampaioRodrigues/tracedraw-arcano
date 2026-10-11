@@ -130,6 +130,10 @@ pub(crate) struct RunStyle {
     pub char_spacing: Option<f64>,
     /// Paragraph indents in points: (left, first line, right).
     pub indent_pt: Option<(f64, f64, f64)>,
+    /// An inline uniform fill colour (version 16 and later style strings
+    /// describe the run's fill as an object with its colour);
+    /// `Some(None)` is no fill.
+    pub fill_color: Option<Option<tracedraw_core::Color>>,
 }
 
 impl RunStyle {
@@ -148,6 +152,7 @@ impl RunStyle {
             line_spacing: self.line_spacing.or(base.line_spacing),
             char_spacing: self.char_spacing.or(base.char_spacing),
             indent_pt: self.indent_pt.or(base.indent_pt),
+            fill_color: self.fill_color.or(base.fill_color),
         }
     }
 }
@@ -1037,12 +1042,155 @@ fn apply_style_object(s: &mut RunStyle, obj: &Json, depth: usize) {
     }
     if let Json::Obj(items) = obj {
         for (k, v) in items {
-            match v {
-                Json::Obj(_) => apply_style_object(s, v, depth + 1),
+            match (k.as_str(), v) {
+                // An inline fill: the run's colour. Its own keys (type,
+                // overprint, screens) are not run settings.
+                ("fill", Json::Obj(_)) => {
+                    if let Some(c) = inline_fill_color(v) {
+                        s.fill_color = Some(c);
+                    }
+                }
+                // An inline outline, the frame and the settings for
+                // right-to-left and East Asian scripts are not read; only
+                // the Latin font settings apply to the text.
+                ("outline" | "frame" | "RTL" | "farEast", Json::Obj(_)) => {}
+                ("paragraph", Json::Obj(p)) => apply_paragraph_object(s, p),
+                (_, Json::Obj(_)) => apply_style_object(s, v, depth + 1),
                 _ => apply_style_key(s, k, v),
             }
         }
     }
+}
+
+/// The `paragraph` section of a version 16+ style string: line spacing as
+/// a millionth of the line height (1000000 = 100 %, assumed from a version
+/// 21 file holding the default), alignment; the underline, overline and
+/// strikeout geometry keys are left out (their names would read as
+/// outline references).
+fn apply_paragraph_object(s: &mut RunStyle, items: &[(String, Json)]) {
+    for (k, v) in items {
+        let lk = k.to_ascii_lowercase();
+        if matches!(v, Json::Obj(_) | Json::Arr(_)) {
+            continue;
+        }
+        if lk == "interlinespacing" {
+            if let Some(n) = v.num() {
+                let f = n / 1_000_000.0;
+                if f.is_finite() && f > 0.0 && f < 100.0 {
+                    s.line_spacing = Some(f);
+                }
+            }
+            continue;
+        }
+        if lk.contains("underline")
+            || lk.contains("overline")
+            || lk.contains("strikeout")
+            || lk.starts_with("thin")
+            || lk.starts_with("thick")
+            || lk.starts_with("dbl")
+            || lk.starts_with("inter")
+            || lk.contains("spacing")
+        {
+            continue;
+        }
+        apply_style_key(s, k, v);
+    }
+}
+
+/// The width of a paragraph frame from an object's version 16+ style
+/// string, in file units: its `frame` section's `columns` lists each
+/// column's width and the gutter after it (`"623721,0"`: one column); the
+/// frame is the columns with the gutters between them (seen in a version
+/// 21 file with one column; several columns assumed alike).
+pub(crate) fn frame_width_units(style: &str) -> Option<f64> {
+    let t = style.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+    let Json::Obj(items) = parse_json(t)? else {
+        return None;
+    };
+    let Json::Obj(frame) = &items.iter().find(|(k, _)| k == "frame")?.1 else {
+        return None;
+    };
+    let Json::Str(cols) = &frame.iter().find(|(k, _)| k == "columns")?.1 else {
+        return None;
+    };
+    let v: Vec<f64> = cols
+        .split(',')
+        .map(|p| p.trim().parse::<f64>().ok())
+        .collect::<Option<Vec<f64>>>()?;
+    if v.is_empty() {
+        return None;
+    }
+    // Widths at even places, gutters at odd ones; the last gutter is
+    // outside the frame.
+    let widths: f64 = v.iter().step_by(2).sum();
+    let gutters: f64 = v
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .take(v.len().div_ceil(2).saturating_sub(1))
+        .sum();
+    let w = widths + gutters;
+    (w.is_finite() && w > 0.0).then_some(w)
+}
+
+/// The colour of an inline fill object of a version 16+ style string:
+/// `type` 1 is a uniform fill whose `primaryColor` reads
+/// `MODEL,PALETTE,v1,v2,...` (`CMYK255` on 0..255 and `CMYK` on 0..100,
+/// both seen in a version 21 file; `RGB255` and `GRAY255` assumed alike);
+/// `type` 0 is no fill (`Some(None)`). Other fill types give `None` (the
+/// object's fill applies).
+fn inline_fill_color(fill: &Json) -> Option<Option<tracedraw_core::Color>> {
+    let Json::Obj(items) = fill else {
+        return None;
+    };
+    let get = |key: &str| items.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+    match get("type").and_then(Json::num) {
+        Some(0.0) => return Some(None),
+        Some(1.0) => {}
+        _ => return None,
+    }
+    let Json::Str(spec) = get("primaryColor")? else {
+        return None;
+    };
+    parse_color_spec(spec).map(Some)
+}
+
+/// A colour written `MODEL,PALETTE,v1,v2,...` in version 16+ style strings.
+pub(crate) fn parse_color_spec(spec: &str) -> Option<tracedraw_core::Color> {
+    use tracedraw_core::Color;
+    let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+    let model = parts.first()?.to_ascii_uppercase();
+    let nums: Vec<f64> = parts
+        .iter()
+        .skip(2)
+        .map_while(|p| p.parse::<f64>().ok())
+        .collect();
+    let unit = |v: f64, max: f64| (v / max).clamp(0.0, 1.0) as f32;
+    let c = match model.as_str() {
+        "CMYK255" if nums.len() >= 4 => Color::cmyk_pct(
+            unit(nums[0], 255.0) * 100.0,
+            unit(nums[1], 255.0) * 100.0,
+            unit(nums[2], 255.0) * 100.0,
+            unit(nums[3], 255.0) * 100.0,
+        ),
+        "CMYK" if nums.len() >= 4 => Color::cmyk_pct(
+            unit(nums[0], 100.0) * 100.0,
+            unit(nums[1], 100.0) * 100.0,
+            unit(nums[2], 100.0) * 100.0,
+            unit(nums[3], 100.0) * 100.0,
+        ),
+        "RGB255" | "RGB" if nums.len() >= 3 => Color::rgb8(
+            nums[0].clamp(0.0, 255.0) as u8,
+            nums[1].clamp(0.0, 255.0) as u8,
+            nums[2].clamp(0.0, 255.0) as u8,
+        ),
+        "GRAY255" | "GRAYSCALE" | "GRAY" if !nums.is_empty() => {
+            let g = nums[0].clamp(0.0, 255.0) as u8;
+            Color::rgb8(g, g, g)
+        }
+        _ => return None,
+    };
+    Some(c)
 }
 
 /// version 16+ style string: a JSON object with `character` and `paragraph`
@@ -1097,6 +1245,57 @@ mod tests {
         assert!(StyleFlags(1 << 18).underline());
         assert!(StyleFlags(1 << 24).strikethrough());
         assert!(!StyleFlags(0x40).underline());
+    }
+
+    /// The version 21 style string: the run's colour from its inline
+    /// fill, the Latin font, the size; the outline's and the paragraph's
+    /// own keys (behindFill, overline geometry) are not run settings.
+    #[test]
+    fn version_21_style_strings_give_the_inline_colour() {
+        let s = parse_style_string(
+            r#"{"character":{"fill":{"type":"1","primaryColor":"CMYK255,USER,0,255,255,0,100,u"},
+            "outline":{"behindFill":"0","width":"762"},
+            "RTL":{"font":"Other","size":"9999999"},
+            "latin":{"font":"Kristen ITC","weight":"64","italic":"0","size":"128819"}},
+            "paragraph":{"interLineSpacing":"1200000","thinOverlineThickness":"45455","dblUnderline1Distance":"-90909"}}"#,
+        );
+        assert_eq!(s.family.as_deref(), Some("Kristen ITC"));
+        assert!((s.size_pt.expect("size") - 36.5156).abs() < 1e-3);
+        assert_eq!(s.bold, Some(false));
+        assert_eq!(s.fill_id, None);
+        assert_eq!(s.outl_id, None);
+        assert_eq!(
+            s.fill_color,
+            Some(Some(tracedraw_core::Color::cmyk_pct(
+                0.0, 100.0, 100.0, 0.0
+            )))
+        );
+        assert!((s.line_spacing.expect("spacing") - 1.2).abs() < 1e-9);
+        // No fill, and colour specs in the other spellings.
+        let s = parse_style_string(r#"{"character":{"fill":{"type":"0"}}}"#);
+        assert_eq!(s.fill_color, Some(None));
+        assert_eq!(
+            parse_color_spec("CMYK,USER,0,0,0,100,100,x"),
+            Some(tracedraw_core::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0))
+        );
+        assert_eq!(
+            parse_color_spec("RGB255,USER,255,128,0,100,x"),
+            Some(tracedraw_core::Color::rgb8(255, 128, 0))
+        );
+        assert_eq!(parse_color_spec("PANTONE,X,1"), None);
+        assert_eq!(parse_color_spec(""), None);
+        // The frame's width: the columns and the gutters between them.
+        assert_eq!(
+            frame_width_units(r#"{"frame":{"columns":"623721,0","equalWidthColumns":"1"}}"#),
+            Some(623721.0)
+        );
+        assert_eq!(
+            frame_width_units(r#"{"frame":{"columns":"100,10,100,10"}}"#),
+            Some(210.0)
+        );
+        assert_eq!(frame_width_units(r#"{"frame":{}}"#), None);
+        assert_eq!(frame_width_units(r#"{"frame":{"columns":"x"}}"#), None);
+        assert_eq!(frame_width_units("not json"), None);
     }
 
     #[test]

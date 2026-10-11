@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` files from recent versions: paragraph text keeps its frame (it
+  was laid out as a single unframed line), and coloured runs of text take
+  their colour (the run colour is stored inline in those files).
+
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
   app (the windowing layer delivers them as clipboard events, not as
   key presses, so they did nothing); Ctrl+Shift+V pastes in the middle

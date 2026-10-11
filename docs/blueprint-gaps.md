@@ -50,7 +50,8 @@ exceptions, shown disabled so the layout stays complete:
 - Done since: groups (`grp ` lists, nested), text fitted to a path
   (from the frame flag and the sibling curve), line spacing, character
   spacing and indents from `stlt`, custom arrowhead outlines kept as
-  custom arrowheads.
+  custom arrowheads, version 21 paragraph frames and inline run
+  colours.
 - Still open in the reader: splines (0x26, layout not public), vector
   pattern (10) and PostScript (6) fills, text before version 7,
   single-byte code pages other than Windows-1252, tabs, bullets and drop

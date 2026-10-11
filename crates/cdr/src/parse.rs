@@ -55,6 +55,9 @@ pub(crate) const ARG_OUTLINE: u32 = 0x0a;
 pub(crate) const ARG_FILL: u32 = 0x14;
 pub(crate) const ARG_COORDS: u32 = 0x1e;
 pub(crate) const ARG_STYLE: u32 = 200;
+/// The object's style as a string (version 16 and later): fill, outline,
+/// character, frame and paragraph settings (seen in a version 21 file).
+const ARG_STYLE_STRING: u32 = 201;
 pub(crate) const ARG_NAME: u32 = 1000;
 pub(crate) const ARG_OPACITY: u32 = 8000;
 const ARG_POLYGON: u32 = 11000;
@@ -185,6 +188,17 @@ struct Arg {
     ty: u32,
     off: usize,
     end: usize,
+}
+
+/// What a paragraph text's frame may be worked out from when its
+/// coordinates hold no size (version 16 and later).
+struct FrameHints<'s> {
+    /// The object's style string.
+    style: Option<&'s str>,
+    /// The object's box on the page (file coordinates).
+    bbox: Option<Rect>,
+    /// The object's transform (file coordinates).
+    transform: Affine,
 }
 
 /// Decoded `loda` header and argument table.
@@ -1084,7 +1098,13 @@ impl<'a> Ctx<'a> {
                 span.tracking_pct = cs * 100.0;
             }
         }
-        if let Some(fid) = style.fill_id {
+        if let Some(inline) = style.fill_color {
+            // Version 16+ files describe the run's colour inline.
+            let fill = inline.map(Fill::Solid).unwrap_or(Fill::None);
+            if fill != *object_fill {
+                span.fill = Some(fill);
+            }
+        } else if let Some(fid) = style.fill_id {
             match self.fills.get(&fid) {
                 Some(f) if f.fill != *object_fill => span.fill = Some(f.fill.clone()),
                 Some(_) => {}
@@ -1099,6 +1119,7 @@ impl<'a> Ctx<'a> {
     /// Text object (artistic 0x04 or paragraph 0x06): geometry from the
     /// coordinates argument, content from the `txsm` chunk inside the
     /// object's list (assumed placement), defaults from the `stlt` style.
+    #[allow(clippy::too_many_arguments)]
     fn build_text(
         &mut self,
         kind_code: u32,
@@ -1107,6 +1128,7 @@ impl<'a> Ctx<'a> {
         oc: &Chunk,
         style_id: Option<u32>,
         object_fill: &Fill,
+        hints: FrameHints,
     ) -> Option<ShapeKind> {
         let mut origin = Point::ZERO;
         let mut frame: Option<Size> = None;
@@ -1144,9 +1166,18 @@ impl<'a> Ctx<'a> {
         let parsed = parsed?;
         self.pending_on_path = parsed.on_path;
         if frame.is_none() && (parsed.frame || kind_code == OBJ_PARAGRAPH_TEXT) {
-            // A frame without readable size: lay the text out unframed.
-            self.report
-                .warn("paragraph text without a readable frame; treated as artistic text");
+            // Version 16+: the frame is the object's box in its own space,
+            // its width the columns of the object's style.
+            match self.frame_from_hints(&hints) {
+                Some((o, size)) => {
+                    origin = o;
+                    frame = Some(size);
+                }
+                // A frame without readable size: lay the text out unframed.
+                None => self
+                    .report
+                    .warn("paragraph text without a readable frame; treated as artistic text"),
+            }
         }
         let object_style = style_id
             .map(|id| self.style_defaults(id))
@@ -1402,6 +1433,70 @@ impl<'a> Ctx<'a> {
     /// table, offset of the types table, object type. The offsets table has
     /// one extra entry marking the end of the last argument, and the types
     /// table is stored in reverse order relative to the offsets.
+    /// The object style string argument (version 16 and later): a u32,
+    /// the length, then the text (UTF-16 before version 17, one byte per
+    /// character from 17 on).
+    fn read_object_style_string(&self, d: &'a [u8], arg: Arg) -> Option<String> {
+        let mut r = self.reader_at(d.get(..arg.end)?, arg.off);
+        r.skip(4);
+        let len = r.u32()? as usize;
+        let bytes = if self.v < 17 {
+            len.checked_mul(2)?
+        } else {
+            len
+        };
+        let s = d.get(r.pos..r.pos.checked_add(bytes)?.min(arg.end))?;
+        Some(if self.v < 17 {
+            text::decode_utf16le(s)
+        } else {
+            String::from_utf8_lossy(s).into_owned()
+        })
+    }
+
+    /// The object's `bbox` chunk: its box on the page (file coordinates,
+    /// origin at the page centre).
+    fn object_bbox(&self, oc: &Chunk) -> Option<Rect> {
+        let c = oc.find(b"bbox")?;
+        let d = self.data(c);
+        let mut r = self.reader(d);
+        let (x0, y0, x1, y1) = (r.coord()?, r.coord()?, r.coord()?, r.coord()?);
+        let b = Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
+        (b.x0.is_finite() && b.y0.is_finite() && b.width() > 0.0 && b.height() > 0.0).then_some(b)
+    }
+
+    /// A paragraph frame from the object's box and style (version 16+
+    /// files keep no frame size in the coordinates): the box taken back
+    /// through the object's transform gives the frame's place and height,
+    /// the style's columns its width when present. Only for transforms
+    /// that neither turn nor slant (a turned box is larger than the
+    /// frame). Seen in a version 21 file, where the box's width is the
+    /// column width times the transform's scale.
+    fn frame_from_hints(&self, h: &FrameHints) -> Option<(Point, Size)> {
+        let b = h.bbox?;
+        let [a, bb, c, dd, _, _] = h.transform.as_coeffs();
+        if bb.abs() > 1e-9 || c.abs() > 1e-9 || a.abs() < 1e-9 || dd.abs() < 1e-9 {
+            return None;
+        }
+        let inv = h.transform.inverse();
+        let p0 = inv * Point::new(b.x0, b.y0);
+        let p1 = inv * Point::new(b.x1, b.y1);
+        let local = Rect::from_points(p0, p1);
+        let width = h
+            .style
+            .and_then(text::frame_width_units)
+            .map(|w| w * UNIT_MM)
+            .filter(|w| *w > 0.0)
+            .unwrap_or(local.width());
+        let size = Size::new(width, local.height());
+        let ok = local.x0.is_finite()
+            && local.y0.is_finite()
+            && size.width.is_finite()
+            && size.height.is_finite()
+            && size.width > 1e-3
+            && size.height > 1e-3;
+        ok.then(|| (Point::new(local.x0, local.y0), size))
+    }
+
     fn read_loda(&mut self, d: &'a [u8]) -> Option<Loda> {
         let mut r = self.reader(d);
         let _len = r.uint()?;
@@ -1508,11 +1603,13 @@ impl<'a> Ctx<'a> {
         let mut coords: Option<Arg> = None;
         let mut polygon: Option<PolygonInfo> = None;
         let mut style_id: Option<u32> = None;
+        let mut style_string: Option<String> = None;
         let mut opacity = 1.0;
 
         for arg in &l.args {
             match arg.ty {
                 ARG_STYLE => style_id = self.reader_at(d, arg.off).uint(),
+                ARG_STYLE_STRING => style_string = self.read_object_style_string(d, *arg),
                 ARG_OPACITY => {
                     if let Some(o) = self.read_opacity(d, *arg) {
                         opacity = o;
@@ -1549,7 +1646,12 @@ impl<'a> Ctx<'a> {
 
         let kind = match kind_code {
             OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT => {
-                self.build_text(kind_code, d, coords, oc, style_id, &fill)
+                let frame = FrameHints {
+                    style: style_string.as_deref(),
+                    bbox: self.object_bbox(oc),
+                    transform,
+                };
+                self.build_text(kind_code, d, coords, oc, style_id, &fill, frame)
             }
             _ => coords.and_then(|a| self.read_geometry(kind_code, d, a, polygon)),
         };
@@ -3669,6 +3771,106 @@ mod tests {
                 assert_eq!(spans[0].fill, Some(Fill::Solid(Color::rgb8(0, 128, 0))));
                 assert_eq!(spans[1].text, "cd");
                 assert_eq!(spans[1].fill, None);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// Version 21 paragraph text: the loda has no frame size; the frame
+    /// comes from the object's box taken back through its transform (a
+    /// horizontal scale of 0.75 here) and the width of the columns in the
+    /// object's style string; the run's colour from its inline fill.
+    #[test]
+    fn version_21_paragraph_text_takes_its_frame_from_the_box_and_style() {
+        let v = 21u16;
+        let mut t = u32s(&[0xffff_ffff]); // frame
+        t.extend_from_slice(&[0; 32]);
+        t.extend_from_slice(&u16s(&[1700]));
+        t.extend_from_slice(&[0; 3]);
+        t.extend_from_slice(&u32s(&[1, 1])); // one frame, id 1
+        t.extend_from_slice(&[0; 48]);
+        t.extend_from_slice(&u32s(&[0])); // not on a path
+        t.extend_from_slice(&[0; 8]);
+        t.extend_from_slice(&u32s(&[1])); // one paragraph
+        t.extend_from_slice(&u32s(&[0]));
+        t.push(0);
+        t.push(0);
+        t.extend_from_slice(&style_string(
+            v,
+            r#"{"character":{"fill":{"type":"1","primaryColor":"CMYK255,USER,0,255,255,0,100,u"},"outline":{"behindFill":"0"},"latin":{"font":"Georgia","size":"128819","weight":"64"}},"frame":{},"paragraph":{"thinOverlineThickness":"45455"}}"#,
+        ));
+        t.extend_from_slice(&u32s(&[0])); // no style records
+        t.extend_from_slice(&u32s(&[2]));
+        for _ in 0..2 {
+            t.extend_from_slice(&u16s(&[0]));
+            t.push(0xfe);
+            t.extend_from_slice(&[0; 5]);
+        }
+        t.extend_from_slice(&u32s(&[2]));
+        t.extend_from_slice(b"Hi");
+        t.push(0);
+        // The object's style string: frame columns 60 mm wide.
+        let json = r#"{"fill":{"type":"1"},"frame":{"columns":"600000,0"}}"#;
+        let mut style = u32s(&[1, json.len() as u32]);
+        style.extend_from_slice(json.as_bytes());
+        let mut coords = vec![0u8; 4];
+        coords.extend_from_slice(&i32s(&[0, 8]));
+        // On the page: the frame at x 10..55 (60 mm times 0.75) and y
+        // 20..32, the transform's origin at (11, 22).
+        let bbox = i32s(&[100_000, 320_000, 550_000, 200_000]);
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"bbox", &bbox),
+                chunk(
+                    b"loda",
+                    &loda(
+                        OBJ_ARTISTIC_TEXT,
+                        &[(ARG_STYLE_STRING, style), (ARG_COORDS, coords)],
+                    ),
+                ),
+                chunk(
+                    b"trfd",
+                    &trfd(v, [0.75, 0.0, 110_000.0, 0.0, 1.0, 220_000.0]),
+                ),
+                chunk(b"txsm", &t),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRL", &body), v);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        assert!(
+            !rep.warnings
+                .iter()
+                .any(|w| w.contains("frame") || w.contains("fill")),
+            "{:?}",
+            rep.warnings
+        );
+        let shape = first_shape(&doc);
+        match &shape.kind {
+            ShapeKind::Text {
+                spans,
+                frame,
+                origin,
+                ..
+            } => {
+                let f = frame.expect("frame");
+                assert!((f.width - 60.0).abs() < 1e-6, "{f:?}");
+                assert!((f.height - 12.0).abs() < 1e-6, "{f:?}");
+                // (10 - 11) / 0.75 and 20 - 22, in the object's own space.
+                assert!((origin.x - (-1.0 / 0.75)).abs() < 1e-6, "{origin:?}");
+                assert!((origin.y - (-2.0)).abs() < 1e-6, "{origin:?}");
+                assert_eq!(spans[0].text, "Hi");
+                assert_eq!(spans[0].font_family, "Georgia");
+                assert_eq!(
+                    spans[0].fill,
+                    Some(Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)))
+                );
             }
             other => panic!("{other:?}"),
         }
