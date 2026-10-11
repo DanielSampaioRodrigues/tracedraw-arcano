@@ -14,7 +14,7 @@
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-b7410e?style=flat-square&logo=rust">
   <img alt="Windows, macOS, Linux and the browser" src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Web-native-1f6fc5?style=flat-square">
   <img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-444444?style=flat-square">
-  <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-2f9e6b?style=flat-square">
+  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-d97706?style=flat-square">
   <img alt="12 interface languages" src="https://img.shields.io/badge/interface-12%20languages-7b5cff?style=flat-square">
 </p>
 
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <sub>Beta. A <code>.cdr</code> file that does not open right? <a href="https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml">Send it in an issue</a>: sample files are what improves the reader most.</sub>
+  <sub>Alpha: expect bugs. A <code>.cdr</code> file that does not open right? <a href="https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml">Send it in an issue</a>: sample files are what improves the reader most.</sub>
 </p>
 
 <br>
@@ -287,8 +287,9 @@ New contributors and AI agents: start with [`AGENTS.md`](AGENTS.md), then
 [`CONTRIBUTING.md`](CONTRIBUTING.md) and the pages in [`docs/`](docs/).
 
 > [!IMPORTANT]
-> **Status: beta.** Most of what a vector editor is expected to do is in
-> place and covered by tests, but TraceDraw is young: expect rough edges,
+> **Status: alpha.** Most of what a vector editor is expected to do is in
+> place and covered by tests, but TraceDraw is young and has barely met
+> real users: expect bugs and rough edges,
 > some formats and effects that are close in look rather than identical,
 > and gaps listed in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md).
 > [`docs/features.md`](docs/features.md) is the honest, row-by-row picture.

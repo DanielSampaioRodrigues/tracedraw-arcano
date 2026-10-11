@@ -6,8 +6,8 @@ full, row-by-row status.
 
 ## 0.2.0 (2026-10-11)
 
-The first release meant for everyone to try. Still a beta: see
-"Known limits" below.
+The first release meant for everyone to try. It is an alpha: real
+use will turn up bugs, and "Known limits" below lists what is known.
 
 **Working in the window**
 - Several drawings open in tabs; a Create a New Document dialog.
