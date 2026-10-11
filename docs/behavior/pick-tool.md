@@ -5,14 +5,14 @@
 | Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds) |
 | Shift+click | add or remove from the selection |
 | Alt+click | select the object beneath the current one (dig) |
-| Click on selected | toggle the rotate/skew handles |
+| Click on selected | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
 | Drag on empty | marquee; objects fully inside are selected; Alt makes touching count |
 | Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on |
 | Corner handle | scale proportionally from the opposite corner; Shift from the centre; Ctrl in whole steps of 100 % (crossing the other side gives the mirror image at the same size); Alt scales freely |
 | Side handle | stretch one axis from the opposite side (across it: mirrored); Shift from the centre; Ctrl in steps of 100 % |
 | Rotate handle (rotate mode, corners) | rotate about the centre of rotation; Ctrl in steps of the constrain angle (15 degrees) |
 | Skew handle (rotate mode, sides) | slant: the top and bottom handles sideways, the left and right ones up and down, the opposite side fixed; Shift about the centre line; Ctrl in steps of the constrain angle |
-| Centre of rotation (rotate mode) | drag it to turn about another point (kept while the selection stays the same); double-click puts it back in the middle; a click on it keeps rotate mode |
+| Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point (kept while the selection stays the same); double-click puts it back in the middle; a click on it keeps rotate mode |
 | Right click during a move, scale, rotation or skew | the original stays and a copy takes the change (the copy becomes the selection); a second right click takes it back; the status bar says which |
 | Esc during a move, scale, rotation or skew | cancels it; nothing changes |
 | Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |

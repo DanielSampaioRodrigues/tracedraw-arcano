@@ -715,17 +715,12 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             .rotation_center()
             .map(|c| app.view.to_screen(c))
             .unwrap_or(r.center());
-        painter.circle_stroke(c, 5.0, EStroke::new(1.0, Tokens::HANDLE));
-        painter.line_segment(
-            [c - egui::vec2(8.0, 0.0), c + egui::vec2(8.0, 0.0)],
-            EStroke::new(1.0, Tokens::HANDLE),
-        );
-        painter.line_segment(
-            [c - egui::vec2(0.0, 8.0), c + egui::vec2(0.0, 8.0)],
-            EStroke::new(1.0, Tokens::HANDLE),
-        );
+        // The centre of rotation: a ring with a dot, on a white halo.
+        painter.circle_stroke(c, 5.5, EStroke::new(3.0, Color32::WHITE));
+        painter.circle_stroke(c, 5.5, EStroke::new(1.3, Tokens::HANDLE));
+        painter.circle_filled(c, 1.6, Tokens::HANDLE);
         for (h, p) in app.handle_positions(bounds) {
-            draw_rotate_handle(painter, p, h, r);
+            draw_rotate_handle(painter, p, h);
         }
     } else {
         for (_, p) in app.handle_positions(bounds) {
@@ -744,7 +739,11 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             );
         }
     }
-    // Hint "x" in the centre: the move marker.
+    // Hint "x" in the centre: the move marker (rotate mode shows the
+    // centre of rotation instead).
+    if app.rotate_mode && pick {
+        return;
+    }
     let c = r.center();
     painter.line_segment(
         [c - egui::vec2(4.0, 4.0), c + egui::vec2(4.0, 4.0)],
@@ -756,33 +755,60 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
     );
 }
 
-fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle, r: ERect) {
-    let s = EStroke::new(1.5, Tokens::HANDLE);
-    if h.is_corner() {
-        // Curved double arrow approximated by a short arc.
-        let c = r.center();
-        let dir = (p - c).normalized();
-        let n = egui::vec2(-dir.y, dir.x);
-        let a = p + n * 7.0 - dir * 2.0;
-        let b = p - n * 7.0 - dir * 2.0;
-        painter.add(epaint::PathShape::line(vec![a, p + dir * 2.0, b], s));
-        painter.line_segment([a, a + dir * 3.0], s);
-        painter.line_segment([b, b + dir * 3.0], s);
+/// A rotate mode handle at `p`: a curved arrow turning around each
+/// corner, a straight double arrow along each side (sideways at the top
+/// and bottom, up and down at the left and right). Black on a white halo.
+fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
+    let ink = EStroke::new(1.4, Tokens::HANDLE);
+    let halo = EStroke::new(3.6, Color32::WHITE);
+    let lines: Vec<Vec<Pos2>> = if h.is_corner() {
+        // Outward along the corner's diagonal (screen y grows downwards).
+        let (sx, sy) = match h {
+            Handle::NE => (1.0, -1.0),
+            Handle::NW => (-1.0, -1.0),
+            Handle::SE => (1.0, 1.0),
+            _ => (-1.0, 1.0),
+        };
+        let out = egui::vec2(sx, sy).normalized();
+        let base = out.y.atan2(out.x);
+        let centre = p - out * 2.0;
+        let radius = 8.0;
+        let arc: Vec<Pos2> = (0..=12)
+            .map(|i| {
+                let a = base - 0.85 + 1.7 * i as f32 / 12.0;
+                centre + egui::vec2(a.cos(), a.sin()) * radius
+            })
+            .collect();
+        // The head at the arc's end, pointing along the turn.
+        let a = base + 0.85;
+        let tip = centre + egui::vec2(a.cos(), a.sin()) * radius;
+        let along = egui::vec2(-a.sin(), a.cos());
+        let across = egui::vec2(a.cos(), a.sin());
+        let head = vec![
+            tip - along * 4.0 + across * 3.0,
+            tip,
+            tip - along * 4.0 - across * 3.0,
+        ];
+        vec![arc, head]
     } else {
-        let horizontal = matches!(h, Handle::N | Handle::S);
-        let d = if horizontal {
+        let d = if matches!(h, Handle::N | Handle::S) {
             egui::vec2(7.0, 0.0)
         } else {
             egui::vec2(0.0, 7.0)
         };
-        painter.line_segment([p - d, p + d], s);
-        let t = if horizontal {
-            egui::vec2(0.0, 3.0)
-        } else {
-            egui::vec2(3.0, 0.0)
-        };
-        painter.line_segment([p + d, p + d * 0.6 + t], s);
-        painter.line_segment([p - d, p - d * 0.6 - t], s);
+        let n = egui::vec2(d.y, d.x).normalized() * 3.0;
+        let u = d.normalized() * 3.5;
+        vec![
+            vec![p - d, p + d],
+            vec![p + d - u + n, p + d, p + d - u - n],
+            vec![p - d + u + n, p - d, p - d + u - n],
+        ]
+    };
+    for l in &lines {
+        painter.add(epaint::PathShape::line(l.clone(), halo));
+    }
+    for l in lines {
+        painter.add(epaint::PathShape::line(l, ink));
     }
 }
 
