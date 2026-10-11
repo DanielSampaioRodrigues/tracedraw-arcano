@@ -53,6 +53,7 @@ mod palette;
 mod picture_mosaic;
 mod placeholder;
 mod preflight;
+mod prefs;
 mod raster;
 mod scripting;
 mod settings;

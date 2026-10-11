@@ -327,6 +327,29 @@ pub fn message_box(
     text: &str,
     buttons: &[&str],
 ) -> Option<usize> {
+    message_box_with(ctx, icon, text, buttons, None)
+}
+
+/// A [`message_box`] with a check box under the message ("Do not show
+/// this message again").
+pub fn message_box_check(
+    ctx: &Context,
+    icon: MessageIcon,
+    text: &str,
+    buttons: &[&str],
+    check: &str,
+    checked: &mut bool,
+) -> Option<usize> {
+    message_box_with(ctx, icon, text, buttons, Some((check, checked)))
+}
+
+fn message_box_with(
+    ctx: &Context,
+    icon: MessageIcon,
+    text: &str,
+    buttons: &[&str],
+    check: Option<(&str, &mut bool)>,
+) -> Option<usize> {
     let mut picked = None;
     let before = take_close_request(ctx);
     window("TraceDraw").show(ctx, |ui| {
@@ -342,6 +365,13 @@ pub fn message_box(
                 ui.add(egui::Label::new(egui::RichText::new(text).size(13.5)).wrap());
             });
         });
+        if let Some((label, checked)) = check {
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.add_space(48.0);
+                ui.checkbox(checked, label);
+            });
+        }
         ui.add_space(14.0);
         picked = button_row(ui, buttons, true);
     });

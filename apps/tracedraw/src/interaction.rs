@@ -1285,7 +1285,7 @@ impl App {
         }
         // The rest of the menu shortcuts.
         if pressed(Key::P, cmd) {
-            self.dialog = crate::ui::dialogs::Dialog::Print(Default::default());
+            self.print();
         }
         if pressed(Key::R, cmd) {
             self.repeat_last();

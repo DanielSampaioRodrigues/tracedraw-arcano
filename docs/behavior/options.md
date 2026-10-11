@@ -56,11 +56,72 @@ Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 
 ## Global and Workspaces
 
-Global: user interface language; where the preferences and auto-backups
-are kept; Reset all settings... (asks first, then puts every preference
-back to how TraceDraw comes, keeping the recent drawings, the last
-folder and the window's size; drawings are not touched). Workspaces: the workspace in use, and exporting and importing
-the user's setup to a `.tdws` file (see `workspaces.md`).
+Global > General: user interface language; Reset all settings... (asks
+first, then puts every preference back to how TraceDraw comes, keeping
+the recent drawings, the last folder and the window's size; drawings are
+not touched). Global > File Locations: where the preferences and
+auto-backups are kept. Workspaces: the workspace in use, and exporting
+and importing the user's setup to a `.tdws` file (see `workspaces.md`).
+
+### Printing
+
+What the Print dialog starts with (`printing` in the preferences): Fit
+to page, Print separations, Bleed, Crop marks, Registration marks, Colour
+bars, Densitometer scale, Page information (all off), the sheet (fitted
+to the pages) with Landscape, and the space between pages (5 mm). The
+rest starts as always: one copy, all pages, 100 %, as in the document.
+
+- Remember the settings of the last print (off): Print in the dialog
+  keeps its choices above for the next time.
+- Check the drawing in the Print dialog (on): the preflight summary and
+  its "Preflight..." button; off, the dialog runs no checks.
+- A sheet out of the list or a space that is not a number from a file
+  falls back to the defaults (the space is kept within 0 to 100 mm).
+
+### File Formats
+
+What File > Export (Ctrl+E) starts with (`formats`): the format (SVG),
+the resolution of bitmap formats (300 dpi, 36 to 2400), the JPEG and
+WebP quality (90, 1 to 100), Transparent background (on), the PDF
+standard (PDF 1.4), the PDF/X output condition (FOGRA39, at most 64
+characters) and the PDF bleed (0 mm, 0 to 50). Remember the settings of
+the last export (off): exporting keeps the dialog's choices for the next
+time. Export for Web and Export for Office keep their own presets and
+never change these.
+
+Imported objects go (File > Import, Ctrl+I): where the file has them
+(the default), or centred in the middle of the view; the move is part of
+the import's undo step.
+
+### Bitmap Tracing
+
+Quick Trace uses (`tracing`): one of the eight presets (Clipart by
+default). Every trace starts with: Remove background (on) and Delete
+original image (off); Quick Trace and the Trace dialog's presets take
+them, and the dialog can still change them for one trace.
+
+### Warnings
+
+Show a message (`warnings`, all on):
+
+- When objects of an opened file could not be read: after a `.cdr` file
+  opens with objects left out, a message gives their number and a Report
+  button that opens a new issue for the file.
+- When an opened drawing uses fonts that are not installed: the message
+  names them (the text shows in a similar font and keeps its font name).
+- Before an item is removed from the Shelf: Remove or Cancel.
+
+Both parts after opening share one message. Each message has "Do not show
+this message again" (the Shelf's: "Do not ask again"), which turns off
+the matching choice here; ticking it again brings the message back. A
+message never replaces another dialog that is open.
+
+### Pages with no equivalent
+
+Pen settings (pressure curves for tablets), Tablet Mode, VBA and
+plug-ins have no page: TraceDraw reads no pen pressure, has its own
+workspaces instead of a tablet mode, scripts in JavaScript (Scripts
+panel) and hosts no plug-ins.
 
 ## Interface size
 
@@ -112,8 +173,11 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 - `ui::options::tests::every_page_belongs_to_one_dialog`
 - `ui::options::tests::cancel_puts_settings_and_document_back`
 - `ui::options::tests::every_page_draws`
-- `ui::tests::interface_size_overrides_the_system_scaling`
-- `ui::tests::automatic_size_follows_the_sign_in_scaling`
+- `ui::tests::interface_size_is_relative_to_the_system_scaling`
+- `prefs::tests` (print, export and trace preferences; the dialogs
+  starting with them; imports centred in the view; the messages after
+  opening; the Shelf asking before removing)
+- `ui::options_global::tests::the_global_pages_draw`
 - `drawing_scale::tests::zoom_100_follows_the_ruler_calibration`
 - `tracedraw_render` `open_curves_are_not_filled_unless_the_document_says_so`
 - `tracedraw_io` `open_curves_lose_their_fill_in_vector_exports`

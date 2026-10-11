@@ -1,7 +1,9 @@
 # Export
 
 File > Export (Ctrl+E) and File > Export For > Web or Office open the
-Export dialog.
+Export dialog. File > Export starts with the choices of Options > Global
+> File Formats, which can also keep those of the last export; the Web and
+Office presets start with their own (see `options.md`).
 
 ## Layout
 

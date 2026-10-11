@@ -18,6 +18,9 @@ pub use crate::ui::options::OptionsPage;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportState {
+    /// File > Export opened it and Options > Global > File Formats keeps
+    /// the last export's choices: exporting stores them.
+    pub remember: bool,
     pub format: usize,
     pub dpi: f64,
     pub all_pages: bool,
@@ -34,6 +37,7 @@ pub struct ExportState {
 impl Default for ExportState {
     fn default() -> Self {
         ExportState {
+            remember: false,
             format: 0,
             dpi: 300.0,
             all_pages: false,
@@ -47,6 +51,9 @@ impl Default for ExportState {
         }
     }
 }
+
+/// Where a `.cdr` file that does not open right is sent in.
+pub const CDR_ISSUE: &str = "https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml";
 
 pub const PDF_STANDARDS: [&str; 4] = ["PDF 1.4", "PDF/X-1a:2003", "PDF/X-3:2003", "PDF/X-4"];
 
@@ -177,6 +184,17 @@ pub const SHEETS: [(&str, Option<Size>); 9] = [
     ),
 ];
 
+/// The name of the Print dialog's sheet `i` (the first one fits the
+/// sheet to the pages).
+pub fn sheet_name(i: usize) -> String {
+    let (n, _) = SHEETS[i.min(SHEETS.len() - 1)];
+    if i == 0 {
+        tr(n)
+    } else {
+        n.to_string()
+    }
+}
+
 impl PrintState {
     /// The imposition chosen.
     pub fn layout(&self) -> crate::imposition::Layout {
@@ -296,12 +314,48 @@ pub struct TraceState {
 }
 
 impl TraceState {
-    pub fn new(preset: crate::trace::Preset) -> Self {
+    /// The Trace dialog on `preset`, with the choices every trace starts
+    /// with (Options > Global > Bitmap Tracing).
+    pub fn new(preset: crate::trace::Preset, prefs: &crate::prefs::TracePrefs) -> Self {
         TraceState {
             preset,
-            settings: preset.settings(),
+            settings: prefs.settings(preset),
             preview_count: None,
         }
+    }
+}
+
+/// What the message after opening a drawing says.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OpenNotes {
+    /// The drawing's file name.
+    pub name: String,
+    /// Objects left out because they could not be read (0: none, or the
+    /// warning is off).
+    pub unread: usize,
+    /// Fonts the drawing uses that are not installed (empty: none, or the
+    /// warning is off).
+    pub fonts: Vec<String>,
+    pub dont_show: bool,
+}
+
+impl OpenNotes {
+    /// The message: one paragraph per part.
+    pub fn text(&self) -> String {
+        let mut parts = Vec::new();
+        if self.unread > 0 {
+            parts.push(trf(
+                "notes.unread_objects",
+                &[("n", &self.unread.to_string()), ("name", &self.name)],
+            ));
+        }
+        if !self.fonts.is_empty() {
+            parts.push(trf(
+                "notes.missing_fonts",
+                &[("name", &self.name), ("fonts", &self.fonts.join(", "))],
+            ));
+        }
+        parts.join("\n\n")
     }
 }
 
@@ -404,9 +458,18 @@ pub enum Dialog {
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
     ConfirmResetSettings,
-    /// The browser version, the first time a browser opens it: what the
-    /// demo leaves out, with OK.
+    /// The browser version, each time the page opens: what the demo
+    /// leaves out, with OK.
     WebDemo,
+    /// After a drawing opens: objects that could not be read, fonts that
+    /// are not installed (Options > Global > Warnings).
+    OpenNotes(OpenNotes),
+    /// Take an item off the Shelf? (Options > Global > Warnings.)
+    ConfirmShelfRemove {
+        uid: u64,
+        name: String,
+        dont_ask: bool,
+    },
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
@@ -916,6 +979,67 @@ pub fn show(app: &mut App, ctx: &Context) {
             ) {
                 Some(0) => {
                     app.reset_settings();
+                    close = true;
+                }
+                Some(_) => close = true,
+                None => {}
+            }
+        }
+        Dialog::OpenNotes(notes) => {
+            let ok = tr("dialog.ok");
+            let report = tr("notes.report");
+            // Unread objects: a way to send the file in.
+            let buttons: Vec<&str> = if notes.unread > 0 {
+                vec![&ok, &report]
+            } else {
+                vec![&ok]
+            };
+            let text = notes.text();
+            let picked = crate::ui::chrome::message_box_check(
+                ctx,
+                crate::ui::chrome::MessageIcon::Info,
+                &text,
+                &buttons,
+                &tr("notes.dont_show"),
+                &mut notes.dont_show,
+            );
+            if let Some(i) = picked {
+                if notes.dont_show {
+                    if notes.unread > 0 {
+                        app.settings.warnings.unread_objects = false;
+                    }
+                    if !notes.fonts.is_empty() {
+                        app.settings.warnings.missing_fonts = false;
+                    }
+                    app.settings.save();
+                }
+                if i == 1 && notes.unread > 0 {
+                    app.open_url(crate::ui::dialogs::CDR_ISSUE);
+                }
+                close = true;
+            }
+        }
+        Dialog::ConfirmShelfRemove {
+            uid,
+            name,
+            dont_ask,
+        } => {
+            let (remove, cancel) = (tr("shelf.remove"), tr("dialog.cancel"));
+            match crate::ui::chrome::message_box_check(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &trf("shelf.confirm_remove", &[("name", name)]),
+                &[&remove, &cancel],
+                &tr("shelf.dont_ask"),
+                dont_ask,
+            ) {
+                Some(0) => {
+                    if *dont_ask {
+                        app.settings.warnings.shelf_remove = false;
+                        app.settings.save();
+                    }
+                    let uid = *uid;
+                    crate::ui::shelf_docker::remove_now(app, uid);
                     close = true;
                 }
                 Some(_) => close = true,
@@ -2112,6 +2236,10 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
                     }
                 });
+            if st.remember {
+                app.settings.formats.remember(st);
+                app.settings.save();
+            }
         }
     });
 }
@@ -2153,14 +2281,7 @@ fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     }
                     ui.label(tr("print.sheet"));
                     ui.horizontal(|ui| {
-                        let name = |i: usize| {
-                            let (n, _) = SHEETS[i.min(SHEETS.len() - 1)];
-                            if i == 0 {
-                                tr(n)
-                            } else {
-                                n.to_string()
-                            }
-                        };
+                        let name = sheet_name;
                         egui::ComboBox::from_id_salt("print_sheet")
                             .selected_text(name(st.sheet))
                             .width(120.0)
@@ -2291,36 +2412,43 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
             });
         });
         ui.separator();
-        // Preflight: what the checks find, and the way to the list.
-        let issues = st
-            .preflight
-            .get_or_insert_with(|| crate::ui::preflight_dialog::issues_of(app))
-            .clone();
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-            if let Some(i) = issues.first() {
-                let warn = issues
-                    .iter()
-                    .any(|i| i.check.severity() == crate::preflight::Severity::Warning);
-                let sev = if warn {
-                    crate::preflight::Severity::Warning
-                } else {
-                    i.check.severity()
-                };
-                crate::ui::preflight_dialog::paint_icon(ui.painter(), r.center(), sev);
-            }
-            ui.label(crate::ui::preflight_dialog::summary(&issues));
-            if !issues.is_empty() && ui.button(tr("preflight.open")).clicked() {
-                app.dialog = Dialog::Preflight(Default::default());
-                *close = true;
-            }
-        });
+        // Preflight: what the checks find, and the way to the list
+        // (unless Options > Global > Printing turns it off).
+        if app.settings.printing.preflight {
+            let issues = st
+                .preflight
+                .get_or_insert_with(|| crate::ui::preflight_dialog::issues_of(app))
+                .clone();
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                if let Some(i) = issues.first() {
+                    let warn = issues
+                        .iter()
+                        .any(|i| i.check.severity() == crate::preflight::Severity::Warning);
+                    let sev = if warn {
+                        crate::preflight::Severity::Warning
+                    } else {
+                        i.check.severity()
+                    };
+                    crate::ui::preflight_dialog::paint_icon(ui.painter(), r.center(), sev);
+                }
+                ui.label(crate::ui::preflight_dialog::summary(&issues));
+                if !issues.is_empty() && ui.button(tr("preflight.open")).clicked() {
+                    app.dialog = Dialog::Preflight(Default::default());
+                    *close = true;
+                }
+            });
+        }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui.button(tr("dialog.print")).clicked() {
                 match crate::export::print(app, st) {
                     Ok(msg) => app.status = msg,
                     Err(e) => app.status = format!("{}: {e}", tr("dialog.print_failed")),
+                }
+                if app.settings.printing.remember_last {
+                    app.settings.printing.remember(st);
+                    app.settings.save();
                 }
                 *close = true;
             }
@@ -2425,19 +2553,10 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
         });
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            for p in [
-                crate::trace::Preset::Technical,
-                crate::trace::Preset::LineDrawing,
-                crate::trace::Preset::LineArt,
-                crate::trace::Preset::Logo,
-                crate::trace::Preset::DetailedLogo,
-                crate::trace::Preset::Clipart,
-                crate::trace::Preset::LowQualityImage,
-                crate::trace::Preset::HighQualityImage,
-            ] {
+            for p in crate::trace::Preset::ALL {
                 if ui.selectable_label(st.preset == p, tr(p.key())).clicked() {
                     st.preset = p;
-                    st.settings = p.settings();
+                    st.settings = app.settings.tracing.settings(p);
                     st.preview_count = None;
                 }
             }
@@ -3516,7 +3635,10 @@ mod tests {
                 ph: 110.0,
                 keep: false,
             }),
-            Dialog::Trace(TraceState::new(crate::trace::Preset::Logo)),
+            Dialog::Trace(TraceState::new(
+                crate::trace::Preset::Logo,
+                &Default::default(),
+            )),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("emboss")),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("tone_curve")),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new(

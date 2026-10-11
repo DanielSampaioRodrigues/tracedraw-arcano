@@ -157,6 +157,18 @@ pub struct Settings {
     /// imports.
     #[serde(default)]
     pub workspace_parts: crate::workspace_file::WorkspaceParts,
+    /// Options > Global > Printing.
+    #[serde(default)]
+    pub printing: crate::prefs::PrintPrefs,
+    /// Options > Global > File Formats.
+    #[serde(default)]
+    pub formats: crate::prefs::FormatPrefs,
+    /// Options > Global > Bitmap Tracing.
+    #[serde(default)]
+    pub tracing: crate::prefs::TracePrefs,
+    /// Options > Global > Warnings.
+    #[serde(default)]
+    pub warnings: crate::prefs::WarningPrefs,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -606,6 +618,10 @@ impl Default for Settings {
             defaults: crate::defaults::DefaultsPrefs::default(),
             shown_bars: None,
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
+            printing: Default::default(),
+            formats: Default::default(),
+            tracing: Default::default(),
+            warnings: Default::default(),
         }
     }
 }

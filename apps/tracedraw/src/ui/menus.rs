@@ -1048,7 +1048,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.import();
     }
     if item(ui, "menu.file.export", "Ctrl+E", doc) {
-        app.dialog = Dialog::Export(crate::ui::dialogs::ExportState::default());
+        app.export();
     }
     sub(ui, "menu.file.export_for", |ui| {
         if item(ui, "menu.file.export_for_web", "", doc) {
@@ -1092,7 +1092,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     });
     sep(ui);
     if item(ui, "menu.file.print", "Ctrl+P", doc) {
-        app.dialog = Dialog::Print(Default::default());
+        app.print();
     }
     if item(ui, "menu.file.print_preview", "", doc) {
         app.fullscreen_preview = true;
@@ -1972,7 +1972,10 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             ),
         ] {
             if item(ui, key, "", has_bitmap) {
-                app.dialog = Dialog::Trace(crate::ui::dialogs::TraceState::new(preset));
+                app.dialog = Dialog::Trace(crate::ui::dialogs::TraceState::new(
+                    preset,
+                    &app.settings.tracing,
+                ));
             }
         }
     });
@@ -1995,7 +1998,10 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             ),
         ] {
             if item(ui, key, "", has_bitmap) {
-                app.dialog = Dialog::Trace(crate::ui::dialogs::TraceState::new(preset));
+                app.dialog = Dialog::Trace(crate::ui::dialogs::TraceState::new(
+                    preset,
+                    &app.settings.tracing,
+                ));
             }
         }
     });

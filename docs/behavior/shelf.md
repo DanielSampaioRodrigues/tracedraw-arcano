@@ -51,7 +51,10 @@ restarts. Code: `shelf.rs` (items, file, placing, pictures) and
 - The item's menu: Place, Rename (the name becomes a field: Enter or
   leaving it keeps the name, Esc keeps the old one), Remove.
 - Remove (button or menu) takes the chosen item off the shelf; it cannot
-  be undone. The status bar says "Removed from the Shelf: name".
+  be undone, so it asks first ("Remove name from the Shelf?", Remove or
+  Cancel) unless Options > Global > Warnings, or "Do not ask again" in
+  that question, says not to. The status bar says "Removed from the
+  Shelf: name".
 - Dragging an item onto another item moves it to that place.
 
 ## Pictures

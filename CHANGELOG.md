@@ -12,6 +12,15 @@ full, row-by-row status.
 - Shelf panel: keep objects for any drawing and after restarts, place
   them by double click or by dragging onto the page (Window > Dockers >
   Shelf, or Add to Shelf on the object menu).
+- Options > Global: Printing and File Formats set what the Print and
+  Export dialogs start with (and can remember the last ones), where
+  imported objects go, Bitmap Tracing sets Quick Trace's preset, and
+  Warnings turns messages on and off.
+- Opening a `.cdr` file with objects that could not be read, or a drawing
+  with fonts that are not installed, now says so in a message (with a
+  Report button for the file).
+- The browser demo's loading page says only that it is loading; the demo
+  message shows each time the page opens.
 
 ## 0.3.0 (2026-10-11)
 

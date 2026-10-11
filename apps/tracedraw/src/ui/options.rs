@@ -52,6 +52,10 @@ pub enum OptionsPage {
     Eraser,
     // Tools > Options > Global.
     GlobalGeneral,
+    Printing,
+    FileFormats,
+    BitmapTracing,
+    Warnings,
     FileLocations,
     // Tools > Options > Workspaces.
     Workspace,
@@ -84,7 +88,14 @@ impl OptionsSet {
             OptionsSet::Tools => &[
                 Pick, ZoomPan, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table, Eraser,
             ],
-            OptionsSet::Global => &[GlobalGeneral, FileLocations],
+            OptionsSet::Global => &[
+                GlobalGeneral,
+                Printing,
+                FileFormats,
+                BitmapTracing,
+                Warnings,
+                FileLocations,
+            ],
             OptionsSet::Workspaces => &[Workspace],
             OptionsSet::Document => &[
                 DocumentGeneral,
@@ -151,6 +162,10 @@ impl OptionsPage {
             Table => "tool.table",
             Eraser => "tool.eraser",
             FileLocations => "options.file_locations",
+            Printing => "options.printing",
+            FileFormats => "options.file_formats",
+            BitmapTracing => "options.bitmap_tracing",
+            Warnings => "options.warnings",
             Workspace => "options.workspace",
             PageSize => "options.page_size",
             Layout => "options.layout",
@@ -495,6 +510,10 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         Table => table_page(app, ui),
         Eraser => eraser_page(app, ui),
         GlobalGeneral => global_general_page(app, ui),
+        Printing => crate::ui::options_global::printing_page(app, ui),
+        FileFormats => crate::ui::options_global::file_formats_page(app, ui),
+        BitmapTracing => crate::ui::options_global::bitmap_tracing_page(app, ui),
+        Warnings => crate::ui::options_global::warnings_page(app, ui),
         FileLocations => file_locations_page(app, ui),
         Workspace => workspace_page(app, ui),
         DocumentGeneral => document_general_page(app, ui),
@@ -509,17 +528,17 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
 }
 
 /// A label right-aligned in a grid's first column.
-fn row_label(ui: &mut Ui, text: &str) {
+pub(crate) fn row_label(ui: &mut Ui, text: &str) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.label(text);
     });
 }
 
-fn grid(id: &str) -> egui::Grid {
+pub(crate) fn grid(id: &str) -> egui::Grid {
     egui::Grid::new(id).num_columns(2).spacing([8.0, 8.0])
 }
 
-fn combo<T: Copy + PartialEq>(
+pub(crate) fn combo<T: Copy + PartialEq>(
     ui: &mut Ui,
     id: &str,
     value: &mut T,

@@ -1243,8 +1243,11 @@ impl App {
 
     // ----- tracing ---------------------------------------------------------------------
 
+    /// Bitmaps > Quick Trace: the preset and choices of Options > Global >
+    /// Bitmap Tracing.
     pub fn quick_trace(&mut self) {
-        let settings = crate::trace::Preset::Clipart.settings();
+        let prefs = &self.settings.tracing;
+        let settings = prefs.settings(prefs.quick_preset);
         self.trace_bitmaps(&settings);
     }
 

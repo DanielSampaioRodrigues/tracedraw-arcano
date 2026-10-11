@@ -8,7 +8,8 @@ use tracedraw_core::{
     Color,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Preset {
     // Centreline
     Technical,
@@ -23,6 +24,18 @@ pub enum Preset {
 }
 
 impl Preset {
+    /// Every preset, centreline ones first.
+    pub const ALL: [Preset; 8] = [
+        Preset::Technical,
+        Preset::LineDrawing,
+        Preset::LineArt,
+        Preset::Logo,
+        Preset::DetailedLogo,
+        Preset::Clipart,
+        Preset::LowQualityImage,
+        Preset::HighQualityImage,
+    ];
+
     pub fn is_centerline(self) -> bool {
         matches!(self, Preset::Technical | Preset::LineDrawing)
     }

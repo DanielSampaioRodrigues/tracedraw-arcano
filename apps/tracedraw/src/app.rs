@@ -2751,6 +2751,8 @@ impl App {
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        // Objects of a `.cdr` file left out because they could not be read.
+        let mut unread = 0usize;
         let result = if ext == "svg" || ext == "svgz" {
             Self::read_svg_text(&path)
                 .and_then(|text| {
@@ -2998,6 +3000,7 @@ impl App {
                     for w in &report.warnings {
                         log::warn!("cdr: {w}");
                     }
+                    unread = report.skipped_objects;
                     (
                         doc,
                         crate::i18n::trf(
@@ -3056,6 +3059,11 @@ impl App {
                 self.store_thumbnail(&path);
                 self.show_welcome = false;
                 self.check_missing_fonts();
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.show_open_notes(name, unread);
             }
             Err(e) => {
                 self.status = crate::i18n::trf(
@@ -3263,10 +3271,39 @@ impl App {
     }
 
     /// File > Export (Ctrl+E, the toolbar button): the Export dialog with
-    /// every format.
+    /// every format, starting with the choices of Options > Global > File
+    /// Formats.
     pub fn export(&mut self) {
-        self.dialog =
-            crate::ui::dialogs::Dialog::Export(crate::ui::dialogs::ExportState::default());
+        self.dialog = crate::ui::dialogs::Dialog::Export(self.settings.formats.state());
+    }
+
+    /// After a drawing opened: say which objects could not be read and
+    /// which fonts are missing, as far as Options > Global > Warnings asks
+    /// for it, unless another dialog is up.
+    pub fn show_open_notes(&mut self, name: String, unread: usize) {
+        if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
+            return;
+        }
+        let w = &self.settings.warnings;
+        let notes = crate::ui::dialogs::OpenNotes {
+            name,
+            unread: if w.unread_objects { unread } else { 0 },
+            fonts: if w.missing_fonts {
+                self.missing_fonts.clone()
+            } else {
+                Vec::new()
+            },
+            dont_show: false,
+        };
+        if notes.unread > 0 || !notes.fonts.is_empty() {
+            self.dialog = crate::ui::dialogs::Dialog::OpenNotes(notes);
+        }
+    }
+
+    /// File > Print (Ctrl+P, the toolbar button): the Print dialog,
+    /// starting with the choices of Options > Global > Printing.
+    pub fn print(&mut self) {
+        self.dialog = crate::ui::dialogs::Dialog::Print(self.settings.printing.state());
     }
 
     pub fn import(&mut self) {
@@ -3296,7 +3333,37 @@ impl App {
     }
 
     /// Import a file into the active layer, by extension.
+    /// File > Import of `path`: the objects are added to the active
+    /// layer and selected, as one undo step; Options > Global > File
+    /// Formats may centre them in the view.
     pub fn import_path(&mut self, path: &std::path::Path) {
+        let before = self.selection.clone();
+        self.import_path_as_in_file(path);
+        if self.settings.formats.import_place != crate::prefs::ImportPlace::ViewCenter
+            || self.selection == before
+            || self.selection.is_empty()
+        {
+            return;
+        }
+        let Some(b) = self.selection_bounds() else {
+            return;
+        };
+        let view = self.view.visible_page_rect(self.canvas_rect).center();
+        let d = view - b.center();
+        if !(d.x.is_finite() && d.y.is_finite()) {
+            return;
+        }
+        // Part of the import's own undo step.
+        let cmd = Command::TransformShapes {
+            shapes: self.selection.clone(),
+            transform: Affine::translate(d),
+        };
+        if let Err(e) = self.engine.amend(&cmd) {
+            self.status = e.to_string();
+        }
+    }
+
+    fn import_path_as_in_file(&mut self, path: &std::path::Path) {
         let path = path.to_path_buf();
         let ext = path
             .extension()

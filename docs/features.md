@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 169, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 170, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -207,7 +207,8 @@ Counts: works 169, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Scripts panel: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
 | Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
-| Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Printing, File Formats | missing |
+| Options > Global > Printing (what the Print dialog starts with, remember the last print, preflight in the dialog), File Formats (what Export starts with, remember the last export, imported objects centred or as in the file), Bitmap Tracing (Quick Trace preset, what every trace starts with), Warnings (unread objects, missing fonts, Shelf removal; each message can be turned off) | works (see `behavior/options.md`) |
+| Options pages for pen pressure, tablet mode, VBA and plug-ins | not applicable: no pen pressure input, own workspaces, JavaScript scripting, no plug-in host |
 | Save settings as default | works |
 | Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |

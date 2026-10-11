@@ -9,7 +9,9 @@ is downloaded). `export::print` builds it; the sheets come from
 
 Two columns: the pages and the prepress options on the left, the layout
 on the right; under them the preflight outcome (see `preflight.md`) and
-Print, Print Preview and Cancel.
+Print, Print Preview and Cancel. The dialog starts with the choices of
+Options > Global > Printing, which can also keep those of the last print
+and turn the preflight outcome off (see `options.md`).
 
 - Copies (handed to the viewer), All pages (off: the current page only),
   Fit to page (off: a scale in percent for fitted sheets).

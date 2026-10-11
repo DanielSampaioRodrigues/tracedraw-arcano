@@ -26,6 +26,7 @@ pub mod layout_options;
 pub mod menus;
 pub mod objects_docker;
 pub mod options;
+pub mod options_global;
 pub mod palette;
 pub mod pdf_password;
 pub mod picture_mosaic_docker;

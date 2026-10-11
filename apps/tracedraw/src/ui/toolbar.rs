@@ -239,7 +239,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             app.save(false);
         }
         if std_button(ui, icons::Action::Print, &tr("toolbar.print"), doc, false).clicked() {
-            app.dialog = crate::ui::dialogs::Dialog::Print(Default::default());
+            app.print();
         }
         std_sep(ui);
         let has = doc && !app.selection.is_empty();
@@ -1705,7 +1705,7 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
             ),
         ] {
             if ui.button(tr(key)).clicked() {
-                app.dialog = Dialog::Trace(TraceState::new(preset));
+                app.dialog = Dialog::Trace(TraceState::new(preset, &app.settings.tracing));
                 ui.close();
             }
         }

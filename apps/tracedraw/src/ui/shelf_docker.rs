@@ -50,7 +50,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui) {
             .clicked()
         {
             if let Some(uid) = chosen {
-                remove(app, uid);
+                ask_to_remove(app, uid);
             }
         }
     });
@@ -91,7 +91,25 @@ pub fn shelf(app: &mut App, ui: &mut Ui) {
     }
 }
 
-fn remove(app: &mut App, uid: u64) {
+/// Remove (button or menu): asks first unless Options > Global >
+/// Warnings says not to.
+pub fn ask_to_remove(app: &mut App, uid: u64) {
+    let Some(name) = app.shelf.item(uid).map(|i| i.name.clone()) else {
+        return;
+    };
+    if app.settings.warnings.shelf_remove {
+        app.dialog = crate::ui::dialogs::Dialog::ConfirmShelfRemove {
+            uid,
+            name,
+            dont_ask: false,
+        };
+    } else {
+        remove_now(app, uid);
+    }
+}
+
+/// Take the item off the shelf and say so.
+pub fn remove_now(app: &mut App, uid: u64) {
     let name = app.shelf.item(uid).map(|i| i.name.clone());
     if app.shelf_remove(uid) {
         if let Some(name) = name {
@@ -202,7 +220,7 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
                 }
                 crate::ui::menus::sep(ui);
                 if crate::ui::menus::item(ui, "shelf.remove", "", true) {
-                    remove(app, uid);
+                    ask_to_remove(app, uid);
                 }
             })
         });
