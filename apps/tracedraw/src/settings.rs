@@ -136,6 +136,9 @@ pub struct Settings {
     /// The Time Tracker's toolbar and idle time.
     #[serde(default)]
     pub time_tracker: TimeTrackerPrefs,
+    /// File > Preflight: the checks to run and their thresholds.
+    #[serde(default)]
+    pub preflight: crate::preflight::PreflightPrefs,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -532,6 +535,7 @@ impl Default for Settings {
             window_maximized: true,
             window_size: [0.0, 0.0],
             time_tracker: TimeTrackerPrefs::default(),
+            preflight: crate::preflight::PreflightPrefs::default(),
         }
     }
 }

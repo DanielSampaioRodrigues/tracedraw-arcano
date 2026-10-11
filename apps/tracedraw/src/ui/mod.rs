@@ -27,6 +27,7 @@ pub mod objects_docker;
 pub mod options;
 pub mod palette;
 pub mod picture_mosaic_docker;
+pub mod preflight_dialog;
 pub mod preview;
 pub mod propbar;
 pub mod rulers;

@@ -223,6 +223,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Print preview | works |
 | Print merge from CSV (create/load, edit, perform) | works |
 | Separations and overprint simulation | works |
+| Preflight: thirteen checks (empty or overflowing text, missing fonts, small and rich black text, RGB in CMYK, objects off the page, low and very high bitmap resolution, thin outlines, white overprint, empty pages, objects that will not print) with thresholds, a list that selects the object, and a summary in the Print dialog | works (see `behavior/preflight.md`) |
 
 ## Workspace look
 

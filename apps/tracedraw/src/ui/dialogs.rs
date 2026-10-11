@@ -99,6 +99,8 @@ pub struct PrintState {
     pub bleed: bool,
     pub mirror: bool,
     pub invert: bool,
+    /// What the preflight found when the dialog opened.
+    pub preflight: Option<Vec<crate::preflight::Issue>>,
 }
 
 impl Default for PrintState {
@@ -114,6 +116,7 @@ impl Default for PrintState {
             bleed: false,
             mirror: false,
             invert: false,
+            preflight: None,
         }
     }
 }
@@ -327,6 +330,7 @@ pub enum Dialog {
     NewDocument(crate::new_document::NewDocState),
     About,
     TimeTracker(crate::ui::time_tracker::TrackerDialog),
+    Preflight(crate::ui::preflight_dialog::PreflightState),
 }
 
 /// Convert to Bitmap: Resolution (a list and a value), Color mode,
@@ -592,6 +596,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::None => {}
         Dialog::BitmapBw(s) => crate::ui::bitmap_dialogs::bw_dialog(app, ctx, s, &mut close),
         Dialog::TimeTracker(st) => crate::ui::time_tracker::dialog(app, ctx, st, &mut close),
+        Dialog::Preflight(st) => crate::ui::preflight_dialog::dialog(app, ctx, st, &mut close),
         Dialog::BitmapDuotone(st) => {
             crate::ui::bitmap_dialogs::duotone_dialog(app, ctx, st, &mut close)
         }
@@ -1984,6 +1989,31 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
         ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
         ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
         ui.checkbox(&mut st.invert, tr("dialog.invert"));
+        ui.separator();
+        // Preflight: what the checks find, and the way to the list.
+        let issues = st
+            .preflight
+            .get_or_insert_with(|| crate::ui::preflight_dialog::issues_of(app))
+            .clone();
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+            if let Some(i) = issues.first() {
+                let warn = issues
+                    .iter()
+                    .any(|i| i.check.severity() == crate::preflight::Severity::Warning);
+                let sev = if warn {
+                    crate::preflight::Severity::Warning
+                } else {
+                    i.check.severity()
+                };
+                crate::ui::preflight_dialog::paint_icon(ui.painter(), r.center(), sev);
+            }
+            ui.label(crate::ui::preflight_dialog::summary(&issues));
+            if !issues.is_empty() && ui.button(tr("preflight.open")).clicked() {
+                app.dialog = Dialog::Preflight(Default::default());
+                *close = true;
+            }
+        });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui.button(tr("dialog.print")).clicked() {

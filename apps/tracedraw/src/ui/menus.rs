@@ -721,6 +721,9 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.print_preview", "", doc) {
         app.fullscreen_preview = true;
     }
+    if item(ui, "menu.file.preflight", "", doc) {
+        app.dialog = Dialog::Preflight(Default::default());
+    }
     sep(ui);
     if item(ui, "menu.file.document_properties", "", doc) {
         app.dialog = Dialog::DocumentProperties;

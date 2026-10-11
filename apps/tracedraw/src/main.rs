@@ -48,6 +48,7 @@ mod ops;
 mod ops2;
 mod palette;
 mod picture_mosaic;
+mod preflight;
 mod raster;
 mod scripting;
 mod settings;
