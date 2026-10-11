@@ -94,8 +94,9 @@ pub fn resize_icon(h: Handle) -> egui::CursorIcon {
 fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     let moving = ToolCursor::System(egui::CursorIcon::Move);
     match &app.drag {
-        // Over the document palette letting go adds the colours.
-        Drag::Move { .. } if app.over_document_palette() => {
+        // Over the document palette letting go adds the colours; after a
+        // right click the move leaves the original (a copy moves).
+        Drag::Move { .. } if app.over_document_palette() || app.drag_copy => {
             return Some(ToolCursor::System(egui::CursorIcon::Copy))
         }
         Drag::Move { .. } | Drag::Pivot => return Some(moving),
@@ -165,6 +166,26 @@ pub fn ruler_drag_cursor(app: &App) -> Option<egui::CursorIcon> {
     }
 }
 
+/// The Shape tool's pointer: over the handles framing the selected nodes
+/// (Stretch and Scale or Rotate and Skew Nodes) the arrows of the Pick
+/// tool's handles, else its arrow with a mark.
+fn shape_cursor(app: &App, pos: Option<Pos2>) -> ToolCursor {
+    use crate::node_edit::NodeTransformMode as M;
+    let handle = match &app.drag {
+        Drag::NodeTransform { handle, .. } => Some(*handle),
+        Drag::None => pos.and_then(|s| app.node_transform_handle_at(app.view.to_page(s))),
+        _ => None,
+    };
+    match (handle, app.node_transform) {
+        (Some(h), M::StretchScale) => ToolCursor::System(resize_icon(h)),
+        (Some(h), M::RotateSkew) if h.is_corner() => ToolCursor::Rotate,
+        (Some(h), M::RotateSkew) => ToolCursor::Skew {
+            horizontal: matches!(h, Handle::N | Handle::S),
+        },
+        _ => ToolCursor::ShapeArrow(shape_mark(app, pos)),
+    }
+}
+
 /// What the Shape tool's arrow points at: what is being dragged, else
 /// what is under `pos` (screen).
 fn shape_mark(app: &App, pos: Option<Pos2>) -> ShapeMark {
@@ -182,7 +203,10 @@ fn shape_mark(app: &App, pos: Option<Pos2>) -> ShapeMark {
     let p = app.view.to_page(pos);
     if app.ctrl_handle_at(p).is_some() {
         ShapeMark::Control
-    } else if app.node_at(p).is_some() || app.kind_node_at(p).is_some() {
+    } else if app.node_at(p).is_some()
+        || app.kind_node_at(p).is_some()
+        || app.effect_node_at(p).is_some()
+    {
         ShapeMark::Node
     } else if app.segment_at(p).is_some() {
         ShapeMark::Segment
@@ -227,7 +251,14 @@ pub fn for_tool(
             ToolCursor::System(egui::CursorIcon::Crosshair)
         }
         Tool::Pick | Tool::FreeformPick => ToolCursor::System(egui::CursorIcon::Default),
-        Tool::Shape => ToolCursor::ShapeArrow(shape_mark(app, pos)),
+        Tool::Shape => shape_cursor(app, pos),
+        // The fill's handles move.
+        Tool::InteractiveFill
+            if matches!(app.drag, Drag::FountainHandle { .. })
+                || pos.is_some_and(|s| app.fountain_handle_at(app.view.to_page(s)).is_some()) =>
+        {
+            ToolCursor::System(egui::CursorIcon::Move)
+        }
         Tool::Eraser => ToolCursor::Nib {
             radius: nib_px(app.eraser_width / 2.0, app.view.zoom),
             square: app.eraser_square,

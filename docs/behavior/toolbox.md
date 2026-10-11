@@ -50,6 +50,7 @@ Each tool's pointer says which tool is active (code: `ui/cursors.rs`):
 | Eraser | the cross hair inside the nib's outline at its size on screen (a circle, a square for the square nib) |
 | Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen | the cross hair inside a circle of the brush size |
 | Freehand, Bezier, Pen, B-spline, Polyline, 2-point line | the cross hair with the tool's icon; above and right of it a node with a line going on over an end node of the selected open curve (a line from there continues it), a ring over the first node of the curve being drawn once it has three nodes (a click closes it) |
+| Interactive Fill | the move arrows over a handle of the selected object's fountain fill (and while one is dragged), else the cross hair with the tool's icon |
 | Every other tool (shapes, dimensions, connectors, effects, fills, Crop, Knife, Table, ...) | the cross hair with the tool's icon at its lower right on a light patch |
 
 The cross hair, the arrows and the I-beam are the system's own; the

@@ -12,6 +12,7 @@
 | Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on; let go over the document palette to add the objects' colours to it instead of moving them |
 | Corner handle | scale proportionally from the opposite corner; Shift from the centre; Ctrl in whole steps of 100 % (crossing the other side gives the mirror image at the same size); Alt scales freely |
 | Side handle | stretch one axis from the opposite side (across it: mirrored); Shift from the centre; Ctrl in steps of 100 % |
+| Snapping while scaling | with snapping on, the dragged corner or side handle snaps to other objects' points and edges, guidelines, the grid and the page (never to the selection's own points), and the snap mark shows where |
 | Rotate handle (rotate mode, corners) | rotate about the centre of rotation; Ctrl in steps of the constrain angle (15 degrees) |
 | Skew handle (rotate mode, sides) | slant: the top and bottom handles sideways, the left and right ones up and down, the opposite side fixed; Shift about the centre line; Ctrl in steps of the constrain angle |
 | Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point (kept while rotate mode stays on for the same selection; it starts in the middle each time rotate mode comes on); double-click puts it back in the middle; a click on it keeps rotate mode |
@@ -51,7 +52,8 @@ The pointer says what a press would do (code: `ui/cursors.rs`):
 | Anything else | the arrow (the cross hair with Options > Tools > Pick > Cross hair) |
 
 While dragging, the pointer keeps the shape of what is being done (move
-arrows, the handle's resize arrows, the turning arrow, the slant
+arrows, the copy arrow once a right click made the move leave the
+original, the handle's resize arrows, the turning arrow, the slant
 arrows, the arrows across a guideline being moved or dragged out of a
 ruler, the cross hair while the ruler origin is dragged). Resize and move arrows are the system's own; the turning and
 slant arrows are drawn by TraceDraw, black on a white halo.
@@ -111,6 +113,7 @@ break instead.
 - `pick_drag_tests::alt_marquees_take_what_they_touch`
 - `pick_drag_tests::clicking_the_selection_or_its_centre_mark_turns_the_handles`
 - `pick_drag_tests::the_pointer_shows_moves_for_objects_and_guidelines`
+- `pick_drag_tests::scale_handles_snap_to_other_objects_not_to_the_selection`
 - `select_region::tests` (wholly inside, touching, groups, lassos)
 - `command::tests::objects_inside_groups_can_be_changed_and_deleted` (core)
 - `tests::the_drag_preview_reaches_objects_inside_groups` (render)

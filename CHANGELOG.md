@@ -29,7 +29,13 @@ full, row-by-row status.
   its outline it colours the outline; onto the document palette it joins
   it.
 - The Text tool's pointer is the I-beam only over text; elsewhere the
-  cross hair with its icon.
+  cross hair with its icon. The Shape tool shows the resize, turning and
+  slant arrows over the handles framing selected nodes, and its right
+  click chooses the node or segment under the pointer before the menu
+  opens. Interactive Fill shows the move arrows over the fill's handles.
+- Scale handles snap to other objects, guidelines, the grid and the page.
+- A double click on the drawing with the Rectangle tool no longer adds a
+  page frame (double-click the tool's button for that).
 - The pointer shows what a press would do: resize arrows on the handles,
   move arrows on objects and the centre mark, arrows across guidelines,
   turning and slant arrows in rotate mode,

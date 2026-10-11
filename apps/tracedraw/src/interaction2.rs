@@ -1036,6 +1036,24 @@ impl App {
                 }
             }
         }
+        if self.tool == Tool::Shape {
+            // A right click on a node takes it (unless it is chosen
+            // already); on a segment, the node it ends at, so that the
+            // menu's To Line and To Curve act on that segment; on another
+            // object, that object.
+            if let Some(hit) = self.node_at(p) {
+                let key = (hit.shape, hit.index);
+                if !self.node_selection.contains(&key) {
+                    self.node_selection = vec![key];
+                }
+            } else if let Some((id, i, _)) = self.segment_at(p) {
+                self.node_selection = vec![(id, i)];
+            } else if let Some(id) = self.hit_test(p) {
+                if !self.selection.contains(&id) {
+                    self.select(vec![id]);
+                }
+            }
+        }
         self.context_menu = Some((screen, p));
     }
 }

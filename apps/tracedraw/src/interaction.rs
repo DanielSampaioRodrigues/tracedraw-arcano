@@ -903,6 +903,11 @@ impl App {
             }
             _ => None,
         };
+        let snapped_handle = if matches!(self.drag, Drag::Scale { .. }) {
+            self.snap_point_excluding(p, &self.selection)
+        } else {
+            p
+        };
         match &mut self.drag {
             Drag::Move { last, total, .. } => {
                 if let Some((np, nt)) = snapped_move {
@@ -922,8 +927,13 @@ impl App {
             }
             Drag::Scale {
                 current, mods: m, ..
+            } => {
+                // The handle snaps to other objects, guidelines, the grid
+                // and the page, never to the selection's own points.
+                *current = snapped_handle;
+                *m = crate::app::HandleMods::of(mods);
             }
-            | Drag::Skew {
+            Drag::Skew {
                 current, mods: m, ..
             } => {
                 *current = p;
@@ -1071,17 +1081,8 @@ impl App {
                 *current = q;
             }
         }
-        if response.double_clicked_by(PointerButton::Primary) && self.tool == Tool::Rectangle {
-            // Double-clicking the Rectangle tool draws a page frame.
-            let r = self.page_rect();
-            if let Some(id) = self.new_shape(ShapeKind::Rect {
-                rect: r,
-                radius: 0.0,
-                corners: None,
-            }) {
-                self.select(vec![id]);
-            }
-        }
+        // A page frame comes from double-clicking the tool's toolbox
+        // button, not from a double click on the drawing.
     }
 
     /// 3-point rectangle, ellipse and curve: drag the base segment, then

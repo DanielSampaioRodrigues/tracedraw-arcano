@@ -49,7 +49,9 @@ Drawing tools snap the pointer. A move with the Pick tool that starts on
 one of the selection's points (a node, a midpoint, a quadrant or the
 centre within the radius) carries that point onto another object's point
 or edge; otherwise the selection's box edges and centre snap to
-guidelines, the grids, the page and the other objects' boxes.
+guidelines, the grids, the page and the other objects' boxes. A scale
+handle being dragged snaps like the pointer of a drawing tool, leaving
+out the selection's own points.
 
 A guideline being dragged (or dragged out of a ruler) and the ruler origin
 snap to everything except guidelines.

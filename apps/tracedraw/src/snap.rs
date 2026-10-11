@@ -245,14 +245,21 @@ impl App {
 
     /// Snap a pointer position (drawing tools, text placement).
     pub fn snap_point(&self, p: Point) -> Point {
+        self.snap_point_excluding(p, &[])
+    }
+
+    /// Snap a pointer position to everything but `exclude` (a handle of
+    /// the selection snaps to other objects, not to the selection's own
+    /// points).
+    pub fn snap_point_excluding(&self, p: Point, exclude: &[ShapeId]) -> Point {
         if !self.snap_enabled() {
             return p;
         }
-        if let Some(t) = self.object_snap(p, &[], true, false) {
+        if let Some(t) = self.object_snap(p, exclude, true, false) {
             self.snap_mark.set(Some(t));
             return t.point;
         }
-        let (xs, ys) = self.snap_candidates(&[], true, false);
+        let (xs, ys) = self.snap_candidates(exclude, true, false);
         let axis = Point::new(
             self.snap_axis(p.x, &xs, true).unwrap_or(p.x),
             self.snap_axis(p.y, &ys, false).unwrap_or(p.y),
@@ -261,7 +268,7 @@ impl App {
             return axis;
         }
         if !self.snap.guides {
-            return self.edge_snap(p);
+            return self.edge_snap(p, exclude);
         }
         // Angled guides: project onto the nearest one within tolerance.
         let tol = self.snap_tolerance();
@@ -281,12 +288,12 @@ impl App {
                 return q;
             }
         }
-        self.edge_snap(p)
+        self.edge_snap(p, exclude)
     }
 
     /// An object's or the page's edge, or a text baseline, near `p`.
-    fn edge_snap(&self, p: Point) -> Point {
-        match self.object_snap(p, &[], false, true) {
+    fn edge_snap(&self, p: Point, exclude: &[ShapeId]) -> Point {
+        match self.object_snap(p, exclude, false, true) {
             Some(t) => {
                 self.snap_mark.set(Some(t));
                 t.point

@@ -14,9 +14,22 @@ Node counts in the status bar and the Objects panel count it once.
 A solid black arrow (drawn by TraceDraw on a white halo, its tip on the
 hot spot) with a mark at its lower right for what a press would take:
 a small hollow square over a node (of a curve, or of a rectangle,
-ellipse or polygon), a dot over a control point of a selected node, a
-wave over a segment of a selected curve, nothing elsewhere. While a node
-or a control point is dragged the mark stays.
+ellipse or polygon, or an envelope, perspective or mesh node), a dot
+over a control point of a selected node, a wave over a segment of a
+selected curve, nothing elsewhere. While a node or a control point is
+dragged the mark stays. Over the handles framing the selected nodes
+(Stretch and Scale or Rotate and Skew Nodes) the pointer is the Pick
+tool's: resize arrows, or the turning arrow at the corners and the slant
+arrows at the sides, also while they are dragged.
+
+## Right click
+
+A right click on a node chooses it (unless it is chosen already), on a
+segment the node that segment ends at (so To Line and To Curve act on
+that segment), on another object that object; then the node menu opens:
+Add, Delete, Join, Break, To Line, To Curve, Cusp, Smooth, Symmetrical,
+Reverse Direction, Extract Subpath, Close Curve, Elastic Mode,
+Properties.
 
 ## Selecting nodes
 
@@ -112,6 +125,9 @@ Reduce Nodes, Curve smoothness.
 
 ## Checks
 
+- `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`
+- `pick_drag_tests::the_pointer_shows_what_a_press_would_do` (marks, node
+  transform handles)
 - `node_edit::tests::ctrl_toggles_and_shift_selects_a_run`
 - `node_edit::tests::handles_scale_rotate_and_skew_the_chosen_nodes`
 - `node_edit::tests::reflect_and_elastic_moves`

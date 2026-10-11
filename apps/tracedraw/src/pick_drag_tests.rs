@@ -496,6 +496,30 @@ fn the_pointer_shows_what_a_press_would_do() {
         cursor(&app, empty),
         ToolCursor::ShapeArrow(ShapeMark::Nothing)
     );
+    // The handles framing selected nodes: resize arrows, or turning and
+    // slant arrows.
+    app.select_all_nodes();
+    app.node_transform = crate::node_edit::NodeTransformMode::StretchScale;
+    let at = |app: &App, h: Handle| {
+        let p = app
+            .node_transform_handles()
+            .into_iter()
+            .find(|(k, _)| *k == h)
+            .map(|(_, p)| p)
+            .expect("handle");
+        app.view.to_screen(p)
+    };
+    assert_eq!(
+        cursor(&app, at(&app, Handle::E)),
+        ToolCursor::System(resize_icon(Handle::E))
+    );
+    app.node_transform = crate::node_edit::NodeTransformMode::RotateSkew;
+    assert_eq!(cursor(&app, at(&app, Handle::NE)), ToolCursor::Rotate);
+    assert_eq!(
+        cursor(&app, at(&app, Handle::S)),
+        ToolCursor::Skew { horizontal: true }
+    );
+    app.node_transform = crate::node_edit::NodeTransformMode::None;
     // While dragging, the pointer keeps the drag's shape.
     app.set_tool(Tool::Pick);
     app.drag = Drag::Rotate {
@@ -504,6 +528,25 @@ fn the_pointer_shows_what_a_press_would_do() {
         current_angle: 0.0,
     };
     assert_eq!(cursor(&app, empty), ToolCursor::Rotate);
+    // A move that will leave the original (after a right click): the copy
+    // arrow.
+    app.drag = Drag::Move {
+        start: Point::ZERO,
+        last: Point::ZERO,
+        total: Vec2::ZERO,
+        start_bounds: Rect::ZERO,
+        source: None,
+    };
+    assert_eq!(
+        cursor(&app, empty),
+        ToolCursor::System(egui::CursorIcon::Move)
+    );
+    app.drag_copy = true;
+    assert_eq!(
+        cursor(&app, empty),
+        ToolCursor::System(egui::CursorIcon::Copy)
+    );
+    app.drag_copy = false;
     app.drag = Drag::None;
 }
 
@@ -1005,4 +1048,72 @@ fn the_pointer_shows_moves_for_objects_and_guidelines() {
         Some(egui::CursorIcon::ResizeVertical)
     );
     app.drag = Drag::None;
+}
+
+#[test]
+fn a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let right_click = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+    };
+    // The bottom side's middle: that segment's end node is chosen.
+    let on_segment = app.view.to_screen(Point::new(35.0, 10.0));
+    let (seg_shape, seg_index, _) = app.segment_at(Point::new(35.0, 10.0)).expect("segment");
+    right_click(&ctx, &mut app, on_segment);
+    assert!(app.context_menu.is_some());
+    assert_eq!(app.node_selection, vec![(seg_shape, seg_index)]);
+    assert_eq!(seg_shape, id);
+    app.context_menu = None;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // A corner: that node.
+    let corner = app.view.to_screen(Point::new(60.0, 40.0));
+    let hit = app.node_at(Point::new(60.0, 40.0)).expect("node");
+    right_click(&ctx, &mut app, corner);
+    assert_eq!(app.node_selection, vec![(hit.shape, hit.index)]);
+    app.context_menu = None;
+}
+
+#[test]
+fn scale_handles_snap_to_other_objects_not_to_the_selection() {
+    let (ctx, mut app, id) = setup();
+    // A second rectangle whose left edge is at x = 80.
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(80.0, 10.0, 100.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Drag the right side handle to a little short of the other's edge.
+    let e = handle(&app, Handle::E);
+    let short = app.view.to_screen(Point::new(80.0, 25.0)) - egui::vec2(2.0, 0.0);
+    drag(&ctx, &mut app, e, short, Modifiers::NONE, Vec::new());
+    let b = bounds(&app, id);
+    assert!((b.x1 - 80.0).abs() < 1e-6, "{b:?}");
+    assert!((b.x0 - 10.0).abs() < 1e-6);
+    // With snapping off the handle goes where the pointer is.
+    app.undo();
+    app.snap.off = true;
+    let e = handle(&app, Handle::E);
+    drag(&ctx, &mut app, e, short, Modifiers::NONE, Vec::new());
+    let b = bounds(&app, id);
+    assert!((b.x1 - 80.0).abs() > 0.1, "{b:?}");
+    assert!(app.doc().find_shape(other).is_some());
 }
