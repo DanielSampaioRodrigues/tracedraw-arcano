@@ -943,6 +943,10 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             titles.push(menu(ui, "menu.window", &mut |ui| window_menu(app, ui)));
             titles.push(menu(ui, "menu.help", &mut |ui| help_menu(app, ui)));
             switch_on_hover(ui.ctx(), &titles);
+            // The browser demo points at the desktop app.
+            if crate::files::WEB {
+                crate::ui::welcome::web_demo_link(app, ui);
+            }
         });
 }
 

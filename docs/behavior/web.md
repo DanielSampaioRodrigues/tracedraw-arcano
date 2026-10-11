@@ -21,6 +21,25 @@ does not work because browsers refuse to load modules from `file://`).
 | System clipboard | text and images (arboard) | text through the browser; pasting images from other programs is not available |
 | Help links | system browser | a new tab |
 
+## A demo, and it says so
+
+The browser version is for trying TraceDraw without installing it, and
+tells the visitor what that means and where the desktop app is:
+
+- The loading page says it is the browser demo, slower on heavy work and
+  limited to the fonts that come with it, with a link to the desktop
+  downloads (`https://github.com/igtoth/tracedraw/releases/latest`).
+- The Welcome Screen's Get Started page shows the same in place of the
+  recent documents (a browser keeps none), with a "Download the desktop
+  app" button.
+- The menu bar ends with a link to the downloads ("Browser demo: get the
+  desktop app"); its tooltip repeats what the demo leaves out.
+
+Heavy work is slower than on the desktop because the build is optimised
+for download size (`profile.web`, `opt-level = "s"`), runs on one thread
+(effects, tracing, mosaics and large exports keep the page busy until
+they finish) and a page has less memory than a program.
+
 ## Keyboard
 
 The editor's shortcuts reach the editor instead of the browser: while

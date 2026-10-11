@@ -134,6 +134,12 @@ fn get_started(app: &mut App, ui: &mut Ui) {
         });
         ui.add_space(40.0);
         ui.vertical(|ui| {
+            // A browser keeps no recent documents; what the demo leaves out
+            // takes their place.
+            if crate::files::WEB {
+                web_demo_notice(app, ui);
+                return;
+            }
             ui.strong(tr("welcome.recent_documents"));
             let recent = app.settings.recent_files.clone();
             if recent.is_empty() {
@@ -163,6 +169,46 @@ fn get_started(app: &mut App, ui: &mut Ui) {
                 app.settings.save();
             }
         });
+    });
+}
+
+/// Where the desktop app is downloaded.
+pub const DOWNLOADS: &str = "https://github.com/igtoth/tracedraw/releases/latest";
+
+const NOTE_FILL: egui::Color32 = egui::Color32::from_rgb(0xFF, 0xF7, 0xE0);
+const NOTE_EDGE: egui::Color32 = egui::Color32::from_rgb(0xE6, 0xC8, 0x7A);
+
+/// In the browser: what this version leaves out, and a button to the
+/// desktop downloads.
+pub fn web_demo_notice(app: &mut App, ui: &mut Ui) {
+    egui::Frame::new()
+        .fill(NOTE_FILL)
+        .stroke(egui::Stroke::new(1.0, NOTE_EDGE))
+        .inner_margin(12)
+        .show(ui, |ui| {
+            ui.set_max_width(440.0);
+            ui.strong(tr("welcome.web_demo_title"));
+            ui.add_space(4.0);
+            ui.label(tr("welcome.web_demo_text"));
+            ui.add_space(8.0);
+            if ui.button(tr("welcome.web_demo_download")).clicked() {
+                app.open_url(DOWNLOADS);
+            }
+        });
+}
+
+/// In the browser: a link to the desktop downloads at the right end of the
+/// menu bar.
+pub fn web_demo_link(app: &mut App, ui: &mut Ui) {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.add_space(8.0);
+        if ui
+            .link(tr("welcome.web_demo_link"))
+            .on_hover_text(tr("welcome.web_demo_text"))
+            .clicked()
+        {
+            app.open_url(DOWNLOADS);
+        }
     });
 }
 
@@ -371,4 +417,30 @@ fn templates(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The browser's notice and menu bar link draw (they show only in the
+    /// browser build, so they are drawn here directly).
+    #[test]
+    fn the_browser_demo_notice_draws() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            web_demo_notice(&mut app, ui);
+            ui.horizontal(|ui| web_demo_link(&mut app, ui));
+        });
+        out.textures_delta.clear();
+        assert!(DOWNLOADS.starts_with("https://"));
+    }
 }
