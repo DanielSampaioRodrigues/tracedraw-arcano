@@ -6,71 +6,87 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Pick tool: Shift scales from the centre, Ctrl scales in 100 % steps
-  (dragging across gives the mirror image at the same size), Alt frees a
-  corner, Ctrl keeps a move straight, a right click during a drag leaves
-  the original, Space drops a copy, Esc cancels; in rotate mode the side
-  handles skew and the centre of rotation can be moved.
-- Pick tool: Ctrl+click chooses an object inside a group (round handles;
-  it moves, takes colours and is deleted on its own), Alt+click digs to
-  the object beneath, a marquee with Alt takes what it touches, a click
-  on any selected object or on the centre mark turns the handles, and
-  the centre mark can be dragged. The Freehand Pick has the Pick tool's
-  handles and takes what its lasso holds wholly (with Alt, what it
-  touches).
-- Curves: Ctrl keeps lines and Bezier nodes to steps of the constrain
-  angle; with Freehand a click and then another click draw a straight
-  line. A line drawn from (or to) an end node of the selected curve
-  continues that curve, closes it when it meets the other end, and the
-  pointer shows when it would. The curve tools' property bar has the
-  outline width, line style, arrowheads and Close Curve, and Freehand
-  its smoothing (also in Options > Tools > Curve tools).
+The Pick and Shape tools now behave as the keys and the pointer lead
+you to expect: modifiers while dragging, choosing inside groups,
+bending segments, a pointer that shows what a press will do.
+
+**Selecting and transforming (Pick tool)**
+- Shift scales from the centre, Ctrl scales in 100 % steps (dragging
+  across gives the mirror image at the same size), Alt frees a corner,
+  Ctrl keeps a move straight; a right click during a drag leaves the
+  original, Space drops a copy, Esc cancels.
+- In rotate mode the side handles skew, and the centre of rotation can
+  be moved; it stays with the object (selecting it again finds it where
+  it was put, and it moves with the object).
+- Ctrl+click chooses an object inside a group (round handles; it moves,
+  takes colours and is deleted on its own); Alt+click digs to the object
+  beneath; a marquee with Alt takes what it touches.
+- A click on any selected object, or on the centre mark, turns the
+  handles; the centre mark can be dragged; scale handles snap to other
+  objects, guidelines, the grid and the page; `+` duplicates in place.
+- The Freehand Pick has the Pick tool's handles and takes what its lasso
+  holds wholly (with Alt, what it touches).
+
+**Curves and nodes**
+- Shape tool: dragging a segment bends it (a straight one becomes a
+  curve, smooth nodes stay smooth); a click on a segment marks where Add
+  Node (or `+`) puts the new node; C, S and Y make the chosen nodes cusp,
+  smooth or symmetrical; `-` deletes them; a right click chooses the
+  node or segment under the pointer before the menu opens.
+- A line drawn from (or to) an end node of the selected curve continues
+  that curve, and closes it when it meets the other end.
+- Ctrl keeps lines and Bezier nodes to steps of the constrain angle;
+  with Freehand a click and then another click draw a straight line.
+- The curve tools' property bar has the outline width, line style,
+  arrowheads and Close Curve, and Freehand its smoothing (also in
+  Options > Tools > Curve tools).
+
+**The pointer**
+- It shows what a press would do: resize arrows on the handles, move
+  arrows on objects and the centre mark, turning and slant arrows in
+  rotate mode, arrows across guidelines, the copy arrow when a move will
+  leave the original.
+- The Shape tool's own arrow marks nodes, control points and segments,
+  and shows the resize, turning and slant arrows over the handles that
+  frame selected nodes.
+- Drawing tools show their icon by the cross hair, with a sign where a
+  line would continue the selected curve or close the one being drawn;
+  the Eraser and the brushes show their nib at its size; the Text tool
+  shows the I-beam only over text; Interactive Fill shows the move
+  arrows over the fill's handles.
+
+**Text**
+- Paragraph text frames show as dashed lines (Text > Show Text Frames;
+  red with a down arrow when the text does not fit), the handles sit on
+  the frame, and scaling it with the Pick tool resizes the frame so the
+  text flows anew instead of stretching the letters. Lines that do not
+  fit are no longer drawn over the others.
+
+**Colour**
 - Drag a colour from the palette onto an object: inside it fills it, on
   its outline it colours the outline; onto the document palette it joins
-  it.
-- The Text tool's pointer is the I-beam only over text; elsewhere the
-  cross hair with its icon. The Shape tool shows the resize, turning and
-  slant arrows over the handles framing selected nodes, and its right
-  click chooses the node or segment under the pointer before the menu
-  opens. Interactive Fill shows the move arrows over the fill's handles.
-- Scale handles snap to other objects, guidelines, the grid and the page.
-- A moved centre of rotation stays with the object: deselecting and
-  selecting it again finds it where it was put, and it moves with the
-  object.
-- Touch workspace (Window > Workspace > Touch): a larger interface for
-  touch screens; two fingers pan and pinch zooms on the drawing.
-- Paragraph text: the frame shows as a dashed line (Text > Show Text
-  Frames; red with a down arrow when the text does not fit), the handles
-  sit on the frame, and scaling it with the Pick
-  tool resizes the frame so the text flows anew instead of stretching
-  the letters.
-- Shape tool: dragging a segment bends it (a straight one becomes a
-  curve; smooth nodes stay smooth); a click on a segment marks the spot
-  where Add Node (or `+`) puts the new node; C, S and Y make the chosen
-  nodes cusp, smooth or symmetrical.
-- `+` duplicates the selection in place with the Pick tool; with the
-  Shape tool and nodes chosen, `+` and `-` add and delete nodes.
-- A double click on the drawing with the Rectangle tool no longer adds a
-  page frame (double-click the tool's button for that).
-- The pointer shows what a press would do: resize arrows on the handles,
-  move arrows on objects and the centre mark, arrows across guidelines,
-  turning and slant arrows in rotate mode,
-  and the Shape tool's own arrow with a mark over nodes, control points
-  and segments. Drawing tools show their icon by the cross hair; the
-  Eraser and the brushes show their nib at its size.
+  it. Objects dropped on the document palette give it their colours.
+
+**Interface**
 - Interface size 100 % now draws menus, bars and text as large as other
   programs at 100 % (a quarter smaller than in 0.3.0 on a monitor the
   system scales by 125 %); drawings keep their real size at zoom 100 %.
+- Touch workspace (Window > Workspace > Touch): a larger interface for
+  touch screens; two fingers pan and pinch zooms.
 - Shelf panel: keep objects for any drawing and after restarts, place
-  them by double click or by dragging onto the page (Window > Dockers >
-  Shelf, or Add to Shelf on the object menu).
+  them by double click or by dragging onto the page.
 - Options > Global: Printing and File Formats set what the Print and
   Export dialogs start with (and can remember the last ones), where
   imported objects go, Bitmap Tracing sets Quick Trace's preset, and
   Warnings turns messages on and off.
-- Opening a `.cdr` file with objects that could not be read, or a drawing
-  with fonts that are not installed, now says so in a message (with a
-  Report button for the file).
+- The status bar tells how far, how much and what angle while dragging.
+- A double click on the drawing with the Rectangle tool no longer adds a
+  page frame (double-click the tool's button for that).
+
+**Files**
+- Opening a `.cdr` file with objects that could not be read, or a
+  drawing with fonts that are not installed, now says so in a message
+  (with a Report button for the file).
 - The browser demo's loading page says only that it is loading; the demo
   message shows each time the page opens.
 
