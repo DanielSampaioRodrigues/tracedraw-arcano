@@ -591,7 +591,8 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
-    let mut v = app.units.from_mm(*mm);
+    // Positions and sizes of the selection: through the drawing scale.
+    let mut v = app.units.world_from_mm(*mm);
     let r = ui.add(
         crate::ui::field::NumField::new(&mut v)
             .speed(speed)
@@ -599,7 +600,7 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
             .suffix(format!(" {}", app.units.short())),
     );
     if r.changed() {
-        *mm = app.units.to_mm(v);
+        *mm = app.units.world_to_mm(v);
     }
     r.drag_stopped() || r.lost_focus()
 }

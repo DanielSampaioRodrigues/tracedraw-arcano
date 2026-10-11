@@ -1553,7 +1553,7 @@ impl Default for GridSettings {
 }
 
 /// Ruler settings (Document Options, Rulers).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RulerSettings {
     /// The ruler origin, in mm from the page's bottom-left corner.
@@ -1561,6 +1561,16 @@ pub struct RulerSettings {
     pub origin_y: f64,
     /// Number of tick marks between two numbered marks.
     pub tick_divisions: u32,
+    /// Drawing scale: `scale_page` mm on the page stand for `scale_world`
+    /// mm in the world (1:1 by default). Rulers, positions, sizes and
+    /// dimension labels show world distances; outline widths, text sizes
+    /// and the page size stay as printed.
+    pub scale_page: f64,
+    pub scale_world: f64,
+    /// The units the two distances were given in (unit ids such as "cm"
+    /// or "m"), kept for the dialog; empty for millimetres.
+    pub scale_page_units: String,
+    pub scale_world_units: String,
 }
 
 impl Default for RulerSettings {
@@ -1569,7 +1579,29 @@ impl Default for RulerSettings {
             origin_x: 0.0,
             origin_y: 0.0,
             tick_divisions: 10,
+            scale_page: 1.0,
+            scale_world: 1.0,
+            scale_page_units: String::new(),
+            scale_world_units: String::new(),
         }
+    }
+}
+
+impl RulerSettings {
+    /// World millimetres per page millimetre: 1 for a 1:1 drawing, 100 for
+    /// 1:100. Never zero, negative or infinite (1 then).
+    pub fn world_per_page(&self) -> f64 {
+        let r = self.scale_world / self.scale_page;
+        if r.is_finite() && r > 0.0 && self.scale_page > 0.0 {
+            r
+        } else {
+            1.0
+        }
+    }
+
+    /// True when the drawing is not at 1:1.
+    pub fn is_scaled(&self) -> bool {
+        (self.world_per_page() - 1.0).abs() > 1e-12
     }
 }
 

@@ -122,6 +122,10 @@ pub struct Settings {
     /// Options > Tools > Pick: the Pick tool's pointer is a cross hair.
     #[serde(default)]
     pub crosshair_cursor: bool,
+    /// Options > Display > Ruler calibration: interface points per inch of
+    /// the screen, so that zoom 100% shows real sizes (96 by default).
+    #[serde(default = "default_screen_ppi")]
+    pub screen_ppi: f32,
     /// Options > Tools > Zoom/Pan: a right click with the Zoom tool zooms
     /// out (off: it opens the context menu).
     #[serde(default = "default_true")]
@@ -140,6 +144,19 @@ fn default_desktop() -> [u8; 3] {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_screen_ppi() -> f32 {
+    96.0
+}
+
+/// The calibrated screen resolution, kept within 48 to 400 points per inch.
+pub fn screen_ppi(s: &Settings) -> f32 {
+    if s.screen_ppi.is_finite() {
+        s.screen_ppi.clamp(48.0, 400.0)
+    } else {
+        96.0
+    }
 }
 
 fn default_undo_levels() -> usize {
@@ -380,7 +397,7 @@ fn default_micro_nudge() -> f64 {
 }
 
 /// Document settings saved as the default for new drawings.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct DocumentDefaults {
     pub grid: tracedraw_core::document::GridSettings,
@@ -392,14 +409,14 @@ impl DocumentDefaults {
     pub fn of(doc: &tracedraw_core::Document) -> Self {
         DocumentDefaults {
             grid: doc.metadata.grid,
-            rulers: doc.metadata.rulers,
+            rulers: doc.metadata.rulers.clone(),
             guides: doc.metadata.guides,
         }
     }
 
     pub fn apply(&self, doc: &mut tracedraw_core::Document) {
         doc.metadata.grid = self.grid;
-        doc.metadata.rulers = self.rulers;
+        doc.metadata.rulers = self.rulers.clone();
         doc.metadata.guides = self.guides;
     }
 }
@@ -499,6 +516,7 @@ impl Default for Settings {
             text_increment_pt: default_text_increment(),
             treat_all_filled: false,
             crosshair_cursor: false,
+            screen_ppi: default_screen_ppi(),
             zoom_right_click_out: true,
             palette: PalettePrefs::default(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),

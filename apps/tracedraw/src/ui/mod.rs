@@ -154,8 +154,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     app.docker_preview.clear();
     app.docker_preview_point = None;
     let ctx = ui.ctx().clone();
-    // Pixels are measured at the active drawing's resolution.
+    // Pixels are measured at the active drawing's resolution, distances
+    // at its drawing scale.
     crate::app::set_pixel_dpi(app.document_dpi());
+    crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, app.settings.ui_scale);
     app.keyboard(&ctx);
 

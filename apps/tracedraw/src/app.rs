@@ -147,6 +147,28 @@ pub fn pixel_dpi() -> f64 {
     PIXEL_DPI.with(|c| c.get())
 }
 
+thread_local! {
+    /// World millimetres per page millimetre: the active drawing's scale
+    /// (Document Options > Rulers > Drawing scale), 1 at 1:1.
+    static DRAWING_SCALE: std::cell::Cell<f64> = const { std::cell::Cell::new(1.0) };
+}
+
+/// Set the drawing scale distances are shown at (each frame, from the
+/// active drawing). Values that are not positive and finite mean 1:1.
+pub fn set_drawing_scale(world_per_page: f64) {
+    let s = if world_per_page.is_finite() && world_per_page > 0.0 {
+        world_per_page
+    } else {
+        1.0
+    };
+    DRAWING_SCALE.with(|c| c.set(s));
+}
+
+/// The drawing scale: world millimetres per page millimetre.
+pub fn drawing_scale() -> f64 {
+    DRAWING_SCALE.with(|c| c.get())
+}
+
 /// Units of measure, in the order the Units list shows them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Units {
@@ -266,6 +288,26 @@ impl Units {
     }
     pub fn to_mm(self, v: f64) -> f64 {
         v * self.mm()
+    }
+    /// Page millimetres per unit of a distance in the drawing: [`mm`]
+    /// through the drawing scale (a world metre at 1:100 is 10 page mm).
+    ///
+    /// [`mm`]: Units::mm
+    pub fn world_mm(self) -> f64 {
+        self.mm() / drawing_scale()
+    }
+    /// A distance in the drawing (a position, a size, an offset, a length)
+    /// from page millimetres to this unit, through the drawing scale. Page
+    /// sizes, outline widths and text sizes use [`from_mm`] instead: they
+    /// are as printed.
+    ///
+    /// [`from_mm`]: Units::from_mm
+    pub fn world_from_mm(self, v: f64) -> f64 {
+        v / self.world_mm()
+    }
+    /// A distance in the drawing typed in this unit, as page millimetres.
+    pub fn world_to_mm(self, v: f64) -> f64 {
+        v * self.world_mm()
     }
 }
 
@@ -1425,7 +1467,7 @@ impl App {
 
     /// The ruler origin, page coordinates in mm.
     pub fn ruler_origin(&self) -> Point {
-        let r = self.doc().metadata.rulers;
+        let r = self.doc().metadata.rulers.clone();
         Point::new(r.origin_x, r.origin_y)
     }
 
@@ -3631,13 +3673,15 @@ impl App {
         }
     }
 
-    /// Screen pixels per mm at 100%: real size on a 96 dpi screen, or in
-    /// the Pixels view one screen pixel per document pixel.
+    /// Interface points per mm at 100%: real size at the calibrated screen
+    /// resolution (Options > Display > Ruler calibration, 96 points per
+    /// inch by default), or in the Pixels view one point per document
+    /// pixel.
     fn zoom_100(&self) -> f32 {
         let dpi = if self.view_mode == ViewMode::Pixels {
             self.document_dpi().max(1.0) as f32
         } else {
-            96.0
+            crate::settings::screen_ppi(&self.settings)
         };
         dpi / 25.4
     }

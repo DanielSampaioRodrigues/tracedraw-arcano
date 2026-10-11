@@ -192,7 +192,7 @@ fn pick_button(
 /// A labelled length field in the document unit; true when it changed.
 fn length_row(ui: &mut Ui, app_units: crate::app::Units, key: &str, mm: &mut f64) -> bool {
     let u = app_units;
-    let mut v = u.from_mm(*mm);
+    let mut v = u.world_from_mm(*mm);
     let mut changed = false;
     ui.label(tr(key));
     if ui
@@ -206,7 +206,7 @@ fn length_row(ui: &mut Ui, app_units: crate::app::Units, key: &str, mm: &mut f64
         )
         .changed()
     {
-        *mm = u.to_mm(v);
+        *mm = u.world_to_mm(v);
         changed = true;
     }
     changed
@@ -218,7 +218,7 @@ fn point_fields(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point) -> b
     for (axis, label) in [(0, "x:"), (1, "y:")] {
         ui.label(label);
         let mm = if axis == 0 { p.x - o.x } else { p.y - o.y };
-        let mut v = u.from_mm(mm);
+        let mut v = u.world_from_mm(mm);
         if ui
             .add_sized(
                 [FIELD_W, 20.0],
@@ -230,7 +230,7 @@ fn point_fields(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point) -> b
             )
             .changed()
         {
-            let mm = u.to_mm(v);
+            let mm = u.world_to_mm(v);
             if axis == 0 {
                 p.x = mm + o.x;
             } else {
@@ -583,7 +583,7 @@ fn point_fields_grid(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point)
     for axis in 0..2 {
         ui.label(if axis == 0 { "x:" } else { "y:" });
         let mm = if axis == 0 { p.x - o.x } else { p.y - o.y };
-        let mut v = u.from_mm(mm);
+        let mut v = u.world_from_mm(mm);
         if ui
             .add_sized(
                 [FIELD_W, 20.0],
@@ -595,7 +595,7 @@ fn point_fields_grid(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point)
             )
             .changed()
         {
-            let mm = u.to_mm(v);
+            let mm = u.world_to_mm(v);
             if axis == 0 {
                 p.x = mm + o.x;
             } else {
@@ -683,7 +683,7 @@ fn multipoint(
         if c.current == Some(i) {
             painter.rect_filled(row, 0.0, Color32::from_rgb(0xCC, 0xE8, 0xFF));
         }
-        let r = Point::new(u.from_mm(p.x - o.x), u.from_mm(p.y - o.y));
+        let r = Point::new(u.world_from_mm(p.x - o.x), u.world_from_mm(p.y - o.y));
         for (x, t) in [
             (0.0, (i + 1).to_string()),
             (

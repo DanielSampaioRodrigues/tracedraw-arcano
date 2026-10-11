@@ -191,7 +191,7 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         ui.radio_value(&mut sr.mode_x, 0, tr("docker.offset"));
         ui.radio_value(&mut sr.mode_x, 1, tr("docker.spacing"));
     });
-    let mut dx = u.from_mm(sr.dx);
+    let mut dx = u.world_from_mm(sr.dx);
     if ui
         .add(
             egui::DragValue::new(&mut dx)
@@ -200,14 +200,14 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         )
         .changed()
     {
-        sr.dx = u.to_mm(dx);
+        sr.dx = u.world_to_mm(dx);
     }
     ui.strong(tr("docker.vertical_settings"));
     ui.horizontal(|ui| {
         ui.radio_value(&mut sr.mode_y, 0, tr("docker.offset"));
         ui.radio_value(&mut sr.mode_y, 1, tr("docker.spacing"));
     });
-    let mut dy = u.from_mm(sr.dy);
+    let mut dy = u.world_from_mm(sr.dy);
     if ui
         .add(
             egui::DragValue::new(&mut dy)
@@ -216,7 +216,7 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         )
         .changed()
     {
-        sr.dy = u.to_mm(dy);
+        sr.dy = u.world_to_mm(dy);
     }
     let has = !app.selection.is_empty();
     if ui
@@ -1283,16 +1283,16 @@ fn contour(app: &mut App, ui: &mut Ui) {
             .changed();
     }
     let u = app.units;
-    let mut o = u.from_mm(offset);
+    let mut o = u.world_from_mm(offset);
     if ui
         .add(crate::ui::Rail(
-            egui::Slider::new(&mut o, 0.01..=u.from_mm(50.0))
+            egui::Slider::new(&mut o, 0.01..=u.world_from_mm(50.0))
                 .text(tr("docker.offset"))
                 .logarithmic(true),
         ))
         .changed()
     {
-        offset = u.to_mm(o);
+        offset = u.world_to_mm(o);
         changed = true;
     }
     ui.horizontal(|ui| {
@@ -2020,7 +2020,7 @@ fn corners(app: &mut App, ui: &mut Ui) {
     let field = |ui: &mut Ui, label: &str, mm: &mut f64| {
         ui.horizontal(|ui| {
             ui.label(label);
-            let mut v = u.from_mm(*mm);
+            let mut v = u.world_from_mm(*mm);
             if ui
                 .add_sized(
                     [90.0, 22.0],
@@ -2032,7 +2032,7 @@ fn corners(app: &mut App, ui: &mut Ui) {
                 )
                 .changed()
             {
-                *mm = u.to_mm(v);
+                *mm = u.world_to_mm(v);
             }
         });
     };
@@ -2052,7 +2052,7 @@ fn corners(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!c.lock, |ui| {
                 ui.label("B:");
-                let mut v = u.from_mm(if c.lock { c.a } else { c.b });
+                let mut v = u.world_from_mm(if c.lock { c.a } else { c.b });
                 if ui
                     .add_sized(
                         [90.0, 22.0],
@@ -2064,7 +2064,7 @@ fn corners(app: &mut App, ui: &mut Ui) {
                     )
                     .changed()
                 {
-                    c.b = u.to_mm(v);
+                    c.b = u.world_to_mm(v);
                 }
             });
             if crate::ui::propbar::pic_button(
@@ -2130,7 +2130,7 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
     let field = |ui: &mut Ui, key: &str, mm: &mut f64| {
         ui.horizontal(|ui| {
             ui.label(tr(key));
-            let mut v = u.from_mm(*mm);
+            let mut v = u.world_from_mm(*mm);
             if ui
                 .add_sized(
                     [90.0, 22.0],
@@ -2142,7 +2142,7 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
                 )
                 .changed()
             {
-                *mm = u.to_mm(v);
+                *mm = u.world_to_mm(v);
             }
         });
     };

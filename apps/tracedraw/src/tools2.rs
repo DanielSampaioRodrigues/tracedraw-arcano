@@ -755,7 +755,11 @@ impl App {
         line.fill = Fill::Solid(Color::BLACK);
         line.stroke = Some(Stroke::hairline(Color::BLACK));
         let text_id = self.engine.new_shape_id();
-        let label = format!("{:.2} {}", self.units.from_mm(len), self.units.short());
+        let label = format!(
+            "{:.2} {}",
+            self.units.world_from_mm(len),
+            self.units.short()
+        );
         let mid = a2.midpoint(b2) + n * 1.5;
         let mut text = Shape::new(
             text_id,

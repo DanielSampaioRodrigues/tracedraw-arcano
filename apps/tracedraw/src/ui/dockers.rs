@@ -341,10 +341,10 @@ fn properties(app: &mut App, ui: &mut Ui) {
     ui.label(
         egui::RichText::new(format!(
             "x {:.2}  y {:.2}  w {:.2}  h {:.2} {}",
-            app.units.from_mm(o.x),
-            app.units.from_mm(o.y),
-            app.units.from_mm(b.width()),
-            app.units.from_mm(b.height()),
+            app.units.world_from_mm(o.x),
+            app.units.world_from_mm(o.y),
+            app.units.world_from_mm(b.width()),
+            app.units.world_from_mm(b.height()),
             app.units.short()
         ))
         .monospace()
@@ -453,7 +453,7 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
             ] {
                 for (i, key) in pair {
                     ui.label(tr(key));
-                    let mut v = u.from_mm(c.radii[i]);
+                    let mut v = u.world_from_mm(c.radii[i]);
                     let r = ui.add(
                         egui::DragValue::new(&mut v)
                             .range(0.0..=10_000.0)
@@ -461,9 +461,9 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
                             .suffix(format!(" {}", u.short())),
                     );
                     if (r.drag_stopped() || r.lost_focus() || (r.changed() && !r.dragged()))
-                        && (u.to_mm(v) - c.radii[i]).abs() > 1e-12
+                        && (u.world_to_mm(v) - c.radii[i]).abs() > 1e-12
                     {
-                        edit = Some(CornerEdit::Size(i, u.to_mm(v)));
+                        edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
                     }
                 }
                 ui.end_row();
@@ -1044,7 +1044,13 @@ fn transformations(app: &mut App, ui: &mut Ui) {
                     TransformTab::Scale => [100.0, 100.0, 0.0, 0.0],
                     TransformTab::Size => {
                         let b = app.selection_bounds().unwrap_or_default();
-                        [b.width(), b.height(), 0.0, 0.0]
+                        let u = app.units;
+                        [
+                            u.world_from_mm(b.width()),
+                            u.world_from_mm(b.height()),
+                            0.0,
+                            0.0,
+                        ]
                     }
                     _ => [0.0; 4],
                 };
@@ -1132,8 +1138,8 @@ fn transformations(app: &mut App, ui: &mut Ui) {
         let t = match app.transform_tab {
             TransformTab::Position => {
                 let d = tracedraw_core::geometry::Vec2::new(
-                    app.units.to_mm(v[0]),
-                    app.units.to_mm(v[1]),
+                    app.units.world_to_mm(v[0]),
+                    app.units.world_to_mm(v[1]),
                 );
                 if relative {
                     tracedraw_core::geometry::Affine::translate(d)
@@ -1149,8 +1155,8 @@ fn transformations(app: &mut App, ui: &mut Ui) {
             TransformTab::Size => {
                 let b = app.selection_bounds().unwrap_or_default();
                 tracedraw_core::geometry::Affine::scale_non_uniform(
-                    app.units.to_mm(v[0]) / b.width().max(1e-9),
-                    app.units.to_mm(v[1]) / b.height().max(1e-9),
+                    app.units.world_to_mm(v[0]) / b.width().max(1e-9),
+                    app.units.world_to_mm(v[1]) / b.height().max(1e-9),
                 )
             }
             TransformTab::Skew => tracedraw_core::geometry::Affine::skew(

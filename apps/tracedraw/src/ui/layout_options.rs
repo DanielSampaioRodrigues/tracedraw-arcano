@@ -286,10 +286,26 @@ fn row_label(ui: &mut Ui, key: &str) {
     });
 }
 
-/// A distance field in the ruler unit; returns the new value in mm when
-/// it changed.
+/// A distance field in the ruler unit through the drawing scale (a
+/// position, an offset, a spacing); returns the new value in mm when it
+/// changed.
 fn distance_field(ui: &mut Ui, units: Units, mm: f64, speed: f64) -> Option<f64> {
-    let mut v = units.from_mm(mm);
+    unit_field(ui, units, units.world_mm(), mm, speed)
+}
+
+/// A distance field in the ruler unit as printed (page margins, columns,
+/// the baseline grid), not through the drawing scale.
+fn paper_field(ui: &mut Ui, units: Units, mm: f64, speed: f64) -> Option<f64> {
+    unit_field(ui, units, units.mm(), mm, speed)
+}
+
+fn unit_field(ui: &mut Ui, units: Units, unit_mm: f64, mm: f64, speed: f64) -> Option<f64> {
+    let unit_mm = if unit_mm.is_finite() && unit_mm > 0.0 {
+        unit_mm
+    } else {
+        1.0
+    };
+    let mut v = mm / unit_mm;
     let r = ui.add_sized(
         [110.0, 20.0],
         egui::DragValue::new(&mut v)
@@ -297,7 +313,7 @@ fn distance_field(ui: &mut Ui, units: Units, mm: f64, speed: f64) -> Option<f64>
             .max_decimals(4)
             .suffix(format!(" {}", units.short())),
     );
-    r.changed().then(|| units.to_mm(v))
+    r.changed().then_some(v * unit_mm)
 }
 
 fn units_combo(ui: &mut Ui, id: &str, units: &mut Units) -> bool {
@@ -347,6 +363,8 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
             }
             ui.end_row();
         });
+    section(ui, "options.drawing_scale");
+    drawing_scale_fields(app, ui, &mut meta);
     section(ui, "options.origin");
     egui::Grid::new("rulers_origin")
         .num_columns(2)
@@ -411,6 +429,107 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
     set_metadata(app, meta);
 }
 
+/// Document Options > Rulers > Drawing scale: the typical scales, then the
+/// page distance and the world distance it stands for, each with its unit.
+/// The world unit becomes the ruler unit.
+fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
+    use crate::drawing_scale as ds;
+    let r = &mut meta.rulers;
+    let current = ds::matching_preset(r);
+    let (page_unit, world_unit) = ds::units_of(r);
+    let mut new_units = None;
+    egui::Grid::new("drawing_scale")
+        .num_columns(2)
+        .spacing([8.0, 6.0])
+        .show(ui, |ui| {
+            row_label(ui, "options.typical_scales");
+            let shown = current
+                .map(|p| p.label.to_string())
+                .unwrap_or_else(|| tr("options.scale_custom"));
+            let mut pick = None;
+            egui::ComboBox::from_id_salt("typical_scales")
+                .selected_text(shown)
+                .width(160.0)
+                .height(320.0)
+                .show_ui(ui, |ui| {
+                    for p in ds::PRESETS.iter() {
+                        let on = current.is_some_and(|c| c.label == p.label);
+                        if ui.selectable_label(on, p.label).clicked() {
+                            pick = Some(*p);
+                        }
+                    }
+                });
+            if let Some(p) = pick {
+                // A ratio keeps the units in use; inch and foot scales
+                // bring theirs.
+                let (pu, wu) = if p.page_unit == Units::Inches {
+                    (p.page_unit, p.world_unit)
+                } else {
+                    (page_unit, world_unit)
+                };
+                let world = p.ratio() * pu.to_mm(p.page) / wu.mm();
+                ds::set(r, p.page, pu, world, wu);
+                if wu != world_unit || p.page_unit == Units::Inches {
+                    new_units = Some(wu);
+                }
+            }
+            ui.end_row();
+            row_label(ui, "options.page_distance");
+            ui.horizontal(|ui| {
+                let world = world_unit.from_mm(r.scale_world);
+                let mut v = page_unit.from_mm(r.scale_page);
+                if ui
+                    .add_sized(
+                        [90.0, 20.0],
+                        egui::DragValue::new(&mut v)
+                            .speed(0.1)
+                            .max_decimals(4)
+                            .range(0.0001..=1_000_000.0),
+                    )
+                    .changed()
+                {
+                    ds::set(r, v, page_unit, world, world_unit);
+                }
+                let mut u = page_unit;
+                if units_combo(ui, "scale_page_unit", &mut u) {
+                    ds::set(r, u.from_mm(r.scale_page), u, world, world_unit);
+                }
+            });
+            ui.end_row();
+            row_label(ui, "options.world_distance");
+            ui.horizontal(|ui| {
+                let page = page_unit.from_mm(r.scale_page);
+                let mut v = world_unit.from_mm(r.scale_world);
+                if ui
+                    .add_sized(
+                        [90.0, 20.0],
+                        egui::DragValue::new(&mut v)
+                            .speed(0.1)
+                            .max_decimals(4)
+                            .range(0.0001..=1_000_000_000.0),
+                    )
+                    .changed()
+                {
+                    ds::set(r, page, page_unit, v, world_unit);
+                }
+                let mut u = world_unit;
+                if units_combo(ui, "scale_world_unit", &mut u) {
+                    ds::set(r, page, page_unit, u.from_mm(r.scale_world), u);
+                    new_units = Some(u);
+                }
+            });
+            ui.end_row();
+        });
+    ui.label(
+        egui::RichText::new(tr("options.scale_note"))
+            .color(crate::theme::Tokens::TEXT_DIM)
+            .size(11.0),
+    );
+    if let Some(u) = new_units {
+        app.units = u;
+    }
+}
+
 /// Document Options > Grid.
 pub fn grid_page(app: &mut App, ui: &mut Ui) {
     let mut meta = app.doc().metadata.clone();
@@ -432,7 +551,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                 row_label(ui, key);
                 if app.grid_frequency {
                     // Lines per unit.
-                    let mut f = units.mm() / value.max(1e-9);
+                    let mut f = units.world_mm() / value.max(1e-9);
                     if ui
                         .add_sized(
                             [110.0, 20.0],
@@ -444,7 +563,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                         .changed()
                         && f > 0.0
                     {
-                        *value = units.mm() / f;
+                        *value = units.world_mm() / f;
                     }
                 } else if let Some(v) = distance_field(ui, units, *value, 0.1) {
                     if v > 0.0 {
@@ -511,7 +630,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
             }
             ui.end_row();
             row_label(ui, "options.baseline_start");
-            if let Some(v) = distance_field(ui, units, meta.grid.baseline_start, 0.1) {
+            if let Some(v) = paper_field(ui, units, meta.grid.baseline_start, 0.1) {
                 meta.grid.baseline_start = v.max(0.0);
             }
             ui.end_row();
@@ -591,20 +710,20 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     row_label(ui, "guides.top");
-                    if let Some(v) = distance_field(ui, units, form.margin_top, 0.1) {
+                    if let Some(v) = paper_field(ui, units, form.margin_top, 0.1) {
                         form.margin_top = v;
                     }
                     row_label(ui, "guides.left");
-                    if let Some(v) = distance_field(ui, units, form.margin_left, 0.1) {
+                    if let Some(v) = paper_field(ui, units, form.margin_left, 0.1) {
                         form.margin_left = v;
                     }
                     ui.end_row();
                     row_label(ui, "guides.bottom");
-                    if let Some(v) = distance_field(ui, units, form.margin_bottom, 0.1) {
+                    if let Some(v) = paper_field(ui, units, form.margin_bottom, 0.1) {
                         form.margin_bottom = v;
                     }
                     row_label(ui, "guides.right");
-                    if let Some(v) = distance_field(ui, units, form.margin_right, 0.1) {
+                    if let Some(v) = paper_field(ui, units, form.margin_right, 0.1) {
                         form.margin_right = v;
                     }
                     ui.end_row();
@@ -623,7 +742,7 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
                     );
                     ui.end_row();
                     row_label(ui, "guides.distance_between");
-                    if let Some(v) = distance_field(ui, units, form.column_gutter, 0.1) {
+                    if let Some(v) = paper_field(ui, units, form.column_gutter, 0.1) {
                         form.column_gutter = v.max(0.0);
                     }
                     ui.end_row();
@@ -739,7 +858,7 @@ fn guide_text(app: &App, g: &Guide) -> String {
     let u = app.units;
     let (o, _) = g.line.point_and_direction();
     let r = app.to_ruler(o);
-    let fmt = |v: f64| format!("{:.3} {}", u.from_mm(v), u.short());
+    let fmt = |v: f64| format!("{:.3} {}", u.world_from_mm(v), u.short());
     match g.line {
         GuideLine::Horizontal { .. } => fmt(r.y),
         GuideLine::Vertical { .. } => fmt(r.x),

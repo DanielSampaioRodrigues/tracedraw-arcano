@@ -124,7 +124,7 @@ impl App {
         if best.is_none() && self.snap.grid {
             // Grid lines pass through the ruler origin.
             let grid = self.doc().metadata.grid;
-            let rulers = self.doc().metadata.rulers;
+            let rulers = self.doc().metadata.rulers.clone();
             let (step, origin) = if horizontal {
                 (grid.spacing_x, rulers.origin_x)
             } else {

@@ -14,7 +14,8 @@ text object with the measurement.
   segment of the curve under the first click between its two nodes.
 - Drawing: extension lines from the points to the dimension line, the
   dimension line, filled arrowheads at both ends; the text is the length
-  in the document units with two decimals (`12.70 mm`), 10 pt in the
+  in the document units with two decimals (`12.70 mm`), through the
+  drawing scale (at 1:100 a 10 mm line reads `1000.00 mm`), 10 pt in the
   current font, placed 1.5 mm above the middle of the line and rotated
   with it.
 - The text is a normal text object: it can be moved or restyled; it

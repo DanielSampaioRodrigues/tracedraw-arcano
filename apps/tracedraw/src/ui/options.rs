@@ -604,6 +604,96 @@ fn display_page(app: &mut App, ui: &mut Ui) {
         app.settings.wheel_zooms = zoom;
         ui.end_row();
     });
+    chrome::section(ui, &tr("options.ruler_calibration"));
+    ui.label(
+        egui::RichText::new(tr("options.calibrate_help"))
+            .color(Tokens::TEXT_DIM)
+            .size(12.0),
+    );
+    ui.horizontal(|ui| {
+        ui.label(tr("options.screen_resolution"));
+        let mut ppi = crate::settings::screen_ppi(&app.settings);
+        if ui
+            .add_sized(
+                [80.0, 22.0],
+                egui::DragValue::new(&mut ppi)
+                    .range(48.0..=400.0)
+                    .speed(0.1)
+                    .max_decimals(1),
+            )
+            .changed()
+        {
+            app.settings.screen_ppi = ppi;
+        }
+        ui.label(tr("options.points_per_inch"));
+        if ui.button(tr("options.reset")).clicked() {
+            app.settings.screen_ppi = 96.0;
+        }
+    });
+    calibration_rulers(ui, crate::settings::screen_ppi(&app.settings));
+}
+
+/// Two rulers drawn at the calibrated resolution, 100 mm and 4 inches
+/// long, to hold a real ruler against.
+fn calibration_rulers(ui: &mut Ui, ppi: f32) {
+    let per_mm = ppi / 25.4;
+    let pad = 8.0;
+    // Room at the right end for the unit's name.
+    let width = 100.0 * per_mm + pad + 30.0;
+    for metric in [true, false] {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::hover());
+        let p = ui.painter();
+        p.rect(
+            rect,
+            0.0,
+            egui::Color32::WHITE,
+            egui::Stroke::new(1.0, chrome::FIELD_BORDER),
+            egui::StrokeKind::Inside,
+        );
+        let x0 = rect.left() + pad;
+        let top = rect.top() + 1.0;
+        let font = egui::FontId::proportional(10.0);
+        let (count, step, label_every, unit) = if metric {
+            (100, per_mm, 10, "mm")
+        } else {
+            // Eighths of an inch.
+            (32, ppi / 8.0, 8, "in")
+        };
+        for i in 0..=count {
+            let x = (x0 + i as f32 * step).round() + 0.5;
+            let long = i % label_every == 0;
+            let mid = if metric { i % 5 == 0 } else { i % 4 == 0 };
+            let h = if long {
+                14.0
+            } else if mid {
+                9.0
+            } else {
+                5.0
+            };
+            p.line_segment(
+                [egui::pos2(x, top), egui::pos2(x, top + h)],
+                egui::Stroke::new(1.0, Tokens::TEXT),
+            );
+            if long {
+                let n = if metric { i } else { i / 8 };
+                p.text(
+                    egui::pos2(x, top + 16.0),
+                    egui::Align2::CENTER_TOP,
+                    n.to_string(),
+                    font.clone(),
+                    Tokens::TEXT,
+                );
+            }
+        }
+        p.text(
+            egui::pos2(rect.right() - 4.0, rect.bottom() - 3.0),
+            egui::Align2::RIGHT_BOTTOM,
+            unit,
+            font,
+            Tokens::TEXT_DIM,
+        );
+        ui.add_space(4.0);
+    }
 }
 
 fn edit_page(app: &mut App, ui: &mut Ui) {
@@ -1095,7 +1185,7 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                 ] {
                     for (i, key) in pair {
                         row_label(ui, &tr(key));
-                        let mut v = u.from_mm(c.radii[i]);
+                        let mut v = u.world_from_mm(c.radii[i]);
                         if ui
                             .add_sized(
                                 [80.0, 22.0],
@@ -1106,7 +1196,7 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                             )
                             .changed()
                         {
-                            let v = u.to_mm(v).max(0.0);
+                            let v = u.world_to_mm(v).max(0.0);
                             if together {
                                 c.radii = [v; 4];
                             } else {
@@ -1369,8 +1459,8 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
         row_label(ui, &tr("options.duplicate_offset"));
         let u = app.units;
         let (mut dx, mut dy) = (
-            u.from_mm(app.duplicate_offset.x),
-            u.from_mm(app.duplicate_offset.y),
+            u.world_from_mm(app.duplicate_offset.x),
+            u.world_from_mm(app.duplicate_offset.y),
         );
         ui.horizontal(|ui| {
             let a = ui.add(
@@ -1385,7 +1475,7 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
             );
             if a.changed() || b.changed() {
                 app.duplicate_offset =
-                    tracedraw_core::geometry::Vec2::new(u.to_mm(dx), u.to_mm(dy));
+                    tracedraw_core::geometry::Vec2::new(u.world_to_mm(dx), u.world_to_mm(dy));
             }
         });
         ui.end_row();

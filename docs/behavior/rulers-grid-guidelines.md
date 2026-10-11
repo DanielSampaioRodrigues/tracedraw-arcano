@@ -41,6 +41,34 @@ kilometers), Origin (horizontal, vertical), Tick divisions, Nudge (nudge
 2.54 mm, super nudge 5.08 mm with Shift, micro nudge 0.254 mm with Ctrl),
 Show rulers, and a button that puts the origin back at the page corner.
 
+### Drawing scale
+
+Document Options > Rulers > Drawing scale makes a distance on the page
+stand for a distance in the world (`drawing_scale.rs`):
+
+- Typical scales: 1:1 (default), 1:2, 1:5, 1:10, 1:20, 1:25, 1:50, 1:75,
+  1:100, 1:200, 1:250, 1:500, 1:1000, 1:2000, 1:2500, 1:5000, 1:10000,
+  2:1, 5:1, 10:1, and 1/16, 1/8, 1/4, 1/2 and 3/4 in = 1 ft, 1 in = 1 ft,
+  1 in = 10 ft, 1 in = 100 ft; "Custom" when the distances match none.
+  A ratio keeps the units in use (1:100 in centimetres and metres is
+  1 cm = 1 m); the inch and foot scales set inches and feet.
+- Page distance and World distance, each a value and a unit. Changing a
+  unit converts its value (the scale stays); the world unit becomes the
+  ruler unit.
+- Through the scale go the rulers (their unit name at the right end gets
+  the scale, "millimeters (1:100)"), the cursor coordinates and object
+  details on the status bar, the property bar's position, size, nudge,
+  duplicate distance and corner sizes, the Transformations, Object
+  Coordinates, Step and Repeat, Corners and Join Curves panels, contour
+  offsets, the grid spacing, guideline positions, the ruler origin and the
+  symmetry centre, and the labels of new dimension lines.
+- Not through it, as printed: the page size, bleed, page margins and
+  columns of the guideline presets, the baseline grid, outline widths, text
+  sizes, paragraph indents, tabs and columns, barcodes and QR codes, nib
+  widths (eraser, artistic media) and Border and Grommet.
+- The scale is saved with the drawing (`scale_page` and `scale_world` in
+  mm with the units they were given in); changing it is an undo step.
+
 ## Document grid
 
 - View > Grid > Document Grid shows it over the page and the desktop,
@@ -132,3 +160,6 @@ active drawing's grid, ruler and guideline settings for new drawings.
 - `canvas::tests::grid_lines_thin_out_and_follow_the_origin`
 - `tracedraw_core` document tests: old guidelines load, appearance round
   trips, defaults for documents without grid settings.
+- `drawing_scale::tests::presets_have_the_ratio_their_label_says`
+- `drawing_scale::tests::the_settings_find_their_preset_and_label`
+- `drawing_scale::tests::world_distances_go_through_the_scale`

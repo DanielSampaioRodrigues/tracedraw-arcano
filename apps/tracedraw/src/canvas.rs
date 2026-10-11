@@ -848,7 +848,7 @@ pub fn grid_positions(a: f64, b: f64, origin: f64, step: f64) -> Vec<f64> {
 fn draw_grid(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     let meta = &app.doc().metadata;
-    let (grid, rulers) = (meta.grid, meta.rulers);
+    let (grid, rulers) = (meta.grid, meta.rulers.clone());
     let zoom = view.zoom as f64;
     let dots = grid.display == tracedraw_core::document::GridDisplay::Dots;
     let min_px = if dots { 8.0 } else { 6.0 };

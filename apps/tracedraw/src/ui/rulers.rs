@@ -125,10 +125,19 @@ pub fn label(v: f64, major: f64) -> String {
     }
 }
 
-/// The ruler value (signed, in the ruler unit) of a page position along
-/// one axis.
+/// The unit name at the end of the horizontal ruler, with the drawing
+/// scale when it is not 1:1 ("meters (1:100)").
+fn unit_text(app: &App) -> String {
+    match crate::drawing_scale::short_label(&app.doc().metadata.rulers) {
+        Some(scale) => format!("{} ({scale})", app.units.label()),
+        None => app.units.label(),
+    }
+}
+
+/// The ruler value (signed, in the ruler unit, through the drawing scale)
+/// of a page position along one axis.
 fn value_of(app: &App, mm: f64, origin: f64) -> f64 {
-    app.units.from_mm(mm - origin)
+    app.units.world_from_mm(mm - origin)
 }
 
 /// The rulers, their corner, the pointer markers and their interaction.
@@ -284,8 +293,8 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
         Stroke::new(1.0, BORDER_COLOR),
     );
     let view = &app.view;
-    let rulers = app.doc().metadata.rulers;
-    let ppu = view.zoom as f64 * app.units.mm();
+    let rulers = app.doc().metadata.rulers.clone();
+    let ppu = view.zoom as f64 * app.units.world_mm();
     let a = value_of(app, view.to_page(top.left_top()).x, rulers.origin_x);
     let b = value_of(app, view.to_page(top.right_top()).x, rulers.origin_x);
     let major = major_step(ppu);
@@ -293,7 +302,7 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
 
     // The unit name at the right end, over a patch of background so the
     // numbers do not run into it.
-    let unit = painter.layout_no_wrap(app.units.label(), font.clone(), LABEL_COLOR);
+    let unit = painter.layout_no_wrap(unit_text(app), font.clone(), LABEL_COLOR);
     let unit_rect = Rect::from_min_size(
         Pos2::new(top.right() - unit.size().x - 4.0, top.top() + LABEL_OFFSET),
         unit.size(),
@@ -302,7 +311,7 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
     let mut pixels = Pixels::default();
     for (v, kind) in ticks(a, b, ppu, rulers.tick_divisions) {
         let px = view
-            .to_screen(Point::new(app.units.to_mm(v) + rulers.origin_x, 0.0))
+            .to_screen(Point::new(app.units.world_to_mm(v) + rulers.origin_x, 0.0))
             .x
             .round();
         let x = px + 0.5;
@@ -352,8 +361,8 @@ fn draw_vertical(app: &App, painter: &Painter, left: Rect) {
         Stroke::new(1.0, BORDER_COLOR),
     );
     let view = &app.view;
-    let rulers = app.doc().metadata.rulers;
-    let ppu = view.zoom as f64 * app.units.mm();
+    let rulers = app.doc().metadata.rulers.clone();
+    let ppu = view.zoom as f64 * app.units.world_mm();
     // Y up: the bottom of the ruler has the smaller values.
     let a = value_of(app, view.to_page(left.left_bottom()).y, rulers.origin_y);
     let b = value_of(app, view.to_page(left.left_top()).y, rulers.origin_y);
@@ -363,7 +372,7 @@ fn draw_vertical(app: &App, painter: &Painter, left: Rect) {
     let mut pixels = Pixels::default();
     for (v, kind) in ticks(a, b, ppu, rulers.tick_divisions) {
         let py = view
-            .to_screen(Point::new(0.0, app.units.to_mm(v) + rulers.origin_y))
+            .to_screen(Point::new(0.0, app.units.world_to_mm(v) + rulers.origin_y))
             .y
             .round();
         let y = py + 0.5;

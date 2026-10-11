@@ -805,12 +805,36 @@ fn label_text(ui: &mut Ui, text: &str) {
     );
 }
 
-/// A distance field in the ruler unit; with spin arrows when `step` is
-/// given (in the unit). Returns the new value in mm once committed.
+/// A distance field in the ruler unit, through the drawing scale (a
+/// position, a size, an offset); with spin arrows when `step` is given (in
+/// the unit). Returns the new value in mm once committed.
 fn distance(ui: &mut Ui, app: &App, mm: f64, width: f32, step: Option<f64>) -> Option<f64> {
+    distance_in(ui, app, mm, width, step, app.units.world_mm())
+}
+
+/// A page size field: in the ruler unit as printed, not through the
+/// drawing scale.
+fn paper_distance(ui: &mut Ui, app: &App, mm: f64, width: f32, step: Option<f64>) -> Option<f64> {
+    distance_in(ui, app, mm, width, step, app.units.mm())
+}
+
+/// A distance field showing `mm` in units of `unit_mm` millimetres.
+fn distance_in(
+    ui: &mut Ui,
+    app: &App,
+    mm: f64,
+    width: f32,
+    step: Option<f64>,
+    unit_mm: f64,
+) -> Option<f64> {
     let u = app.units;
     let d = app.settings.precision.min(6) as usize;
-    let mut v = u.from_mm(mm);
+    let unit_mm = if unit_mm.is_finite() && unit_mm > 0.0 {
+        unit_mm
+    } else {
+        1.0
+    };
+    let mut v = mm / unit_mm;
     let r = ui.add_sized(
         [width, ROW],
         crate::ui::field::NumField::new(&mut v)
@@ -821,12 +845,12 @@ fn distance(ui: &mut Ui, app: &App, mm: f64, width: f32, step: Option<f64>) -> O
     );
     let mut out = None;
     // Typed values apply with Enter or when the field is left.
-    if r.changed() && (u.to_mm(v) - mm).abs() > 1e-12 {
-        out = Some(u.to_mm(v));
+    if r.changed() && (v * unit_mm - mm).abs() > 1e-12 {
+        out = Some(v * unit_mm);
     }
     if let Some(step) = step {
         if let Some(delta) = spin(ui) {
-            out = Some(u.to_mm(u.from_mm(mm) + delta * step));
+            out = Some((mm / unit_mm + delta * step) * unit_mm);
         }
     }
     out
@@ -933,13 +957,13 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
     stacked(ui, |ui| {
         row(ui, |ui| {
             label_pic(ui, Pic::PageWidth, &tr("toolbar.page_width"));
-            if let Some(w) = distance(ui, app, size.width, 92.0, Some(1.0)) {
+            if let Some(w) = paper_distance(ui, app, size.width, 92.0, Some(1.0)) {
                 new_size = Some(Size::new(w, size.height));
             }
         });
         row(ui, |ui| {
             label_pic(ui, Pic::PageHeight, &tr("toolbar.page_height"));
-            if let Some(h) = distance(ui, app, size.height, 92.0, Some(1.0)) {
+            if let Some(h) = paper_distance(ui, app, size.height, 92.0, Some(1.0)) {
                 new_size = Some(Size::new(size.width, h));
             }
         });

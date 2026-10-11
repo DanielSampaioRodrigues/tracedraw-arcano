@@ -26,7 +26,7 @@ double-click on a ruler, the page border or its shadow).
 | Page | Settings (defaults) |
 |---|---|
 | General | On start-up: Welcome Screen, Start a new document, Open last edited document; Show New Document dialog box (on); Show the splash screen at start-up (on); Undo levels, Regular (150) |
-| Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll |
+| Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll; Ruler calibration (below) |
 | Edit | Constrain angle (15 degrees: Ctrl while rotating); Drawing precision (3 decimal places in the property bar and the status bar) |
 | Nodes and Handles | Node size Small, Medium, Large (7, 9, 11 px); node shape per type (cusp square, smooth circle, symmetrical diamond); Show curve direction (an arrow after the first node, secondary colour); main colour (selected nodes and handles, blue) and secondary colour (red); Show unselected nodes with fill (on, Ctrl+Shift+G) |
 | clip frame | Auto-center new content: when it lies completely outside the frame (default), always, never; Show lines in empty clip frame frames (on, on screen) |
@@ -73,6 +73,16 @@ Automatic, 100 %, 110 %, 125 %, 150 %, 175 % or 200 %.
   the monitor's scaling, so text stays sharp.
 - Ctrl+plus and Ctrl+minus zoom the drawing, never the interface.
 
+## Ruler calibration
+
+Options > Display > Ruler calibration sets the screen resolution in
+interface points per inch (96 by default, 48 to 400, `screen_ppi` in the
+preferences) and draws a 100 mm ruler and a 4 inch ruler at that
+resolution: hold a real ruler against the screen and change the value
+until the marks match. Zoom 100% then shows a drawing at its real size
+(the zoom box percentages follow; the Pixels view keeps one point per
+document pixel). Reset puts 96 back.
+
 ## Document Options
 
 General (rendering resolution; Fill open curves, off: an open curve's
@@ -88,6 +98,7 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 - `ui::options::tests::every_page_draws`
 - `ui::tests::interface_size_overrides_the_system_scaling`
 - `ui::tests::automatic_size_follows_the_sign_in_scaling`
+- `drawing_scale::tests::zoom_100_follows_the_ruler_calibration`
 - `tracedraw_render` `open_curves_are_not_filled_unless_the_document_says_so`
 - `tracedraw_io` `open_curves_lose_their_fill_in_vector_exports`
 - `app::tests` start-up, backups and clip frame centring (below)

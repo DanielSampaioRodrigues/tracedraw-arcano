@@ -116,7 +116,7 @@ fn object_details(app: &App) -> String {
     };
     let u = app.units;
     let d = app.settings.precision.min(10) as usize;
-    let f = |mm: f64| format!("{:.*}", d, u.from_mm(mm));
+    let f = |mm: f64| format!("{:.*}", d, u.world_from_mm(mm));
     let c = app.to_ruler(b.center());
     trf(
         "status.details",
@@ -138,9 +138,9 @@ fn cursor_coordinates(app: &App) -> String {
             format!(
                 "({:.*}, {:.*}) {}",
                 d,
-                u.from_mm(p.x),
+                u.world_from_mm(p.x),
                 d,
-                u.from_mm(p.y),
+                u.world_from_mm(p.y),
                 u.label()
             )
         }

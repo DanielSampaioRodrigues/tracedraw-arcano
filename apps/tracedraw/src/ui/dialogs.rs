@@ -1140,7 +1140,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                         ui.end_row();
                         ui.label(tr("dialog.mirror_center"));
                         ui.horizontal(|ui| {
-                            let (mut x, mut y) = (u.from_mm(c.x), u.from_mm(c.y));
+                            let (mut x, mut y) = (u.world_from_mm(c.x), u.world_from_mm(c.y));
                             let cx = ui
                                 .add(egui::DragValue::new(&mut x).speed(0.5).prefix("x "))
                                 .changed();
@@ -1148,7 +1148,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                 .add(egui::DragValue::new(&mut y).speed(0.5).prefix("y "))
                                 .changed();
                             if cx || cy {
-                                c = tracedraw_core::geometry::Point::new(u.to_mm(x), u.to_mm(y));
+                                c = tracedraw_core::geometry::Point::new(
+                                    u.world_to_mm(x),
+                                    u.world_to_mm(y),
+                                );
                                 changed = true;
                             }
                         });
