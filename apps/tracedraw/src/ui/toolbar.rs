@@ -1769,7 +1769,8 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
             crate::ui::field::NumField::new(&mut size)
                 .speed(0.5)
                 .range(1.0..=999.0)
-                .suffix(" pt"),
+                .suffix(" pt")
+                .width(60.0),
         )
         .changed()
     {

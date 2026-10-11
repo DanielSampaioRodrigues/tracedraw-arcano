@@ -22,6 +22,7 @@ pub mod icons;
 pub mod lab_dialog;
 pub mod layout_options;
 pub mod menus;
+pub mod objects_docker;
 pub mod options;
 pub mod palette;
 pub mod picture_mosaic_docker;

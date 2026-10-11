@@ -274,7 +274,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
             }
             egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
                 DockerTab::Properties => properties(app, ui),
-                DockerTab::Objects => objects(app, ui),
+                DockerTab::Objects => crate::ui::objects_docker::objects(app, ui),
                 DockerTab::Hints => {}
                 DockerTab::Transformations => transformations(app, ui),
                 DockerTab::Undo => undo_docker(app, ui),
@@ -985,14 +985,10 @@ pub fn kind_name(k: &ShapeKind) -> String {
             }
         }
         ShapeKind::Path { path, .. } => {
-            let n = path
-                .elements()
-                .iter()
-                .filter(|e| !matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
-                .count();
+            let n = tracedraw_core::nodes::nodes(path).len();
             trf("kind.curve_n", &[("n", &n.to_string())])
         }
-        ShapeKind::Text { spans, .. } => {
+        ShapeKind::Text { spans, frame, .. } => {
             let t: String = spans
                 .iter()
                 .map(|s| s.text.as_str())
@@ -1000,7 +996,12 @@ pub fn kind_name(k: &ShapeKind) -> String {
                 .chars()
                 .take(20)
                 .collect();
-            trf("kind.artistic_text", &[("t", &t)])
+            let key = if frame.is_some() {
+                "kind.paragraph_text"
+            } else {
+                "kind.artistic_text"
+            };
+            trf(key, &[("t", &t)])
         }
         ShapeKind::Group { children } => trf("kind.group_n", &[("n", &children.len().to_string())]),
         ShapeKind::Bitmap {
@@ -1020,137 +1021,6 @@ pub fn kind_name(k: &ShapeKind) -> String {
         ),
         ShapeKind::SymbolInstance { index } => {
             trf("kind.symbol_n", &[("n", &(index + 1).to_string())])
-        }
-    }
-}
-
-fn objects(app: &mut App, ui: &mut Ui) {
-    let doc = app.doc();
-    let Ok(page) = doc.page(app.page) else { return };
-    let mut toggles: Vec<(tracedraw_core::LayerId, bool, bool)> = Vec::new();
-    let mut click: Option<tracedraw_core::ShapeId> = None;
-    let mut add_layer = false;
-    ui.horizontal(|ui| {
-        ui.strong(&page.name);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button(tr("docker.add_layer")).clicked() {
-                add_layer = true;
-            }
-        });
-    });
-    let mut rename: Option<(tracedraw_core::LayerId, String)> = None;
-    let mut delete: Option<tracedraw_core::LayerId> = None;
-    let mut reorder: Option<(tracedraw_core::LayerId, usize)> = None;
-    let nlayers = page.layers.len();
-    for (li, layer) in page.layers.iter().enumerate().rev() {
-        let mut vis = layer.visible;
-        let mut locked = layer.locked;
-        ui.horizontal(|ui| {
-            if ui
-                .checkbox(&mut vis, "")
-                .on_hover_text(tr("docker.show_hide"))
-                .changed()
-            {
-                toggles.push((layer.id, vis, locked));
-            }
-            if ui
-                .selectable_label(locked, "L")
-                .on_hover_text(tr("docker.lock_layer"))
-                .clicked()
-            {
-                locked = !locked;
-                toggles.push((layer.id, vis, locked));
-            }
-            let r = ui.strong(&layer.name);
-            if r.double_clicked() {
-                rename = Some((layer.id, layer.name.clone()));
-            }
-            r.context_menu(|ui| {
-                if ui.button(tr("docker.rename")).clicked() {
-                    rename = Some((layer.id, layer.name.clone()));
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(li + 1 < nlayers, egui::Button::new(tr("docker.move_up")))
-                    .clicked()
-                {
-                    reorder = Some((layer.id, li + 1));
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(li > 0, egui::Button::new(tr("docker.move_down")))
-                    .clicked()
-                {
-                    reorder = Some((layer.id, li - 1));
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(nlayers > 1, egui::Button::new(tr("docker.delete_layer")))
-                    .clicked()
-                {
-                    delete = Some(layer.id);
-                    ui.close();
-                }
-            });
-        });
-        for s in layer.shapes.iter().rev() {
-            let sel = app.selection.contains(&s.id);
-            let fill = crate::app::fill_preview_color(&s.fill);
-            ui.horizontal(|ui| {
-                ui.add_space(18.0);
-                let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-                match fill {
-                    Some(c) => {
-                        ui.painter().rect_filled(r, 1.0, c);
-                    }
-                    None => {
-                        ui.painter().rect_stroke(
-                            r,
-                            1.0,
-                            egui::Stroke::new(1.0, Tokens::TEXT_DIM),
-                            egui::epaint::StrokeKind::Inside,
-                        );
-                    }
-                }
-                if ui.selectable_label(sel, kind_name(&s.kind)).clicked() {
-                    click = Some(s.id);
-                }
-            });
-        }
-    }
-    for (layer, visible, locked) in toggles {
-        app.run(Command::SetLayerVisible { layer, visible });
-        app.run(Command::SetLayerLocked { layer, locked });
-    }
-    if let Some((layer, name)) = rename {
-        app.dialog = crate::ui::dialogs::Dialog::RenameLayer { layer, name };
-    }
-    if let Some(layer) = delete {
-        app.selection.clear();
-        app.run(Command::DeleteLayer { layer });
-    }
-    if let Some((layer, index)) = reorder {
-        app.run(Command::ReorderLayer { layer, index });
-    }
-    if add_layer {
-        let page = app.page;
-        let n = app
-            .doc()
-            .page(page)
-            .map(|p| p.layers.len() + 1)
-            .unwrap_or(1);
-        app.run(Command::AddLayer {
-            page,
-            name: trf("docker.layer_n", &[("n", &n.to_string())]),
-        });
-    }
-    if let Some(id) = click {
-        if ui.input(|i| i.modifiers.shift) {
-            if !app.selection.contains(&id) {
-                app.selection.push(id);
-            }
-        } else {
-            app.select(vec![id]);
         }
     }
 }

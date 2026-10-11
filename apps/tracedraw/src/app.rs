@@ -692,6 +692,9 @@ pub struct App {
     pub options_labels: bool,
     /// Navigator pop-up (corner of the scrollbars).
     pub navigator_open: bool,
+    /// Objects docker: layers shown closed, groups shown open.
+    pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
+    pub objects_open_groups: std::collections::HashSet<ShapeId>,
     pub navigator_tex: Option<egui::TextureHandle>,
     pub options_label_index: usize,
     pub options_current_only: bool,
@@ -1219,6 +1222,8 @@ impl App {
             pending_clone_effect: None,
             options_labels: false,
             navigator_open: false,
+            objects_collapsed: Default::default(),
+            objects_open_groups: Default::default(),
             navigator_tex: None,
             options_label_index: 0,
             options_current_only: false,
@@ -2633,7 +2638,7 @@ impl App {
                         doc.pages[0].layers[0].shapes.push(shape);
                     }
                     doc.set_ids(ids);
-                    (doc, format!("SVG: {n} object(s)"))
+                    (doc, opened_objects("SVG", n))
                 })
         } else if ext == "psd" || ext == "psb" {
             crate::files::read(&path)
@@ -2681,7 +2686,7 @@ impl App {
                         doc.pages[0].layers[0].shapes.push(shape);
                     }
                     doc.set_ids(ids);
-                    (doc, format!("{}: {n} object(s)", ext.to_ascii_uppercase()))
+                    (doc, opened_objects(&ext.to_ascii_uppercase(), n))
                 })
         } else if ext == "eps" || ext == "ps" {
             crate::files::read(&path)
@@ -2708,7 +2713,7 @@ impl App {
                         doc.pages[0].layers[0].shapes.push(shape);
                     }
                     doc.set_ids(ids);
-                    (doc, format!("EPS: {n} object(s)"))
+                    (doc, opened_objects("EPS", n))
                 })
         } else if matches!(ext.as_str(), "plt" | "hpgl" | "hgl") {
             crate::files::read(&path)
@@ -2786,7 +2791,7 @@ impl App {
                         doc2.pages[0].layers.push(layer);
                     }
                     doc2.set_ids(ids);
-                    (doc2, format!("DXF: {n} object(s)"))
+                    (doc2, opened_objects("DXF", n))
                 })
         } else if ext == "pdf" || ext == "ai" {
             crate::files::read(&path)
@@ -2835,7 +2840,17 @@ impl App {
                         });
                     }
                     doc2.set_ids(ids);
-                    (doc2, format!("PDF: {pages} page(s), {n} object(s)"))
+                    (
+                        doc2,
+                        crate::i18n::trf(
+                            "status.opened_pages",
+                            &[
+                                ("format", "PDF"),
+                                ("pages", &pages.to_string()),
+                                ("objects", &n.to_string()),
+                            ],
+                        ),
+                    )
                 })
         } else if ext == "cdr" {
             Self::open_cdr(&path)
@@ -2846,9 +2861,14 @@ impl App {
                     }
                     (
                         doc,
-                        format!(
-                            "{ver}: {} page(s), {} object(s), {} skipped",
-                            report.pages, report.shapes, report.skipped_objects
+                        crate::i18n::trf(
+                            "status.opened_cdr",
+                            &[
+                                ("version", &ver.to_string()),
+                                ("pages", &report.pages.to_string()),
+                                ("objects", &report.shapes.to_string()),
+                                ("skipped", &report.skipped_objects.to_string()),
+                            ],
                         ),
                     )
                 })
@@ -2859,7 +2879,7 @@ impl App {
                 .and_then(|json| {
                     tracedraw_core::Document::from_json(&json).map_err(|e| e.to_string())
                 })
-                .map(|d| (d, "Opened".to_string()))
+                .map(|d| (d, crate::i18n::tr("status.opened")))
         };
         match result {
             Ok((doc, msg)) => {
@@ -3790,6 +3810,14 @@ pub fn color_description(c: Color) -> String {
         ),
         Color::Registration => "Registration".into(),
     }
+}
+
+/// The status after opening a file of `format` with `n` objects.
+fn opened_objects(format: &str, n: usize) -> String {
+    crate::i18n::trf(
+        "status.opened_objects",
+        &[("format", format), ("objects", &n.to_string())],
+    )
 }
 
 #[cfg(test)]

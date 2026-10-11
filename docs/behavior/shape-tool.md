@@ -3,6 +3,12 @@
 Shortcut F10. Double-clicking the tool's toolbox button selects every
 node of the selected curves.
 
+A closed curve whose last segment ends back on its first node has that
+node once: it shows both handles (the last segment's arriving one and the
+first segment's leaving one), moves with the end lying on it, deletes by
+joining the last and first segments, and Break opens the curve there.
+Node counts in the status bar and the Objects panel count it once.
+
 ## Selecting nodes
 
 | Action | Behaviour |

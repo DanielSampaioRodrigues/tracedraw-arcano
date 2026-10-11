@@ -78,11 +78,9 @@ pub fn object_info(app: &App) -> String {
         [s] => {
             if app.tool == Tool::Shape {
                 if let ShapeKind::Path { path, .. } = &s.kind {
-                    let n = path
-                        .elements()
-                        .iter()
-                        .filter(|e| !matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
-                        .count();
+                    // The nodes the Shape tool shows (a closed curve's start
+                    // and the end lying on it count once).
+                    let n = tracedraw_core::nodes::nodes(path).len();
                     return trf("status.curve_nodes", &[("n", &n.to_string())]);
                 }
             }

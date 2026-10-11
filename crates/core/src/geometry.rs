@@ -177,19 +177,35 @@ pub fn polyline_path(points: &[Point], closed: bool) -> BezPath {
 }
 
 /// Smooth cubic curve through the points (Catmull-Rom converted to Bezier),
-/// the way a freehand stroke is turned into a curve.
+/// the way a freehand stroke is turned into a curve. A closed curve wraps
+/// around: the last point joins the first with a curve too, and the
+/// tangents run on through the join, so it has no corner there. A closing
+/// point equal to the first is dropped.
 pub fn smooth_path(points: &[Point], closed: bool) -> BezPath {
-    let n = points.len();
+    let mut pts = points;
+    if closed && pts.len() > 3 {
+        if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
+            if (*first - *last).hypot() < 1e-9 {
+                pts = &pts[..pts.len() - 1];
+            }
+        }
+    }
+    let n = pts.len();
     if n < 3 {
-        return polyline_path(points, closed);
+        return polyline_path(pts, closed);
     }
     let mut path = BezPath::new();
-    path.move_to(points[0]);
+    path.move_to(pts[0]);
     let get = |i: isize| -> Point {
-        let idx = i.clamp(0, n as isize - 1) as usize;
-        points[idx]
+        let idx = if closed {
+            i.rem_euclid(n as isize) as usize
+        } else {
+            i.clamp(0, n as isize - 1) as usize
+        };
+        pts[idx]
     };
-    for i in 0..n - 1 {
+    let segments = if closed { n } else { n - 1 };
+    for i in 0..segments {
         let p0 = get(i as isize - 1);
         let p1 = get(i as isize);
         let p2 = get(i as isize + 1);
@@ -265,6 +281,36 @@ mod tests {
         assert_eq!(simplify(&pts, 0.1).len(), 2);
         let smooth = smooth_path(&pts, false);
         assert_eq!(smooth.elements().len(), 10);
+    }
+
+    #[test]
+    fn closed_smooth_curves_wrap_around_without_a_corner() {
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ];
+        let p = smooth_path(&pts, true);
+        // Four curves (the last one back to the start) and the close.
+        let curves: Vec<(Point, Point, Point)> = p
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                PathEl::CurveTo(a, b, c) => Some((*a, *b, *c)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(curves.len(), 4);
+        assert_eq!(curves[3].2, pts[0]);
+        // The tangent into the start equals the tangent out of it.
+        let into = pts[0] - curves[3].1;
+        let out = curves[0].0 - pts[0];
+        assert!((into.x - out.x).abs() < 1e-9 && (into.y - out.y).abs() < 1e-9);
+        // A closing point equal to the first changes nothing.
+        let mut again = pts.to_vec();
+        again.push(pts[0]);
+        assert_eq!(smooth_path(&again, true), p);
     }
 
     #[test]

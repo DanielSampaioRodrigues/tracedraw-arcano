@@ -17,7 +17,12 @@ pub struct NumField<'a, N: Numeric> {
     max_decimals: Option<usize>,
     /// Millimetres per unit of the field, for distances typed with a unit.
     unit_mm: Option<f64>,
+    /// Width in points when the field is not given a size by its parent.
+    width: f32,
 }
+
+/// The width of a field added without a size (see [`NumField::width`]).
+pub const DEFAULT_WIDTH: f32 = 64.0;
 
 impl<'a, N: Numeric> NumField<'a, N> {
     pub fn new(value: &'a mut N) -> Self {
@@ -28,7 +33,15 @@ impl<'a, N: Numeric> NumField<'a, N> {
             min_decimals: 0,
             max_decimals: None,
             unit_mm: None,
+            width: DEFAULT_WIDTH,
         }
+    }
+
+    /// The field's width when it is added on its own; a field placed with
+    /// `ui.add_sized` (or in any justified layout) fills the room it gets.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
     }
 
     pub fn range<R: Numeric>(mut self, range: RangeInclusive<R>) -> Self {
@@ -108,12 +121,19 @@ impl<N: Numeric> Widget for NumField<'_, N> {
         // While typing, the text lives in memory until it is applied.
         let stored = ui.data(|d| d.get_temp::<String>(id));
         let mut buf = stored.clone().unwrap_or_else(|| shown.clone());
+        // Fill a sized slot; otherwise keep to the field's own width, so a
+        // field in a row of controls does not take the rest of the row.
+        let width = if ui.layout().horizontal_justify() {
+            f32::INFINITY
+        } else {
+            self.width
+        };
         let mut resp = ui.add(
             TextEdit::singleline(&mut buf)
                 .id(id)
                 .margin(egui::Margin::symmetric(4, 0))
                 .vertical_align(egui::Align::Center)
-                .desired_width(f32::INFINITY),
+                .desired_width(width),
         );
         // Typing does not change the value; applying it does.
         resp.flags.set(egui::response::Flags::CHANGED, false);
@@ -362,6 +382,33 @@ mod tests {
         assert_eq!(format_number(0.123456, false, 1, Some(4)), "0.1235");
         assert_eq!(format_number(-0.0001, false, 0, Some(2)), "0");
         assert_eq!(format_number(7.6, true, 0, None), "8");
+    }
+
+    #[test]
+    fn a_field_keeps_its_width_in_a_row_and_fills_a_sized_slot() {
+        let ctx = egui::Context::default();
+        let mut v = 5.0f64;
+        let mut w = 5.0f64;
+        let (mut row_width, mut slot_width) = (0.0, 0.0);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 200.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            ui.horizontal(|ui| {
+                row_width = ui.add(NumField::new(&mut v)).rect.width();
+                slot_width = ui
+                    .add_sized([120.0, 20.0], NumField::new(&mut w))
+                    .rect
+                    .width();
+            });
+        });
+        out.textures_delta.clear();
+        assert!(row_width < 100.0, "{row_width}");
+        assert!((slot_width - 120.0).abs() < 1.0, "{slot_width}");
     }
 
     #[test]

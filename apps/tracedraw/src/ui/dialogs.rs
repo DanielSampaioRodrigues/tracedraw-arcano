@@ -285,6 +285,10 @@ pub enum Dialog {
         layer: tracedraw_core::LayerId,
         name: String,
     },
+    RenameObject {
+        shape: tracedraw_core::ShapeId,
+        name: String,
+    },
     DocumentProperties,
     ConfirmClose,
     Export(ExportState),
@@ -724,6 +728,21 @@ pub fn show(app: &mut App, ctx: &Context) {
                     app.run(Command::RenameLayer {
                         layer: *layer,
                         name: name.clone(),
+                    });
+                }
+            });
+        }
+        Dialog::RenameObject { shape, name } => {
+            window(ctx, tr("dialog.rename_object")).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(tr("dialog.object_name"));
+                    ui.text_edit_singleline(name);
+                });
+                if ok_cancel(ui, &mut close) {
+                    let trimmed = name.trim();
+                    app.run(Command::SetShapeName {
+                        shape: *shape,
+                        name: (!trimmed.is_empty()).then(|| trimmed.to_string()),
                     });
                 }
             });

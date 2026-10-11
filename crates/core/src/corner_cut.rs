@@ -350,8 +350,9 @@ mod tests {
             );
             let b = p.bounding_box();
             assert!((b.width() - 10.0).abs() < 1e-6, "{cut:?}: {b:?}");
-            // Each corner adds one node; the close draws the last side.
-            assert_eq!(crate::nodes::nodes(&p).len(), 8 + 1, "{cut:?}: {p:?}");
+            // Each corner becomes two nodes; the last cut ends on the
+            // start node, which counts once.
+            assert_eq!(crate::nodes::nodes(&p).len(), 8, "{cut:?}: {p:?}");
         }
         // Fillets meet the sides smoothly: each arc leaves the side before
         // it along that side and arrives along the side after it.

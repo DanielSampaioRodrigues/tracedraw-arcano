@@ -309,7 +309,8 @@ fn text(app: &mut App, ui: &mut Ui) {
                     .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
                     .changed();
             });
-            ui.horizontal(|ui| {
+            // Wrapped, so the feature buttons never widen the docker.
+            ui.horizontal_wrapped(|ui| {
                 ui.label(tr("docker.opentype"));
                 for (tag, k) in [
                     ("liga", "docker.ligatures"),
