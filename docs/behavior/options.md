@@ -25,7 +25,7 @@ double-click on a ruler, the page border or its shadow).
 
 | Page | Settings (defaults) |
 |---|---|
-| General | On start-up: Welcome Screen, Start a new document, Open last edited document; Show New Document dialog box (on); Undo levels, Regular (150) |
+| General | On start-up: Welcome Screen, Start a new document, Open last edited document; Show New Document dialog box (on); Show the splash screen at start-up (on); Undo levels, Regular (150) |
 | Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll |
 | Edit | Constrain angle (15 degrees: Ctrl while rotating); Drawing precision (3 decimal places in the property bar and the status bar) |
 | Nodes and Handles | Node size Small, Medium, Large (7, 9, 11 px); node shape per type (cusp square, smooth circle, symmetrical diamond); Show curve direction (an arrow after the first node, secondary colour); main colour (selected nodes and handles, blue) and secondary colour (red); Show unselected nodes with fill (on, Ctrl+Shift+G) |

@@ -230,6 +230,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Panels (35): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic | works |
 | Welcome Screen with tabs | works |
 | About box with the banner, icon, facts (author, license, source code, co-author) and copyright; opens from the Welcome Screen too (see `behavior/about-and-startup.md`) | works |
+| Splash screen while starting (artwork, status, progress), then the main window maximized or at its kept size; can be turned off (see `behavior/about-and-startup.md`) | works |
 | Interface size: Automatic (the sign-in display scaling on Windows), 100 % to 200 % (see `behavior/options.md`) | works |
 | Right-click context menus (object, node, page, table) | works |
 | Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |

@@ -17,7 +17,47 @@ button) 480 points wide:
   (a link that opens the repository), Developed with.
 - The copyright line in small dim text and a Close button (Enter or Esc).
 
+## Splash screen
+
+While TraceDraw starts, a borderless 640 x 380 point window centred on
+the screen shows the same artwork as the About banner at a larger size
+(two selected nodes on the main curve), the 96 px icon, the name at
+46 px with the tagline, and a darker strip along the bottom with the
+status line, a thin progress bar and the footer (copyright on the left,
+the version on the right).
+
+- The bundled interface font is installed at once; the system font list
+  (and the system fonts for Chinese, Japanese, Arabic, Hindi and Bengali)
+  is read on a worker thread. Texts in those languages appear once their
+  fonts are in; the name and version always show.
+- Status: "Loading fonts..." while the thread works, then "Opening
+  <file>..." for a file named on the command line, else "Preparing the
+  workspace...".
+- The bar eases towards 80 % over 1.6 s while the fonts load and fills
+  once they are in. The splash stays up at least 1.6 s.
+- Then the editor is built and the window becomes the main window:
+  decorations, resizable, a minimum of 1000 x 600, the size kept from the
+  last session (1600 x 950 the first time, never larger than 95 % of the
+  monitor) centred on the monitor, maximized when it was left maximized
+  (the first start is maximized).
+- Options > General > Show the splash screen at start-up turns it off.
+  `--no-splash` or `TRACEDRAW_NO_SPLASH=1` skip it for one run and open a
+  plain 1600 x 950 window (automation and the visual checks use this).
+- The browser build has no splash: the page shows its own loader.
+
+## Window state
+
+The main window's state is kept in the preferences on exit: maximized or
+not, and its inner size while it was neither maximized nor minimized.
+
 ## Checks
 
-- `ui::about::tests::the_embedded_icon_decodes`
-- `ui::about::tests::cubic_helpers_follow_the_curve`
+- `ui::about::tests::the_about_box_draws_on_the_welcome_screen`
+- `ui::brand::tests::the_embedded_icon_decodes`
+- `ui::brand::tests::cubic_helpers_follow_the_curve`
+- `ui::brand::tests::the_main_curve_spans_the_right_part`
+- `splash::tests::progress_waits_for_the_fonts_and_the_minimum_time`
+- `splash::tests::the_status_names_the_file_being_opened`
+- `splash::tests::the_main_window_keeps_a_sensible_size`
+- `splash::tests::the_main_window_is_centred`
+- `splash::tests::a_splash_frame_draws_and_then_starts_the_editor`

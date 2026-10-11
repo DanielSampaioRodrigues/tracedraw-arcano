@@ -70,6 +70,15 @@ pub struct Settings {
     /// interface point (1.0 = 100 %); 0 follows the system's scaling.
     #[serde(default)]
     pub ui_scale: f32,
+    /// Options > General: show the splash screen while TraceDraw starts.
+    #[serde(default = "default_true")]
+    pub show_splash: bool,
+    /// The main window as it was left: maximized, else its inner size in
+    /// points ([0, 0] until the first exit).
+    #[serde(default = "default_true")]
+    pub window_maximized: bool,
+    #[serde(default)]
+    pub window_size: [f32; 2],
     /// Options > General: what opens at start-up.
     #[serde(default)]
     pub startup: Startup,
@@ -464,6 +473,9 @@ impl Default for Settings {
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
             ui_scale: 0.0,
+            show_splash: true,
+            window_maximized: true,
+            window_size: [0.0, 0.0],
         }
     }
 }

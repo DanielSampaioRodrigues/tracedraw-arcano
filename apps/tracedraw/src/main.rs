@@ -53,6 +53,8 @@ mod shape_tool;
 mod snap;
 mod snap_points;
 mod spell;
+#[cfg(not(target_arch = "wasm32"))]
+mod splash;
 mod straighten;
 mod table;
 mod text_editing;
@@ -73,24 +75,56 @@ mod web;
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     tracedraw_text::install();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     // `tracedraw --mcp`: no window, a Model Context Protocol server on
     // stdin/stdout (see mcp.rs and docs/behavior/mcp.md).
-    if std::env::args().any(|a| a == "--mcp") {
+    if args.iter().any(|a| a == "--mcp") {
         mcp::serve();
         return Ok(());
     }
-    let open_path = std::env::args().nth(1).map(std::path::PathBuf::from);
+    // `--no-splash` or TRACEDRAW_NO_SPLASH (automation, the visual
+    // checks): straight into a plain window at the default size.
+    let plain = args.iter().any(|a| a == "--no-splash")
+        || std::env::var("TRACEDRAW_NO_SPLASH").is_ok_and(|v| !v.is_empty() && v != "0");
+    let open_path = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .map(std::path::PathBuf::from);
+    let settings = settings::Settings::load();
+    i18n::set_language(&if settings.language.is_empty() {
+        i18n::system_language().to_string()
+    } else {
+        settings.language.clone()
+    });
+    let splash = settings.show_splash && !plain;
+    let viewport = if splash {
+        egui::ViewportBuilder::default()
+            .with_inner_size(splash::SIZE)
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_title("TraceDraw")
+    } else {
+        egui::ViewportBuilder::default()
+            .with_inner_size(splash::main_window_size(settings.window_size, None))
+            .with_min_inner_size(splash::MIN_SIZE)
+            .with_maximized(settings.window_maximized && !plain)
+            .with_title("TraceDraw")
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1600.0, 950.0])
-            .with_min_inner_size([1000.0, 600.0])
-            .with_title("TraceDraw"),
+        viewport,
+        centered: splash,
         ..Default::default()
     };
     eframe::run_native(
         "TraceDraw",
         options,
-        Box::new(move |cc| Ok(Box::new(Shell::new(cc, open_path)))),
+        Box::new(move |cc| {
+            Ok(Box::new(if splash {
+                Shell::with_splash(cc, open_path)
+            } else {
+                Shell::new(cc, open_path)
+            }))
+        }),
     )
 }
 
@@ -102,31 +136,72 @@ fn main() {
 }
 
 struct Shell {
-    app: app::App,
+    app: Option<app::App>,
+    /// The splash screen while TraceDraw starts (see splash.rs).
+    #[cfg(not(target_arch = "wasm32"))]
+    splash: Option<splash::Splash>,
+    /// The file to open once the splash is done.
+    #[cfg(not(target_arch = "wasm32"))]
+    open: Option<std::path::PathBuf>,
 }
 
 impl Shell {
+    /// The editor at once (the browser build, or no splash screen).
     fn new(cc: &eframe::CreationContext<'_>, open: Option<std::path::PathBuf>) -> Self {
+        theme::install_fonts(&cc.egui_ctx);
         Shell {
-            app: app::App::new(cc, open),
+            app: Some(app::App::new(&cc.egui_ctx, open)),
+            #[cfg(not(target_arch = "wasm32"))]
+            splash: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            open: None,
+        }
+    }
+
+    /// The splash screen first; the editor is built when it is done.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn with_splash(cc: &eframe::CreationContext<'_>, open: Option<std::path::PathBuf>) -> Self {
+        Shell {
+            app: None,
+            splash: Some(splash::Splash::start(&cc.egui_ctx, open.as_deref())),
+            open,
         }
     }
 }
 
 impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(splash) = self.splash.as_mut() {
+            if splash.update(ui) == splash::Step::Wait {
+                return;
+            }
+            self.splash = None;
+            let app = app::App::new(ui.ctx(), self.open.take());
+            splash::open_main_window(ui.ctx(), &app.settings);
+            self.app = Some(app);
+            ui.ctx().request_repaint();
+            return;
+        }
+        let Some(app) = self.app.as_mut() else {
+            return;
+        };
         // File dialogs that finished in the background (browser build).
-        files::run_finished(&mut self.app);
+        files::run_finished(app);
         // A Picture Mosaic library indexed on worker threads.
-        if self.app.poll_picture_mosaic_index() {
+        if app.poll_picture_mosaic_index() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
-        ui::root(&mut self.app, ui);
+        ui::root(app, ui);
+        #[cfg(not(target_arch = "wasm32"))]
+        splash::remember_window(ui.ctx(), &mut app.settings);
     }
 
     /// Keep the toolbox, dockers and other preferences for the next session.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.app.save_settings();
+        if let Some(app) = self.app.as_mut() {
+            app.save_settings();
+        }
     }
 }

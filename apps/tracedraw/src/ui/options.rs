@@ -549,6 +549,9 @@ fn general_page(app: &mut App, ui: &mut Ui) {
             &mut app.settings.show_new_document_dialog,
             tr("options.show_new_document_dialog"),
         );
+        if !crate::files::WEB {
+            ui.checkbox(&mut app.settings.show_splash, tr("options.show_splash"));
+        }
     });
     chrome::section(ui, &tr("options.undo_levels"));
     ui.indent("undo", |ui| {

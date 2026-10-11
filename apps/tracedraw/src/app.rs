@@ -1019,18 +1019,19 @@ pub enum TransformTab {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
-        theme::install_fonts(&cc.egui_ctx);
+    /// The editor in the window of `ctx`, whose fonts are already
+    /// installed (see `theme::install_fonts` and the splash screen).
+    pub fn new(ctx: &egui::Context, open: Option<PathBuf>) -> Self {
         // egui quits on Ctrl+Q by default; here Ctrl+Q is Convert to Curves
         // and the application closes through File > Exit (Alt+F4).
-        cc.egui_ctx.options_mut(|o| {
+        ctx.options_mut(|o| {
             o.quit_shortcuts.clear();
             // Ctrl+plus and Ctrl+minus zoom the drawing, not the interface;
             // the interface size is an option (see `ui_scale`).
             o.zoom_with_keyboard = false;
         });
-        cc.egui_ctx.set_visuals(theme::visuals());
-        cc.egui_ctx.all_styles_mut(|style| {
+        ctx.set_visuals(theme::visuals());
+        ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
             // Interface text at 13 px, the size labels, lists, menus and

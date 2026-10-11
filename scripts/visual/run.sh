@@ -3,6 +3,7 @@
 # Runs the debug binary under Xvfb, drives it with the script (see
 # drive.py for click/drag/key/shot) and reports the app's exit status.
 # Screenshots go to $TRACEDRAW_SHOTS (default /tmp/tracedraw-visual).
+# The splash screen is skipped unless TRACEDRAW_NO_SPLASH=0.
 set -e
 cd "$(dirname "$0")/../.."
 export DISPLAY=:99
@@ -12,7 +13,7 @@ LOG="$TRACEDRAW_SHOTS/app.log"
 Xvfb :99 -screen 0 1600x1000x24 >/dev/null 2>&1 & XPID=$!
 sleep 1
 SCRIPT=$1; shift
-(WINIT_UNIX_BACKEND=x11 TRACEDRAW_CONFIG_DIR="$TRACEDRAW_SHOTS/config" LIBGL_ALWAYS_SOFTWARE=1 ./target/debug/tracedraw "$@" >"$LOG" 2>&1; echo "APP EXIT $?" >> "$LOG") &
+(WINIT_UNIX_BACKEND=x11 TRACEDRAW_NO_SPLASH="${TRACEDRAW_NO_SPLASH:-1}" TRACEDRAW_CONFIG_DIR="$TRACEDRAW_SHOTS/config" LIBGL_ALWAYS_SOFTWARE=1 ./target/debug/tracedraw "$@" >"$LOG" 2>&1; echo "APP EXIT $?" >> "$LOG") &
 sleep 6
 python3 "$(dirname "$0")/drive.py" "$SCRIPT" || true
 sleep 1

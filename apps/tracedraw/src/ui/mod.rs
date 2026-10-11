@@ -6,6 +6,7 @@
 pub mod about;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;
+pub mod brand;
 pub mod chrome;
 pub mod context;
 pub mod coords_docker;

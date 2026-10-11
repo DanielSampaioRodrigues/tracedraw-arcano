@@ -92,11 +92,35 @@ pub fn bold(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name(BOLD.into()))
 }
 
-/// Install the interface fonts: the bundled UI font first, then egui's
-/// own and the system fonts covering the scripts of the supported UI
-/// languages (CJK, Arabic, Devanagari, Bengali), so menus render in every
-/// language on machines that have such fonts.
+/// Install the interface fonts (see [`font_definitions`]).
 pub fn install_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(font_definitions());
+}
+
+/// The interface fonts: the bundled UI font first, then egui's own and
+/// the system fonts covering the scripts of the supported UI languages
+/// (CJK, Arabic, Devanagari, Bengali), so menus render in every language
+/// on machines that have such fonts. Reads the system font list, which
+/// can take a moment: the splash screen builds these on a worker thread.
+pub fn font_definitions() -> egui::FontDefinitions {
+    let mut defs = bundled_font_definitions();
+    for key in fallback_fonts(&mut defs) {
+        for family in [
+            egui::FontFamily::Proportional,
+            egui::FontFamily::Monospace,
+            egui::FontFamily::Name(BOLD.into()),
+        ] {
+            if let Some(list) = defs.families.get_mut(&family) {
+                list.push(key.clone());
+            }
+        }
+    }
+    defs
+}
+
+/// The interface fonts without the system ones: the bundled UI font
+/// (Latin, Greek, Cyrillic) and egui's own, ready at once.
+pub fn bundled_font_definitions() -> egui::FontDefinitions {
     let mut defs = egui::FontDefinitions::default();
     defs.font_data.insert(
         "ui-regular".into(),
@@ -118,18 +142,14 @@ pub fn install_fonts(ctx: &egui::Context) {
     bold.extend(defaults);
     defs.families
         .insert(egui::FontFamily::Name(BOLD.into()), bold);
-    for key in fallback_fonts(&mut defs) {
-        for family in [
-            egui::FontFamily::Proportional,
-            egui::FontFamily::Monospace,
-            egui::FontFamily::Name(BOLD.into()),
-        ] {
-            if let Some(list) = defs.families.get_mut(&family) {
-                list.push(key.clone());
-            }
-        }
-    }
-    ctx.set_fonts(defs);
+    defs
+}
+
+/// True when the interface language `code` needs a system font for its
+/// script (the bundled one covers Latin, Greek and Cyrillic).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub fn needs_system_font(code: &str) -> bool {
+    matches!(code, "zh-CN" | "ja" | "ar" | "hi" | "bn")
 }
 
 /// A context with the interface fonts installed (headless tests draw
