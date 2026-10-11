@@ -15,6 +15,11 @@ use will turn up bugs, and "Known limits" below lists what is known.
   float, and the window remembers where they were.
 - Keyboard shortcuts of your own for every menu command (Options >
   Customization > Commands), shown in the menus.
+- Workspace files: export and import shortcuts, bars and toolbox,
+  palette options and appearance, part by part; the bars shown come back
+  after a restart.
+- The interface size follows the scaling the system gives each monitor,
+  like other programs (100 % by default, 80 % to 200 % relative to it).
 - A splash screen, an About box, an interface size option, tool cursors,
   a Hints panel with a page per tool, typed number fields and a status bar
   with object details and coordinates.
@@ -51,7 +56,8 @@ use will turn up bugs, and "Known limits" below lists what is known.
 - Time Tracker: time spent on a drawing, task by task.
 
 **Platforms**
-- The whole editor runs in the browser (WebAssembly).
+- The whole editor runs in the browser (WebAssembly), as a demo that
+  says what it leaves out and links to the desktop app.
 - Installers for Windows, macOS and Linux on every release, a Microsoft
   Store package in the build, and code signing ready to switch on.
 
