@@ -4,7 +4,7 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.4.0 (2026-10-11)
 
 The Pick and Shape tools now behave as the keys and the pointer lead
 you to expect: modifiers while dragging, choosing inside groups,
@@ -89,6 +89,14 @@ bending segments, a pointer that shows what a press will do.
   (with a Report button for the file).
 - The browser demo's loading page says only that it is loading; the demo
   message shows each time the page opens.
+
+**Known limits**
+- Downloads are not code-signed yet: Windows SmartScreen asks for "More
+  info > Run anyway", and macOS needs right-click > Open the first time.
+- The `.cdr` reader is written from public notes and sample files; some
+  files open with objects missing or looking different. Reports with a
+  file are very welcome (there is an issue template for them).
+- Gaps are listed in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md).
 
 ## 0.3.0 (2026-10-11)
 
