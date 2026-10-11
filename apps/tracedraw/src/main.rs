@@ -20,6 +20,7 @@ mod border_grommet;
 mod canvas;
 mod clipboard;
 mod clone_effect;
+mod common_shapes;
 mod coords;
 mod corners;
 mod defaults;

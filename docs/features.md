@@ -34,7 +34,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Rectangle, 3-point rectangle, page frame on double-click; Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
 | Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties panel, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
-| Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes, Action Lines | works (see `behavior/shape-tools.md`) |
+| Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes (71 in five sets: basic shapes, arrows, flowchart, banners, callouts; picked from a grid of outlines), Action Lines | works (see `behavior/shape-tools.md`) |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve | works |
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |

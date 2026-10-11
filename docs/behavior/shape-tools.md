@@ -89,8 +89,37 @@ whatever tool is active.
 
 ## Common shapes
 
-- Right arrow, heart, diamond, banner, callout, cross, lightning,
-  triangle; picked on the property bar; the glyph scales to the box.
+71 shapes in five sets (`common_shapes.rs`), picked on the property bar:
+the button shows the shape and its name; a click opens the sets as tabs
+(the current shape's set first) over a grid of outlines, nine to a row,
+each named in its tooltip. Picking one closes the grid.
+
+- Basic shapes (18): parallelogram, trapezoid, diamond, triangle, right
+  triangle, hexagon, octagon, plus, heart, lightning, crescent, ring,
+  cylinder, cube, frame, teardrop, smiley face, no symbol.
+- Arrows (12): right, left, up, down, left and right, up and down,
+  four-way, chevron, pentagon arrow, notched, striped, bent.
+- Flowchart (27): process, alternate process, decision, data, predefined
+  process, internal storage, document, multiple documents, terminator,
+  preparation, manual input, manual operation, connector, off-page
+  connector, card, punched tape, summing junction, or, collate, sort,
+  extract, merge, stored data, delay, magnetic disk, direct access
+  storage, display.
+- Banners (8): ribbon, folded ribbon, wave, double wave, scroll,
+  explosion, burst, pennant.
+- Callouts (6): rectangle, rounded, oval and cloud callouts, line and
+  bent line callouts.
+
+Each shape is drawn into the box dragged as one curve object with the
+default fill and outline. Parts meant to look separate (a cylinder's top
+and body, a cube's faces, a ribbon's tails, the pages behind a multiple
+document) are separate subpaths edge to edge, never overlapping, and
+holes (ring, frame, the smiley's eyes and mouth, the no symbol's
+openings) run against the outline, so they stay open under any fill
+rule. Inner details (the bars of a predefined process, the cross of a
+summing junction, a callout's leader) are straight two-point lines that
+are stroked, not filled. Rounded corners (alternate process, the
+terminator's ends, a rounded callout) keep their size in long boxes.
 
 ## Action Lines
 
@@ -99,6 +128,12 @@ whatever tool is active.
   object; the lines are grouped.
 
 ## Checks
+
+- `common_shapes::tests::every_shape_fills_its_box`: every shape stays in
+  its box and fills at least 80 % of it both ways, and is named.
+- `common_shapes::tests::rounded_corners_keep_their_size_in_long_boxes`:
+  a terminator in a 100 x 20 mm box has ends of radius 10 mm; ring and
+  frame areas are the outer less the hole.
 
 - Given a drag from (10,10) to (30,20) with Ctrl, then the rectangle is
   20 x 20 mm.

@@ -965,30 +965,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     app.action_lines_radial = true;
                 }
             }
-            Tool::CommonShapes => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.shape"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                egui::ComboBox::from_id_salt("common_shape")
-                    .selected_text(app.common_shape.name())
-                    .show_ui(ui, |ui| {
-                        for cs in crate::tools2::CommonShape::ALL {
-                            if ui
-                                .selectable_label(app.common_shape == cs, cs.name())
-                                .clicked()
-                            {
-                                app.common_shape = cs;
-                            }
-                        }
-                    });
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drag_to_draw"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::CommonShapes => common_shapes_bar(app, ui),
             Tool::Table => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.rows"))
@@ -2226,4 +2203,116 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
+}
+
+/// The Common Shapes tool's bar: the shape picked from a grid of
+/// thumbnails, set by set.
+fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
+    use crate::common_shapes::{Category, CommonShape};
+    ui.label(
+        egui::RichText::new(tr("toolbar.shape"))
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
+    );
+    let popup = egui::Id::new("common_shapes_popup");
+    let resp = ui
+        .horizontal(|ui| {
+            let thumb = shape_thumbnail(ui, app.common_shape, false, true);
+            let name = ui.add(
+                egui::Button::new(format!("{} \u{25BE}", app.common_shape.name())).frame(false),
+            );
+            thumb.union(name)
+        })
+        .inner;
+    egui::Popup::menu(&resp)
+        .id(popup)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            let shown = ui.data_mut(|d| {
+                *d.get_temp_mut_or_insert_with(popup, || app.common_shape.category())
+            });
+            ui.horizontal(|ui| {
+                for c in Category::ALL {
+                    if ui.selectable_label(shown == c, tr(c.key())).clicked() {
+                        ui.data_mut(|d| d.insert_temp(popup, c));
+                    }
+                }
+            });
+            ui.separator();
+            egui::Grid::new("common_shapes_grid")
+                .spacing([2.0, 2.0])
+                .show(ui, |ui| {
+                    for (i, s) in CommonShape::of(shown).enumerate() {
+                        let picked = shape_thumbnail(ui, s, app.common_shape == s, false)
+                            .on_hover_text(s.name());
+                        if picked.clicked() {
+                            app.common_shape = s;
+                            egui::Popup::close_id(ui.ctx(), popup);
+                        }
+                        if i % 9 == 8 {
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+    ui.label(
+        egui::RichText::new(tr("toolbar.drag_to_draw"))
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
+    );
+}
+
+/// A shape's outline drawn small, as a button (`on`: the one picked).
+fn shape_thumbnail(
+    ui: &mut Ui,
+    shape: crate::common_shapes::CommonShape,
+    on: bool,
+    small: bool,
+) -> egui::Response {
+    use tracedraw_core::geometry::PathEl;
+    let side = if small { 22.0 } else { 34.0 };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click());
+    let painter = ui.painter();
+    if on || resp.hovered() {
+        let fill = if on {
+            Tokens::TOOL_ACTIVE
+        } else {
+            Tokens::TOOL_HOVER
+        };
+        painter.rect_filled(rect, 2.0, fill);
+    }
+    let inner = rect.shrink(if small { 3.0 } else { 6.0 });
+    // Page y runs up: the box's bottom is the thumbnail's bottom.
+    let path = shape.path(Rect::new(0.0, 0.0, 1.0, 1.0));
+    let to_screen = |x: f64, y: f64| {
+        egui::pos2(
+            inner.left() + x as f32 * inner.width(),
+            inner.bottom() - y as f32 * inner.height(),
+        )
+    };
+    let stroke = egui::Stroke::new(1.0, Tokens::ICON);
+    let mut run: Vec<egui::Pos2> = Vec::new();
+    let flush = |run: &mut Vec<egui::Pos2>, closed: bool| {
+        if run.len() > 1 {
+            let mut pts = std::mem::take(run);
+            if closed {
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+            }
+            painter.add(egui::Shape::line(pts, stroke));
+        }
+        run.clear();
+    };
+    tracedraw_core::geometry::flatten(&path, 0.005, &mut |el| match el {
+        PathEl::MoveTo(p) => {
+            flush(&mut run, false);
+            run.push(to_screen(p.x, p.y));
+        }
+        PathEl::LineTo(p) => run.push(to_screen(p.x, p.y)),
+        PathEl::ClosePath => flush(&mut run, true),
+        _ => {}
+    });
+    flush(&mut run, false);
+    resp
 }

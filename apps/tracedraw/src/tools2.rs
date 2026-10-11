@@ -19,137 +19,7 @@ pub enum ContourDirection {
     Outside,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommonShape {
-    RightArrow,
-    Heart,
-    Diamond,
-    Banner,
-    Callout,
-    Cross,
-    Lightning,
-    Triangle,
-}
-
-impl CommonShape {
-    pub const ALL: [CommonShape; 8] = [
-        CommonShape::RightArrow,
-        CommonShape::Heart,
-        CommonShape::Diamond,
-        CommonShape::Banner,
-        CommonShape::Callout,
-        CommonShape::Cross,
-        CommonShape::Lightning,
-        CommonShape::Triangle,
-    ];
-    pub fn name(self) -> String {
-        tr(match self {
-            CommonShape::RightArrow => "shape.arrow",
-            CommonShape::Heart => "shape.heart",
-            CommonShape::Diamond => "shape.diamond",
-            CommonShape::Banner => "shape.banner",
-            CommonShape::Callout => "shape.callout",
-            CommonShape::Cross => "shape.cross",
-            CommonShape::Lightning => "shape.lightning",
-            CommonShape::Triangle => "shape.triangle",
-        })
-    }
-
-    /// Unit-square outline (0..1), y up.
-    pub fn unit_path(self) -> BezPath {
-        let mut p = BezPath::new();
-        let poly = |p: &mut BezPath, pts: &[(f64, f64)]| {
-            for (i, (x, y)) in pts.iter().enumerate() {
-                if i == 0 {
-                    p.move_to((*x, *y));
-                } else {
-                    p.line_to((*x, *y));
-                }
-            }
-            p.close_path();
-        };
-        match self {
-            CommonShape::RightArrow => poly(
-                &mut p,
-                &[
-                    (0.0, 0.3),
-                    (0.6, 0.3),
-                    (0.6, 0.0),
-                    (1.0, 0.5),
-                    (0.6, 1.0),
-                    (0.6, 0.7),
-                    (0.0, 0.7),
-                ],
-            ),
-            CommonShape::Heart => {
-                p.move_to((0.5, 0.0));
-                p.curve_to((0.1, 0.35), (0.0, 0.55), (0.0, 0.72));
-                p.curve_to((0.0, 0.95), (0.25, 1.05), (0.5, 0.78));
-                p.curve_to((0.75, 1.05), (1.0, 0.95), (1.0, 0.72));
-                p.curve_to((1.0, 0.55), (0.9, 0.35), (0.5, 0.0));
-                p.close_path();
-            }
-            CommonShape::Diamond => poly(&mut p, &[(0.5, 0.0), (1.0, 0.5), (0.5, 1.0), (0.0, 0.5)]),
-            CommonShape::Banner => poly(
-                &mut p,
-                &[
-                    (0.0, 0.1),
-                    (0.15, 0.5),
-                    (0.0, 0.9),
-                    (1.0, 0.9),
-                    (0.85, 0.5),
-                    (1.0, 0.1),
-                ],
-            ),
-            CommonShape::Callout => {
-                p.move_to((0.0, 0.25));
-                p.line_to((0.0, 0.9));
-                p.curve_to((0.0, 0.97), (0.03, 1.0), (0.1, 1.0));
-                p.line_to((0.9, 1.0));
-                p.curve_to((0.97, 1.0), (1.0, 0.97), (1.0, 0.9));
-                p.line_to((1.0, 0.35));
-                p.curve_to((1.0, 0.28), (0.97, 0.25), (0.9, 0.25));
-                p.line_to((0.35, 0.25));
-                p.line_to((0.15, 0.0));
-                p.line_to((0.2, 0.25));
-                p.line_to((0.1, 0.25));
-                p.curve_to((0.03, 0.25), (0.0, 0.28), (0.0, 0.35));
-                p.close_path();
-            }
-            CommonShape::Cross => poly(
-                &mut p,
-                &[
-                    (0.35, 0.0),
-                    (0.65, 0.0),
-                    (0.65, 0.35),
-                    (1.0, 0.35),
-                    (1.0, 0.65),
-                    (0.65, 0.65),
-                    (0.65, 1.0),
-                    (0.35, 1.0),
-                    (0.35, 0.65),
-                    (0.0, 0.65),
-                    (0.0, 0.35),
-                    (0.35, 0.35),
-                ],
-            ),
-            CommonShape::Lightning => poly(
-                &mut p,
-                &[
-                    (0.55, 1.0),
-                    (0.15, 0.45),
-                    (0.45, 0.45),
-                    (0.3, 0.0),
-                    (0.85, 0.6),
-                    (0.55, 0.6),
-                    (0.7, 1.0),
-                ],
-            ),
-            CommonShape::Triangle => poly(&mut p, &[(0.5, 1.0), (1.0, 0.0), (0.0, 0.0)]),
-        }
-        p
-    }
-}
+pub use crate::common_shapes::CommonShape;
 
 /// Archimedean or logarithmic spiral inscribed in `rect`.
 pub fn spiral_path(rect: Rect, revolutions: u32, logarithmic: bool) -> BezPath {
@@ -420,10 +290,7 @@ impl App {
                 self.star_sharpness,
             ),
             Tool::Spiral => spiral_path(r, self.spiral_revolutions, self.spiral_logarithmic),
-            Tool::CommonShapes => {
-                Affine::new([r.width(), 0.0, 0.0, r.height(), r.x0, r.y0])
-                    * self.common_shape.unit_path()
-            }
+            Tool::CommonShapes => self.common_shape.path(r),
             Tool::GraphPaper => grid_path(r, self.graph_rows, self.graph_cols),
             Tool::ActionLines => {
                 action_lines_path(r, self.action_lines_count, self.action_lines_radial)
@@ -458,10 +325,7 @@ impl App {
             }
             Tool::CommonShapes => {
                 if rect.width() > 0.1 && rect.height() > 0.1 {
-                    let unit = self.common_shape.unit_path();
-                    let path =
-                        Affine::new([rect.width(), 0.0, 0.0, rect.height(), rect.x0, rect.y0])
-                            * unit;
+                    let path = self.common_shape.path(rect);
                     if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
                         self.select(vec![id]);
                     }
