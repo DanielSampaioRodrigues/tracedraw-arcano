@@ -50,6 +50,8 @@ mod node_edit;
 mod ops;
 mod ops2;
 mod palette;
+#[cfg(test)]
+mod pick_drag_tests;
 mod picture_mosaic;
 mod placeholder;
 mod preflight;

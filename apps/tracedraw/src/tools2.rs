@@ -874,6 +874,7 @@ impl App {
                             self.select(vec![id]);
                         }
                         self.drag = Drag::Move {
+                            start: p,
                             last: p,
                             total: Vec2::ZERO,
                             start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),

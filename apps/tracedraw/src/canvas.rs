@@ -161,7 +161,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     let doc: &Document = app.doc();
     let preview = match &app.drag {
         Drag::Move { total, .. } if total.hypot() > 0.0 => Some(Affine::translate(*total)),
-        d @ (Drag::Scale { .. } | Drag::Rotate { .. }) => app.preview_transform_of(d),
+        d @ (Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. }) => {
+            app.preview_transform_of(d)
+        }
         _ => None,
     };
     if let Some(tex) = app.raster.borrow_mut().texture(
@@ -707,8 +709,12 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         Tool::Pick | Tool::FreeformPick | Tool::InteractiveFill | Tool::Text
     );
     if app.rotate_mode && pick {
-        // Rotation arrows at corners, skew arrows at edges, centre pivot.
-        let c = r.center();
+        // Rotation arrows at corners, skew arrows at edges, the centre of
+        // rotation (it can be moved).
+        let c = app
+            .rotation_center()
+            .map(|c| app.view.to_screen(c))
+            .unwrap_or(r.center());
         painter.circle_stroke(c, 5.0, EStroke::new(1.0, Tokens::HANDLE));
         painter.line_segment(
             [c - egui::vec2(8.0, 0.0), c + egui::vec2(8.0, 0.0)],

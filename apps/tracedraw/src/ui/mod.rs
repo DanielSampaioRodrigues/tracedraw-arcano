@@ -544,7 +544,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                         i.pointer.hover_pos(),
                     )
                 });
-                let cursor = cursors::for_tool(app, shift, primary, middle);
+                let cursor = cursors::for_tool(app, shift, primary, middle, pos);
                 cursors::show(ui.ctx(), cursor, pos);
             }
         });

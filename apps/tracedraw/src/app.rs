@@ -311,6 +311,30 @@ impl Units {
     }
 }
 
+/// What the modifier keys do while a handle of the selection is dragged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HandleMods {
+    /// Shift: from the centre of the selection instead of the opposite
+    /// side.
+    pub from_center: bool,
+    /// Ctrl: scales in whole steps of 100 % (so crossing the other side
+    /// mirrors at the same size), skews in steps of the constrain angle.
+    pub steps: bool,
+    /// Alt: corner handles scale freely instead of keeping the
+    /// proportions.
+    pub free: bool,
+}
+
+impl HandleMods {
+    pub fn of(mods: egui::Modifiers) -> Self {
+        HandleMods {
+            from_center: mods.shift,
+            steps: mods.ctrl,
+            free: mods.alt,
+        }
+    }
+}
+
 /// Which handle of the selection box the pointer grabbed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Handle {
@@ -347,6 +371,8 @@ pub enum Drag {
     },
     /// Moving the selection.
     Move {
+        /// Where the drag began.
+        start: Point,
         last: Point,
         total: Vec2,
         start_bounds: Rect,
@@ -354,13 +380,26 @@ pub enum Drag {
         /// began: it snaps to other objects' points.
         source: Option<Point>,
     },
-    /// Scaling the selection with a handle; `anchor` stays fixed.
+    /// Scaling the selection with a handle; `anchor` stays fixed (the
+    /// centre with Shift).
     Scale {
         handle: Handle,
         anchor: Point,
         start_bounds: Rect,
         current: Point,
+        mods: HandleMods,
     },
+    /// Skewing the selection with a side handle in rotate mode: the
+    /// opposite side stays (the centre line with Shift).
+    Skew {
+        handle: Handle,
+        start_bounds: Rect,
+        start: Point,
+        current: Point,
+        mods: HandleMods,
+    },
+    /// Moving the centre of rotation in rotate mode.
+    Pivot,
     /// Rotating the selection about `center`.
     Rotate {
         center: Point,
@@ -563,7 +602,13 @@ pub struct App {
     pub selection: Vec<ShapeId>,
     /// Second click on a selected object switches to rotate/skew handles.
     pub rotate_mode: bool,
+    /// The centre of rotation moved by the user in rotate mode, with the
+    /// selection it belongs to (otherwise the selection's centre).
+    pub rotation_pivot: Option<(Vec<ShapeId>, Point)>,
     pub drag: Drag,
+    /// A right click during a move, scale, rotation or skew: on release
+    /// the change goes to copies and the originals stay.
+    pub drag_copy: bool,
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
     pub file: Option<PathBuf>,
@@ -1155,7 +1200,9 @@ impl App {
             previous_tool: Tool::Pick,
             selection: Vec::new(),
             rotate_mode: false,
+            rotation_pivot: None,
             drag: Drag::None,
+            drag_copy: false,
             curve: None,
             text_edit: None,
             file: None,
@@ -2032,6 +2079,7 @@ impl App {
     pub fn select(&mut self, ids: Vec<ShapeId>) {
         self.selection = ids;
         self.rotate_mode = false;
+        self.rotation_pivot = None;
         self.node_selection.clear();
         self.rect_corner_selected = None;
     }

@@ -10,6 +10,70 @@ use tracedraw_core::{
 };
 
 const HANDLE_PX: f32 = 7.0;
+/// How near the centre of rotation the pointer grabs it, screen pixels.
+const PIVOT_PX: f32 = 8.0;
+
+/// The skew a side handle in rotate mode makes when dragged by `d` (page
+/// millimetres): the top and bottom handles slant the selection sideways,
+/// the left and right ones up or down. The opposite side stays put (with
+/// Shift the centre line); with Ctrl the slant goes in steps of
+/// `constrain_deg`.
+pub fn skew_transform(
+    handle: Handle,
+    b: Rect,
+    d: Vec2,
+    mods: crate::app::HandleMods,
+    constrain_deg: f64,
+) -> Option<Affine> {
+    let horizontal = matches!(handle, Handle::N | Handle::S);
+    if handle.is_corner() || b.width() <= 1e-9 || b.height() <= 1e-9 {
+        return None;
+    }
+    // The fixed line and how far the dragged side is from it, signed.
+    let (fixed, span, moved) = match handle {
+        Handle::N => (
+            if mods.from_center { b.center().y } else { b.y0 },
+            b.y1,
+            d.x,
+        ),
+        Handle::S => (
+            if mods.from_center { b.center().y } else { b.y1 },
+            b.y0,
+            d.x,
+        ),
+        Handle::E => (
+            if mods.from_center { b.center().x } else { b.x0 },
+            b.x1,
+            d.y,
+        ),
+        _ => (
+            if mods.from_center { b.center().x } else { b.x1 },
+            b.x0,
+            d.y,
+        ),
+    };
+    let span = span - fixed;
+    if span.abs() < 1e-9 {
+        return None;
+    }
+    let mut k = moved / span;
+    if mods.steps {
+        let step = constrain_deg.max(0.1).to_radians();
+        let a = (k.atan() / step).round() * step;
+        // Never a right angle: that slant has no inverse.
+        k = a.clamp(-1.5, 1.5).tan();
+    }
+    if !k.is_finite() {
+        return None;
+    }
+    Some(if horizontal {
+        // x' = x + k (y - fixed)
+        Affine::new([1.0, 0.0, k, 1.0, -k * fixed, 0.0])
+    } else {
+        // y' = y + k (x - fixed)
+        Affine::new([1.0, k, 0.0, 1.0, 0.0, -k * fixed])
+    })
+}
 
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
@@ -80,7 +144,74 @@ impl App {
         ]
     }
 
-    fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
+    /// The centre of rotation of the selection: where it was moved to in
+    /// rotate mode, else the middle of the selection.
+    pub fn rotation_center(&self) -> Option<Point> {
+        let b = self.selection_bounds()?;
+        Some(match &self.rotation_pivot {
+            Some((sel, p)) if *sel == self.selection => *p,
+            _ => b.center(),
+        })
+    }
+
+    /// The pointer is on the centre of rotation (rotate mode).
+    pub fn pivot_at(&self, screen: egui::Pos2) -> bool {
+        self.rotate_mode
+            && self
+                .rotation_center()
+                .is_some_and(|c| self.view.to_screen(c).distance(screen) <= PIVOT_PX)
+    }
+
+    /// A move, scale, rotation or skew of the selection is being dragged.
+    pub fn transforming(&self) -> bool {
+        matches!(
+            self.drag,
+            Drag::Move { .. } | Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. }
+        ) && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+    }
+
+    /// The end of a move, scale, rotation or skew: on the selection, or on
+    /// copies of it (which become the selection) after a right click
+    /// during the drag.
+    fn finish_transform(&mut self, t: Affine) {
+        if std::mem::take(&mut self.drag_copy) {
+            self.duplicate_in_place();
+        }
+        self.transform_selection(t);
+    }
+
+    /// Space during a move leaves a copy where the selection is now.
+    fn stamp_on_space(&mut self, response: &Response) {
+        if let Drag::Move { total, .. } = &self.drag {
+            if response.ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                let t = Affine::translate(*total);
+                self.stamp_copies(t);
+            }
+        }
+    }
+
+    /// Copies of the selection moved by `t`, left where they are while the
+    /// drag goes on (Space during a move), as one undo step.
+    pub fn stamp_copies(&mut self, t: Affine) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut cmds = Vec::new();
+        for s in self.selected_shapes() {
+            let id = self.engine.new_shape_id();
+            let mut shape = crate::app::reid_pub(s, id, &mut self.engine);
+            shape.transform = t * shape.transform;
+            cmds.push(Command::AddShape { layer, shape });
+        }
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Copy", &cmds) {
+            self.status = e.to_string();
+        }
+    }
+
+    pub(crate) fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
         let b = self.selection_bounds()?;
         self.handle_positions(b)
             .iter()
@@ -94,7 +225,8 @@ impl App {
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
         let Some(p) = pointer else {
-            if response.drag_stopped() {
+            let released = self.transforming() && !response.ctx.input(|i| i.pointer.primary_down());
+            if response.drag_stopped() || released {
                 self.end_drag();
             }
             return;
@@ -115,10 +247,36 @@ impl App {
             self.view.pan(response.drag_delta());
             return;
         }
-        // Right-button drags of objects end in the drop menu.
-        if matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+        // A right click during a move, scale, rotation or skew: the change
+        // goes to copies on release, the originals stay (again: not).
+        if self.transforming() {
+            if response
+                .ctx
+                .input(|i| i.pointer.button_pressed(PointerButton::Secondary))
+            {
+                self.drag_copy = !self.drag_copy;
+                self.status = crate::i18n::tr(if self.drag_copy {
+                    "status.drag_copy_on"
+                } else {
+                    "status.drag_copy_off"
+                });
+            }
+            // egui ends a drag when any button goes up (the right one, for
+            // a copy): the transform goes on while the left button is held
+            // and ends when it goes up.
+            if !response.dragged() && !response.drag_stopped_by(PointerButton::Primary) {
+                if response.ctx.input(|i| i.pointer.primary_down()) {
+                    self.pick_drag_to(p, mods);
+                    self.stamp_on_space(response);
+                } else {
+                    self.end_drag();
+                }
+                return;
+            }
+        } else if matches!(self.tool, Tool::Pick | Tool::FreeformPick)
             && self.right_drag_input(response, p)
         {
+            // Right-button drags of objects end in the drop menu.
             return;
         }
 
@@ -130,8 +288,9 @@ impl App {
             self.view.zoom_at(screen, 0.5);
             return;
         }
-        // Right click: context menu (drawn by the UI at this position).
-        if response.secondary_clicked() && !self.pending_clip_frame {
+        // Right click: context menu (drawn by the UI at this position);
+        // none while a transform is dragged.
+        if response.secondary_clicked() && !self.pending_clip_frame && !self.transforming() {
             if self.pending_click(response, p) || self.coords_pick_input(response, p) {
                 return;
             }
@@ -335,16 +494,30 @@ impl App {
 
     fn pick_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
         if response.drag_started_by(PointerButton::Primary) {
+            self.drag_copy = false;
+            // Rotate mode: the centre of rotation moves.
+            if self.pivot_at(screen) {
+                self.drag = Drag::Pivot;
+                return;
+            }
             if let Some(h) = self.handle_at(screen) {
                 let b = self.selection_bounds().unwrap_or(Rect::ZERO);
                 if self.rotate_mode {
                     if h.is_corner() {
-                        let c = b.center();
+                        let c = self.rotation_center().unwrap_or(b.center());
                         let a = (p - c).atan2();
                         self.drag = Drag::Rotate {
                             center: c,
                             start_angle: a,
                             current_angle: a,
+                        };
+                    } else {
+                        self.drag = Drag::Skew {
+                            handle: h,
+                            start_bounds: b,
+                            start: p,
+                            current: p,
+                            mods: crate::app::HandleMods::of(mods),
                         };
                     }
                 } else {
@@ -363,6 +536,7 @@ impl App {
                         anchor,
                         start_bounds: b,
                         current: p,
+                        mods: crate::app::HandleMods::of(mods),
                     };
                 }
                 return;
@@ -385,6 +559,7 @@ impl App {
                         self.select(vec![id]);
                     }
                     self.drag = Drag::Move {
+                        start: p,
                         last: p,
                         total: Vec2::ZERO,
                         start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
@@ -404,48 +579,12 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
-            if matches!(self.drag, Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) {
-                self.drag_guide_to(p);
-                return;
-            }
-            let snapped_move = match &self.drag {
-                Drag::Move {
-                    last,
-                    total,
-                    start_bounds,
-                    source,
-                } => {
-                    let raw = *total + (p - *last);
-                    Some((p, self.snap_move_from(*source, *start_bounds, raw)))
-                }
-                _ => None,
-            };
-            match &mut self.drag {
-                Drag::Move { last, total, .. } => {
-                    if let Some((np, nt)) = snapped_move {
-                        *last = np;
-                        *total = nt;
-                    }
-                }
-                Drag::Marquee { current, .. } | Drag::Scale { current, .. } => *current = p,
-                Drag::Rotate {
-                    center,
-                    start_angle,
-                    current_angle,
-                } => {
-                    let mut a = (p - *center).atan2();
-                    // Ctrl turns in steps of the constrain angle.
-                    if mods.ctrl {
-                        let step = self.settings.constrain_angle.max(0.1).to_radians();
-                        a = *start_angle + ((a - *start_angle) / step).round() * step;
-                    }
-                    *current_angle = a;
-                }
-                _ => {}
-            }
+            self.pick_drag_to(p, mods);
         }
+        self.stamp_on_space(response);
         if response.clicked_by(PointerButton::Primary) {
-            if self.handle_at(screen).is_some() {
+            // A click on the centre of rotation keeps rotate mode.
+            if self.handle_at(screen).is_some() || self.pivot_at(screen) {
                 return;
             }
             if (self.guide_rotate.is_some() || self.hit_test(p).is_none())
@@ -474,6 +613,11 @@ impl App {
             }
         }
         if response.double_clicked_by(PointerButton::Primary) {
+            // The centre of rotation goes back to the middle.
+            if self.pivot_at(screen) {
+                self.rotation_pivot = None;
+                return;
+            }
             // The page border or its shadow: the page size options.
             let on_frame = response
                 .interact_pointer_pos()
@@ -494,6 +638,76 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    /// A Pick tool drag goes on with the pointer at `p` (page) and the
+    /// modifier keys `mods`.
+    fn pick_drag_to(&mut self, p: Point, mods: Modifiers) {
+        if matches!(self.drag, Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) {
+            self.drag_guide_to(p);
+            return;
+        }
+        let snapped_move = match &self.drag {
+            Drag::Move {
+                start,
+                start_bounds,
+                source,
+                ..
+            } => {
+                // The pointer's way since the press, snapped; Ctrl
+                // keeps it horizontal or vertical, whichever is longer.
+                let mut d = p - *start;
+                let axis = mods.ctrl.then_some(d.x.abs() >= d.y.abs());
+                match axis {
+                    Some(true) => d.y = 0.0,
+                    Some(false) => d.x = 0.0,
+                    None => {}
+                }
+                let mut t = self.snap_move_from(*source, *start_bounds, d);
+                match axis {
+                    Some(true) => t.y = 0.0,
+                    Some(false) => t.x = 0.0,
+                    None => {}
+                }
+                Some((p, t))
+            }
+            _ => None,
+        };
+        match &mut self.drag {
+            Drag::Move { last, total, .. } => {
+                if let Some((np, nt)) = snapped_move {
+                    *last = np;
+                    *total = nt;
+                }
+            }
+            Drag::Marquee { current, .. } => *current = p,
+            Drag::Scale {
+                current, mods: m, ..
+            }
+            | Drag::Skew {
+                current, mods: m, ..
+            } => {
+                *current = p;
+                *m = crate::app::HandleMods::of(mods);
+            }
+            Drag::Pivot => {
+                self.rotation_pivot = Some((self.selection.clone(), p));
+            }
+            Drag::Rotate {
+                center,
+                start_angle,
+                current_angle,
+            } => {
+                let mut a = (p - *center).atan2();
+                // Ctrl turns in steps of the constrain angle.
+                if mods.ctrl {
+                    let step = self.settings.constrain_angle.max(0.1).to_radians();
+                    a = *start_angle + ((a - *start_angle) / step).round() * step;
+                }
+                *current_angle = a;
+            }
+            _ => {}
         }
     }
 
@@ -855,12 +1069,13 @@ impl App {
             }
             Drag::Move { total, .. } => {
                 if total.hypot() > 1e-6 {
-                    self.transform_selection(Affine::translate(total));
+                    self.finish_transform(Affine::translate(total));
                 }
             }
-            Drag::Scale { .. } | Drag::Rotate { .. } => {
+            Drag::Pivot => {}
+            Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. } => {
                 if let Some(t) = self.preview_transform_of(&drag) {
-                    self.transform_selection(t);
+                    self.finish_transform(t);
                 }
             }
             Drag::Marquee { start, current } => {
@@ -986,9 +1201,17 @@ impl App {
                 anchor,
                 start_bounds,
                 current,
+                mods,
             } => {
                 let b = *start_bounds;
-                let (w, h) = (b.width().max(1e-6), b.height().max(1e-6));
+                // From the centre (Shift) the handle's side is half as far
+                // from the fixed point.
+                let (anchor, half) = if mods.from_center {
+                    (b.center(), 0.5)
+                } else {
+                    (*anchor, 1.0)
+                };
+                let (w, h) = ((b.width() * half).max(1e-6), (b.height() * half).max(1e-6));
                 let (mut sx, mut sy) = (1.0, 1.0);
                 match handle {
                     Handle::E | Handle::W => {
@@ -1014,8 +1237,8 @@ impl App {
                         sy = (anchor.y - current.y) / h;
                     }
                 }
-                if handle.is_corner() && !self.rotate_mode {
-                    // Corners scale proportionally.
+                if handle.is_corner() && !self.rotate_mode && !mods.free {
+                    // Corners scale proportionally (Alt: freely).
                     let s = if sx.abs() > sy.abs() {
                         sx.abs()
                     } else {
@@ -1024,7 +1247,14 @@ impl App {
                     sx = s * sx.signum();
                     sy = s * sy.signum();
                 }
-                if sx.abs() < 1e-3 || sy.abs() < 1e-3 {
+                if mods.steps {
+                    // Ctrl: whole steps of 100 %, so crossing the other
+                    // side gives the mirror image at the same size.
+                    let step = |v: f64| v.signum() * v.abs().round().max(1.0);
+                    sx = step(sx);
+                    sy = step(sy);
+                }
+                if !(sx.is_finite() && sy.is_finite()) || sx.abs() < 1e-3 || sy.abs() < 1e-3 {
                     return None;
                 }
                 Some(
@@ -1045,6 +1275,19 @@ impl App {
                         * Affine::translate(-center.to_vec2()),
                 )
             }
+            Drag::Skew {
+                handle,
+                start_bounds,
+                start,
+                current,
+                mods,
+            } => skew_transform(
+                *handle,
+                *start_bounds,
+                *current - *start,
+                *mods,
+                self.settings.constrain_angle,
+            ),
             _ => None,
         }
     }
@@ -1081,6 +1324,13 @@ impl App {
                     s.restore(self);
                 }
             }
+            return;
+        }
+        // Esc during a move, scale, rotation or skew cancels it: nothing
+        // changes and the selection stays.
+        if self.transforming() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.drag = Drag::None;
+            self.drag_copy = false;
             return;
         }
         let input = ctx.input(|i| i.clone());

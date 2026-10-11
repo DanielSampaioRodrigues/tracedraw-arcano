@@ -80,7 +80,7 @@ impl App {
     }
 
     /// Control handle under the pointer, for selected nodes only.
-    fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
+    pub(crate) fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
         let tol = NODE_PX / self.view.zoom as f64;
         for (id, index) in &self.node_selection {
             let Some((path, _, t)) = self.path_of(*id) else {
@@ -444,7 +444,7 @@ impl App {
     }
 
     /// Nearest segment of a selected curve within a few pixels.
-    fn segment_at(&self, p: Point) -> Option<(ShapeId, usize, f64)> {
+    pub(crate) fn segment_at(&self, p: Point) -> Option<(ShapeId, usize, f64)> {
         let tol = 6.0 / self.view.zoom as f64;
         let mut best: Option<(ShapeId, usize, f64, f64)> = None;
         for id in &self.selection {

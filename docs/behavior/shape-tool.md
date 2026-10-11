@@ -9,6 +9,15 @@ first segment's leaving one), moves with the end lying on it, deletes by
 joining the last and first segments, and Break opens the curve there.
 Node counts in the status bar and the Objects panel count it once.
 
+## The pointer
+
+A solid black arrow (drawn by TraceDraw on a white halo, its tip on the
+hot spot) with a mark at its lower right for what a press would take:
+a small hollow square over a node (of a curve, or of a rectangle,
+ellipse or polygon), a dot over a control point of a selected node, a
+wave over a segment of a selected curve, nothing elsewhere. While a node
+or a control point is dragged the mark stays.
+
 ## Selecting nodes
 
 | Action | Behaviour |

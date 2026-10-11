@@ -6,6 +6,15 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pick tool: Shift scales from the centre, Ctrl scales in 100 % steps
+  (dragging across gives the mirror image at the same size), Alt frees a
+  corner, Ctrl keeps a move straight, a right click during a drag leaves
+  the original, Space drops a copy, Esc cancels; in rotate mode the side
+  handles skew and the centre of rotation can be moved.
+- The pointer shows what a press would do: resize arrows on the handles,
+  move arrows on the selection, turning and slant arrows in rotate mode,
+  and the Shape tool's own arrow with a mark over nodes, control points
+  and segments.
 - Interface size 100 % now draws menus, bars and text as large as other
   programs at 100 % (a quarter smaller than in 0.3.0 on a monitor the
   system scales by 125 %); drawings keep their real size at zoom 100 %.

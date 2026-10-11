@@ -160,7 +160,9 @@ impl App {
         self.transform_selection(full);
     }
 
-    fn duplicate_in_place(&mut self) {
+    /// Copies of the selection right on top of it, which become the
+    /// selection (a transform that leaves the originals).
+    pub(crate) fn duplicate_in_place(&mut self) {
         let saved = self.duplicate_offset;
         self.duplicate_offset = Vec2::ZERO;
         self.duplicate();
