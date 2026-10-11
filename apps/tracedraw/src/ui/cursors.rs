@@ -43,6 +43,10 @@ pub enum ToolCursor {
     /// The system cross hair with the tool's icon at its lower right (the
     /// drawing, effect and fill tools).
     Badge(Tool),
+    /// A curve tool's badge with what a press there would do: continue
+    /// the selected curve from its end node, or close the curve being
+    /// drawn on its first node.
+    CurveBadge(Tool, CurveMark),
     /// The cross hair with the nib's outline around it: a circle of
     /// `radius` screen points, or a square of that half side (the Eraser,
     /// the Smooth, Smear, Twirl, Attract and Repel, Smudge and Roughen
@@ -51,6 +55,15 @@ pub enum ToolCursor {
         radius: f32,
         square: bool,
     },
+}
+
+/// What a curve tool's press would do besides drawing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurveMark {
+    /// Continue the selected curve from its end node.
+    Join,
+    /// Close the curve being drawn on its first node.
+    Close,
 }
 
 /// What the Shape tool's arrow points at.
@@ -206,7 +219,10 @@ pub fn for_tool(
         },
         Tool::ColorEyedropper | Tool::AttributesEyedropper => ToolCursor::Pipette,
         Tool::AreaFill => ToolCursor::Bucket,
-        Tool::Text => ToolCursor::System(egui::CursorIcon::Text),
+        // The I-beam where a click edits text, else the cross hair with the
+        // tool's sign (a click starts a new text, a drag a frame).
+        Tool::Text if over_text(app, pos) => ToolCursor::System(egui::CursorIcon::Text),
+        Tool::Text => ToolCursor::Badge(Tool::Text),
         Tool::Pick | Tool::FreeformPick if app.settings.crosshair_cursor => {
             ToolCursor::System(egui::CursorIcon::Crosshair)
         }
@@ -225,8 +241,49 @@ pub fn for_tool(
             radius: nib_px(app.brush_radius, app.view.zoom),
             square: false,
         },
+        t @ (Tool::Freehand
+        | Tool::Bezier
+        | Tool::Pen
+        | Tool::BSpline
+        | Tool::Polyline
+        | Tool::TwoPointLine) => match curve_mark(app, pos) {
+            Some(m) => ToolCursor::CurveBadge(t, m),
+            None => ToolCursor::Badge(t),
+        },
         t => ToolCursor::Badge(t),
     }
+}
+
+/// A curve tool over the first node of the curve being drawn (three
+/// nodes or more: a press closes it) or over an end node of the selected
+/// open curve (the new line continues it).
+fn curve_mark(app: &App, pos: Option<Pos2>) -> Option<CurveMark> {
+    let pos = pos?;
+    let p = app.view.to_page(pos);
+    if let Some(c) = &app.curve {
+        let near_first = c.nodes.first().is_some_and(|(f, _)| {
+            app.view.to_screen(*f).distance(pos) as f64 <= app.settings.curves.join_px()
+        });
+        if near_first && c.nodes.len() >= 3 {
+            return Some(CurveMark::Close);
+        }
+    }
+    app.on_join_end(p).then_some(CurveMark::Join)
+}
+
+/// The pointer at `pos` is over a text object (or the text being
+/// edited), where a Text tool click places the caret.
+fn over_text(app: &App, pos: Option<Pos2>) -> bool {
+    if matches!(app.drag, Drag::TextSelect) {
+        return true;
+    }
+    let Some(pos) = pos else {
+        return false;
+    };
+    let p = app.view.to_page(pos);
+    app.hit_test(p)
+        .and_then(|id| app.doc().find_shape(id))
+        .is_some_and(|s| matches!(s.kind, tracedraw_core::ShapeKind::Text { .. }))
 }
 
 /// A nib of `mm` on screen at `zoom` (points per mm), kept visible and
@@ -245,7 +302,10 @@ fn nib_px(mm: f64, zoom: f32) -> f32 {
 pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
     // The system cross hair stays sharp; the badge or the nib is painted
     // next to it.
-    if matches!(cursor, ToolCursor::Badge(_) | ToolCursor::Nib { .. }) {
+    if matches!(
+        cursor,
+        ToolCursor::Badge(_) | ToolCursor::CurveBadge(..) | ToolCursor::Nib { .. }
+    ) {
         ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
         if let Some(p) = pos {
             let painter = ctx.layer_painter(egui::LayerId::new(
@@ -287,6 +347,10 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
         ToolCursor::Skew { horizontal } => skew_arrows(painter, p, horizontal),
         ToolCursor::ShapeArrow(mark) => shape_arrow(painter, p, mark),
         ToolCursor::Badge(tool) => badge(painter, p, tool),
+        ToolCursor::CurveBadge(tool, mark) => {
+            badge(painter, p, tool);
+            curve_mark_sign(painter, p, mark);
+        }
         ToolCursor::Nib { radius, square } => nib(painter, p, radius, square),
     }
 }
@@ -301,6 +365,30 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
         Color32::from_white_alpha(200),
     );
     crate::ui::icons::draw(painter, r, tool, crate::theme::Tokens::ICON);
+}
+
+/// Above and to the right of the cross hair: a node with the line going
+/// on from it (join), or a ring (close).
+fn curve_mark_sign(painter: &Painter, p: Pos2, mark: CurveMark) {
+    let c = p + Vec2::new(12.0, -12.0);
+    match mark {
+        CurveMark::Join => {
+            haloed(painter, &[vec![c, c + Vec2::new(7.0, -5.0)]], 1.4);
+            let r = Rect::from_center_size(c, Vec2::splat(5.0));
+            painter.rect(
+                r.expand(1.0),
+                CornerRadius::ZERO,
+                HALO,
+                Stroke::NONE,
+                egui::StrokeKind::Inside,
+            );
+            painter.rect_filled(r, CornerRadius::ZERO, INK);
+        }
+        CurveMark::Close => {
+            painter.circle_stroke(c, 4.0, Stroke::new(3.4, HALO));
+            painter.circle_stroke(c, 4.0, Stroke::new(1.4, INK));
+        }
+    }
 }
 
 /// The nib's outline around the hot spot: black with a white halo.
@@ -551,9 +639,26 @@ mod tests {
             for_tool(&app, false, false, false, None),
             ToolCursor::Bucket
         );
+        // The Text tool: the cross hair with its sign away from text, the
+        // I-beam over text.
         app.tool = Tool::Text;
         assert_eq!(
             for_tool(&app, false, false, false, None),
+            ToolCursor::Badge(Tool::Text)
+        );
+        app.canvas_rect = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let page = app.page_rect();
+        app.view.fit(page, app.canvas_rect);
+        app.start_text(tracedraw_core::geometry::Point::new(50.0, 50.0), None);
+        for c in "Hello".chars() {
+            app.text_insert(&c.to_string());
+        }
+        app.finish_text();
+        let on = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(52.0, 51.0));
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(on)),
             ToolCursor::System(egui::CursorIcon::Text)
         );
         app.tool = Tool::Rectangle;
@@ -561,6 +666,40 @@ mod tests {
             for_tool(&app, false, false, false, None),
             ToolCursor::Badge(Tool::Rectangle)
         );
+        // Curve tools: a join sign over an end node of the selected open
+        // curve, a close sign over the first node of the curve being drawn.
+        app.tool = Tool::Bezier;
+        app.select(Vec::new());
+        app.add_drawn_line({
+            let mut l = tracedraw_core::geometry::BezPath::new();
+            l.move_to((10.0, 10.0));
+            l.line_to((60.0, 10.0));
+            l
+        });
+        let end = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(60.0, 10.0));
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(end)),
+            ToolCursor::CurveBadge(Tool::Bezier, CurveMark::Join)
+        );
+        app.curve = Some(crate::app::CurveInProgress {
+            nodes: vec![
+                (tracedraw_core::geometry::Point::new(100.0, 100.0), None),
+                (tracedraw_core::geometry::Point::new(150.0, 100.0), None),
+                (tracedraw_core::geometry::Point::new(150.0, 150.0), None),
+            ],
+            smooth: true,
+            dragging_handle: false,
+        });
+        let first = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(100.0, 100.0));
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(first)),
+            ToolCursor::CurveBadge(Tool::Bezier, CurveMark::Close)
+        );
+        app.curve = None;
         // The Eraser and the brushes show their nib at its size on screen.
         app.tool = Tool::Eraser;
         app.eraser_width = 10.0;

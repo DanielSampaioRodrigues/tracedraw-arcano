@@ -20,10 +20,16 @@ full, row-by-row status.
   touches).
 - Curves: Ctrl keeps lines and Bezier nodes to steps of the constrain
   angle; with Freehand a click and then another click draw a straight
-  line.
+  line. A line drawn from (or to) an end node of the selected curve
+  continues that curve, closes it when it meets the other end, and the
+  pointer shows when it would. The curve tools' property bar has the
+  outline width, line style, arrowheads and Close Curve, and Freehand
+  its smoothing (also in Options > Tools > Curve tools).
 - Drag a colour from the palette onto an object: inside it fills it, on
   its outline it colours the outline; onto the document palette it joins
   it.
+- The Text tool's pointer is the I-beam only over text; elsewhere the
+  cross hair with its icon.
 - The pointer shows what a press would do: resize arrows on the handles,
   move arrows on objects and the centre mark, arrows across guidelines,
   turning and slant arrows in rotate mode,

@@ -259,6 +259,44 @@ impl Default for WarningPrefs {
     }
 }
 
+/// Options > Tools > Curves: how the Freehand stroke is smoothed and how
+/// near an end node a new line must start to continue that curve.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CurvePrefs {
+    /// Freehand smoothing, 0 (keeps every wobble) to 100.
+    pub smoothing: u32,
+    /// Screen pixels within which a new line joins an end node of the
+    /// selected curve (and a curve closes on its first node).
+    pub join_px: f32,
+}
+
+impl Default for CurvePrefs {
+    fn default() -> Self {
+        CurvePrefs {
+            smoothing: 50,
+            join_px: 5.0,
+        }
+    }
+}
+
+impl CurvePrefs {
+    /// The join distance, kept sensible.
+    pub fn join_px(&self) -> f64 {
+        if self.join_px.is_finite() {
+            f64::from(self.join_px.clamp(1.0, 50.0))
+        } else {
+            5.0
+        }
+    }
+
+    /// The simplification tolerance of a freehand stroke in screen
+    /// pixels: 0.2 at no smoothing, 1.3 at the default 50, 2.4 at 100.
+    pub fn freehand_tolerance_px(&self) -> f64 {
+        0.2 + f64::from(self.smoothing.min(100)) / 100.0 * 2.2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

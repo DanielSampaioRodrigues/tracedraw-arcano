@@ -24,6 +24,7 @@ mod color_drop;
 mod common_shapes;
 mod coords;
 mod corners;
+mod curve_join;
 mod defaults;
 mod documents;
 mod drawing_scale;

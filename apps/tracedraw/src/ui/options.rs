@@ -43,6 +43,7 @@ pub enum OptionsPage {
     // Tools > Options > Tools.
     Pick,
     ZoomPan,
+    Curves,
     Rectangle,
     Ellipse,
     Polygon,
@@ -86,7 +87,8 @@ impl OptionsSet {
             ],
             OptionsSet::Customization => &[Appearance, Commands, CommandBars, ColorPalette],
             OptionsSet::Tools => &[
-                Pick, ZoomPan, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table, Eraser,
+                Pick, ZoomPan, Curves, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table,
+                Eraser,
             ],
             OptionsSet::Global => &[
                 GlobalGeneral,
@@ -154,6 +156,7 @@ impl OptionsPage {
             ColorPalette => "options.color_palette",
             Pick => "tool.pick",
             ZoomPan => "options.zoom_pan",
+            Curves => "options.curve_tools",
             Rectangle => "tool.rectangle",
             Ellipse => "tool.ellipse",
             Polygon => "tool.polygon",
@@ -509,6 +512,7 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         GraphPaper => graph_paper_page(app, ui),
         Table => table_page(app, ui),
         Eraser => eraser_page(app, ui),
+        Curves => curves_page(app, ui),
         GlobalGeneral => global_general_page(app, ui),
         Printing => crate::ui::options_global::printing_page(app, ui),
         FileFormats => crate::ui::options_global::file_formats_page(app, ui),
@@ -1559,6 +1563,36 @@ fn table_page(app: &mut App, ui: &mut Ui) {
         ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=99));
         ui.end_row();
     });
+}
+
+/// Options > Tools > Curve tools: the Freehand smoothing and how near an
+/// end node a new line joins the selected curve (and a curve closes on
+/// its first node). See `prefs::CurvePrefs`.
+fn curves_page(app: &mut App, ui: &mut Ui) {
+    let c = &mut app.settings.curves;
+    grid("curves").show(ui, |ui| {
+        row_label(ui, &tr("options.freehand_smoothing"));
+        let mut v = c.smoothing.min(100);
+        ui.add(egui::Slider::new(&mut v, 0..=100));
+        c.smoothing = v;
+        ui.end_row();
+        row_label(ui, &tr("options.join_within"));
+        let mut px = if c.join_px.is_finite() {
+            c.join_px
+        } else {
+            5.0
+        };
+        ui.add(
+            egui::DragValue::new(&mut px)
+                .range(1.0..=50.0)
+                .speed(0.2)
+                .suffix(" px"),
+        );
+        c.join_px = px;
+        ui.end_row();
+    });
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(tr("options.join_hint")).color(crate::theme::Tokens::TEXT_DIM));
 }
 
 fn eraser_page(app: &mut App, ui: &mut Ui) {

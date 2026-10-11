@@ -1169,7 +1169,7 @@ impl App {
             .as_ref()
             .and_then(|c| c.nodes.first().map(|n| n.0))
             .map(|s| {
-                (s - p).hypot() <= 5.0 / self.view.zoom as f64
+                (s - p).hypot() <= self.settings.curves.join_px() / self.view.zoom as f64
                     && self
                         .curve
                         .as_ref()
@@ -1380,16 +1380,13 @@ impl App {
                 }
             }
             Drag::Freehand { points } => {
-                let tol = 0.6 / self.view.zoom as f64 * 2.0;
-                let pts = tracedraw_core::geometry::simplify(&points, tol.max(0.15));
+                // Smoothing (Options > Tools > Curves, the property bar)
+                // sets how far the stroke may be simplified, on screen.
+                let tol = self.settings.curves.freehand_tolerance_px() / self.view.zoom as f64;
+                let pts = tracedraw_core::geometry::simplify(&points, tol.max(0.02));
                 if pts.len() >= 2 {
                     let path = tracedraw_core::geometry::smooth_path(&pts, false);
-                    if let Some(id) = self.new_shape(ShapeKind::Path {
-                        path,
-                        closed: false,
-                    }) {
-                        self.select(vec![id]);
-                    }
+                    self.add_drawn_line(path);
                 }
             }
             Drag::FillGradient {

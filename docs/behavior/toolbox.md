@@ -46,10 +46,11 @@ Each tool's pointer says which tool is active (code: `ui/cursors.rs`):
 | Pan, and any tool while the middle button pans | an open hand, closed while dragging |
 | Colour and Attributes Eyedropper, palette sampling | a pipette |
 | Area Fill | a paint bucket |
-| Text | the text I-beam |
+| Text | the text I-beam over text (a click places the caret there), elsewhere the cross hair with the tool's icon |
 | Eraser | the cross hair inside the nib's outline at its size on screen (a circle, a square for the square nib) |
 | Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen | the cross hair inside a circle of the brush size |
-| Every other tool (curves, shapes, dimensions, connectors, effects, fills, Crop, Knife, Table, ...) | the cross hair with the tool's icon at its lower right on a light patch |
+| Freehand, Bezier, Pen, B-spline, Polyline, 2-point line | the cross hair with the tool's icon; above and right of it a node with a line going on over an end node of the selected open curve (a line from there continues it), a ring over the first node of the curve being drawn once it has three nodes (a click closes it) |
+| Every other tool (shapes, dimensions, connectors, effects, fills, Crop, Knife, Table, ...) | the cross hair with the tool's icon at its lower right on a light patch |
 
 The cross hair, the arrows and the I-beam are the system's own; the
 icons, nibs and drawn pointers are painted by TraceDraw above the

@@ -169,6 +169,9 @@ pub struct Settings {
     /// Options > Global > Warnings.
     #[serde(default)]
     pub warnings: crate::prefs::WarningPrefs,
+    /// Options > Tools > Curves.
+    #[serde(default)]
+    pub curves: crate::prefs::CurvePrefs,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -622,6 +625,7 @@ impl Default for Settings {
             formats: Default::default(),
             tracing: Default::default(),
             warnings: Default::default(),
+            curves: Default::default(),
         }
     }
 }

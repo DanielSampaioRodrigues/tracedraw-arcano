@@ -689,16 +689,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::Polyline
             | Tool::TwoPointLine
             | Tool::BSpline
-            | Tool::ThreePointCurve => {
-                object_properties(app, ui);
-                vsep(ui);
-                let hint = if app.tool == Tool::ThreePointCurve {
-                    tr("toolbar.three_point_hint")
-                } else {
-                    tr("toolbar.curve_finish_hint")
-                };
-                ui.label(egui::RichText::new(hint).color(Tokens::TEXT_DIM).size(11.0));
-            }
+            | Tool::ThreePointCurve => curve_tool_properties(app, ui),
             Tool::Blend => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.blend_steps"))
@@ -1655,6 +1646,48 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
 
 /// The object part of the property bar (position, size, scale, rotation,
 /// mirroring); the page's when nothing is selected.
+/// The curve tools' bar: the selection's position and size, then (with a
+/// selection) its outline width, line style and arrowheads and Close
+/// Curve; the Freehand tool's smoothing; with nothing selected, how to
+/// finish a curve.
+fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
+    use crate::ui::propbar::{pic_button, sep, Pic};
+    object_properties(app, ui);
+    let selected = !app.selection.is_empty();
+    if selected {
+        sep(ui);
+        crate::ui::propbar::outline_part(app, ui);
+        let open = app.selected_shapes().iter().any(|s| match &s.kind {
+            ShapeKind::Path { path, .. } => !path
+                .elements()
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath)),
+            _ => false,
+        });
+        if pic_button(ui, Pic::CloseCurve, &tr("toolbar.close_tip"), open, false).clicked() {
+            app.close_selected_curves();
+        }
+    }
+    if app.tool == Tool::Freehand {
+        sep(ui);
+        let mut v = app.settings.curves.smoothing.min(100);
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut v, 0..=100).show_value(true),
+        ))
+        .on_hover_text(tr("toolbar.freehand_smoothing"));
+        app.settings.curves.smoothing = v;
+    }
+    if !selected {
+        vsep(ui);
+        let hint = if app.tool == Tool::ThreePointCurve {
+            tr("toolbar.three_point_hint")
+        } else {
+            tr("toolbar.curve_finish_hint")
+        };
+        ui.label(egui::RichText::new(hint).color(Tokens::TEXT_DIM).size(11.0));
+    }
+}
+
 fn object_properties(app: &mut App, ui: &mut Ui) {
     if app.selection_bounds().is_none() {
         page_properties(app, ui);

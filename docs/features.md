@@ -38,7 +38,7 @@ Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties panel, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
 | Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes (71 in five sets: basic shapes, arrows, flowchart, banners, callouts; picked from a grid of outlines), Action Lines | works (see `behavior/shape-tools.md`) |
-| Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve | works |
+| Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve; lines from an end node of the selected curve continue it (join, close, merge subpaths); Freehand smoothing; outline, arrowheads and Close Curve on the property bar | works (see `behavior/curve-tools.md`) |
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
 | Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
@@ -209,7 +209,7 @@ Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
-| Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
+| Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, Curve tools, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
 | Options > Global > Printing (what the Print dialog starts with, remember the last print, preflight in the dialog), File Formats (what Export starts with, remember the last export, imported objects centred or as in the file), Bitmap Tracing (Quick Trace preset, what every trace starts with), Warnings (unread objects, missing fonts, Shelf removal; each message can be turned off) | works (see `behavior/options.md`) |
 | Options pages for pen pressure, tablet mode, VBA and plug-ins | not applicable: no pen pressure input, own workspaces, JavaScript scripting, no plug-in host |
 | Save settings as default | works |

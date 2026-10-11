@@ -2339,18 +2339,15 @@ impl App {
         }
     }
 
+    /// The curve being drawn is done: it continues the selected curve
+    /// when it starts or ends on one of its end nodes, otherwise it becomes
+    /// a curve of its own (see `curve_join.rs`).
     pub fn finish_curve(&mut self) {
         let Some(c) = self.curve.take() else { return };
         if c.nodes.len() < 2 {
             return;
         }
-        let path = c.path(None);
-        if let Some(id) = self.new_shape(ShapeKind::Path {
-            path,
-            closed: false,
-        }) {
-            self.select(vec![id]);
-        }
+        self.add_drawn_line(c.path(None));
     }
 
     /// Start artistic text at a point, or paragraph text in a frame.
