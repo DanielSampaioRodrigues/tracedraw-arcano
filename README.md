@@ -54,7 +54,7 @@
   <tr>
     <td width="25%" valign="top">
       <h3>A full desktop workspace</h3>
-      Menu bar, context-sensitive property bar, toolbox with flyouts, 35 dockable panels, colour palette, rulers, guides and a page navigator, all set out for long working sessions.
+      Menu bar, context-sensitive property bar, toolbox with flyouts, 36 dockable panels, colour palette, rulers, guides and a page navigator, all set out for long working sessions.
     </td>
     <td width="25%" valign="top">
       <h3>Native and light</h3>
@@ -338,13 +338,12 @@ are in [`packaging/`](packaging/); the browser build is described in
 ## Code signing policy
 
 Windows releases are built from this repository by GitHub Actions
-([`build.yml`](.github/workflows/build.yml)) and nowhere else. A signing
-request is made only for a version tag, and only after an approver
-accepts it. Free code signing provided by
-[SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org) (not in effect yet: until the
-project is accepted, the downloads are unsigned). How the build signs is
-described in [`docs/code-signing.md`](docs/code-signing.md).
+([`build.yml`](.github/workflows/build.yml)) and nowhere else. The
+downloads are not code-signed yet: if SmartScreen warns, More info > Run
+anyway. The Microsoft Store version, once published, is signed by the
+Store. When a certificate is set up, a signing request is made only for a
+version tag, and only after an approver accepts it; how the build signs
+is described in [`docs/code-signing.md`](docs/code-signing.md).
 
 | Role | Members |
 |---|---|
@@ -354,7 +353,8 @@ described in [`docs/code-signing.md`](docs/code-signing.md).
 Privacy policy: this program will not transfer any information to other
 networked systems unless specifically requested by the user or the person
 installing or operating it. TraceDraw opens web pages (help, the project's
-pages) in your browser only when you choose to.
+pages) in your browser only when you choose to. The full policy is in
+[`PRIVACY.md`](PRIVACY.md).
 
 ## Documentation
 

@@ -32,6 +32,16 @@ For TraceDraw, a project by one person in the EU, the free routes are the
 ones to take: apply to the SignPath Foundation for the installer and the
 portable zip, and publish the MSIX in the Microsoft Store.
 
+Status (2026-10-11): the SignPath Foundation declined the first
+application. Its program is for projects with public signs of trust
+(stars, forks and contributors, articles and discussions elsewhere,
+sustained activity), and it invites a new application once the project is
+better known. Until then the installer and the portable zip are unsigned,
+and the Microsoft Store is the way to a signed install on Windows. The
+cheapest paid route for one person in the EU is the Certum Open Source
+certificate (from EUR 49 a year in the cloud, EUR 69 with a card, at the
+time of writing).
+
 ## What gets signed
 
 - `tracedraw.exe` and `tracedraw-cli.exe`, before they are packed (so the
@@ -101,7 +111,10 @@ SignPath that means approving every push, so leave it off there.
    development builds use the run number as the fourth number). Upload the
    one of a version tag in a new submission under Packages; the Store
    checks it, signs it and publishes it.
-5. The manifest is `packaging/windows/msix/AppxManifest.xml` (the program
+5. For the submission itself (description, features, keywords, the
+   privacy policy address and the reason for the full-trust capability)
+   see [`store-listing.md`](store-listing.md).
+6. The manifest is `packaging/windows/msix/AppxManifest.xml` (the program
    runs with full trust; `.tdraw` and `.cdr` open with it; `tracedraw` and
    `tracedraw-cli` work in a terminal); its tiles are in
    `packaging/windows/msix/Assets/`. Without the variables the build still
