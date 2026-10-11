@@ -798,6 +798,9 @@ impl FontSystem {
                 0.0
             };
 
+            // The line's outlines; lines past the frame (overflow) are not
+            // drawn.
+            let mut line_path = BezPath::new();
             // Drop cap: the first glyph of a paragraph, scaled so its top
             // meets the top of the first line's letters and it sits on the
             // baseline of the Nth line.
@@ -810,7 +813,7 @@ impl FontSystem {
                 let gp = Affine::translate((x0, baseline))
                     * Affine::scale(scale)
                     * g.path.as_ref().clone();
-                path.extend(gp.elements().iter().copied());
+                line_path.extend(gp.elements().iter().copied());
                 drop_cap_indent = (g.advance * scale + 1.0, para.drop_cap_lines as usize);
                 glyphs = &glyphs[1..];
                 glyph_count += 1;
@@ -826,7 +829,7 @@ impl FontSystem {
                     for g in &b {
                         let gp = Affine::translate((col_x + para.left_indent, y))
                             * g.path.as_ref().clone();
-                        path.extend(gp.elements().iter().copied());
+                        line_path.extend(gp.elements().iter().copied());
                     }
                 }
             }
@@ -902,7 +905,7 @@ impl FontSystem {
                 }
                 let gp =
                     Affine::translate((pen + g.x_offset, y + g.y_offset)) * g.path.as_ref().clone();
-                path.extend(gp.elements().iter().copied());
+                line_path.extend(gp.elements().iter().copied());
                 let adv = g.advance + if g.ch == ' ' { space_extra } else { 0.0 };
                 let span = &spans[g.span];
                 if span.underline || span.strikethrough {
@@ -927,7 +930,7 @@ impl FontSystem {
             });
             if let Some(h) = &line.hyphen {
                 let gp = Affine::translate((pen, y)) * h.path.clone();
-                path.extend(gp.elements().iter().copied());
+                line_path.extend(gp.elements().iter().copied());
                 pen += h.advance;
             }
             for (si, a, b) in underline_runs {
@@ -940,7 +943,7 @@ impl FontSystem {
                         b,
                         y + sm.underline_pos,
                     );
-                    path.extend(r.to_path(0.01).elements().iter().copied());
+                    line_path.extend(r.to_path(0.01).elements().iter().copied());
                 }
                 if span.strikethrough {
                     let r = Rect::new(
@@ -949,8 +952,11 @@ impl FontSystem {
                         b,
                         y + sm.strike_pos + sm.underline_thick / 2.0,
                     );
-                    path.extend(r.to_path(0.01).elements().iter().copied());
+                    line_path.extend(r.to_path(0.01).elements().iter().copied());
                 }
+            }
+            if !overflow {
+                path.extend(line_path.elements().iter().copied());
             }
             line_baselines.push((line_start, y));
             max_x = max_x.max(pen);
@@ -1589,8 +1595,23 @@ mod tests {
                 on_path: None,
             }
         }
-        assert!(f.layout(&req(&s, &para)).overflow);
+        let over = f.layout(&req(&s, &para));
+        assert!(over.overflow);
         assert!(!f.layout(&req(&s, &fit)).overflow);
+        // The lines that do not fit are not drawn: nothing reaches more
+        // than a line below the frame (5 mm tall, top at y = 0).
+        use kurbo::Shape as _;
+        let b = over.path.bounding_box();
+        assert!(b.y0 > -5.0 - 3.0, "{b:?}");
+        // Laid out in a tall frame, the same text draws more.
+        let tall = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame: Some(Size::new(20.0, 100.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert!(tall.path.elements().len() > over.path.elements().len());
     }
 
     #[test]

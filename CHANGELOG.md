@@ -35,7 +35,8 @@ full, row-by-row status.
   opens. Interactive Fill shows the move arrows over the fill's handles.
 - Scale handles snap to other objects, guidelines, the grid and the page.
 - Paragraph text: the frame shows as a dashed line (Text > Show Text
-  Frames), the handles sit on the frame, and scaling it with the Pick
+  Frames; red with a down arrow when the text does not fit), the handles
+  sit on the frame, and scaling it with the Pick
   tool resizes the frame so the text flows anew instead of stretching
   the letters.
 - Shape tool: dragging a segment bends it (a straight one becomes a

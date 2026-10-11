@@ -726,6 +726,9 @@ pub struct App {
     /// All colours of a palette at once (the expand button): which row.
     pub palette_expanded: Option<crate::ui::palette::Row>,
     pub raster: std::cell::RefCell<crate::raster::Raster>,
+    /// Whether each paragraph text overflows its frame, by document
+    /// revision (laying text out every frame would be slow).
+    pub overflow_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, bool>)>,
     pub wireframe: bool,
     pub font_families: Vec<String>,
     pub transform_tab: TransformTab,
@@ -1309,6 +1312,7 @@ impl App {
             palette_shades: None,
             palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
+            overflow_cache: Default::default(),
             wireframe: false,
             font_families: tracedraw_text::fonts().families().to_vec(),
             transform_tab: TransformTab::Position,

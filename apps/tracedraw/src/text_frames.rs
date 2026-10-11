@@ -9,6 +9,17 @@ use crate::app::App;
 use tracedraw_core::geometry::{Affine, Point, Rect, Size};
 use tracedraw_core::{Command, Shape, ShapeId, ShapeKind};
 
+/// A paragraph text frame as shown on screen.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShownFrame {
+    /// Page-space corners, the frame's lower left first.
+    pub corners: [Point; 4],
+    /// The text is selected or being edited.
+    pub chosen: bool,
+    /// The text does not fit (drawn red, with a tab below).
+    pub overflow: bool,
+}
+
 /// The factors of an axis-aligned scale by positive amounts (with any
 /// move), else `None`.
 fn axis_scale(a: Affine) -> Option<(f64, f64)> {
@@ -119,13 +130,48 @@ impl App {
         true
     }
 
+    /// Paragraph text `s` does not fit its frame (the last frame of a
+    /// linked chain included); cached per document revision.
+    pub fn text_overflows(&self, s: &Shape) -> bool {
+        let rev = self.engine.revision();
+        let mut cache = self.overflow_cache.borrow_mut();
+        if cache.0 != rev {
+            *cache = (rev, Default::default());
+        }
+        if let Some(v) = cache.1.get(&s.id) {
+            return *v;
+        }
+        let v = match &s.kind {
+            ShapeKind::Text {
+                spans,
+                frame: Some(f),
+                align,
+                para,
+                on_path: None,
+                ..
+            } => {
+                let req = tracedraw_core::document::text_outline::TextRequest {
+                    spans,
+                    frame: Some(*f),
+                    align: *align,
+                    para,
+                    on_path: None,
+                };
+                tracedraw_text::fonts().layout(&req).overflow
+            }
+            _ => false,
+        };
+        cache.1.insert(s.id, v);
+        v
+    }
+
     /// The paragraph text frames to show, in page space, each with whether
     /// it is chosen (selected or edited): every frame on the page with
     /// Text > Show Text Frames, else those of the selected texts and the
     /// text being edited; the selected frames being dragged take `preview`
     /// (resized for a scale, else moved, turned or slanted with the
     /// selection).
-    pub fn shown_text_frames(&self, preview: Option<Affine>) -> Vec<([Point; 4], bool)> {
+    pub fn shown_text_frames(&self, preview: Option<Affine>) -> Vec<ShownFrame> {
         let doc = self.doc();
         let Ok(page) = doc.page(self.page) else {
             return Vec::new();
@@ -156,7 +202,11 @@ impl App {
             } else if let Some(t) = preview.filter(|_| selected) {
                 c = c.map(|p| t * p);
             }
-            out.push((c, chosen));
+            out.push(ShownFrame {
+                corners: c,
+                chosen,
+                overflow: self.text_overflows(s),
+            });
         }
         out
     }
@@ -233,6 +283,19 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_too_small_for_its_text_overflows() {
+        let mut app = App::headless();
+        let id = paragraph(&mut app);
+        let s = app.doc().shape(id).expect("shape").1.clone();
+        assert!(!app.text_overflows(&s));
+        // A tenth of the height: the words no longer fit.
+        app.transform_selection(Affine::scale_non_uniform(1.0, 0.1));
+        let s = app.doc().shape(id).expect("shape").1.clone();
+        assert!(app.text_overflows(&s));
+        assert!(app.shown_text_frames(None)[0].overflow);
+    }
+
+    #[test]
     fn frames_show_dashed_and_follow_a_scale_being_dragged() {
         let mut app = App::headless();
         let id = paragraph(&mut app);
@@ -240,8 +303,8 @@ mod tests {
         assert_eq!(app.shown_text_frames(None).len(), 1);
         let t = Affine::scale_non_uniform(1.5, 1.0);
         let c = app.shown_text_frames(Some(t));
-        assert!((c[0].0[1].x - 120.0).abs() < 1e-6, "{c:?}");
-        assert!(c[0].1);
+        assert!((c[0].corners[1].x - 120.0).abs() < 1e-6, "{c:?}");
+        assert!(c[0].chosen && !c[0].overflow);
         // Off: only the selected text's frame.
         app.settings.show_text_frames = false;
         assert_eq!(app.shown_text_frames(None).len(), 1);

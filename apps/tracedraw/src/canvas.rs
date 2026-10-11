@@ -873,10 +873,15 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
 /// Paragraph text frames: dashed grey lines (Text > Show Text Frames),
 /// blue for the selected texts and the one being edited.
 fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
-    for (c, chosen) in app.shown_text_frames(preview) {
-        let mut pts: Vec<Pos2> = c.iter().map(|p| app.view.to_screen(*p)).collect();
+    // A text that does not fit: red, with a tab holding a down arrow
+    // below the frame's middle.
+    let red = Color32::from_rgb(220, 30, 30);
+    for f in app.shown_text_frames(preview) {
+        let mut pts: Vec<Pos2> = f.corners.iter().map(|p| app.view.to_screen(*p)).collect();
         pts.push(pts[0]);
-        let color = if chosen {
+        let color = if f.overflow {
+            red
+        } else if f.chosen {
             Tokens::SELECTION
         } else {
             Color32::from_gray(150)
@@ -887,6 +892,28 @@ fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
             4.0,
             3.0,
         ));
+        if f.overflow {
+            // The bottom edge's middle, then a tab hanging from it.
+            let mid = pts[0] + (pts[1] - pts[0]) * 0.5;
+            let tab = ERect::from_min_size(mid + egui::vec2(-6.0, 1.0), egui::vec2(12.0, 9.0));
+            painter.rect(
+                tab,
+                0.0,
+                Color32::WHITE,
+                EStroke::new(1.0, red),
+                epaint::StrokeKind::Inside,
+            );
+            let c = tab.center();
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![
+                    c + egui::vec2(-3.0, -2.0),
+                    c + egui::vec2(3.0, -2.0),
+                    c + egui::vec2(0.0, 2.5),
+                ],
+                red,
+                EStroke::NONE,
+            ));
+        }
     }
 }
 

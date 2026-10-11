@@ -62,7 +62,11 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   they run over it): the selection handles sit on the frame, a click
   anywhere in it picks the text, and alignment and snapping use it.
 - Frames show as dashed lines: grey, blue for the selected texts and the
-  one being edited. Text > Show Text Frames (on by default, kept between
+  one being edited, red with a small tab holding a down arrow under the
+  bottom edge's middle when the text does not fit (the layout says so;
+  kept per document revision). The lines that do not fit are not drawn,
+  printed or exported; they show again when the frame grows, and flow
+  into the next frame of a linked chain. Text > Show Text Frames (on by default, kept between
   sessions) shows every frame; off, only the selected and edited ones
   show.
 - Scaling a paragraph text with the Pick tool's handles, or with the
@@ -137,6 +141,7 @@ edited is finished first. One undo step.
 
 - `text_frames::tests::scaling_paragraph_text_resizes_its_frame_and_keeps_the_letters`
 - `text_frames::tests::frames_show_dashed_and_follow_a_scale_being_dragged`
+- `text_frames::tests::a_frame_too_small_for_its_text_overflows`
 
 - `text_nodes::tests::every_character_has_a_node_on_its_baseline`,
   `text_nodes::tests::dragging_chosen_characters_shifts_only_them`,
