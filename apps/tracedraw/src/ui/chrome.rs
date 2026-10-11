@@ -197,31 +197,33 @@ pub fn take_close_request(ctx: &Context) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageIcon {
     Question,
+    /// Something to know: an "i".
+    Info,
 }
 
 /// Paint a 32 px message icon at `rect`: a blue disc with a white
-/// question mark.
+/// question mark or "i".
 fn paint_message_icon(ui: &Ui, rect: Rect, icon: MessageIcon) {
     let p = ui.painter();
     let c = rect.center();
     let r = rect.width().min(rect.height()) / 2.0;
-    match icon {
-        MessageIcon::Question => {
-            p.circle_filled(c, r, Color32::from_rgb(0x1F, 0x6F, 0xC5));
-            p.circle_stroke(
-                c,
-                r - 0.5,
-                Stroke::new(1.0, Color32::from_rgb(0x14, 0x52, 0x96)),
-            );
-            p.text(
-                c + Vec2::new(0.0, 0.5),
-                Align2::CENTER_CENTER,
-                "?",
-                crate::theme::bold(r * 1.25),
-                Color32::WHITE,
-            );
-        }
-    }
+    let mark = match icon {
+        MessageIcon::Question => "?",
+        MessageIcon::Info => "i",
+    };
+    p.circle_filled(c, r, Color32::from_rgb(0x1F, 0x6F, 0xC5));
+    p.circle_stroke(
+        c,
+        r - 0.5,
+        Stroke::new(1.0, Color32::from_rgb(0x14, 0x52, 0x96)),
+    );
+    p.text(
+        c + Vec2::new(0.0, 0.5),
+        Align2::CENTER_CENTER,
+        mark,
+        crate::theme::bold(r * 1.25),
+        Color32::WHITE,
+    );
 }
 
 /// A button label with its access key (the first letter) underlined.

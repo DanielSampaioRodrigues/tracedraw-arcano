@@ -404,6 +404,9 @@ pub enum Dialog {
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
     ConfirmResetSettings,
+    /// The browser version, the first time a browser opens it: what the
+    /// demo leaves out, with OK.
+    WebDemo,
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
@@ -917,6 +920,23 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 Some(_) => close = true,
                 None => {}
+            }
+        }
+        Dialog::WebDemo => {
+            let text = format!(
+                "{}\n\n{}",
+                tr("welcome.web_demo_title"),
+                tr("welcome.web_demo_text")
+            );
+            if crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Info,
+                &text,
+                &[&tr("dialog.ok")],
+            )
+            .is_some()
+            {
+                close = true;
             }
         }
         Dialog::Export(st) => export_dialog(app, ctx, st, &mut close),
@@ -3468,6 +3488,7 @@ mod tests {
             Dialog::DocumentProperties,
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
+            Dialog::WebDemo,
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),

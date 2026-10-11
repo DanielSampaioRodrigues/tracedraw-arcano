@@ -1391,7 +1391,22 @@ impl App {
                 }
             }
         }
+        if crate::files::WEB {
+            app.show_web_demo_notice();
+        }
         app
+    }
+
+    /// The first time a browser opens the browser version: a message with
+    /// what the demo leaves out and an OK button (then remembered in the
+    /// browser's storage with the other preferences).
+    pub fn show_web_demo_notice(&mut self) {
+        if self.settings.web_demo_seen {
+            return;
+        }
+        self.settings.web_demo_seen = true;
+        self.settings.save();
+        self.dialog = crate::ui::dialogs::Dialog::WebDemo;
     }
 
     /// A new document with localised default page and layer names.
@@ -3951,6 +3966,17 @@ fn opened_objects(format: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_browser_demo_message_shows_once() {
+        let mut app = App::headless();
+        app.settings.web_demo_seen = false;
+        app.show_web_demo_notice();
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::WebDemo));
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        app.show_web_demo_notice();
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+    }
 
     #[test]
     fn resetting_the_settings_brings_back_the_defaults() {
