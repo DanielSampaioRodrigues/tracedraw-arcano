@@ -57,7 +57,8 @@ Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 ## Global and Workspaces
 
 Global: user interface language; where the preferences and auto-backups
-are kept. Workspaces: the workspace in use.
+are kept. Workspaces: the workspace in use, and exporting and importing
+the user's setup to a `.tdws` file (see `workspaces.md`).
 
 ## Interface size
 

@@ -147,6 +147,47 @@ pub struct Settings {
     /// What a fill or outline chosen with nothing selected changes.
     #[serde(default)]
     pub defaults: crate::defaults::DefaultsPrefs,
+    /// The bars shown when TraceDraw was left; none in preferences written
+    /// before they were kept (the workspace's own bars then show).
+    #[serde(default)]
+    pub shown_bars: Option<ShownBars>,
+    /// Options > Workspaces: the parts a workspace file exports and
+    /// imports.
+    #[serde(default)]
+    pub workspace_parts: crate::workspace_file::WorkspaceParts,
+}
+
+/// Which bars are shown (Window > Toolbars, the bars' menu). The palette
+/// is kept with the palette options (`PalettePrefs::show_palette`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShownBars {
+    pub standard_toolbar: bool,
+    pub property_bar: bool,
+    pub toolbox: bool,
+    pub status_bar: bool,
+    pub dockers: bool,
+    pub rulers: bool,
+    pub text_toolbar: bool,
+    pub zoom_toolbar: bool,
+    pub transform_toolbar: bool,
+}
+
+impl Default for ShownBars {
+    /// The bars of the Default workspace.
+    fn default() -> Self {
+        ShownBars {
+            standard_toolbar: true,
+            property_bar: true,
+            toolbox: true,
+            status_bar: true,
+            dockers: true,
+            rulers: true,
+            text_toolbar: false,
+            zoom_toolbar: false,
+            transform_toolbar: false,
+        }
+    }
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -551,6 +592,8 @@ impl Default for Settings {
             preflight: crate::preflight::PreflightPrefs::default(),
             publish_pdf: crate::ui::publish_pdf::PublishPrefs::default(),
             defaults: crate::defaults::DefaultsPrefs::default(),
+            shown_bars: None,
+            workspace_parts: crate::workspace_file::WorkspaceParts::default(),
         }
     }
 }
@@ -626,11 +669,18 @@ impl Settings {
         let Some(p) = Self::path() else {
             return;
         };
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
         match serde_json::to_string_pretty(self) {
             Ok(s) => {
+                // Unit tests share one settings folder (`App::headless`):
+                // preferences a test changes (shortcuts, bars shown, an
+                // imported workspace) must not reach the tests that start
+                // after it, so they never write the file.
+                if cfg!(test) {
+                    return;
+                }
+                if let Some(dir) = p.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
                 if let Err(e) = std::fs::write(&p, s) {
                     log::warn!("could not save settings: {e}");
                 }

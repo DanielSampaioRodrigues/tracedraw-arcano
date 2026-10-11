@@ -216,6 +216,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | User interface in 12 languages with system fallback fonts | works |
 | Keyboard shortcuts (every menu shortcut bound; Esc closes dialogs) | works (see `behavior/shortcuts.md`) |
 | Shortcuts of your own for every menu command (Options > Customization > Commands: search, press the keys, conflicts named, shown in the menus) | works (see `behavior/shortcuts.md`) |
+| Workspace export and import (`.tdws`: shortcuts, bars and toolbox, palette options, appearance; part by part) and the bars shown kept across restarts | works (see `behavior/workspaces.md`) |
 | Time Tracker: tasks per drawing saved in `.tdraw` files, a clock that stops after a set time without input, toolbar with the active task, its time and the total, dialog to add, rename, delete and edit tasks (time, start, finish), CSV and text export | works (see `behavior/time-tracker.md`) |
 
 ## 12. Print and prepress

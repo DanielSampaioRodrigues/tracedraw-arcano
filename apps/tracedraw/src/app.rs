@@ -1541,20 +1541,16 @@ impl App {
         crate::i18n::set_language(&lang);
         self.workspace = Workspace::from_id(&s.workspace);
         self.set_workspace(self.workspace);
+        // The bars as they were left, over the workspace's own.
+        if let Some(shown) = s.shown_bars {
+            self.set_shown_bars(shown);
+        }
         self.snap.grid = s.snap.grid;
         self.snap.guides = s.snap.guides;
         self.snap.objects = s.snap.objects;
         self.snap.page = s.snap.page;
         self.nudge_mm = s.nudge_mm;
-        for (gi, id) in s.toolbox.iter().enumerate() {
-            let group = crate::tools::GROUPS.get(gi);
-            let tool = Tool::ALL.iter().find(|t| t.id() == id);
-            if let (Some(g), Some(t), Some(slot)) = (group, tool, self.toolbox_last.get_mut(gi)) {
-                if g.tools.contains(t) {
-                    *slot = *t;
-                }
-            }
-        }
+        self.apply_toolbox_picks(&s.toolbox);
         self.duplicate_offset = Vec2::new(s.duplicate_offset_mm[0], s.duplicate_offset_mm[1]);
         self.units = Units::from_id(&s.units);
         self.settings = s;
@@ -1656,6 +1652,49 @@ impl App {
         self.settings.duplicate_offset_mm = [self.duplicate_offset.x, self.duplicate_offset.y];
         self.settings.units = self.units.id().into();
         self.settings.language = crate::i18n::language();
+        self.settings.shown_bars = Some(self.shown_bars());
+    }
+
+    /// The tool each toolbox group shows, from tool ids (one per group, in
+    /// group order); ids that name no tool of their group are skipped.
+    pub fn apply_toolbox_picks(&mut self, ids: &[String]) {
+        for (gi, id) in ids.iter().enumerate() {
+            let group = crate::tools::GROUPS.get(gi);
+            let tool = Tool::ALL.iter().find(|t| t.id() == id);
+            if let (Some(g), Some(t), Some(slot)) = (group, tool, self.toolbox_last.get_mut(gi)) {
+                if g.tools.contains(t) {
+                    *slot = *t;
+                }
+            }
+        }
+    }
+
+    /// The bars shown now (the palette's visibility is a palette option).
+    pub fn shown_bars(&self) -> crate::settings::ShownBars {
+        crate::settings::ShownBars {
+            standard_toolbar: self.show_standard_toolbar,
+            property_bar: self.show_property_bar,
+            toolbox: self.show_toolbox,
+            status_bar: self.show_status_bar,
+            dockers: self.show_dockers,
+            rulers: self.show_rulers,
+            text_toolbar: self.show_text_toolbar,
+            zoom_toolbar: self.show_zoom_toolbar,
+            transform_toolbar: self.show_transform_toolbar,
+        }
+    }
+
+    /// Show and hide the bars as `shown` says.
+    pub fn set_shown_bars(&mut self, shown: crate::settings::ShownBars) {
+        self.show_standard_toolbar = shown.standard_toolbar;
+        self.show_property_bar = shown.property_bar;
+        self.show_toolbox = shown.toolbox;
+        self.show_status_bar = shown.status_bar;
+        self.show_dockers = shown.dockers;
+        self.show_rulers = shown.rulers;
+        self.show_text_toolbar = shown.text_toolbar;
+        self.show_zoom_toolbar = shown.zoom_toolbar;
+        self.show_transform_toolbar = shown.transform_toolbar;
     }
 
     /// Tools > Save Settings as Default: persist current tool defaults.

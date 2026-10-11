@@ -591,7 +591,7 @@ pub(crate) mod replay {
 
     /// Items that would block on a native file chooser, start another
     /// program (an editor or the web browser) or close the window.
-    const SKIP: [&str; 13] = [
+    const SKIP: [&str; 15] = [
         "menu.file.send_to_mail",
         "menu.help.updates",
         "menu.help.community",
@@ -605,6 +605,8 @@ pub(crate) mod replay {
         "menu.bitmaps.edit_bitmap",
         "menu.tools.scripts_run",
         "menu.window.palette_open",
+        "menu.window.workspace_export",
+        "menu.window.workspace_import",
     ];
 
     pub fn start(target: usize) {
@@ -2349,6 +2351,14 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             if check(ui, key, "", app.workspace == ws) {
                 app.set_workspace(ws);
             }
+        }
+        sep(ui);
+        // Every part, whatever the options chose.
+        if item(ui, "menu.window.workspace_export", "", true) {
+            app.export_workspace_dialog(crate::workspace_file::WorkspaceParts::ALL);
+        }
+        if item(ui, "menu.window.workspace_import", "", true) {
+            app.import_workspace_dialog(crate::workspace_file::WorkspaceParts::ALL, true);
         }
     });
     sep(ui);

@@ -185,6 +185,9 @@ pub struct OptionsSnapshot {
     show_text_toolbar: bool,
     show_zoom_toolbar: bool,
     show_transform_toolbar: bool,
+    show_dockers: bool,
+    docker_tab: crate::app::DockerTab,
+    toolbox_last: Vec<crate::tools::Tool>,
     proof_colors: bool,
     snap: crate::snap::SnapSettings,
     polygon_points: u32,
@@ -229,6 +232,9 @@ impl OptionsSnapshot {
             show_text_toolbar: app.show_text_toolbar,
             show_zoom_toolbar: app.show_zoom_toolbar,
             show_transform_toolbar: app.show_transform_toolbar,
+            show_dockers: app.show_dockers,
+            docker_tab: app.docker_tab,
+            toolbox_last: app.toolbox_last.clone(),
             proof_colors: app.proof_colors,
             snap: app.snap,
             polygon_points: app.polygon_points,
@@ -264,6 +270,11 @@ impl OptionsSnapshot {
         }
         crate::i18n::set_language(&self.language);
         app.settings = self.settings;
+        // The workspace first: choosing one sets the bars, which the
+        // snapshot then puts back as they were.
+        if app.workspace != self.workspace {
+            app.set_workspace(self.workspace);
+        }
         app.units = self.units;
         app.nudge_mm = self.nudge_mm;
         app.duplicate_offset = self.duplicate_offset;
@@ -299,9 +310,9 @@ impl OptionsSnapshot {
         app.text_size_pt = self.text_size_pt;
         app.text_hyphenation = self.text_hyphenation;
         app.show_non_printing = self.show_non_printing;
-        if app.workspace != self.workspace {
-            app.set_workspace(self.workspace);
-        }
+        app.show_dockers = self.show_dockers;
+        app.docker_tab = self.docker_tab;
+        app.toolbox_last = self.toolbox_last;
         app.apply_runtime_settings();
     }
 }
@@ -1621,6 +1632,30 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
             {
                 app.set_workspace(ws);
             }
+        }
+    });
+    ui.add_space(10.0);
+    ui.strong(tr("options.workspace_transfer"));
+    ui.label(egui::RichText::new(tr("options.workspace_transfer_hint")).color(Tokens::TEXT_DIM));
+    let mut parts = app.settings.workspace_parts;
+    for (on, key) in parts.flags_mut() {
+        ui.checkbox(on, tr(key));
+    }
+    app.settings.workspace_parts = parts;
+    ui.horizontal(|ui| {
+        let any = parts.any();
+        if ui
+            .add_enabled(any, egui::Button::new(tr("options.workspace_export")))
+            .clicked()
+        {
+            app.export_workspace_dialog(parts);
+        }
+        // Imported parts stay until OK; Cancel puts the old ones back.
+        if ui
+            .add_enabled(any, egui::Button::new(tr("options.workspace_import")))
+            .clicked()
+        {
+            app.import_workspace_dialog(parts, false);
         }
     });
 }

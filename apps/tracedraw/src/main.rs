@@ -79,6 +79,7 @@ mod vector_mosaic;
 mod view;
 #[cfg(target_arch = "wasm32")]
 mod web;
+mod workspace_file;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
