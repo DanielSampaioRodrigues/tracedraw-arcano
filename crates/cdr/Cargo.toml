@@ -10,5 +10,6 @@ tracedraw-core.workspace = true
 thiserror.workspace = true
 log.workspace = true
 zip.workspace = true
+encoding_rs.workspace = true
 flate2 = "1"
 tiny-skia.workspace = true

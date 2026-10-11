@@ -227,8 +227,11 @@ struct Ctx<'a> {
     bitmaps: HashMap<u32, BitmapDef>,
     /// Two-colour pattern tiles (`bmpf`), 1 bit per pixel: true = front.
     pattern_tiles: HashMap<u32, PatternBits>,
-    /// `font` chunks: font id to family name.
-    fonts: HashMap<u16, String>,
+    /// `font` chunks by font id: family name and character set.
+    fonts: HashMap<u16, text::FontRec>,
+    /// Character set of names (layers, objects) before version 12: the
+    /// non-Latin set most fonts use, else Latin (0).
+    name_charset: u8,
     /// `stlt` style records by style id.
     styles: HashMap<u32, StyleRec>,
     /// `arrw` arrowhead definitions classified into our presets.
@@ -261,6 +264,7 @@ impl<'a> Ctx<'a> {
             bitmaps: HashMap::new(),
             pattern_tiles: HashMap::new(),
             fonts: HashMap::new(),
+            name_charset: 0,
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
@@ -312,6 +316,7 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
             ctx.read_font(c);
         }
     });
+    ctx.name_charset = ctx.common_charset();
     tree.root.walk(&mut |c, _| {
         if c.is(b"fild") || c.is(b"fill") {
             ctx.read_fill(c);
@@ -480,7 +485,7 @@ impl<'a> Ctx<'a> {
         let d = self.data(loda);
         let l = self.read_loda(d)?;
         let arg = l.args.iter().find(|a| a.ty == ARG_NAME)?;
-        let name = read_name(d.get(arg.off..arg.end)?, self.v);
+        let name = self.read_name(d.get(arg.off..arg.end)?);
         if name.is_empty() {
             None
         } else {
@@ -1020,11 +1025,57 @@ impl<'a> Ctx<'a> {
         self.arrows.insert(id, head);
     }
 
-    /// `font`: id and family name.
+    /// `font`: id, family name and character set.
     fn read_font(&mut self, c: &Chunk) {
         let d = self.data(c);
         if let Some(f) = text::read_font(d, self.v) {
-            self.fonts.insert(f.id, f.name);
+            self.fonts.insert(f.id, f);
+        }
+    }
+
+    /// The non-Latin character set most fonts use (Latin, 0, when none
+    /// does): the code page names were most likely typed in.
+    fn common_charset(&self) -> u8 {
+        let mut counts: HashMap<u8, usize> = HashMap::new();
+        for f in self.fonts.values() {
+            if f.charset != 2 && text::is_non_latin_charset(f.charset) {
+                *counts.entry(f.charset).or_default() += 1;
+            }
+        }
+        counts
+            .into_iter()
+            .max_by_key(|(cs, n)| (*n, std::cmp::Reverse(*cs)))
+            .map_or(0, |(cs, _)| cs)
+    }
+
+    /// A layer or object name: UTF-16LE from version 12, before that
+    /// single-byte (or double-byte) text in the code page of the fonts.
+    fn read_name(&self, b: &[u8]) -> String {
+        if self.v >= 12 {
+            text::decode_utf16le(b)
+        } else {
+            text::decode_charset(b, self.name_charset)
+        }
+    }
+
+    /// The text of a run with its style resolved: before version 12 its
+    /// bytes in the code page of its character set, the style's or else its
+    /// font's (a non-Latin set wins: a Latin one tells nothing).
+    fn run_text(&self, run: &text::TextRun, style: &text::RunStyle) -> String {
+        let Some(raw) = &run.raw else {
+            return run.text.clone();
+        };
+        let font = style
+            .font_id
+            .and_then(|id| self.fonts.get(&id))
+            .map(|f| f.charset);
+        let charset = [style.charset, font]
+            .into_iter()
+            .flatten()
+            .find(|cs| text::is_non_latin_charset(*cs));
+        match charset {
+            Some(cs) => text::decode_charset(raw, cs),
+            None => run.text.clone(),
         }
     }
 
@@ -1067,7 +1118,11 @@ impl<'a> Ctx<'a> {
         let family = style
             .family
             .clone()
-            .or_else(|| style.font_id.and_then(|id| self.fonts.get(&id).cloned()))
+            .or_else(|| {
+                style
+                    .font_id
+                    .and_then(|id| self.fonts.get(&id).map(|f| f.name.clone()))
+            })
             .unwrap_or_else(|| {
                 if let Some(id) = style.font_id {
                     self.report.warn(format!(
@@ -1214,7 +1269,7 @@ impl<'a> Ctx<'a> {
             }
             for (k, run) in para.runs.iter().enumerate() {
                 let style = run.style.over(&base);
-                let mut text = run.text.clone();
+                let mut text = self.run_text(run, &style);
                 if i + 1 < n && k + 1 == para.runs.len() {
                     text.push('\n');
                 }
@@ -1636,7 +1691,7 @@ impl<'a> Ctx<'a> {
                 ARG_COORDS => coords = Some(*arg),
                 ARG_NAME => {
                     if let Some(s) = d.get(arg.off..arg.end) {
-                        let s = read_name(s, self.v);
+                        let s = self.read_name(s);
                         if !s.is_empty() {
                             name = Some(s);
                         }
@@ -2187,12 +2242,6 @@ fn bounds_of(pts: &[Point]) -> Option<Rect> {
         r.y1 = r.y1.max(p.y);
     }
     Some(r)
-}
-
-/// Object and layer names: NUL-terminated single-byte text before version
-/// 12 (the system code page; we read it as Windows-1252), UTF-16LE after.
-fn read_name(b: &[u8], v: u16) -> String {
-    text::decode_text(b, v)
 }
 
 /// Sort an arrowhead outline into one of our presets by its shape: a
@@ -3691,6 +3740,95 @@ mod tests {
             ShapeKind::Text { spans, .. } => {
                 assert_eq!(spans[0].text, "caf\u{e9}");
                 assert!((spans[0].size_pt - DEFAULT_SIZE_PT).abs() < 1e-9);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// `font` chunk payload before version 12: the character set in the
+    /// encoding field, the name as single bytes.
+    fn font_chunk_8bit(id: u16, charset: u16, name: &[u8]) -> Vec<u8> {
+        let mut f = u16s(&[id, charset]);
+        f.extend_from_slice(&u32s(&[0]));
+        f.extend_from_slice(&[0; 10]);
+        f.extend_from_slice(name);
+        f.push(0);
+        f
+    }
+
+    #[test]
+    fn old_text_and_names_take_the_code_page_of_their_fonts() {
+        // Six Cyrillic letters in font 3 (Cyrillic set), then " caf" and
+        // e acute in font 4 (Latin set).
+        let styles = [
+            Style7 {
+                chars: 6,
+                font: Some(3),
+                flags: None,
+                size_units: None,
+                fill: None,
+            },
+            Style7 {
+                chars: 5,
+                font: Some(4),
+                flags: None,
+                size_units: None,
+                fill: None,
+            },
+        ];
+        let mut t = txsm7(9, false, &styles, "");
+        let cut = t.len() - 1 - 4;
+        t.truncate(cut);
+        let bytes = [
+            0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2, b' ', b'c', b'a', b'f', 0xe9,
+        ];
+        t.extend_from_slice(&u32s(&[bytes.len() as u32]));
+        t.extend_from_slice(&vec![0; bytes.len() * 4]);
+        t.extend_from_slice(&bytes);
+        t.push(0);
+        let tables = [
+            // A font name in the Cyrillic code page too.
+            chunk(
+                b"font",
+                &font_chunk_8bit(3, 204, &[0xc0, 0xf0, 0xe8, 0xe0, 0xeb]),
+            ),
+            chunk(b"font", &font_chunk_8bit(4, 0, b"Times")),
+        ]
+        .concat();
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(
+                    b"loda",
+                    &loda(OBJ_ARTISTIC_TEXT, &[(ARG_COORDS, i32s(&[0, 0]))]),
+                ),
+                chunk(b"txsm", &t),
+            ]
+            .concat(),
+        );
+        // The layer's name, single-byte: "Layer" in Russian.
+        let mut name = vec![0xd1, 0xeb, 0xee, 0xe9];
+        name.push(0);
+        let layer = list(
+            b"layr",
+            &[chunk(b"loda", &loda(0, &[(ARG_NAME, name)])), obj].concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            tables,
+            list(b"page", &layer),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR9", &body), 9);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        assert_eq!(doc.pages[0].layers[0].name, "\u{421}\u{43b}\u{43e}\u{439}");
+        match &first_shape(&doc).kind {
+            ShapeKind::Text { spans, .. } => {
+                assert_eq!(spans.len(), 2, "{spans:?}");
+                assert_eq!(spans[0].text, "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}");
+                assert_eq!(spans[0].font_family, "\u{410}\u{440}\u{438}\u{430}\u{43b}");
+                assert_eq!(spans[1].text, " caf\u{e9}");
+                assert_eq!(spans[1].font_family, "Times");
             }
             other => panic!("{other:?}"),
         }

@@ -14,6 +14,10 @@ full, row-by-row status.
   their colour (stored inline in those files).
 - The missing-font check also looks at text inside groups, clip frames,
   table cells and symbols.
+- `.cdr` files before version 12: text, font names and layer and object
+  names written in Cyrillic, Greek, Turkish, Central European, Baltic,
+  Hebrew, Arabic, Thai, Vietnamese, Japanese, Chinese or Korean read in
+  their own code page (they came out as Western European letters).
 
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
   app (the windowing layer delivers them as clipboard events, not as

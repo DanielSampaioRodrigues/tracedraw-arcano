@@ -54,14 +54,46 @@ pub(crate) fn decode_utf16le(b: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
-/// Text in the version's string encoding: UTF-16LE from version 12,
-/// single-byte (system code page, read as Windows-1252) before.
-pub(crate) fn decode_text(b: &[u8], v: u16) -> String {
-    if v >= 12 {
-        decode_utf16le(b)
-    } else {
-        decode_cp1252(b)
+/// The code page a font record's character set names (the Windows
+/// character set values): Latin (0, and the default, OEM and unknown
+/// sets) reads as Windows-1252.
+fn charset_encoding(charset: u8) -> Option<&'static encoding_rs::Encoding> {
+    use encoding_rs::*;
+    Some(match charset {
+        128 => SHIFT_JIS,
+        129 => EUC_KR,
+        134 => GBK,
+        136 => BIG5,
+        161 => WINDOWS_1253,
+        162 => WINDOWS_1254,
+        163 => WINDOWS_1258,
+        177 => WINDOWS_1255,
+        178 => WINDOWS_1256,
+        186 => WINDOWS_1257,
+        204 => WINDOWS_1251,
+        222 => WINDOWS_874,
+        238 => WINDOWS_1250,
+        _ => return None,
+    })
+}
+
+/// Single-byte (or double-byte) text in the code page of the character set
+/// `charset`, stopping at the first NUL. Symbol fonts (2) keep the byte
+/// values, which symbol fonts map to their glyphs.
+pub(crate) fn decode_charset(b: &[u8], charset: u8) -> String {
+    let b = &b[..b.iter().position(|c| *c == 0).unwrap_or(b.len())];
+    if charset == 2 {
+        return b.iter().map(|&c| c as char).collect();
     }
+    match charset_encoding(charset) {
+        Some(enc) => enc.decode_without_bom_handling(b).0.into_owned(),
+        None => decode_cp1252(b),
+    }
+}
+
+/// The character set is one whose text differs from Windows-1252.
+pub(crate) fn is_non_latin_charset(charset: u8) -> bool {
+    charset == 2 || charset_encoding(charset).is_some()
 }
 
 /// Decoded `text_style_flags`: the low 18 bits name the face (one bit per
@@ -88,26 +120,35 @@ impl StyleFlags {
     }
 }
 
-/// `font` chunk: id and family name.
+/// `font` chunk: id, family name and character set.
 pub(crate) struct FontRec {
     pub id: u16,
     pub name: String,
+    /// The Windows character set of the font's text (the low byte of the
+    /// encoding field): 0 Latin, 204 Cyrillic, 238 Central European ...
+    pub charset: u8,
 }
 
 /// `font`: id u16, encoding u16, style flags u32, 10 unknown bytes, name
-/// to the end of the chunk (UTF-16LE from version 12).
+/// to the end of the chunk (UTF-16LE from version 12, before that in the
+/// code page of the encoding's character set).
 pub(crate) fn read_font(d: &[u8], v: u16) -> Option<FontRec> {
     let mut r = Reader::new(d, false);
     let id = r.u16()?;
-    let _encoding = r.u16()?;
+    let charset = (r.u16()? & 0xff) as u8;
     let _flags = r.u32()?;
     r.skip(10);
-    let name = decode_text(d.get(r.pos..)?, v);
+    let raw = d.get(r.pos..)?;
+    let name = if v >= 12 {
+        decode_utf16le(raw)
+    } else {
+        decode_charset(raw, charset)
+    };
     let name = name.trim().to_string();
     if name.is_empty() {
         return None;
     }
-    Some(FontRec { id, name })
+    Some(FontRec { id, name, charset })
 }
 
 /// Character and paragraph properties a run or a style may set. `None`
@@ -115,6 +156,9 @@ pub(crate) fn read_font(d: &[u8], v: u16) -> Option<FontRec> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunStyle {
     pub font_id: Option<u16>,
+    /// The character set of the text (before version 12; see
+    /// [`decode_charset`]).
+    pub charset: Option<u8>,
     pub family: Option<String>,
     pub size_pt: Option<f64>,
     pub flags: Option<StyleFlags>,
@@ -141,6 +185,7 @@ impl RunStyle {
     pub fn over(&self, base: &RunStyle) -> RunStyle {
         RunStyle {
             font_id: self.font_id.or(base.font_id),
+            charset: self.charset.or(base.charset),
             family: self.family.clone().or_else(|| base.family.clone()),
             size_pt: self.size_pt.or(base.size_pt),
             flags: self.flags.or(base.flags),
@@ -206,10 +251,10 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
         return Vec::new();
     };
     let nf = (nf as usize).min(r.remaining() / font_size);
-    let mut fonts: std::collections::HashMap<u32, (u16, f64, StyleFlags)> =
+    let mut fonts: std::collections::HashMap<u32, (u16, u8, f64, StyleFlags)> =
         std::collections::HashMap::with_capacity(nf);
     for _ in 0..nf {
-        let (Some(id), _, Some(font_id), Some(_enc), _, Some(size), _, Some(flags)) = (
+        let (Some(id), _, Some(font_id), Some(enc), _, Some(size), _, Some(flags)) = (
             r.u32(),
             r.skip(font_gap),
             r.u16(),
@@ -225,7 +270,7 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
             r.skip(8);
         }
         let pt = size as f64 * if v16 { PT_PER_UNIT16 } else { PT_PER_UNIT };
-        fonts.insert(id, (font_id, pt, StyleFlags(flags)));
+        fonts.insert(id, (font_id, (enc & 0xff) as u8, pt, StyleFlags(flags)));
     }
     let Some(aligns) = read_entries(&mut r, 0) else {
         return Vec::new();
@@ -359,8 +404,9 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
             if has_set11 {
                 r.skip(4);
             }
-            if let Some((font_id, pt, flags)) = fonts.get(&font_ref) {
+            if let Some((font_id, charset, pt, flags)) = fonts.get(&font_ref) {
                 style.font_id = Some(*font_id);
+                style.charset = Some(*charset);
                 if *pt > 0.0 && pt.is_finite() {
                     style.size_pt = Some(*pt);
                 }
@@ -391,6 +437,10 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
 pub(crate) struct TextRun {
     pub text: String,
     pub style: RunStyle,
+    /// Before version 12: the run's bytes, decoded in its font's code page
+    /// once its style is resolved (`text` holds them read as
+    /// Windows-1252).
+    pub raw: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -511,7 +561,7 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
             let mut s = RunStyle::default();
             if flags & 0x01 != 0 {
                 s.font_id = Some(r.u16()?);
-                let _encoding = r.u16()?;
+                s.charset = Some((r.u16()? & 0xff) as u8);
             }
             if flags & 0x02 != 0 {
                 s.flags = Some(StyleFlags(r.u32()?));
@@ -574,11 +624,15 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        let text = decode_text(text, v);
+        let runs = if v >= 12 {
+            split_runs(&decode_utf16le(text), &styles)
+        } else {
+            split_byte_runs(text, &styles)
+        };
         out.paragraphs.push(TextParagraph {
             style_id,
             base: RunStyle::default(),
-            runs: split_runs(&text, &styles),
+            runs,
         });
     }
     Some(out)
@@ -594,40 +648,62 @@ fn finish(out: Txsm, warn: &mut dyn FnMut(String), what: &str) -> Option<Txsm> {
     }
 }
 
-/// Cut `text` into runs of `n` characters per style; a shortfall extends
-/// the last run, and a surplus becomes a run with no properties.
-fn split_runs(text: &str, styles: &[(usize, RunStyle)]) -> Vec<TextRun> {
-    let chars: Vec<char> = text.chars().collect();
+/// Cut `units` into runs of `n` units per style; a shortfall extends the
+/// last run, and a surplus becomes a run with no properties. Never empty.
+fn split_by_lengths<'t, T>(
+    units: &'t [T],
+    styles: &[(usize, RunStyle)],
+) -> Vec<(&'t [T], RunStyle)> {
     let mut runs = Vec::new();
     let mut pos = 0usize;
     for (i, (n, s)) in styles.iter().enumerate() {
         let last = i + 1 == styles.len();
         let end = if last {
-            chars.len()
+            units.len()
         } else {
-            (pos + n).min(chars.len())
+            pos.saturating_add(*n).min(units.len())
         };
         if end > pos || last {
-            runs.push(TextRun {
-                text: chars[pos..end].iter().collect(),
-                style: s.clone(),
-            });
+            runs.push((&units[pos..end], s.clone()));
         }
         pos = end;
     }
-    if pos < chars.len() {
-        runs.push(TextRun {
-            text: chars[pos..].iter().collect(),
-            style: RunStyle::default(),
-        });
+    if pos < units.len() {
+        runs.push((&units[pos..], RunStyle::default()));
     }
     if runs.is_empty() {
-        runs.push(TextRun {
-            text: text.to_string(),
-            style: RunStyle::default(),
-        });
+        runs.push((units, RunStyle::default()));
     }
     runs
+}
+
+/// Cut `text` into runs of `n` characters per style (see
+/// [`split_by_lengths`]).
+fn split_runs(text: &str, styles: &[(usize, RunStyle)]) -> Vec<TextRun> {
+    let chars: Vec<char> = text.chars().collect();
+    split_by_lengths(&chars, styles)
+        .into_iter()
+        .map(|(c, style)| TextRun {
+            text: c.iter().collect(),
+            style,
+            raw: None,
+        })
+        .collect()
+}
+
+/// Cut single-byte `text` (before version 12; it ends at the first NUL)
+/// into runs of `n` bytes per style, each keeping its bytes for decoding
+/// in its font's code page.
+fn split_byte_runs(text: &[u8], styles: &[(usize, RunStyle)]) -> Vec<TextRun> {
+    let text = &text[..text.iter().position(|c| *c == 0).unwrap_or(text.len())];
+    split_by_lengths(text, styles)
+        .into_iter()
+        .map(|(b, style)| TextRun {
+            text: decode_cp1252(b),
+            style,
+            raw: Some(b.to_vec()),
+        })
+        .collect()
 }
 
 fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
@@ -759,6 +835,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
                 _ => runs.push(TextRun {
                     text: ch.to_string(),
                     style,
+                    raw: None,
                 }),
             }
         }
@@ -766,6 +843,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
             runs.push(TextRun {
                 text: String::new(),
                 style: default.clone(),
+                raw: None,
             });
         }
         out.paragraphs.push(TextParagraph {
@@ -1231,6 +1309,42 @@ mod tests {
             decode_cp1252(&[0x41, 0x80, 0x93, 0xe9, 0x00, 0x42]),
             "A\u{20ac}\u{201c}é"
         );
+    }
+
+    #[test]
+    fn old_text_reads_in_the_code_page_of_its_character_set() {
+        // Cyrillic, Central European, Greek, Turkish, Baltic, Japanese.
+        assert_eq!(
+            decode_charset(&[0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2], 204),
+            "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}"
+        );
+        assert_eq!(
+            decode_charset(&[0xa3, 0xf3, 0x64, 0x9f], 238),
+            "\u{141}\u{f3}d\u{17a}"
+        );
+        assert_eq!(
+            decode_charset(&[0xc3, 0xe5, 0xe9, 0xe1], 161),
+            "\u{393}\u{3b5}\u{3b9}\u{3b1}"
+        );
+        assert_eq!(
+            decode_charset(&[0xf0, 0xfd, 0xfe], 162),
+            "\u{11f}\u{131}\u{15f}"
+        );
+        assert_eq!(decode_charset(&[0xe0, 0xf0], 186), "\u{105}\u{161}");
+        assert_eq!(
+            decode_charset(&[0x93, 0xfa, 0x96, 0x7b], 128),
+            "\u{65e5}\u{672c}"
+        );
+        // Latin and unknown sets read as Windows-1252; symbol fonts keep
+        // the byte values; text ends at a NUL.
+        assert_eq!(decode_charset(&[0x80, 0xe9], 0), "\u{20ac}\u{e9}");
+        assert_eq!(decode_charset(&[0x80, 0xe9], 77), "\u{20ac}\u{e9}");
+        assert_eq!(decode_charset(&[0x41, 0x80, 0xf0], 2), "A\u{80}\u{f0}");
+        assert_eq!(decode_charset(&[0xcf, 0, 0xf0], 204), "\u{41f}");
+        assert!(is_non_latin_charset(204) && is_non_latin_charset(2));
+        assert!(!is_non_latin_charset(0) && !is_non_latin_charset(1));
+        // A cut double-byte character is replaced, not a panic.
+        assert_eq!(decode_charset(&[0x41, 0x93], 128), "A\u{fffd}");
     }
 
     #[test]
