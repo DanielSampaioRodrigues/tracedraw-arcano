@@ -66,10 +66,12 @@ pub struct Settings {
     /// each flyout's first tool).
     #[serde(default)]
     pub toolbox_hidden: Vec<String>,
-    /// Customization > Appearance > Interface size: screen pixels per
-    /// interface point (1.0 = 100 %); 0 follows the system's scaling.
+    /// Customization > Appearance > Interface size, relative to the
+    /// scaling the system gives the monitor (1.0 = 100 %, the size of
+    /// other programs); 0 is 100 % too. Preferences written before sizes
+    /// were relative kept absolute sizes as `ui_scale`, which is ignored.
     #[serde(default)]
-    pub ui_scale: f32,
+    pub ui_size: f32,
     /// Options > General: show the splash screen while TraceDraw starts.
     #[serde(default = "default_true")]
     pub show_splash: bool,
@@ -540,7 +542,7 @@ impl Default for Settings {
             desktop_rgb: default_desktop(),
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
-            ui_scale: 0.0,
+            ui_size: 0.0,
             show_splash: true,
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,

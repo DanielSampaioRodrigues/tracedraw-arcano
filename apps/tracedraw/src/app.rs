@@ -1087,7 +1087,7 @@ impl App {
         ctx.options_mut(|o| {
             o.quit_shortcuts.clear();
             // Ctrl+plus and Ctrl+minus zoom the drawing, not the interface;
-            // the interface size is an option (see `ui_scale`).
+            // the interface size is an option (see `ui_size`).
             o.zoom_with_keyboard = false;
         });
         ctx.set_visuals(theme::visuals());

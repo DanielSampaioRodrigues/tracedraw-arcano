@@ -57,70 +57,29 @@ fn bar() -> Frame {
         .inner_margin(egui::Margin::symmetric(4, 2))
 }
 
-/// The interface size: `scale` screen pixels per point, or the automatic
-/// size (see [`auto_ui_scale`]) when it is 0.
-pub(crate) fn apply_ui_scale(ctx: &egui::Context, scale: f32) {
-    let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-    let zoom = ui_zoom(effective_ui_scale(scale, native, system_ui_scale()), native);
+/// Customization > Appearance > Interface size: the size of the menus,
+/// bars and panels relative to the scaling the system gives the monitor
+/// the window is on, as other programs size themselves. 1 (100 %) is the
+/// system's size; 0 (no choice made) is 100 % too.
+pub(crate) fn apply_ui_scale(ctx: &egui::Context, size: f32) {
+    let zoom = ui_zoom(size);
     if (ctx.zoom_factor() - zoom).abs() > 0.001 {
         ctx.set_zoom_factor(zoom);
     }
 }
 
-/// True for a usable interface scale.
-fn valid_scale(scale: f32) -> bool {
-    (0.5..=4.0).contains(&scale)
-}
+/// The interface sizes offered, relative to the system's scaling.
+pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
-/// The automatic interface size on a monitor scaled by `native`: the
-/// scaling the system applies to programs that follow the sign-in
-/// setting (`system`), so the interface has the size of the other
-/// desktop programs even on a monitor scaled differently; the monitor's
-/// own scaling where the system has no such setting.
-pub(crate) fn auto_ui_scale(native: f32, system: Option<f32>) -> f32 {
-    match system {
-        Some(s) if valid_scale(s) => s,
-        _ => native,
-    }
-}
-
-/// The pixels per point the interface uses: the chosen `scale`, or the
-/// automatic size when it is 0 or out of range.
-pub(crate) fn effective_ui_scale(scale: f32, native: f32, system: Option<f32>) -> f32 {
-    if valid_scale(scale) {
-        scale
+/// The zoom factor of the interface size `size` (egui multiplies the
+/// monitor's own scaling by it): `size` itself from 50 % to 400 %, else
+/// 1, the system's size.
+pub(crate) fn ui_zoom(size: f32) -> f32 {
+    if (0.5..=4.0).contains(&size) {
+        size
     } else {
-        auto_ui_scale(native, system)
+        1.0
     }
-}
-
-/// The zoom factor that gives `scale` pixels per point on a monitor whose
-/// scaling is `native`; 1 (the monitor's size) when either is unusable.
-pub(crate) fn ui_zoom(scale: f32, native: f32) -> f32 {
-    if !valid_scale(scale) || !native.is_finite() || native <= 0.0 {
-        return 1.0;
-    }
-    scale / native
-}
-
-/// The scaling Windows applies to programs that follow the sign-in
-/// display setting (the system DPI over 96). Other systems have none.
-#[cfg(windows)]
-pub(crate) fn system_ui_scale() -> Option<f32> {
-    // SAFETY: GetDpiForSystem takes no arguments and only returns a value.
-    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() };
-    if dpi > 0 {
-        Some(dpi as f32 / 96.0)
-    } else {
-        None
-    }
-}
-
-/// The scaling Windows applies to programs that follow the sign-in
-/// display setting (the system DPI over 96). Other systems have none.
-#[cfg(not(windows))]
-pub(crate) fn system_ui_scale() -> Option<f32> {
-    None
 }
 
 /// A slider whose rail shows on the white and light grey panels. egui
@@ -162,7 +121,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     // at its drawing scale.
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
-    apply_ui_scale(&ctx, app.settings.ui_scale);
+    apply_ui_scale(&ctx, app.settings.ui_size);
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
@@ -701,32 +660,18 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
 #[cfg(test)]
 mod tests {
     #[test]
-    fn interface_size_overrides_the_system_scaling() {
-        // Automatic keeps the system's size.
-        assert_eq!(ui_zoom(0.0, 1.25), 1.0);
-        // 100 % on a 125 % screen draws one pixel per point.
-        assert!((ui_zoom(1.0, 1.25) * 1.25 - 1.0).abs() < 1e-6);
-        assert!((ui_zoom(1.5, 1.0) - 1.5).abs() < 1e-6);
+    fn interface_size_is_relative_to_the_system_scaling() {
+        // No choice made, or 100 %: the system's size, whatever the
+        // monitor's scaling.
+        assert_eq!(ui_zoom(0.0), 1.0);
+        assert_eq!(ui_zoom(1.0), 1.0);
+        // 125 % is a quarter larger than the system's size.
+        assert!((ui_zoom(1.25) - 1.25).abs() < 1e-6);
+        assert!(UI_SIZES.iter().all(|s| (ui_zoom(*s) - s).abs() < 1e-6));
         // Nonsense falls back to the system's size.
-        assert_eq!(ui_zoom(9.0, 1.0), 1.0);
-        assert_eq!(ui_zoom(1.0, 0.0), 1.0);
-        assert_eq!(ui_zoom(f32::NAN, 1.0), 1.0);
-    }
-
-    #[test]
-    fn automatic_size_follows_the_sign_in_scaling() {
-        // A 125 % monitor while the sign-in scaling is 100 %: Automatic
-        // draws at 100 %, the size of programs that follow the system.
-        assert_eq!(effective_ui_scale(0.0, 1.25, Some(1.0)), 1.0);
-        assert!((ui_zoom(effective_ui_scale(0.0, 1.25, Some(1.0)), 1.25) - 0.8).abs() < 1e-6);
-        // Same scaling everywhere: nothing changes.
-        assert_eq!(effective_ui_scale(0.0, 1.5, Some(1.5)), 1.5);
-        // No system setting (Linux, macOS): the monitor's scaling.
-        assert_eq!(effective_ui_scale(0.0, 1.25, None), 1.25);
-        // A chosen size wins over both.
-        assert_eq!(effective_ui_scale(1.1, 1.25, Some(1.0)), 1.1);
-        // A nonsense system value is ignored.
-        assert_eq!(auto_ui_scale(2.0, Some(0.0)), 2.0);
+        for bad in [9.0, 0.1, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(ui_zoom(bad), 1.0, "{bad}");
+        }
     }
 
     use super::*;

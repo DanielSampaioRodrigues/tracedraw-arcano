@@ -62,16 +62,18 @@ are kept. Workspaces: the workspace in use.
 ## Interface size
 
 Customization > Appearance > Interface size sets how large the menus,
-bars, icons and dockers are drawn, in screen pixels per point:
-Automatic, 100 %, 110 %, 125 %, 150 %, 175 % or 200 %.
+bars, icons and dockers are drawn, relative to the scaling the system
+gives the monitor the window is on: 80 %, 90 %, 100 % (the default),
+110 %, 125 %, 150 %, 175 % or 200 %.
 
-- Automatic uses the scaling Windows applies to programs that follow the
-  sign-in display setting (`GetDpiForSystem() / 96`), so TraceDraw has
-  the size of the other desktop programs even on a monitor scaled
-  differently since sign-in. Elsewhere it is the monitor's own scaling.
-  The list shows the percentage Automatic gives on this computer.
-- A chosen size wins on every monitor: the zoom factor is the size over
-  the monitor's scaling, so text stays sharp.
+- 100 % is the size of the other programs on that monitor: a monitor
+  scaled to 125 % by the system shows TraceDraw at 125 % too, and moving
+  the window to a monitor at 100 % brings it to 100 %. 200 % is twice the
+  system's size.
+- The size is a zoom factor over the monitor's own scaling, so text stays
+  sharp. Values out of 50 % to 400 % count as 100 %.
+- Preferences written before sizes were relative (`ui_scale`, an absolute
+  size) are ignored: the size starts at 100 % (`ui_size`).
 - Ctrl+plus and Ctrl+minus zoom the drawing, never the interface.
 
 ## Ruler calibration

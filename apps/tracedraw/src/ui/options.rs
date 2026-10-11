@@ -990,29 +990,22 @@ fn text_page(app: &mut App, ui: &mut Ui) {
 // ----- Customization -----------------------------------------------------
 
 fn appearance_page(app: &mut App, ui: &mut Ui) {
-    let native = ui.ctx().native_pixels_per_point().unwrap_or(1.0);
-    let automatic = crate::ui::auto_ui_scale(native, crate::ui::system_ui_scale());
     grid("appearance").show(ui, |ui| {
         row_label(ui, &tr("options.ui_scale"));
-        let auto = trf(
-            "options.ui_scale_auto",
-            &[("n", &format!("{:.0}", automatic * 100.0))],
-        );
-        let label = |s: f32| -> String {
-            if s <= 0.0 {
-                auto.clone()
-            } else {
-                format!("{:.0} %", s * 100.0)
-            }
-        };
+        let label = |s: f32| format!("{:.0} %", crate::ui::ui_zoom(s) * 100.0);
+        // No choice made yet reads as 100 %.
+        let mut size = crate::ui::ui_zoom(app.settings.ui_size);
         egui::ComboBox::from_id_salt("ui_scale")
-            .selected_text(label(app.settings.ui_scale))
+            .selected_text(label(size))
             .width(170.0)
             .show_ui(ui, |ui| {
-                for s in [0.0, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0] {
-                    ui.selectable_value(&mut app.settings.ui_scale, s, label(s));
+                for s in crate::ui::UI_SIZES {
+                    ui.selectable_value(&mut size, s, label(s));
                 }
             });
+        if (size - crate::ui::ui_zoom(app.settings.ui_size)).abs() > 1e-6 {
+            app.settings.ui_size = size;
+        }
         ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
         ui.horizontal(|ui| {
@@ -1023,6 +1016,7 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         });
         ui.end_row();
     });
+    ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::TEXT_DIM));
     ui.checkbox(&mut app.show_page_border, tr("menu.view.page_border"));
     ui.checkbox(
         &mut app.settings.show_outline_flyout,

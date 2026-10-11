@@ -238,7 +238,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Welcome Screen with tabs | works |
 | About box with the banner, icon, facts (author, license, source code, co-author) and copyright; opens from the Welcome Screen too (see `behavior/about-and-startup.md`) | works |
 | Splash screen while starting (artwork, status, progress), then the main window maximized or at its kept size; can be turned off (see `behavior/about-and-startup.md`) | works |
-| Interface size: Automatic (the sign-in display scaling on Windows), 100 % to 200 % (see `behavior/options.md`) | works |
+| Interface size relative to the system scaling of the monitor: 80 % to 200 %, 100 % by default (see `behavior/options.md`) | works |
 | Drawing scale (typical scales 1:1 to 1:10000, 2:1 to 10:1, inch-to-foot scales, or any page and world distance): rulers, coordinates, sizes, offsets, grid, guidelines and dimension labels in world units; ruler calibration so zoom 100% is real size (see `behavior/rulers-grid-guidelines.md`, `behavior/options.md`) | works |
 | Movable bars: the toolbox and the colour palette dock on any edge or float, the standard toolbar and the property bar dock at the top or the bottom or float, the status bar sits at the top or the bottom; dragging a grip or a floating title shows where the bar goes; the bar menu (right-click) has its places, the bars to show, Lock Toolbars and Reset Bar Positions; the layout is kept (see `behavior/toolbars.md`) | works |
 | Right-click context menus (object, node, page, table) | works |
