@@ -102,7 +102,13 @@ fn main() -> eframe::Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .map(std::path::PathBuf::from);
-    let settings = settings::Settings::load();
+    let mut settings = settings::Settings::load();
+    // `--reset-settings`: every preference back to how TraceDraw comes
+    // (the recent drawings and the window's size are kept).
+    if args.iter().any(|a| a == "--reset-settings") {
+        settings = settings.reset_keeping_history();
+        settings.save();
+    }
     i18n::set_language(&if settings.language.is_empty() {
         i18n::system_language().to_string()
     } else {
@@ -188,9 +194,14 @@ impl eframe::App for Shell {
             if splash.update(ui) == splash::Step::Wait {
                 return;
             }
+            let reset = splash.reset_requested;
             self.splash = None;
-            let app = app::App::new(ui.ctx(), self.open.take());
+            let mut app = app::App::new(ui.ctx(), self.open.take());
             splash::open_main_window(ui.ctx(), &app.settings);
+            // F8 held while TraceDraw started: ask before resetting.
+            if reset {
+                app.dialog = ui::dialogs::Dialog::ConfirmResetSettings;
+            }
             self.app = Some(app);
             ui.ctx().request_repaint();
             return;

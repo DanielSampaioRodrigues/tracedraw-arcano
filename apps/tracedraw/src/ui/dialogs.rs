@@ -401,6 +401,9 @@ pub enum Dialog {
     },
     DocumentProperties,
     ConfirmClose,
+    /// Reset every preference to the defaults? (F8 while TraceDraw
+    /// starts, Options > Global.)
+    ConfirmResetSettings,
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
@@ -897,6 +900,22 @@ pub fn show(app: &mut App, ctx: &Context) {
                     close = true;
                     app.after_close_question(false);
                 }
+                None => {}
+            }
+        }
+        Dialog::ConfirmResetSettings => {
+            let (reset, cancel) = (tr("dialog.reset"), tr("dialog.cancel"));
+            match crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &tr("dialog.reset_settings_question"),
+                &[&reset, &cancel],
+            ) {
+                Some(0) => {
+                    app.reset_settings();
+                    close = true;
+                }
+                Some(_) => close = true,
                 None => {}
             }
         }
@@ -3448,6 +3467,7 @@ mod tests {
             },
             Dialog::DocumentProperties,
             Dialog::ConfirmClose,
+            Dialog::ConfirmResetSettings,
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),

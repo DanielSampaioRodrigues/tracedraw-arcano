@@ -45,6 +45,9 @@ pub struct Splash {
     /// True once the last frame (the "opening" status, a full bar) shows.
     last_frame_drawn: bool,
     icon: Option<TextureHandle>,
+    /// F8 was held while the splash showed: the editor asks whether to
+    /// reset every preference.
+    pub reset_requested: bool,
 }
 
 impl Splash {
@@ -67,6 +70,7 @@ impl Splash {
                 .map(|n| n.to_string_lossy().into_owned()),
             last_frame_drawn: false,
             icon: brand::icon(ctx),
+            reset_requested: false,
         }
     }
 
@@ -74,6 +78,9 @@ impl Splash {
     /// [`Step::Start`] when the editor should be built.
     pub fn update(&mut self, ui: &mut egui::Ui) -> Step {
         let ctx = ui.ctx().clone();
+        if ctx.input(|i| i.key_down(egui::Key::F8)) {
+            self.reset_requested = true;
+        }
         if self.frames_with_fonts.is_none() && self.fonts.as_ref().is_none_or(|h| h.is_finished()) {
             let defs = self
                 .fonts
@@ -380,5 +387,28 @@ mod tests {
         // status, then the editor starts.
         assert_eq!(steps[0], Step::Wait);
         assert!(steps.contains(&Step::Start));
+        assert!(!splash.reset_requested);
+    }
+
+    #[test]
+    fn f8_while_starting_asks_to_reset_the_settings() {
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            events: vec![egui::Event::Key {
+                key: egui::Key::F8,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            splash.update(ui);
+        });
+        out.textures_delta.clear();
+        assert!(splash.reset_requested);
     }
 }

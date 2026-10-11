@@ -1634,6 +1634,22 @@ impl App {
         }
     }
 
+    /// Every preference back to how TraceDraw comes (history kept: see
+    /// `Settings::reset_keeping_history`), applied and saved: shortcuts,
+    /// bars, toolbox, palette options, interface size and the rest.
+    /// Drawings are not touched.
+    pub fn reset_settings(&mut self) {
+        let fresh = self.settings.reset_keeping_history();
+        self.toolbox_last = crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect();
+        self.apply_settings(fresh);
+        self.show_page_border = true;
+        self.shortcut_editor = Default::default();
+        self.recent_thumbs.clear();
+        self.apply_runtime_settings();
+        self.save_settings();
+        self.status = crate::i18n::tr("status.settings_reset");
+    }
+
     pub fn save_settings(&mut self) {
         self.sync_settings();
         self.settings.save();
@@ -3935,6 +3951,29 @@ fn opened_objects(format: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resetting_the_settings_brings_back_the_defaults() {
+        let mut app = App::headless();
+        app.settings.shortcuts = vec![("menu.file.export".into(), "Ctrl+Shift+X".into())];
+        app.settings.ui_size = 1.5;
+        app.settings.recent_files = vec!["/kept.tdraw".into()];
+        app.show_status_bar = false;
+        app.show_page_border = false;
+        app.set_workspace(Workspace::Lite);
+        app.toolbox_last[0] =
+            crate::tools::GROUPS[0].tools[crate::tools::GROUPS[0].tools.len() - 1];
+        app.reset_settings();
+        assert!(app.settings.shortcuts.is_empty());
+        assert_eq!(app.settings.ui_size, 0.0);
+        assert_eq!(
+            app.settings.recent_files,
+            vec![PathBuf::from("/kept.tdraw")]
+        );
+        assert_eq!(app.workspace, Workspace::Default);
+        assert!(app.show_status_bar && app.show_page_border && app.show_dockers);
+        assert_eq!(app.toolbox_last[0], crate::tools::GROUPS[0].tools[0]);
+    }
 
     fn rect_shape(app: &mut App, r: Rect, filled: bool) -> ShapeId {
         let id = app

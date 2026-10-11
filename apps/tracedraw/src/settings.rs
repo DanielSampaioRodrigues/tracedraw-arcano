@@ -625,6 +625,19 @@ pub fn config_dir() -> Option<PathBuf> {
 const WEB_KEY: &str = "tracedraw.settings";
 
 impl Settings {
+    /// The preferences as TraceDraw comes, keeping what is history rather
+    /// than choice: the recent drawings, the last folder and the window's
+    /// size.
+    pub fn reset_keeping_history(&self) -> Settings {
+        Settings {
+            recent_files: self.recent_files.clone(),
+            last_dir: self.last_dir.clone(),
+            window_maximized: self.window_maximized,
+            window_size: self.window_size,
+            ..Settings::default()
+        }
+    }
+
     pub fn path() -> Option<PathBuf> {
         config_dir().map(|d| d.join("settings.json"))
     }
@@ -729,5 +742,30 @@ mod tests {
             "old settings files keep the zoom default"
         );
         assert!(partial.snap.guides);
+    }
+
+    #[test]
+    fn a_reset_keeps_history_and_nothing_else() {
+        let mut s = Settings::default();
+        s.recent_files = vec!["/a.tdraw".into()];
+        s.last_dir = Some("/drawings".into());
+        s.window_maximized = false;
+        s.window_size = [1200.0, 800.0];
+        s.shortcuts = vec![("menu.file.export".into(), "Ctrl+Shift+X".into())];
+        s.ui_size = 1.5;
+        s.language = "de".into();
+        s.shown_bars = Some(ShownBars {
+            status_bar: false,
+            ..ShownBars::default()
+        });
+        let r = s.reset_keeping_history();
+        assert_eq!(r.recent_files, s.recent_files);
+        assert_eq!(r.last_dir, s.last_dir);
+        assert_eq!(
+            (r.window_maximized, r.window_size),
+            (false, [1200.0, 800.0])
+        );
+        assert!(r.shortcuts.is_empty() && r.shown_bars.is_none());
+        assert_eq!((r.ui_size, r.language.as_str()), (0.0, ""));
     }
 }

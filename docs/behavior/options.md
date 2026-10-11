@@ -57,7 +57,9 @@ Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 ## Global and Workspaces
 
 Global: user interface language; where the preferences and auto-backups
-are kept. Workspaces: the workspace in use, and exporting and importing
+are kept; Reset all settings... (asks first, then puts every preference
+back to how TraceDraw comes, keeping the recent drawings, the last
+folder and the window's size; drawings are not touched). Workspaces: the workspace in use, and exporting and importing
 the user's setup to a `.tdws` file (see `workspaces.md`).
 
 ## Interface size

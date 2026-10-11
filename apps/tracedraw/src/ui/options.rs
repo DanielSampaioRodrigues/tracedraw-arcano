@@ -1587,6 +1587,16 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
             });
         ui.end_row();
     });
+    ui.add_space(10.0);
+    ui.label(egui::RichText::new(tr("options.reset_all_hint")).color(Tokens::TEXT_DIM));
+    if ui.button(tr("options.reset_all")).clicked() {
+        // The question replaces the options; nothing changes unless it is
+        // answered Reset.
+        if let Some(snapshot) = app.options_snapshot.take() {
+            snapshot.restore(app);
+        }
+        app.dialog = crate::ui::dialogs::Dialog::ConfirmResetSettings;
+    }
 }
 
 fn file_locations_page(_app: &mut App, ui: &mut Ui) {

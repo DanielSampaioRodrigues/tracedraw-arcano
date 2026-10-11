@@ -45,6 +45,19 @@ the version on the right).
   plain 1600 x 950 window (automation and the visual checks use this).
 - The browser build has no splash: the page shows its own loader.
 
+## Back to the defaults
+
+Pressing F8 while the splash screen shows asks, once the editor is up,
+whether to reset every preference to how TraceDraw comes (Options >
+Global > Reset all settings... asks the same). Reset keeps the recent
+drawings, the last folder and the window's size; Cancel changes
+nothing. `tracedraw --reset-settings` resets without asking (scripts,
+support). Drawings are never touched.
+
+- `splash::tests::f8_while_starting_asks_to_reset_the_settings`
+- `settings::tests::a_reset_keeps_history_and_nothing_else`
+- `app::tests::resetting_the_settings_brings_back_the_defaults`
+
 ## Window state
 
 The main window's state is kept in the preferences on exit: maximized or
