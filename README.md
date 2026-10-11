@@ -25,6 +25,10 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
+<p align="center">
+  <sub>Beta. A <code>.cdr</code> file that does not open right? <a href="https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml">Send it in an issue</a>: sample files are what improves the reader most.</sub>
+</p>
+
 <br>
 
 <p align="center">
@@ -287,13 +291,17 @@ New contributors and AI agents: start with [`AGENTS.md`](AGENTS.md), then
 > some formats and effects that are close in look rather than identical,
 > and gaps listed in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md).
 > [`docs/features.md`](docs/features.md) is the honest, row-by-row picture.
-> Issues with a sample file and a screenshot are the most helpful.
+> Issues with a sample file and a screenshot are the most helpful; there
+> are [templates](https://github.com/igtoth/tracedraw/issues/new/choose)
+> for bugs, `.cdr` files and feature requests.
 
 ## Downloads
 
-Every push to `main` builds installers with GitHub Actions and publishes
-them as the **Nightly build** pre-release; `v*` tags get a versioned
-release. `<version>` in the file names is the version number.
+Each version gets a release with installers for every platform: take the
+[latest release](https://github.com/igtoth/tracedraw/releases/latest)
+(what changed is in [`CHANGELOG.md`](CHANGELOG.md)). Every push to `main`
+also refreshes the **Nightly build** pre-release. `<version>` in the file
+names is the version number.
 
 | Platform | Files |
 |---|---|

@@ -1,0 +1,50 @@
+name: A .cdr file that does not open right
+description: The file does not open, opens with missing objects or looks different from how it should.
+title: "[cdr] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. A file that TraceDraw gets wrong is the most useful report there is: the `.cdr` reader is written from public notes and from sample files, so every new file teaches it something.
+
+        Only attach a file you are allowed to share, never confidential work. A small drawing made just for this report is perfect. GitHub does not take `.cdr` attachments directly: put the file in a `.zip` first.
+  - type: dropdown
+    id: what
+    attributes:
+      label: What happens
+      options:
+        - It does not open
+        - It opens, but objects are missing
+        - It opens, but some objects look different
+        - TraceDraw stops or freezes
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What is missing or different? A screenshot of how it should look and how TraceDraw shows it helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: What the reader sees
+      description: The output of `tracedraw-cli info yourfile.cdr` (tracedraw-cli comes with every download, next to the editor).
+      render: text
+  - type: input
+    id: origin
+    attributes:
+      label: The program and version that saved the file, if you know it
+  - type: input
+    id: version
+    attributes:
+      label: TraceDraw version
+      description: Help > About, or the name of the file you downloaded.
+  - type: textarea
+    id: file
+    attributes:
+      label: The file
+      description: Drop the zipped `.cdr` here, or say why it cannot be shared.

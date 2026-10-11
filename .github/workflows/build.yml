@@ -59,7 +59,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.1.0-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            # The workspace version from Cargo.toml, then the commit.
+            base=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            echo "version=${base}-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Linux system libraries
@@ -264,7 +266,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.1.0-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            # The workspace version from Cargo.toml, then the commit.
+            base=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            echo "version=${base}-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
       # build.rs bundles these into the module (the browser has no system
