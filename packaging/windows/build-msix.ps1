@@ -18,6 +18,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+trap {
+    Write-Host "::error title=MSIX::$($_.Exception.Message)"
+    exit 1
+}
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 
 # MSIX versions are four numbers below 65536; the Store wants the last one
@@ -76,6 +80,13 @@ if (-not $makeappx) { throw 'makeappx.exe not found (Windows SDK)' }
 
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $out = Join-Path $outDir "tracedraw-$Version-windows-x86_64.msix"
-& $makeappx.FullName pack /d $stage /p $out /o
-if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }
+Write-Host "makeappx: $($makeappx.FullName)"
+$log = & $makeappx.FullName pack /d $stage /p $out /o 2>&1 | Out-String
+Write-Host $log
+if ($LASTEXITCODE -ne 0) {
+    # The lines that say what went wrong, as annotations on the run.
+    $log -split "`r?`n" | Where-Object { $_ -match 'error|0x8|line \d+' } |
+        Select-Object -First 8 | ForEach-Object { Write-Host "::error title=MSIX::$($_.Trim())" }
+    throw "makeappx failed with exit code $LASTEXITCODE"
+}
 Write-Host "MSIX $msixVersion -> $out"

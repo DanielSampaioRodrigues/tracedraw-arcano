@@ -13,7 +13,6 @@
     <DisplayName>TraceDraw</DisplayName>
     <PublisherDisplayName>{PUBLISHER_NAME}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
-    <Description>Open-source vector editor written in Rust. Opens .cdr files.</Description>
   </Properties>
 
   <Dependencies>

@@ -163,6 +163,9 @@ jobs:
       # check package is built and not published.
       - name: Store package (Windows)
         if: runner.os == 'Windows'
+        # Only a check until the Store identity is set: it must not hold
+        # back the other downloads.
+        continue-on-error: ${{ vars.MSIX_IDENTITY_NAME == '' }}
         shell: pwsh
         env:
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
