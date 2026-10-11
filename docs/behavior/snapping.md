@@ -26,7 +26,7 @@ Alt+Q turns all snapping off and on.
 | Tangent | from where the line being drawn starts: where it touches an ellipse or a curve | circle under a line |
 | Perpendicular | from the same start: the foot of the perpendicular on a segment | right angle |
 | Edge | the nearest point of an outline | hourglass |
-| Center | the centre of rectangles, ellipses, polygons, bitmaps and tables; the area centroid of closed curves | circle with a dot |
+| Center | the centre of rectangles, ellipses, polygons, bitmaps and tables; the area centroid of closed curves | circle with a cross |
 | Text baseline | the nearest point of the baseline of a line of artistic or paragraph text | a T on a line |
 
 Groups and clip frames offer their contents' points. The line being drawn
@@ -41,7 +41,9 @@ tangent, perpendicular, centre) wins, the nearest one, an equal distance
 going to the mode listed first; then guidelines (horizontal, vertical,
 angled), the baseline grid, the document grid and pixels; then the
 nearest edge or text baseline. The mark of the point snapped to is drawn
-in the selection colour with the mode's name beside it.
+in black on a white halo, with the mode's name beside it in the
+selection colour, also haloed in white (no box), so both read on any
+drawing.
 
 Drawing tools snap the pointer. A move with the Pick tool that starts on
 one of the selection's points (a node, a midpoint, a quadrant or the

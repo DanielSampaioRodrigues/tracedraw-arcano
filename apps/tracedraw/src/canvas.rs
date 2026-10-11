@@ -1479,8 +1479,18 @@ pub fn draw_snap_glyph(
     mode: crate::snap_points::SnapMode,
     color: Color32,
 ) {
+    draw_snap_glyph_width(painter, c, mode, color, 1.5);
+}
+
+fn draw_snap_glyph_width(
+    painter: &Painter,
+    c: Pos2,
+    mode: crate::snap_points::SnapMode,
+    color: Color32,
+    width: f32,
+) {
     use crate::snap_points::SnapMode;
-    let s = EStroke::new(1.5, color);
+    let s = EStroke::new(width, color);
     let h = 5.0;
     let v = egui::vec2;
     match mode {
@@ -1523,8 +1533,9 @@ pub fn draw_snap_glyph(
             ));
         }
         SnapMode::Center => {
-            painter.circle_stroke(c, h, s);
-            painter.circle_filled(c, 1.5, color);
+            painter.circle_stroke(c, h - 0.5, s);
+            painter.line_segment([c + v(-h - 1.5, 0.0), c + v(h + 1.5, 0.0)], s);
+            painter.line_segment([c + v(0.0, -h - 1.5), c + v(0.0, h + 1.5)], s);
         }
         SnapMode::TextBaseline => {
             // A "T" standing on its baseline.
@@ -1546,22 +1557,27 @@ pub fn draw_snap_mark(app: &App, painter: &Painter) {
         return;
     }
     let c = app.view.to_screen(t.point);
-    let color = Tokens::SELECTION;
-    draw_snap_glyph(painter, c, t.mode, color);
+    // The mark in black on a white halo, so it reads on any colour.
+    draw_snap_glyph_halo(painter, c, t.mode);
     if app.settings.snap.screen_tips {
+        // The mode's name in blue beside it, haloed in white.
         let font = egui::FontId::proportional(11.0);
-        let galley = painter.layout_no_wrap(crate::i18n::tr(t.mode.key()), font, color);
-        let at = c + egui::vec2(10.0, 8.0);
-        let r = ERect::from_min_size(at, galley.size()).expand2(egui::vec2(3.0, 1.0));
-        painter.rect_filled(r, 2.0, Color32::from_rgba_unmultiplied(255, 255, 255, 230));
-        painter.rect_stroke(
-            r,
-            2.0,
-            EStroke::new(1.0, Tokens::BORDER),
-            epaint::StrokeKind::Inside,
-        );
-        painter.galley(at, galley, color);
+        let text = crate::i18n::tr(t.mode.key());
+        let at = c + egui::vec2(12.0, -7.0);
+        let halo = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
+        for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            painter.galley(at + egui::vec2(dx, dy), halo.clone(), Color32::WHITE);
+        }
+        let galley = painter.layout_no_wrap(text, font, Tokens::SELECTION);
+        painter.galley(at, galley, Tokens::SELECTION);
     }
+}
+
+/// A snap mark in black over a wider white copy of itself.
+fn draw_snap_glyph_halo(painter: &Painter, c: Pos2, mode: crate::snap_points::SnapMode) {
+    // The halo: the same mark, thicker, in white.
+    draw_snap_glyph_width(painter, c, mode, Color32::WHITE, 3.5);
+    draw_snap_glyph_width(painter, c, mode, Tokens::HANDLE, 1.3);
 }
 
 /// Effect nodes (envelope, perspective, mesh) of the selection when the

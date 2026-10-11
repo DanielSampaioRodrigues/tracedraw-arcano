@@ -897,7 +897,7 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
                     modes.set(m, on);
                 }
                 let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                crate::canvas::draw_snap_glyph(ui.painter(), r.center(), m, Tokens::SELECTION);
+                crate::canvas::draw_snap_glyph(ui.painter(), r.center(), m, Tokens::ICON);
                 ui.label(tr(m.key()));
             });
         }
