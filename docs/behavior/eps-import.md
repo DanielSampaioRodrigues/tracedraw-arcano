@@ -1,6 +1,8 @@
 # EPS import
 
-File > Open and File > Import accept `.eps` and `.ps`. The file is run by
+File > Open and File > Import accept `.eps` and `.ps`, and `.ai` files
+that start with `%!` (the PostScript-based versions of that format; the
+later PDF-based ones go through the PDF import). The file is run by
 a PostScript interpreter (`crates/io/src/eps_import.rs`) that records
 what the program paints; no external PostScript engine is involved.
 

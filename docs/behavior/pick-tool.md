@@ -90,6 +90,17 @@ Curves with the bitmap commands: Edit Bitmap, Crop Bitmap (switches to the
 Crop tool), Trace Bitmap (Quick Trace and the centreline and outline
 presets), Straighten Image and Resample.
 
+With two or more objects selected, a group, or a curve of several parts,
+the bar ends with the arranging buttons: Group (Ctrl+G), Ungroup
+(Ctrl+U) and Ungroup All (with a group in the selection), Combine
+(Ctrl+L) and Break Apart (Ctrl+K, with a curve of several parts), the
+shaping operations Weld, Trim, Intersect, Simplify, Front Minus Back,
+Back Minus Front and Boundary (they act as in Object > Shaping; Boundary
+works on one object too), and a button that opens the Align and
+Distribute panel (Ctrl+Shift+A). Their pictures show a square behind a
+circle: the result filled, an object that stays outlined, one that goes
+away dashed.
+
 ## Dialogs
 
 Enter presses OK in every modal dialog (Esc cancels). In the two
@@ -98,6 +109,7 @@ break instead.
 
 ## Checks
 
+- `ui::propbar::tests::shaping_and_grouping_show_for_several_objects_groups_and_parts`
 - `pick_drag_tests::ctrl_keeps_a_move_straight`
 - `pick_drag_tests::a_right_click_while_dragging_leaves_the_original`
 - `pick_drag_tests::esc_cancels_a_drag`

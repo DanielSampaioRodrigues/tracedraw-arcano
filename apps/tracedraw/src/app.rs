@@ -2883,13 +2883,24 @@ impl App {
         self.open_path_with_password(path, "");
     }
 
-    /// Open `path`; `password` opens a protected PDF (empty: none).
-    pub fn open_path_with_password(&mut self, path: PathBuf, password: &str) {
+    /// The kind of file `path` holds, by its extension, except that an
+    /// `.ai` file written as PostScript (the format's versions before the
+    /// PDF-based ones) reads as EPS.
+    pub(crate) fn file_kind(path: &std::path::Path) -> String {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        if ext == "ai" && crate::files::read(path).is_ok_and(|b| b.starts_with(b"%!")) {
+            return "eps".into();
+        }
+        ext
+    }
+
+    /// Open `path`; `password` opens a protected PDF (empty: none).
+    pub fn open_path_with_password(&mut self, path: PathBuf, password: &str) {
+        let ext = Self::file_kind(&path);
         // Objects of a `.cdr` file left out because they could not be read.
         let mut unread = 0usize;
         let result = if ext == "svg" || ext == "svgz" {
@@ -3507,11 +3518,7 @@ impl App {
 
     fn import_path_as_in_file(&mut self, path: &std::path::Path) {
         let path = path.to_path_buf();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let ext = Self::file_kind(&path);
         if ext == "svg" || ext == "svgz" {
             self.import_svg(&path);
             return;
@@ -4330,6 +4337,35 @@ mod tests {
         assert!(app.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
         let saved: Vec<_> = std::fs::read_dir(dir.join("auto")).unwrap().collect();
         assert_eq!(saved.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn postscript_ai_files_open_as_eps() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-ai-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("old.ai");
+        std::fs::write(
+            &old,
+            b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 100 100\nnewpath 10 10 moveto 90 10 lineto 90 90 lineto closepath fill\n%%EOF\n",
+        )
+        .unwrap();
+        let new = dir.join("new.ai");
+        std::fs::write(&new, b"%PDF-1.5\n").unwrap();
+        assert_eq!(App::file_kind(&old), "eps");
+        assert_eq!(App::file_kind(&new), "ai");
+        assert_eq!(App::file_kind(&dir.join("missing.AI")), "ai");
+        assert_eq!(App::file_kind(&dir.join("x.PDF")), "pdf");
+        // The old file opens through the PostScript interpreter.
+        let mut app = App::headless();
+        app.open_path(old);
+        let n: usize = app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum();
+        assert!(n >= 1, "{}", app.status);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -119,7 +119,9 @@ fn read_document(
         tracedraw_cdr::open(path)
             .map(|(d, r)| (d, Some(r)))
             .map_err(|e| e.to_string())
-    } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
+    } else if lower.ends_with(".pdf")
+        || (lower.ends_with(".ai") && !std::fs::read(path).is_ok_and(|b| b.starts_with(b"%!")))
+    {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         // TRACEDRAW_PASSWORD opens a protected file.
         let password = std::env::var("TRACEDRAW_PASSWORD").unwrap_or_default();
@@ -140,7 +142,7 @@ fn read_document(
             tracedraw_io::pdf_import::to_document(imported, &title),
             None,
         ))
-    } else if lower.ends_with(".eps") || lower.ends_with(".ps") {
+    } else if lower.ends_with(".eps") || lower.ends_with(".ps") || lower.ends_with(".ai") {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let imported =
             tracedraw_io::eps_import::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;

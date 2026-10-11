@@ -631,6 +631,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     app.sync_text_defaults_from(id);
                 }
                 text_properties(app, ui);
+                crate::ui::propbar::arrange_part(app, ui);
             }
             Tool::Pick | Tool::FreeformPick
                 if shapes
@@ -642,6 +643,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 object_properties(app, ui);
                 vsep(ui);
                 bitmap_properties(app, ui);
+                crate::ui::propbar::arrange_part(app, ui);
             }
             Tool::Pick | Tool::FreeformPick => {
                 object_properties(app, ui);
@@ -652,6 +654,9 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 crate::ui::propbar::outline_part(app, ui);
                 crate::ui::propbar::sep(ui);
                 crate::ui::propbar::order_part(app, ui);
+                // Several objects, a group or a curve of several parts:
+                // group, combine and shape them.
+                crate::ui::propbar::arrange_part(app, ui);
             }
             Tool::Zoom | Tool::Pan => crate::ui::propbar::zoom_bar(app, ui),
             Tool::Rectangle | Tool::ThreePointRectangle => {

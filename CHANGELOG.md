@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- With two or more objects selected (or a group, or a curve of several
+  parts) the Pick tool's property bar shows Group, Ungroup, Ungroup All,
+  Combine, Break Apart, the shaping operations (Weld, Trim, Intersect,
+  Simplify, Front Minus Back, Back Minus Front, Boundary) and Align and
+  Distribute.
+- `.ai` files written as PostScript (the format's early versions) open
+  through the PostScript interpreter instead of failing as PDF.
 - `.cdr` files: fonts embedded in the file are used for its text when
   they are not installed (and their licence allows it), so text keeps its
   letters instead of falling back to another font; the drawing carries

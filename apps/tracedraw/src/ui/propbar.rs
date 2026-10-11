@@ -87,6 +87,21 @@ pub enum Pic {
     // The Star tool's kinds.
     Star,
     ComplexStar,
+    // Arranging several objects: grouping, combining and shaping, drawn
+    // as a square behind a circle.
+    Group,
+    Ungroup,
+    UngroupAll,
+    Combine,
+    BreakApart,
+    Weld,
+    Trim,
+    Intersect,
+    Simplify,
+    FrontMinusBack,
+    BackMinusFront,
+    Boundary,
+    AlignDistribute,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -725,6 +740,219 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 pts.iter().map(|(x, y)| q(r, *x, *y)).collect(),
                 s,
             ));
+        }
+        _ => draw_arrange_pic(painter, r, pic, color),
+    }
+}
+
+/// Fill a simple polygon, convex or not (cut into triangles by ear
+/// clipping), with an edge stroke so the border is smooth.
+fn fill_polygon(painter: &Painter, pts: &[Pos2], color: Color32, edge: f32) {
+    let n = pts.len();
+    if n < 3 {
+        return;
+    }
+    let area: f32 = (0..n)
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            a.x * b.y - b.x * a.y
+        })
+        .sum();
+    let turn = |a: Pos2, b: Pos2, c: Pos2| (b - a).x * (c - b).y - (b - a).y * (c - b).x;
+    let inside = |p: Pos2, a: Pos2, b: Pos2, c: Pos2| {
+        let (d1, d2, d3) = (turn(a, b, p), turn(b, c, p), turn(c, a, p));
+        (d1 >= 0.0 && d2 >= 0.0 && d3 >= 0.0) || (d1 <= 0.0 && d2 <= 0.0 && d3 <= 0.0)
+    };
+    let mut mesh = epaint::Mesh::default();
+    for p in pts {
+        mesh.colored_vertex(*p, color);
+    }
+    let mut idx: Vec<usize> = (0..n).collect();
+    while idx.len() > 3 {
+        let m = idx.len();
+        let ear = (0..m).find(|&i| {
+            let (a, b, c) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
+            let t = turn(pts[a], pts[b], pts[c]);
+            t * area > 0.0
+                && !idx
+                    .iter()
+                    .any(|&j| j != a && j != b && j != c && inside(pts[j], pts[a], pts[b], pts[c]))
+        });
+        let Some(i) = ear else {
+            break;
+        };
+        let (a, b, c) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
+        mesh.add_triangle(a as u32, b as u32, c as u32);
+        idx.remove(i);
+    }
+    if idx.len() == 3 {
+        mesh.add_triangle(idx[0] as u32, idx[1] as u32, idx[2] as u32);
+    }
+    painter.add(mesh);
+    painter.add(epaint::PathShape::closed_line(
+        pts.to_vec(),
+        Stroke::new(edge, color),
+    ));
+}
+
+/// The arranging pictures. The shaping ones show a square (behind) and a
+/// circle (in front, centred on the square's lower right corner); the
+/// result is filled, a removed object dashed, a kept one outlined.
+fn draw_arrange_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
+    let k = r.width() / 16.0;
+    let thin = Stroke::new(0.8 * k, color);
+    let edge = 0.6 * k;
+    let p = |x: f32, y: f32| q(r, x, y);
+    // The circle's points from angle `a0` to `a1` (degrees, y down).
+    let arc = |cx: f32, cy: f32, rad: f32, a0: f32, a1: f32| -> Vec<Pos2> {
+        (0..=16)
+            .map(|i| {
+                let t = (a0 + (a1 - a0) * i as f32 / 16.0).to_radians();
+                p(cx + rad * t.cos(), cy + rad * t.sin())
+            })
+            .collect()
+    };
+    let square = [p(1.5, 1.5), p(10.0, 1.5), p(10.0, 10.0), p(1.5, 10.0)];
+    let circle = || arc(10.0, 10.0, 5.0, 0.0, 360.0);
+    let union = || {
+        let mut v = vec![p(1.5, 1.5), p(10.0, 1.5)];
+        v.extend(arc(10.0, 10.0, 5.0, -90.0, 180.0));
+        v.push(p(1.5, 10.0));
+        v
+    };
+    let back_minus_front = || {
+        let mut v = vec![p(1.5, 1.5), p(10.0, 1.5)];
+        v.extend(arc(10.0, 10.0, 5.0, -90.0, -180.0));
+        v.push(p(1.5, 10.0));
+        v
+    };
+    let front_minus_back = || {
+        let mut v = arc(10.0, 10.0, 5.0, -90.0, 180.0);
+        v.push(p(10.0, 10.0));
+        v
+    };
+    let both = || {
+        let mut v = vec![p(10.0, 10.0)];
+        v.extend(arc(10.0, 10.0, 5.0, -90.0, -180.0));
+        v
+    };
+    let outline = |pts: Vec<Pos2>, st: Stroke| {
+        painter.add(epaint::PathShape::closed_line(pts, st));
+    };
+    let dashed = |mut pts: Vec<Pos2>| {
+        if let Some(first) = pts.first().copied() {
+            pts.push(first);
+        }
+        painter.extend(egui::Shape::dashed_line(&pts, thin, 1.3 * k, 1.7 * k));
+    };
+    // Corner marks around a box, as a group's selection shows.
+    let brackets = |x0: f32, y0: f32, x1: f32, y1: f32| {
+        let l = 2.5;
+        for (cx, cy, dx, dy) in [
+            (x0, y0, 1.0, 1.0),
+            (x1, y0, -1.0, 1.0),
+            (x1, y1, -1.0, -1.0),
+            (x0, y1, 1.0, -1.0),
+        ] {
+            painter.add(epaint::PathShape::line(
+                vec![p(cx + dx * l, cy), p(cx, cy), p(cx, cy + dy * l)],
+                thin,
+            ));
+        }
+    };
+    match pic {
+        Pic::Weld => fill_polygon(painter, &union(), color, edge),
+        Pic::Trim => {
+            fill_polygon(painter, &back_minus_front(), color, edge);
+            outline(circle(), thin);
+        }
+        Pic::Intersect => {
+            outline(square.to_vec(), thin);
+            outline(circle(), thin);
+            fill_polygon(painter, &both(), color, edge);
+        }
+        Pic::Simplify => {
+            outline(back_minus_front(), thin);
+            fill_polygon(painter, &circle(), color, edge);
+        }
+        Pic::FrontMinusBack => {
+            dashed(square.to_vec());
+            fill_polygon(painter, &front_minus_back(), color, edge);
+        }
+        Pic::BackMinusFront => {
+            dashed(circle());
+            fill_polygon(painter, &back_minus_front(), color, edge);
+        }
+        Pic::Boundary => {
+            outline(square.to_vec(), thin);
+            outline(circle(), thin);
+            // The outline around both, a little outside them.
+            let mut v = vec![p(0.5, 0.5), p(11.0, 0.5)];
+            v.extend(arc(10.0, 10.0, 6.0, -80.0, 170.0));
+            v.push(p(0.5, 11.0));
+            dashed(v);
+        }
+        Pic::Combine => {
+            // One object with both outlines: where they overlap is a hole.
+            fill_polygon(painter, &back_minus_front(), color, edge);
+            fill_polygon(painter, &front_minus_back(), color, edge);
+        }
+        Pic::BreakApart => {
+            fill_polygon(
+                painter,
+                &[p(1.0, 1.0), p(7.0, 1.0), p(7.0, 7.0), p(1.0, 7.0)],
+                color,
+                edge,
+            );
+            fill_polygon(painter, &arc(11.5, 11.5, 3.5, 0.0, 360.0), color, edge);
+            painter.line_segment([p(5.2, 10.8), p(10.8, 5.2)], thin);
+            for (a, b, c) in [
+                ((4.5, 11.5), (4.5, 8.8), (7.2, 11.5)),
+                ((11.5, 4.5), (8.8, 4.5), (11.5, 7.2)),
+            ] {
+                painter.add(epaint::PathShape::convex_polygon(
+                    vec![p(a.0, a.1), p(b.0, b.1), p(c.0, c.1)],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
+        }
+        Pic::Group | Pic::Ungroup | Pic::UngroupAll => {
+            fill_polygon(
+                painter,
+                &[p(3.5, 3.5), p(8.5, 3.5), p(8.5, 8.5), p(3.5, 8.5)],
+                color,
+                edge,
+            );
+            fill_polygon(painter, &arc(10.5, 10.5, 2.8, 0.0, 360.0), color, edge);
+            match pic {
+                Pic::Group => brackets(1.0, 1.0, 15.0, 15.0),
+                Pic::Ungroup => {
+                    brackets(1.5, 1.5, 9.5, 9.5);
+                    brackets(6.8, 6.8, 14.5, 14.5);
+                }
+                _ => {
+                    brackets(0.5, 0.5, 15.5, 15.5);
+                    brackets(2.3, 2.3, 9.7, 9.7);
+                    brackets(6.9, 6.9, 14.1, 14.1);
+                }
+            }
+        }
+        Pic::AlignDistribute => {
+            painter.line_segment([p(2.0, 1.0), p(2.0, 15.0)], thin);
+            for (y, w) in [(2.5, 10.0), (6.5, 6.5), (10.5, 12.5)] {
+                fill_polygon(
+                    painter,
+                    &[
+                        p(3.0, y),
+                        p(3.0 + w, y),
+                        p(3.0 + w, y + 3.0),
+                        p(3.0, y + 3.0),
+                    ],
+                    color,
+                    edge,
+                );
+            }
         }
         _ => {}
     }
@@ -1970,6 +2198,174 @@ pub fn zoom_bar(app: &mut App, ui: &mut Ui) {
 }
 
 /// Order and conversion buttons after an object's properties.
+/// Grouping, combining and shaping the selection (Pick tool, two or more
+/// objects, a group, or a curve of several parts), after a separator:
+/// shown only when one of them applies. Returns whether it was shown.
+/// What the arrange part offers for the selected `shapes`: several
+/// objects (group, combine, shape), a group (ungroup), a curve of several
+/// parts (break apart); `None` when nothing applies.
+pub fn arrange_offers(shapes: &[tracedraw_core::Shape]) -> Option<(bool, bool, bool)> {
+    let many = shapes.len() >= 2;
+    let groups = shapes
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Group { .. }));
+    let parts = shapes.iter().any(|s| match &s.kind {
+        ShapeKind::Path { path, .. } => {
+            path.elements()
+                .iter()
+                .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+                .count()
+                > 1
+        }
+        _ => false,
+    });
+    (many || groups || parts).then_some((many, groups, parts))
+}
+
+pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
+    use crate::ops::Shaping;
+    let shapes = app.selected_shapes();
+    let Some((many, groups, parts)) = arrange_offers(&shapes) else {
+        return false;
+    };
+    sep(ui);
+    let tip = |key: &str, keys: &str| {
+        if keys.is_empty() {
+            tr(key)
+        } else {
+            format!("{} ({keys})", tr(key))
+        }
+    };
+    if pic_button(
+        ui,
+        Pic::Group,
+        &tip("menu.object.group_group", "Ctrl+G"),
+        many,
+        false,
+    )
+    .clicked()
+    {
+        app.group_selection();
+    }
+    if pic_button(
+        ui,
+        Pic::Ungroup,
+        &tip("menu.object.group_ungroup", "Ctrl+U"),
+        groups,
+        false,
+    )
+    .clicked()
+    {
+        app.ungroup_selection();
+    }
+    if pic_button(
+        ui,
+        Pic::UngroupAll,
+        &tip("menu.object.group_ungroup_all", ""),
+        groups,
+        false,
+    )
+    .clicked()
+    {
+        app.ungroup_all();
+    }
+    sep(ui);
+    if pic_button(
+        ui,
+        Pic::Combine,
+        &tip("menu.object.combine", "Ctrl+L"),
+        many,
+        false,
+    )
+    .clicked()
+    {
+        app.combine();
+    }
+    if pic_button(
+        ui,
+        Pic::BreakApart,
+        &tip("menu.object.break_apart", "Ctrl+K"),
+        parts,
+        false,
+    )
+    .clicked()
+    {
+        app.break_apart();
+    }
+    sep(ui);
+    for (pic, key, hint, op, need_many) in [
+        (
+            Pic::Weld,
+            "menu.object.weld",
+            "docker.weld_hint",
+            Shaping::Weld,
+            true,
+        ),
+        (
+            Pic::Trim,
+            "menu.object.trim",
+            "docker.trim_hint",
+            Shaping::Trim,
+            true,
+        ),
+        (
+            Pic::Intersect,
+            "menu.object.intersect",
+            "docker.intersect_hint",
+            Shaping::Intersect,
+            true,
+        ),
+        (
+            Pic::Simplify,
+            "menu.object.simplify",
+            "docker.simplify_hint",
+            Shaping::Simplify,
+            true,
+        ),
+        (
+            Pic::FrontMinusBack,
+            "menu.object.front_minus_back",
+            "docker.front_minus_back_hint",
+            Shaping::FrontMinusBack,
+            true,
+        ),
+        (
+            Pic::BackMinusFront,
+            "menu.object.back_minus_front",
+            "docker.back_minus_front_hint",
+            Shaping::BackMinusFront,
+            true,
+        ),
+        (
+            Pic::Boundary,
+            "menu.object.boundary",
+            "docker.boundary_hint",
+            Shaping::Boundary,
+            false,
+        ),
+    ] {
+        let on = if need_many { many } else { !shapes.is_empty() };
+        let tip = format!("{}\n{}", tr(key), tr(hint));
+        if pic_button(ui, pic, &tip, on, false).clicked() {
+            app.shaping(op);
+        }
+    }
+    sep(ui);
+    if pic_button(
+        ui,
+        Pic::AlignDistribute,
+        &tip("menu.object.align_distribute_docker", "Ctrl+Shift+A"),
+        true,
+        false,
+    )
+    .clicked()
+    {
+        app.show_dockers = true;
+        app.docker_tab = crate::app::DockerTab::AlignDistribute;
+    }
+    true
+}
+
 pub fn order_part(app: &mut App, ui: &mut Ui) {
     if pic_button(ui, Pic::ToFront, &tr("toolbar.to_front"), true, false).clicked() {
         app.order(0);
@@ -1998,6 +2394,43 @@ pub fn order_part(app: &mut App, ui: &mut Ui) {
 mod tests {
     use super::*;
     use tracedraw_core::geometry::Rect as R;
+
+    #[test]
+    fn shaping_and_grouping_show_for_several_objects_groups_and_parts() {
+        use tracedraw_core::geometry::Shape as _;
+        use tracedraw_core::{Shape, ShapeId};
+        let rect = |id: u64, x: f64| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Rect {
+                    rect: R::new(x, 0.0, x + 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            )
+        };
+        // One plain object: nothing to arrange.
+        assert_eq!(arrange_offers(&[rect(1, 0.0)]), None);
+        assert_eq!(arrange_offers(&[]), None);
+        // Two objects: group, combine and the shaping buttons.
+        assert_eq!(
+            arrange_offers(&[rect(1, 0.0), rect(2, 20.0)]),
+            Some((true, false, false))
+        );
+        // A group alone: ungroup.
+        let group = Shape::new(
+            ShapeId(3),
+            ShapeKind::Group {
+                children: vec![rect(4, 0.0), rect(5, 20.0)],
+            },
+        );
+        assert_eq!(arrange_offers(&[group]), Some((false, true, false)));
+        // A curve of two parts: break apart.
+        let mut path = R::new(0.0, 0.0, 5.0, 5.0).to_path(0.1);
+        path.extend(R::new(10.0, 0.0, 15.0, 5.0).to_path(0.1));
+        let curve = Shape::new(ShapeId(6), ShapeKind::Path { path, closed: true });
+        assert_eq!(arrange_offers(&[curve]), Some((false, false, true)));
+    }
 
     #[test]
     fn the_object_origin_picks_corners_edges_and_centre() {

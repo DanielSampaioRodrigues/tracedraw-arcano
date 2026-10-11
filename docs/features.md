@@ -63,7 +63,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes, twisted stars) | works (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
-| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and panel) | works |
+| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu, panel and the property bar with several objects selected) | works |
 | Combine, Break apart, Group, Ungroup, Ungroup all | works |
 | Join Curves panel: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
 | Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
@@ -195,7 +195,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Links: a web address, e-mail address or page for any object (Links and Bookmarks panel), exported as link areas in PDF and as links around the object in SVG and HTML; named objects as bookmarks in the panel | works (see `behavior/links.md`) |
 | Publish to PDF dialog: pages (all, current, selection), PDF/X level, bleed, title, author, subject and keywords, a bookmark per page, password protection (AES-256: a password to open, a password for the permissions to print, copy and change) | works (see `behavior/publish-to-pdf.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
-| Import EPS and PostScript (interpreter: paths, images, text, clips, shadings, patterns, prologs) | works (see `behavior/eps-import.md`) |
+| Import EPS and PostScript (interpreter: paths, images, text, clips, shadings, patterns, prologs), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
 | Import EMF and WMF (GDI paths, pens, brushes, text, DIB bitmaps, clips); export EMF and WMF | works (see `behavior/emf-wmf.md`) |
 | Import CMX | missing |
