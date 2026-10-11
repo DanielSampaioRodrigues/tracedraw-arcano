@@ -2,12 +2,17 @@
 
 ## Freehand Pick
 
-- Drag a lasso on the canvas. When the button is released, every object
-  on an unlocked, visible layer whose bounds centre lies inside the
-  lasso polygon is selected (point-in-polygon test, even-odd). Fewer
-  than three points select nothing.
-- A click selects the object under the pointer like the Pick tool; the
-  property bar is the Pick tool's.
+- Works as the Pick tool (clicks, Shift, Ctrl and Alt clicks, the
+  handles and rotate mode, moving, the pointer, the property bar) except
+  that a drag from empty space draws a lasso (a dashed blue line) instead
+  of a frame.
+- When the button is released, every object on an unlocked, visible
+  layer lying wholly inside the lasso (every point of its outline; for
+  text, bitmaps, tables and clip frames their box) is added; with Alt
+  held at the end, every object the lasso touches (the same rules as the
+  Pick tool's Alt marquee). The lasso is closed from its last point to
+  its first and tested even-odd; fewer than three points select nothing.
+- Check: `pick_drag_tests::the_freehand_pick_lassoes_and_has_the_pick_tools_handles`.
 
 ## Free Transform
 

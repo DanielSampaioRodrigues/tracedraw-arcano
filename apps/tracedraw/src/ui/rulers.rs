@@ -190,6 +190,11 @@ pub fn rulers(app: &mut App, ui: &mut Ui, full: Rect) {
     if top_resp.hovered() || left_resp.hovered() || corner_resp.hovered() {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
     }
+    // While a guideline or the origin is dragged out, wherever the pointer
+    // is.
+    if let Some(icon) = crate::ui::cursors::ruler_drag_cursor(app) {
+        ui.ctx().set_cursor_icon(icon);
+    }
 }
 
 /// Follow the pointer while a guideline or the ruler origin is dragged out

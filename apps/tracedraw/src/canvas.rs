@@ -227,7 +227,28 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
             }
         },
-        Drag::Marquee { start, current } | Drag::ZoomBox { start, current } => {
+        Drag::Marquee { start, current, .. } => {
+            // A dashed blue frame.
+            let r = view.rect_to_screen(Rect::from_points(*start, *current));
+            let pts = [
+                r.left_top(),
+                r.right_top(),
+                r.right_bottom(),
+                r.left_bottom(),
+                r.left_top(),
+            ];
+            dashed_selection_line(painter, &pts);
+        }
+        Drag::Lasso { points, .. } => {
+            let mut pts: Vec<Pos2> = points.iter().map(|p| view.to_screen(*p)).collect();
+            if let Some(first) = pts.first().copied() {
+                pts.push(first);
+            }
+            if pts.len() > 2 {
+                dashed_selection_line(painter, &pts);
+            }
+        }
+        Drag::ZoomBox { start, current } => {
             let r = view.rect_to_screen(Rect::from_points(*start, *current));
             let stroke = EStroke::new(1.0, Tokens::SELECTION);
             painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
@@ -386,6 +407,21 @@ fn clip_segment(a: Pos2, b: Pos2, r: ERect) -> Option<(Pos2, Pos2)> {
         Pos2::new(a.x + dx * t0, a.y + dy * t0),
         Pos2::new(a.x + dx * t1, a.y + dy * t1),
     ))
+}
+
+/// The marquee's and the lasso's line: blue dashes on a white line so it
+/// shows on any drawing.
+fn dashed_selection_line(painter: &Painter, pts: &[Pos2]) {
+    painter.add(epaint::PathShape::line(
+        pts.to_vec(),
+        EStroke::new(1.0, Color32::from_white_alpha(200)),
+    ));
+    painter.extend(egui::Shape::dashed_line(
+        pts,
+        EStroke::new(1.0, Tokens::SELECTION),
+        4.0,
+        3.0,
+    ));
 }
 
 /// Outline of the shape a 3-point tool would create for base `a -> b` and third point `c`.
@@ -727,12 +763,18 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             draw_rotate_handle(painter, p, h);
         }
     } else {
+        // Objects chosen inside a group show round handles.
+        let nested = app.selection_nested();
         for (_, p) in app.handle_positions(bounds) {
-            painter.rect_filled(
-                ERect::from_center_size(p, egui::vec2(7.0, 7.0)),
-                0.0,
-                Tokens::HANDLE,
-            );
+            if nested {
+                painter.circle_filled(p, 3.8, Tokens::HANDLE);
+            } else {
+                painter.rect_filled(
+                    ERect::from_center_size(p, egui::vec2(7.0, 7.0)),
+                    0.0,
+                    Tokens::HANDLE,
+                );
+            }
         }
         if shapes.len() > 1 {
             painter.rect_stroke(

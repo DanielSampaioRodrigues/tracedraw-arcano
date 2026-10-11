@@ -2058,6 +2058,113 @@ impl Document {
             .find_map(|s| walk(s, id))
     }
 
+    /// Find any shape to change it, including children of groups and clip
+    /// frames.
+    pub fn find_shape_mut(&mut self, id: ShapeId) -> Option<&mut Shape> {
+        fn walk(s: &mut Shape, id: ShapeId) -> Option<&mut Shape> {
+            if s.id == id {
+                return Some(s);
+            }
+            match &mut s.kind {
+                ShapeKind::Group { children } => children.iter_mut().find_map(|c| walk(c, id)),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    walk(frame, id).or_else(|| contents.iter_mut().find_map(|c| walk(c, id)))
+                }
+                _ => None,
+            }
+        }
+        self.all_layers_mut()
+            .flat_map(|l| &mut l.shapes)
+            .find_map(|s| walk(s, id))
+    }
+
+    /// The transform taking the space of `id` to the page: the product of
+    /// the transforms of the groups and clip frames it is in (the identity
+    /// for an object lying on a layer). `None` when there is no such
+    /// object.
+    pub fn parent_transform(&self, id: ShapeId) -> Option<Affine> {
+        fn walk(s: &Shape, id: ShapeId, above: Affine) -> Option<Affine> {
+            if s.id == id {
+                return Some(above);
+            }
+            let inner = above * s.transform;
+            match &s.kind {
+                ShapeKind::Group { children } => children.iter().find_map(|c| walk(c, id, inner)),
+                ShapeKind::ClipFrame { frame, contents } => walk(frame, id, inner)
+                    .or_else(|| contents.iter().find_map(|c| walk(c, id, inner))),
+                _ => None,
+            }
+        }
+        self.all_layers()
+            .flat_map(|l| &l.shapes)
+            .find_map(|s| walk(s, id, Affine::IDENTITY))
+    }
+
+    /// A copy of any object, nested ones too, whose transform takes it
+    /// straight to the page, so its paths and bounds are in page space.
+    pub fn shape_on_page(&self, id: ShapeId) -> Option<Shape> {
+        if let Ok((_, s)) = self.shape(id) {
+            return Some(s.clone());
+        }
+        let parent = self.parent_transform(id)?;
+        let mut s = self.find_shape(id)?.clone();
+        s.transform = parent * s.transform;
+        Some(s)
+    }
+
+    /// The groups and clip frames holding `id`, outermost first (empty for
+    /// an object on a layer or one that is not there).
+    pub fn ancestors(&self, id: ShapeId) -> Vec<ShapeId> {
+        fn walk(s: &Shape, id: ShapeId, path: &mut Vec<ShapeId>) -> bool {
+            if s.id == id {
+                return true;
+            }
+            path.push(s.id);
+            let found = match &s.kind {
+                ShapeKind::Group { children } => children.iter().any(|c| walk(c, id, path)),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    walk(frame, id, path) || contents.iter().any(|c| walk(c, id, path))
+                }
+                _ => false,
+            };
+            if !found {
+                path.pop();
+            }
+            found
+        }
+        let mut path = Vec::new();
+        for s in self.all_layers().flat_map(|l| &l.shapes) {
+            if walk(s, id, &mut path) {
+                return path;
+            }
+        }
+        Vec::new()
+    }
+
+    /// The object lies inside a group or a clip frame (not on a layer).
+    pub fn is_nested(&self, id: ShapeId) -> bool {
+        self.shape(id).is_err() && self.find_shape(id).is_some()
+    }
+
+    /// The object on a layer that holds `id` (itself when it lies on a
+    /// layer).
+    pub fn top_level_of(&self, id: ShapeId) -> Option<ShapeId> {
+        fn holds(s: &Shape, id: ShapeId) -> bool {
+            s.id == id
+                || match &s.kind {
+                    ShapeKind::Group { children } => children.iter().any(|c| holds(c, id)),
+                    ShapeKind::ClipFrame { frame, contents } => {
+                        holds(frame, id) || contents.iter().any(|c| holds(c, id))
+                    }
+                    _ => false,
+                }
+        }
+        self.all_layers()
+            .flat_map(|l| &l.shapes)
+            .find(|s| holds(s, id))
+            .map(|s| s.id)
+    }
+
     /// Union of all shape bounds on a page, or None when the page is empty.
     pub fn content_bounds(&self, page: PageId) -> Result<Option<Rect>> {
         let p = self.page(page)?;

@@ -114,6 +114,12 @@ stand for a distance in the world (`drawing_scale.rs`):
   Dragging an arrow turns the guideline about the pivot in whole degrees;
   0 and 180 make it horizontal, 90 and 270 vertical.
 - Locked guidelines can be selected but not moved or deleted.
+- The pointer over a guideline (where no object is) shows the arrows
+  across it: up and down for a horizontal one, sideways for a vertical
+  one, the move arrows for a slanted one, the plain arrow for a locked
+  one; a turning arrow over its rotation handles. While a guideline is
+  dragged out of a ruler or moved it keeps those arrows; dragging the
+  ruler origin shows the cross hair.
 - Delete removes the selected guidelines that are not locked.
 - Right-click on a guideline: Undo, Delete, Lock or Unlock, Properties
   (opens the Guidelines panel with the guideline's values).

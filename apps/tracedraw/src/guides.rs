@@ -402,6 +402,11 @@ impl App {
         Some((index, pivot, [pivot + d * reach, pivot - d * reach]))
     }
 
+    /// `p` (page) is on a rotation handle of the guideline in rotate mode.
+    pub fn guide_rotate_handle_at(&self, p: Point) -> bool {
+        self.rotate_handle_at(p).is_some()
+    }
+
     fn rotate_handle_at(&self, p: Point) -> Option<(usize, Point)> {
         let (index, pivot, handles) = self.guide_rotate_handles()?;
         let tol = HANDLE_PICK_PX / self.view.zoom.max(1e-6) as f64;

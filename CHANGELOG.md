@@ -11,6 +11,13 @@ full, row-by-row status.
   corner, Ctrl keeps a move straight, a right click during a drag leaves
   the original, Space drops a copy, Esc cancels; in rotate mode the side
   handles skew and the centre of rotation can be moved.
+- Pick tool: Ctrl+click chooses an object inside a group (round handles;
+  it moves, takes colours and is deleted on its own), Alt+click digs to
+  the object beneath, a marquee with Alt takes what it touches, a click
+  on any selected object or on the centre mark turns the handles, and
+  the centre mark can be dragged. The Freehand Pick has the Pick tool's
+  handles and takes what its lasso holds wholly (with Alt, what it
+  touches).
 - Curves: Ctrl keeps lines and Bezier nodes to steps of the constrain
   angle; with Freehand a click and then another click draw a straight
   line.
@@ -18,7 +25,8 @@ full, row-by-row status.
   its outline it colours the outline; onto the document palette it joins
   it.
 - The pointer shows what a press would do: resize arrows on the handles,
-  move arrows on the selection, turning and slant arrows in rotate mode,
+  move arrows on objects and the centre mark, arrows across guidelines,
+  turning and slant arrows in rotate mode,
   and the Shape tool's own arrow with a mark over nodes, control points
   and segments. Drawing tools show their icon by the cross hair; the
   Eraser and the brushes show their nib at its size.

@@ -59,6 +59,7 @@ mod preflight;
 mod prefs;
 mod raster;
 mod scripting;
+mod select_region;
 mod settings;
 mod shape_tool;
 mod shelf;

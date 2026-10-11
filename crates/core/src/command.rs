@@ -410,10 +410,10 @@ impl Command {
                     None => None,
                 };
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    let shape = doc.shape_mut(*id)?;
+                    let shape = any_mut(doc, *id)?;
                     shape.style = found.as_ref().map(|s| s.id);
                     if let Some(st) = &found {
                         st.apply_to(shape);
@@ -461,39 +461,53 @@ impl Command {
             Command::AddShape { layer, shape } => doc.layer_mut(*layer)?.shapes.push(shape.clone()),
             Command::DeleteShapes { shapes } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
-                for layer in doc.pages.iter_mut().flat_map(|p| &mut p.layers) {
-                    layer.shapes.retain(|s| !shapes.contains(&s.id));
+                for layer in doc.all_layers_mut() {
+                    remove_shapes(&mut layer.shapes, shapes);
                 }
             }
             Command::TransformShapes { shapes, transform } => {
+                // The transform is in page space; an object inside a group
+                // or a clip frame takes it in its parent's space.
+                let mut local = Vec::with_capacity(shapes.len());
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
+                    let t = if doc.shape(*id).is_ok() {
+                        *transform
+                    } else {
+                        let parent = doc.parent_transform(*id).unwrap_or(Affine::IDENTITY);
+                        let det = parent.determinant();
+                        if !det.is_finite() || det.abs() < 1e-12 {
+                            return Err(Error::ShapeNotFound(*id));
+                        }
+                        parent.inverse() * *transform * parent
+                    };
+                    local.push((*id, t));
                 }
-                for id in shapes {
-                    let s = doc.shape_mut(*id)?;
-                    s.transform = *transform * s.transform;
+                for (id, t) in local {
+                    let s = any_mut(doc, id)?;
+                    s.transform = t * s.transform;
                 }
             }
             Command::SetFill { shapes, fill } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.fill = fill.clone();
+                    any_mut(doc, *id)?.fill = fill.clone();
                 }
             }
             Command::SetStroke { shapes, stroke } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.stroke = stroke.clone();
+                    any_mut(doc, *id)?.stroke = stroke.clone();
                 }
             }
-            Command::SetShapeKind { shape, kind } => doc.shape_mut(*shape)?.kind = kind.clone(),
-            Command::SetShapeName { shape, name } => doc.shape_mut(*shape)?.name = name.clone(),
+            Command::SetShapeKind { shape, kind } => any_mut(doc, *shape)?.kind = kind.clone(),
+            Command::SetShapeName { shape, name } => any_mut(doc, *shape)?.name = name.clone(),
 
             Command::Reorder {
                 shape,
@@ -539,33 +553,30 @@ impl Command {
             }
             Command::SetOpacity { shapes, opacity } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.opacity = opacity.clamp(0.0, 1.0);
+                    any_mut(doc, *id)?.opacity = opacity.clamp(0.0, 1.0);
                 }
             }
             Command::SetLocked { shapes, locked } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.locked = *locked;
+                    any_mut(doc, *id)?.locked = *locked;
                 }
             }
             Command::SetVisible { shapes, visible } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.visible = *visible;
+                    any_mut(doc, *id)?.visible = *visible;
                 }
             }
             Command::SetEffects { shape, effects } => {
-                let s = doc
-                    .shape_mut(*shape)
-                    .map_err(|_| Error::ShapeNotFound(*shape))?;
-                s.effects = effects.clone();
+                any_mut(doc, *shape)?.effects = effects.clone();
             }
             Command::SetOverprint {
                 shapes,
@@ -573,10 +584,10 @@ impl Command {
                 outline,
             } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    let s = doc.shape_mut(*id)?;
+                    let s = any_mut(doc, *id)?;
                     if let Some(f) = fill {
                         s.overprint_fill = *f;
                     }
@@ -587,22 +598,22 @@ impl Command {
             }
             Command::SetWrapText { shapes, wrap } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.wrap_text = *wrap;
+                    any_mut(doc, *id)?.wrap_text = *wrap;
                 }
             }
             Command::SetLink { shapes, link } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.link = link.clone();
+                    any_mut(doc, *id)?.link = link.clone();
                 }
             }
             Command::SetObjectData { shape, data } => {
-                doc.shape_mut(*shape)?.data = data.clone();
+                any_mut(doc, *shape)?.data = data.clone();
             }
             Command::OrderRelative {
                 shapes,
@@ -821,10 +832,10 @@ impl Command {
             }
             Command::SetShadow { shapes, shadow } => {
                 for id in shapes {
-                    doc.shape(*id)?;
+                    any(doc, *id)?;
                 }
                 for id in shapes {
-                    doc.shape_mut(*id)?.shadow = *shadow;
+                    any_mut(doc, *id)?.shadow = *shadow;
                 }
             }
             Command::AddGuide { page, guide } => doc.page_mut(*page)?.guides.push(*guide),
@@ -864,6 +875,33 @@ impl Command {
 }
 
 /// Deep copy of a shape with fresh ids (groups included).
+/// Any object, nested ones too.
+fn any(doc: &Document, id: ShapeId) -> Result<&Shape> {
+    doc.find_shape(id).ok_or(Error::ShapeNotFound(id))
+}
+
+/// Any object to change, nested ones too.
+fn any_mut(doc: &mut Document, id: ShapeId) -> Result<&mut Shape> {
+    doc.find_shape_mut(id).ok_or(Error::ShapeNotFound(id))
+}
+
+/// Take the objects `ids` out of `shapes`, inside groups and clip frames
+/// too; a group left with nothing by it goes as well.
+fn remove_shapes(shapes: &mut Vec<Shape>, ids: &[ShapeId]) {
+    shapes.retain(|s| !ids.contains(&s.id));
+    shapes.retain_mut(|s| match &mut s.kind {
+        ShapeKind::Group { children } if !children.is_empty() => {
+            remove_shapes(children, ids);
+            !children.is_empty()
+        }
+        ShapeKind::ClipFrame { contents, .. } => {
+            remove_shapes(contents, ids);
+            true
+        }
+        _ => true,
+    });
+}
+
 fn reid_shape(s: &Shape, doc: &mut Document) -> Shape {
     let mut c = s.clone();
     c.id = doc.ids_mut().shape();
@@ -922,6 +960,89 @@ mod tests {
                 corners: None,
             },
         )
+    }
+
+    /// Objects inside a group take page-space transforms, fills and
+    /// outlines, and can be deleted; a group left empty goes too.
+    #[test]
+    fn objects_inside_groups_can_be_changed_and_deleted() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 20.0);
+        let (ia, ib) = (a.id, b.id);
+        for shape in [a, b] {
+            Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
+        }
+        Command::Group {
+            shapes: vec![ia, ib],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let gid = doc.layer(layer).unwrap().shapes[0].id;
+        // The group is turned and scaled, so the child's space is not the
+        // page's.
+        let g = Affine::translate((100.0, 50.0)) * Affine::rotate(0.5) * Affine::scale(2.0);
+        Command::TransformShapes {
+            shapes: vec![gid],
+            transform: g,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert!(doc.is_nested(ia) && !doc.is_nested(gid));
+        assert_eq!(doc.top_level_of(ib), Some(gid));
+        assert_eq!(doc.ancestors(ib), vec![gid]);
+        assert!(doc.ancestors(gid).is_empty());
+        let before = doc.shape_on_page(ia).unwrap().bounds();
+        // A page-space move moves the child by exactly that on the page.
+        Command::TransformShapes {
+            shapes: vec![ia],
+            transform: Affine::translate((7.0, -3.0)),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let after = doc.shape_on_page(ia).unwrap().bounds();
+        assert!((after.x0 - before.x0 - 7.0).abs() < 1e-9);
+        assert!((after.y0 - before.y0 + 3.0).abs() < 1e-9);
+        assert!((after.width() - before.width()).abs() < 1e-9);
+        // The other child stays where it was.
+        let b_page = doc.shape_on_page(ib).unwrap().bounds();
+        let expected = {
+            use crate::geometry::Shape as _;
+            (g * Rect::new(20.0, 0.0, 30.0, 10.0).to_path(0.01)).bounding_box()
+        };
+        assert!((b_page.x0 - expected.x0).abs() < 1e-6);
+        // Fills and outlines reach the child.
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        Command::SetFill {
+            shapes: vec![ia],
+            fill: red.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.find_shape(ia).unwrap().fill, red);
+        Command::SetStroke {
+            shapes: vec![ib],
+            stroke: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert!(doc.find_shape(ib).unwrap().stroke.is_none());
+        // Deleting one child keeps the group; deleting the last one takes
+        // the group away.
+        Command::DeleteShapes { shapes: vec![ia] }
+            .apply(&mut doc)
+            .unwrap();
+        assert!(doc.find_shape(ia).is_none());
+        assert_eq!(doc.top_level_of(ib), Some(gid));
+        Command::DeleteShapes { shapes: vec![ib] }
+            .apply(&mut doc)
+            .unwrap();
+        assert!(doc.layer(layer).unwrap().shapes.is_empty());
+        // Unknown objects are refused.
+        assert!(Command::DeleteShapes { shapes: vec![ia] }
+            .apply(&mut doc)
+            .is_err());
     }
 
     #[test]

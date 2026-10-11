@@ -867,41 +867,6 @@ impl App {
                 }
             }
             Tool::Smooth | Tool::Smear | Tool::Twirl => self.brush_input(response, p),
-            Tool::FreeformPick => {
-                if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
-                        if !self.selection.contains(&id) {
-                            self.select(vec![id]);
-                        }
-                        self.drag = Drag::Move {
-                            start: p,
-                            last: p,
-                            total: Vec2::ZERO,
-                            start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
-                            source: None,
-                        };
-                    } else {
-                        self.drag = Drag::Freehand { points: vec![p] };
-                    }
-                }
-                if response.dragged_by(PointerButton::Primary) {
-                    match &mut self.drag {
-                        Drag::Freehand { points } => points.push(p),
-                        Drag::Move { last, total, .. } => {
-                            let d = p - *last;
-                            *last = p;
-                            *total += d;
-                        }
-                        _ => {}
-                    }
-                }
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => self.select(vec![id]),
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
             _ => {}
         }
     }
@@ -959,33 +924,6 @@ impl App {
                 self.drag = Drag::Node { last: p };
             }
         }
-    }
-
-    /// Lasso finished (Freehand Pick): select objects whose bounds centre
-    /// lies inside the drawn polygon.
-    pub fn finish_lasso(&mut self, points: Vec<Point>) {
-        if points.len() < 3 {
-            return;
-        }
-        let poly = tracedraw_core::effects::polygon(&points);
-        let Ok(page) = self.doc().page(self.page) else {
-            return;
-        };
-        let mut ids = Vec::new();
-        for s in page
-            .layers
-            .iter()
-            .filter(|l| l.visible && !l.locked)
-            .flat_map(|l| &l.shapes)
-        {
-            if s.locked {
-                continue;
-            }
-            if point_in_path(&poly, s.bounds().center()) {
-                ids.push(s.id);
-            }
-        }
-        self.select(ids);
     }
 
     pub fn apply_extrude(&mut self) {

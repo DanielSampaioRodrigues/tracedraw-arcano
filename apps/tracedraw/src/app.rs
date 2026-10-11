@@ -406,10 +406,18 @@ pub enum Drag {
         start_angle: f64,
         current_angle: f64,
     },
-    /// Rubber-band selection.
+    /// Rubber-band selection; with `touching` (Alt) objects it touches
+    /// count too.
     Marquee {
         start: Point,
         current: Point,
+        touching: bool,
+    },
+    /// Freehand Pick lasso; with `touching` (Alt) objects it touches count
+    /// too.
+    Lasso {
+        points: Vec<Point>,
+        touching: bool,
     },
     /// Freehand stroke being drawn.
     Freehand {
@@ -2013,12 +2021,28 @@ impl App {
             .map(|l| l.id)
     }
 
+    /// The selected objects, each in page space (an object inside a group
+    /// with its group's transform taken in).
     pub fn selected_shapes(&self) -> Vec<Shape> {
         let doc = self.doc();
         self.selection
             .iter()
-            .filter_map(|id| doc.shape(*id).ok().map(|(_, s)| s.clone()))
+            .filter_map(|id| doc.shape_on_page(*id))
             .collect()
+    }
+
+    /// Some selected object lies inside a group (chosen with Ctrl+click or
+    /// in the Objects docker).
+    pub fn selection_nested(&self) -> bool {
+        let doc = self.doc();
+        self.selection.iter().any(|id| doc.is_nested(*id))
+    }
+
+    /// Turn the rotate and skew handles on or off; the centre of rotation
+    /// starts in the middle each time.
+    pub fn toggle_rotate_mode(&mut self) {
+        self.rotate_mode = !self.rotate_mode;
+        self.rotation_pivot = None;
     }
 
     pub fn selection_bounds(&self) -> Option<Rect> {
@@ -2735,7 +2759,7 @@ impl App {
             Err(e) => self.status = e.to_string(),
         }
         self.selection
-            .retain(|id| self.engine.document().shape(*id).is_ok());
+            .retain(|id| self.engine.document().find_shape(*id).is_some());
     }
 
     pub fn redo(&mut self) {
@@ -2744,7 +2768,7 @@ impl App {
             Err(e) => self.status = e.to_string(),
         }
         self.selection
-            .retain(|id| self.engine.document().shape(*id).is_ok());
+            .retain(|id| self.engine.document().find_shape(*id).is_some());
     }
 
     // ----- files -------------------------------------------------------------

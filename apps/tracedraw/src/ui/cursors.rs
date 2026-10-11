@@ -87,17 +87,18 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
         }
         Drag::Move { .. } | Drag::Pivot => return Some(moving),
         Drag::Scale { handle, .. } => return Some(ToolCursor::System(resize_icon(*handle))),
-        Drag::Rotate { .. } => return Some(ToolCursor::Rotate),
+        Drag::Rotate { .. } | Drag::RotateGuide { .. } => return Some(ToolCursor::Rotate),
         Drag::Skew { handle, .. } => {
             return Some(ToolCursor::Skew {
                 horizontal: matches!(handle, Handle::N | Handle::S),
             })
         }
+        Drag::MoveGuide { guide, .. } => return Some(across_guide(&guide.line)),
         Drag::None => {}
         _ => return None,
     }
     let pos = pos?;
-    if app.pivot_at(pos) {
+    if app.pivot_at(pos) || app.center_mark_at(pos) {
         return Some(moving);
     }
     if let Some(h) = app.handle_at(pos) {
@@ -111,8 +112,44 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
             }
         });
     }
-    let id = app.hit_test(app.view.to_page(pos))?;
-    app.selection.contains(&id).then_some(moving)
+    let p = app.view.to_page(pos);
+    // A guideline's rotation handles, then the guideline itself where no
+    // object is (objects win a press there).
+    if app.guide_rotate_handle_at(p) {
+        return Some(ToolCursor::Rotate);
+    }
+    if app.hit_test(p).is_some() {
+        return Some(moving);
+    }
+    let guides = app.page_guides();
+    let g = guides.get(app.guide_at(p)?)?;
+    (!g.locked).then(|| across_guide(&g.line))
+}
+
+/// The arrows for moving a guideline: up and down for a horizontal one,
+/// sideways for a vertical one, the move arrows for a slanted one.
+fn across_guide(line: &tracedraw_core::document::GuideLine) -> ToolCursor {
+    use tracedraw_core::document::GuideLine;
+    ToolCursor::System(match line {
+        GuideLine::Horizontal { .. } => egui::CursorIcon::ResizeVertical,
+        GuideLine::Vertical { .. } => egui::CursorIcon::ResizeHorizontal,
+        GuideLine::Angled { .. } => egui::CursorIcon::Move,
+    })
+}
+
+/// The pointer while a guideline or the ruler origin is dragged out of
+/// the rulers (with any tool): the arrows across the new guideline, the
+/// cross hair for the origin.
+pub fn ruler_drag_cursor(app: &App) -> Option<egui::CursorIcon> {
+    match &app.drag {
+        Drag::NewGuide { horizontal, .. } => Some(if *horizontal {
+            egui::CursorIcon::ResizeVertical
+        } else {
+            egui::CursorIcon::ResizeHorizontal
+        }),
+        Drag::RulerOrigin { .. } => Some(egui::CursorIcon::Crosshair),
+        _ => None,
+    }
 }
 
 /// What the Shape tool's arrow points at: what is being dragged, else

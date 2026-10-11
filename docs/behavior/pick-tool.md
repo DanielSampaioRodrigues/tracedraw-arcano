@@ -4,15 +4,17 @@
 |---|---|
 | Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds) |
 | Shift+click | add or remove from the selection |
-| Alt+click | select the object beneath the current one (dig) |
-| Click on selected | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
-| Drag on empty | marquee; objects fully inside are selected; Alt makes touching count |
+| Ctrl+click | the object inside a group: the innermost object under the pointer (in nested groups too); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
+| Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups; Shift+Alt adds it |
+| Click on a selected object (any of a selection), or on the centre mark | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
+| Drag on empty | marquee (a dashed blue frame); objects wholly inside are selected; with Alt held when the drag ends, every object the frame touches: its outline crosses or lies in the frame, or the frame lies in its fill (text, bitmaps, tables and clip frames anywhere in their box; a group when one of its objects counts); Shift keeps the selection and adds |
+| Drag the centre mark (the "x") | moves the selection, also where the mark lies on nothing (an outline-only ring) |
 | Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on; let go over the document palette to add the objects' colours to it instead of moving them |
 | Corner handle | scale proportionally from the opposite corner; Shift from the centre; Ctrl in whole steps of 100 % (crossing the other side gives the mirror image at the same size); Alt scales freely |
 | Side handle | stretch one axis from the opposite side (across it: mirrored); Shift from the centre; Ctrl in steps of 100 % |
 | Rotate handle (rotate mode, corners) | rotate about the centre of rotation; Ctrl in steps of the constrain angle (15 degrees) |
 | Skew handle (rotate mode, sides) | slant: the top and bottom handles sideways, the left and right ones up and down, the opposite side fixed; Shift about the centre line; Ctrl in steps of the constrain angle |
-| Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point (kept while the selection stays the same); double-click puts it back in the middle; a click on it keeps rotate mode |
+| Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point (kept while rotate mode stays on for the same selection; it starts in the middle each time rotate mode comes on); double-click puts it back in the middle; a click on it keeps rotate mode |
 | Right click during a move, scale, rotation or skew | the original stays and a copy takes the change (the copy becomes the selection); a second right click takes it back; the status bar says which |
 | Esc during a move, scale, rotation or skew | cancels it; nothing changes |
 | Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |
@@ -24,7 +26,9 @@
 The toolbox button of each flyout shows the tool last used from it; the
 choice is kept between sessions (`toolbox` in the settings file).
 
-Selecting inside a group: Ctrl+click.
+The status bar names an object chosen inside a group "Rectangle in a
+group on Layer 1". Arrange commands (order, group, combine) act on the
+objects on layers and leave an object chosen inside a group where it is.
 
 The drag keeps going while the left button is held, also after a right
 click (the windowing layer ends a drag when any button goes up); the
@@ -39,14 +43,17 @@ The pointer says what a press would do (code: `ui/cursors.rs`):
 |---|---|
 | A corner handle | diagonal resize arrows (top left and bottom right, or top right and bottom left) |
 | A side handle | vertical (top, bottom) or horizontal (left, right) resize arrows |
-| A selected object, or the centre of rotation | move arrows |
+| An object (selected or not), the centre mark or the centre of rotation | move arrows |
+| A horizontal or vertical guideline (where no object is) | up and down or sideways arrows across it; the move arrows on a slanted one; the arrow on a locked one |
+| A rotation handle of a guideline in rotate mode | a turning arrow |
 | A corner handle in rotate mode | a turning arrow |
 | A side handle in rotate mode | two half arrows along the slant (sideways for top and bottom, up and down for the sides) |
 | Anything else | the arrow (the cross hair with Options > Tools > Pick > Cross hair) |
 
 While dragging, the pointer keeps the shape of what is being done (move
 arrows, the handle's resize arrows, the turning arrow, the slant
-arrows). Resize and move arrows are the system's own; the turning and
+arrows, the arrows across a guideline being moved or dragged out of a
+ruler, the cross hair while the ruler origin is dragged). Resize and move arrows are the system's own; the turning and
 slant arrows are drawn by TraceDraw, black on a white halo.
 
 ## Dragging with the right mouse button
@@ -99,6 +106,14 @@ break instead.
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do`
 - `pick_drag_tests::the_status_bar_tells_how_far_how_much_and_what_angle`
 - `pick_drag_tests::objects_dropped_on_the_document_palette_give_their_colours`
+- `pick_drag_tests::ctrl_click_chooses_an_object_inside_a_group`
+- `pick_drag_tests::alt_click_digs_to_the_object_beneath`
+- `pick_drag_tests::alt_marquees_take_what_they_touch`
+- `pick_drag_tests::clicking_the_selection_or_its_centre_mark_turns_the_handles`
+- `pick_drag_tests::the_pointer_shows_moves_for_objects_and_guidelines`
+- `select_region::tests` (wholly inside, touching, groups, lassos)
+- `command::tests::objects_inside_groups_can_be_changed_and_deleted` (core)
+- `tests::the_drag_preview_reaches_objects_inside_groups` (render)
 - `drop_menu::tests::move_here_and_copy_here`
 - `drop_menu::tests::fill_outline_and_properties_go_onto_the_target`
 - `drop_menu::tests::place_inside_makes_the_target_a_clip_frame`

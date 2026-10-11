@@ -99,48 +99,177 @@ impl App {
         let doc = self.doc();
         let page = doc.page(self.page).ok()?;
         let tol = 3.0 / self.view.zoom as f64;
-        for layer in page.layers.iter().rev() {
-            if !layer.visible || layer.locked {
-                continue;
+        page.layers
+            .iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .find(|s| !s.locked && s.visible && !skip(s.id) && self.shape_hit(s, p, tol))
+            .map(|s| s.id)
+    }
+
+    /// `s` (in page space) is under `p` within `tol` page units: text,
+    /// groups, tables, bitmaps, clip frames and symbols anywhere in their
+    /// box; filled objects inside their shape (an open curve only when the
+    /// document fills open curves, unfilled ones too with "Treat all
+    /// objects as filled"); otherwise near the outline.
+    fn shape_hit(&self, s: &tracedraw_core::Shape, p: Point, tol: f64) -> bool {
+        if !s.bounds().inflate(tol, tol).contains(p) {
+            return false;
+        }
+        if matches!(
+            s.kind,
+            ShapeKind::Text { .. }
+                | ShapeKind::Group { .. }
+                | ShapeKind::Table(_)
+                | ShapeKind::Bitmap { .. }
+                | ShapeKind::ClipFrame { .. }
+                | ShapeKind::SymbolInstance { .. }
+        ) {
+            return true;
+        }
+        let path = s.page_path();
+        let open = matches!(s.kind, ShapeKind::Path { closed: false, .. });
+        let filled =
+            !matches!(s.fill, Fill::None) && (!open || self.doc().metadata.fill_open_curves);
+        if (filled || self.settings.treat_all_filled) && path.contains(p) {
+            return true;
+        }
+        crate::canvas::distance_to_path(&path, p) <= tol * 1.5
+    }
+
+    /// The children of a group (`g` in page space) that are under `p`, top
+    /// first, each in page space; a child group counts only where one of
+    /// its own objects is.
+    fn children_hit(
+        &self,
+        g: &tracedraw_core::Shape,
+        p: Point,
+        tol: f64,
+    ) -> Vec<tracedraw_core::Shape> {
+        let ShapeKind::Group { children } = &g.kind else {
+            return Vec::new();
+        };
+        children
+            .iter()
+            .rev()
+            .filter(|c| c.visible && !c.locked)
+            .map(|c| {
+                let mut c = c.clone();
+                c.transform = g.transform * c.transform;
+                c
+            })
+            .filter(|c| {
+                if matches!(c.kind, ShapeKind::Group { .. }) {
+                    !self.children_hit(c, p, tol).is_empty()
+                } else {
+                    self.shape_hit(c, p, tol)
+                }
+            })
+            .collect()
+    }
+
+    /// The innermost object at `p` (Ctrl+click): in the topmost object
+    /// there, while it is a group, its topmost child there. A group with
+    /// no object of its own at `p` is itself the answer.
+    pub fn hit_test_deep(&self, p: Point) -> Option<ShapeId> {
+        let top = self.hit_test(p)?;
+        let tol = 3.0 / self.view.zoom as f64;
+        let mut current = self.doc().shape(top).ok()?.1.clone();
+        while let Some(c) = self.children_hit(&current, p, tol).into_iter().next() {
+            current = c;
+        }
+        Some(current.id)
+    }
+
+    /// Every object at `p`, top first: the objects on the layers, or with
+    /// `deep` the innermost objects inside groups (Alt+click digs through
+    /// these, Ctrl+Alt+click through the deep ones).
+    pub fn hits_at(&self, p: Point, deep: bool) -> Vec<ShapeId> {
+        let doc = self.doc();
+        let Ok(page) = doc.page(self.page) else {
+            return Vec::new();
+        };
+        let tol = 3.0 / self.view.zoom as f64;
+        let mut out = Vec::new();
+        fn leaves(
+            app: &App,
+            s: &tracedraw_core::Shape,
+            p: Point,
+            tol: f64,
+            out: &mut Vec<ShapeId>,
+        ) {
+            let inner = app.children_hit(s, p, tol);
+            if inner.is_empty() {
+                out.push(s.id);
             }
-            for s in layer.shapes.iter().rev() {
-                if s.locked || !s.visible || skip(s.id) {
-                    continue;
-                }
-                let b = s.bounds().inflate(tol, tol);
-                if !b.contains(p) {
-                    continue;
-                }
-                // Text, groups, tables, bitmaps, clip frames and symbols hit
-                // anywhere in their box.
-                if matches!(
-                    s.kind,
-                    ShapeKind::Text { .. }
-                        | ShapeKind::Group { .. }
-                        | ShapeKind::Table(_)
-                        | ShapeKind::Bitmap { .. }
-                        | ShapeKind::ClipFrame { .. }
-                        | ShapeKind::SymbolInstance { .. }
-                ) {
-                    return Some(s.id);
-                }
-                // Filled objects hit inside their shape (an open curve only
-                // when the document fills open curves); with "Treat all
-                // objects as filled" unfilled ones do too. Otherwise only
-                // near the outline.
-                let path = s.page_path();
-                let open = matches!(s.kind, ShapeKind::Path { closed: false, .. });
-                let filled =
-                    !matches!(s.fill, Fill::None) && (!open || doc.metadata.fill_open_curves);
-                if (filled || self.settings.treat_all_filled) && path.contains(p) {
-                    return Some(s.id);
-                }
-                if crate::canvas::distance_to_path(&path, p) <= tol * 1.5 {
-                    return Some(s.id);
-                }
+            for c in &inner {
+                leaves(app, c, p, tol, out);
             }
         }
-        None
+        for s in page
+            .layers
+            .iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .filter(|s| !s.locked && s.visible && self.shape_hit(s, p, tol))
+        {
+            if deep {
+                leaves(self, s, p, tol, &mut out);
+            } else {
+                out.push(s.id);
+            }
+        }
+        out
+    }
+
+    /// Add the objects `region` takes (wholly inside, or with `touching`
+    /// those it touches) to the selection: on unlocked, visible layers,
+    /// not locked or hidden.
+    pub fn select_in_region(&mut self, region: crate::select_region::Region, touching: bool) {
+        let doc = self.doc();
+        let Ok(page) = doc.page(self.page) else {
+            return;
+        };
+        let fill_open = doc.metadata.fill_open_curves;
+        let all_filled = self.settings.treat_all_filled;
+        let fill_counts = |s: &tracedraw_core::Shape| {
+            all_filled
+                || (!matches!(s.fill, Fill::None)
+                    && (fill_open || !matches!(s.kind, ShapeKind::Path { closed: false, .. })))
+        };
+        let mut ids = self.selection.clone();
+        for s in page
+            .layers
+            .iter()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| &l.shapes)
+            .filter(|s| s.visible && !s.locked)
+        {
+            if !ids.contains(&s.id)
+                && crate::select_region::takes(region, s, touching, &fill_counts)
+            {
+                ids.push(s.id);
+            }
+        }
+        self.select(ids);
+    }
+
+    /// Add `id` to the selection, taking out the groups holding it and the
+    /// objects inside it, so nothing is selected twice over.
+    pub fn select_add(&mut self, id: ShapeId) {
+        let above = self.doc().ancestors(id);
+        let doc = self.doc();
+        let keep: Vec<ShapeId> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|s| *s != id && !above.contains(s) && !doc.ancestors(*s).contains(&id))
+            .collect();
+        self.selection = keep;
+        self.selection.push(id);
+        self.rotate_mode = false;
     }
 
     /// Screen-space handle positions for the selection box.
@@ -174,6 +303,28 @@ impl App {
             && self
                 .rotation_center()
                 .is_some_and(|c| self.view.to_screen(c).distance(screen) <= PIVOT_PX)
+    }
+
+    /// The pointer is on the selection's centre mark, the "x" (outside
+    /// rotate mode): a drag there moves the selection, a click toggles the
+    /// rotate and skew handles.
+    pub fn center_mark_at(&self, screen: egui::Pos2) -> bool {
+        !self.rotate_mode
+            && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+            && self
+                .selection_bounds()
+                .is_some_and(|b| self.view.to_screen(b.center()).distance(screen) <= PIVOT_PX)
+    }
+
+    /// Start moving the selection from `p` (page).
+    fn start_move(&mut self, p: Point) {
+        self.drag = Drag::Move {
+            start: p,
+            last: p,
+            total: Vec2::ZERO,
+            start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
+            source: self.selection_snap_source(p),
+        };
     }
 
     /// Where the next node of the curve being drawn goes for the pointer
@@ -363,8 +514,7 @@ impl App {
             return;
         }
         match self.tool {
-            Tool::Pick => self.pick_input(response, p, screen, mods),
-            Tool::FreeformPick => self.effects_input(response, p, mods),
+            Tool::Pick | Tool::FreeformPick => self.pick_input(response, p, screen, mods),
             Tool::Shape => {
                 if !self.effect_node_input(response, p) {
                     self.shape_input(response, p, mods)
@@ -573,6 +723,11 @@ impl App {
                 }
                 return;
             }
+            // The centre mark moves the selection, whatever lies under it.
+            if self.center_mark_at(screen) && !mods.shift {
+                self.start_move(p);
+                return;
+            }
             // Guidelines lie above the layers but objects win a press, as
             // they are what is usually edited; the rotation handles of a
             // guideline in rotate mode win over objects.
@@ -581,31 +736,39 @@ impl App {
             {
                 return;
             }
-            match self.hit_test(p) {
+            // Ctrl takes the object inside a group, unless the press is on
+            // what is selected already (Ctrl then keeps the move straight).
+            let hit = match self.hit_test(p) {
+                Some(top) if mods.ctrl && !self.selection.contains(&top) => self.hit_test_deep(p),
+                other => other,
+            };
+            match hit {
                 Some(id) => {
                     if mods.shift {
                         if !self.selection.contains(&id) {
-                            self.selection.push(id);
+                            self.select_add(id);
                         }
                     } else if !self.selection.contains(&id) {
                         self.select(vec![id]);
                     }
-                    self.drag = Drag::Move {
-                        start: p,
-                        last: p,
-                        total: Vec2::ZERO,
-                        start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
-                        source: self.selection_snap_source(p),
-                    };
+                    self.start_move(p);
                 }
                 None => {
                     if !mods.shift {
                         self.select(Vec::new());
                     }
                     self.deselect_guides();
-                    self.drag = Drag::Marquee {
-                        start: p,
-                        current: p,
+                    self.drag = if self.tool == Tool::FreeformPick {
+                        Drag::Lasso {
+                            points: vec![p],
+                            touching: mods.alt,
+                        }
+                    } else {
+                        Drag::Marquee {
+                            start: p,
+                            current: p,
+                            touching: mods.alt,
+                        }
                     };
                 }
             }
@@ -619,24 +782,58 @@ impl App {
             if self.handle_at(screen).is_some() || self.pivot_at(screen) {
                 return;
             }
+            // A click on the centre mark: like a click on the selection.
+            if self.center_mark_at(screen) && !mods.shift && !mods.alt {
+                self.toggle_rotate_mode();
+                return;
+            }
             if (self.guide_rotate.is_some() || self.hit_test(p).is_none())
                 && self.click_guide(p, mods.shift)
             {
                 return;
             }
             self.deselect_guides();
-            match self.hit_test(p) {
+            // Alt digs: the object beneath the selected one there (with
+            // Ctrl among the objects inside groups).
+            if mods.alt {
+                let hits = self.hits_at(p, mods.ctrl);
+                if !hits.is_empty() {
+                    let below = match self.selection.as_slice() {
+                        [one] => hits
+                            .iter()
+                            .position(|h| h == one)
+                            .map(|i| (i + 1) % hits.len()),
+                        _ => None,
+                    };
+                    let id = hits[below.unwrap_or(0)];
+                    if mods.shift {
+                        self.select_add(id);
+                    } else {
+                        self.select(vec![id]);
+                    }
+                    return;
+                }
+            }
+            // Ctrl: the object inside a group.
+            let hit = if mods.ctrl {
+                self.hit_test_deep(p)
+            } else {
+                self.hit_test(p)
+            };
+            match hit {
                 Some(id) if mods.shift => {
                     if let Some(i) = self.selection.iter().position(|s| *s == id) {
                         self.selection.remove(i);
+                        self.rotate_mode = false;
                     } else {
-                        self.selection.push(id);
+                        self.select_add(id);
                     }
                 }
                 Some(id) => {
-                    if self.selection == vec![id] {
-                        // Second click: toggle rotate/skew handles.
-                        self.rotate_mode = !self.rotate_mode;
+                    if self.selection.contains(&id) {
+                        // A click on what is selected: toggle the rotate and
+                        // skew handles.
+                        self.toggle_rotate_mode();
                     } else {
                         self.select(vec![id]);
                     }
@@ -713,7 +910,16 @@ impl App {
                     *total = nt;
                 }
             }
-            Drag::Marquee { current, .. } => *current = p,
+            Drag::Marquee {
+                current, touching, ..
+            } => {
+                *current = p;
+                *touching = mods.alt;
+            }
+            Drag::Lasso { points, touching } => {
+                points.push(p);
+                *touching = mods.alt;
+            }
             Drag::Scale {
                 current, mods: m, ..
             }
@@ -1144,23 +1350,19 @@ impl App {
                     self.finish_transform(t);
                 }
             }
-            Drag::Marquee { start, current } => {
+            Drag::Marquee {
+                start,
+                current,
+                touching,
+            } => {
                 let r = Rect::from_points(start, current);
                 if r.width() > 0.1 || r.height() > 0.1 {
-                    if let Ok(page) = self.doc().page(self.page) {
-                        let mut ids = self.selection.clone();
-                        for s in page
-                            .layers
-                            .iter()
-                            .filter(|l| l.visible && !l.locked)
-                            .flat_map(|l| &l.shapes)
-                        {
-                            if r.contains_rect(s.bounds()) && !ids.contains(&s.id) {
-                                ids.push(s.id);
-                            }
-                        }
-                        self.select(ids);
-                    }
+                    self.select_in_region(crate::select_region::Region::Rect(r), touching);
+                }
+            }
+            Drag::Lasso { points, touching } => {
+                if points.len() >= 3 {
+                    self.select_in_region(crate::select_region::Region::Polygon(&points), touching);
                 }
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
@@ -1176,9 +1378,6 @@ impl App {
                         self.selection = ids;
                     }
                 }
-            }
-            Drag::Freehand { points } if self.tool == Tool::FreeformPick => {
-                self.finish_lasso(points)
             }
             Drag::Freehand { points } => {
                 let tol = 0.6 / self.view.zoom as f64 * 2.0;

@@ -67,9 +67,11 @@ pub fn object_info(app: &App) -> String {
         return tr("status.editing_text");
     }
     let shapes = app.selected_shapes();
+    // An object inside a group is on its group's layer.
     let layer_of = |id| {
-        app.doc()
-            .shape(id)
+        let doc = app.doc();
+        doc.top_level_of(id)
+            .and_then(|top| doc.shape(top).ok())
             .map(|(l, _)| l.name.clone())
             .unwrap_or_default()
     };
@@ -90,6 +92,9 @@ pub fn object_info(app: &App) -> String {
             };
             if app.is_effect_clone(s.id) {
                 kind = format!("{kind} ({})", tr("status.effect_clone"));
+            }
+            if app.doc().is_nested(s.id) {
+                kind = trf("status.in_group", &[("k", &kind)]);
             }
             trf(
                 "status.object_on_layer",

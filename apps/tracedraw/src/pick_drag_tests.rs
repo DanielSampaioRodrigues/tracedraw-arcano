@@ -598,9 +598,11 @@ fn click_at(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
         vec![button(at, false, PointerButton::Primary, mods)],
         mods,
     );
-    // Past the double-click time, so the next click is a click of its own.
-    std::thread::sleep(std::time::Duration::from_millis(350));
-    frame(ctx, app, Vec::new(), mods);
+    // Past the double-click time (frames advance the input clock by a
+    // sixtieth of a second each), so the next click is a click of its own.
+    for _ in 0..20 {
+        frame(ctx, app, Vec::new(), mods);
+    }
 }
 
 fn last_path(app: &App) -> tracedraw_core::BezPath {
@@ -672,4 +674,335 @@ fn ctrl_keeps_lines_to_the_constrain_angle() {
         (d.y.atan2(d.x).to_degrees() - 45.0).abs() < 1e-6,
         "45 degrees: {pts:?}"
     );
+}
+
+/// Two filled 20 x 20 mm squares grouped (at x 100 and 140, y 100) and a
+/// third square on its own at (100, 150), nothing selected.
+fn grouped() -> (egui::Context, App, [ShapeId; 3], ShapeId) {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let mut ids = Vec::new();
+    for (x, y) in [(100.0, 100.0), (140.0, 100.0), (100.0, 150.0)] {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(x, y, x + 20.0, y + 20.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            30, 30, 200,
+        )));
+        ids.push(id);
+    }
+    app.select(vec![ids[0], ids[1]]);
+    app.group_selection();
+    let group = app.selection[0];
+    // The group is moved, so its objects' space is not the page's.
+    app.run(tracedraw_core::Command::TransformShapes {
+        shapes: vec![group],
+        transform: Affine::translate((5.0, 0.0)),
+    });
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    (ctx, app, [ids[0], ids[1], ids[2]], group)
+}
+
+fn page_bounds(app: &App, id: ShapeId) -> Rect {
+    app.doc()
+        .shape_on_page(id)
+        .map(|s| s.bounds())
+        .expect("shape")
+}
+
+#[test]
+fn ctrl_click_chooses_an_object_inside_a_group() {
+    let (ctx, mut app, [a, b, _c], group) = grouped();
+    let on_a = app.view.to_screen(Point::new(115.0, 110.0));
+    // A plain click takes the group.
+    click_at(&ctx, &mut app, on_a, Modifiers::NONE);
+    assert_eq!(app.selection, vec![group]);
+    // Ctrl+click: the square inside it, with round handles and the status
+    // bar saying where it is.
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![a]);
+    assert!(app.selection_nested());
+    assert!(crate::ui::status::object_info(&app).contains("in a group"));
+    let before_b = page_bounds(&app, b);
+    // Dragging it moves that square only, by the drag on the page.
+    let before = page_bounds(&app, a);
+    let to = app.view.to_screen(Point::new(115.0, 130.0));
+    drag(&ctx, &mut app, on_a, to, Modifiers::NONE, Vec::new());
+    let after = page_bounds(&app, a);
+    assert!(close(after.y0 - before.y0, 20.0), "{before:?} {after:?}");
+    assert!(close(after.x0, before.x0));
+    assert_eq!(page_bounds(&app, b), before_b);
+    assert_eq!(app.doc().top_level_of(a), Some(group));
+    // Undo and redo keep it chosen.
+    app.undo();
+    assert_eq!(app.selection, vec![a]);
+    assert!(close(page_bounds(&app, a).y0, before.y0));
+    app.redo();
+    assert_eq!(app.selection, vec![a]);
+    // A colour reaches it alone.
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        0, 200, 0,
+    )));
+    let fill_of = |app: &App, id| app.doc().find_shape(id).map(|s| s.fill.clone());
+    assert_ne!(fill_of(&app, a), fill_of(&app, b));
+    // Ctrl+Shift+click adds the other square; the group is never selected
+    // with its own objects.
+    let on_b = app.view.to_screen(Point::new(155.0, 110.0));
+    click_at(&ctx, &mut app, on_b, Modifiers::CTRL | Modifiers::SHIFT);
+    assert_eq!(app.selection, vec![a, b]);
+    app.select_add(group);
+    assert_eq!(app.selection, vec![group]);
+    // Delete takes the chosen square out of the group.
+    app.select(vec![a]);
+    app.delete_selection();
+    assert!(app.doc().find_shape(a).is_none());
+    assert_eq!(app.doc().top_level_of(b), Some(group));
+}
+
+#[test]
+fn alt_click_digs_to_the_object_beneath() {
+    let (ctx, mut app, [_a, _b, c], _group) = grouped();
+    // A fourth square over the third one.
+    let top = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(105.0, 155.0, 125.0, 175.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![top]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        200, 200, 0,
+    )));
+    let both = app.view.to_screen(Point::new(110.0, 160.0));
+    click_at(&ctx, &mut app, both, Modifiers::NONE);
+    assert_eq!(app.selection, vec![top]);
+    click_at(&ctx, &mut app, both, Modifiers::ALT);
+    assert_eq!(app.selection, vec![c]);
+    // Once more: round to the top again.
+    click_at(&ctx, &mut app, both, Modifiers::ALT);
+    assert_eq!(app.selection, vec![top]);
+    assert!(!app.rotate_mode);
+}
+
+#[test]
+fn alt_marquees_take_what_they_touch() {
+    let (ctx, mut app, [_a, _b, c], group) = grouped();
+    // Across the lone square and the group's first square, holding
+    // neither wholly.
+    let from = app.view.to_screen(Point::new(90.0, 112.0));
+    let to = app.view.to_screen(Point::new(112.0, 158.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert!(app.selection.is_empty());
+    drag(&ctx, &mut app, from, to, Modifiers::ALT, Vec::new());
+    let mut sel = app.selection.clone();
+    sel.sort_by_key(|s| s.raw());
+    let mut want = vec![group, c];
+    want.sort_by_key(|s| s.raw());
+    assert_eq!(sel, want);
+    // Round all three: everything.
+    app.select(Vec::new());
+    let from = app.view.to_screen(Point::new(90.0, 90.0));
+    let to = app.view.to_screen(Point::new(180.0, 180.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection.len(), 2);
+}
+
+/// The screen points of a lasso through `pts` (page), in small steps as a
+/// hand draws it.
+fn lasso_path(app: &App, pts: &[Point]) -> Vec<Pos2> {
+    let mut out = Vec::new();
+    for w in pts.windows(2) {
+        for i in 0..8 {
+            let t = i as f64 / 8.0;
+            out.push(app.view.to_screen(w[0] + (w[1] - w[0]) * t));
+        }
+    }
+    if let Some(last) = pts.last() {
+        out.push(app.view.to_screen(*last));
+    }
+    out
+}
+
+#[test]
+fn the_freehand_pick_lassoes_and_has_the_pick_tools_handles() {
+    let (ctx, mut app, [_a, _b, c], group) = grouped();
+    app.set_tool(Tool::FreeformPick);
+    // A loop round the lone square only.
+    let pts = [
+        Point::new(90.0, 140.0),
+        Point::new(130.0, 140.0),
+        Point::new(130.0, 180.0),
+        Point::new(90.0, 180.0),
+        Point::new(90.0, 141.0),
+    ];
+    let screen = lasso_path(&app, &pts);
+    let lasso = |ctx: &egui::Context, app: &mut App, mods: Modifiers| {
+        frame(ctx, app, vec![Event::PointerMoved(screen[0])], mods);
+        frame(
+            ctx,
+            app,
+            vec![button(screen[0], true, PointerButton::Primary, mods)],
+            mods,
+        );
+        for p in &screen[1..] {
+            frame(ctx, app, vec![Event::PointerMoved(*p)], mods);
+        }
+        frame(
+            ctx,
+            app,
+            vec![button(
+                *screen.last().expect("point"),
+                false,
+                PointerButton::Primary,
+                mods,
+            )],
+            mods,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    lasso(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.selection, vec![c]);
+    // The handles scale as with the Pick tool.
+    let before = page_bounds(&app, c);
+    let ne = handle(&app, Handle::NE);
+    drag(
+        &ctx,
+        &mut app,
+        ne,
+        ne + egui::vec2(40.0, -40.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert!(page_bounds(&app, c).width() > before.width() + 1.0);
+    // A loop through the group's first square takes the group with Alt.
+    app.select(Vec::new());
+    let screen2 = lasso_path(
+        &app,
+        &[
+            Point::new(110.0, 90.0),
+            Point::new(130.0, 90.0),
+            Point::new(130.0, 130.0),
+            Point::new(110.0, 130.0),
+        ],
+    );
+    let mods = Modifiers::ALT;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(screen2[0])], mods);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(screen2[0], true, PointerButton::Primary, mods)],
+        mods,
+    );
+    for p in &screen2[1..] {
+        frame(&ctx, &mut app, vec![Event::PointerMoved(*p)], mods);
+    }
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(
+            *screen2.last().expect("point"),
+            false,
+            PointerButton::Primary,
+            mods,
+        )],
+        mods,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.selection, vec![group]);
+}
+
+#[test]
+fn clicking_the_selection_or_its_centre_mark_turns_the_handles() {
+    let (ctx, mut app, [_a, _b, c], group) = grouped();
+    app.select(vec![group, c]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Any selected object toggles rotate mode for the whole selection.
+    let on_c = app.view.to_screen(Point::new(110.0, 160.0));
+    click_at(&ctx, &mut app, on_c, Modifiers::NONE);
+    assert!(app.rotate_mode);
+    assert_eq!(app.selection.len(), 2);
+    // A moved centre of rotation goes back to the middle when rotate mode
+    // comes on again.
+    let middle = app.selection_bounds().expect("bounds").center();
+    app.rotation_pivot = Some((app.selection.clone(), Point::new(0.0, 0.0)));
+    click_at(&ctx, &mut app, on_c, Modifiers::NONE);
+    assert!(!app.rotate_mode);
+    click_at(&ctx, &mut app, on_c, Modifiers::NONE);
+    assert!(app.rotate_mode);
+    assert_eq!(app.rotation_center(), Some(middle));
+    // The centre mark of an outline-only ring: it lies on nothing, yet a
+    // click there turns the handles and a drag moves the ring.
+    app.select(Vec::new());
+    let ring = app
+        .new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(20.0, 200.0, 60.0, 240.0),
+            arc: None,
+        })
+        .expect("ellipse");
+    app.select(vec![ring]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let mark = app.view.to_screen(Point::new(40.0, 220.0));
+    assert_eq!(app.hit_test(Point::new(40.0, 220.0)), None);
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(mark)),
+        ToolCursor::System(egui::CursorIcon::Move)
+    );
+    let before = page_bounds(&app, ring);
+    let to = app.view.to_screen(Point::new(70.0, 220.0));
+    drag(&ctx, &mut app, mark, to, Modifiers::NONE, Vec::new());
+    assert!(close(page_bounds(&app, ring).x0 - before.x0, 30.0));
+    assert_eq!(app.selection, vec![ring]);
+    let moved = app.view.to_screen(Point::new(70.0, 220.0));
+    click_at(&ctx, &mut app, moved, Modifiers::NONE);
+    assert!(app.rotate_mode);
+}
+
+#[test]
+fn the_pointer_shows_moves_for_objects_and_guidelines() {
+    let (_ctx, mut app, [a, _b, _c], _group) = grouped();
+    let cursor = |app: &App, at: Pos2| for_tool(app, false, false, false, Some(at));
+    // Unselected objects show the move arrows too.
+    assert!(app.selection.is_empty());
+    let on_a = app.view.to_screen(Point::new(115.0, 110.0));
+    assert_eq!(
+        cursor(&app, on_a),
+        ToolCursor::System(egui::CursorIcon::Move)
+    );
+    assert!(app.doc().is_nested(a));
+    // Guidelines: arrows across them; a locked one keeps the arrow.
+    app.add_guide(tracedraw_core::document::Guide::horizontal(250.0));
+    app.add_guide(tracedraw_core::document::Guide::vertical(250.0));
+    let on_h = app.view.to_screen(Point::new(200.0, 250.0));
+    let on_v = app.view.to_screen(Point::new(250.0, 200.0));
+    assert_eq!(
+        cursor(&app, on_h),
+        ToolCursor::System(egui::CursorIcon::ResizeVertical)
+    );
+    assert_eq!(
+        cursor(&app, on_v),
+        ToolCursor::System(egui::CursorIcon::ResizeHorizontal)
+    );
+    app.set_guides_locked(&[0], true);
+    assert_eq!(
+        cursor(&app, on_h),
+        ToolCursor::System(egui::CursorIcon::Default)
+    );
+    // Dragging a new guideline out of a ruler.
+    app.drag = Drag::NewGuide {
+        horizontal: true,
+        pos: Point::ZERO,
+    };
+    assert_eq!(
+        crate::ui::cursors::ruler_drag_cursor(&app),
+        Some(egui::CursorIcon::ResizeVertical)
+    );
+    app.drag = Drag::None;
 }

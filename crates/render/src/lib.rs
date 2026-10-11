@@ -172,6 +172,7 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
         zoom: opts.view.zoom,
         flags,
         symbols: &doc.symbols,
+        preview: opts.preview.as_ref(),
     };
     if let Some(bg) = &page.background {
         let mut bg_shape = Shape::new(
@@ -192,10 +193,7 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
             continue;
         }
         for shape in &layer.shapes {
-            let extra = match &opts.preview {
-                Some(p) if p.shapes.contains(&shape.id) => p.transform,
-                _ => Affine::IDENTITY,
-            };
+            let extra = r.child_transform(shape, Affine::IDENTITY);
             r.draw_shape(shape, extra);
         }
     }
@@ -208,6 +206,9 @@ struct Renderer<'a> {
     zoom: f64,
     flags: Flags,
     symbols: &'a [tracedraw_core::Symbol],
+    /// Objects drawn displaced (the live drag preview), on a layer or
+    /// inside a group or a clip frame.
+    preview: Option<&'a Preview>,
 }
 
 impl Renderer<'_> {
@@ -222,6 +223,16 @@ impl Renderer<'_> {
             zoom: self.zoom,
             flags: self.flags,
             symbols: self.symbols,
+            preview: self.preview,
+        }
+    }
+
+    /// The transform `child` is drawn with inside `transform`: the live
+    /// drag preview's first when the child is being dragged.
+    fn child_transform(&self, child: &Shape, transform: Affine) -> Affine {
+        match self.preview {
+            Some(p) if p.shapes.contains(&child.id) => p.transform * transform,
+            _ => transform,
         }
     }
 
@@ -281,7 +292,8 @@ impl Renderer<'_> {
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
-                self.draw_shape(c, transform);
+                let t = self.child_transform(c, transform);
+                self.draw_shape(c, t);
             }
             return;
         }
@@ -310,7 +322,8 @@ impl Renderer<'_> {
                     {
                         let mut sub = self.sub(&mut layer);
                         for c in contents {
-                            sub.draw_shape(c, transform);
+                            let t = sub.child_transform(c, transform);
+                            sub.draw_shape(c, t);
                         }
                     }
                     let pp = tiny_skia::PixmapPaint {
@@ -1100,6 +1113,7 @@ impl Renderer<'_> {
                 ..self.flags
             },
             symbols: self.symbols,
+            preview: None,
         };
         for s in shapes {
             sub.draw_shape(s, Affine::IDENTITY);
@@ -1334,6 +1348,7 @@ pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> 
         zoom,
         flags: Flags::default(),
         symbols: &[],
+        preview: None,
     };
     r.draw_fill(fill, &page_path, &sk, FillRule::Winding);
     Some(pixmap)
@@ -1425,6 +1440,46 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    /// The drag preview moves an object inside a moved group by the
+    /// page-space transform, and only that object.
+    #[test]
+    fn the_drag_preview_reaches_objects_inside_groups() {
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let a = rect(1, Rect::new(0.0, 0.0, 10.0, 10.0), red);
+        let b = rect(2, Rect::new(20.0, 0.0, 30.0, 10.0), blue);
+        let mut g = Shape::new(
+            tracedraw_core::ShapeId(3),
+            ShapeKind::Group {
+                children: vec![a, b],
+            },
+        );
+        g.transform = Affine::translate((10.0, 10.0));
+        let (doc, page) = doc_with(vec![g]);
+        let mut opts = RenderOptions {
+            width: 100,
+            height: 100,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 100.0,
+            },
+            ..RenderOptions::default()
+        };
+        // Without a preview: red at page (15, 15), screen (15, 85).
+        let pm = render_page(&doc, page, &opts).unwrap();
+        assert_eq!(px(&pm, 15, 85), (255, 0, 0));
+        opts.preview = Some(Preview {
+            shapes: vec![tracedraw_core::ShapeId(1)],
+            transform: Affine::translate((0.0, 40.0)),
+        });
+        let pm = render_page(&doc, page, &opts).unwrap();
+        // The red square moved up by 40 mm; the blue one stayed.
+        assert_eq!(pm.pixel(15, 85).unwrap().alpha(), 0);
+        assert_eq!(px(&pm, 15, 45), (255, 0, 0));
+        assert_eq!(px(&pm, 35, 85), (0, 0, 255));
     }
 
     #[test]
