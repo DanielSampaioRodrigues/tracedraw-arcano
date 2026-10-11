@@ -1689,6 +1689,7 @@ menu.text.insert_placeholder_text = "プレースホルダー テキストの挿
 menu.text.make_web_compatible = "テキストをWeb互換にする"
 menu.text.paragraph_text_frame = "段落テキストフレーム"
 menu.text.show_non_printing = "印刷されない文字を表示"
+menu.text.show_text_frames = "テキストフレームを表示"
 menu.text.spell_check = "スペルチェック..."
 menu.text.straighten_text = "テキストをまっすぐにする"
 menu.text.tabs = "タブ..."

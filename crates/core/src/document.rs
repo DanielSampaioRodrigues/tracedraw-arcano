@@ -1218,8 +1218,64 @@ impl Shape {
     }
 
     /// Axis-aligned bounds in page coordinates, ignoring outline width.
+    /// Paragraph text counts its whole frame (empty or not), and a group
+    /// the bounds of its objects.
     pub fn bounds(&self) -> Rect {
-        self.page_path().bounding_box()
+        match &self.kind {
+            ShapeKind::Text {
+                origin,
+                frame: Some(f),
+                on_path: None,
+                ..
+            } => {
+                let frame = Rect::new(
+                    origin.x,
+                    origin.y,
+                    origin.x + f.width.max(0.0),
+                    origin.y + f.height.max(0.0),
+                );
+                let fb = (self.transform * frame.to_path(0.01)).bounding_box();
+                let path = self.page_path();
+                if path.elements().is_empty() {
+                    fb
+                } else {
+                    path.bounding_box().union(fb)
+                }
+            }
+            ShapeKind::Group { children } => children
+                .iter()
+                .map(|c| {
+                    let mut c = c.clone();
+                    c.transform = self.transform * c.transform;
+                    c.bounds()
+                })
+                .reduce(|a, b| a.union(b))
+                .unwrap_or_else(|| self.page_path().bounding_box()),
+            _ => self.page_path().bounding_box(),
+        }
+    }
+
+    /// The frame of paragraph text in page space (its four corners, the
+    /// local frame's lower left first, counter-clockwise), `None` for other
+    /// objects.
+    pub fn text_frame_corners(&self) -> Option<[Point; 4]> {
+        match &self.kind {
+            ShapeKind::Text {
+                origin,
+                frame: Some(f),
+                on_path: None,
+                ..
+            } => {
+                let t = self.transform;
+                Some([
+                    t * *origin,
+                    t * Point::new(origin.x + f.width, origin.y),
+                    t * Point::new(origin.x + f.width, origin.y + f.height),
+                    t * Point::new(origin.x, origin.y + f.height),
+                ])
+            }
+            _ => None,
+        }
     }
 }
 

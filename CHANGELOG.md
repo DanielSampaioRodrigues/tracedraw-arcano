@@ -34,6 +34,10 @@ full, row-by-row status.
   click chooses the node or segment under the pointer before the menu
   opens. Interactive Fill shows the move arrows over the fill's handles.
 - Scale handles snap to other objects, guidelines, the grid and the page.
+- Paragraph text: the frame shows as a dashed line (Text > Show Text
+  Frames), the handles sit on the frame, and scaling it with the Pick
+  tool resizes the frame so the text flows anew instead of stretching
+  the letters.
 - Shape tool: dragging a segment bends it (a straight one becomes a
   curve; smooth nodes stay smooth); a click on a segment marks the spot
   where Add Node (or `+`) puts the new node; C, S and Y make the chosen

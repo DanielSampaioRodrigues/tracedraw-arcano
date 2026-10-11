@@ -1689,6 +1689,7 @@ menu.text.insert_placeholder_text = "Вставить текст-заполни�
 menu.text.make_web_compatible = "Сделать текст совместимым с веб"
 menu.text.paragraph_text_frame = "Рамка простого текста"
 menu.text.show_non_printing = "Показать непечатаемые символы"
+menu.text.show_text_frames = "Показывать текстовые рамки"
 menu.text.spell_check = "Проверка орфографии..."
 menu.text.straighten_text = "Выпрямить текст"
 menu.text.tabs = "Табуляция..."

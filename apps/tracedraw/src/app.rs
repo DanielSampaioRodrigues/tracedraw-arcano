@@ -2738,10 +2738,13 @@ impl App {
             return;
         }
         let shapes = self.selection.clone();
-        self.run(Command::TransformShapes {
-            shapes: shapes.clone(),
-            transform: t,
-        });
+        // Paragraph text takes a scale as a new frame (see text_frames.rs).
+        if !self.transform_with_frames(&shapes, t) {
+            self.run(Command::TransformShapes {
+                shapes: shapes.clone(),
+                transform: t,
+            });
+        }
         self.compensate_unlocked_clip_frames(&shapes, t);
         self.apply_hinting(&shapes);
         self.reflow_chains_of(&shapes);

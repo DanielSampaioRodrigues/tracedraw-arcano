@@ -2068,6 +2068,14 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.text.show_non_printing", "", app.show_non_printing) {
         app.show_non_printing = !app.show_non_printing;
     }
+    if check(
+        ui,
+        "menu.text.show_text_frames",
+        "",
+        app.settings.show_text_frames,
+    ) {
+        app.settings.show_text_frames = !app.settings.show_text_frames;
+    }
     sep(ui);
     sub(ui, "menu.text.paragraph_text_frame", |ui| {
         if item(ui, "menu.text.frame_fit_text", "", is_para) {

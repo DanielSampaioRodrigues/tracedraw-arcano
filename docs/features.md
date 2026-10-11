@@ -80,7 +80,7 @@ Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 
 | Capability | Status |
 |---|---|
-| Artistic text and paragraph text frames, in-place editing | works |
+| Artistic text and paragraph text frames (dashed frames, Show Text Frames, resizing a frame with the Pick tool reflows the text), in-place editing | works (see `behavior/text.md`) |
 | Font family, size, bold, italic, alignment, underline, strikethrough | works |
 | Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap | works |
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |

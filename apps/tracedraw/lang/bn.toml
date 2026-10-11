@@ -1689,6 +1689,7 @@ menu.text.insert_placeholder_text = "প্লেসহোল্ডার টে
 menu.text.make_web_compatible = "টেক্সট ওয়েব-সঙ্গত করুন"
 menu.text.paragraph_text_frame = "প্যারাগ্রাফ টেক্সট ফ্রেম"
 menu.text.show_non_printing = "অমুদ্রণযোগ্য অক্ষর দেখান"
+menu.text.show_text_frames = "টেক্সট ফ্রেম দেখান"
 menu.text.spell_check = "বানান পরীক্ষা..."
 menu.text.straighten_text = "টেক্সট সোজা করুন"
 menu.text.tabs = "ট্যাব..."

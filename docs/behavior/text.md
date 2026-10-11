@@ -56,6 +56,25 @@ The property bar's font, size and style buttons act on the selected
 characters while a selection exists, and show the style at the caret. All
 the keystrokes of one editing session are one "Edit Text" undo step.
 
+## Paragraph text frames
+
+- A paragraph text's bounds are its whole frame (with the letters, when
+  they run over it): the selection handles sit on the frame, a click
+  anywhere in it picks the text, and alignment and snapping use it.
+- Frames show as dashed lines: grey, blue for the selected texts and the
+  one being edited. Text > Show Text Frames (on by default, kept between
+  sessions) shows every frame; off, only the selected and edited ones
+  show.
+- Scaling a paragraph text with the Pick tool's handles, or with the
+  property bar's size and scale fields, changes its frame and the text
+  flows anew in it; the letters keep their size and the text's transform
+  stays as it was (`text_frames.rs`). While the handle is dragged the
+  frame follows and the letters stay. This holds for text that is
+  neither turned nor slanted and a scale by positive amounts; turning,
+  slanting, mirroring and moving act on the whole text, and a turned
+  text scales as a whole. With other objects in the selection each is
+  scaled as usual, all in one undo step.
+
 ## Character offsets, angle and spacing
 
 - Each character can be shifted and turned: Horizontal character offset
@@ -115,6 +134,9 @@ edited is finished first. One undo step.
 - Fit text to frame: scale size so the paragraph fills the frame height.
 
 ## Checks
+
+- `text_frames::tests::scaling_paragraph_text_resizes_its_frame_and_keeps_the_letters`
+- `text_frames::tests::frames_show_dashed_and_follow_a_scale_being_dragged`
 
 - `text_nodes::tests::every_character_has_a_node_on_its_baseline`,
   `text_nodes::tests::dragging_chosen_characters_shifts_only_them`,

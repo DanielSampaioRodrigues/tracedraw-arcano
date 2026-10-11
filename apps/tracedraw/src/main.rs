@@ -74,6 +74,7 @@ mod straighten;
 mod styles;
 mod table;
 mod text_editing;
+mod text_frames;
 mod text_nodes;
 mod textflow;
 mod theme;

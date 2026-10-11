@@ -166,13 +166,24 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         }
         _ => None,
     };
+    // Paragraph text being resized keeps its letters while the frame
+    // follows the drag (the text flows anew on release).
+    let preview_ids = preview.map(|t| {
+        let ids: Vec<_> = app
+            .selection
+            .iter()
+            .copied()
+            .filter(|id| !app.resizes_text_frame(*id, t))
+            .collect();
+        (ids, t)
+    });
     if let Some(tex) = app.raster.borrow_mut().texture(
         painter.ctx(),
         doc,
         app.page,
         view,
         rect,
-        preview.map(|t| (app.selection.clone(), t)),
+        preview_ids,
         app.engine.revision(),
         app.wireframe,
         app.simulate_overprints,
@@ -188,6 +199,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
 
     draw_pixel_grid(app, painter, rect);
     draw_empty_clip_frames(app, painter);
+    draw_text_frames(app, painter, preview);
 
     // Selection.
     draw_selection(app, painter, preview);
@@ -855,6 +867,26 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
     }
     for l in lines {
         painter.add(epaint::PathShape::line(l, ink));
+    }
+}
+
+/// Paragraph text frames: dashed grey lines (Text > Show Text Frames),
+/// blue for the selected texts and the one being edited.
+fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
+    for (c, chosen) in app.shown_text_frames(preview) {
+        let mut pts: Vec<Pos2> = c.iter().map(|p| app.view.to_screen(*p)).collect();
+        pts.push(pts[0]);
+        let color = if chosen {
+            Tokens::SELECTION
+        } else {
+            Color32::from_gray(150)
+        };
+        painter.extend(egui::Shape::dashed_line(
+            &pts,
+            EStroke::new(1.0, color),
+            4.0,
+            3.0,
+        ));
     }
 }
 

@@ -1689,6 +1689,7 @@ menu.text.insert_placeholder_text = "प्लेसहोल्डर पाठ
 menu.text.make_web_compatible = "टेक्स्ट को वेब-संगत बनाएँ"
 menu.text.paragraph_text_frame = "पैराग्राफ़ टेक्स्ट फ़्रेम"
 menu.text.show_non_printing = "गैर-मुद्रण वर्ण दिखाएँ"
+menu.text.show_text_frames = "टेक्स्ट फ़्रेम दिखाएँ"
 menu.text.spell_check = "वर्तनी जाँच..."
 menu.text.straighten_text = "टेक्स्ट सीधा करें"
 menu.text.tabs = "टैब..."

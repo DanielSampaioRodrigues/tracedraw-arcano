@@ -172,6 +172,10 @@ pub struct Settings {
     /// Options > Tools > Curves.
     #[serde(default)]
     pub curves: crate::prefs::CurvePrefs,
+    /// Text > Show Text Frames: paragraph text frames show as dashed
+    /// lines (else only the selected ones).
+    #[serde(default = "default_true")]
+    pub show_text_frames: bool,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -626,6 +630,7 @@ impl Default for Settings {
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),
+            show_text_frames: true,
         }
     }
 }
