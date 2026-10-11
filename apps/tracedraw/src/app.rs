@@ -546,9 +546,12 @@ impl CurveInProgress {
 /// Artistic text being typed.
 pub use crate::text_editing::TextEdit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Clipboard {
     pub shapes: Vec<Shape>,
+    /// The object styles of the drawing copied from, so that pasted
+    /// objects keep their links only to the same styles.
+    pub styles: Vec<tracedraw_core::ObjectStyle>,
 }
 
 pub struct App {
@@ -579,8 +582,6 @@ pub struct App {
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
     // Defaults for new objects (no fill, black hairline).
-    pub default_fill: Fill,
-    pub default_stroke: Option<Stroke>,
     pub polygon_points: u32,
     pub star_sharpness: f64,
     /// Star tool: draw complex stars (sides crossing), their points and
@@ -1157,13 +1158,6 @@ impl App {
             toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
-            default_fill: Fill::None,
-            // New objects: no fill, a 0.2 mm black outline (CMYK black).
-            default_stroke: Some(Stroke {
-                color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
-                width: 0.2,
-                ..Stroke::default()
-            }),
             polygon_points: 5,
             star_sharpness: 0.5,
             star_complex: false,
@@ -1965,13 +1959,8 @@ impl App {
         let layer = self.active_layer()?;
         let id = self.engine.new_shape_id();
         let mut shape = Shape::new(id, kind);
-        shape.fill = self.default_fill.clone();
-        shape.stroke = self.default_stroke.clone();
-        if matches!(shape.kind, ShapeKind::Text { .. }) {
-            // Text defaults to a black fill and no outline.
-            shape.fill = Fill::Solid(Color::BLACK);
-            shape.stroke = None;
-        }
+        // The fill and outline of its kind (Default Properties).
+        self.doc().defaults.apply_to(&mut shape);
         self.run(Command::AddShape { layer, shape });
         Some(id)
     }
@@ -2074,10 +2063,9 @@ impl App {
                         corners: None,
                     },
                 );
-                s.fill = self.default_fill.clone();
+                s.fill = self.default_fill();
                 s.stroke = self
-                    .default_stroke
-                    .clone()
+                    .default_stroke()
                     .or_else(|| Some(Stroke::hairline(Color::BLACK)));
                 ids.push(id);
                 cmds.push(Command::AddShape { layer, shape: s });
@@ -2110,8 +2098,7 @@ impl App {
             closed: false,
         }) {
             let stroke = self
-                .default_stroke
-                .clone()
+                .default_stroke()
                 .unwrap_or_else(|| Stroke::hairline(Color::BLACK));
             self.run(Command::SetStroke {
                 shapes: vec![id],
@@ -2302,7 +2289,10 @@ impl App {
     pub fn copy(&mut self) {
         let shapes = self.selected_shapes();
         if !shapes.is_empty() {
-            self.clipboard = Some(Clipboard { shapes });
+            self.clipboard = Some(Clipboard {
+                shapes,
+                styles: self.doc().object_styles.clone(),
+            });
             self.status = crate::i18n::trf(
                 "status.objects_copied",
                 &[("n", &self.selection.len().to_string())],
@@ -2324,9 +2314,11 @@ impl App {
         };
         let mut ids = Vec::new();
         let mut cmds = Vec::new();
+        let here = self.doc().object_styles.clone();
         for s in cb.shapes {
             let id = self.engine.new_shape_id();
-            let shape = reid(s, id, &mut self.engine);
+            let mut shape = reid(s, id, &mut self.engine);
+            crate::styles::keep_links_to(&mut shape, &cb.styles, &here);
             ids.push(id);
             cmds.push(Command::AddShape { layer, shape });
         }
@@ -2462,8 +2454,7 @@ impl App {
             }
         }
         if self.selection.is_empty() {
-            self.default_fill = fill;
-            self.status = crate::i18n::tr("status.default_fill_changed");
+            self.request_default_change(crate::defaults::DefaultChange::Fill(fill));
         } else {
             let shapes = self.selection.clone();
             let used = match &fill {
@@ -2519,7 +2510,7 @@ impl App {
             })
         };
         if self.selection.is_empty() {
-            self.default_stroke = make(self.default_stroke.as_ref());
+            self.request_default_change(crate::defaults::DefaultChange::OutlineColor(color));
         } else {
             let shapes = self.selected_shapes();
             let cmds: Vec<Command> = shapes
@@ -2540,9 +2531,7 @@ impl App {
     pub fn apply_outline_width(&mut self, width: f64) {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
-            if let Some(s) = &mut self.default_stroke {
-                s.width = width;
-            }
+            self.request_default_change(crate::defaults::DefaultChange::OutlineWidth(width));
             return;
         }
         let cmds: Vec<Command> = shapes

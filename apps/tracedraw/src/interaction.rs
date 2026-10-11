@@ -774,9 +774,9 @@ impl App {
             }
             if let Some(id) = self.hit_test_inside(p) {
                 self.select(vec![id]);
-                let fill = match &self.default_fill {
+                let fill = match self.default_fill() {
                     Fill::None => Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0)),
-                    f => f.clone(),
+                    f => f,
                 };
                 self.run(Command::SetFill {
                     shapes: vec![id],
@@ -933,7 +933,7 @@ impl App {
                 current,
             } => {
                 if (current - start).hypot() > 0.5 {
-                    let from = match &self.default_fill {
+                    let from = match &self.default_fill() {
                         Fill::Solid(c) => *c,
                         _ => Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
                     };

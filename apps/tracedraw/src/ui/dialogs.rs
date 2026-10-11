@@ -440,6 +440,7 @@ pub enum Dialog {
     Preflight(crate::ui::preflight_dialog::PreflightState),
     PublishPdf(Box<crate::ui::publish_pdf::PublishState>),
     PdfPassword(crate::ui::pdf_password::PdfPasswordState),
+    ChangeDefaults(crate::ui::defaults_dialog::State),
 }
 
 /// Convert to Bitmap: Resolution (a list and a value), Color mode,
@@ -708,6 +709,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Preflight(st) => crate::ui::preflight_dialog::dialog(app, ctx, st, &mut close),
         Dialog::PublishPdf(st) => crate::ui::publish_pdf::dialog(app, ctx, st, &mut close),
         Dialog::PdfPassword(st) => crate::ui::pdf_password::dialog(app, ctx, st, &mut close),
+        Dialog::ChangeDefaults(st) => crate::ui::defaults_dialog::dialog(app, ctx, st, &mut close),
         Dialog::BitmapDuotone(st) => {
             crate::ui::bitmap_dialogs::duotone_dialog(app, ctx, st, &mut close)
         }

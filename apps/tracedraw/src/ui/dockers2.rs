@@ -753,64 +753,177 @@ fn color_styles(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Object Styles: the default properties of new objects, then the styles
+/// with their parts and the objects linked to each.
 fn object_styles(app: &mut App, ui: &mut Ui) {
-    let styles = app.doc().object_styles.clone();
-    if ui
-        .add_enabled(
-            !app.selection.is_empty(),
-            egui::Button::new(tr("docker.new_style_from_selection")),
-        )
-        .clicked()
-    {
-        if let Some(s) = app.selected_shapes().first() {
-            let mut st = styles.clone();
-            st.push(tracedraw_core::ObjectStyle {
-                name: format!("Style {}", st.len() + 1),
-                fill: s.fill.clone(),
-                stroke: s.stroke.clone(),
-            });
-            app.run(Command::SetObjectStyles { styles: st });
+    default_properties(app, ui);
+    ui.separator();
+    styles_list(app, ui);
+}
+
+/// A fill swatch and an outline swatch (a red stroke across for none).
+fn style_swatches(ui: &mut Ui, fill: &Fill, stroke: &Option<tracedraw_core::Stroke>) {
+    let none = |ui: &mut Ui, r: egui::Rect| {
+        ui.painter().line_segment(
+            [r.left_bottom(), r.right_top()],
+            egui::Stroke::new(1.5, egui::Color32::from_rgb(0xD0, 0x30, 0x30)),
+        );
+    };
+    let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 2.0, egui::Color32::WHITE);
+    match crate::app::fill_preview_color(fill) {
+        Some(c) => {
+            ui.painter().rect_filled(r, 2.0, c);
         }
+        None => none(ui, r),
     }
+    ui.painter().rect_stroke(
+        r,
+        2.0,
+        egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        egui::StrokeKind::Inside,
+    );
+    let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 2.0, egui::Color32::WHITE);
+    match stroke {
+        Some(s) => {
+            let c = crate::canvas::to_color32(s.color);
+            let w = (s.width as f32 * 4.0).clamp(1.0, 4.0);
+            ui.painter().rect_stroke(
+                r.shrink(2.0),
+                1.0,
+                egui::Stroke::new(w, c),
+                egui::StrokeKind::Inside,
+            );
+        }
+        None => none(ui, r),
+    }
+}
+
+/// Default Properties: what each kind of new object starts with.
+fn default_properties(app: &mut App, ui: &mut Ui) {
+    use tracedraw_core::{DefaultKind, ObjectDefaults};
+    ui.strong(tr("defaults.title"));
+    let first = app.selected_shapes().first().cloned();
+    for kind in DefaultKind::ALL {
+        let d = app.doc().defaults.get(kind).clone();
+        ui.horizontal(|ui| {
+            style_swatches(ui, &d.fill, &d.stroke);
+            ui.label(tr(crate::defaults::kind_key(kind)));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .small_button(tr("docker.reset"))
+                    .on_hover_text(tr("defaults.reset_hint"))
+                    .clicked()
+                {
+                    let fresh = ObjectDefaults::default().get(kind).clone();
+                    app.set_default_properties(kind, |p| *p = fresh);
+                }
+                let from = ui
+                    .add_enabled(
+                        first.is_some(),
+                        egui::Button::new(tr("docker.from_selection")).small(),
+                    )
+                    .on_hover_text(tr("defaults.from_selection_hint"));
+                if from.clicked() {
+                    if let Some(s) = &first {
+                        let (fill, stroke) = (s.fill.clone(), s.stroke.clone());
+                        app.set_default_properties(kind, |p| {
+                            p.fill = fill;
+                            p.stroke = stroke;
+                        });
+                    }
+                }
+            });
+        });
+    }
+    ui.checkbox(&mut app.settings.defaults.ask, tr("defaults.ask"));
+}
+
+/// The styles: a row each (swatches, name, objects linked, Apply, Update,
+/// delete) and the parts it sets.
+fn styles_list(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        ui.strong(tr("docker.object_styles"));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(
+                    !app.selection.is_empty(),
+                    egui::Button::new(tr("docker.new_style_from_selection")).small(),
+                )
+                .clicked()
+            {
+                app.new_style_from_selection();
+            }
+        });
+    });
+    let styles = app.doc().object_styles.clone();
+    if styles.is_empty() {
+        dim(ui, tr("docker.object_styles_hint"));
+    }
+    let counts = crate::styles::linked_counts(app.doc());
+    let first = app.selected_shapes().first().cloned();
     let mut st = styles.clone();
     let mut changed = false;
     let mut remove = None;
+    let mut apply = None;
     for (i, os) in st.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            let swatch = crate::app::fill_preview_color(&os.fill).unwrap_or(egui::Color32::WHITE);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 2.0, swatch);
+            style_swatches(ui, &os.fill, &os.stroke);
             changed |= ui
-                .add(egui::TextEdit::singleline(&mut os.name).desired_width(90.0))
+                .add(egui::TextEdit::singleline(&mut os.name).desired_width(96.0))
                 .lost_focus();
-            if ui.small_button(tr("docker.apply")).clicked() {
-                let shapes = app.selection.clone();
-                let cmds = vec![
-                    Command::SetFill {
-                        shapes: shapes.clone(),
-                        fill: os.fill.clone(),
-                    },
-                    Command::SetStroke {
-                        shapes,
-                        stroke: os.stroke.clone(),
-                    },
-                ];
-                let _ = app.engine.run_batch("Apply Style", &cmds);
-            }
+            let n = counts.get(&os.id).copied().unwrap_or(0);
+            dim(ui, trf("docker.style_objects", &[("n", &n.to_string())]));
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(38.0);
+            changed |= ui
+                .checkbox(&mut os.parts.fill, tr("docker.style_fill"))
+                .changed();
+            changed |= ui
+                .checkbox(&mut os.parts.outline, tr("docker.style_outline"))
+                .changed();
+            changed |= ui
+                .checkbox(&mut os.parts.transparency, tr("docker.style_transparency"))
+                .changed();
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(38.0);
             if ui
-                .small_button(tr("docker.update_from_selection"))
+                .add_enabled(
+                    !app.selection.is_empty(),
+                    egui::Button::new(tr("docker.apply")).small(),
+                )
+                .on_hover_text(tr("docker.style_apply_hint"))
                 .clicked()
             {
-                if let Some(s) = app.selected_shapes().first() {
+                apply = Some(i);
+            }
+            if ui
+                .add_enabled(
+                    first.is_some(),
+                    egui::Button::new(tr("docker.update_from_selection")).small(),
+                )
+                .on_hover_text(tr("docker.style_update_hint"))
+                .clicked()
+            {
+                if let Some(s) = &first {
                     os.fill = s.fill.clone();
                     os.stroke = s.stroke.clone();
+                    os.opacity = s.opacity;
                     changed = true;
                 }
             }
-            if ui.small_button("x").clicked() {
+            if ui
+                .small_button(tr("docker.delete"))
+                .on_hover_text(tr("docker.style_delete_hint"))
+                .clicked()
+            {
                 remove = Some(i);
             }
         });
+        ui.add_space(2.0);
     }
     if let Some(i) = remove {
         st.remove(i);
@@ -818,9 +931,15 @@ fn object_styles(app: &mut App, ui: &mut Ui) {
     }
     if changed {
         app.run(Command::SetObjectStyles { styles: st });
+    } else if let Some(i) = apply {
+        app.apply_style(i);
     }
-    if styles.is_empty() {
-        dim(ui, tr("docker.object_styles_hint"));
+    let linked = !app.styled_selection().is_empty();
+    if ui
+        .add_enabled(linked, egui::Button::new(tr("docker.break_style_link")))
+        .clicked()
+    {
+        app.break_style_links();
     }
 }
 

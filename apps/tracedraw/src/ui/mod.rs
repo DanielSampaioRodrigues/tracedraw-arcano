@@ -13,6 +13,7 @@ pub mod context;
 pub mod coords_docker;
 pub mod cursors;
 pub mod curve_edit;
+pub mod defaults_dialog;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;

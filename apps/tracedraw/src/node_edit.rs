@@ -497,7 +497,10 @@ impl App {
         if shapes.is_empty() {
             return false;
         }
-        self.clipboard = Some(crate::app::Clipboard { shapes });
+        self.clipboard = Some(crate::app::Clipboard {
+            shapes,
+            styles: self.doc().object_styles.clone(),
+        });
         true
     }
 

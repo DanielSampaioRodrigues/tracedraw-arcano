@@ -63,8 +63,21 @@ pub enum Command {
     SetTimeTracker {
         tracker: crate::document::TimeTracker,
     },
+    /// Replace the object styles. Styles without an id get a free one;
+    /// objects linked to a style take its parts again, and links to a
+    /// style that is gone are dropped.
     SetObjectStyles {
         styles: Vec<ObjectStyle>,
+    },
+    /// Link objects to an object style and give them its parts; `None`
+    /// breaks their links and leaves their properties as they are.
+    LinkObjectStyle {
+        shapes: Vec<ShapeId>,
+        style: Option<u32>,
+    },
+    /// Replace the fill and outline new objects get.
+    SetObjectDefaults {
+        defaults: crate::document::ObjectDefaults,
     },
     SetColorStyles {
         styles: Vec<ColorStyle>,
@@ -265,6 +278,9 @@ impl Command {
             Command::SetMetadata { .. } => "Document Properties",
             Command::SetTimeTracker { .. } => "Time Tracker",
             Command::SetObjectStyles { .. } => "Object Styles",
+            Command::LinkObjectStyle { style: Some(_), .. } => "Apply Style",
+            Command::LinkObjectStyle { style: None, .. } => "Break Link to Style",
+            Command::SetObjectDefaults { .. } => "Default Properties",
             Command::SetColorStyles { .. } => "Color Styles",
             Command::SetDocumentPalette { .. } => "Document Palette",
             Command::AddSymbol { .. } => "New Symbol",
@@ -373,7 +389,39 @@ impl Command {
                 doc.time_tracker = tracker.clone();
             }
             Command::SetObjectStyles { styles } => {
-                doc.object_styles = styles.clone();
+                let mut styles = styles.clone();
+                let mut next = styles.iter().map(|s| s.id).max().unwrap_or(0);
+                for st in styles.iter_mut().filter(|s| s.id == 0) {
+                    next += 1;
+                    st.id = next;
+                }
+                doc.object_styles = styles;
+                restyle(doc);
+            }
+            Command::LinkObjectStyle { shapes, style } => {
+                let found = match style {
+                    Some(id) => Some(
+                        doc.object_styles
+                            .iter()
+                            .find(|s| s.id == *id)
+                            .cloned()
+                            .ok_or(Error::StyleNotFound(*id))?,
+                    ),
+                    None => None,
+                };
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    let shape = doc.shape_mut(*id)?;
+                    shape.style = found.as_ref().map(|s| s.id);
+                    if let Some(st) = &found {
+                        st.apply_to(shape);
+                    }
+                }
+            }
+            Command::SetObjectDefaults { defaults } => {
+                doc.defaults = defaults.clone();
             }
             Command::SetColorStyles { styles } => {
                 doc.color_styles = styles.clone();
@@ -826,6 +874,39 @@ fn reid_shape(s: &Shape, doc: &mut Document) -> Shape {
     c
 }
 
+/// Give every object linked to an object style the style's parts again,
+/// inside groups and clip frames too; links to missing styles go.
+fn restyle(doc: &mut Document) {
+    fn walk(shape: &mut Shape, styles: &[ObjectStyle]) {
+        if let Some(id) = shape.style {
+            match styles.iter().find(|s| s.id == id) {
+                Some(st) => st.apply_to(shape),
+                None => shape.style = None,
+            }
+        }
+        match &mut shape.kind {
+            ShapeKind::Group { children } => {
+                for c in children {
+                    walk(c, styles);
+                }
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                walk(frame, styles);
+                for c in contents {
+                    walk(c, styles);
+                }
+            }
+            _ => {}
+        }
+    }
+    let styles = doc.object_styles.clone();
+    for layer in doc.all_layers_mut() {
+        for shape in &mut layer.shapes {
+            walk(shape, &styles);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -950,6 +1031,134 @@ mod tests {
             .unwrap();
         assert_eq!(doc.layer(layer).unwrap().shapes.len(), 2);
         assert!(doc.shape(ia).is_ok());
+    }
+
+    #[test]
+    fn styled_objects_follow_their_style() {
+        use crate::document::{ObjectStyle, StyleParts};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 20.0);
+        let c = rect(&mut doc, 40.0);
+        let (ia, ib, ic) = (a.id, b.id, c.id);
+        for shape in [a, b, c] {
+            Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
+        }
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        let mut style = ObjectStyle::from_shape("Red", doc.shape(ia).unwrap().1);
+        style.fill = red.clone();
+        style.parts = StyleParts {
+            fill: true,
+            outline: false,
+            transparency: true,
+        };
+        style.opacity = 0.5;
+        // A style without an id gets one.
+        Command::SetObjectStyles {
+            styles: vec![style.clone()],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let id = doc.object_styles[0].id;
+        assert_eq!(id, 1);
+        let stroke_before = doc.shape(ia).unwrap().1.stroke.clone();
+        Command::LinkObjectStyle {
+            shapes: vec![ia, ib],
+            style: Some(id),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let a = doc.shape(ia).unwrap().1;
+        assert_eq!(
+            (a.fill.clone(), a.opacity, a.style),
+            (red.clone(), 0.5, Some(id))
+        );
+        // Parts the style leaves out stay as they were.
+        assert_eq!(a.stroke, stroke_before);
+        // Grouped objects stay linked and follow too.
+        Command::Group {
+            shapes: vec![ib, ic],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+        let mut styles = doc.object_styles.clone();
+        styles[0].fill = blue.clone();
+        Command::SetObjectStyles { styles }.apply(&mut doc).unwrap();
+        assert_eq!(doc.shape(ia).unwrap().1.fill, blue);
+        assert_eq!(doc.find_shape(ib).unwrap().fill, blue);
+        // The unlinked one keeps its own fill.
+        assert_ne!(doc.find_shape(ic).unwrap().fill, blue);
+        // Breaking the link keeps the properties; later changes pass it by.
+        Command::LinkObjectStyle {
+            shapes: vec![ia],
+            style: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let mut styles = doc.object_styles.clone();
+        styles[0].fill = red.clone();
+        Command::SetObjectStyles { styles }.apply(&mut doc).unwrap();
+        let a = doc.shape(ia).unwrap().1;
+        assert_eq!((a.fill.clone(), a.style), (blue, None));
+        assert_eq!(doc.find_shape(ib).unwrap().fill, red);
+        // Deleting the style drops the links; a missing style is an error.
+        Command::SetObjectStyles { styles: Vec::new() }
+            .apply(&mut doc)
+            .unwrap();
+        assert_eq!(doc.find_shape(ib).unwrap().style, None);
+        assert!(Command::LinkObjectStyle {
+            shapes: vec![ia],
+            style: Some(7),
+        }
+        .apply(&mut doc)
+        .is_err());
+        // Older files: styles without parts set fill and outline.
+        let mut json = serde_json::to_value(&style).unwrap();
+        for key in ["id", "parts", "opacity"] {
+            json.as_object_mut().unwrap().remove(key);
+        }
+        let old: ObjectStyle = serde_json::from_value(json).unwrap();
+        assert_eq!(old.parts, StyleParts::default());
+        assert_eq!((old.id, old.opacity), (0, 1.0));
+    }
+
+    #[test]
+    fn new_objects_take_the_defaults_of_their_kind() {
+        use crate::document::{DefaultKind, ObjectDefaults};
+        let mut doc = Document::default();
+        let mut defaults = ObjectDefaults::default();
+        defaults.paragraph_text.fill = Fill::Solid(Color::rgb8(0, 128, 0));
+        Command::SetObjectDefaults {
+            defaults: defaults.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.defaults, defaults);
+        let mut s = rect(&mut doc, 0.0);
+        s.fill = Fill::Solid(Color::BLACK);
+        doc.defaults.apply_to(&mut s);
+        assert_eq!(s.fill, Fill::None);
+        assert_eq!(s.stroke.as_ref().map(|k| k.width), Some(0.2));
+        let text = |frame| ShapeKind::Text {
+            spans: Vec::new(),
+            origin: crate::geometry::Point::ZERO,
+            frame,
+            align: Default::default(),
+            para: Default::default(),
+            on_path: None,
+        };
+        assert_eq!(DefaultKind::of(&text(None)), DefaultKind::ArtisticText);
+        let mut p = Shape::new(crate::id::ShapeId(99), text(Some(Size::new(10.0, 10.0))));
+        doc.defaults.apply_to(&mut p);
+        assert_eq!(p.fill, Fill::Solid(Color::rgb8(0, 128, 0)));
+        assert!(p.stroke.is_none());
+        // Older files have none: the defaults of a new drawing.
+        let mut json: serde_json::Value = serde_json::from_str(&doc.to_json().unwrap()).unwrap();
+        json.as_object_mut().unwrap().remove("defaults");
+        let old = Document::from_json(&json.to_string()).unwrap();
+        assert_eq!(old.defaults, ObjectDefaults::default());
     }
 
     #[test]

@@ -782,6 +782,56 @@ fn flate(data: &[u8]) -> Vec<u8> {
     e.finish().unwrap_or_default()
 }
 
+/// The link areas of `shapes`: each linked object's bounds (in page
+/// millimetres, `parent` applied) with its link. A linked group's link
+/// covers its children; hidden objects have none.
+fn link_areas(
+    shapes: &[Shape],
+    symbols: &[tracedraw_core::Symbol],
+    parent: Affine,
+    out: &mut Vec<(Rect, String)>,
+) {
+    use tracedraw_core::geometry::Shape as _;
+    for s in shapes {
+        if !s.visible {
+            continue;
+        }
+        let transform = parent * s.transform;
+        if let Some(link) = s.link.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+            let r = (transform * s.local_path_with(symbols)).bounding_box();
+            if r.width() > 0.0 || r.height() > 0.0 {
+                out.push((r, link.to_string()));
+            }
+            continue;
+        }
+        if let ShapeKind::Group { children } = &s.kind {
+            link_areas(children, symbols, transform, out);
+        }
+    }
+}
+
+/// What a link annotation does: `#page=n` goes to the top of page n of
+/// the file; anything else is opened as an address (made 7-bit, as the
+/// standard asks, by percent-encoding the rest).
+fn link_target(link: &str, page_ids: &[usize], doc: &Document, bleed: f64) -> Option<String> {
+    if let Some(n) = link.strip_prefix("#page=") {
+        let n: usize = n.trim().parse().ok()?;
+        let index = n.checked_sub(1)?;
+        let id = page_ids.get(index)?;
+        let top = (doc.pages.get(index)?.size.height + 2.0 * bleed) * MM_PT;
+        return Some(format!("/Dest [{id} 0 R /XYZ 0 {} null]", f(top)));
+    }
+    let mut uri = String::with_capacity(link.len());
+    for b in link.bytes() {
+        if b.is_ascii_graphic() {
+            uri.push(b as char);
+        } else {
+            let _ = write!(uri, "%{b:02X}");
+        }
+    }
+    Some(format!("/A << /S /URI /URI {} >>", pdf_text(&uri)))
+}
+
 pub fn document_to_pdf(doc: &Document) -> Vec<u8> {
     document_to_pdf_with(doc, &PdfOptions::default())
 }
@@ -908,7 +958,24 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         300.0
     };
     let mut page_ids = Vec::new();
+    // Each page's link areas, made into annotations once every page has
+    // its object (a link can go to a later page).
+    let mut page_link_areas: Vec<Vec<(Rect, String)>> = Vec::new();
     for page in &doc.pages {
+        let mut areas = Vec::new();
+        // PDF/X allows no link annotations on the page.
+        if std_ == PdfStandard::None {
+            let offset = Affine::translate((bleed, bleed));
+            for layer in doc
+                .layers_for_page(page.id)
+                .unwrap_or_default()
+                .iter()
+                .filter(|l| l.visible && l.printable)
+            {
+                link_areas(&layer.shapes, &doc.symbols, offset, &mut areas);
+            }
+        }
+        page_link_areas.push(areas);
         let flat = if std_.flatten() {
             Some(flatten_page(doc, page, flatten_dpi))
         } else {
@@ -1008,6 +1075,31 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             res
         ));
         page_ids.push(page_id);
+    }
+    // Link annotations: a web or mail address, or a page of the file.
+    for (areas, &page_id) in page_link_areas.iter().zip(&page_ids) {
+        let mut annots = Vec::new();
+        for (rect, link) in areas {
+            let Some(target) = link_target(link, &page_ids, doc, bleed) else {
+                continue;
+            };
+            let id = pdf.add_str(format!(
+                "<< /Type /Annot /Subtype /Link /Rect [{} {} {} {}] /Border [0 0 0] {target} >>",
+                f(rect.x0 * MM_PT),
+                f(rect.y0 * MM_PT),
+                f(rect.x1 * MM_PT),
+                f(rect.y1 * MM_PT)
+            ));
+            annots.push(format!("{id} 0 R"));
+        }
+        if annots.is_empty() {
+            continue;
+        }
+        let body = &mut pdf.objects[page_id - 1];
+        if body.ends_with(b" >>") {
+            body.truncate(body.len() - 3);
+            body.extend_from_slice(format!(" /Annots [{}] >>", annots.join(" ")).as_bytes());
+        }
     }
     let kids: Vec<String> = page_ids.iter().map(|id| format!("{id} 0 R")).collect();
     pdf.objects[1] = format!(
@@ -1706,6 +1798,66 @@ mod pdfx_tests {
             "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">Spring sale</rdf:li>"
         ));
         assert!(text.contains("<pdf:Keywords>sale, poster</pdf:Keywords>"));
+    }
+
+    #[test]
+    fn linked_objects_become_link_areas() {
+        let mut doc = two_pages();
+        // The page's red base links to a web address (é percent-encoded),
+        // the blue square to the second page.
+        doc.pages[0].layers[0].shapes[0].link = Some("https://example.com/caf\u{e9}".into());
+        doc.pages[0].layers[0].shapes[1].link = Some("#page=2".into());
+        let bytes = document_to_pdf(&doc);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(
+            text.contains("/URI (https://example.com/caf%C3%A9)"),
+            "{text}"
+        );
+        assert!(text.contains("/Rect [0 0 283.4646 141.7323]"));
+        // The square: 20 to 60 by 10 to 40 mm.
+        assert!(text.contains("/Rect [56.6929 28.3465 170.0787 113.3858]"));
+        let parsed = lopdf::Document::load_mem(&bytes).expect("parse");
+        let pages: Vec<lopdf::ObjectId> = parsed.get_pages().values().copied().collect();
+        let annots = parsed
+            .get_dictionary(pages[0])
+            .and_then(|p| p.get(b"Annots"))
+            .and_then(lopdf::Object::as_array)
+            .expect("annotations");
+        assert_eq!(annots.len(), 2);
+        let dest = annots
+            .iter()
+            .filter_map(|a| a.as_reference().ok())
+            .filter_map(|id| parsed.get_dictionary(id).ok())
+            .find_map(|d| {
+                d.get(b"Dest")
+                    .and_then(lopdf::Object::as_array)
+                    .ok()
+                    .cloned()
+            })
+            .expect("page link");
+        assert_eq!(dest[0].as_reference().ok(), Some(pages[1]));
+        // A page that is not there, an empty link and PDF/X: none.
+        doc.pages[0].layers[0].shapes[1].link = Some("#page=9".into());
+        doc.pages[0].layers[0].shapes[0].link = Some("  ".into());
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).into_owned();
+        assert!(!text.contains("/Annots"));
+        doc.pages[0].layers[0].shapes[0].link = Some("https://example.com".into());
+        let opts = PdfOptions {
+            standard: PdfStandard::X4,
+            ..Default::default()
+        };
+        let text = String::from_utf8_lossy(&document_to_pdf_with(&doc, &opts)).into_owned();
+        assert!(!text.contains("/Annots"));
+        // The bleed moves the area with the page.
+        let opts = PdfOptions {
+            bleed_mm: 3.0,
+            ..Default::default()
+        };
+        let text = String::from_utf8_lossy(&document_to_pdf_with(&doc, &opts)).into_owned();
+        assert!(
+            text.contains("/Rect [8.5039 8.5039 291.9685 150.2362]"),
+            "{text}"
+        );
     }
 
     #[test]

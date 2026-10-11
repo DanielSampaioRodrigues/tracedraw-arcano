@@ -159,7 +159,7 @@ impl App {
         if pts.len() < 2 {
             return Vec::new();
         }
-        let color = match &self.default_stroke {
+        let color = match &self.default_stroke() {
             Some(st) => st.color,
             None => Color::BLACK,
         };

@@ -388,7 +388,7 @@ fn clip_segment(a: Pos2, b: Pos2, r: ERect) -> Option<(Pos2, Pos2)> {
 /// objects get no outline), so the preview looks like the result.
 fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
     let view = &app.view;
-    let stroke = match &app.default_stroke {
+    let stroke = match &app.default_stroke() {
         Some(s) => EStroke::new((s.width as f32 * view.zoom).max(1.0), to_color32(s.color)),
         None => EStroke::new(1.0, Tokens::SELECTION),
     };

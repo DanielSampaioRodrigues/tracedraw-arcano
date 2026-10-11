@@ -134,7 +134,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Colour models with conversions, colour panel, mixer, gamut warning | works |
 | Palettes: the default CMYK palette (99 named colours), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
 | Colour styles and harmonies | works |
-| Object styles | works |
+| Object styles (fill, outline and transparency parts; objects stay linked and follow the style; break link) and default properties of new graphics, artistic text and paragraph text, saved with the drawing | works (see `behavior/object-styles.md`) |
 | Overprint fill, outline and bitmap; Simulate Overprints preview | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
 | CMYK shown through a built-in press model of coated stock when no profile is loaded (default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
@@ -187,6 +187,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Export dialog with a preview, the size in pixels and an estimated file size (see `behavior/export.md`) | works |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations; protected files of every revision (RC4, AES-128, AES-256), asking for the password when one is needed | works (see `behavior/pdf-import.md`) |
+| Links: a web address, e-mail address or page for any object (Links and Bookmarks panel), exported as link areas in PDF and as links around the object in SVG and HTML; named objects as bookmarks in the panel | works (see `behavior/links.md`) |
 | Publish to PDF dialog: pages (all, current, selection), PDF/X level, bleed, title, author, subject and keywords, a bookmark per page, password protection (AES-256: a password to open, a password for the permissions to print, copy and change) | works (see `behavior/publish-to-pdf.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
 | Import EPS and PostScript (interpreter: paths, images, text, clips, shadings, patterns, prologs) | works (see `behavior/eps-import.md`) |

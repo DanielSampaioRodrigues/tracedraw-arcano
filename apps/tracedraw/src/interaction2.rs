@@ -910,11 +910,11 @@ impl App {
         };
         let id = self.engine.new_shape_id();
         let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
-        s.fill = match &self.default_fill {
+        s.fill = match self.default_fill() {
             Fill::None => Fill::Solid(self.area_fill_color),
-            other => other.clone(),
+            other => other,
         };
-        s.stroke = self.default_stroke.clone();
+        s.stroke = self.default_stroke();
         s.name = Some("Area Fill".into());
         self.run(Command::AddShape { layer, shape: s });
         self.select(vec![id]);

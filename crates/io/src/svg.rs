@@ -58,7 +58,49 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
     out
 }
 
+/// A linked object inside a link (`<a>`) to its address; links of the
+/// objects inside it are dropped, since links cannot nest. Page links
+/// (`#page=n`) have no target in a one-page SVG and are left out.
 fn write_shape(
+    shape: &Shape,
+    symbols: &[tracedraw_core::Symbol],
+    parent: Affine,
+    out: &mut String,
+    defs: &mut String,
+    next_grad: &mut usize,
+    indent: usize,
+) {
+    let link = shape
+        .link
+        .as_deref()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("#page="));
+    let Some(link) = link.filter(|_| shape.visible) else {
+        write_unlinked(shape, symbols, parent, out, defs, next_grad, indent);
+        return;
+    };
+    let pad = "  ".repeat(indent);
+    let _ = writeln!(out, "{pad}<a href=\"{}\">", escape(link));
+    let mut inner = shape.clone();
+    drop_links(&mut inner);
+    write_unlinked(&inner, symbols, parent, out, defs, next_grad, indent + 1);
+    let _ = writeln!(out, "{pad}</a>");
+}
+
+/// `shape` and everything inside it without links.
+fn drop_links(shape: &mut Shape) {
+    shape.link = None;
+    match &mut shape.kind {
+        ShapeKind::Group { children } => children.iter_mut().for_each(drop_links),
+        ShapeKind::ClipFrame { frame, contents } => {
+            drop_links(frame);
+            contents.iter_mut().for_each(drop_links);
+        }
+        _ => {}
+    }
+}
+
+fn write_unlinked(
     shape: &Shape,
     symbols: &[tracedraw_core::Symbol],
     parent: Affine,
@@ -514,6 +556,46 @@ fn escape(s: &str) -> String {
 mod tests {
     use super::*;
     use tracedraw_core::{geometry::Rect, Color, Document, Stroke};
+
+    #[test]
+    fn linked_objects_sit_inside_links() {
+        let mut doc = Document::default();
+        let layer = &mut doc.pages[0].layers[0];
+        let rect = |id: u64, link: Option<&str>| {
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(id),
+                ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.link = link.map(String::from);
+            s
+        };
+        let mut group = Shape::new(
+            tracedraw_core::ShapeId(10),
+            ShapeKind::Group {
+                children: vec![rect(11, Some("https://inner.example")), rect(12, None)],
+            },
+        );
+        group.link = Some("https://example.com/?a=1&b=2".into());
+        layer.shapes = vec![
+            group,
+            rect(20, Some("#page=2")),
+            rect(21, Some("mailto:a@b.c")),
+        ];
+        let svg = page_to_svg(&doc, 0);
+        assert!(
+            svg.contains("<a href=\"https://example.com/?a=1&amp;b=2\">"),
+            "{svg}"
+        );
+        // Links do not nest; page links have no target in one page.
+        assert!(!svg.contains("inner.example") && !svg.contains("#page"));
+        assert!(svg.contains("<a href=\"mailto:a@b.c\">"));
+        assert_eq!(svg.matches("<a ").count(), 2);
+        assert_eq!(svg.matches("</a>").count(), 2);
+    }
 
     #[test]
     fn exports_a_filled_rect() {

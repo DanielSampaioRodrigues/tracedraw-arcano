@@ -694,8 +694,8 @@ impl App {
         let layer = self.active_layer()?;
         let id = self.engine.new_shape_id();
         let mut shape = Shape::new(id, kind);
-        shape.fill = self.default_fill.clone();
-        shape.stroke = self.default_stroke.clone();
+        shape.fill = self.default_fill();
+        shape.stroke = self.default_stroke();
         shape.transform = transform;
         if let Err(e) = self
             .engine

@@ -275,26 +275,28 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     });
     sub(ui, "docker.object_styles", |ui| {
         if ci(ui, close, "docker.new_style_from_selection", "", true) {
-            app.show_dockers = true;
-            app.docker_tab = DockerTab::ObjectStyles;
+            app.new_style_from_selection();
         }
         let styles = app.doc().object_styles.clone();
-        for os in styles {
+        if !styles.is_empty() {
+            sep(ui);
+        }
+        for (i, os) in styles.iter().enumerate() {
             if item_label(ui, &os.name, "", true) {
-                let shapes = app.selection.clone();
-                let cmds = vec![
-                    Command::SetFill {
-                        shapes: shapes.clone(),
-                        fill: os.fill.clone(),
-                    },
-                    Command::SetStroke {
-                        shapes,
-                        stroke: os.stroke.clone(),
-                    },
-                ];
-                let _ = app.engine.run_batch("Apply Style", &cmds);
+                app.apply_style(i);
                 *close = true;
             }
+        }
+        let linked = !app.styled_selection().is_empty();
+        if linked {
+            sep(ui);
+        }
+        if ci(ui, close, "docker.break_style_link", "", linked) {
+            app.break_style_links();
+        }
+        if ci(ui, close, "docker.open_object_styles", "", true) {
+            app.show_dockers = true;
+            app.docker_tab = DockerTab::ObjectStyles;
         }
     });
     sub(ui, "docker.color_styles", |ui| {

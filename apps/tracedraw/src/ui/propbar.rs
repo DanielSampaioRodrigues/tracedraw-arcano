@@ -1310,11 +1310,16 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
                 .selectable_label(stroke.is_none(), tr("toolbar.none"))
                 .clicked()
             {
-                let shapes = app.selection.clone();
-                app.run(Command::SetStroke {
-                    shapes,
-                    stroke: None,
-                });
+                if app.selection.is_empty() {
+                    // Nothing selected: new objects get no outline.
+                    app.request_default_change(crate::defaults::DefaultChange::Outline(None));
+                } else {
+                    let shapes = app.selection.clone();
+                    app.run(Command::SetStroke {
+                        shapes,
+                        stroke: None,
+                    });
+                }
             }
             if ui.selectable_label(false, tr("toolbar.hairline")).clicked() {
                 app.apply_outline_width(tracedraw_core::Stroke::HAIRLINE);

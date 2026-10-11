@@ -2089,7 +2089,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     let mut fill = shapes
         .first()
         .map(|s| s.fill.clone())
-        .unwrap_or_else(|| app.default_fill.clone());
+        .unwrap_or_else(|| app.default_fill());
     let kind = match &fill {
         Fill::None => 0,
         Fill::Solid(_) => 1,

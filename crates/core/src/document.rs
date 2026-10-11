@@ -887,6 +887,9 @@ pub struct Shape {
     /// Paragraph text flows around this object.
     #[serde(default)]
     pub wrap_text: bool,
+    /// The object style it is linked to ([`ObjectStyle::id`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<u32>,
 }
 
 fn one() -> f64 {
@@ -912,6 +915,7 @@ impl Shape {
             data: Vec::new(),
             effects: Vec::new(),
             wrap_text: false,
+            style: None,
         }
     }
 
@@ -1244,12 +1248,167 @@ impl MasterScope {
     }
 }
 
-/// A saved object style (Object Styles docker).
+/// A named set of object properties (Object Styles panel). Objects it is
+/// applied to keep a link to it ([`Shape::style`]), so changing the style
+/// changes them; the parts it leaves out stay as each object has them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectStyle {
     pub name: String,
     pub fill: Fill,
     pub stroke: Option<Stroke>,
+    /// What links to the style refer to; 0 until the styles are set
+    /// (older files), when it gets a free number.
+    #[serde(default)]
+    pub id: u32,
+    /// The properties the style sets.
+    #[serde(default)]
+    pub parts: StyleParts,
+    /// The transparency part: opacity, 1 being opaque.
+    #[serde(default = "one")]
+    pub opacity: f64,
+}
+
+/// Which properties an object style sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StyleParts {
+    pub fill: bool,
+    pub outline: bool,
+    pub transparency: bool,
+}
+
+impl Default for StyleParts {
+    /// Fill and outline: what styles held before they had parts.
+    fn default() -> Self {
+        StyleParts {
+            fill: true,
+            outline: true,
+            transparency: false,
+        }
+    }
+}
+
+impl ObjectStyle {
+    /// A style named `name` with the fill and outline of `shape`, and its
+    /// transparency when it has some.
+    pub fn from_shape(name: impl Into<String>, shape: &Shape) -> ObjectStyle {
+        ObjectStyle {
+            name: name.into(),
+            fill: shape.fill.clone(),
+            stroke: shape.stroke.clone(),
+            id: 0,
+            parts: StyleParts {
+                fill: true,
+                outline: true,
+                transparency: shape.opacity < 1.0,
+            },
+            opacity: shape.opacity,
+        }
+    }
+
+    /// Give `shape` the parts this style sets.
+    pub fn apply_to(&self, shape: &mut Shape) {
+        if self.parts.fill {
+            shape.fill = self.fill.clone();
+        }
+        if self.parts.outline {
+            shape.stroke = self.stroke.clone();
+        }
+        if self.parts.transparency {
+            shape.opacity = self.opacity.clamp(0.0, 1.0);
+        }
+    }
+}
+
+/// The fill and outline new objects get, by kind (Object Styles panel,
+/// Default Properties); saved with the drawing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ObjectDefaults {
+    pub graphic: DefaultProperties,
+    pub artistic_text: DefaultProperties,
+    pub paragraph_text: DefaultProperties,
+}
+
+/// One kind's defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DefaultProperties {
+    pub fill: Fill,
+    pub stroke: Option<Stroke>,
+}
+
+/// The kinds of new objects with their own defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DefaultKind {
+    Graphic,
+    ArtisticText,
+    ParagraphText,
+}
+
+impl DefaultKind {
+    pub const ALL: [DefaultKind; 3] = [
+        DefaultKind::Graphic,
+        DefaultKind::ArtisticText,
+        DefaultKind::ParagraphText,
+    ];
+
+    /// The kind of `kind`: text in a frame is paragraph text, other text
+    /// artistic text, everything else a graphic.
+    pub fn of(kind: &ShapeKind) -> DefaultKind {
+        match kind {
+            ShapeKind::Text { frame: Some(_), .. } => DefaultKind::ParagraphText,
+            ShapeKind::Text { .. } => DefaultKind::ArtisticText,
+            _ => DefaultKind::Graphic,
+        }
+    }
+}
+
+impl Default for ObjectDefaults {
+    /// Graphics: no fill and a 0.2 mm CMYK black outline; text: a black
+    /// fill and no outline.
+    fn default() -> Self {
+        let text = DefaultProperties {
+            fill: Fill::Solid(crate::Color::BLACK),
+            stroke: None,
+        };
+        ObjectDefaults {
+            graphic: DefaultProperties {
+                fill: Fill::None,
+                stroke: Some(Stroke {
+                    color: crate::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+                    width: 0.2,
+                    ..Stroke::default()
+                }),
+            },
+            artistic_text: text.clone(),
+            paragraph_text: text,
+        }
+    }
+}
+
+impl ObjectDefaults {
+    pub fn get(&self, kind: DefaultKind) -> &DefaultProperties {
+        match kind {
+            DefaultKind::Graphic => &self.graphic,
+            DefaultKind::ArtisticText => &self.artistic_text,
+            DefaultKind::ParagraphText => &self.paragraph_text,
+        }
+    }
+
+    pub fn get_mut(&mut self, kind: DefaultKind) -> &mut DefaultProperties {
+        match kind {
+            DefaultKind::Graphic => &mut self.graphic,
+            DefaultKind::ArtisticText => &mut self.artistic_text,
+            DefaultKind::ParagraphText => &mut self.paragraph_text,
+        }
+    }
+
+    /// Give a new `shape` the fill and outline of its kind.
+    pub fn apply_to(&self, shape: &mut Shape) {
+        let d = self.get(DefaultKind::of(&shape.kind));
+        shape.fill = d.fill.clone();
+        shape.stroke = d.stroke.clone();
+    }
 }
 
 /// A named colour (Color Styles docker); `harmony` groups styles that
@@ -1655,6 +1814,9 @@ pub struct Document {
     pub master: Vec<Layer>,
     #[serde(default)]
     pub object_styles: Vec<ObjectStyle>,
+    /// The fill and outline new objects get.
+    #[serde(default)]
+    pub defaults: ObjectDefaults,
     #[serde(default)]
     pub color_styles: Vec<ColorStyle>,
     #[serde(default)]
@@ -1756,6 +1918,7 @@ impl Document {
             ids,
             master: Vec::new(),
             object_styles: Vec::new(),
+            defaults: ObjectDefaults::default(),
             color_styles: Vec::new(),
             symbols: Vec::new(),
             metadata: Metadata {

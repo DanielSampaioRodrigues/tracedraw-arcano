@@ -311,15 +311,15 @@ fn properties(app: &mut App, ui: &mut Ui) {
         ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::TEXT_DIM));
         ui.add_space(6.0);
         ui.strong(tr("docker.default_properties"));
-        let mut fill = app.default_fill.clone();
+        let mut fill = app.default_fill();
         if fill_editor(ui, &mut fill) {
-            app.default_fill = fill;
+            app.set_default_properties(tracedraw_core::DefaultKind::Graphic, |p| p.fill = fill);
         }
         ui.separator();
-        let mut stroke = app.default_stroke.clone();
+        let mut stroke = app.default_stroke();
         let custom = app.settings.custom_arrowheads.clone();
         if outline_editor(ui, &mut stroke, &custom) {
-            app.default_stroke = stroke;
+            app.set_default_properties(tracedraw_core::DefaultKind::Graphic, |p| p.stroke = stroke);
         }
         return;
     }

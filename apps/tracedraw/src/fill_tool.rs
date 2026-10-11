@@ -100,7 +100,7 @@ impl App {
     /// is selected.
     pub fn apply_fill_or_default(&mut self, fill: Fill) {
         if self.selection.is_empty() {
-            self.default_fill = fill;
+            self.request_default_change(crate::defaults::DefaultChange::Fill(fill));
         } else {
             self.apply_fill(fill);
         }

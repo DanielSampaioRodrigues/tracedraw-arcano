@@ -22,6 +22,7 @@ mod clipboard;
 mod clone_effect;
 mod coords;
 mod corners;
+mod defaults;
 mod documents;
 mod drawing_scale;
 mod drop_menu;
@@ -60,6 +61,7 @@ mod spell;
 #[cfg(not(target_arch = "wasm32"))]
 mod splash;
 mod straighten;
+mod styles;
 mod table;
 mod text_editing;
 mod text_nodes;

@@ -145,7 +145,8 @@ A preset line already present is not added twice.
 ## Save as Default
 
 Tools > Save Settings as Default (and the button in Options) keeps the
-active drawing's grid, ruler and guideline settings for new drawings.
+active drawing's grid, ruler and guideline settings, and its default
+properties for new objects (see `object-styles.md`), for new drawings.
 
 ## Checks
 

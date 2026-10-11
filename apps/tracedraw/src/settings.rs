@@ -142,6 +142,9 @@ pub struct Settings {
     /// File > Publish to PDF: the choices used last (never the passwords).
     #[serde(default)]
     pub publish_pdf: crate::ui::publish_pdf::PublishPrefs,
+    /// What a fill or outline chosen with nothing selected changes.
+    #[serde(default)]
+    pub defaults: crate::defaults::DefaultsPrefs,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -409,6 +412,9 @@ pub struct DocumentDefaults {
     pub grid: tracedraw_core::document::GridSettings,
     pub rulers: tracedraw_core::document::RulerSettings,
     pub guides: tracedraw_core::document::GuideSettings,
+    /// The fill and outline new objects get.
+    #[serde(default)]
+    pub objects: tracedraw_core::ObjectDefaults,
 }
 
 impl DocumentDefaults {
@@ -417,6 +423,7 @@ impl DocumentDefaults {
             grid: doc.metadata.grid,
             rulers: doc.metadata.rulers.clone(),
             guides: doc.metadata.guides,
+            objects: doc.defaults.clone(),
         }
     }
 
@@ -424,6 +431,7 @@ impl DocumentDefaults {
         doc.metadata.grid = self.grid;
         doc.metadata.rulers = self.rulers.clone();
         doc.metadata.guides = self.guides;
+        doc.defaults = self.objects.clone();
     }
 }
 
@@ -540,6 +548,7 @@ impl Default for Settings {
             time_tracker: TimeTrackerPrefs::default(),
             preflight: crate::preflight::PreflightPrefs::default(),
             publish_pdf: crate::ui::publish_pdf::PublishPrefs::default(),
+            defaults: crate::defaults::DefaultsPrefs::default(),
         }
     }
 }

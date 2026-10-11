@@ -331,7 +331,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let shapes = app.selected_shapes();
     let (fill, stroke) = match shapes.first() {
         Some(s) => (s.fill.clone(), s.stroke.clone()),
-        None => (app.default_fill.clone(), app.default_stroke.clone()),
+        None => (app.default_fill(), app.default_stroke()),
     };
     let (fill_text, fill_swatch, outline_label, outline_swatch) = if doc {
         (

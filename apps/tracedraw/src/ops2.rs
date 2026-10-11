@@ -734,7 +734,8 @@ impl App {
         if shapes.is_empty() {
             return;
         }
-        self.default_fill = Fill::Pattern(tracedraw_core::Pattern::vector_from_shapes(&shapes));
+        let fill = Fill::Pattern(tracedraw_core::Pattern::vector_from_shapes(&shapes));
+        self.set_default_properties(tracedraw_core::DefaultKind::Graphic, |p| p.fill = fill);
         self.status = tr("status.pattern_created");
     }
 
@@ -1230,12 +1231,13 @@ impl App {
         else {
             return;
         };
-        self.default_fill = Fill::Pattern(tracedraw_core::style::Pattern::Bitmap {
+        let fill = Fill::Pattern(tracedraw_core::style::Pattern::Bitmap {
             png,
             width_px,
             height_px,
             size_mm: bounds.width().max(0.1),
         });
+        self.set_default_properties(tracedraw_core::DefaultKind::Graphic, |p| p.fill = fill);
         self.status = tr("status.pattern_created");
     }
 

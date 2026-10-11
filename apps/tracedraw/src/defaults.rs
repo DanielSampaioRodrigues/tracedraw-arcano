@@ -1,0 +1,213 @@
+//! Default properties: the fill and outline new objects get, by kind
+//! (graphics, artistic text, paragraph text), kept in the drawing
+//! (`Document::defaults`). A fill or outline chosen with nothing selected
+//! changes them, for the kinds the user picks.
+
+use crate::app::App;
+use crate::i18n::{tr, trf};
+use serde::{Deserialize, Serialize};
+use tracedraw_core::{
+    style::{Fill, Stroke},
+    Color, Command, DefaultKind, DefaultProperties,
+};
+
+/// A change made with nothing selected.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DefaultChange {
+    Fill(Fill),
+    /// `None` takes the outline away.
+    OutlineColor(Option<Color>),
+    /// Only kinds that have an outline change.
+    OutlineWidth(f64),
+    Outline(Option<Stroke>),
+}
+
+impl DefaultChange {
+    pub fn apply(&self, p: &mut DefaultProperties) {
+        match self {
+            DefaultChange::Fill(f) => p.fill = f.clone(),
+            DefaultChange::OutlineColor(None) => p.stroke = None,
+            DefaultChange::OutlineColor(Some(c)) => {
+                let mut s = p.stroke.clone().unwrap_or_default();
+                s.color = *c;
+                p.stroke = Some(s);
+            }
+            DefaultChange::OutlineWidth(w) => {
+                if let Some(s) = &mut p.stroke {
+                    s.width = *w;
+                }
+            }
+            DefaultChange::Outline(s) => p.stroke = s.clone(),
+        }
+    }
+}
+
+/// How changes with nothing selected are handled; kept in the preferences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DefaultsPrefs {
+    /// Ask which kinds a change applies to (else the kinds below).
+    pub ask: bool,
+    pub graphic: bool,
+    pub artistic_text: bool,
+    pub paragraph_text: bool,
+}
+
+impl Default for DefaultsPrefs {
+    fn default() -> Self {
+        DefaultsPrefs {
+            ask: true,
+            graphic: true,
+            artistic_text: false,
+            paragraph_text: false,
+        }
+    }
+}
+
+impl DefaultsPrefs {
+    pub fn kinds(&self) -> [bool; 3] {
+        [self.graphic, self.artistic_text, self.paragraph_text]
+    }
+
+    pub fn set_kinds(&mut self, kinds: [bool; 3]) {
+        [self.graphic, self.artistic_text, self.paragraph_text] = kinds;
+    }
+}
+
+/// The i18n key naming a kind.
+pub fn kind_key(kind: DefaultKind) -> &'static str {
+    match kind {
+        DefaultKind::Graphic => "defaults.graphic",
+        DefaultKind::ArtisticText => "defaults.artistic_text",
+        DefaultKind::ParagraphText => "defaults.paragraph_text",
+    }
+}
+
+impl App {
+    /// The fill new graphic objects get.
+    pub fn default_fill(&self) -> Fill {
+        self.doc().defaults.graphic.fill.clone()
+    }
+
+    /// The outline new graphic objects get.
+    pub fn default_stroke(&self) -> Option<Stroke> {
+        self.doc().defaults.graphic.stroke.clone()
+    }
+
+    /// A fill or outline chosen with nothing selected: ask which kinds of
+    /// new objects take it, or use the kinds picked before.
+    pub fn request_default_change(&mut self, change: DefaultChange) {
+        let prefs = self.settings.defaults;
+        if prefs.ask {
+            self.dialog =
+                crate::ui::dialogs::Dialog::ChangeDefaults(crate::ui::defaults_dialog::State {
+                    change,
+                    kinds: prefs.kinds(),
+                    dont_ask: false,
+                });
+        } else {
+            self.change_defaults(&change, prefs.kinds());
+        }
+    }
+
+    /// Apply `change` to the defaults of the kinds marked in `kinds`
+    /// (graphic, artistic text, paragraph text), as one undo step.
+    pub fn change_defaults(&mut self, change: &DefaultChange, kinds: [bool; 3]) {
+        let mut defaults = self.doc().defaults.clone();
+        let mut names = Vec::new();
+        for (kind, on) in DefaultKind::ALL.into_iter().zip(kinds) {
+            if on {
+                change.apply(defaults.get_mut(kind));
+                names.push(tr(kind_key(kind)));
+            }
+        }
+        if names.is_empty() || defaults == self.doc().defaults {
+            return;
+        }
+        self.run(Command::SetObjectDefaults { defaults });
+        self.status = trf("status.defaults_changed", &[("kinds", &names.join(", "))]);
+    }
+
+    /// Change one kind's defaults at once (the Properties and Object
+    /// Styles panels, patterns made into the default fill).
+    pub fn set_default_properties(
+        &mut self,
+        kind: DefaultKind,
+        edit: impl FnOnce(&mut DefaultProperties),
+    ) {
+        let mut defaults = self.doc().defaults.clone();
+        edit(defaults.get_mut(kind));
+        if defaults != self.doc().defaults {
+            self.run(Command::SetObjectDefaults { defaults });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracedraw_core::{geometry::Rect, ShapeKind};
+
+    #[test]
+    fn changes_reach_the_kinds_picked_and_new_objects() {
+        let mut app = App::headless();
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        // Nothing selected: the question comes first.
+        app.selection.clear();
+        app.apply_fill(red.clone());
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ChangeDefaults(_)
+        ));
+        assert_eq!(app.default_fill(), Fill::None);
+        // Graphics and paragraph text, not artistic text.
+        app.change_defaults(&DefaultChange::Fill(red.clone()), [true, false, true]);
+        let d = &app.doc().defaults;
+        assert_eq!(
+            (d.graphic.fill.clone(), d.paragraph_text.fill.clone()),
+            (red.clone(), red.clone())
+        );
+        assert_eq!(d.artistic_text.fill, Fill::Solid(Color::BLACK));
+        // One undo step.
+        app.undo();
+        assert_eq!(app.default_fill(), Fill::None);
+        app.redo();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        assert_eq!(
+            app.doc().shape(id).map(|(_, s)| s.fill.clone()).ok(),
+            Some(red)
+        );
+        // Without the question, the kinds picked before.
+        app.settings.defaults = DefaultsPrefs {
+            ask: false,
+            graphic: false,
+            artistic_text: true,
+            paragraph_text: false,
+        };
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        app.selection.clear();
+        app.apply_outline_color(Some(Color::rgb8(0, 0, 255)));
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+        let d = &app.doc().defaults;
+        assert_eq!(
+            d.artistic_text.stroke.as_ref().map(|s| s.color),
+            Some(Color::rgb8(0, 0, 255))
+        );
+        assert_eq!(d.graphic.stroke.as_ref().map(|s| s.width), Some(0.2));
+        // A width only changes outlines that are there.
+        let mut p = DefaultProperties {
+            fill: Fill::None,
+            stroke: None,
+        };
+        DefaultChange::OutlineWidth(1.0).apply(&mut p);
+        assert!(p.stroke.is_none());
+        DefaultChange::OutlineColor(None).apply(&mut p);
+        assert!(p.stroke.is_none());
+    }
+}

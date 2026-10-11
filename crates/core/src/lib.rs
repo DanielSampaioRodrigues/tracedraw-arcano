@@ -28,9 +28,10 @@ pub use color::Color;
 pub use command::Command;
 pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
-    split_spans_at, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners, Document,
-    EllipseArc, Layer, MasterScope, Metadata, ObjectStyle, Page, ParagraphStyle, Shadow, Shape,
-    ShapeKind, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker, TrackedTask,
+    split_spans_at, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners, DefaultKind,
+    DefaultProperties, Document, EllipseArc, Layer, MasterScope, Metadata, ObjectDefaults,
+    ObjectStyle, Page, ParagraphStyle, Shadow, Shape, ShapeKind, StyleParts, Symbol, Table,
+    TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker, TrackedTask,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
@@ -60,6 +61,8 @@ pub enum Error {
     NothingToUndo,
     #[error("nothing to redo")]
     NothingToRedo,
+    #[error("object style not found: {0}")]
+    StyleNotFound(u32),
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }
