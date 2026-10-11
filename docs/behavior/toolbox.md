@@ -33,3 +33,24 @@
 - `ui::toolbox::tests::flyout_groups_can_be_hidden_and_reset`
 - `ui::toolbox::tests::separators_split_the_reference_subgroups`
 - `ops::smoke_tests::toolbox_groups_remember_the_last_tool_used`
+
+## The pointer over the drawing
+
+Each tool's pointer says which tool is active (code: `ui/cursors.rs`):
+
+| Tools | Pointer |
+|---|---|
+| Pick, Freehand Pick | the arrow, with resize, move, turning and slant arrows over handles and the selection (see `pick-tool.md`) |
+| Shape | a solid arrow marking nodes, control points and segments (see `shape-tool.md`) |
+| Zoom | a magnifier with a plus (a minus with Shift) |
+| Pan, and any tool while the middle button pans | an open hand, closed while dragging |
+| Colour and Attributes Eyedropper, palette sampling | a pipette |
+| Area Fill | a paint bucket |
+| Text | the text I-beam |
+| Eraser | the cross hair inside the nib's outline at its size on screen (a circle, a square for the square nib) |
+| Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen | the cross hair inside a circle of the brush size |
+| Every other tool (curves, shapes, dimensions, connectors, effects, fills, Crop, Knife, Table, ...) | the cross hair with the tool's icon at its lower right on a light patch |
+
+The cross hair, the arrows and the I-beam are the system's own; the
+icons, nibs and drawn pointers are painted by TraceDraw above the
+drawing. Nib outlines stay between 2 and 400 points on screen.

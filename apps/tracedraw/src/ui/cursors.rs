@@ -20,7 +20,7 @@ use crate::tools::Tool;
 use egui::{Color32, CornerRadius, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
 /// What the pointer looks like over the drawing window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ToolCursor {
     /// A system cursor.
     System(egui::CursorIcon),
@@ -40,6 +40,17 @@ pub enum ToolCursor {
     },
     /// The Shape tool: a solid arrow with what is under it.
     ShapeArrow(ShapeMark),
+    /// The system cross hair with the tool's icon at its lower right (the
+    /// drawing, effect and fill tools).
+    Badge(Tool),
+    /// The cross hair with the nib's outline around it: a circle of
+    /// `radius` screen points, or a square of that half side (the Eraser,
+    /// the Smooth, Smear, Twirl, Attract and Repel, Smudge and Roughen
+    /// brushes).
+    Nib {
+        radius: f32,
+        square: bool,
+    },
 }
 
 /// What the Shape tool's arrow points at.
@@ -160,13 +171,50 @@ pub fn for_tool(
         }
         Tool::Pick | Tool::FreeformPick => ToolCursor::System(egui::CursorIcon::Default),
         Tool::Shape => ToolCursor::ShapeArrow(shape_mark(app, pos)),
-        _ => ToolCursor::System(egui::CursorIcon::Crosshair),
+        Tool::Eraser => ToolCursor::Nib {
+            radius: nib_px(app.eraser_width / 2.0, app.view.zoom),
+            square: app.eraser_square,
+        },
+        Tool::Smooth
+        | Tool::Smear
+        | Tool::Twirl
+        | Tool::AttractRepel
+        | Tool::Smudge
+        | Tool::Roughen => ToolCursor::Nib {
+            radius: nib_px(app.brush_radius, app.view.zoom),
+            square: false,
+        },
+        t => ToolCursor::Badge(t),
+    }
+}
+
+/// A nib of `mm` on screen at `zoom` (points per mm), kept visible and
+/// within the window.
+fn nib_px(mm: f64, zoom: f32) -> f32 {
+    let px = mm as f32 * zoom;
+    if px.is_finite() {
+        px.clamp(2.0, 400.0)
+    } else {
+        2.0
     }
 }
 
 /// Show `cursor` at `pos` (the pointer): set the system cursor, or hide it
 /// and paint the drawn one on top of everything.
 pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
+    // The system cross hair stays sharp; the badge or the nib is painted
+    // next to it.
+    if matches!(cursor, ToolCursor::Badge(_) | ToolCursor::Nib { .. }) {
+        ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+        if let Some(p) = pos {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("tool_cursor"),
+            ));
+            paint(&painter, cursor, p);
+        }
+        return;
+    }
     let ToolCursor::System(icon) = cursor else {
         ctx.set_cursor_icon(egui::CursorIcon::None);
         if let Some(p) = pos {
@@ -197,6 +245,37 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
         ToolCursor::Rotate => rotate_arrows(painter, p),
         ToolCursor::Skew { horizontal } => skew_arrows(painter, p, horizontal),
         ToolCursor::ShapeArrow(mark) => shape_arrow(painter, p, mark),
+        ToolCursor::Badge(tool) => badge(painter, p, tool),
+        ToolCursor::Nib { radius, square } => nib(painter, p, radius, square),
+    }
+}
+
+/// The tool's icon below and to the right of the cross hair, on a light
+/// patch so it reads on any drawing.
+fn badge(painter: &Painter, p: Pos2, tool: Tool) {
+    let r = Rect::from_min_size(p + Vec2::new(9.0, 9.0), Vec2::splat(15.0));
+    painter.rect_filled(
+        r.expand(1.0),
+        CornerRadius::same(3),
+        Color32::from_white_alpha(200),
+    );
+    crate::ui::icons::draw(painter, r, tool, crate::theme::Tokens::ICON);
+}
+
+/// The nib's outline around the hot spot: black with a white halo.
+fn nib(painter: &Painter, c: Pos2, radius: f32, square: bool) {
+    for (w, color) in [(3.0, HALO), (1.0, INK)] {
+        let s = Stroke::new(w, color);
+        if square {
+            painter.rect_stroke(
+                Rect::from_center_size(c, Vec2::splat(radius * 2.0)),
+                CornerRadius::ZERO,
+                s,
+                egui::StrokeKind::Middle,
+            );
+        } else {
+            painter.circle_stroke(c, radius, s);
+        }
     }
 }
 
@@ -439,7 +518,27 @@ mod tests {
         app.tool = Tool::Rectangle;
         assert_eq!(
             for_tool(&app, false, false, false, None),
-            ToolCursor::System(egui::CursorIcon::Crosshair)
+            ToolCursor::Badge(Tool::Rectangle)
+        );
+        // The Eraser and the brushes show their nib at its size on screen.
+        app.tool = Tool::Eraser;
+        app.eraser_width = 10.0;
+        app.view.zoom = 2.0;
+        assert_eq!(
+            for_tool(&app, false, false, false, None),
+            ToolCursor::Nib {
+                radius: 10.0,
+                square: app.eraser_square
+            }
+        );
+        app.tool = Tool::Smudge;
+        app.brush_radius = f64::NAN;
+        assert_eq!(
+            for_tool(&app, false, false, false, None),
+            ToolCursor::Nib {
+                radius: 2.0,
+                square: false
+            }
         );
         app.tool = Tool::Pick;
         assert_eq!(

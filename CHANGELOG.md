@@ -14,7 +14,8 @@ full, row-by-row status.
 - The pointer shows what a press would do: resize arrows on the handles,
   move arrows on the selection, turning and slant arrows in rotate mode,
   and the Shape tool's own arrow with a mark over nodes, control points
-  and segments.
+  and segments. Drawing tools show their icon by the cross hair; the
+  Eraser and the brushes show their nib at its size.
 - Interface size 100 % now draws menus, bars and text as large as other
   programs at 100 % (a quarter smaller than in 0.3.0 on a monitor the
   system scales by 125 %); drawings keep their real size at zoom 100 %.
