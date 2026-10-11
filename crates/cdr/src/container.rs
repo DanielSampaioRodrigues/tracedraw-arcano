@@ -182,6 +182,58 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
 /// this keeps a damaged size from taking all memory).
 const MAX_EMBEDDED: u64 = 64 << 20;
 
+/// The CMYK colour profile a version 14+ ZIP file carries (a member
+/// under `color/profiles/cmyk/`, seen in version 17 to 21 files next to
+/// `color/color.xml`, which names it), when it reads as an ICC profile.
+/// `None` for RIFF files and files without one.
+pub fn cmyk_profile(
+    bytes: &[u8],
+    container: &Container,
+) -> Option<tracedraw_core::DocumentProfile> {
+    if container.kind == ContainerKind::Riff {
+        return None;
+    }
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let mut names: Vec<String> = archive
+        .file_names()
+        .filter(|n| {
+            let lower = n.to_ascii_lowercase();
+            lower.starts_with("color/profiles/cmyk/")
+                && (lower.ends_with(".icc") || lower.ends_with(".icm"))
+        })
+        .map(String::from)
+        .collect();
+    names.sort();
+    for name in names {
+        let Ok(f) = archive.by_name(&name) else {
+            continue;
+        };
+        if f.size() > MAX_PROFILE {
+            continue;
+        }
+        let mut data = Vec::new();
+        if f.take(MAX_PROFILE).read_to_end(&mut data).is_err() {
+            continue;
+        }
+        let Ok(profile) = tracedraw_core::icc::Profile::parse(&data) else {
+            continue;
+        };
+        if profile.color_space() != tracedraw_core::icc::ColorSpace::Cmyk {
+            continue;
+        }
+        let file = name.rsplit('/').next().unwrap_or(&name);
+        let label = profile
+            .description()
+            .map(String::from)
+            .unwrap_or_else(|| file.to_string());
+        return Some(tracedraw_core::DocumentProfile::new(label, data));
+    }
+    None
+}
+
+/// The largest colour profile read from a file.
+const MAX_PROFILE: u64 = 16 << 20;
+
 /// The fonts a ZIP file embeds: each `embed/embedding<n>` member holds a
 /// header of its own and then an EOT structure (see [`crate::eot`]).
 /// Returns the fonts, without repeats, and a note for each member that
@@ -199,9 +251,18 @@ pub fn embedded_fonts(
     let Ok(mut archive) = zip::ZipArchive::new(cursor) else {
         return (fonts, notes);
     };
+    // Next to each font, newer files keep pictures of it and a sample
+    // ("embedding0.png", "embedding0-Extended.png",
+    // "embedding0.sample.curve"): not fonts, left alone.
+    const NOT_FONTS: [&str; 7] = [".png", ".curve", ".jpg", ".jpeg", ".bmp", ".xml", ".json"];
     let mut names: Vec<String> = archive
         .file_names()
-        .filter(|n| n.to_ascii_lowercase().starts_with("embed/") && !n.ends_with('/'))
+        .filter(|n| {
+            let lower = n.to_ascii_lowercase();
+            lower.starts_with("embed/")
+                && !n.ends_with('/')
+                && !NOT_FONTS.iter().any(|e| lower.ends_with(e))
+        })
         .map(String::from)
         .collect();
     names.sort();
@@ -294,6 +355,36 @@ pub fn parse_palette_xml(xml: &str) -> Vec<(String, Color)> {
                 b: *b,
             },
             ("GRAY" | "GRAYSCALE", [v]) => Color::Gray { v: *v },
+            // The other models, each component a fraction of 255 (the
+            // names give the values: "C60 M169 Y255", "H119 S80 B190",
+            // "H295 L165 S69", "L76 a-14 b66", "Y100 I69 Q89"; seen in a
+            // version 17 file). CMY is the complement of RGB.
+            ("CMY", [c, m, y]) => Color::Rgb {
+                r: 1.0 - c,
+                g: 1.0 - m,
+                b: 1.0 - y,
+            },
+            ("HSB" | "HSV", [h, s, b]) => Color::Hsb {
+                h: h * 360.0,
+                s: *s,
+                b: *b,
+            },
+            ("HLS", [h, l, s]) => Color::Hsl {
+                h: h * 360.0,
+                s: *s,
+                l: *l,
+            },
+            ("LAB", [l, a, b]) => Color::Lab {
+                l: l * 100.0,
+                a: a * 255.0 - 128.0,
+                b: b * 255.0 - 128.0,
+            },
+            ("YIQ", [y, i, q]) => Color::Yiq {
+                y: *y,
+                i: *i,
+                q: *q,
+            },
+            ("REGISTRATION", _) => Color::Registration,
             _ => {
                 log::warn!("document palette colour {name:?} in {cs:?} skipped");
                 continue;
@@ -355,6 +446,37 @@ mod tests {
                 b: 0.5
             }
         );
+    }
+
+    #[test]
+    fn document_palette_reads_the_other_colour_models() {
+        let xml = r#"<colors><color cs="CMY" name="C60 M169 Y255" tints="0.235294,0.662745,1"/><color cs="HSB" name="H119 S80 B190" tints="0.330556,0.313725,0.745098"/><color cs="HLS" name="H295 L165 S69" tints="0.819444,0.647059,0.270588"/><color cs="LAB" name="L76 a-14 b66" tints="0.764706,0.447059,0.760784"/><color cs="YIQ" name="Y100 I69 Q89" tints="0.392157,0.270588,0.34902"/><color cs="Gray" name="Grey" tints="0.639216"/><color cs="Registration" name="Reg" tints="1,1,1,1"/><color cs="PANTONE 448 C" name="Spot" tints="1"/></colors>"#;
+        let p = parse_palette_xml(xml);
+        assert_eq!(p.len(), 7, "{p:?}");
+        let close = |a: f32, b: f32| (a - b).abs() < 0.01;
+        match p[0].1 {
+            Color::Rgb { r, g, b } => assert!(close(r, 0.765) && close(g, 0.337) && close(b, 0.0)),
+            other => panic!("{other:?}"),
+        }
+        match p[1].1 {
+            Color::Hsb { h, s, b } => {
+                assert!(close(h, 119.0) && close(s, 0.3137) && close(b, 0.745))
+            }
+            other => panic!("{other:?}"),
+        }
+        match p[2].1 {
+            Color::Hsl { h, s, l } => {
+                assert!(close(h, 295.0) && close(s, 0.2706) && close(l, 0.647))
+            }
+            other => panic!("{other:?}"),
+        }
+        match p[3].1 {
+            Color::Lab { l, a, b } => assert!(close(l, 76.47) && close(a, -14.0) && close(b, 66.0)),
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(p[4].1, Color::Yiq { .. }));
+        assert!(matches!(p[5].1, Color::Gray { .. }));
+        assert_eq!(p[6].1, Color::Registration);
     }
 
     #[test]
@@ -437,12 +559,47 @@ mod tests {
     }
 
     #[test]
+    fn the_cmyk_profile_comes_with_the_document() {
+        use tracedraw_core::icc::test_profiles as tp;
+        let cmyk = tp::lut16_cmyk_profile();
+        let rgb = tp::matrix_trc_profile(tp::para_srgb(), tp::para_srgb(), tp::para_srgb());
+        // An RGB profile in the CMYK folder and a damaged one are passed
+        // over; the CMYK profile is kept, named by its description.
+        let bytes = zip_file(&[
+            ("color/color.xml", b"<Color/>".to_vec()),
+            (
+                "color/profiles/cmyk/a damaged.icc",
+                b"not a profile".to_vec(),
+            ),
+            ("color/profiles/cmyk/b rgb.icc", rgb),
+            ("color/profiles/cmyk/c press.icc", cmyk.clone()),
+        ]);
+        let (doc, _) = crate::open_bytes(&bytes, "colour").expect("opens");
+        let p = doc.cmyk_profile.expect("profile");
+        assert_eq!(p.name, "Synthetic CMYK");
+        assert_eq!(p.data.as_slice(), cmyk.as_slice());
+        // None in a file without one, nor in a RIFF file.
+        let (doc, _) = crate::open_bytes(&zip_file(&[]), "plain").expect("opens");
+        assert!(doc.cmyk_profile.is_none());
+        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        assert!(crate::open_bytes(&riff, "riff")
+            .expect("opens")
+            .0
+            .cmyk_profile
+            .is_none());
+    }
+
+    #[test]
     fn embedded_fonts_come_with_the_document() {
         let bytes = zip_file(&[
             ("embed/embedding0", embedding(FONT, "Selawik")),
             // The same font again, and a member that holds none.
             ("embed/embedding1", embedding(FONT, "Selawik")),
             ("embed/embedding2", b"nothing to see".to_vec()),
+            // Pictures and a sample of a font, kept next to it.
+            ("embed/embedding0.png", b"\x89PNG".to_vec()),
+            ("embed/embedding0-Extended.png", b"\x89PNG".to_vec()),
+            ("embed/embedding0.sample.curve", b"curve".to_vec()),
         ]);
         let (doc, report) = crate::open_bytes(&bytes, "fonts").expect("opens");
         assert_eq!(doc.fonts.len(), 1);
@@ -450,6 +607,14 @@ mod tests {
         assert_eq!(doc.fonts[0].data.as_slice(), FONT);
         assert!(
             report.warnings.iter().any(|w| w.contains("embedding2")),
+            "{:?}",
+            report.warnings
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.contains(".png") || w.contains(".curve")),
             "{:?}",
             report.warnings
         );

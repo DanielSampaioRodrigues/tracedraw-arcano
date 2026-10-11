@@ -13,3 +13,6 @@ zip.workspace = true
 encoding_rs.workspace = true
 flate2 = "1"
 tiny-skia.workspace = true
+
+[dev-dependencies]
+tracedraw-core = { workspace = true, features = ["test-profiles"] }

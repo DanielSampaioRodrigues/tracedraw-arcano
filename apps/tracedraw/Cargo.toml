@@ -55,9 +55,10 @@ getrandom03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 boa_engine = { version = "0.20", features = ["js"] }
 jiff = { version = "0.2", features = ["js"] }
 
-# Reads back the PDFs the tests publish.
+# Reads back the PDFs the tests publish; ICC profiles built for tests.
 [dev-dependencies]
 lopdf = { version = "0.36", default-features = false }
+tracedraw-core = { workspace = true, features = ["test-profiles"] }
 
 [package.metadata.deb]
 name = "tracedraw"

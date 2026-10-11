@@ -178,6 +178,9 @@ pub(crate) struct RunStyle {
     /// describe the run's fill as an object with its colour);
     /// `Some(None)` is no fill.
     pub fill_color: Option<Option<tracedraw_core::Color>>,
+    /// Version 16+ style strings: underline and strikeout on or off.
+    pub underline: Option<bool>,
+    pub strikethrough: Option<bool>,
 }
 
 impl RunStyle {
@@ -198,6 +201,8 @@ impl RunStyle {
             char_spacing: self.char_spacing.or(base.char_spacing),
             indent_pt: self.indent_pt.or(base.indent_pt),
             fill_color: self.fill_color.or(base.fill_color),
+            underline: self.underline.or(base.underline),
+            strikethrough: self.strikethrough.or(base.strikethrough),
         }
     }
 }
@@ -855,6 +860,17 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
     Some(out)
 }
 
+/// Text with its line breaks as `\n`: files end lines with a carriage
+/// return (`\r`, version 21 artistic text), a CR LF pair, a line or
+/// paragraph separator or a vertical tab.
+pub(crate) fn line_breaks(text: &str) -> String {
+    if !text.contains(['\r', '\u{2028}', '\u{2029}', '\u{0B}']) {
+        return text.to_string();
+    }
+    text.replace("\r\n", "\n")
+        .replace(['\r', '\u{2028}', '\u{2029}', '\u{0B}'], "\n")
+}
+
 /// Minimal JSON value for the version 16+ style strings.
 #[derive(Debug, Clone, PartialEq)]
 enum Json {
@@ -1027,6 +1043,45 @@ fn style_size_pt(n: f64) -> Option<f64> {
 /// loosely so both the JSON and the `key:value;` spellings work.
 fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
     let k = key.to_ascii_lowercase();
+    // Version 16+ style strings write numbers as strings ("1024").
+    let number = match value {
+        Json::Str(t) => t.trim().parse::<f64>().ok().map(Json::Num),
+        _ => None,
+    };
+    let value = number.as_ref().unwrap_or(value);
+    if k == "underline" || k == "strikeout" || k == "strikethrough" {
+        if let Some(n) = value.num() {
+            if k == "underline" {
+                s.underline = Some(n != 0.0);
+            } else {
+                s.strikethrough = Some(n != 0.0);
+            }
+        }
+        return;
+    }
+    if k.contains("overline") {
+        return;
+    }
+    if k.contains("weight") {
+        // The style code of the style tables: a power of two whose
+        // exponent counts weights in steps (64 = 400, 1024 = 600,
+        // 4096 = 700; an odd exponent is the italic of the weight below,
+        // as the embedded faces of a version 19 file confirm for 64,
+        // 1024 and 4096). Other numbers are CSS weights.
+        if let Some(n) = value.num() {
+            let code = n as u64;
+            if n >= 1.0 && n.fract() == 0.0 && code.is_power_of_two() && code < 1 << 18 {
+                let f = StyleFlags(code as u32);
+                s.bold = Some(f.bold());
+                if f.italic() {
+                    s.italic = Some(true);
+                }
+            } else if (100.0..=1000.0).contains(&n) {
+                s.bold = Some(n >= 600.0);
+            }
+            return;
+        }
+    }
     if k.contains("size") {
         if let Some(pt) = value.num().and_then(style_size_pt) {
             s.size_pt = Some(pt);
@@ -1069,7 +1124,7 @@ fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
                 s.fill_id = Some(n as u32);
             }
         }
-    } else if k.contains("outl") || (k.contains("line") && !k.contains("under")) {
+    } else if k.contains("outl") || k == "line" {
         if let Some(n) = value.num() {
             if n >= 0.0 && n <= u32::MAX as f64 {
                 s.outl_id = Some(n as u32);
@@ -1077,7 +1132,8 @@ fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
         }
     } else if k.contains("justif") || k.contains("align") {
         match value {
-            Json::Str(a) => {
+            // A word ("center"); numbers written as strings ("2") are codes.
+            Json::Str(a) if a.trim().parse::<f64>().is_err() => {
                 let a = a.to_ascii_lowercase();
                 s.align = Some(if a.contains("cent") {
                     3
@@ -1090,9 +1146,19 @@ fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
                 });
             }
             other => {
+                // Style strings number alignments their own way: 2 centres
+                // the lines on one another (seen in version 19 and 21
+                // files). 3 right and 4, 5 justify are assumed; 0 and 1
+                // read as left. Stored in the style table's codes.
                 if let Some(n) = other.num() {
                     if (0.0..=5.0).contains(&n) {
-                        s.align = Some(n as u32);
+                        s.align = Some(match n as u32 {
+                            2 => 3,
+                            3 => 2,
+                            4 => 4,
+                            5 => 5,
+                            _ => 1,
+                        });
                     }
                 }
             }
@@ -1171,6 +1237,33 @@ fn apply_paragraph_object(s: &mut RunStyle, items: &[(String, Json)]) {
         }
         apply_style_key(s, k, v);
     }
+}
+
+/// The opacity an object's version 16+ style string gives it: its
+/// `transparency` section's `uniformTransparency` is the share of the
+/// object that lets the background through (0.3 draws it at 70 %: the
+/// colours of a version 19 file's preview match that). Without it, the
+/// mean of `startTransparency` and `endTransparency` (a graded
+/// transparency drawn uniform, assumed). `None` for an empty section.
+pub(crate) fn object_opacity(style: &str) -> Option<f64> {
+    let t = style.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+    let Json::Obj(items) = parse_json(t)? else {
+        return None;
+    };
+    let Json::Obj(tr) = &items.iter().find(|(k, _)| k == "transparency")?.1 else {
+        return None;
+    };
+    let get = |key: &str| {
+        tr.iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.num())
+            .filter(|n| n.is_finite())
+    };
+    let amount = match get("uniformTransparency") {
+        Some(u) => u,
+        None => (get("startTransparency")? + get("endTransparency")?) / 2.0,
+    };
+    Some((1.0 - amount).clamp(0.0, 1.0))
 }
 
 /// The width of a paragraph frame from an object's version 16+ style
@@ -1411,14 +1504,72 @@ mod tests {
     }
 
     #[test]
+    fn style_strings_give_the_object_transparency() {
+        let o = object_opacity(
+            r#"{"transparency":{"startTransparency":"0.3","endTransparency":"1","uniformTransparency":"0.3","mode":"0"},"fill":{}}"#,
+        );
+        assert!((o.unwrap() - 0.7).abs() < 1e-9);
+        let o =
+            object_opacity(r#"{"transparency":{"startTransparency":"0","endTransparency":"1"}}"#);
+        assert!((o.unwrap() - 0.5).abs() < 1e-9);
+        assert_eq!(object_opacity(r#"{"transparency":{},"fill":{}}"#), None);
+        assert_eq!(object_opacity(r#"{"fill":{}}"#), None);
+        assert_eq!(object_opacity("not json"), None);
+        let o = object_opacity(r#"{"transparency":{"uniformTransparency":"7"}}"#);
+        assert_eq!(o, Some(0.0));
+    }
+
+    #[test]
+    fn style_string_weights_are_style_codes() {
+        let latin = |inner: &str| parse_style_string(&format!(r#"{{"latin":{{{inner}}}}}"#));
+        let s = latin(r#""weight":"64","italic":"0""#);
+        assert_eq!((s.bold, s.italic), (Some(false), Some(false)));
+        // 1024 is a 600 weight (a semibold face), 4096 a 700 one.
+        assert_eq!(latin(r#""weight":"1024""#).bold, Some(true));
+        assert_eq!(latin(r#""weight":"4096""#).bold, Some(true));
+        // An odd exponent is the italic of a weight.
+        let s = latin(r#""weight":"8192""#);
+        assert_eq!((s.bold, s.italic), (Some(true), Some(true)));
+        assert_eq!(latin(r#""weight":"128""#).italic, Some(true));
+        // CSS weights and words still read.
+        assert_eq!(latin(r#""weight":700"#).bold, Some(true));
+        assert_eq!(latin(r#""weight":"400""#).bold, Some(false));
+        assert_eq!(latin(r#""fontWeight":"bold""#).bold, Some(true));
+        // Italic, underline and strikeout written as "1" or "0".
+        let s = latin(r#""italic":"1","underline":"1","strikeout":"0","overline":"1""#);
+        assert_eq!(s.italic, Some(true));
+        assert_eq!(s.underline, Some(true));
+        assert_eq!(s.strikethrough, Some(false));
+        assert_eq!(s.outl_id, None);
+    }
+
+    #[test]
+    fn line_breaks_become_newlines() {
+        assert_eq!(line_breaks("Fazendo\rum bolo"), "Fazendo\num bolo");
+        assert_eq!(
+            line_breaks("a\r\nb\u{2028}c\u{2029}d\u{0B}e"),
+            "a\nb\nc\nd\ne"
+        );
+        assert_eq!(line_breaks("plain"), "plain");
+    }
+
+    #[test]
     fn style_string_json_and_key_value_forms() {
         let s = parse_style_string(
-            r#"{"character":{"font":7,"size":304800,"fill":12},"paragraph":{"justify":3}}"#,
+            r#"{"character":{"font":7,"size":304800,"fill":12},"paragraph":{"justify":"2"}}"#,
         );
         assert_eq!(s.font_id, Some(7));
         assert!((s.size_pt.unwrap() - 86.4).abs() < 1e-6);
         assert_eq!(s.fill_id, Some(12));
+        // "justify" 2 centres (the style table's code 3).
         assert_eq!(s.align, Some(3));
+        let align =
+            |j: &str| parse_style_string(&format!(r#"{{"paragraph":{{"justify":"{j}"}}}}"#)).align;
+        assert_eq!(align("0"), Some(1));
+        assert_eq!(align("1"), Some(1));
+        assert_eq!(align("3"), Some(2));
+        assert_eq!(align("4"), Some(4));
+        assert_eq!(align("9"), None);
         let s = parse_style_string("font-family:Times New Roman;font-size:12;font-weight:bold");
         assert_eq!(s.family.as_deref(), Some("Times New Roman"));
         assert_eq!(s.size_pt, Some(12.0));

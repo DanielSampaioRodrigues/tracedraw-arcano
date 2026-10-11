@@ -117,8 +117,11 @@ impl Corners {
     /// out of it, and how far the cut runs along each edge, all in the
     /// rectangle's own space. `scale` is the page length of one unit along
     /// the rectangle's x and y axes; fixed corners are divided by it so
-    /// that they keep their size on the page. A corner is at most half the
-    /// shorter side.
+    /// that they keep their size on the page. The two corners on a side
+    /// together are at most as long as the side: when they would be
+    /// longer, every corner shrinks by the same factor, so equal corners
+    /// are at most half the shorter side and a single corner can take a
+    /// whole side.
     fn layout(&self, rect: Rect, scale: (f64, f64)) -> [CornerAt; 4] {
         let rect = rect.abs();
         let (sx, sy) = if self.fixed {
@@ -126,16 +129,32 @@ impl Corners {
         } else {
             (1.0, 1.0)
         };
-        // Page-space limit, then each corner as an ellipse in local space.
-        let limit = (rect.width() * sx).min(rect.height() * sy) / 2.0;
-        let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
-        let at = |index: usize, p: Point, d_in: Vec2, d_out: Vec2| {
-            let r = self.radii[index];
-            let r = if r.is_finite() {
-                r.clamp(0.0, limit.max(0.0))
+        // Sizes in the units the radii are in, then each corner as an
+        // ellipse in local space.
+        let (w, h) = (rect.width() * sx, rect.height() * sy);
+        let radius = |i: usize| {
+            let r = self.radii[i];
+            if r.is_finite() {
+                r.max(0.0)
             } else {
                 0.0
-            };
+            }
+        };
+        let fit = |side: f64, a: usize, b: usize| {
+            let sum = radius(a) + radius(b);
+            if sum > side.max(0.0) && sum > 0.0 {
+                side.max(0.0) / sum
+            } else {
+                1.0
+            }
+        };
+        let shrink = fit(w, Self::TOP_LEFT, Self::TOP_RIGHT)
+            .min(fit(w, Self::BOTTOM_LEFT, Self::BOTTOM_RIGHT))
+            .min(fit(h, Self::TOP_LEFT, Self::BOTTOM_LEFT))
+            .min(fit(h, Self::TOP_RIGHT, Self::BOTTOM_RIGHT));
+        let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
+        let at = |index: usize, p: Point, d_in: Vec2, d_out: Vec2| {
+            let r = radius(index) * shrink;
             // The part of the corner's size along a direction.
             let along = |d: Vec2| if d.x != 0.0 { r / sx } else { r / sy };
             CornerAt {
@@ -1900,6 +1919,39 @@ pub struct Document {
     /// opened from), saved with it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fonts: Vec<DocumentFont>,
+    /// The CMYK colour profile the drawing's CMYK colours were chosen in
+    /// (the profile a `.cdr` file carries), saved with it; screen colours
+    /// of CMYK values come from it while the drawing is open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cmyk_profile: Option<DocumentProfile>,
+}
+
+/// An ICC profile a drawing carries.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentProfile {
+    /// The profile's name, for display.
+    pub name: String,
+    /// The ICC file, shared between undo steps.
+    #[serde(with = "shared_bytes")]
+    pub data: std::sync::Arc<Vec<u8>>,
+}
+
+impl DocumentProfile {
+    pub fn new(name: impl Into<String>, data: Vec<u8>) -> Self {
+        DocumentProfile {
+            name: name.into(),
+            data: std::sync::Arc::new(data),
+        }
+    }
+}
+
+impl std::fmt::Debug for DocumentProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentProfile")
+            .field("name", &self.name)
+            .field("bytes", &self.data.len())
+            .finish()
+    }
 }
 
 /// A font file a drawing carries, so its text keeps its letters where the
@@ -2042,6 +2094,7 @@ impl Document {
             palette: Vec::new(),
             time_tracker: TimeTracker::default(),
             fonts: Vec::new(),
+            cmyk_profile: None,
         }
     }
 
@@ -2697,6 +2750,32 @@ mod tests {
     }
 
     #[test]
+    fn a_single_corner_can_take_a_whole_side() {
+        // One corner of 70 mm on a 56 x 37 mm rectangle (as a file had
+        // it): it shrinks to the shorter side, 37 mm along both edges.
+        let mut c = Corners::default();
+        c.radii[Corners::TOP_LEFT] = 70.0;
+        let rect = Rect::new(0.0, 0.0, 56.0, 37.0);
+        let ends = c.ends(rect, (1.0, 1.0));
+        assert_eq!(
+            ends[Corners::TOP_LEFT],
+            (
+                Point::new(0.0, 37.0),
+                Point::new(0.0, 0.0),
+                Point::new(37.0, 37.0)
+            )
+        );
+        // With a second corner every corner shrinks by the factor of the
+        // tightest side (the left one: 37 / 70).
+        c.radii[Corners::TOP_RIGHT] = 30.0;
+        let ends = c.ends(rect, (1.0, 1.0));
+        let k = 37.0 / 70.0;
+        assert!((ends[Corners::TOP_LEFT].2.x - 70.0 * k).abs() < 1e-9);
+        assert!((ends[Corners::TOP_RIGHT].2.x - (56.0 - 30.0 * k)).abs() < 1e-9);
+        assert!((ends[Corners::TOP_RIGHT].1.y - (37.0 - 30.0 * k)).abs() < 1e-9);
+    }
+
+    #[test]
     fn fixed_corners_keep_their_size_when_scaled() {
         let r = 4.0;
         let mut c = Corners::uniform(r, CornerKind::Round);
@@ -2880,6 +2959,33 @@ mod tests {
         // Damaged base64 is an error, not a panic.
         let bad = r#"{"family":"X","data":"@@not base64@@"}"#;
         assert!(serde_json::from_str::<DocumentFont>(bad).is_err());
+    }
+
+    #[test]
+    fn a_carried_colour_profile_is_saved_with_the_drawing() {
+        let mut doc = Document::default();
+        let json = doc.to_json().expect("json");
+        // Not written when there is none (the metadata's profile name is
+        // another field).
+        let v: serde_json::Value = serde_json::from_str(&json).expect("value");
+        assert!(v.get("cmyk_profile").is_none());
+        assert!(Document::from_json(&json)
+            .expect("load")
+            .cmyk_profile
+            .is_none());
+        doc.cmyk_profile = Some(DocumentProfile::new("Press", vec![1, 2, 3, 4]));
+        let back = Document::from_json(&doc.to_json().expect("json")).expect("load");
+        assert_eq!(back.cmyk_profile, doc.cmyk_profile);
+        let copy = doc.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &copy.cmyk_profile.as_ref().expect("profile").data,
+            &doc.cmyk_profile.as_ref().expect("profile").data
+        ));
+        let shown = format!("{:?}", doc.cmyk_profile);
+        assert!(
+            shown.contains("Press") && shown.contains("bytes: 4"),
+            "{shown}"
+        );
     }
 
     #[test]

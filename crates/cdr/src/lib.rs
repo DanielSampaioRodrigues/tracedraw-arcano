@@ -72,6 +72,7 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
         .collect();
     let (fonts, notes) = container::embedded_fonts(bytes, &container);
     doc_report.0.fonts = fonts;
+    doc_report.0.cmyk_profile = container::cmyk_profile(bytes, &container);
     for n in notes {
         doc_report.1.warn(n);
     }

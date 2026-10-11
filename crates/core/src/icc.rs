@@ -1799,8 +1799,9 @@ impl Transform {
 // Test profile builders (shared with color.rs tests)
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
-pub(crate) mod test_profiles {
+#[cfg(any(test, feature = "test-profiles"))]
+#[doc(hidden)]
+pub mod test_profiles {
     //! Hand-assembled profiles: header, tag table and tag data.
 
     pub struct Builder {

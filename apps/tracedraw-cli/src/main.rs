@@ -108,6 +108,20 @@ fn load(
     if !loaded.0.fonts.is_empty() {
         tracedraw_text::fonts().add_document_fonts(&loaded.0.fonts);
     }
+    // CMYK colours render through the profile the drawing carries.
+    if let Some(p) = &loaded.0.cmyk_profile {
+        match tracedraw_core::icc::Profile::parse(&p.data) {
+            Ok(profile) if profile.color_space() == tracedraw_core::icc::ColorSpace::Cmyk => {
+                tracedraw_core::color::engine::install(tracedraw_core::color::IccEngine::new(
+                    None,
+                    Some(profile),
+                    tracedraw_core::icc::Intent::default(),
+                    false,
+                ));
+            }
+            _ => eprintln!("{path}: the colour profile it carries could not be used"),
+        }
+    }
     Ok(loaded)
 }
 
@@ -336,6 +350,22 @@ fn main() -> ExitCode {
                     for f in &doc.fonts {
                         println!("carries font: {} ({} bytes)", f.family, f.data.len());
                     }
+                    if let Some(p) = &doc.cmyk_profile {
+                        println!("carries CMYK profile: {} ({} bytes)", p.name, p.data.len());
+                    }
+                    // TRACEDRAW_OBJECTS=1 lists every object, for checking a
+                    // reader against what the file holds.
+                    if std::env::var("TRACEDRAW_OBJECTS").is_ok_and(|v| v != "0") {
+                        for p in &doc.pages {
+                            println!("{}:", p.name);
+                            for l in &p.layers {
+                                println!("  layer {:?}", l.name);
+                                for s in &l.shapes {
+                                    print!("{}", describe_shape(s, 2));
+                                }
+                            }
+                        }
+                    }
                     if let Some(r) = report {
                         println!(
                             "version: {}",
@@ -531,31 +561,32 @@ fn main() -> ExitCode {
                 std::fs::write(output, tracedraw_cdr::write::document_to_cdr(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".emf") {
-                tracedraw_io::save_emf(&doc, 0, output)
+                tracedraw_io::save_emf(&doc, page_index(), output)
             } else if output.to_ascii_lowercase().ends_with(".wmf") {
-                tracedraw_io::save_wmf(&doc, 0, output)
+                tracedraw_io::save_wmf(&doc, page_index(), output)
             } else if output.to_ascii_lowercase().ends_with(".plt") {
-                tracedraw_io::save_plt(&doc, 0, output)
+                tracedraw_io::save_plt(&doc, page_index(), output)
             } else if output.to_ascii_lowercase().ends_with(".psd") {
                 let dpi = std::env::var("TRACEDRAW_DPI")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(96.0);
-                tracedraw_io::save_psd(&doc, 0, dpi, output)
+                tracedraw_io::save_psd(&doc, page_index(), dpi, output)
             } else if output.to_ascii_lowercase().ends_with(".dxf") {
-                tracedraw_io::save_dxf(&doc, 0, output)
+                tracedraw_io::save_dxf(&doc, page_index(), output)
             } else if output.to_ascii_lowercase().ends_with(".html") {
                 std::fs::write(output, tracedraw_io::html::document_to_html(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".png") {
-                // Rasterise the first page at 96 dpi (or TRACEDRAW_DPI).
+                // Rasterise the first page (or TRACEDRAW_PAGE) at 96 dpi
+                // (or TRACEDRAW_DPI).
                 let dpi = std::env::var("TRACEDRAW_DPI")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(96.0);
                 match doc
                     .pages
-                    .first()
+                    .get(page_index())
                     .and_then(|p| tracedraw_render::render_page_image(&doc, p.id, dpi))
                 {
                     Some(pm) => pm
@@ -580,9 +611,154 @@ fn main() -> ExitCode {
     }
 }
 
+/// One line per object (and its children), indented by `depth`: kind,
+/// geometry, transform, fill, outline and text.
+fn describe_shape(s: &tracedraw_core::Shape, depth: usize) -> String {
+    use tracedraw_core::document::ShapeKind;
+    let pad = "  ".repeat(depth);
+    let kind = match &s.kind {
+        ShapeKind::Rect {
+            rect,
+            radius,
+            corners,
+        } => format!(
+            "rect {:.2}x{:.2} at ({:.2},{:.2}) radius {:.2}{}",
+            rect.width(),
+            rect.height(),
+            rect.x0,
+            rect.y0,
+            radius,
+            corners
+                .as_ref()
+                .map(|c| format!(" corners {c:?}"))
+                .unwrap_or_default()
+        ),
+        ShapeKind::Ellipse { rect, arc } => format!(
+            "ellipse {:.2}x{:.2} at ({:.2},{:.2}){}",
+            rect.width(),
+            rect.height(),
+            rect.x0,
+            rect.y0,
+            arc.as_ref()
+                .map(|a| format!(" arc {a:?}"))
+                .unwrap_or_default()
+        ),
+        ShapeKind::Polygon { rect, points, .. } => {
+            format!(
+                "polygon {points} points {:.2}x{:.2}",
+                rect.width(),
+                rect.height()
+            )
+        }
+        ShapeKind::Path { path, closed } => format!(
+            "path {} elements{}",
+            path.elements().len(),
+            if *closed { " closed" } else { "" }
+        ),
+        ShapeKind::Text {
+            spans,
+            origin,
+            frame,
+            align,
+            para,
+            on_path,
+        } => {
+            let runs: Vec<String> = spans
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{:?} [{} {:.1}pt{}{}]",
+                        r.text,
+                        r.font_family,
+                        r.size_pt,
+                        if r.bold { " bold" } else { "" },
+                        if r.italic { " italic" } else { "" }
+                    )
+                })
+                .collect();
+            format!(
+                "text at ({:.2},{:.2}) frame {:?} align {:?} leading {:.0}%{} {}",
+                origin.x,
+                origin.y,
+                frame.map(|f| (f.width, f.height)),
+                align,
+                para.leading_pct,
+                if on_path.is_some() { " on path" } else { "" },
+                runs.join(" + ")
+            )
+        }
+        ShapeKind::Group { children } => format!("group of {}", children.len()),
+        ShapeKind::ClipFrame { contents, .. } => format!("clip frame of {}", contents.len()),
+        ShapeKind::Table(_) => "table".to_string(),
+        ShapeKind::SymbolInstance { index } => format!("symbol {index}"),
+        ShapeKind::Bitmap {
+            rect,
+            width_px,
+            height_px,
+            ..
+        } => format!(
+            "bitmap {width_px}x{height_px} px in {:.2}x{:.2} mm",
+            rect.width(),
+            rect.height()
+        ),
+    };
+    let b = s.bounds();
+    let t = s.transform.as_coeffs();
+    let fill = match &s.fill {
+        tracedraw_core::Fill::None => "none".to_string(),
+        tracedraw_core::Fill::Solid(c) => format!("{c:?}"),
+        other => format!("{:?}", std::mem::discriminant(other)),
+    };
+    let stroke = s
+        .stroke
+        .as_ref()
+        .map(|o| format!("{:.3} mm {:?}", o.width, o.color))
+        .unwrap_or_else(|| "none".to_string());
+    let mut out = format!(
+        "{pad}{kind}\n{pad}  bounds ({:.2},{:.2})-({:.2},{:.2}) transform [{:.3} {:.3} {:.3} {:.3} {:.2} {:.2}] opacity {:.2}\n{pad}  fill {fill}; outline {stroke}\n",
+        b.x0, b.y0, b.x1, b.y1, t[0], t[1], t[2], t[3], t[4], t[5], s.opacity
+    );
+    match &s.kind {
+        ShapeKind::Group { children } => {
+            for c in children {
+                out.push_str(&describe_shape(c, depth + 1));
+            }
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            out.push_str(&describe_shape(frame, depth + 1));
+            for c in contents {
+                out.push_str(&describe_shape(c, depth + 1));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The page the single-page exports write: TRACEDRAW_PAGE, counted from
+/// 1 (the first page when unset or unreadable).
+fn page_index() -> usize {
+    page_from(std::env::var("TRACEDRAW_PAGE").ok().as_deref())
+}
+
+fn page_from(v: Option<&str>) -> usize {
+    v.and_then(|v| v.trim().parse::<usize>().ok())
+        .map(|n| n.saturating_sub(1))
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_to_export_counts_from_one() {
+        assert_eq!(page_from(None), 0);
+        assert_eq!(page_from(Some("1")), 0);
+        assert_eq!(page_from(Some(" 3 ")), 2);
+        assert_eq!(page_from(Some("0")), 0);
+        assert_eq!(page_from(Some("two")), 0);
+    }
 
     #[test]
     fn pdf_protection_comes_from_the_environment_values() {

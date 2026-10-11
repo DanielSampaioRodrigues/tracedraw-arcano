@@ -226,6 +226,7 @@ MCP server all go through it, so anything a click can do, a script can do.
 # Convert between any format TraceDraw opens and any it writes
 tracedraw-cli convert poster.cdr poster.pdf
 TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
+TRACEDRAW_PAGE=2 tracedraw-cli convert brochure.cdr page2.png
 
 # A PDF with a bookmark per page that cannot be printed or copied
 # without its permissions password
@@ -235,6 +236,7 @@ TRACEDRAW_PDF_BOOKMARKS=1 TRACEDRAW_PDF_OWNER_PASSWORD=boss \
 # Look inside a .cdr: the chunk tree, and what the reader made of it
 tracedraw-cli inspect drawing.cdr
 tracedraw-cli info drawing.cdr
+TRACEDRAW_OBJECTS=1 tracedraw-cli info drawing.cdr   # every object
 
 # Serve the editor to an AI agent over the Model Context Protocol
 tracedraw --mcp

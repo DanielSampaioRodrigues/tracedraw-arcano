@@ -149,6 +149,19 @@ text everywhere in the drawing: on layers, in groups and clip frames,
 in table cells and in symbols; a family is missing when it is neither
 installed nor carried.
 
+## Family names
+
+A font is found by the family name its file lists (the typographic
+family, "Arial") and by its legacy family name when that differs
+("Arial Narrow", "Arial Black", "Segoe UI Semibold", the name a drawing
+from another program usually gives); the font lists show both. A
+legacy name picks the face of that name nearest the text's weight and
+style.
+
+A drawing that carries several faces of one family (regular and bold)
+has each face serve its text; an installed face of the same family,
+weight and style wins over the carried one.
+
 ## Missing fonts
 
 Text set in a family that is neither installed nor carried keeps its
@@ -211,6 +224,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Checks
 
+- `tests::fonts_are_found_by_their_legacy_family_names`,
+  `tests::a_drawing_brings_every_face_of_a_family`,
 - `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`,
   `tests::letters_a_font_lacks_are_drawn_with_a_font_that_has_them`,
   `tests::variable_fonts_draw_bold_with_their_weight_axis` and

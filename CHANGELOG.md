@@ -32,6 +32,23 @@ full, row-by-row status.
   for the classic PostScript ones), else of the same style (serif,
   monospaced, casual or sans-serif), so text keeps its line breaks; the
   messages name the stand-in, as in "Arial (Liberation Sans)".
+- `.cdr` files, checked against the previews files carry (public samples
+  of versions 11 to 22 and files of the project's author): line breaks in
+  artistic text of recent versions (they showed as boxes and the text ran
+  on one line), centred lines, bold, semibold, italic and underlined runs
+  from the style strings, rectangles of version 15 and later at their own
+  size (the scale was applied twice) with corners in the right unit,
+  polygons and stars at their size (they came out as a point), the size
+  of each page, layer names, uniform transparency, and CMYK colours shown
+  through the profile the file carries (the colours of the previews).
+  Every face of an embedded family is used (a bold face next to the
+  regular one), fonts are found by legacy names such as "Arial Narrow",
+  and the palette keeps colours in the CMY, HSB, HLS, Lab and YIQ models.
+- Outlines thinner than a pixel are drawn one pixel wide on screen and in
+  bitmap exports instead of fading out.
+- `tracedraw-cli`: `TRACEDRAW_PAGE` chooses the page a bitmap or single-page
+  export writes, and `TRACEDRAW_OBJECTS=1 tracedraw-cli info` lists every
+  object the reader made.
 - Letters a font lacks are drawn with a font that has them, so Chinese,
   Japanese, Korean, Arabic, Hebrew or Thai text set in a Latin font shows
   its letters instead of empty boxes.

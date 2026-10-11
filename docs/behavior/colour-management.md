@@ -83,7 +83,32 @@ Export > PDF offers PDF 1.4, PDF/X-1a:2003, PDF/X-3:2003 and PDF/X-4
 `qpdf --check` finds no errors; a sample X-1a file of a real banner
 rendered the same picture through the DeviceCMYK image.
 
+## A drawing's own CMYK profile
+
+A drawing can carry the CMYK profile its CMYK values were chosen in: a
+`.cdr` file's profile (under `color/profiles/cmyk/`) comes with the
+drawing and is saved in its `.tdraw` file. While that drawing is the
+active one, its CMYK colours show through its profile (rendering intent
+and black point compensation from the settings); other drawings use the
+profile of the settings. Switching tabs, opening or reverting a drawing
+installs the right one. `tracedraw-cli` renders and exports through the
+drawing's profile too (relative colorimetric, no black point
+compensation).
+
+## Thin outlines on screen
+
+An outline thinner than one pixel at the current zoom (or the
+resolution of a bitmap export) is drawn one pixel wide at full strength
+instead of a faded fraction of a pixel; vector exports keep the true
+width.
+
 ## Checks
+
+- `app::tests::a_drawing_shows_through_the_cmyk_profile_it_carries`,
+  `container::tests::the_cmyk_profile_comes_with_the_document` (cdr crate),
+  `document::tests::a_carried_colour_profile_is_saved_with_the_drawing`
+  (core) and `tests::outlines_thinner_than_a_pixel_stay_one_pixel_wide`
+  (render crate).
 
 - `tracedraw_core` `press::tests::process_inks_show_as_on_a_coated_web_press`:
   the default palette colours on screen within 5 levels.

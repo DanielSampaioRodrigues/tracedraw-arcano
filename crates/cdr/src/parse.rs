@@ -211,6 +211,7 @@ struct Loda {
 #[derive(Debug, Clone, Copy)]
 struct PolygonInfo {
     num_angles: u32,
+    /// Scale factors of the base shape the object's coordinates hold.
     rx: f64,
     ry: f64,
     cx: f64,
@@ -473,11 +474,11 @@ impl<'a> Ctx<'a> {
         self.flags(lc).filter(|f| f[3] == 0x98).map(|f| f[0])
     }
 
-    /// The `loda`/`lobj` chunk that is a direct child of a list.
+    /// The `loda`/`lobj` chunk of a list: a direct child, or (version 16+,
+    /// seen in version 17 to 21 files) the one in its `lgob` list.
     fn own_loda<'c>(&self, list: &'c Chunk) -> Option<&'c Chunk> {
-        list.children
-            .iter()
-            .find(|c| c.is(b"loda") || c.is(b"lobj"))
+        let direct = |l: &'c Chunk| l.children.iter().find(|c| c.is(b"loda") || c.is(b"lobj"));
+        direct(list).or_else(|| list.find(b"lgob").and_then(direct))
     }
 
     fn layer_name(&mut self, lc: &Chunk) -> Option<String> {
@@ -1148,6 +1149,12 @@ impl<'a> Ctx<'a> {
         if let Some(i) = style.italic {
             span.italic = i;
         }
+        if let Some(u) = style.underline {
+            span.underline = u;
+        }
+        if let Some(t) = style.strikethrough {
+            span.strikethrough = t;
+        }
         if let Some(cs) = style.char_spacing {
             if cs != 0.0 {
                 span.tracking_pct = cs * 100.0;
@@ -1237,9 +1244,16 @@ impl<'a> Ctx<'a> {
                     .warn("paragraph text without a readable frame; treated as artistic text"),
             }
         }
-        let object_style = style_id
+        // The object's own style string (version 16+: its paragraph
+        // alignment, spacing and character settings), over the style
+        // table's entry.
+        let table_style = style_id
             .map(|id| self.style_defaults(id))
             .unwrap_or_default();
+        let object_style = match hints.style {
+            Some(st) => text::parse_style_string(st).over(&table_style),
+            None => table_style,
+        };
         let mut spans: Vec<TextSpan> = Vec::new();
         let mut align: Option<u32> = object_style.align;
         let mut para_fmt = ParagraphStyle::default();
@@ -1269,7 +1283,7 @@ impl<'a> Ctx<'a> {
             }
             for (k, run) in para.runs.iter().enumerate() {
                 let style = run.style.over(&base);
-                let mut text = self.run_text(run, &style);
+                let mut text = text::line_breaks(&self.run_text(run, &style));
                 if i + 1 < n && k + 1 == para.runs.len() {
                     text.push('\n');
                 }
@@ -1609,8 +1623,8 @@ impl<'a> Ctx<'a> {
         }
         Some(PolygonInfo {
             num_angles,
-            rx: rx * UNIT_MM,
-            ry: ry * UNIT_MM,
+            rx,
+            ry,
             cx,
             cy,
         })
@@ -1725,6 +1739,13 @@ impl<'a> Ctx<'a> {
                 return None;
             }
         };
+
+        // Version 16+: the transparency of the object's style string.
+        if opacity >= 1.0 {
+            if let Some(o) = style_string.as_deref().and_then(text::object_opacity) {
+                opacity = o;
+            }
+        }
 
         // The page origin is the page centre; ours is the bottom-left.
         let recenter = Affine::translate((page_size.width / 2.0, page_size.height / 2.0));
@@ -1861,31 +1882,28 @@ impl<'a> Ctx<'a> {
                     }
                     (w, h, radii)
                 } else {
-                    // version 15+: doubles in coordinate units, scale factors, and
-                    // four radii each followed by corner data we skip.
+                    // version 15+: width and height as doubles in coordinate
+                    // units, the scale the transform applies (it is in
+                    // `trfd` too, so it is not applied again), a flag, and
+                    // four radii in inches each followed by corner data we
+                    // skip.
                     let w = r.f64_coord()?;
                     let h = r.f64_coord()?;
-                    let sx = r.f64().unwrap_or(1.0);
-                    let sy = r.f64().unwrap_or(1.0);
-                    let scale_with = r.u8().unwrap_or(0);
+                    let _sx = r.f64();
+                    let _sy = r.f64();
+                    let _scale_with = r.u8();
                     r.skip(7);
-                    let unit = if scale_with == 0 { UNIT_MM } else { 25.4 };
                     // Each radius is followed by 16 bytes of corner data
                     // (corner type and unknown fields) except the last.
                     let mut radii = Vec::new();
                     for gap in [16usize, 16, 16, 0] {
                         let Some(raw) = r.f64() else { break };
                         if raw.is_finite() {
-                            radii.push(raw * unit);
+                            radii.push(raw * 25.4);
                         }
                         r.skip(gap);
                     }
-                    let (sx, sy) = if sx.is_finite() && sy.is_finite() && sx != 0.0 && sy != 0.0 {
-                        (sx, sy)
-                    } else {
-                        (1.0, 1.0)
-                    };
-                    (w * sx, h * sy, radii)
+                    (w, h, radii)
                 };
                 let rect = Rect::new(
                     0.0_f64.min(w),
@@ -1947,26 +1965,45 @@ impl<'a> Ctx<'a> {
             }
             // Polygon: the coordinates hold the base curve; the polygon
             // argument gives the number of angles, radii and centre.
+            // Polygon: the coordinates hold one segment of a base shape
+            // centred on the origin (its first point the top vertex, then
+            // the middle of the side or the inner point of a star, then
+            // the next vertex clockwise); argument 11000 scales it and
+            // places its centre (seen in a version 19 file: a base radius
+            // of 1000 mm scaled by 0.0445 to a 44.5 mm pentagon).
             OBJ_POLYGON => {
                 let n = r.u32()? as usize;
                 let (pts, _types) = self.read_points(&mut r, n)?;
+                let radius = pts.first().map(|p| p.to_vec2().hypot()).unwrap_or(0.0);
+                let inner = pts
+                    .get(1)
+                    .map(|p| p.to_vec2().hypot() / radius)
+                    .filter(|k| k.is_finite());
                 let (rect, points) = match polygon {
-                    Some(p) if p.rx.abs() > 1e-9 && p.ry.abs() > 1e-9 => (
-                        Rect::new(
-                            p.cx - p.rx.abs(),
-                            p.cy - p.ry.abs(),
-                            p.cx + p.rx.abs(),
-                            p.cy + p.ry.abs(),
-                        ),
-                        p.num_angles.clamp(3, 500),
-                    ),
+                    Some(p)
+                        if radius > 1e-9
+                            && (p.rx * radius).abs() > 1e-6
+                            && (p.ry * radius).abs() > 1e-6 =>
+                    {
+                        let (hx, hy) = ((p.rx * radius).abs(), (p.ry * radius).abs());
+                        (
+                            Rect::new(p.cx - hx, p.cy - hy, p.cx + hx, p.cy + hy),
+                            p.num_angles.clamp(3, 500),
+                        )
+                    }
                     Some(p) => (bounds_of(&pts)?, p.num_angles.clamp(3, 500)),
                     None => (bounds_of(&pts)?, 5),
+                };
+                // An inner point closer than the middle of a side: a star.
+                let side_middle = (std::f64::consts::PI / points as f64).cos();
+                let sharpness = match inner {
+                    Some(k) if k < side_middle - 1e-3 => (1.0 - k).clamp(0.0, 1.0),
+                    _ => 0.0,
                 };
                 Some(ShapeKind::Polygon {
                     rect,
                     points,
-                    sharpness: 0.0,
+                    sharpness,
                     complex: None,
                     twist: 0.0,
                 })
@@ -2977,16 +3014,14 @@ mod tests {
 
     #[test]
     fn rectangle_x5_doubles_and_scale() {
-        let mut c = f64s(&[254000.0, 127000.0]); // 1 x 0.5 inch
+        // 1 x 0.5 inch with corners of 0.1 inch (radii are in inches, as a
+        // version 17 file shows); the scale is the transform's, so the
+        // rectangle keeps its own size.
+        let mut c = f64s(&[254000.0, 127000.0]);
         c.extend_from_slice(&f64s(&[2.0, 2.0])); // scale
-        c.push(0); // scale_with = 0: radii in coordinate units
+        c.push(0); // scale_with
         c.extend_from_slice(&[0; 7]);
-        for (r, gap) in [
-            (25400.0f64, 16usize),
-            (25400.0, 16),
-            (25400.0, 16),
-            (25400.0, 0),
-        ] {
+        for (r, gap) in [(0.1f64, 16usize), (0.1, 16), (0.1, 16), (0.1, 0)] {
             c.extend_from_slice(&f64s(&[r]));
             c.extend_from_slice(&vec![0u8; gap]);
         }
@@ -3003,8 +3038,8 @@ mod tests {
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
         match &first_shape(&doc).kind {
             ShapeKind::Rect { rect, radius, .. } => {
-                assert!((rect.width() - 50.8).abs() < 1e-9);
-                assert!((rect.height() - 25.4).abs() < 1e-9);
+                assert!((rect.width() - 25.4).abs() < 1e-9);
+                assert!((rect.height() - 12.7).abs() < 1e-9);
                 assert!((radius - 2.54).abs() < 1e-9);
             }
             other => panic!("{other:?}"),
@@ -3089,33 +3124,61 @@ mod tests {
 
     #[test]
     fn polygon_uses_the_polygon_argument() {
-        let mut coords = u32s(&[2]);
-        coords.extend_from_slice(&i32s(&[0, 0, 10000, 10000]));
-        coords.extend_from_slice(&[0x00, 0x40]);
-        // version 13 layout: num angles, next point 1 (> 1 so 4 unknown bytes
-        // follow), unknown3, rx, ry, cx, cy.
-        let mut poly = u32s(&[6, 2, 0, 0]);
-        poly.extend_from_slice(&f64s(&[254000.0, 127000.0]));
-        poly.extend_from_slice(&i32s(&[0, 0]));
-        let obj = list(
-            b"obj ",
-            &chunk(
-                b"loda",
-                &loda(OBJ_POLYGON, &[(ARG_COORDS, coords), (ARG_POLYGON, poly)]),
-            ),
-        );
-        let body = [
-            chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
-            list(b"page", &list(b"layr", &obj)),
-        ]
-        .concat();
-        let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
-        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
-        match &first_shape(&doc).kind {
-            ShapeKind::Polygon { rect, points, .. } => {
-                assert_eq!(*points, 6);
-                assert!((rect.width() - 50.8).abs() < 1e-9);
+        // One segment of a base hexagon of radius 1000 mm: the top vertex,
+        // the middle of a side (or a star's inner point), the next vertex.
+        let read = |inner_mm: f64| {
+            let a = 60f64.to_radians();
+            let mut coords = u32s(&[3]);
+            coords.extend_from_slice(&i32s(&[
+                0,
+                10_000_000,
+                (inner_mm * 10_000.0 * a.cos()).round() as i32,
+                (inner_mm * 10_000.0 * a.sin()).round() as i32,
+                8_660_254,
+                5_000_000,
+            ]));
+            coords.extend_from_slice(&[0x00, 0x01, 0x01]);
+            // version 13 layout: num angles, next point, unknown, 4 unknown,
+            // the scale of the base shape, the centre.
+            let mut poly = u32s(&[6, 2, 0, 0]);
+            poly.extend_from_slice(&f64s(&[0.0254, 0.0127]));
+            poly.extend_from_slice(&i32s(&[100_000, 0]));
+            let obj = list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(OBJ_POLYGON, &[(ARG_COORDS, coords), (ARG_POLYGON, poly)]),
+                ),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            first_shape(&doc).kind.clone()
+        };
+        // A plain hexagon: 25.4 by 12.7 mm radii around (10 mm, 0).
+        match read(1000.0 * 30f64.to_radians().cos()) {
+            ShapeKind::Polygon {
+                rect,
+                points,
+                sharpness,
+                ..
+            } => {
+                assert_eq!(points, 6);
+                assert!((rect.width() - 50.8).abs() < 1e-9, "{rect:?}");
                 assert!((rect.height() - 25.4).abs() < 1e-9);
+                assert!((rect.center().x - 10.0).abs() < 1e-9);
+                assert_eq!(sharpness, 0.0);
+            }
+            other => panic!("{other:?}"),
+        }
+        // An inner point at half the radius: a star.
+        match read(500.0) {
+            ShapeKind::Polygon { sharpness, .. } => {
+                assert!((sharpness - 0.5).abs() < 1e-6, "{sharpness}")
             }
             other => panic!("{other:?}"),
         }
@@ -3864,7 +3927,7 @@ mod tests {
         t.push(0); // frame flag byte: not 1
         t.extend_from_slice(&style_string(
             v,
-            r#"{"character":{"font":5,"size":10},"paragraph":{"justify":3}}"#,
+            r#"{"character":{"font":5,"size":10},"paragraph":{"justify":"2"}}"#,
         ));
         t.extend_from_slice(&u32s(&[1])); // one style record
         t.extend_from_slice(&u16s(&[0, 1, 0]));

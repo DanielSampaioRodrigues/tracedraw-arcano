@@ -94,7 +94,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
 | Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report: stand-ins drawn to the same widths (Liberation for Arial, Times and Courier, Carlito for Calibri, Caladea for Cambria, ...), else of the same style, named in the report | works (see `behavior/text.md`) |
-| Letters a font lacks drawn with a font that has them (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Indic and symbols included); variable fonts drawn at their weight and slant | works (see `behavior/text.md`) |
+| Letters a font lacks drawn with a font that has them (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Indic and symbols included); variable fonts drawn at their weight and slant; fonts found by their legacy family names too ("Arial Narrow", "Arial Black") | works (see `behavior/text.md`) |
 | Browser build: about a hundred free font families in a font folder, fetched the first time text needs one | works (see `behavior/web.md`, `web/FONTS.md`) |
 | Fonts carried by a drawing (embedded in an opened `.cdr`, saved in `.tdraw`): used for its text when not installed and the licence allows it | works (see `behavior/text.md`) |
 | Convert text to table and table to text | works |
@@ -146,6 +146,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Proof colours (soft proofing with the built-in CMYK model) | works |
 | CMYK shown through a built-in press model of coated stock when no profile is loaded (default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
+| A drawing's own CMYK profile (the one a `.cdr` file carries, saved in `.tdraw`): its CMYK colours shown through it while it is the active drawing | works (see `cdr-format.md`) |
 | Separations | works (PDF separations export) |
 
 ## 8. Bitmaps and images
@@ -184,7 +185,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Capability | Status |
 |---|---|
 | Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
-| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as clip frames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity, embedded fonts (EOT, not compressed) | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
+| `.cdr` content: shapes, curves, paths, polygons and stars (scaled base shapes), groups, bitmaps (cropped ones as clip frames), rectangles with their corners, text (artistic, paragraph, on a path in a group; line breaks, alignment, weights, italic, underline from style strings), line spacing and indents, fills, outlines, uniform transparency, preset and custom arrowheads, opacity, embedded fonts (EOT, not compressed, every face), the drawing's CMYK profile, page sizes per page, layer names | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects, text fitted to a path outside a group |
 | Native `.tdraw` save/load | works |
 | MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`) |
 | Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |

@@ -48,6 +48,11 @@ pub struct FontSystem {
     /// Counts the times fonts were added, so views drawn with stand-ins
     /// know to draw again.
     generation: AtomicU64,
+    /// Family names fonts give as their legacy family (name ID 1, "Arial
+    /// Narrow", "Arial Black", "Segoe UI Semibold") where fontdb lists the
+    /// typographic family ("Arial"), with their faces: drawings name fonts
+    /// that way.
+    legacy: RwLock<HashMap<String, Vec<fontdb::ID>>>,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -234,6 +239,36 @@ pub fn substitutes(family: &str) -> Vec<&'static str> {
         }
     }
     out
+}
+
+/// The legacy family names (name ID 1) a face's name table gives that
+/// differ from the families fontdb lists for it (the typographic family,
+/// name ID 16): "Arial Narrow" for a face fontdb files under "Arial".
+fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
+    let Some(face) = db.face(id) else {
+        return Vec::new();
+    };
+    let known: Vec<&str> = face.families.iter().map(|(n, _)| n.as_str()).collect();
+    db.with_face_data(id, |data, index| {
+        let Ok(f) = ttf_parser::Face::parse(data, index) else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+        for name in f.names() {
+            if name.name_id != ttf_parser::name_id::FAMILY || !name.is_unicode() {
+                continue;
+            }
+            let Some(text) = name.to_string() else {
+                continue;
+            };
+            let text = text.trim().to_string();
+            if !text.is_empty() && !known.contains(&text.as_str()) && !out.contains(&text) {
+                out.push(text);
+            }
+        }
+        out
+    })
+    .unwrap_or_default()
 }
 
 /// `data` is a font file (or collection) whose every face reads and
@@ -573,6 +608,14 @@ impl FontSystem {
             .faces()
             .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))
             .collect();
+        let mut legacy: HashMap<String, Vec<fontdb::ID>> = HashMap::new();
+        let ids: Vec<fontdb::ID> = db.faces().map(|f| f.id).collect();
+        for id in ids {
+            for name in legacy_families(&db, id) {
+                legacy.entry(name).or_default().push(id);
+            }
+        }
+        families.extend(legacy.keys().cloned());
         families.sort();
         families.dedup();
         log::info!(
@@ -591,7 +634,56 @@ impl FontSystem {
             requests: Mutex::new((Vec::new(), Vec::new())),
             fallbacks: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
+            legacy: RwLock::new(legacy),
         }
+    }
+
+    /// Note the legacy family names of faces just loaded (see
+    /// [`FontSystem::legacy`]); returns them.
+    fn register_legacy(&self, ids: &[fontdb::ID]) -> Vec<String> {
+        let mut names = Vec::new();
+        {
+            let db = self.db();
+            let mut legacy = self.legacy.write().unwrap_or_else(|e| e.into_inner());
+            for id in ids {
+                for name in legacy_families(&db, *id) {
+                    let faces = legacy.entry(name.clone()).or_default();
+                    if !faces.contains(id) {
+                        faces.push(*id);
+                    }
+                    names.push(name);
+                }
+            }
+        }
+        names.sort();
+        names.dedup();
+        if !names.is_empty() {
+            let mut families = self.families.write().unwrap_or_else(|e| e.into_inner());
+            families.extend(names.iter().cloned());
+            families.sort();
+            families.dedup();
+        }
+        names
+    }
+
+    /// The face of a legacy family name nearest the weight and style.
+    fn legacy_face(
+        &self,
+        db: &fontdb::Database,
+        family: &str,
+        weight: fontdb::Weight,
+        style: fontdb::Style,
+    ) -> Option<fontdb::ID> {
+        let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
+        legacy
+            .get(family)?
+            .iter()
+            .filter_map(|id| db.face(*id).map(|f| (*id, f)))
+            .min_by_key(|(_, f)| {
+                let off = (i32::from(f.weight.0) - i32::from(weight.0)).abs();
+                off + if f.style == style { 0 } else { 1000 }
+            })
+            .map(|(id, _)| id)
     }
 
     /// Fonts were added: drop what was laid out or chosen without them.
@@ -695,6 +787,7 @@ impl FontSystem {
     /// they added.
     pub fn add_fonts(&self, files: Vec<Vec<u8>>) -> Vec<String> {
         let mut added = Vec::new();
+        let mut loaded = Vec::new();
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
         for data in files {
             let source = fontdb::Source::Binary(Arc::new(data));
@@ -702,10 +795,12 @@ impl FontSystem {
             for id in ids {
                 if let Some(face) = db.face(id) {
                     added.extend(face.families.iter().map(|(n, _)| n.clone()));
+                    loaded.push(id);
                 }
             }
         }
         drop(db);
+        added.extend(self.register_legacy(&loaded));
         added.sort();
         added.dedup();
         if added.is_empty() {
@@ -762,27 +857,52 @@ impl FontSystem {
         let source = fontdb::Source::Binary(font.data.clone());
         let mut probe = fontdb::Database::new();
         probe.load_font_source(source.clone());
-        let mut names: Vec<String> = probe
+        // A face is new when no loaded face has its family, weight and
+        // style: a drawing brings the bold face of a family it also brings
+        // (or that is installed) in regular, and both serve its text.
+        let faces: Vec<(Vec<String>, fontdb::Weight, fontdb::Style)> = probe
             .faces()
-            .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))
+            .map(|f| {
+                let names = f.families.iter().map(|(n, _)| n.clone()).collect();
+                (names, f.weight, f.style)
+            })
             .collect();
-        names.sort();
-        names.dedup();
         // Checked and loaded under one lock, so two documents bringing the
         // same font load it once.
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
-        let new: Vec<String> = names
-            .into_iter()
-            .filter(|n| !db.faces().any(|f| f.families.iter().any(|(m, _)| m == n)))
+        let mut new: Vec<String> = faces
+            .iter()
+            .filter(|(names, weight, style)| {
+                !db.faces().any(|g| {
+                    g.weight == *weight
+                        && g.style == *style
+                        && g.families.iter().any(|(m, _)| names.contains(m))
+                })
+            })
+            .flat_map(|(names, _, _)| names.iter().cloned())
             .collect();
+        new.sort();
+        new.dedup();
         if new.is_empty() {
             return Vec::new();
         }
-        if db.load_font_source(source).is_empty() {
+        let loaded = db.load_font_source(source);
+        if loaded.is_empty() {
             return Vec::new();
         }
         drop(db);
+        let before = self.families();
+        let legacy_names = self.register_legacy(&loaded);
+        new.extend(legacy_names);
+        new.sort();
+        new.dedup();
         let mut families = self.families.write().unwrap_or_else(|e| e.into_inner());
+        // Families nothing installed or brought before: the drawing's own.
+        let own: Vec<String> = new
+            .iter()
+            .filter(|n| !before.contains(n))
+            .cloned()
+            .collect();
         families.extend(new.iter().cloned());
         families.sort();
         families.dedup();
@@ -791,7 +911,7 @@ impl FontSystem {
             .document_families
             .write()
             .unwrap_or_else(|e| e.into_inner());
-        doc.extend(new.iter().cloned());
+        doc.extend(own);
         doc.sort();
         doc.dedup();
         drop(doc);
@@ -895,8 +1015,23 @@ impl FontSystem {
         } else {
             fontdb::Style::Normal
         };
-        let mut fams = vec![fontdb::Family::Name(family)];
-        fams.extend(substitutes(family).into_iter().map(fontdb::Family::Name));
+        let db = self.db();
+        let exact = fontdb::Query {
+            families: &[fontdb::Family::Name(family)],
+            weight,
+            stretch: fontdb::Stretch::Normal,
+            style,
+        };
+        if let Some(id) = db
+            .query(&exact)
+            .or_else(|| self.legacy_face(&db, family, weight, style))
+        {
+            return Some(id);
+        }
+        let mut fams: Vec<fontdb::Family> = substitutes(family)
+            .into_iter()
+            .map(fontdb::Family::Name)
+            .collect();
         fams.extend([
             fontdb::Family::Name("DejaVu Sans"),
             fontdb::Family::Name("Arial"),
@@ -908,7 +1043,6 @@ impl FontSystem {
             stretch: fontdb::Stretch::Normal,
             style,
         };
-        let db = self.db();
         db.query(&q).or_else(|| db.faces().next().map(|f| f.id))
     }
 
@@ -2591,6 +2725,49 @@ mod tests {
     }
 
     #[test]
+    fn fonts_are_found_by_their_legacy_family_names() {
+        // Quicksand lists "Quicksand" as its family and "Quicksand Light"
+        // as its legacy one (name ID 1): text set in either finds it.
+        let f = system_with(&[QUICKSAND]);
+        assert!(f.has_family("Quicksand Light"));
+        assert_eq!(f.substitute("Quicksand Light"), None);
+        let a = f.outline(&[TextSpan::new("Hello", "Quicksand Light", 24.0)]);
+        let b = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
+        assert_eq!(a.path.elements().len(), b.path.elements().len());
+        assert!((a.bounds.width() - b.bounds.width()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_drawing_brings_every_face_of_a_family() {
+        const SELAWIK_BOLD: &[u8] =
+            include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+        let f = system_with(&[]);
+        let regular = DocumentFont::new("Selawik", SELAWIK.to_vec());
+        let bold = DocumentFont::new("Selawik", SELAWIK_BOLD.to_vec());
+        // The bold face of the same family loads too.
+        assert_eq!(
+            f.add_document_fonts(std::slice::from_ref(&regular)),
+            ["Selawik"]
+        );
+        assert_eq!(
+            f.add_document_fonts(std::slice::from_ref(&bold)),
+            ["Selawik"]
+        );
+        assert_eq!(f.db().len(), 2);
+        // The same faces again: nothing new.
+        assert!(f.add_document_fonts(&[regular, bold]).is_empty());
+        assert_eq!(f.db().len(), 2);
+        // Bold text is drawn with the bold face, not a thickened regular one.
+        let mut span = TextSpan::new("Hello", "Selawik", 100.0);
+        let plain = f.outline(std::slice::from_ref(&span));
+        span.bold = true;
+        let heavy = f.outline(&[span]);
+        assert!(heavy.path.elements().len() < plain.path.elements().len() * 2);
+        let advance = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        assert!((advance(&heavy) - advance(&plain)).abs() > 0.1);
+    }
+
+    #[test]
     fn fonts_the_application_offers_are_asked_for_once_and_then_draw() {
         let f = system_with(&[]);
         let _ = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
@@ -2610,10 +2787,14 @@ mod tests {
         // and draws; a file that is not a font is skipped.
         let g = f.generation();
         let added = f.add_fonts(vec![QUICKSAND.to_vec(), b"not a font".to_vec()]);
-        assert_eq!(added, ["Quicksand"]);
+        // The family, and the legacy name of its default instance.
+        assert_eq!(added, ["Quicksand", "Quicksand Light"]);
         assert!(f.generation() > g);
         assert!(f.has_family("Quicksand"));
-        assert_eq!(f.available_families(), ["Quicksand", "Unused Sans"]);
+        assert_eq!(
+            f.available_families(),
+            ["Quicksand", "Quicksand Light", "Unused Sans"]
+        );
         let l = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
         assert!(l.path.elements().len() > 20);
         assert!(f.add_fonts(vec![vec![1, 2, 3]]).is_empty());

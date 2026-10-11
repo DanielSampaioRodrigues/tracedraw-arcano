@@ -748,6 +748,9 @@ pub struct App {
     /// `tracedraw_text::fonts().generation()` when `font_families` was
     /// taken (see `App::sync_fonts`).
     pub font_generation: u64,
+    /// The carried CMYK profile the colour engine was installed with
+    /// (its data's address), see `App::sync_document_colors`.
+    pub color_profile_key: Option<usize>,
     pub transform_tab: TransformTab,
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
@@ -1348,6 +1351,7 @@ impl App {
             wireframe: false,
             font_families: tracedraw_text::fonts().available_families(),
             font_generation: tracedraw_text::fonts().generation(),
+            color_profile_key: None,
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
             segment_spot: None,
@@ -1713,19 +1717,35 @@ impl App {
             }
         };
         let rgb = load(&c.rgb_profile_path);
-        let cmyk = load(&c.cmyk_profile_path);
+        // A drawing that carries its CMYK profile (a `.cdr` file's) shows
+        // its CMYK colours through it; others through the settings' one.
+        let carried = self.doc().cmyk_profile.clone();
+        let cmyk = carried_cmyk_profile(self.doc()).or_else(|| load(&c.cmyk_profile_path));
+        let intent = Intent::from_name(&c.intent).unwrap_or_default();
+        let bpc = c.black_point_compensation;
+        self.color_profile_key = carried.map(|p| std::sync::Arc::as_ptr(&p.data) as usize);
         if rgb.is_none() && cmyk.is_none() {
             engine::clear();
+            self.raster.borrow_mut().invalidate();
             return;
         }
-        let intent = Intent::from_name(&c.intent).unwrap_or_default();
-        engine::install(IccEngine::new(
-            rgb,
-            cmyk,
-            intent,
-            c.black_point_compensation,
-        ));
+        engine::install(IccEngine::new(rgb, cmyk, intent, bpc));
         self.raster.borrow_mut().invalidate();
+    }
+
+    /// Show the active drawing through the CMYK profile it carries, or the
+    /// settings' one when it carries none: called every frame, it installs
+    /// the colour engine again only when the drawing's profile changed
+    /// (another tab, a drawing opened or reverted).
+    pub fn sync_document_colors(&mut self) {
+        let key = self
+            .doc()
+            .cmyk_profile
+            .as_ref()
+            .map(|p| std::sync::Arc::as_ptr(&p.data) as usize);
+        if key != self.color_profile_key {
+            self.apply_color_settings();
+        }
     }
 
     /// Pick an `.icc`/`.icm` file for the RGB or CMYK slot.
@@ -4233,9 +4253,37 @@ fn opened_objects(format: &str, n: usize) -> String {
     )
 }
 
+/// The CMYK profile a drawing carries, when it reads as a CMYK profile.
+pub(crate) fn carried_cmyk_profile(
+    doc: &tracedraw_core::Document,
+) -> Option<tracedraw_core::icc::Profile> {
+    let p = doc.cmyk_profile.as_ref()?;
+    let profile = tracedraw_core::icc::Profile::parse(&p.data).ok()?;
+    (profile.color_space() == tracedraw_core::icc::ColorSpace::Cmyk).then_some(profile)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_drawing_shows_through_the_cmyk_profile_it_carries() {
+        use tracedraw_core::icc::test_profiles as tp;
+        let mut doc = tracedraw_core::Document::default();
+        assert!(carried_cmyk_profile(&doc).is_none());
+        doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new(
+            "Synthetic CMYK",
+            tp::lut16_cmyk_profile(),
+        ));
+        let p = carried_cmyk_profile(&doc).expect("profile");
+        assert_eq!(p.description(), Some("Synthetic CMYK"));
+        // Not a CMYK profile, or not a profile: the settings decide.
+        let rgb = tp::matrix_trc_profile(tp::para_srgb(), tp::para_srgb(), tp::para_srgb());
+        doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new("RGB", rgb));
+        assert!(carried_cmyk_profile(&doc).is_none());
+        doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new("Junk", vec![1, 2, 3]));
+        assert!(carried_cmyk_profile(&doc).is_none());
+    }
 
     #[test]
     fn the_browser_demo_message_shows_at_every_visit() {

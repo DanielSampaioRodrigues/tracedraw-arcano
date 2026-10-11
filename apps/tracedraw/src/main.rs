@@ -223,6 +223,7 @@ impl eframe::App for Shell {
         #[cfg(target_arch = "wasm32")]
         web::fetch_requested_fonts();
         app.sync_fonts();
+        app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
         // A Picture Mosaic library indexed on worker threads.

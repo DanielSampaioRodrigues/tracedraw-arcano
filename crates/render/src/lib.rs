@@ -1133,18 +1133,19 @@ impl Renderer<'_> {
         } else {
             1.0
         };
-        let width_px = if hair {
-            0.0
-        } else {
-            (stroke.width * object_scale * self.zoom) as f32
-        };
+        let true_px = (stroke.width * object_scale * self.zoom) as f32;
+        // An outline thinner than a pixel is drawn one pixel wide (a
+        // hairline) rather than faded until it disappears, as previews of
+        // such files show it.
+        let width_px = if hair || true_px < 1.0 { 0.0 } else { true_px };
         let dash = if stroke.dash.is_empty() || hair {
             None
         } else {
+            let unit = true_px.max(1.0);
             let arr: Vec<f32> = stroke
                 .dash
                 .iter()
-                .map(|d| (*d as f32 * width_px).max(0.01))
+                .map(|d| (*d as f32 * unit).max(0.01))
                 .collect();
             let arr = if arr.len() % 2 == 1 {
                 [arr.clone(), arr].concat()
@@ -1653,6 +1654,30 @@ mod tests {
             "outline {r} {g} {b}"
         );
         assert_eq!(px(&pm, 12, 87), (128, 128, 128), "plain fill knocks out");
+    }
+
+    #[test]
+    fn outlines_thinner_than_a_pixel_stay_one_pixel_wide() {
+        // A 0.1 mm black line at 25.4 dpi (a tenth of a pixel): drawn as a
+        // full-strength one-pixel line, not faded to a tenth.
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::geometry::BezPath::new();
+                    p.move_to((0.0, 50.5));
+                    p.line_to((100.0, 50.5));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(Stroke::new(Color::BLACK, 0.1));
+        let (doc, page) = doc_with(vec![line]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        let darkest = (0..100).map(|y| px(&pm, 50, y).0).min().unwrap_or(255);
+        assert!(darkest < 64, "darkest {darkest}");
     }
 
     #[test]
