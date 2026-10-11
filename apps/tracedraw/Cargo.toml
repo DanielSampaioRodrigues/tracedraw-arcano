@@ -41,6 +41,10 @@ web-time = "1"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
+# Windows: the sign-in display scaling for the automatic interface size.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_HiDpi"] }
+
 # The browser build: WebGL canvas, file pickers and downloads through the
 # DOM, randomness and time from JavaScript.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -893,7 +893,30 @@ fn text_page(app: &mut App, ui: &mut Ui) {
 // ----- Customization -----------------------------------------------------
 
 fn appearance_page(app: &mut App, ui: &mut Ui) {
+    let native = ui.ctx().native_pixels_per_point().unwrap_or(1.0);
+    let automatic = crate::ui::auto_ui_scale(native, crate::ui::system_ui_scale());
     grid("appearance").show(ui, |ui| {
+        row_label(ui, &tr("options.ui_scale"));
+        let auto = trf(
+            "options.ui_scale_auto",
+            &[("n", &format!("{:.0}", automatic * 100.0))],
+        );
+        let label = |s: f32| -> String {
+            if s <= 0.0 {
+                auto.clone()
+            } else {
+                format!("{:.0} %", s * 100.0)
+            }
+        };
+        egui::ComboBox::from_id_salt("ui_scale")
+            .selected_text(label(app.settings.ui_scale))
+            .width(170.0)
+            .show_ui(ui, |ui| {
+                for s in [0.0, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0] {
+                    ui.selectable_value(&mut app.settings.ui_scale, s, label(s));
+                }
+            });
+        ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
         ui.horizontal(|ui| {
             rgb_button(ui, &mut app.settings.desktop_rgb);

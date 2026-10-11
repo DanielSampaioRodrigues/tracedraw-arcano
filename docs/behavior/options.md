@@ -36,8 +36,8 @@ double-click on a ruler, the page border or its shadow).
 
 ## Customization
 
-Appearance (desktop colour, page border, Outline flyout in the toolbox),
-Commands (keyboard shortcuts of the tools), Command Bars (standard
+Appearance (interface size, desktop colour, page border, Outline flyout
+in the toolbox), Commands (keyboard shortcuts of the tools), Command Bars (standard
 toolbar, property bar, toolbox, status bar, Text, Zoom and Transform
 toolbars), Color Palette (No Color well, right mouse button, document
 palette; see `color-palettes.md`).
@@ -58,6 +58,21 @@ Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 Global: user interface language; where the preferences and auto-backups
 are kept. Workspaces: the workspace in use.
 
+## Interface size
+
+Customization > Appearance > Interface size sets how large the menus,
+bars, icons and dockers are drawn, in screen pixels per point:
+Automatic, 100 %, 110 %, 125 %, 150 %, 175 % or 200 %.
+
+- Automatic uses the scaling Windows applies to programs that follow the
+  sign-in display setting (`GetDpiForSystem() / 96`), so TraceDraw has
+  the size of the other desktop programs even on a monitor scaled
+  differently since sign-in. Elsewhere it is the monitor's own scaling.
+  The list shows the percentage Automatic gives on this computer.
+- A chosen size wins on every monitor: the zoom factor is the size over
+  the monitor's scaling, so text stays sharp.
+- Ctrl+plus and Ctrl+minus zoom the drawing, never the interface.
+
 ## Document Options
 
 General (rendering resolution; Fill open curves, off: an open curve's
@@ -71,6 +86,8 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 - `ui::options::tests::every_page_belongs_to_one_dialog`
 - `ui::options::tests::cancel_puts_settings_and_document_back`
 - `ui::options::tests::every_page_draws`
+- `ui::tests::interface_size_overrides_the_system_scaling`
+- `ui::tests::automatic_size_follows_the_sign_in_scaling`
 - `tracedraw_render` `open_curves_are_not_filled_unless_the_document_says_so`
 - `tracedraw_io` `open_curves_lose_their_fill_in_vector_exports`
 - `app::tests` start-up, backups and clip frame centring (below)

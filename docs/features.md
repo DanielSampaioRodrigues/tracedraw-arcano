@@ -18,7 +18,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
-| Rulers drawn as the reference (numbers from the origin without sign, unit name, origin button, pointer markers), draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines panel; all 13 units | works |
+| Rulers with numbers from the origin without sign, the unit name, an origin button and pointer markers; draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines panel; all 13 units | works |
 | Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
 | Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
 | Snapping modes (node, intersection, midpoint, quadrant, tangent, perpendicular, edge, center, text baseline) with snap location marks and screen tips; moves carry the grabbed point (Options > Snapping) | works (see `behavior/snapping.md`) |
@@ -201,7 +201,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
-| Options as the reference's dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
+| Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
 | Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Printing, File Formats | missing |
 | Save settings as default | works |
 | Hints panel with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
@@ -229,6 +229,8 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Icons | painted vector icons, one per tool, close in style; not pixel-identical |
 | Panels (35): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic | works |
 | Welcome Screen with tabs | works |
+| About box with the banner, icon, facts (author, license, source code, co-author) and copyright; opens from the Welcome Screen too (see `behavior/about-and-startup.md`) | works |
+| Interface size: Automatic (the sign-in display scaling on Windows), 100 % to 200 % (see `behavior/options.md`) | works |
 | Right-click context menus (object, node, page, table) | works |
 | Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |
 | Several open drawings in tabs (unsaved marker, close button, New after the last tab), Window list, Close, Close All, exit asks about each unsaved drawing | works (see `behavior/documents.md`) |

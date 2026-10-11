@@ -66,6 +66,10 @@ pub struct Settings {
     /// each flyout's first tool).
     #[serde(default)]
     pub toolbox_hidden: Vec<String>,
+    /// Customization > Appearance > Interface size: screen pixels per
+    /// interface point (1.0 = 100 %); 0 follows the system's scaling.
+    #[serde(default)]
+    pub ui_scale: f32,
     /// Options > General: what opens at start-up.
     #[serde(default)]
     pub startup: Startup,
@@ -459,6 +463,7 @@ impl Default for Settings {
             desktop_rgb: default_desktop(),
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
+            ui_scale: 0.0,
         }
     }
 }

@@ -1226,34 +1226,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::About => {
-            window(ctx, tr("dialog.about")).show(ctx, |ui| {
-                ui.heading("TraceDraw");
-                ui.label(format!(
-                    "{} {}",
-                    tr("dialog.version"),
-                    env!("CARGO_PKG_VERSION")
-                ));
-                ui.label(tr("dialog.about_text"));
-                ui.add_space(6.0);
-                ui.label(trf(
-                    "dialog.about_copyright",
-                    &[("name", env!("CARGO_PKG_AUTHORS"))],
-                ));
-                ui.label(tr("dialog.about_ai"));
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.about_source"));
-                    let repo = env!("CARGO_PKG_REPOSITORY");
-                    if ui.link(repo).clicked() {
-                        app.open_url(repo);
-                    }
-                });
-                ui.add_space(6.0);
-                if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
-                    close = true;
-                }
-            });
-        }
+        Dialog::About => crate::ui::about::about_dialog(app, ctx, &mut close),
     }
     // A dialog's close button closes it like Esc.
     if crate::ui::chrome::take_close_request(ctx) {

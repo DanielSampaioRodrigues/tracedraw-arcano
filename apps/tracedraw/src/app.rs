@@ -603,7 +603,6 @@ pub struct App {
     pub eyedropper_sample: u32,
     pub canvas_rect: egui::Rect,
     pub pointer_page: Option<Point>,
-    pub about_open: bool,
     /// The palette shown in the bottom strip (the first visible one).
     pub palette: Vec<(String, Color)>,
     /// First swatch shown in the bottom strip (its scroll position).
@@ -1024,7 +1023,12 @@ impl App {
         theme::install_fonts(&cc.egui_ctx);
         // egui quits on Ctrl+Q by default; here Ctrl+Q is Convert to Curves
         // and the application closes through File > Exit (Alt+F4).
-        cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
+        cc.egui_ctx.options_mut(|o| {
+            o.quit_shortcuts.clear();
+            // Ctrl+plus and Ctrl+minus zoom the drawing, not the interface;
+            // the interface size is an option (see `ui_scale`).
+            o.zoom_with_keyboard = false;
+        });
         cc.egui_ctx.set_visuals(theme::visuals());
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
@@ -1158,7 +1162,6 @@ impl App {
             eyedropper_sample: 1,
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
-            about_open: false,
             palette: crate::palette::default_cmyk(),
             palette_scroll: 0,
             doc_palette_scroll: 0,

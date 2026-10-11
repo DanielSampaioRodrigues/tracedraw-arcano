@@ -2136,6 +2136,6 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     if item(ui, "menu.help.about", "", true) {
-        app.about_open = true;
+        app.dialog = Dialog::About;
     }
 }
