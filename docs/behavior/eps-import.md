@@ -1,8 +1,12 @@
 # EPS import
 
-File > Open and File > Import accept `.eps` and `.ps`, and `.ai` files
-that start with `%!` (the PostScript-based versions of that format; the
-later PDF-based ones go through the PDF import). The file is run by
+File > Open and File > Import accept `.eps`, `.ps` and `.prn` (print
+files: PostScript a printer driver wrote, often after a printer job
+header, which is skipped up to the first `%!`), and `.ai` files that
+start with `%!` (the PostScript-based versions of that format; the later
+PDF-based ones go through the PDF import). A file that is not PostScript
+(a `.prn` file in a printer's own language, for one) is refused with a
+message. The file is run by
 a PostScript interpreter (`crates/io/src/eps_import.rs`) that records
 what the program paints; no external PostScript engine is involved.
 
@@ -46,6 +50,11 @@ what the program paints; no external PostScript engine is involved.
 - Clipping wraps painted objects in clip frames the way the PDF importer
   does; the page is the `%%HiResBoundingBox`/`%%BoundingBox` with its
   lower-left corner at the origin.
+- Pages: each `showpage` (or `copypage`) ends a page; File > Open makes
+  one page per page of the file, each at the size `setpagedevice` gave
+  it (`/PageSize`), else the bounding box, else (one page) the bounds of
+  its content, else A4. Objects after the last `showpage` make a page
+  when there are any. File > Import places the first page's objects.
 
 ## Limits
 

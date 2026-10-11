@@ -71,6 +71,11 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             let eps = tracedraw_io::eps::page_to_eps(&doc, 0);
             crate::files::write(path, eps).map_err(|e| e.to_string())?;
         }
+        "ps" | "prn" => {
+            // Every exported page; a print file is the same PostScript.
+            let ps = tracedraw_io::eps::document_to_ps(&doc);
+            crate::files::write(path, ps).map_err(|e| e.to_string())?;
+        }
         "dxf" => {
             let dxf = tracedraw_io::dxf::page_to_dxf(&doc, 0);
             crate::files::write(path, dxf).map_err(|e| e.to_string())?;
@@ -220,6 +225,7 @@ pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) 
     match ext {
         "svg" => Some(tracedraw_io::svg::page_to_svg(&doc, 0).len()),
         "eps" => Some(tracedraw_io::eps::page_to_eps(&doc, 0).len()),
+        "ps" | "prn" => Some(tracedraw_io::eps::document_to_ps(&doc).len()),
         "pdf" | "ai" => Some(tracedraw_io::pdf::document_to_pdf(&doc).len()),
         "png" | "jpg" | "bmp" | "tif" | "webp" | "gif" | "psd" => {
             let enc = if ext == "psd" { "tif" } else { ext };

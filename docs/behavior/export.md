@@ -21,10 +21,11 @@ Office presets start with their own (see `options.md`).
 | BMP, TIFF, PSD | resolution |
 | PDF | standard (PDF 1.4, PDF/X-1a, PDF/X-3, PDF/X-4), bleed, output condition for PDF/X; the author, subject and keywords come from the drawing's properties (File > Publish to PDF has bookmarks and protection, see `publish-to-pdf.md`) |
 | SVG, EPS, AI, DXF, HTML, EMF, WMF, PLT | none |
+| PostScript (`.ps`), PRN (`.prn`) | none; every exported page in one file (All pages, else the current page), each page setting its size with `setpagedevice` and ending with `showpage` (Document Structuring Conventions 3.0); a `.prn` print file is the same PostScript, to send to a PostScript printer |
 
 - Bitmap formats show the size in pixels: the page (or selection) size
   over 25.4 times the resolution.
-- File size: vector formats (SVG, EPS, PDF, AI) are written in memory and
+- File size: vector formats (SVG, EPS, PostScript, PDF, AI) are written in memory and
   measured; bitmap formats are estimated by encoding the preview the same
   way and scaling by the pixel count of the export (times the pages with
   All pages). It shows as "about 820 KB" or "about 3.4 MB".

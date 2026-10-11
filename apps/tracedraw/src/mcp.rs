@@ -242,6 +242,9 @@ fn export_to(app: &App, path: &std::path::Path, page_index: usize, dpi: f64) -> 
         "pdf" => e(tracedraw_io::save_pdf(doc, path)),
         "eps" => std::fs::write(path, tracedraw_io::eps::page_to_eps(doc, page_index))
             .map_err(|e| e.to_string()),
+        "ps" | "prn" => {
+            std::fs::write(path, tracedraw_io::eps::document_to_ps(doc)).map_err(|e| e.to_string())
+        }
         "dxf" => e(tracedraw_io::save_dxf(doc, page_index, path)),
         "emf" => e(tracedraw_io::save_emf(doc, page_index, path)),
         "wmf" => e(tracedraw_io::save_wmf(doc, page_index, path)),

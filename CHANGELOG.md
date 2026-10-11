@@ -13,6 +13,10 @@ full, row-by-row status.
   Distribute.
 - `.ai` files written as PostScript (the format's early versions) open
   through the PostScript interpreter instead of failing as PDF.
+- PostScript: `.prn` print files open and import (a printer job header
+  before the program is skipped), multi-page `.ps` and `.prn` files open
+  with one page per page of the file at its own size, and File > Export
+  writes PostScript (`.ps`) and PRN (`.prn`) with every page.
 - `.cdr` files: fonts embedded in the file are used for its text when
   they are not installed (and their licence allows it), so text keeps its
   letters instead of falling back to another font; the drawing carries

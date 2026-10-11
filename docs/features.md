@@ -187,7 +187,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`) |
 | Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
-| Export SVG, PDF, AI (PDF-compatible), EPS, DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
+| Export SVG, PDF, AI (PDF-compatible), EPS, PostScript and PRN (every page), DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
 | Export dialog with a preview, the size in pixels and an estimated file size (see `behavior/export.md`) | works |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
@@ -195,7 +195,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Links: a web address, e-mail address or page for any object (Links and Bookmarks panel), exported as link areas in PDF and as links around the object in SVG and HTML; named objects as bookmarks in the panel | works (see `behavior/links.md`) |
 | Publish to PDF dialog: pages (all, current, selection), PDF/X level, bleed, title, author, subject and keywords, a bookmark per page, password protection (AES-256: a password to open, a password for the permissions to print, copy and change) | works (see `behavior/publish-to-pdf.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
-| Import EPS and PostScript (interpreter: paths, images, text, clips, shadings, patterns, prologs), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
+| Import EPS, PostScript and PRN print files (interpreter: paths, images, text, clips, shadings, patterns, prologs; one page per `showpage` at its `/PageSize`), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
 | Import EMF and WMF (GDI paths, pens, brushes, text, DIB bitmaps, clips); export EMF and WMF | works (see `behavior/emf-wmf.md`) |
 | Import CMX | missing |

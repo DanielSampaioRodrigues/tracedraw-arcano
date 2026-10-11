@@ -52,7 +52,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
     ExitCode::from(2)
 }
 
@@ -142,15 +142,41 @@ fn read_document(
             tracedraw_io::pdf_import::to_document(imported, &title),
             None,
         ))
-    } else if lower.ends_with(".eps") || lower.ends_with(".ps") || lower.ends_with(".ai") {
+    } else if [".eps", ".ps", ".prn", ".ai"]
+        .iter()
+        .any(|e| lower.ends_with(e))
+    {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let imported =
             tracedraw_io::eps_import::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
         for w in &imported.warnings {
             eprintln!("warning: {w}");
         }
-        let mut doc = tracedraw_core::Document::new("eps", imported.size);
-        doc.pages[0].layers[0].shapes = imported.shapes;
+        // Every page of the file, each at its own size.
+        let pages = imported.pages();
+        let first = pages
+            .first()
+            .map(|p| p.1)
+            .unwrap_or(tracedraw_core::document::paper::A4);
+        let mut doc = tracedraw_core::Document::new("eps", first);
+        let mut ids = doc.ids().clone();
+        for (i, (shapes, size)) in pages.into_iter().enumerate() {
+            if i == 0 {
+                doc.pages[0].layers[0].shapes = shapes;
+                continue;
+            }
+            let mut layer = tracedraw_core::Layer::new(ids.layer(), "Layer 1");
+            layer.shapes = shapes;
+            doc.pages.push(tracedraw_core::Page {
+                id: ids.page(),
+                name: format!("Page {}", i + 1),
+                size,
+                layers: vec![layer],
+                guides: Vec::new(),
+                background: None,
+            });
+        }
+        doc.set_ids(ids);
         Ok((doc, None))
     } else if lower.ends_with(".psd") || lower.ends_with(".psb") {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
@@ -494,6 +520,12 @@ fn main() -> ExitCode {
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".eps") {
                 std::fs::write(output, tracedraw_io::eps::page_to_eps(&doc, 0))
+                    .map_err(tracedraw_io::Error::from)
+            } else if [".ps", ".prn"]
+                .iter()
+                .any(|e| output.to_ascii_lowercase().ends_with(e))
+            {
+                std::fs::write(output, tracedraw_io::eps::document_to_ps(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".cdr") {
                 std::fs::write(output, tracedraw_cdr::write::document_to_cdr(&doc))

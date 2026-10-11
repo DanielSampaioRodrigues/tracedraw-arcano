@@ -30,9 +30,40 @@ const MAX_STRING: usize = 64 << 20;
 
 #[derive(Debug, Clone)]
 pub struct Imported {
+    /// The objects of the first page (of the only one for EPS).
     pub shapes: Vec<Shape>,
     pub size: Size,
+    /// The pages after the first of a multi-page PostScript file (print
+    /// files): what each `showpage` ended.
+    pub more_pages: Vec<ImportedPage>,
     pub warnings: Vec<String>,
+}
+
+/// One more page of a multi-page PostScript file.
+#[derive(Debug, Clone)]
+pub struct ImportedPage {
+    pub shapes: Vec<Shape>,
+    pub size: Size,
+}
+
+impl Imported {
+    /// Every page: (objects, size), the first one first.
+    pub fn pages(self) -> Vec<(Vec<Shape>, Size)> {
+        std::iter::once((self.shapes, self.size))
+            .chain(self.more_pages.into_iter().map(|p| (p.shapes, p.size)))
+            .collect()
+    }
+}
+
+/// Where the PostScript program starts: past a printer job header (print
+/// files often begin with one) at the first `%!` of the first 64 KB.
+fn postscript_start(bytes: &[u8]) -> Option<usize> {
+    if bytes.starts_with(b"%!") {
+        return Some(0);
+    }
+    bytes[..bytes.len().min(64 << 10)]
+        .windows(2)
+        .position(|w| w == b"%!")
 }
 
 /// Does the buffer look like PostScript / EPS?
@@ -55,43 +86,79 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
     } else {
         bytes
     };
-    if !ps.starts_with(b"%!") && !ps.windows(2).take(1024).any(|w| w == b"%!") {
-        return Err("not a PostScript file".into());
-    }
+    let start = postscript_start(ps).ok_or("not a PostScript file")?;
+    let ps = &ps[start..];
     let bbox = bounding_box(ps);
     let mut interp = Interp::new(ps, ids, bbox);
     interp.install_systemdict();
     interp.run_main();
     let warnings = std::mem::take(&mut interp.warnings);
-    let shapes = std::mem::take(&mut interp.shapes);
-    // Page: the bounding box, or the content bounds.
-    let (size, shift) = match bbox {
-        Some(b) => (
-            Size::new(b.width() * PT_MM, b.height() * PT_MM),
-            Vec2::new(-b.x0 * PT_MM, -b.y0 * PT_MM),
-        ),
-        None => {
-            let b = shapes
-                .iter()
-                .map(|s| s.bounds())
-                .reduce(|a, b| a.union(b))
-                .unwrap_or(Rect::new(0.0, 0.0, 210.0, 297.0));
-            (
-                Size::new(b.width().max(1.0), b.height().max(1.0)),
-                Vec2::new(-b.x0, -b.y0),
-            )
-        }
-    };
-    let mut shapes = shapes;
-    if shift != Vec2::ZERO {
-        let t = Affine::translate(shift);
-        for s in shapes.iter_mut() {
-            s.transform = t * s.transform;
-        }
+    let mut shapes = std::mem::take(&mut interp.shapes);
+    // Pages: what each `showpage` ended; the objects after the last one
+    // make a page of their own unless there are none.
+    let mut cuts = std::mem::take(&mut interp.pages);
+    cuts.retain(|(at, _)| *at <= shapes.len());
+    let tail_size = interp.page_size;
+    let mut pages: Vec<(Vec<Shape>, Option<Size>)> = Vec::new();
+    for (at, size) in cuts.iter().rev() {
+        let rest = shapes.split_off((*at).min(shapes.len()));
+        pages.push((rest, *size));
     }
+    pages.reverse();
+    // `pages` now holds the objects after each cut; the first segment is
+    // what is left in `shapes`.
+    let mut segments: Vec<(Vec<Shape>, Option<Size>)> = Vec::new();
+    let first_size = cuts.first().and_then(|c| c.1).or(tail_size);
+    segments.push((shapes, first_size));
+    for (i, (objs, _)) in pages.into_iter().enumerate() {
+        let size = cuts.get(i + 1).and_then(|c| c.1).or(tail_size);
+        segments.push((objs, size));
+    }
+    // Every cut has a page before it; the segment after the last cut is
+    // a page only when it holds objects.
+    if segments.len() > 1 && segments.last().is_some_and(|s| s.0.is_empty()) {
+        segments.pop();
+    }
+    let single = segments.len() == 1;
+    let mut out: Vec<(Vec<Shape>, Size)> = Vec::new();
+    for (mut objs, device) in segments {
+        // Page: the device's page size, else the bounding box, else (one
+        // page) the content bounds, else A4.
+        let (size, shift) = match (device, bbox) {
+            (Some(sz), _) => (sz, Vec2::ZERO),
+            (None, Some(b)) => (
+                Size::new(b.width() * PT_MM, b.height() * PT_MM),
+                Vec2::new(-b.x0 * PT_MM, -b.y0 * PT_MM),
+            ),
+            (None, None) if single => {
+                let b = objs
+                    .iter()
+                    .map(|s| s.bounds())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or(Rect::new(0.0, 0.0, 210.0, 297.0));
+                (
+                    Size::new(b.width().max(1.0), b.height().max(1.0)),
+                    Vec2::new(-b.x0, -b.y0),
+                )
+            }
+            (None, None) => (Size::new(210.0, 297.0), Vec2::ZERO),
+        };
+        if shift != Vec2::ZERO {
+            let t = Affine::translate(shift);
+            for s in objs.iter_mut() {
+                s.transform = t * s.transform;
+            }
+        }
+        out.push((objs, size));
+    }
+    let mut out = out.into_iter();
+    let (shapes, size) = out.next().unwrap_or_default();
     Ok(Imported {
         shapes,
         size,
+        more_pages: out
+            .map(|(shapes, size)| ImportedPage { shapes, size })
+            .collect(),
         warnings,
     })
 }
@@ -698,6 +765,11 @@ struct Interp<'a> {
     separation: bool,
     /// Files created by a DCTDecode filter (whole-stream JPEG sources).
     jpeg_files: Vec<usize>,
+    /// Page ends: the number of objects painted when each `showpage` ran,
+    /// with the device's page size then.
+    pages: Vec<(usize, Option<Size>)>,
+    /// The page size `setpagedevice` set, mm.
+    page_size: Option<Size>,
 }
 
 impl<'a> Interp<'a> {
@@ -733,6 +805,8 @@ impl<'a> Interp<'a> {
             indexed_palette: None,
             separation: false,
             jpeg_files: Vec::new(),
+            pages: Vec::new(),
+            page_size: None,
         }
     }
 
@@ -2263,16 +2337,39 @@ impl<'a> Interp<'a> {
                 self.gs.ctm = self.base;
                 self.gs.path = path;
             }
+            "showpage" | "copypage" => {
+                // A page ends (copypage keeps the marks on the device;
+                // here the next page starts empty).
+                if self.pages.len() < 10_000 {
+                    self.pages.push((self.shapes.len(), self.page_size));
+                }
+            }
+            "setpagedevice" => {
+                if let Some(Obj::Dict(d)) = self.pop() {
+                    let size = d.borrow().map.get("PageSize").cloned();
+                    if let Some(Obj::Array(a, _)) = size {
+                        let v: Vec<f64> = a.borrow().iter().filter_map(Obj::num).collect();
+                        if let [w, h, ..] = v[..] {
+                            if w.is_finite()
+                                && h.is_finite()
+                                && w > 1.0
+                                && h > 1.0
+                                && w < 1e6
+                                && h < 1e6
+                            {
+                                self.page_size = Some(Size::new(w * PT_MM, h * PT_MM));
+                            }
+                        }
+                    }
+                }
+            }
             "setglobal"
             | "setpacking"
             | "setuserparams"
             | "setsystemparams"
             | "flush"
-            | "setpagedevice"
             | "nulldevice"
             | "echo"
-            | "showpage"
-            | "copypage"
             | "erasepage"
             | "setflat"
             | "setstrokeadjust"
@@ -2292,7 +2389,7 @@ impl<'a> Interp<'a> {
                     "setcachedevice" => 6,
                     "setcachedevice2" => 10,
                     "setcharwidth" => 2,
-                    "showpage" | "copypage" | "erasepage" | "nulldevice" | "flush" => 0,
+                    "erasepage" | "nulldevice" | "flush" => 0,
                     _ => 1,
                 };
                 for _ in 0..n {

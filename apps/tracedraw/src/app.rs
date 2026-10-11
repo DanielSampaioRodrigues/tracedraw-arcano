@@ -2862,15 +2862,15 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
                 &[
-                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb",
-                    "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
+                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd",
+                    "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
                 ],
             )
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
             .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
-            .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
+            .add_filter("PostScript (*.ps, *.eps, *.prn)", &["ps", "eps", "prn"])
             .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter("Windows Metafile (*.emf, *.wmf)", &["emf", "wmf"])
             .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
@@ -2894,6 +2894,10 @@ impl App {
             .to_ascii_lowercase();
         if ext == "ai" && crate::files::read(path).is_ok_and(|b| b.starts_with(b"%!")) {
             return "eps".into();
+        }
+        // Print files: PostScript, often after a printer job header.
+        if ext == "prn" {
+            return "ps".into();
         }
         ext
     }
@@ -2991,15 +2995,53 @@ impl App {
                     for w in &imported.warnings {
                         log::warn!("eps: {w}");
                     }
-                    let mut doc = App::localized_document(title, imported.size);
+                    // Every page of a PostScript file (print files have
+                    // several), each at its own size.
+                    let pages = imported.pages();
+                    let first = pages
+                        .first()
+                        .map(|p| p.1)
+                        .unwrap_or(tracedraw_core::document::paper::A4);
+                    let mut doc = App::localized_document(title, first);
+                    let layer_name = doc.pages[0].layers[0].name.clone();
                     let mut ids = doc.ids().clone();
-                    let n = imported.shapes.len();
-                    for s in imported.shapes {
-                        let shape = reid_with(s, &mut ids);
-                        doc.pages[0].layers[0].shapes.push(shape);
+                    let count = pages.len();
+                    let mut n = 0;
+                    for (i, (shapes, size)) in pages.into_iter().enumerate() {
+                        n += shapes.len();
+                        let shapes: Vec<_> =
+                            shapes.into_iter().map(|s| reid_with(s, &mut ids)).collect();
+                        if i == 0 {
+                            doc.pages[0].layers[0].shapes = shapes;
+                            continue;
+                        }
+                        let mut layer =
+                            tracedraw_core::document::Layer::new(ids.layer(), layer_name.clone());
+                        layer.shapes = shapes;
+                        doc.pages.push(tracedraw_core::document::Page {
+                            id: ids.page(),
+                            name: crate::i18n::trf("doc.page_n", &[("n", &(i + 1).to_string())]),
+                            size,
+                            layers: vec![layer],
+                            guides: Vec::new(),
+                            background: None,
+                        });
                     }
                     doc.set_ids(ids);
-                    (doc, opened_objects("EPS", n))
+                    let format = if ext == "eps" { "EPS" } else { "PostScript" };
+                    let msg = if count > 1 {
+                        crate::i18n::trf(
+                            "status.opened_pages",
+                            &[
+                                ("format", format),
+                                ("pages", &count.to_string()),
+                                ("objects", &n.to_string()),
+                            ],
+                        )
+                    } else {
+                        opened_objects(format, n)
+                    };
+                    (doc, msg)
                 })
         } else if matches!(ext.as_str(), "plt" | "hpgl" | "hgl") {
             crate::files::read(&path)
@@ -3464,9 +3506,9 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb", "emf",
-                    "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg", "bmp",
-                    "gif", "webp", "tif", "tiff",
+                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd", "psb",
+                    "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg",
+                    "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
@@ -3474,7 +3516,7 @@ impl App {
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
-            .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
+            .add_filter("PostScript (*.ps, *.eps, *.prn)", &["ps", "eps", "prn"])
             .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter("Windows Metafile (*.emf, *.wmf)", &["emf", "wmf"])
             .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
@@ -4366,6 +4408,33 @@ mod tests {
             .map(|l| l.shapes.len())
             .sum();
         assert!(n >= 1, "{}", app.status);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn print_files_open_with_every_page() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-prn-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Two pages written by the exporter, behind a printer job header.
+        let mut app = App::headless();
+        rect_shape(&mut app, Rect::new(10.0, 10.0, 50.0, 50.0), true);
+        app.add_page();
+        rect_shape(&mut app, Rect::new(20.0, 20.0, 40.0, 40.0), true);
+        let mut prn =
+            b"\x1b%-12345X@PJL JOB NAME=\"art\"\n@PJL ENTER LANGUAGE=POSTSCRIPT\n".to_vec();
+        prn.extend_from_slice(tracedraw_io::eps::document_to_ps(app.doc()).as_bytes());
+        let path = dir.join("art.prn");
+        std::fs::write(&path, prn).unwrap();
+        let mut back = App::headless();
+        back.open_path(path);
+        assert_eq!(back.doc().pages.len(), 2, "{}", back.status);
+        for p in &back.doc().pages {
+            let n: usize = p.layers.iter().map(|l| l.shapes.len()).sum();
+            assert!(n >= 1, "{:?}", p.name);
+        }
+        // Not saved over: a print file is not a drawing.
+        assert!(back.file.is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,6 +1,7 @@
 //! Encapsulated PostScript writer (Level 3): paths with solid and fountain
 //! fills (`shfill`), outlines with width, caps, joins and dashes, bitmaps as
-//! `colorimage`, text as outlines. One page per file.
+//! `colorimage`, text as outlines. One page per EPS file; PostScript files
+//! (`.ps`, and `.prn` print files, which are the same) hold every page.
 
 use std::fmt::Write as _;
 use tracedraw_core::{
@@ -48,6 +49,9 @@ fn rgb_array(c: Color) -> String {
     )
 }
 
+/// The short path operators the page bodies use.
+const PROCS: &str = "/m {moveto} def /l {lineto} def /c {curveto} def /h {closepath} def";
+
 pub fn page_to_eps(doc: &Document, page_index: usize) -> String {
     let Some(page) = doc.pages.get(page_index) else {
         return String::new();
@@ -67,13 +71,65 @@ pub fn page_to_eps(doc: &Document, page_index: usize) -> String {
     let _ = writeln!(out, "%%HiResBoundingBox: 0 0 {} {}", f(w), f(h));
     let _ = writeln!(out, "%%LanguageLevel: 3");
     let _ = writeln!(out, "%%EndComments");
+    let _ = writeln!(out, "{PROCS}");
+    let _ = writeln!(out, "gsave");
+    page_body(&mut out, doc, page);
+    let _ = writeln!(out, "grestore");
+    let _ = writeln!(out, "%%EOF");
+    out
+}
+
+/// A PostScript file with every page (Document Structuring Conventions
+/// 3.0): each page sets its size with `setpagedevice` and ends with
+/// `showpage`. `.prn` print files are written the same way.
+pub fn document_to_ps(doc: &Document) -> String {
+    let pt = |mm: f64| mm * MM_PT;
+    let (mw, mh) = doc.pages.iter().fold((0.0f64, 0.0f64), |(w, h), p| {
+        (w.max(pt(p.size.width)), h.max(pt(p.size.height)))
+    });
+    let mut out = String::new();
+    let _ = writeln!(out, "%!PS-Adobe-3.0");
+    let _ = writeln!(out, "%%Creator: TraceDraw");
+    let _ = writeln!(out, "%%Title: {}", doc.title.replace(['\n', '\r'], " "));
+    let _ = writeln!(out, "%%Pages: {}", doc.pages.len());
     let _ = writeln!(
         out,
-        "/m {{moveto}} def /l {{lineto}} def /c {{curveto}} def /h {{closepath}} def"
+        "%%BoundingBox: 0 0 {} {}",
+        mw.ceil() as i64,
+        mh.ceil() as i64
     );
-    let _ = writeln!(out, "gsave");
+    let _ = writeln!(out, "%%HiResBoundingBox: 0 0 {} {}", f(mw), f(mh));
+    let _ = writeln!(out, "%%LanguageLevel: 3");
+    let _ = writeln!(out, "%%EndComments");
+    let _ = writeln!(out, "%%BeginProlog");
+    let _ = writeln!(out, "{PROCS}");
+    let _ = writeln!(out, "%%EndProlog");
+    for (i, page) in doc.pages.iter().enumerate() {
+        let (w, h) = (pt(page.size.width), pt(page.size.height));
+        let _ = writeln!(out, "%%Page: {} {}", i + 1, i + 1);
+        let _ = writeln!(
+            out,
+            "%%PageBoundingBox: 0 0 {} {}",
+            w.ceil() as i64,
+            h.ceil() as i64
+        );
+        let _ = writeln!(out, "%%BeginPageSetup");
+        let _ = writeln!(out, "<< /PageSize [{} {}] >> setpagedevice", f(w), f(h));
+        let _ = writeln!(out, "%%EndPageSetup");
+        let _ = writeln!(out, "gsave");
+        page_body(&mut out, doc, page);
+        let _ = writeln!(out, "grestore");
+        let _ = writeln!(out, "showpage");
+    }
+    let _ = writeln!(out, "%%Trailer");
+    let _ = writeln!(out, "%%EOF");
+    out
+}
+
+/// The marks of one page: its background, then its printable layers.
+fn page_body(out: &mut String, doc: &Document, page: &tracedraw_core::Page) {
     let mut w_ = Writer {
-        out: &mut out,
+        out,
         symbols: &doc.symbols,
     };
     if let Some(bg) = &page.background {
@@ -95,9 +151,6 @@ pub fn page_to_eps(doc: &Document, page_index: usize) -> String {
             w_.shape(s, Affine::IDENTITY);
         }
     }
-    let _ = writeln!(out, "grestore");
-    let _ = writeln!(out, "%%EOF");
-    out
 }
 
 struct Writer<'a> {
@@ -450,6 +503,65 @@ mod tests {
         assert!(eps.contains("%%BoundingBox: 0 0 596 842"));
         assert!(eps.contains("setcmykcolor"));
         assert!(eps.contains("eofill"));
+    }
+
+    #[test]
+    fn postscript_files_hold_every_page_and_read_back() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::BLACK);
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s.clone());
+        // A second, landscape page with two objects.
+        let pid = doc.ids_mut().page();
+        let lid = doc.ids_mut().layer();
+        let mut second = tracedraw_core::Layer::new(lid, "Layer 1");
+        for (i, x) in [20.0, 120.0].into_iter().enumerate() {
+            let mut t = s.clone();
+            t.id = tracedraw_core::ShapeId(100 + i as u64);
+            t.kind = ShapeKind::Rect {
+                rect: Rect::new(x, 20.0, x + 30.0, 50.0),
+                radius: 0.0,
+                corners: None,
+            };
+            second.shapes.push(t);
+        }
+        doc.pages.push(tracedraw_core::Page {
+            id: pid,
+            name: "Page 2".into(),
+            size: tracedraw_core::Size::new(297.0, 210.0),
+            layers: vec![second],
+            guides: Vec::new(),
+            background: None,
+        });
+        let ps = document_to_ps(&doc);
+        assert!(ps.starts_with("%!PS-Adobe-3.0\n"));
+        assert!(ps.contains("%%Pages: 2"));
+        assert_eq!(ps.matches("showpage").count(), 2);
+        assert_eq!(ps.matches("setpagedevice").count(), 2);
+        // Read back: two pages with their sizes and objects.
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let back = crate::eps_import::parse(ps.as_bytes(), &mut ids).expect("reads");
+        assert!((back.size.width - 210.0).abs() < 0.01, "{:?}", back.size);
+        assert_eq!(back.shapes.len(), 1);
+        assert_eq!(back.more_pages.len(), 1);
+        let p2 = &back.more_pages[0];
+        assert!((p2.size.width - 297.0).abs() < 0.01 && (p2.size.height - 210.0).abs() < 0.01);
+        assert_eq!(p2.shapes.len(), 2);
+        // A print file with a job header before the program reads too.
+        let mut prn = b"\x1b%-12345X@PJL JOB\n@PJL ENTER LANGUAGE = POSTSCRIPT\n".to_vec();
+        prn.extend_from_slice(ps.as_bytes());
+        let back = crate::eps_import::parse(&prn, &mut ids).expect("reads");
+        assert_eq!(back.pages().len(), 2);
     }
 
     #[test]
