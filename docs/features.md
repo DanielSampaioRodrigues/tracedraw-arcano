@@ -213,6 +213,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Bitmap plug-ins (third-party filters) | not applicable: no plug-in host; the built-in bitmap effects cover the stock filters |
 | User interface in 12 languages with system fallback fonts | works |
 | Keyboard shortcuts (every menu shortcut bound; Esc closes dialogs) | works (see `behavior/shortcuts.md`) |
+| Time Tracker: tasks per drawing saved in `.tdraw` files, a clock that stops after a set time without input, toolbar with the active task, its time and the total, dialog to add, rename, delete and edit tasks (time, start, finish), CSV and text export | works (see `behavior/time-tracker.md`) |
 
 ## 12. Print and prepress
 

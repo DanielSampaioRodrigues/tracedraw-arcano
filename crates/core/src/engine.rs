@@ -84,6 +84,11 @@ impl Engine {
 
     /// Like [`run`](Self::run) with a custom history label.
     pub fn run_with_label(&mut self, cmd: &Command, label: &'static str) -> Result<()> {
+        if cmd.outside_history() {
+            // No step, no redo loss, no revision: views and the unsaved
+            // marker do not change for it.
+            return cmd.apply(&mut self.doc);
+        }
         let before = self.doc.clone();
         cmd.apply(&mut self.doc)?;
         self.undo.push(HistoryEntry {
@@ -126,6 +131,9 @@ impl Engine {
     /// applied), so one Undo takes both back. Recorded as a step of its own
     /// when anything else happened since.
     pub fn amend(&mut self, cmd: &Command) -> Result<()> {
+        if cmd.outside_history() {
+            return cmd.apply(&mut self.doc);
+        }
         if self.revision != self.step_revision {
             return self.run(cmd);
         }
@@ -148,8 +156,16 @@ impl Engine {
 
     fn restore(&mut self, snapshot: &Document) {
         let ids = self.doc.ids().clone();
+        let tracker = std::mem::take(&mut self.doc.time_tracker);
         self.doc = snapshot.clone();
         self.doc.set_ids(ids);
+        self.doc.time_tracker = tracker;
+        self.revision += 1;
+    }
+
+    /// Mark the drawing changed without an undo step (an edit of state kept
+    /// outside the history, which should still be saved).
+    pub fn mark_changed(&mut self) {
         self.revision += 1;
     }
 
@@ -264,6 +280,78 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(eng.history_labels().0.len(), 2);
+    }
+
+    #[test]
+    fn time_tracker_stays_out_of_the_history() {
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                arc: None,
+            },
+        );
+        eng.run(&Command::AddShape { layer, shape }).unwrap();
+        let rev = eng.revision();
+        let mut tracker = crate::TimeTracker::default();
+        tracker.tasks.push(crate::TrackedTask {
+            name: "Layout".into(),
+            seconds: 90.0,
+            ..Default::default()
+        });
+        tracker.active = Some(0);
+        eng.run(&Command::SetTimeTracker {
+            tracker: tracker.clone(),
+        })
+        .unwrap();
+        eng.amend(&Command::SetTimeTracker {
+            tracker: tracker.clone(),
+        })
+        .unwrap();
+        // No step and no new revision for it.
+        assert_eq!(eng.history_labels().0, vec!["Create Object"]);
+        assert_eq!(eng.revision(), rev);
+        // Undo and redo of the drawing leave the records alone.
+        eng.undo().unwrap();
+        assert_eq!(eng.document().time_tracker, tracker);
+        eng.redo().unwrap();
+        assert_eq!(eng.document().time_tracker, tracker);
+        // An explicit edit still marks the drawing changed, without a step.
+        eng.mark_saved();
+        assert!(!eng.is_dirty());
+        eng.mark_changed();
+        assert!(eng.is_dirty());
+        assert_eq!(eng.history_labels().0.len(), 1);
+    }
+
+    #[test]
+    fn recording_moves_the_start_and_finish() {
+        let mut t = crate::TimeTracker::default();
+        // Without an active task nothing is recorded.
+        t.record(10.0, 1000);
+        assert!(t.tasks.is_empty() && t.active_task().is_none());
+        t.tasks.push(crate::TrackedTask {
+            name: "A".into(),
+            ..Default::default()
+        });
+        t.active = Some(0);
+        t.record(30.0, 1000);
+        t.record(f64::NAN, 2000);
+        t.record(-5.0, 2000);
+        t.record(15.0, 1100);
+        let a = &t.tasks[0];
+        assert_eq!(a.seconds, 45.0);
+        assert_eq!(a.start, Some(970));
+        assert_eq!(a.finish, Some(1100));
+        assert_eq!(t.total_seconds(), 45.0);
+        // A stale index is no active task.
+        t.active = Some(3);
+        assert!(t.active_task().is_none());
+        t.record(5.0, 1200);
+        assert_eq!(t.total_seconds(), 45.0);
     }
 
     #[test]

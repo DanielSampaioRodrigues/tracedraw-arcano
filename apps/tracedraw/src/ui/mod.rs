@@ -33,6 +33,7 @@ pub mod rulers;
 pub mod status;
 pub mod straighten_dialog;
 pub mod tabs;
+pub mod time_tracker;
 pub mod toolbar;
 pub mod toolbox;
 pub mod vector_mosaic_docker;
@@ -195,6 +196,12 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.auto_backup_tick(web_time::Instant::now()) {
         app.status = tr("status.auto_backup_saved");
     }
+    // The Time Tracker's clock: while it counts, a frame a second keeps it
+    // going (and its display current).
+    let (now, input) = ctx.input(|i| (i.time, crate::time_tracker::is_user_input(&i.events)));
+    if app.time_tracker_frame(now, input) {
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+    }
 
     if app.fullscreen_preview {
         preview::fullscreen(app, ui);
@@ -290,6 +297,11 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         Panel::top("transform_toolbar")
             .frame(bar())
             .show(ui, |ui| toolbar::transform_toolbar(app, ui));
+    }
+    if app.settings.time_tracker.show_bar {
+        Panel::top("time_tracker_toolbar")
+            .frame(bar())
+            .show(ui, |ui| time_tracker::toolbar(app, ui));
     }
     if app.show_status_bar && status_dock == Dock::Bottom {
         status_panel(app, ui, Panel::bottom("status_bar"));

@@ -58,6 +58,11 @@ pub enum Command {
     SetMetadata {
         metadata: Metadata,
     },
+    /// Replace the Time Tracker records. This never becomes an undo step
+    /// and does not mark the drawing changed (see [`Command::outside_history`]).
+    SetTimeTracker {
+        tracker: crate::document::TimeTracker,
+    },
     SetObjectStyles {
         styles: Vec<ObjectStyle>,
     },
@@ -238,6 +243,13 @@ pub enum Command {
 }
 
 impl Command {
+    /// True for commands that change state kept outside the undo history
+    /// (the Time Tracker's records): the engine applies them without an
+    /// undo step, and undo and redo leave that state alone.
+    pub fn outside_history(&self) -> bool {
+        matches!(self, Command::SetTimeTracker { .. })
+    }
+
     /// Short label for the History panel and the Edit menu ("Undo Move").
     pub fn label(&self) -> &'static str {
         match self {
@@ -251,6 +263,7 @@ impl Command {
             Command::SetLayerPrintable { .. } => "Layer Printable",
             Command::SetPageBackground { .. } => "Page Background",
             Command::SetMetadata { .. } => "Document Properties",
+            Command::SetTimeTracker { .. } => "Time Tracker",
             Command::SetObjectStyles { .. } => "Object Styles",
             Command::SetColorStyles { .. } => "Color Styles",
             Command::SetDocumentPalette { .. } => "Document Palette",
@@ -355,6 +368,9 @@ impl Command {
             }
             Command::SetMetadata { metadata } => {
                 doc.metadata = metadata.clone();
+            }
+            Command::SetTimeTracker { tracker } => {
+                doc.time_tracker = tracker.clone();
             }
             Command::SetObjectStyles { styles } => {
                 doc.object_styles = styles.clone();

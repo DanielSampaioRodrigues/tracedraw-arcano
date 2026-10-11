@@ -1632,6 +1632,72 @@ pub struct Document {
     /// Document-level palette (the bottom "document palette").
     #[serde(default)]
     pub palette: Vec<crate::Color>,
+    /// Time Tracker records. Like the id counter they stay as they are
+    /// when the drawing's changes are undone.
+    #[serde(default, skip_serializing_if = "TimeTracker::is_empty")]
+    pub time_tracker: TimeTracker,
+}
+
+/// The Time Tracker's records, saved with the drawing: its tasks and the
+/// one being tracked (Window > Toolbars > Time Tracker).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct TimeTracker {
+    #[serde(default)]
+    pub tasks: Vec<TrackedTask>,
+    /// The active task's index in `tasks`.
+    #[serde(default)]
+    pub active: Option<usize>,
+}
+
+/// One task of the Time Tracker.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct TrackedTask {
+    pub name: String,
+    /// Recorded time, in seconds.
+    #[serde(default)]
+    pub seconds: f64,
+    /// When work on the task started and last finished, in seconds since
+    /// 1970-01-01 UTC. Recording time moves them; they can also be set by
+    /// hand, independently of the recorded time.
+    #[serde(default)]
+    pub start: Option<i64>,
+    #[serde(default)]
+    pub finish: Option<i64>,
+}
+
+impl TimeTracker {
+    pub fn is_empty(&self) -> bool {
+        self.tasks.is_empty()
+    }
+
+    /// The active task, when the index points at one.
+    pub fn active_task(&self) -> Option<&TrackedTask> {
+        self.active.and_then(|i| self.tasks.get(i))
+    }
+
+    pub fn active_task_mut(&mut self) -> Option<&mut TrackedTask> {
+        self.active.and_then(|i| self.tasks.get_mut(i))
+    }
+
+    /// Every task's recorded time together, in seconds.
+    pub fn total_seconds(&self) -> f64 {
+        self.tasks.iter().map(|t| t.seconds.max(0.0)).sum()
+    }
+
+    /// Add `seconds` of work to the active task at `now` (seconds since
+    /// 1970): the first time sets its start, every time its finish.
+    pub fn record(&mut self, seconds: f64, now: i64) {
+        if !(seconds.is_finite() && seconds > 0.0) {
+            return;
+        }
+        if let Some(t) = self.active_task_mut() {
+            t.seconds += seconds;
+            if t.start.is_none() {
+                t.start = Some(now - seconds.round() as i64);
+            }
+            t.finish = Some(now);
+        }
+    }
 }
 
 impl Default for Document {
@@ -1665,6 +1731,7 @@ impl Document {
                 ..Default::default()
             },
             palette: Vec::new(),
+            time_tracker: TimeTracker::default(),
         }
     }
 
@@ -1902,6 +1969,33 @@ mod tests {
         assert!((b.x0 - 15.0).abs() < 1e-6 && (b.y1 - 35.0).abs() < 1e-6);
         assert_eq!(back.locate(id).unwrap(), (layer, 0));
         let _ = Point::ZERO;
+    }
+
+    #[test]
+    fn time_tracker_round_trips_and_is_left_out_when_empty() {
+        let mut doc = Document::default();
+        let plain = doc.to_json().unwrap();
+        assert!(!plain.contains("time_tracker"));
+        doc.time_tracker.tasks.push(TrackedTask {
+            name: "Sketch, \"first\" pass".into(),
+            seconds: 4000.5,
+            start: Some(1_760_000_000),
+            finish: Some(1_760_004_000),
+        });
+        doc.time_tracker.tasks.push(TrackedTask {
+            name: "Colour".into(),
+            ..Default::default()
+        });
+        doc.time_tracker.active = Some(1);
+        let back = Document::from_json(&doc.to_json().unwrap()).unwrap();
+        assert_eq!(back, doc);
+        assert_eq!(
+            back.time_tracker.active_task().map(|t| t.name.as_str()),
+            Some("Colour")
+        );
+        // Files from before the timer existed still open.
+        let old = Document::from_json(&plain).unwrap();
+        assert!(old.time_tracker.is_empty());
     }
 
     #[test]

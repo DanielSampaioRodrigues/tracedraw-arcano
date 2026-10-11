@@ -1926,6 +1926,11 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.tools.border_and_grommet", "", true) {
         app.dialog = Dialog::BorderGrommet(Default::default());
     }
+    sep(ui);
+    let doc = app.has_document() && !app.show_welcome;
+    if item(ui, "menu.tools.time_tracker", "", doc) {
+        app.dialog = Dialog::TimeTracker(Default::default());
+    }
 }
 
 fn window_menu(app: &mut App, ui: &mut Ui) {
@@ -2031,6 +2036,10 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             app.show_transform_toolbar,
         ) {
             app.show_transform_toolbar = !app.show_transform_toolbar;
+        }
+        let tracker = app.settings.time_tracker.show_bar;
+        if check(ui, "menu.window.toolbar_time_tracker", "", tracker) {
+            app.settings.time_tracker.show_bar = !tracker;
         }
         sep(ui);
         let locked = app.settings.bars.locked;

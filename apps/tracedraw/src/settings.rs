@@ -129,6 +129,9 @@ pub struct Settings {
     /// Options > Customization > Color Palette.
     #[serde(default)]
     pub palette: PalettePrefs,
+    /// The Time Tracker's toolbar and idle time.
+    #[serde(default)]
+    pub time_tracker: TimeTrackerPrefs,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -314,6 +317,33 @@ impl Default for PalettePrefs {
     }
 }
 
+/// The Time Tracker (Window > Toolbars > Time Tracker, Tools > Time
+/// Tracker).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TimeTrackerPrefs {
+    /// The Time Tracker toolbar is shown.
+    pub show_bar: bool,
+    /// The clock stops counting this many minutes after the last input.
+    pub idle_minutes: u32,
+}
+
+impl Default for TimeTrackerPrefs {
+    fn default() -> Self {
+        TimeTrackerPrefs {
+            show_bar: false,
+            idle_minutes: 5,
+        }
+    }
+}
+
+impl TimeTrackerPrefs {
+    /// The idle limit in seconds (1 to 120 minutes).
+    pub fn idle_seconds(&self) -> f64 {
+        f64::from(self.idle_minutes.clamp(1, 120)) * 60.0
+    }
+}
+
 /// Backups (Options > Save).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -483,6 +513,7 @@ impl Default for Settings {
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,
             window_size: [0.0, 0.0],
+            time_tracker: TimeTrackerPrefs::default(),
         }
     }
 }

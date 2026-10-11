@@ -63,6 +63,7 @@ mod text_nodes;
 mod textflow;
 mod theme;
 mod thesaurus;
+mod time_tracker;
 mod tools;
 mod tools2;
 mod trace;

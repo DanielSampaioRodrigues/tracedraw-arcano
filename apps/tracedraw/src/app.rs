@@ -697,6 +697,8 @@ pub struct App {
     pub right_drag: Option<crate::drop_menu::RightDrag>,
     /// A bar being moved (see ui/bars.rs).
     pub bar_drag: Option<crate::ui::bars::BarDrag>,
+    /// The Time Tracker's clock (see time_tracker.rs).
+    pub tracker: crate::time_tracker::Clock,
     pub drop_menu: Option<crate::drop_menu::DropMenu>,
     /// Objects docker: layers shown closed, groups shown open.
     pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
@@ -1230,6 +1232,7 @@ impl App {
             navigator_open: false,
             right_drag: None,
             bar_drag: None,
+            tracker: Default::default(),
             drop_menu: None,
             objects_collapsed: Default::default(),
             objects_open_groups: Default::default(),
@@ -2967,6 +2970,8 @@ impl App {
     }
 
     fn save_to(&mut self, path: PathBuf) {
+        // Time counted for the active task goes into the file too.
+        self.flush_tracked_time();
         let is_cdr = path
             .extension()
             .map(|e| e.eq_ignore_ascii_case("cdr"))
