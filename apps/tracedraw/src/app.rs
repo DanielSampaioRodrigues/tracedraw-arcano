@@ -614,6 +614,17 @@ pub struct Clipboard {
     pub styles: Vec<tracedraw_core::ObjectStyle>,
 }
 
+/// Centres of rotation the user moved. One object's is kept in the
+/// object's own space, so it travels with the object when it is moved,
+/// scaled or turned; that of several objects together as a place within
+/// their bounds (keyed by the objects, in id order). Both stay after the
+/// selection changes, so selecting the same objects again finds them.
+#[derive(Debug, Clone, Default)]
+pub struct Pivots {
+    pub single: std::collections::HashMap<ShapeId, Point>,
+    pub several: std::collections::HashMap<Vec<ShapeId>, (f64, f64)>,
+}
+
 pub struct App {
     pub engine: Engine,
     pub page: PageId,
@@ -623,9 +634,10 @@ pub struct App {
     pub selection: Vec<ShapeId>,
     /// Second click on a selected object switches to rotate/skew handles.
     pub rotate_mode: bool,
-    /// The centre of rotation moved by the user in rotate mode, with the
-    /// selection it belongs to (otherwise the selection's centre).
-    pub rotation_pivot: Option<(Vec<ShapeId>, Point)>,
+    /// Where the user moved the centre of rotation (otherwise the
+    /// selection's centre), kept for each object and each set of objects
+    /// after the selection changes (see `Pivots`).
+    pub pivots: Pivots,
     pub drag: Drag,
     /// A right click during a move, scale, rotation or skew: on release
     /// the change goes to copies and the originals stay.
@@ -1249,7 +1261,7 @@ impl App {
             previous_tool: Tool::Pick,
             selection: Vec::new(),
             rotate_mode: false,
-            rotation_pivot: None,
+            pivots: Pivots::default(),
             drag: Drag::None,
             drag_copy: false,
             curve: None,
@@ -2086,11 +2098,10 @@ impl App {
         self.selection.iter().any(|id| doc.is_nested(*id))
     }
 
-    /// Turn the rotate and skew handles on or off; the centre of rotation
-    /// starts in the middle each time.
+    /// Turn the rotate and skew handles on or off (a moved centre of
+    /// rotation stays where it was put).
     pub fn toggle_rotate_mode(&mut self) {
         self.rotate_mode = !self.rotate_mode;
-        self.rotation_pivot = None;
     }
 
     pub fn selection_bounds(&self) -> Option<Rect> {
@@ -2160,7 +2171,6 @@ impl App {
     pub fn select(&mut self, ids: Vec<ShapeId>) {
         self.selection = ids;
         self.rotate_mode = false;
-        self.rotation_pivot = None;
         self.node_selection.clear();
         self.segment_spot = None;
         self.rect_corner_selected = None;

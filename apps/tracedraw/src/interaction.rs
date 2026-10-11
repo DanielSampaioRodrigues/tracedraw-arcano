@@ -288,13 +288,72 @@ impl App {
     }
 
     /// The centre of rotation of the selection: where it was moved to in
-    /// rotate mode, else the middle of the selection.
+    /// rotate mode (now or the last time these objects were selected),
+    /// else the middle of the selection.
     pub fn rotation_center(&self) -> Option<Point> {
         let b = self.selection_bounds()?;
-        Some(match &self.rotation_pivot {
-            Some((sel, p)) if *sel == self.selection => *p,
-            _ => b.center(),
-        })
+        Some(self.moved_pivot(b).unwrap_or(b.center()))
+    }
+
+    /// The centre of rotation moved for the selection, in page space.
+    fn moved_pivot(&self, b: Rect) -> Option<Point> {
+        let p = match self.selection.as_slice() {
+            [] => return None,
+            [one] => {
+                let local = self.pivots.single.get(one)?;
+                self.doc().shape_on_page(*one)?.transform * *local
+            }
+            many => {
+                let mut key = many.to_vec();
+                key.sort();
+                let (u, v) = self.pivots.several.get(&key)?;
+                Point::new(b.x0 + u * b.width(), b.y0 + v * b.height())
+            }
+        };
+        (p.x.is_finite() && p.y.is_finite()).then_some(p)
+    }
+
+    /// Put the selection's centre of rotation at `p` (page space), kept
+    /// with the object (or the objects) for the next time.
+    pub fn set_pivot(&mut self, p: Point) {
+        match self.selection.clone().as_slice() {
+            [] => {}
+            [one] => {
+                let Some(t) = self.doc().shape_on_page(*one).map(|s| s.transform) else {
+                    return;
+                };
+                let det = t.determinant();
+                if det.is_finite() && det.abs() > 1e-12 {
+                    self.pivots.single.insert(*one, t.inverse() * p);
+                }
+            }
+            many => {
+                let Some(b) = self.selection_bounds() else {
+                    return;
+                };
+                let (w, h) = (b.width().max(1e-9), b.height().max(1e-9));
+                let mut key = many.to_vec();
+                key.sort();
+                self.pivots
+                    .several
+                    .insert(key, ((p.x - b.x0) / w, (p.y - b.y0) / h));
+            }
+        }
+    }
+
+    /// The selection's centre of rotation goes back to its middle.
+    pub fn reset_pivot(&mut self) {
+        match self.selection.as_slice() {
+            [] => {}
+            [one] => {
+                self.pivots.single.remove(one);
+            }
+            many => {
+                let mut key = many.to_vec();
+                key.sort();
+                self.pivots.several.remove(&key);
+            }
+        }
     }
 
     /// The pointer is on the centre of rotation (rotate mode).
@@ -844,7 +903,7 @@ impl App {
         if response.double_clicked_by(PointerButton::Primary) {
             // The centre of rotation goes back to the middle.
             if self.pivot_at(screen) {
-                self.rotation_pivot = None;
+                self.reset_pivot();
                 return;
             }
             // The page border or its shadow: the page size options.
@@ -940,7 +999,9 @@ impl App {
                 *m = crate::app::HandleMods::of(mods);
             }
             Drag::Pivot => {
-                self.rotation_pivot = Some((self.selection.clone(), p));
+                // It snaps: a corner of the selection, a node, the grid.
+                let q = self.snap_pivot(p);
+                self.set_pivot(q);
             }
             Drag::Rotate {
                 center,

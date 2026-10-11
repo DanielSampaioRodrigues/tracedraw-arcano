@@ -15,7 +15,7 @@
 | Snapping while scaling | with snapping on, the dragged corner or side handle snaps to other objects' points and edges, guidelines, the grid and the page (never to the selection's own points), and the snap mark shows where |
 | Rotate handle (rotate mode, corners) | rotate about the centre of rotation; Ctrl in steps of the constrain angle (15 degrees) |
 | Skew handle (rotate mode, sides) | slant: the top and bottom handles sideways, the left and right ones up and down, the opposite side fixed; Shift about the centre line; Ctrl in steps of the constrain angle |
-| Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point (kept while rotate mode stays on for the same selection; it starts in the middle each time rotate mode comes on); double-click puts it back in the middle; a click on it keeps rotate mode |
+| Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point; it is kept with the object: rotate mode going off and on, clicking elsewhere and selecting the object again find it where it was put, and it travels with the object when that is moved, scaled or turned (kept in the object's own space; several objects selected together keep theirs as a place within their bounds; each drawing has its own; not saved in the file); double-click puts it back in the middle; a click on it keeps rotate mode |
 | Right click during a move, scale, rotation or skew | the original stays and a copy takes the change (the copy becomes the selection); a second right click takes it back; the status bar says which |
 | Esc during a move, scale, rotation or skew | cancels it; nothing changes |
 | Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |
@@ -116,6 +116,7 @@ break instead.
 - `pick_drag_tests::the_pointer_shows_moves_for_objects_and_guidelines`
 - `pick_drag_tests::scale_handles_snap_to_other_objects_not_to_the_selection`
 - `pick_drag_tests::plus_duplicates_in_place_and_edits_nodes_in_the_shape_tool`
+- `pick_drag_tests::a_moved_centre_of_rotation_is_kept_with_the_object`
 - `select_region::tests` (wholly inside, touching, groups, lassos)
 - `command::tests::objects_inside_groups_can_be_changed_and_deleted` (core)
 - `tests::the_drag_preview_reaches_objects_inside_groups` (render)

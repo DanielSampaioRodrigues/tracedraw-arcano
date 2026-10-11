@@ -34,6 +34,9 @@ full, row-by-row status.
   click chooses the node or segment under the pointer before the menu
   opens. Interactive Fill shows the move arrows over the fill's handles.
 - Scale handles snap to other objects, guidelines, the grid and the page.
+- A moved centre of rotation stays with the object: deselecting and
+  selecting it again finds it where it was put, and it moves with the
+  object.
 - Touch workspace (Window > Workspace > Touch): a larger interface for
   touch screens; two fingers pan and pinch zooms on the drawing.
 - Paragraph text: the frame shows as a dashed line (Text > Show Text

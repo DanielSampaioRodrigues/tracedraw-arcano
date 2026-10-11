@@ -291,6 +291,45 @@ impl App {
         self.edge_snap(p, exclude)
     }
 
+    /// Where the centre of rotation goes for the pointer at `p`: when
+    /// snapping is on, the nearest within the snap radius of the
+    /// selection's box (corners, middles of the sides, centre) and of the
+    /// points the pointer snaps to (nodes and points of every object, the
+    /// selection's own included, guidelines, the grid, the page).
+    pub fn snap_pivot(&self, p: Point) -> Point {
+        if !self.snap_enabled() {
+            return p;
+        }
+        let snapped = self.snap_point(p);
+        let tol = self.snap_tolerance();
+        let boxed = self.selection_bounds().and_then(|b| {
+            let (x0, x1, y0, y1) = (b.x0, b.x1, b.y0, b.y1);
+            let c = b.center();
+            [
+                Point::new(x0, y0),
+                Point::new(x1, y0),
+                Point::new(x0, y1),
+                Point::new(x1, y1),
+                Point::new(c.x, y0),
+                Point::new(c.x, y1),
+                Point::new(x0, c.y),
+                Point::new(x1, c.y),
+                c,
+            ]
+            .into_iter()
+            .map(|q| (q, (q - p).hypot()))
+            .filter(|(_, d)| *d <= tol)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+        });
+        match boxed {
+            Some((q, d)) if snapped == p || d < (snapped - p).hypot() => {
+                self.snap_mark.set(None);
+                q
+            }
+            _ => snapped,
+        }
+    }
+
     /// An object's or the page's edge, or a text baseline, near `p`.
     fn edge_snap(&self, p: Point, exclude: &[ShapeId]) -> Point {
         match self.object_snap(p, exclude, false, true) {

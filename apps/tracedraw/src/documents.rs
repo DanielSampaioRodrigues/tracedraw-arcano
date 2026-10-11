@@ -28,6 +28,8 @@ pub struct DocSlot {
     pub missing_fonts: Vec<String>,
     /// Drawing units of this drawing (the property bar's Units).
     pub units: crate::app::Units,
+    /// Centres of rotation moved in this drawing.
+    pub pivots: crate::app::Pivots,
 }
 
 impl App {
@@ -52,6 +54,7 @@ impl App {
         std::mem::swap(&mut self.page_numbers, &mut slot.page_numbers);
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
         std::mem::swap(&mut self.units, &mut slot.units);
+        std::mem::swap(&mut self.pivots, &mut slot.pivots);
         // A page id from another drawing means nothing here.
         if self.engine.document().page(self.page).is_err() {
             if let Some(p) = self.engine.document().pages.first() {
@@ -117,6 +120,7 @@ impl App {
         self.page_numbers = PageNumberSettings::default();
         self.missing_fonts.clear();
         self.units = units;
+        self.pivots = Default::default();
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
         self.show_welcome = false;
@@ -156,6 +160,7 @@ impl App {
             self.fit_pending = true;
             self.page_numbers = PageNumberSettings::default();
             self.missing_fonts.clear();
+            self.pivots = Default::default();
             self.active_doc = 0;
             self.show_welcome = true;
             return;

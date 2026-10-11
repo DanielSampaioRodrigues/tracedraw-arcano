@@ -972,14 +972,18 @@ fn clicking_the_selection_or_its_centre_mark_turns_the_handles() {
     click_at(&ctx, &mut app, on_c, Modifiers::NONE);
     assert!(app.rotate_mode);
     assert_eq!(app.selection.len(), 2);
-    // A moved centre of rotation goes back to the middle when rotate mode
-    // comes on again.
-    let middle = app.selection_bounds().expect("bounds").center();
-    app.rotation_pivot = Some((app.selection.clone(), Point::new(0.0, 0.0)));
+    // A moved centre of rotation stays where it was put when rotate mode
+    // goes off and on again.
+    let moved = Point::new(105.0, 105.0);
+    app.set_pivot(moved);
     click_at(&ctx, &mut app, on_c, Modifiers::NONE);
     assert!(!app.rotate_mode);
     click_at(&ctx, &mut app, on_c, Modifiers::NONE);
     assert!(app.rotate_mode);
+    assert_eq!(app.rotation_center(), Some(moved));
+    // A double click on it puts it back in the middle.
+    let middle = app.selection_bounds().expect("bounds").center();
+    app.reset_pivot();
     assert_eq!(app.rotation_center(), Some(middle));
     // The centre mark of an outline-only ring: it lies on nothing, yet a
     // click there turns the handles and a drag moves the ring.
@@ -1334,4 +1338,40 @@ fn two_fingers_pan_without_dragging_anything() {
     assert!(moved.x > 30.0, "{moved:?}");
     assert_eq!(bounds(&app, id), before);
     assert!(matches!(app.drag, Drag::None));
+}
+
+#[test]
+fn a_moved_centre_of_rotation_is_kept_with_the_object() {
+    let (ctx, mut app, id) = setup();
+    // Rotate mode: drag the centre of rotation to the rectangle's lower
+    // left corner area.
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert!(app.rotate_mode);
+    let centre = app.view.to_screen(app.rotation_center().expect("centre"));
+    let target = app.view.to_screen(Point::new(20.0, 15.0));
+    app.snap.off = true;
+    drag(&ctx, &mut app, centre, target, Modifiers::NONE, Vec::new());
+    let put = app.rotation_center().expect("centre");
+    assert!((put - Point::new(20.0, 15.0)).hypot() < 0.5, "{put:?}");
+    // Click away (nothing selected), then select the rectangle again and
+    // turn rotate mode on: the centre is where it was put.
+    let empty = app.view.to_screen(Point::new(150.0, 250.0));
+    click_at(&ctx, &mut app, empty, Modifiers::NONE);
+    assert!(app.selection.is_empty());
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert!(app.rotate_mode);
+    assert_eq!(app.rotation_center(), Some(put));
+    // It travels with the object.
+    app.transform_selection(Affine::translate((10.0, 5.0)));
+    let after = app.rotation_center().expect("centre");
+    assert!(
+        (after - (put + Vec2::new(10.0, 5.0))).hypot() < 1e-9,
+        "{after:?}"
+    );
+    // Another drawing has its own centres.
+    app.new_document();
+    assert!(app.pivots.single.is_empty());
 }
