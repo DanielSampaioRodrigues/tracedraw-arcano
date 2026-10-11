@@ -72,7 +72,9 @@ SignPath that means approving every push, so leave it off there.
    - variable `SIGNPATH_PROJECT_SLUG`: the project slug (for example
      `tracedraw`);
    - variable `SIGNPATH_POLICY_SLUG`: the signing policy slug.
-6. Tag a release (`git tag v0.2.0 && git push origin v0.2.0`). The Windows
+6. Make a release: Actions > build > Run workflow with the version (for
+   example `0.3.0`), or push a version tag (`git tag v0.3.0 && git push
+   origin v0.3.0`). The Windows
    job uploads the programs, waits (up to an hour) while you approve the
    request in SignPath, packs the installer with the signed programs, then
    sends the installer and waits for the second approval.
@@ -130,7 +132,7 @@ In Windows, right-click the file > Properties > Digital Signatures, or in
 PowerShell:
 
 ```powershell
-Get-AuthenticodeSignature .\tracedraw-0.2.0-windows-x86_64-setup.exe | Format-List
+Get-AuthenticodeSignature .\tracedraw-0.3.0-windows-x86_64-setup.exe | Format-List
 ```
 
 `Status` should be `Valid` and `SignerCertificate` should name the

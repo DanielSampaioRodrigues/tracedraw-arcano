@@ -4,7 +4,7 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## 0.2.0 (2026-10-11)
+## 0.3.0 (2026-10-11)
 
 The first release meant for everyone to try. It is an alpha: real
 use will turn up bugs, and "Known limits" below lists what is known.
