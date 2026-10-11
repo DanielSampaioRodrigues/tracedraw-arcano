@@ -85,6 +85,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) | works |
 | Text on path (offset, distance, mirror), straighten text | works |
 | Fit text to frame, wrap paragraph text around objects | works |
+| Insert Placeholder Text: filler that fills each selected paragraph frame (see `behavior/text.md`) | works |
 | Linked paragraph text frames (link, unlink, live re-flow) | works |
 | Change case, insert formatting codes, show non-printing characters, Encode, Make Text Web Compatible | works |
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
@@ -208,7 +209,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
 | Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Printing, File Formats | missing |
 | Save settings as default | works |
-| Hints panel with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
+| Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |
 | Vector Mosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
 | Picture Mosaic (bitmap mosaics from an image library folder): columns and rows from the shape, blending, duplicates with tile spacing, Single, Stack and Array composition, Stretch and Remove edges, document, custom, tile and output size priorities, keep original | works (see `behavior/picture-mosaic.md`); a library is one folder, read on worker threads |

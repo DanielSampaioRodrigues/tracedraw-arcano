@@ -788,6 +788,9 @@ pub struct App {
     pub glyph_filter: String,
     pub table_edit: Option<crate::table::TableEdit>,
     pub missing_fonts: Vec<String>,
+    /// Thumbnails of recent drawings loaded for the Welcome Screen (none
+    /// when a drawing has no thumbnail).
+    pub recent_thumbs: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     pub shaping_keep_source: bool,
     pub shaping_keep_target: bool,
     pub color_model: usize,
@@ -1266,6 +1269,7 @@ impl App {
             shortcut_editor: Default::default(),
             pending_command: None,
             last_auto_backup: None,
+            recent_thumbs: Default::default(),
             page_size_all: true,
             object_origin: (1, 1),
             scale_locked: false,
@@ -3014,6 +3018,7 @@ impl App {
                 self.settings.touch_recent(&path);
                 self.settings.last_dir = path.parent().map(|p| p.to_path_buf());
                 self.settings.save();
+                self.store_thumbnail(&path);
                 self.show_welcome = false;
                 self.check_missing_fonts();
             }
@@ -3057,7 +3062,7 @@ impl App {
         }
     }
 
-    fn save_to(&mut self, path: PathBuf) {
+    pub(crate) fn save_to(&mut self, path: PathBuf) {
         // Time counted for the active task goes into the file too.
         self.flush_tracked_time();
         let is_cdr = path
@@ -3085,6 +3090,7 @@ impl App {
                     crate::i18n::trf("status.saved", &[("p", &path.display().to_string())]);
                 self.settings.touch_recent(&path);
                 self.settings.save();
+                self.store_thumbnail(&path);
             }
             Err(e) => {
                 self.status = crate::i18n::trf("status.save_failed", &[("e", &e.to_string())])

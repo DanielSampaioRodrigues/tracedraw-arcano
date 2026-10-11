@@ -93,6 +93,18 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   `leading' = leading * (pitch - dy / (lines - 1)) / pitch`.
 - Text fitted to a path shows no character nodes.
 
+## Placeholder text
+
+Text > Insert Placeholder Text fills each selected paragraph text frame
+with filler text (the traditional pseudo-Latin passage, cycled), as much
+as the frame holds without overflowing: the number of words is found by
+doubling, then halving the gap, with a full layout each time (at most
+20000 words). The filler takes the style of the frame's first
+character, or the default font and size of an empty frame; paragraphs
+end at the first full stop after 60 words and the text ends with a full
+stop. Artistic text and other objects are left alone; a text being
+edited is finished first. One undo step.
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
@@ -118,3 +130,8 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   advances minus the kerning pair from the font.
 - Given a paragraph frame narrower than one word, then the word breaks
   by character.
+- Given a 40 x 20 mm and a 120 x 90 mm paragraph frame and an artistic
+  text selected, when Insert Placeholder Text runs, then both frames hold
+  filler that fits (the larger one more), eight more words would
+  overflow the larger one, the artistic text is unchanged, and one undo
+  brings the old text back.

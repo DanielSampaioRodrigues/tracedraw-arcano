@@ -145,19 +145,9 @@ fn get_started(app: &mut App, ui: &mut Ui) {
             if recent.is_empty() {
                 ui.label(egui::RichText::new(tr("welcome.no_recent")).color(Tokens::TEXT_DIM));
             }
+            ui.add_space(4.0);
             for p in recent {
-                let name = p
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let exists = p.exists();
-                let r = ui.add_enabled(
-                    exists,
-                    egui::Button::new(egui::RichText::new(format!("\u{1F5CE} {name}")).size(13.0))
-                        .frame(false),
-                );
-                let r = r.on_hover_text(p.display().to_string());
-                if r.clicked() {
+                if recent_row(app, ui, &p) {
                     app.open_path(p.clone());
                     app.show_welcome = false;
                 }
@@ -167,9 +157,82 @@ fn get_started(app: &mut App, ui: &mut Ui) {
             {
                 app.settings.recent_files.clear();
                 app.settings.save();
+                crate::thumbnails::clear();
+                app.recent_thumbs.clear();
             }
         });
     });
+}
+
+/// One recent drawing: its thumbnail (a blank page when it has none), its
+/// name and folder. True when clicked; a missing file is greyed out.
+fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
+    const ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
+    const THUMB: egui::Vec2 = egui::vec2(64.0, 48.0);
+    let exists = path.exists();
+    let thumb = if exists {
+        app.recent_thumbnail(ui.ctx(), path)
+    } else {
+        None
+    };
+    let sense = if exists {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(ROW, sense);
+    let painter = ui.painter();
+    if exists && resp.hovered() {
+        painter.rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+    }
+    let frame = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), THUMB);
+    painter.rect_filled(frame, 0.0, egui::Color32::WHITE);
+    if let Some(t) = &thumb {
+        let size = t.size_vec2();
+        let scale = (THUMB.x / size.x.max(1.0)).min(THUMB.y / size.y.max(1.0));
+        let r = egui::Rect::from_center_size(frame.center(), size * scale);
+        painter.image(
+            t.id(),
+            r,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    painter.rect_stroke(
+        frame,
+        0.0,
+        egui::Stroke::new(1.0, Tokens::BORDER),
+        egui::StrokeKind::Inside,
+    );
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let folder = path
+        .parent()
+        .map(|d| d.display().to_string())
+        .unwrap_or_default();
+    let text_x = frame.right() + 10.0;
+    let color = if exists {
+        Tokens::TEXT
+    } else {
+        Tokens::TEXT_DIM
+    };
+    painter.text(
+        egui::pos2(text_x, frame.top() + 6.0),
+        egui::Align2::LEFT_TOP,
+        name,
+        egui::FontId::proportional(13.0),
+        color,
+    );
+    painter.text(
+        egui::pos2(text_x, frame.top() + 26.0),
+        egui::Align2::LEFT_TOP,
+        folder,
+        egui::FontId::proportional(11.0),
+        Tokens::TEXT_DIM,
+    );
+    resp.on_hover_text(path.display().to_string()).clicked()
 }
 
 /// Where the desktop app is downloaded.

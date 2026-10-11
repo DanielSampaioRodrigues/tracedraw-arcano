@@ -1009,6 +1009,8 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             sep(ui);
             if item(ui, "menu.file.clear_recent", "", true) {
                 app.settings.recent_files.clear();
+                crate::thumbnails::clear();
+                app.recent_thumbs.clear();
                 app.settings.save();
             }
         }
@@ -2033,6 +2035,9 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
         app.edit_selected_text();
+    }
+    if item(ui, "menu.text.insert_placeholder_text", "", is_para) {
+        app.insert_placeholder_text();
     }
     sub(ui, "menu.text.insert_formatting_code", |ui| {
         for (key, code) in [

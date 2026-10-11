@@ -61,3 +61,20 @@ not, and its inner size while it was neither maximized nor minimized.
 - `splash::tests::the_main_window_keeps_a_sensible_size`
 - `splash::tests::the_main_window_is_centred`
 - `splash::tests::a_splash_frame_draws_and_then_starts_the_editor`
+
+## Recent drawings on the Welcome Screen
+
+Get Started lists the drawings opened or saved last (ten at most), each
+with a thumbnail of its first page, its name and its folder; a click
+opens it, a drawing whose file is gone is greyed out, and Clear list
+forgets them.
+
+- The thumbnail is made when a drawing is opened or saved: the first
+  page rendered with a white background, 160 pixels on its long side,
+  kept as PNG in the preferences folder under `thumbnails/`, named by a
+  hash of the drawing's path (FNV-1a, the same from one run to the next).
+  Saving again makes it again.
+- Clear list removes the thumbnails too. The browser version records no
+  recent drawings, so it makes no thumbnails.
+- `thumbnails::tests::opened_and_saved_drawings_get_a_thumbnail`
+
