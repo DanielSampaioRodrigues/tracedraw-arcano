@@ -51,6 +51,7 @@ fn main() {
             points: 5,
             sharpness: 0.5,
             complex: None,
+            twist: 0.0,
         },
         Fill::Solid(Color::cmyk_pct(0.0, 0.0, 100.0, 0.0)),
         Some(Stroke::new(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0), 1.0)),

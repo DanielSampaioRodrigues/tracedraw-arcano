@@ -2050,6 +2050,7 @@ impl App {
                 points: self.polygon_points,
                 sharpness: 0.0,
                 complex: None,
+                twist: 0.0,
             },
             // A complex star's vertices are those of a polygon.
             Tool::Star if self.star_complex => ShapeKind::Polygon {
@@ -2061,6 +2062,7 @@ impl App {
                 points: self.complex_points,
                 sharpness: 0.0,
                 complex: Some(self.complex_sharpness),
+                twist: 0.0,
             },
             Tool::Star => ShapeKind::Polygon {
                 rect: tracedraw_core::geometry::polygon_rect_for_bounds(
@@ -2071,6 +2073,7 @@ impl App {
                 points: self.polygon_points,
                 sharpness: self.star_sharpness,
                 complex: None,
+                twist: 0.0,
             },
             Tool::GraphPaper => {
                 self.create_graph_paper(rect);

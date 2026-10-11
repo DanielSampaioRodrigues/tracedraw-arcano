@@ -633,6 +633,7 @@ mod tests {
                 points: 5,
                 sharpness: 0.0,
                 complex: Some(1),
+                twist: 0.0,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));

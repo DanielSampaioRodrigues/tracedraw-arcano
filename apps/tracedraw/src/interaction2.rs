@@ -513,6 +513,7 @@ impl App {
                 points: 3,
                 sharpness: 0.0,
                 complex: None,
+                twist: 0.0,
             }
         } else if closed && pts.len() == 4 || closed && pts.len() == 5 {
             ShapeKind::Rect {

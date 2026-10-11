@@ -1252,6 +1252,7 @@ mod tests {
                 points: 6,
                 sharpness: 0.0,
                 complex: Some(1),
+                twist: 0.0,
             },
         );
         star.fill = Fill::Solid(Color::BLACK);

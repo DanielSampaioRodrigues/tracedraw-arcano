@@ -1565,6 +1565,7 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         u32,
         f64,
         Option<u32>,
+        f64,
     );
     let selected: Vec<Sel> = app
         .selected_shapes()
@@ -1575,7 +1576,8 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
                 points,
                 sharpness,
                 complex,
-            } => Some((s.id, *rect, *points, *sharpness, *complex)),
+                twist,
+            } => Some((s.id, *rect, *points, *sharpness, *complex, *twist)),
             _ => None,
         })
         .collect();
@@ -1625,6 +1627,7 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
                         points: n,
                         sharpness: 0.0,
                         complex: Some(k),
+                        twist: 0.0,
                     },
                 })
                 .collect();
@@ -1666,13 +1669,15 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         let cmds: Vec<Command> = selected
             .iter()
             .filter(|s| s.4.is_none())
-            .map(|(id, rect, _, old, _)| Command::SetShapeKind {
+            .map(|(id, rect, _, old, _, twist)| Command::SetShapeKind {
                 shape: *id,
                 kind: ShapeKind::Polygon {
                     rect: *rect,
                     points: n,
                     sharpness: if *old > 0.0 || star { sharp } else { 0.0 },
                     complex: None,
+                    // A twisted star keeps its turn.
+                    twist: *twist,
                 },
             })
             .collect();

@@ -266,13 +266,17 @@ pub enum ShapeKind {
     },
     /// Polygon or star inscribed in `rect`. `complex` makes a complex
     /// star: each vertex joined to the one `complex + 1` further on, so the
-    /// sides cross (`sharpness` is then unused).
+    /// sides cross (`sharpness` and `twist` are then unused). `twist`
+    /// turns the points between the vertices about the centre (radians,
+    /// counter-clockwise): a twisted star.
     Polygon {
         rect: Rect,
         points: u32,
         sharpness: f64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         complex: Option<u32>,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        twist: f64,
     },
     /// Free path (lines and cubic Beziers) in local space.
     Path { path: BezPath, closed: bool },
@@ -472,6 +476,11 @@ pub struct TextSpan {
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
+}
+
+/// Serde: leave a zero out of the file.
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl TextSpan {
@@ -1054,9 +1063,10 @@ impl Shape {
                 points,
                 sharpness,
                 complex,
+                twist,
             } => match complex {
                 Some(k) => geometry::complex_star_path(*rect, *points, *k),
-                None => geometry::polygon_path(*rect, *points, *sharpness),
+                None => geometry::twisted_polygon_path(*rect, *points, *sharpness, *twist),
             },
             ShapeKind::Path { path, .. } => path.clone(),
             ShapeKind::Text {
@@ -2546,9 +2556,22 @@ mod tests {
             points: 9,
             sharpness: 0.0,
             complex: Some(3),
+            twist: 0.0,
         };
         let back: ShapeKind = serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
         assert_eq!(back, k);
+        // A twist is written only when there is one, and read back.
+        assert!(!serde_json::to_string(&old).unwrap().contains("twist"));
+        let twisted = ShapeKind::Polygon {
+            rect: Rect::new(0.0, 0.0, 2.0, 2.0),
+            points: 5,
+            sharpness: 0.4,
+            complex: None,
+            twist: 0.25,
+        };
+        let json = serde_json::to_string(&twisted).unwrap();
+        assert!(json.contains("twist"));
+        assert_eq!(serde_json::from_str::<ShapeKind>(&json).unwrap(), twisted);
     }
 
     #[test]

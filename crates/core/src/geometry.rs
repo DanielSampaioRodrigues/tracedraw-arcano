@@ -65,11 +65,19 @@ pub fn ellipse_arc_path(rect: Rect, start_deg: f64, end_deg: f64, pie: bool) -> 
 /// `points` is the number of vertices; `sharpness` in `0.0..1.0` pulls every
 /// other vertex toward the centre, turning a polygon into a star.
 pub fn polygon_path(rect: Rect, points: u32, sharpness: f64) -> BezPath {
+    twisted_polygon_path(rect, points, sharpness, 0.0)
+}
+
+/// A polygon or star whose points between the vertices are turned by
+/// `twist` radians (counter-clockwise, within half a turn) about the
+/// centre: a twisted star. A polygon without sharpness gains points
+/// between its vertices, where the middles of its sides were.
+pub fn twisted_polygon_path(rect: Rect, points: u32, sharpness: f64, twist: f64) -> BezPath {
     let c = rect.center();
     let rx = rect.width() / 2.0;
     let ry = rect.height() / 2.0;
     let mut path = BezPath::new();
-    for (i, (x, y)) in polygon_unit_vertices(points, sharpness).enumerate() {
+    for (i, (x, y)) in polygon_unit_vertices(points, sharpness, twist).enumerate() {
         let p = Point::new(c.x + rx * x, c.y + ry * y);
         if i == 0 {
             path.move_to(p);
@@ -102,7 +110,7 @@ pub fn complex_star_path(rect: Rect, points: u32, sharpness: u32) -> BezPath {
     let verts: Vec<Point> = {
         let c = rect.center();
         let (rx, ry) = (rect.width() / 2.0, rect.height() / 2.0);
-        polygon_unit_vertices(n as u32, 0.0)
+        polygon_unit_vertices(n as u32, 0.0, 0.0)
             .map(|(x, y)| Point::new(c.x + rx * x, c.y + ry * y))
             .collect()
     };
@@ -130,14 +138,33 @@ fn gcd(a: usize, b: usize) -> usize {
 
 /// Vertices of a polygon or star on the unit circle, first at the top
 /// (y up), then clockwise.
-fn polygon_unit_vertices(points: u32, sharpness: f64) -> impl Iterator<Item = (f64, f64)> {
+fn polygon_unit_vertices(
+    points: u32,
+    sharpness: f64,
+    twist: f64,
+) -> impl Iterator<Item = (f64, f64)> {
     let points = points.max(3) as usize;
-    let star = sharpness > 0.0;
-    let inner = 1.0 - sharpness.clamp(0.0, 1.0);
+    let twist = if twist.is_finite() {
+        twist.clamp(-std::f64::consts::PI, std::f64::consts::PI)
+    } else {
+        0.0
+    };
+    let star = sharpness > 0.0 || twist != 0.0;
+    // A plain polygon turned keeps its sides' middles as the inner points.
+    let inner = if sharpness > 0.0 {
+        1.0 - sharpness.clamp(0.0, 1.0)
+    } else {
+        (std::f64::consts::PI / points as f64).cos()
+    };
     let n = if star { points * 2 } else { points };
     (0..n).map(move |i| {
-        let t = std::f64::consts::FRAC_PI_2 - i as f64 * std::f64::consts::TAU / n as f64;
-        let k = if star && i % 2 == 1 { inner } else { 1.0 };
+        let mut t = std::f64::consts::FRAC_PI_2 - i as f64 * std::f64::consts::TAU / n as f64;
+        let k = if star && i % 2 == 1 {
+            t += twist;
+            inner
+        } else {
+            1.0
+        };
         (k * t.cos(), k * t.sin())
     })
 }
@@ -147,7 +174,7 @@ fn polygon_unit_vertices(points: u32, sharpness: f64) -> impl Iterator<Item = (f
 /// polygon; the model keeps the ellipse its outer vertices lie on.
 pub fn polygon_rect_for_bounds(bounds: Rect, points: u32, sharpness: f64) -> Rect {
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    for (x, y) in polygon_unit_vertices(points, sharpness) {
+    for (x, y) in polygon_unit_vertices(points, sharpness, 0.0) {
         x0 = x0.min(x);
         y0 = y0.min(y);
         x1 = x1.max(x);
@@ -266,6 +293,47 @@ pub fn transformed_bounds(path: &BezPath, transform: Affine) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The corner points of a closed polygon path, in order.
+    fn corners(p: &BezPath) -> Vec<Point> {
+        p.elements()
+            .iter()
+            .filter_map(|e| match e {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => Some(*p),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn twisting_turns_the_points_between_the_vertices() {
+        let r = Rect::new(-10.0, -10.0, 10.0, 10.0);
+        let star = corners(&polygon_path(r, 5, 0.5));
+        let turn = 0.3;
+        let twisted = corners(&twisted_polygon_path(r, 5, 0.5, turn));
+        assert_eq!((star.len(), twisted.len()), (10, 10));
+        for (i, (a, b)) in star.iter().zip(&twisted).enumerate() {
+            if i % 2 == 0 {
+                // The vertices stay.
+                assert!((*a - *b).hypot() < 1e-9, "{i}");
+            } else {
+                // The points between them keep their distance and turn.
+                assert!((a.to_vec2().hypot() - b.to_vec2().hypot()).abs() < 1e-9);
+                let da = b.y.atan2(b.x) - a.y.atan2(a.x);
+                let da = (da + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                    - std::f64::consts::PI;
+                assert!((da - turn).abs() < 1e-9, "{i}: {da}");
+            }
+        }
+        // A plain polygon turned gains points where its sides' middles were.
+        let plain = corners(&twisted_polygon_path(r, 6, 0.0, 0.2));
+        assert_eq!(plain.len(), 12);
+        let mid = (std::f64::consts::PI / 6.0).cos() * 10.0;
+        assert!((plain[1].to_vec2().hypot() - mid).abs() < 1e-9);
+        // Untwisted is the polygon as before; nonsense counts as untwisted.
+        assert_eq!(corners(&twisted_polygon_path(r, 6, 0.0, 0.0)).len(), 6);
+        assert_eq!(corners(&twisted_polygon_path(r, 5, 0.5, f64::NAN)), star);
+    }
 
     #[test]
     fn rect_path_has_bounds() {

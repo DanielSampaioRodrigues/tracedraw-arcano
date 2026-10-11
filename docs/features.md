@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 167, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -57,7 +57,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Shape tool node selection (Ctrl+click toggles, Shift+click selects a run, Tab and Shift+Tab, rectangular or freehand marquee, double-click the tool selects all) | works (see `behavior/shape-tool.md`) |
 | Shape tool node transforms: Stretch and Scale, Rotate and Skew handles around the selected nodes; Reflect nodes horizontally and vertically | works (see `behavior/shape-tool.md`) |
 | Shape tool segments: Ctrl+C, Ctrl+X, Ctrl+D copy, cut and duplicate the segments between selected nodes; Extend Curve to Close; Curve smoothness slider | works (see `behavior/shape-tool.md`) |
-| Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes) | partial: polygon nodes move in and out only, a drag's angle is not used (no twisted stars) (see `behavior/shape-tool.md`) |
+| Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes, twisted stars) | works (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
 | Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and panel) | works |

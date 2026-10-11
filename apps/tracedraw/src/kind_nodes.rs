@@ -76,6 +76,7 @@ pub fn nodes(s: &Shape) -> Vec<(KindNode, Point)> {
             points,
             sharpness,
             complex,
+            twist,
         } => {
             let n = (*points).max(3) as usize;
             let inner = inner_ratio(n, *sharpness);
@@ -83,7 +84,7 @@ pub fn nodes(s: &Shape) -> Vec<(KindNode, Point)> {
             let (rx, ry) = (rect.width() / 2.0, rect.height() / 2.0);
             for i in 0..n {
                 let a = vertex_angle(n, i);
-                let b = a - std::f64::consts::PI / n as f64;
+                let b = a - std::f64::consts::PI / n as f64 + clamp_twist(*twist);
                 out.push((
                     KindNode::Polygon {
                         outer: true,
@@ -143,6 +144,15 @@ fn inner_ratio(n: usize, sharpness: f64) -> f64 {
         1.0 - sharpness.clamp(0.0, 1.0)
     } else {
         (std::f64::consts::PI / n as f64).cos()
+    }
+}
+
+/// A twist as the polygon path draws it: within half a turn.
+fn clamp_twist(twist: f64) -> f64 {
+    if twist.is_finite() {
+        twist.clamp(-std::f64::consts::PI, std::f64::consts::PI)
+    } else {
+        0.0
     }
 }
 
@@ -269,8 +279,9 @@ pub fn drag(
                 points,
                 sharpness,
                 complex,
+                twist,
             },
-            KindNode::Polygon { outer, .. },
+            KindNode::Polygon { outer, index },
         ) => {
             let n = (*points).max(3) as usize;
             let c = rect.center();
@@ -299,24 +310,44 @@ pub fn drag(
                         points: *points,
                         sharpness: *sharpness,
                         complex: *complex,
+                        twist: *twist,
                     });
                 }
-                // The vertices move, the points between them stay.
+                // The vertices move, the points between them stay (and
+                // keep their turn).
                 let k = inner / rho;
                 Some(ShapeKind::Polygon {
                     rect: grown,
                     points: *points,
                     sharpness: (1.0 - k).clamp(0.001, 0.999),
                     complex: None,
+                    twist: *twist,
                 })
             } else if complex.is_some() {
                 None
             } else {
+                // In or out sharpens the star; around the centre turns the
+                // points between the vertices (a twisted star), unless
+                // Ctrl keeps the turn they have.
+                let twist = if single {
+                    *twist
+                } else {
+                    let untwisted = vertex_angle(n, index) - std::f64::consts::PI / n as f64;
+                    let at = ((lp.y - c.y) / ry).atan2((lp.x - c.x) / rx);
+                    let turn = wrap((at - untwisted).to_degrees()).to_radians();
+                    // A drag straight in or out stays untwisted.
+                    if turn.abs() < 1f64.to_radians() {
+                        0.0
+                    } else {
+                        clamp_twist(turn)
+                    }
+                };
                 Some(ShapeKind::Polygon {
                     rect: *rect,
                     points: *points,
                     sharpness: (1.0 - rho).clamp(0.001, 0.999),
                     complex: None,
+                    twist,
                 })
             }
         }
@@ -539,6 +570,7 @@ mod tests {
                 points: 5,
                 sharpness: 0.0,
                 complex: None,
+                twist: 0.0,
             },
         );
         let n = nodes(&s);
@@ -576,6 +608,67 @@ mod tests {
         assert!((rect.width() - 40.0).abs() < 1e-9);
         let inner = (std::f64::consts::PI / 5.0).cos() * 10.0;
         assert!(((1.0 - sharpness) * 20.0 - inner).abs() < 1e-9);
+    }
+
+    #[test]
+    fn points_between_the_vertices_twist_the_star() {
+        let s = Shape::new(
+            ShapeId(1),
+            ShapeKind::Polygon {
+                rect: Rect::new(-10.0, -10.0, 10.0, 10.0),
+                points: 5,
+                sharpness: 0.5,
+                complex: None,
+                twist: 0.0,
+            },
+        );
+        let mut turn = 0.0;
+        let between = KindNode::Polygon {
+            outer: false,
+            index: 0,
+        };
+        // The node between the first two vertices sits 36 degrees right of
+        // the top; pulled to 20 degrees right of the top, half way out.
+        let untwisted = std::f64::consts::FRAC_PI_2 - std::f64::consts::PI / 5.0;
+        let at = std::f64::consts::FRAC_PI_2 - 20f64.to_radians();
+        let p = Point::new(5.0 * at.cos(), 5.0 * at.sin());
+        let k = drag(&s, between, p, false, &mut turn).expect("dragged");
+        let ShapeKind::Polygon {
+            sharpness, twist, ..
+        } = k
+        else {
+            panic!("{k:?}");
+        };
+        assert!((sharpness - 0.5).abs() < 1e-9);
+        assert!((twist - (at - untwisted)).abs() < 1e-9, "{twist}");
+        // The nodes show where the points are now.
+        let twisted = Shape {
+            kind: k.clone(),
+            ..s.clone()
+        };
+        let shown = nodes(&twisted)
+            .into_iter()
+            .find(|(n, _)| *n == between)
+            .map(|(_, q)| q)
+            .expect("node");
+        assert!((shown - p).hypot() < 1e-9);
+        // Ctrl keeps the turn; straight in or out stays untwisted.
+        let k = drag(&twisted, between, Point::new(0.0, 3.0), true, &mut turn).expect("ctrl");
+        assert!(
+            matches!(k, ShapeKind::Polygon { twist, .. } if (twist - (at - untwisted)).abs() < 1e-9)
+        );
+        let radial = Point::new(4.0 * untwisted.cos(), 4.0 * untwisted.sin());
+        let k = drag(&s, between, radial, false, &mut turn).expect("radial");
+        assert!(matches!(k, ShapeKind::Polygon { twist, .. } if twist == 0.0));
+        // A vertex pulled out keeps the twist.
+        let top = KindNode::Polygon {
+            outer: true,
+            index: 0,
+        };
+        let k = drag(&twisted, top, Point::new(0.0, 15.0), false, &mut turn).expect("vertex");
+        assert!(
+            matches!(k, ShapeKind::Polygon { twist, .. } if (twist - (at - untwisted)).abs() < 1e-9)
+        );
     }
 
     #[test]

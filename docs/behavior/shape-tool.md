@@ -78,7 +78,7 @@ step.
 | Drag a rectangle corner node | every corner grows or shrinks by the same amount, in the current corner style; a square corner has one node, a cut one a node at each end |
 | Ctrl+drag a corner node, or click it first | that corner only (the chosen corner's node is filled) |
 | Drag an ellipse node | pie when the pointer is inside the ellipse, arc outside; a whole ellipse's node starts at the top and the way it turns picks which end it becomes |
-| Drag a polygon node | its mirrored nodes follow: a vertex moves every vertex (the points between them stay), a point between two vertices moves all of those (a star); the drag's distance from the centre counts, not its angle |
+| Drag a polygon node | its mirrored nodes follow: a vertex moves every vertex in or out (the points between them stay, and keep their turn); a point between two vertices moves all of those: in or out sharpens the star, around the centre turns them (a twisted star; within 1 degree of straight it stays untwisted; Ctrl keeps the turn they have) |
 
 Rectangles, ellipses and polygons show these nodes and the property bar
 shows their controls (corners, pie and arc, points) while the Shape tool
@@ -114,3 +114,7 @@ Reduce Nodes, Curve smoothness.
 - `kind_nodes::tests::corners_drag_in_page_units_on_scaled_rectangles`
 - `kind_nodes::tests::the_ellipse_node_opens_a_pie_inside_and_an_arc_outside`
 - `kind_nodes::tests::polygon_nodes_move_together`
+- `kind_nodes::tests::points_between_the_vertices_twist_the_star`
+- `geometry::tests::twisting_turns_the_points_between_the_vertices` (core): the
+  vertices stay, the points between them keep their distance and turn by
+  the twist; a plain polygon turned gains points at its sides' middles.

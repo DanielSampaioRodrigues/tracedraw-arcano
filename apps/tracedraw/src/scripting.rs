@@ -871,6 +871,7 @@ impl HostInner {
                         points: num(a, "points", 5.0) as u32,
                         sharpness: num(a, "sharpness", 0.0),
                         complex: None,
+                        twist: 0.0,
                     },
                 );
                 self.add(layer, s)?

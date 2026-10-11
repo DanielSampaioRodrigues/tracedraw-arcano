@@ -407,6 +407,7 @@ impl CoordsState {
                         points: self.points.clamp(3, 500),
                         sharpness: self.sharpness.clamp(0.01, 0.99),
                         complex: None,
+                        twist: 0.0,
                     },
                     CoordKind::ComplexStar => {
                         let n = self.points.clamp(COMPLEX_STAR_MIN_POINTS, 500);
@@ -418,6 +419,7 @@ impl CoordsState {
                                 self.complex_sharpness
                                     .clamp(1, complex_star_max_sharpness(n)),
                             ),
+                            twist: 0.0,
                         }
                     }
                     _ => ShapeKind::Polygon {
@@ -425,6 +427,7 @@ impl CoordsState {
                         points: self.points.clamp(3, 500),
                         sharpness: 0.0,
                         complex: None,
+                        twist: 0.0,
                     },
                 };
                 Some((kind, t))
@@ -597,6 +600,7 @@ impl CoordsState {
                 points,
                 sharpness,
                 complex,
+                ..
             } => {
                 let (w, h) = (rect.width() * sx, rect.height() * sy);
                 self.kind = match complex {
@@ -975,6 +979,7 @@ mod tests {
                 points: 9,
                 sharpness: 0.0,
                 complex: Some(3),
+                twist: 0.0,
             },
         );
         assert!(c.load(&star));
