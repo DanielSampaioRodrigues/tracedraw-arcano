@@ -514,3 +514,47 @@ impl App {
         self.context_menu.is_none() && self.drop_menu.is_none()
     }
 }
+
+#[test]
+fn the_status_bar_tells_how_far_how_much_and_what_angle() {
+    let (_ctx, mut app, _id) = setup();
+    let info = |app: &App| crate::ui::status::drag_info(app).unwrap_or_default();
+    assert!(info(&app).is_empty(), "nothing while not dragging");
+    app.drag = Drag::Move {
+        start: Point::new(0.0, 0.0),
+        last: Point::new(0.0, 0.0),
+        total: Vec2::new(30.0, 40.0),
+        start_bounds: Rect::new(10.0, 10.0, 60.0, 40.0),
+        source: None,
+    };
+    let text = info(&app);
+    assert!(text.contains("50.000") && text.contains("53.1"), "{text}");
+    app.drag = Drag::Scale {
+        handle: Handle::E,
+        anchor: Point::new(10.0, 25.0),
+        start_bounds: Rect::new(10.0, 10.0, 60.0, 40.0),
+        current: Point::new(85.0, 25.0),
+        mods: HandleMods::default(),
+    };
+    let text = info(&app);
+    assert!(text.contains("150.0") && text.contains("100.0"), "{text}");
+    app.drag = Drag::Rotate {
+        center: Point::new(0.0, 0.0),
+        start_angle: 0.0,
+        current_angle: 30f64.to_radians(),
+    };
+    assert!(info(&app).contains("30.0"), "{}", info(&app));
+    app.drag = Drag::Skew {
+        handle: Handle::N,
+        start_bounds: Rect::new(10.0, 10.0, 60.0, 40.0),
+        start: Point::new(35.0, 40.0),
+        current: Point::new(65.0, 40.0),
+        mods: HandleMods::default(),
+    };
+    assert!(info(&app).contains("45.0"), "{}", info(&app));
+    // A copy says so.
+    app.drag_copy = true;
+    assert!(info(&app).contains(&crate::i18n::tr("status.drag_copy_short")));
+    app.drag = Drag::None;
+    app.drag_copy = false;
+}

@@ -130,6 +130,67 @@ fn object_details(app: &App) -> String {
     )
 }
 
+/// While the Pick tool moves, scales, rotates or skews the selection:
+/// how far, how much or by what angle, and whether a copy takes it.
+pub(crate) fn drag_info(app: &App) -> Option<String> {
+    use crate::app::{Drag, Handle};
+    if !app.transforming() {
+        return None;
+    }
+    let u = app.units;
+    let d = app.settings.precision.min(10) as usize;
+    let len = |mm: f64| format!("{:.*} {}", d, u.world_from_mm(mm), u.label());
+    let text = match &app.drag {
+        Drag::Move { total, .. } => trf(
+            "status.drag_move",
+            &[
+                ("dx", &len(total.x)),
+                ("dy", &len(total.y)),
+                ("d", &len(total.hypot())),
+                ("a", &format!("{:.1}", total.y.atan2(total.x).to_degrees())),
+            ],
+        ),
+        drag @ Drag::Scale { .. } => {
+            let t = app.preview_transform_of(drag)?.as_coeffs();
+            trf(
+                "status.drag_scale",
+                &[
+                    ("sx", &format!("{:.1}", t[0] * 100.0)),
+                    ("sy", &format!("{:.1}", t[3] * 100.0)),
+                ],
+            )
+        }
+        Drag::Rotate {
+            start_angle,
+            current_angle,
+            ..
+        } => {
+            // Counter-clockwise positive, within -180 to 180.
+            let mut a = (current_angle - start_angle).to_degrees();
+            a = (a + 180.0).rem_euclid(360.0) - 180.0;
+            trf("status.drag_rotate", &[("a", &format!("{a:.1}"))])
+        }
+        drag @ Drag::Skew { handle, .. } => {
+            let t = app.preview_transform_of(drag)?.as_coeffs();
+            let k = if matches!(handle, Handle::N | Handle::S) {
+                t[2]
+            } else {
+                t[1]
+            };
+            trf(
+                "status.drag_skew",
+                &[("a", &format!("{:.1}", k.atan().to_degrees()))],
+            )
+        }
+        _ => return None,
+    };
+    Some(if app.drag_copy {
+        format!("{text}    {}", tr("status.drag_copy_short"))
+    } else {
+        text
+    })
+}
+
 fn cursor_coordinates(app: &App) -> String {
     match app.pointer_page.map(|p| app.to_ruler(p)) {
         Some(p) => {
@@ -280,6 +341,8 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     // Left field and object information.
     let (left, info) = if !doc {
         (tr("status.tool_hints"), tr("status.object_information"))
+    } else if let Some(drag) = drag_info(app) {
+        (drag, object_info(app))
     } else {
         let left = match app.settings.status_info {
             StatusInfo::ToolHints => {

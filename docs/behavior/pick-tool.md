@@ -97,6 +97,7 @@ break instead.
 - `pick_drag_tests::handle_modifiers_shape_the_scale`
 - `pick_drag_tests::side_handles_skew`
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do`
+- `pick_drag_tests::the_status_bar_tells_how_far_how_much_and_what_angle`
 - `drop_menu::tests::move_here_and_copy_here`
 - `drop_menu::tests::fill_outline_and_properties_go_onto_the_target`
 - `drop_menu::tests::place_inside_makes_the_target_a_clip_frame`

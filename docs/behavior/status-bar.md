@@ -9,7 +9,11 @@ It sits at the bottom of the window, or at the top below the menu bar
    chooses what the first field shows:
    Tool Hints (default), Object Details, Cursor Coordinates or Document
    Color Settings. The choice is kept in the settings (`status_info`).
-2. The first field:
+2. The first field (while the Pick tool moves, scales, rotates or skews
+   the selection it shows that instead: "dx, dy, Distance, Angle" in the
+   drawing units for a move, "Scale: x % x y %" (negative when mirrored),
+   "Rotation: a°" counter-clockwise, "Skew: a°", and "(a copy, the
+   original stays)" after a right click during the drag):
    - Tool Hints: the active tool's hint (`status_hint.<tool id>` in the
      language files; every tool has one). The Pick tool's hint changes
      when something is selected. A message from the last command comes
