@@ -306,6 +306,11 @@ fn workspace(app: &mut App, ui: &mut Ui) {
                     "menu.window.workspace_page_layout",
                     "welcome.ws_page_layout_desc",
                 ),
+                (
+                    crate::app::Workspace::Touch,
+                    "menu.window.workspace_touch",
+                    "welcome.ws_touch_desc",
+                ),
             ] {
                 ui.horizontal(|ui| {
                     if ui

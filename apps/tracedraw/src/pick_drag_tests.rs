@@ -1274,3 +1274,64 @@ fn c_s_and_y_set_the_type_of_the_chosen_nodes() {
         assert_eq!(app.tool, Tool::Shape);
     }
 }
+
+#[test]
+fn two_fingers_pan_without_dragging_anything() {
+    let (ctx, mut app, id) = setup();
+    let before = bounds(&app, id);
+    let origin = app.view.to_screen(Point::new(0.0, 0.0));
+    let touch = |id: u64, phase: egui::TouchPhase, pos: Pos2| Event::Touch {
+        device_id: egui::TouchDeviceId(1),
+        id: egui::TouchId(id),
+        phase,
+        pos,
+        force: None,
+    };
+    // Both fingers on the object, then both move 60 points right. The
+    // windowing layer also turns the first finger into the pointer.
+    let (a, b) = (
+        app.view.to_screen(Point::new(30.0, 25.0)),
+        app.view.to_screen(Point::new(40.0, 25.0)),
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            Event::PointerMoved(a),
+            button(a, true, PointerButton::Primary, Modifiers::NONE),
+            touch(0, egui::TouchPhase::Start, a),
+            touch(1, egui::TouchPhase::Start, b),
+        ],
+        Modifiers::NONE,
+    );
+    for i in 1..=6 {
+        let d = egui::vec2(10.0 * i as f32, 0.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![
+                Event::PointerMoved(a + d),
+                touch(0, egui::TouchPhase::Move, a + d),
+                touch(1, egui::TouchPhase::Move, b + d),
+            ],
+            Modifiers::NONE,
+        );
+    }
+    let end = egui::vec2(60.0, 0.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            button(a + end, false, PointerButton::Primary, Modifiers::NONE),
+            touch(0, egui::TouchPhase::End, a + end),
+            touch(1, egui::TouchPhase::End, b + end),
+        ],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The view moved with the fingers; the object did not.
+    let moved = app.view.to_screen(Point::new(0.0, 0.0)) - origin;
+    assert!(moved.x > 30.0, "{moved:?}");
+    assert_eq!(bounds(&app, id), before);
+    assert!(matches!(app.drag, Drag::None));
+}

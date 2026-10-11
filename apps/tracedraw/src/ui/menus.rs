@@ -2366,6 +2366,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
                 "menu.window.workspace_page_layout",
                 crate::app::Workspace::PageLayout,
             ),
+            ("menu.window.workspace_touch", crate::app::Workspace::Touch),
         ] {
             if check(ui, key, "", app.workspace == ws) {
                 app.set_workspace(ws);

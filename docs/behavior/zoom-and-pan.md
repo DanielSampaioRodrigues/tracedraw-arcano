@@ -25,6 +25,8 @@
 - With the Scroll setting: the wheel scrolls vertically; Shift+wheel
   scrolls horizontally; Ctrl+wheel zooms.
 - A trackpad pinch zooms by the gesture's factor with either setting.
+- On a touch screen two fingers pan the view and a pinch zooms, with any
+  tool (the first finger's drag is dropped).
 
 ## Pan (H)
 

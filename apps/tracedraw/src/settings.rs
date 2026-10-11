@@ -239,7 +239,22 @@ pub fn screen_ppi(s: &Settings) -> f32 {
 /// over the interface's zoom, so that drawings at zoom 100 % keep their
 /// real size whatever the interface size.
 pub fn screen_points_per_inch(s: &Settings) -> f32 {
-    screen_ppi(s) / crate::ui::ui_zoom(s.ui_size)
+    screen_ppi(s) / crate::ui::ui_zoom(effective_ui_size(s))
+}
+
+/// How much larger the Touch workspace draws the interface (bars,
+/// buttons, panels and text), for fingers.
+pub const TOUCH_SCALE: f32 = 1.4;
+
+/// The interface size in use: the chosen one, larger in the Touch
+/// workspace (at most 400 %).
+pub fn effective_ui_size(s: &Settings) -> f32 {
+    let base = crate::ui::interface_size(s.ui_size);
+    if s.workspace == "touch" {
+        (base * TOUCH_SCALE).min(4.0)
+    } else {
+        base
+    }
 }
 
 fn default_undo_levels() -> usize {

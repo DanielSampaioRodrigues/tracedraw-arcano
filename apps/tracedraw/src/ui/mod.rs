@@ -137,7 +137,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     // at its drawing scale.
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
-    apply_ui_scale(&ctx, app.settings.ui_size);
+    apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
@@ -514,9 +514,23 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             }
             let mods = ui.input(|i| i.modifiers);
 
+            // Two fingers on a touch screen pan (and pinch zooms, above):
+            // what the first finger began is dropped, so the gesture does
+            // not also drag a marquee or an object.
+            let two_fingers = ui.input(|i| i.multi_touch());
+            if let Some(t) = two_fingers {
+                if response.rect.contains(t.center_pos) {
+                    app.view.pan(t.translation_delta);
+                }
+                if !matches!(app.drag, crate::app::Drag::None) {
+                    app.drag = crate::app::Drag::None;
+                    app.drag_copy = false;
+                }
+            }
+
             // A guideline or the ruler origin dragged out of the rulers
             // follows the pointer until release.
-            if !rulers::ruler_drag(app, ui) {
+            if two_fingers.is_none() && !rulers::ruler_drag(app, ui) {
                 app.canvas_input(&response, mods);
             }
 
@@ -697,6 +711,33 @@ mod tests {
             assert_eq!(interface_size(bad), 1.0, "{bad}");
             assert_eq!(ui_zoom(bad), BASE_ZOOM, "{bad}");
         }
+    }
+
+    /// The Touch workspace draws the interface larger and keeps drawings
+    /// at their real size at zoom 100 %; the other workspaces leave the
+    /// size as chosen.
+    #[test]
+    fn the_touch_workspace_is_larger_and_keeps_real_sizes() {
+        let mut app = App::headless();
+        app.settings.ui_size = 1.0;
+        let ppi = crate::settings::screen_points_per_inch(&app.settings);
+        app.set_workspace(crate::app::Workspace::Touch);
+        assert_eq!(app.settings.workspace, "touch");
+        let s = crate::settings::effective_ui_size(&app.settings);
+        assert!((s - crate::settings::TOUCH_SCALE).abs() < 1e-6);
+        // Bigger points, so fewer of them per inch: the same inch on screen.
+        let touch_ppi = crate::settings::screen_points_per_inch(&app.settings);
+        assert!((touch_ppi * crate::settings::TOUCH_SCALE - ppi).abs() < 1e-3);
+        assert!(!app.show_rulers && !app.show_dockers && !app.show_status_bar);
+        assert!(app.show_toolbox && app.show_property_bar);
+        // At most 400 %.
+        app.settings.ui_size = 3.5;
+        assert!((crate::settings::effective_ui_size(&app.settings) - 4.0).abs() < 1e-6);
+        app.set_workspace(crate::app::Workspace::Default);
+        assert!((crate::settings::effective_ui_size(&app.settings) - 3.5).abs() < 1e-6);
+        assert!(crate::app::Workspace::ALL
+            .iter()
+            .all(|w| crate::app::Workspace::from_id(w.id()) == *w));
     }
 
     use super::*;

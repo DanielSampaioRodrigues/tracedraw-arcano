@@ -3,8 +3,22 @@
 A workspace is how the window is set up: which bars show and where they
 sit, the toolbox, keyboard shortcuts, the colour palette options and the
 interface's look. Window > Workspace picks a built-in one (Default, Lite,
-Classic, Illustration, Page Layout); the user's own setup can be kept in
-a file and brought back.
+Classic, Illustration, Page Layout, Touch); the user's own setup can be
+kept in a file and brought back.
+
+## Touch
+
+For touch screens: the interface (bars, buttons, panels, menus and text)
+is drawn `TOUCH_SCALE` = 1.4 times the interface size chosen (at most
+400 %), and drawings keep their real size at zoom 100 % (the points per
+inch shrink by as much). The standard toolbar, property bar and toolbox
+show; rulers, panels and the status bar do not. On the drawing two
+fingers pan and a pinch zooms about its centre, with any tool; the
+gesture drops what the first finger had begun, so it neither drags an
+object nor draws a marquee. Picking another workspace brings the
+interface back to the size chosen.
+Checks: `ui::tests::the_touch_workspace_is_larger_and_keeps_real_sizes`,
+`pick_drag_tests::two_fingers_pan_without_dragging_anything`.
 
 ## Kept across restarts
 

@@ -983,9 +983,22 @@ pub enum Workspace {
     Classic,
     Illustration,
     PageLayout,
+    /// For touch screens: larger bars and buttons, no rulers, panels or
+    /// status bar; two fingers pan and pinch zooms.
+    Touch,
 }
 
 impl Workspace {
+    /// Every built-in workspace, in the order the menus list them.
+    pub const ALL: [Workspace; 6] = [
+        Workspace::Default,
+        Workspace::Lite,
+        Workspace::Classic,
+        Workspace::Illustration,
+        Workspace::PageLayout,
+        Workspace::Touch,
+    ];
+
     pub fn id(self) -> &'static str {
         match self {
             Workspace::Default => "default",
@@ -993,6 +1006,7 @@ impl Workspace {
             Workspace::Classic => "classic",
             Workspace::Illustration => "illustration",
             Workspace::PageLayout => "page_layout",
+            Workspace::Touch => "touch",
         }
     }
     pub fn from_id(id: &str) -> Self {
@@ -1001,6 +1015,7 @@ impl Workspace {
             "classic" => Workspace::Classic,
             "illustration" => Workspace::Illustration,
             "page_layout" => Workspace::PageLayout,
+            "touch" => Workspace::Touch,
             _ => Workspace::Default,
         }
     }
@@ -1832,6 +1847,9 @@ impl App {
 
     pub fn set_workspace(&mut self, ws: Workspace) {
         self.workspace = ws;
+        // The interface size follows at once (the Touch workspace draws it
+        // larger).
+        self.settings.workspace = ws.id().into();
         match ws {
             Workspace::Default | Workspace::Classic => {
                 self.show_standard_toolbar = true;
@@ -1867,6 +1885,14 @@ impl App {
                 self.docker_tab = DockerTab::Pages;
                 self.show_rulers = true;
                 self.show_guides = true;
+            }
+            Workspace::Touch => {
+                self.show_standard_toolbar = true;
+                self.show_property_bar = true;
+                self.show_toolbox = true;
+                self.show_status_bar = false;
+                self.show_dockers = false;
+                self.show_rulers = false;
             }
         }
     }
@@ -3937,7 +3963,8 @@ impl App {
     /// sizes the menus and bars, never the drawing.
     fn zoom_100(&self) -> f32 {
         let per_inch = if self.view_mode == ViewMode::Pixels {
-            self.document_dpi().max(1.0) as f32 / crate::ui::ui_zoom(self.settings.ui_size)
+            self.document_dpi().max(1.0) as f32
+                / crate::ui::ui_zoom(crate::settings::effective_ui_size(&self.settings))
         } else {
             crate::settings::screen_points_per_inch(&self.settings)
         };

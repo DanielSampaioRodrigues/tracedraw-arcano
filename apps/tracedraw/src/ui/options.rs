@@ -1679,13 +1679,7 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
     let frame = chrome::panel();
     frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        for ws in [
-            crate::app::Workspace::Default,
-            crate::app::Workspace::Lite,
-            crate::app::Workspace::Classic,
-            crate::app::Workspace::Illustration,
-            crate::app::Workspace::PageLayout,
-        ] {
+        for ws in crate::app::Workspace::ALL {
             if ui
                 .selectable_label(
                     app.workspace == ws,
