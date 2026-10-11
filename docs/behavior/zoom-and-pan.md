@@ -11,7 +11,9 @@
 - Double-clicking the tool button zooms to fit all objects (F4).
 - F2 picks the tool; Shift+F2 zooms to the selection; F4 zooms to fit
   all objects; Shift+F4 zooms to the page.
-- `+`/`=` and `-` zoom by 1.25 about the canvas centre; the zoom combo
+- `+`/`=` and `-` zoom by 1.25 about the canvas centre (except that `+`
+  duplicates the selection in place with a Pick tool, and with the Shape
+  tool and nodes chosen `+` and `-` add and delete nodes); the zoom combo
   on the standard toolbar steps through 10, 25, 50, 75, 100, 150, 200,
   300, 400, 800 and 1600 % (beyond the last step the factor doubles).
 

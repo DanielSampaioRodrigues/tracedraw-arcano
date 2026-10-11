@@ -20,6 +20,7 @@
 | Esc during a move, scale, rotation or skew | cancels it; nothing changes |
 | Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |
 | Tab / Shift+Tab | cycle selection in stacking order |
+| + (also on the numeric keypad) | duplicate the selection in place (no offset), the copies selected, one undo step |
 | Double-click | Shape tool on a curve; on text, the Text tool editing that text with the caret at the end |
 | Esc | deselect |
 | Double-click the tool button | select all objects |
@@ -114,6 +115,7 @@ break instead.
 - `pick_drag_tests::clicking_the_selection_or_its_centre_mark_turns_the_handles`
 - `pick_drag_tests::the_pointer_shows_moves_for_objects_and_guidelines`
 - `pick_drag_tests::scale_handles_snap_to_other_objects_not_to_the_selection`
+- `pick_drag_tests::plus_duplicates_in_place_and_edits_nodes_in_the_shape_tool`
 - `select_region::tests` (wholly inside, touching, groups, lassos)
 - `command::tests::objects_inside_groups_can_be_changed_and_deleted` (core)
 - `tests::the_drag_preview_reaches_objects_inside_groups` (render)

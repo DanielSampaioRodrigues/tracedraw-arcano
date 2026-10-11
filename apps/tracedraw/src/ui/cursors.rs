@@ -194,6 +194,7 @@ fn shape_mark(app: &App, pos: Option<Pos2>) -> ShapeMark {
             return ShapeMark::Node
         }
         Drag::Handle { .. } => return ShapeMark::Control,
+        Drag::SegmentBend { .. } => return ShapeMark::Segment,
         Drag::None => {}
         _ => return ShapeMark::Nothing,
     }

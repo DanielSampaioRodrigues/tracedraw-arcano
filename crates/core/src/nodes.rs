@@ -391,6 +391,69 @@ pub fn add_node(path: &BezPath, index: usize, t: f64) -> BezPath {
     BezPath::from_vec(out)
 }
 
+/// Bend the segment ending at element `index` so that its point at
+/// parameter `t` moves by `d`, its end nodes staying put: a straight
+/// segment (or a closing one) becomes a curve first; both control points
+/// move, the nearer one more (by `k (1 - t) d` and `k t d`, `k` making the
+/// point follow `d` exactly); an end node that was smooth or symmetrical
+/// stays so (its other handle turns along). Paths whose segment cannot be
+/// bent come back unchanged.
+pub fn bend_segment(path: &BezPath, index: usize, t: f64, d: Vec2) -> BezPath {
+    let n = normalize(path);
+    let mut els: Vec<PathEl> = n.elements().to_vec();
+    if !(d.x.is_finite() && d.y.is_finite()) || index == 0 || index >= els.len() {
+        return n;
+    }
+    let types_before = (node_type(&n, index - 1), node_type(&n, index));
+    let prev = prev_point(&els, index);
+    // The node the segment ends at: itself, or for a closing segment the
+    // subpath's start.
+    let mut end_node = index;
+    match els[index] {
+        PathEl::LineTo(p) => {
+            els[index] = PathEl::CurveTo(prev.lerp(p, 1.0 / 3.0), prev.lerp(p, 2.0 / 3.0), p);
+        }
+        PathEl::CurveTo(..) => {}
+        PathEl::ClosePath => {
+            let start = subpath_start(&els, index);
+            if (start - prev).hypot() < 1e-9 {
+                return n;
+            }
+            els.insert(
+                index,
+                PathEl::CurveTo(
+                    prev.lerp(start, 1.0 / 3.0),
+                    prev.lerp(start, 2.0 / 3.0),
+                    start,
+                ),
+            );
+            end_node = (0..index)
+                .rev()
+                .find(|&i| matches!(els[i], PathEl::MoveTo(_)))
+                .unwrap_or(0);
+        }
+        _ => return n,
+    }
+    let PathEl::CurveTo(c1, c2, _) = els[index] else {
+        return n;
+    };
+    let t = t.clamp(0.02, 0.98);
+    let u = 1.0 - t;
+    let k = 1.0 / (3.0 * t * u * (u * u + t * t));
+    let (n1, n2) = (c1 + d * (k * u), c2 + d * (k * t));
+    let bent = BezPath::from_vec(els);
+    // Through move_handle so smooth and symmetrical ends stay so (the
+    // types as they were before the segment became a curve).
+    let start_type = types_before.0;
+    let end_type = if end_node == index {
+        types_before.1
+    } else {
+        node_type(&n, end_node)
+    };
+    let bent = move_handle(&bent, index - 1, Which::Out, n1, start_type);
+    move_handle(&bent, end_node, Which::In, n2, end_type)
+}
+
 /// Turn the segment ending at `index` into a straight line.
 pub fn to_line(path: &BezPath, index: usize) -> BezPath {
     let mut els: Vec<PathEl> = normalize(path).elements().to_vec();
@@ -940,6 +1003,25 @@ pub fn connect_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
     Some(out)
 }
 
+/// The point at parameter `t` of the segment ending at element `index`
+/// (a line, a curve or a closing line).
+pub fn point_on_segment(path: &BezPath, index: usize, t: f64) -> Option<Point> {
+    use kurbo::{CubicBez, ParamCurve};
+    let n = normalize(path);
+    let els = n.elements();
+    if index == 0 || index >= els.len() {
+        return None;
+    }
+    let prev = prev_point(els, index);
+    let t = t.clamp(0.0, 1.0);
+    match els[index] {
+        PathEl::LineTo(p) => Some(prev.lerp(p, t)),
+        PathEl::CurveTo(c1, c2, p) => Some(CubicBez::new(prev, c1, c2, p).eval(t)),
+        PathEl::ClosePath => Some(prev.lerp(subpath_start(els, index), t)),
+        _ => None,
+    }
+}
+
 /// Nearest segment to a point: (element index, t, distance).
 pub fn nearest_segment(path: &BezPath, p: Point) -> Option<(usize, f64, f64)> {
     use kurbo::{CubicBez, Line, ParamCurve, ParamCurveNearest};
@@ -1112,6 +1194,58 @@ mod tests {
         assert!(n[0].is_start);
         assert_eq!(n[1].ctrl_out, Some(Point::new(15.0, 0.0)));
         assert_eq!(n[2].ctrl_in, Some(Point::new(20.0, 5.0)));
+    }
+
+    /// Dragging a segment: the point under the pointer follows exactly,
+    /// the ends stay, lines become curves, closing lines too, and a smooth
+    /// end node stays smooth.
+    #[test]
+    fn bending_a_segment_moves_its_point_and_keeps_the_ends() {
+        use kurbo::{CubicBez, ParamCurve};
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((30.0, 0.0));
+        let bent = bend_segment(&line, 1, 0.5, Vec2::new(0.0, 12.0));
+        let PathEl::CurveTo(c1, c2, p) = bent.elements()[1] else {
+            panic!("not a curve: {bent:?}");
+        };
+        assert_eq!(p, Point::new(30.0, 0.0));
+        let mid = CubicBez::new(Point::new(0.0, 0.0), c1, c2, p).eval(0.5);
+        assert!((mid - Point::new(15.0, 12.0)).hypot() < 1e-9, "{mid:?}");
+        // Off the middle: the point at t moves by d all the same.
+        let b2 = bend_segment(&line, 1, 0.2, Vec2::new(3.0, -4.0));
+        let PathEl::CurveTo(a1, a2, q) = b2.elements()[1] else {
+            panic!("not a curve");
+        };
+        let at = CubicBez::new(Point::new(0.0, 0.0), a1, a2, q).eval(0.2);
+        assert!((at - Point::new(9.0, -4.0)).hypot() < 1e-9, "{at:?}");
+        // A closing line: a curve is put in before the close.
+        let mut tri = BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 0.0));
+        tri.line_to((10.0, 20.0));
+        tri.close_path();
+        let b3 = bend_segment(&tri, 3, 0.5, Vec2::new(-5.0, 0.0));
+        let els = b3.elements();
+        assert!(matches!(els[3], PathEl::CurveTo(_, _, e) if e == Point::new(0.0, 0.0)));
+        assert!(matches!(els[4], PathEl::ClosePath));
+        assert_eq!(nodes(&b3).len(), 3);
+        // A smooth node at the end of the bent segment stays smooth.
+        let mut s = BezPath::new();
+        s.move_to((0.0, 0.0));
+        s.curve_to((5.0, 0.0), (10.0, -5.0), (20.0, 0.0));
+        s.curve_to((25.0, 2.5), (35.0, 0.0), (40.0, 0.0));
+        assert_eq!(node_type(&s, 1), NodeType::Smooth);
+        let b4 = bend_segment(&s, 1, 0.5, Vec2::new(0.0, 6.0));
+        assert_eq!(node_type(&b4, 1), NodeType::Smooth);
+        assert_eq!(nodes(&b4)[1].pos, Point::new(20.0, 0.0));
+        // Nonsense leaves the path as it was.
+        assert_eq!(bend_segment(&s, 0, 0.5, Vec2::new(1.0, 1.0)), normalize(&s));
+        assert_eq!(bend_segment(&s, 9, 0.5, Vec2::new(1.0, 1.0)), normalize(&s));
+        assert_eq!(
+            bend_segment(&s, 1, 0.5, Vec2::new(f64::NAN, 1.0)),
+            normalize(&s)
+        );
     }
 
     #[test]

@@ -224,6 +224,22 @@ impl App {
                 };
                 return;
             }
+            // A segment of a selected curve bends.
+            if let Some((shape, index, t)) = self.segment_at(p) {
+                if let Some((path, closed, _)) = self.path_of(shape) {
+                    self.segment_spot = None;
+                    self.drag = Drag::SegmentBend {
+                        shape,
+                        path,
+                        closed,
+                        index,
+                        t,
+                        from: p,
+                        begun: false,
+                    };
+                    return;
+                }
+            }
             if let Some(id) = self.hit_test(p) {
                 if !self.selection.contains(&id) {
                     self.select(vec![id]);
@@ -354,6 +370,44 @@ impl App {
                 Drag::NodeMarquee { start, .. } => {
                     self.drag = Drag::NodeMarquee { start, current: p }
                 }
+                Drag::SegmentBend {
+                    shape,
+                    path,
+                    closed,
+                    index,
+                    t,
+                    from,
+                    begun,
+                } => {
+                    // The grabbed point follows the pointer (in the curve's
+                    // own space); one undo step for the whole drag.
+                    if let Some((_, _, tf)) = self.path_of(shape) {
+                        let det = tf.determinant();
+                        if det.is_finite() && det.abs() > 1e-12 {
+                            let inv = tf.inverse();
+                            let d = (inv * p) - (inv * from);
+                            let bent = nodes::bend_segment(&path, index, t, d);
+                            let cmd = Command::SetShapeKind {
+                                shape,
+                                kind: ShapeKind::Path { path: bent, closed },
+                            };
+                            let _ = if begun {
+                                self.engine.amend(&cmd)
+                            } else {
+                                self.engine.run_with_label(&cmd, "Bend Segment")
+                            };
+                        }
+                    }
+                    self.drag = Drag::SegmentBend {
+                        shape,
+                        path,
+                        closed,
+                        index,
+                        t,
+                        from,
+                        begun: true,
+                    };
+                }
                 Drag::KindNode {
                     shape,
                     node,
@@ -401,9 +455,18 @@ impl App {
                 return;
             }
             if let Some(hit) = self.node_at(p) {
+                self.segment_spot = None;
                 self.click_node((hit.shape, hit.index), mods);
                 return;
             }
+            // A click on a segment chooses it (its end node) and marks the
+            // spot, where Add Node puts the new node.
+            if let Some((shape, index, t)) = self.segment_at(p) {
+                self.node_selection = vec![(shape, index)];
+                self.segment_spot = Some((shape, index, t));
+                return;
+            }
+            self.segment_spot = None;
             match self.hit_test(p) {
                 Some(id) => {
                     if mods.shift {
@@ -556,6 +619,17 @@ impl App {
     }
 
     pub fn add_node_midpoints(&mut self) {
+        // A spot clicked on the chosen segment: the node goes there.
+        if let Some((shape, index, t)) = self.segment_spot.take() {
+            if self.node_selection == [(shape, index)] {
+                if let Some((path, closed, _)) = self.path_of(shape) {
+                    let np = nodes::add_node(&path, index, t);
+                    self.set_path_new_step(shape, np, closed);
+                    self.node_selection = vec![(shape, index)];
+                }
+                return;
+            }
+        }
         // Add a node in the middle of the segment ending at each selected node.
         self.for_each_selected_node("Add Nodes", |p, i| nodes::add_node(p, i, 0.5));
         self.node_selection.clear();

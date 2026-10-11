@@ -34,6 +34,12 @@ full, row-by-row status.
   click chooses the node or segment under the pointer before the menu
   opens. Interactive Fill shows the move arrows over the fill's handles.
 - Scale handles snap to other objects, guidelines, the grid and the page.
+- Shape tool: dragging a segment bends it (a straight one becomes a
+  curve; smooth nodes stay smooth); a click on a segment marks the spot
+  where Add Node (or `+`) puts the new node; C, S and Y make the chosen
+  nodes cusp, smooth or symmetrical.
+- `+` duplicates the selection in place with the Pick tool; with the
+  Shape tool and nodes chosen, `+` and `-` add and delete nodes.
 - A double click on the drawing with the Rectangle tool no longer adds a
   page frame (double-click the tool's button for that).
 - The pointer shows what a press would do: resize arrows on the handles,

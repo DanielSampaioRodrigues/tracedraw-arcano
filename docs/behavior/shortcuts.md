@@ -15,6 +15,7 @@ Customization > Commands lists them and takes shortcuts of your own
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+R | Undo, Redo, Repeat |
 | Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+Shift+V | Cut, Copy, Paste, Paste in view |
 | Ctrl+D, Ctrl+Shift+D | Duplicate, Step and Repeat panel |
+| + (Pick tool, with a selection) | Duplicate in place |
 | Ctrl+A, Delete or Backspace | Select all, Delete |
 | Ctrl+F, Ctrl+J, Ctrl+W | Find and Replace panel, Options, Refresh window |
 

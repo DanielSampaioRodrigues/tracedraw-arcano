@@ -1117,3 +1117,160 @@ fn scale_handles_snap_to_other_objects_not_to_the_selection() {
     assert!((b.x1 - 80.0).abs() > 0.1, "{b:?}");
     assert!(app.doc().find_shape(other).is_some());
 }
+
+#[test]
+fn plus_duplicates_in_place_and_edits_nodes_in_the_shape_tool() {
+    let (ctx, mut app, id) = setup();
+    let n = shape_count(&app);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Plus, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(shape_count(&app), n + 1);
+    let copy = app.selection[0];
+    assert_ne!(copy, id);
+    assert_eq!(bounds(&app, copy), bounds(&app, id));
+    // The Shape tool: + adds a node in the middle of the segment ending at
+    // the chosen node, - deletes the chosen nodes.
+    app.select(vec![id]);
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let count = |app: &App| {
+        app.doc()
+            .find_shape(id)
+            .and_then(|s| match &s.kind {
+                ShapeKind::Path { path, .. } => Some(tracedraw_core::nodes::nodes(path).len()),
+                _ => None,
+            })
+            .expect("curve")
+    };
+    let before = count(&app);
+    let hit = app.node_at(Point::new(60.0, 40.0)).expect("node");
+    app.node_selection = vec![(hit.shape, hit.index)];
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Plus, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(count(&app), before + 1);
+    let hit = app.node_at(Point::new(60.0, 40.0)).expect("node");
+    app.node_selection = vec![(hit.shape, hit.index)];
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Minus, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(count(&app), before);
+    // Nothing chosen: + zooms.
+    app.node_selection.clear();
+    let zoom = app.view.zoom;
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Plus, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.view.zoom > zoom);
+}
+
+#[test]
+fn dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path_of = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    let before = path_of(&app);
+    // Drag the middle of the bottom side 10 mm down.
+    let (_, index, t) = app.segment_at(Point::new(35.0, 10.0)).expect("segment");
+    let from = app.view.to_screen(Point::new(35.0, 10.0));
+    let to = app.view.to_screen(Point::new(35.0, 0.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let bent = path_of(&app);
+    let mid = tracedraw_core::nodes::point_on_segment(&bent, index, t).expect("point");
+    assert!((mid - Point::new(35.0, 0.0)).hypot() < 0.3, "{mid:?}");
+    // The corners stay; one undo puts the side back.
+    let corners = |p: &tracedraw_core::BezPath| {
+        tracedraw_core::nodes::nodes(p)
+            .iter()
+            .map(|n| n.pos)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(corners(&bent), corners(&before));
+    app.undo();
+    assert_eq!(corners(&path_of(&app)), corners(&before));
+    let mid = tracedraw_core::nodes::point_on_segment(&path_of(&app), index, t).expect("point");
+    assert!((mid.y - 10.0).abs() < 1e-6);
+    // A click on the right side chooses it and marks the spot; + puts a
+    // node there.
+    let n = corners(&path_of(&app)).len();
+    let spot = Point::new(60.0, 32.0);
+    let at = app.view.to_screen(spot);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let (shape, seg, _) = app.segment_spot.expect("spot");
+    assert_eq!(shape, id);
+    assert_eq!(app.node_selection, vec![(id, seg)]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Plus, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let after = corners(&path_of(&app));
+    assert_eq!(after.len(), n + 1);
+    assert!(after.iter().any(|q| (*q - spot).hypot() < 0.3), "{after:?}");
+}
+
+#[test]
+fn c_s_and_y_set_the_type_of_the_chosen_nodes() {
+    let (ctx, mut app, id) = setup();
+    // A curve with a smooth-able middle node.
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((10.0, 10.0));
+    path.curve_to((20.0, 10.0), (30.0, 20.0), (40.0, 30.0));
+    path.curve_to((45.0, 40.0), (55.0, 30.0), (70.0, 20.0));
+    app.select(vec![id]);
+    app.delete_selection();
+    let c = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![c]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let hit = app.node_at(Point::new(40.0, 30.0)).expect("node");
+    app.node_selection = vec![(hit.shape, hit.index)];
+    let ty = |app: &App| match app.doc().find_shape(c).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => tracedraw_core::nodes::node_type(&path, hit.index),
+        _ => panic!("curve"),
+    };
+    use tracedraw_core::nodes::NodeType;
+    assert_eq!(ty(&app), NodeType::Cusp);
+    for (k, want) in [
+        (egui::Key::S, NodeType::Smooth),
+        (egui::Key::Y, NodeType::Symmetrical),
+        (egui::Key::C, NodeType::Cusp),
+    ] {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(k, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        if want != NodeType::Cusp {
+            assert_eq!(ty(&app), want, "{k:?}");
+        }
+        // Still the Shape tool, nothing aligned.
+        assert_eq!(app.tool, Tool::Shape);
+    }
+}

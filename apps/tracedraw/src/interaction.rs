@@ -1432,6 +1432,7 @@ impl App {
             Drag::NodeLasso { points } => self.finish_node_lasso(&points),
             Drag::NodeMove { .. }
             | Drag::NodeTransform { .. }
+            | Drag::SegmentBend { .. }
             | Drag::TextChars { .. }
             | Drag::TextSpacing { .. } => {}
             Drag::NewGuide { .. } => self.finish_guide_drag(),
@@ -1894,13 +1895,31 @@ impl App {
         if pressed(Key::F2, Modifiers::NONE) {
             self.set_tool(Tool::Zoom);
         }
+        // + and -: with the Shape tool and nodes chosen, a node in the
+        // middle of each segment ending at them, and deleting them; with a
+        // Pick tool and a selection, + duplicates it in place; otherwise
+        // a zoom step about the window's centre.
+        let node_keys = self.tool == Tool::Shape && !self.node_selection.is_empty();
+        let pick_selection =
+            matches!(self.tool, Tool::Pick | Tool::FreeformPick) && !self.selection.is_empty();
         if pressed(Key::Plus, Modifiers::NONE) || pressed(Key::Equals, Modifiers::NONE) {
-            let c = self.canvas_rect.center();
-            self.view.zoom_at(c, 1.25);
+            if node_keys {
+                self.add_node_midpoints();
+            } else if pick_selection && pressed(Key::Plus, Modifiers::NONE) {
+                self.duplicate_in_place();
+                self.status = crate::i18n::tr("status.duplicated_in_place");
+            } else {
+                let c = self.canvas_rect.center();
+                self.view.zoom_at(c, 1.25);
+            }
         }
         if pressed(Key::Minus, Modifiers::NONE) {
-            let c = self.canvas_rect.center();
-            self.view.zoom_at(c, 0.8);
+            if node_keys {
+                self.delete_selected_nodes();
+            } else {
+                let c = self.canvas_rect.center();
+                self.view.zoom_at(c, 0.8);
+            }
         }
         if pressed(Key::Enter, Modifiers::NONE) {
             self.finish_curve();
@@ -1929,8 +1948,25 @@ impl App {
                 self.goto_page(i - 1);
             }
         }
-        // Align shortcuts: plain letters with a selection.
-        if !self.selection.is_empty() {
+        // The Shape tool with nodes chosen: C, S and Y make them cusp,
+        // smooth or symmetrical (before the alignment and tool letters).
+        let nodes_chosen = self.tool == Tool::Shape && !self.node_selection.is_empty();
+        if nodes_chosen {
+            use tracedraw_core::nodes::NodeType;
+            for (k, ty) in [
+                (Key::C, NodeType::Cusp),
+                (Key::S, NodeType::Smooth),
+                (Key::Y, NodeType::Symmetrical),
+            ] {
+                if pressed(k, Modifiers::NONE) {
+                    self.set_selected_node_type(ty);
+                    return;
+                }
+            }
+        }
+        // Align shortcuts: plain letters with a selection (not while nodes
+        // are being edited).
+        if !self.selection.is_empty() && !nodes_chosen {
             use crate::ops::Align;
             for (k, a) in [
                 (Key::L, Align::Left),

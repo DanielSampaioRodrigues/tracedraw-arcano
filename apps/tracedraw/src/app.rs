@@ -453,6 +453,19 @@ pub enum Drag {
         grab: Point,
         begun: bool,
     },
+    /// Bending a segment (Shape tool): the curve as it was when the drag
+    /// began (local path, closed flag), the segment (the element ending
+    /// it), the parameter of the point grabbed, where the drag began
+    /// (page); `begun` once the first step is recorded.
+    SegmentBend {
+        shape: ShapeId,
+        path: tracedraw_core::BezPath,
+        closed: bool,
+        index: usize,
+        t: f64,
+        from: Point,
+        begun: bool,
+    },
     /// Dragging a node transform handle (Shape tool).
     NodeTransform {
         handle: Handle,
@@ -718,6 +731,10 @@ pub struct App {
     pub transform_tab: TransformTab,
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
+    /// The Shape tool's spot on a segment (a click there): the curve, the
+    /// segment (the element ending it) and where along it; Add Node puts
+    /// the node there.
+    pub segment_spot: Option<(ShapeId, usize, f64)>,
     pub snap: crate::snap::SnapSettings,
     /// The Corners docker's operation and sizes.
     pub corners: crate::corners::CornersSettings,
@@ -1296,6 +1313,7 @@ impl App {
             font_families: tracedraw_text::fonts().families().to_vec(),
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
+            segment_spot: None,
             snap: crate::snap::SnapSettings::default(),
             snap_mark: std::cell::Cell::new(None),
             corners: Default::default(),
@@ -2114,6 +2132,7 @@ impl App {
         self.rotate_mode = false;
         self.rotation_pivot = None;
         self.node_selection.clear();
+        self.segment_spot = None;
         self.rect_corner_selected = None;
     }
 

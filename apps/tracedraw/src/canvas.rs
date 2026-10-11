@@ -1110,6 +1110,21 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let prefs = app.settings.nodes;
     let [r, g, b] = prefs.main_rgb;
     let main = Color32::from_rgb(r, g, b);
+    // The spot clicked on a segment: a small round mark where Add Node
+    // puts the node.
+    if let Some((id, index, t)) = app.segment_spot {
+        let spot = app.doc().shape_on_page(id).and_then(|s| match &s.kind {
+            ShapeKind::Path { path, .. } => {
+                nodes::point_on_segment(path, index, t).map(|q| s.transform * q)
+            }
+            _ => None,
+        });
+        if let Some(q) = spot {
+            let c = view.to_screen(q);
+            painter.circle_filled(c, 3.5, Color32::WHITE);
+            painter.circle_filled(c, 2.5, main);
+        }
+    }
     let [r, g, b] = prefs.secondary_rgb;
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();

@@ -47,13 +47,14 @@ Properties.
 | Action | Behaviour |
 |---|---|
 | Drag node | move the selected nodes; Ctrl constrains |
-| Drag segment | bend the curve (the two surrounding handles move) |
+| Click segment | chooses that segment (the node it ends at) and marks the spot clicked with a small round mark; Add Node (+ or the property bar button) puts the new node at that spot |
+| Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along; one undo step (Bend Segment) |
 | Drag handle | smooth nodes move the opposite handle to stay collinear; symmetrical also keep the length |
 | Double-click segment | add a node |
 | Double-click node | delete |
 | Delete | delete selected nodes |
-| + / - | add / delete node |
-| C, S, Y | cusp, smooth, symmetrical (property bar buttons) |
+| + / - | with nodes chosen: a node in the middle of each segment ending at them / delete them (without chosen nodes they zoom) |
+| C, S, Y (with nodes chosen) | cusp, smooth, symmetrical, as the property bar buttons; while nodes are chosen these letters do not align objects or pick tools |
 | Break (property bar) | split the subpath at the node |
 | Join (property bar) | join two end nodes into one |
 | Extend Curve to Close | two selected end nodes are joined by a straight segment: the ends of one subpath close it, ends of two subpaths make one |
@@ -126,6 +127,9 @@ Reduce Nodes, Curve smoothness.
 ## Checks
 
 - `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`
+- `pick_drag_tests::dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes`
+- `nodes::tests::bending_a_segment_moves_its_point_and_keeps_the_ends` (core)
+- `pick_drag_tests::c_s_and_y_set_the_type_of_the_chosen_nodes`
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do` (marks, node
   transform handles)
 - `node_edit::tests::ctrl_toggles_and_shift_selects_a_run`
