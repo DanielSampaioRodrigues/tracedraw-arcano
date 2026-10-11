@@ -42,6 +42,7 @@ to Deep Blue 60 60 0 60).
 | Click and hold (0.5 s) | A 5 x 5 pop-up of the colour's shades: lighter tints upwards, more black downwards, less colourful to the left, more to the right; click one (right click for the outline) |
 | Drag a swatch onto an object | Inside it (also inside a closed object with no fill): its uniform fill; within 4 points of its outline: the outline's colour (an object with no outline gets the default pen in that colour); No Color takes the fill or the outline away. The object need not be selected and the selection stays; one undo step; the colour joins the document palette as with a click |
 | Drag a swatch onto the document palette | The colour joins it |
+| Drag objects (Pick tool) onto the document palette | Their fill and outline colours join it (as Add from Selection); the objects stay where they were; the pointer shows a copy sign there |
 | While dragging a swatch | A chip of the colour follows the pointer: filled over a fill, a ring over an outline; the pointer shows whether letting go changes anything; Esc drops nothing |
 | Scroll arrows, wheel | One swatch at a time; holding an arrow keeps scrolling |
 | The show-all button | Every colour of the row in a grid above it; click to apply, click elsewhere or Esc to close |

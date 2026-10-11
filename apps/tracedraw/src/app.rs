@@ -842,6 +842,8 @@ pub struct App {
     pub palette_drag: Option<Option<Color>>,
     /// Where the document palette is this frame (a drop target).
     pub doc_palette_rect: Option<egui::Rect>,
+    /// The pointer on screen, wherever it is (drops outside the drawing).
+    pub pointer_screen: Option<egui::Pos2>,
     pub shaping_keep_source: bool,
     pub shaping_keep_target: bool,
     pub color_model: usize,
@@ -1329,6 +1331,7 @@ impl App {
             shelf: Default::default(),
             palette_drag: None,
             doc_palette_rect: None,
+            pointer_screen: None,
             page_size_all: true,
             object_origin: (1, 1),
             scale_locked: false,

@@ -81,6 +81,10 @@ pub fn resize_icon(h: Handle) -> egui::CursorIcon {
 fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     let moving = ToolCursor::System(egui::CursorIcon::Move);
     match &app.drag {
+        // Over the document palette letting go adds the colours.
+        Drag::Move { .. } if app.over_document_palette() => {
+            return Some(ToolCursor::System(egui::CursorIcon::Copy))
+        }
         Drag::Move { .. } | Drag::Pivot => return Some(moving),
         Drag::Scale { handle, .. } => return Some(ToolCursor::System(resize_icon(*handle))),
         Drag::Rotate { .. } => return Some(ToolCursor::Rotate),

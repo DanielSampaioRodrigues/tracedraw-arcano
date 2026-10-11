@@ -7,7 +7,7 @@
 | Alt+click | select the object beneath the current one (dig) |
 | Click on selected | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
 | Drag on empty | marquee; objects fully inside are selected; Alt makes touching count |
-| Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on |
+| Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on; let go over the document palette to add the objects' colours to it instead of moving them |
 | Corner handle | scale proportionally from the opposite corner; Shift from the centre; Ctrl in whole steps of 100 % (crossing the other side gives the mirror image at the same size); Alt scales freely |
 | Side handle | stretch one axis from the opposite side (across it: mirrored); Shift from the centre; Ctrl in steps of 100 % |
 | Rotate handle (rotate mode, corners) | rotate about the centre of rotation; Ctrl in steps of the constrain angle (15 degrees) |
@@ -98,6 +98,7 @@ break instead.
 - `pick_drag_tests::side_handles_skew`
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do`
 - `pick_drag_tests::the_status_bar_tells_how_far_how_much_and_what_angle`
+- `pick_drag_tests::objects_dropped_on_the_document_palette_give_their_colours`
 - `drop_menu::tests::move_here_and_copy_here`
 - `drop_menu::tests::fill_outline_and_properties_go_onto_the_target`
 - `drop_menu::tests::place_inside_makes_the_target_a_clip_frame`

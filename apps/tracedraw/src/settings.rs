@@ -671,6 +671,11 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
+        // Unit tests start from the defaults, whatever an earlier run of
+        // the program left in the folder they share (see `save`).
+        if cfg!(test) {
+            return Settings::default();
+        }
         #[cfg(target_arch = "wasm32")]
         {
             // The browser build keeps settings in local storage.

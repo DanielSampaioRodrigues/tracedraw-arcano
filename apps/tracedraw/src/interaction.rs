@@ -162,6 +162,13 @@ impl App {
                 .is_some_and(|c| self.view.to_screen(c).distance(screen) <= PIVOT_PX)
     }
 
+    /// The pointer is over the document palette.
+    pub fn over_document_palette(&self) -> bool {
+        self.doc_palette_rect
+            .zip(self.pointer_screen)
+            .is_some_and(|(r, p)| r.contains(p))
+    }
+
     /// A move, scale, rotation or skew of the selection is being dragged.
     pub fn transforming(&self) -> bool {
         matches!(
@@ -221,6 +228,7 @@ impl App {
 
     pub fn canvas_input(&mut self, response: &Response, mods: Modifiers) {
         self.snap_mark.set(None);
+        self.pointer_screen = response.ctx.pointer_latest_pos();
         let hover = response.hover_pos();
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
@@ -1066,6 +1074,12 @@ impl App {
                         Some(tracedraw_core::geometry::Size::new(r.width(), r.height())),
                     );
                 }
+            }
+            // Dropped on the document palette: the selection's colours
+            // join it and the objects stay where they were.
+            Drag::Move { .. } if self.over_document_palette() => {
+                self.drag_copy = false;
+                self.palette_from_selection();
             }
             Drag::Move { total, .. } => {
                 if total.hypot() > 1e-6 {

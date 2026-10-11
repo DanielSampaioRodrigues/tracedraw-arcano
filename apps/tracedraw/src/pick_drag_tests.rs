@@ -558,3 +558,28 @@ fn the_status_bar_tells_how_far_how_much_and_what_angle() {
     app.drag = Drag::None;
     app.drag_copy = false;
 }
+
+#[test]
+fn objects_dropped_on_the_document_palette_give_their_colours() {
+    let (ctx, mut app, id) = setup();
+    app.settings.palette.show_document = true;
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let row = app.doc_palette_rect.expect("the document palette shows");
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        row.center(),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    // The object stays; its fill joined the document palette.
+    assert!(close(bounds(&app, id).x0, 10.0), "{:?}", bounds(&app, id));
+    assert!(app
+        .doc()
+        .palette
+        .contains(&tracedraw_core::Color::rgb8(200, 30, 30)));
+}
