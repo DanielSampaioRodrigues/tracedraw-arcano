@@ -56,6 +56,7 @@ mod raster;
 mod scripting;
 mod settings;
 mod shape_tool;
+mod shortcuts;
 mod snap;
 mod snap_points;
 mod spell;

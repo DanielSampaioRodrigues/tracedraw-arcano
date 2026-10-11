@@ -1065,6 +1065,15 @@ impl App {
         // A modal dialog owns the keyboard: Esc closes it, the rest is
         // not interpreted as shortcuts.
         if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
+            // A command waiting for its shortcut (Options > Customization >
+            // Commands): Esc stops waiting, other keys are the shortcut.
+            if self.shortcut_editor.capture.is_some() {
+                // Taken from the input so the dialog does not close too.
+                if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                    self.shortcut_editor.capture = None;
+                }
+                return;
+            }
             if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.dialog = crate::ui::dialogs::Dialog::None;
                 // Esc is Cancel for the options dialogs.
@@ -1103,6 +1112,23 @@ impl App {
             })
         };
         let cmd = Modifiers::COMMAND;
+
+        // Menu commands with a shortcut of the user's (Options >
+        // Customization > Commands) come first: they may take a built-in
+        // shortcut over.
+        for (key, mods) in &presses {
+            let text = crate::shortcuts::format(*mods, *key);
+            if let Some(id) = self
+                .settings
+                .shortcuts
+                .iter()
+                .find(|(id, v)| id.starts_with("menu.") && crate::shortcuts::same(v, &text))
+                .map(|(id, _)| id.clone())
+            {
+                self.pending_command = Some(id);
+                return;
+            }
+        }
 
         // The Welcome Screen alone (no drawing open): only the commands
         // that need no drawing.
@@ -1366,7 +1392,8 @@ impl App {
         if pressed(Key::Enter, Modifiers::NONE) {
             self.finish_curve();
         }
-        if pressed(Key::Escape, Modifiers::NONE) {
+        // Esc with a menu or a list open only closes it.
+        if pressed(Key::Escape, Modifiers::NONE) && !egui::Popup::is_any_open(ctx) {
             self.curve = None;
             self.dimension_points.clear();
             self.eyedropper_reset();

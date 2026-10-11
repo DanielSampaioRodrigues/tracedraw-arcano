@@ -163,7 +163,14 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, app.settings.ui_scale);
+    menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
+    // A menu command run by a shortcut of the user's.
+    if let Some(cmd) = app.pending_command.take() {
+        if !menus::run_command(app, &ctx, &cmd) {
+            app.status = crate::i18n::trf("status.command_unavailable", &[("name", &tr(&cmd))]);
+        }
+    }
 
     let doc_name = if app.has_document() && !app.show_welcome {
         app.document_title()
@@ -946,6 +953,14 @@ mod tests {
         let moved = b1.x0 - b0.x0;
         let want = app.nudge_mm + app.settings.super_nudge_mm + app.settings.micro_nudge_mm;
         assert!((moved - want).abs() < 1e-6, "moved {moved}, want {want}");
+        // Esc with a menu open closes the menu and keeps the selection;
+        // with nothing open it deselects.
+        egui::Popup::open_id(&ctx, egui::Id::new("some_menu"));
+        key(&ctx, &mut app, Key::Escape, Modifiers::NONE);
+        assert!(!app.selection.is_empty(), "Esc closed a menu only");
+        egui::Popup::close_all(&ctx);
+        key(&ctx, &mut app, Key::Escape, Modifiers::NONE);
+        assert!(app.selection.is_empty());
     }
 
     /// The whole window draws with every docker tab, every tool and every

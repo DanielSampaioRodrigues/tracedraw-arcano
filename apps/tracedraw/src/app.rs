@@ -719,6 +719,12 @@ pub struct App {
     pub options_page: crate::ui::dialogs::OptionsPage,
     /// What an open options dialog may change, for its Cancel button.
     pub options_snapshot: Option<crate::ui::options::OptionsSnapshot>,
+    /// Options > Customization > Commands: the commands listed and the one
+    /// waiting for its keys.
+    pub shortcut_editor: crate::ui::options::ShortcutEditor,
+    /// A menu command to run this frame (its key), from a shortcut of the
+    /// user's.
+    pub pending_command: Option<String>,
     /// When the last auto-backup ran (set on the first frame).
     pub last_auto_backup: Option<web_time::Instant>,
     /// Page size changes apply to every page (the page bar's All pages).
@@ -1257,6 +1263,8 @@ impl App {
             show_baseline_grid: false,
             options_page: crate::ui::dialogs::OptionsPage::General,
             options_snapshot: None,
+            shortcut_editor: Default::default(),
+            pending_command: None,
             last_auto_backup: None,
             page_size_all: true,
             object_origin: (1, 1),

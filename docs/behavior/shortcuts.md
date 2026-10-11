@@ -1,8 +1,9 @@
 # Keyboard shortcuts
 
 The default bindings. Every menu
-item that shows a shortcut is bound to it; the Options dialog's
-Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
+item that shows a shortcut is bound to it; Tools > Options >
+Customization > Commands lists them and takes shortcuts of your own
+(see "Your own shortcuts" below). `Ctrl` is the Command key on macOS.
 
 ## Files and editing
 
@@ -68,8 +69,41 @@ Media; the Bezier, Pen, Crop and Knife tools have no key.
 
 - Esc closes any dialog without applying; while a dialog is open the
   shortcuts above are not interpreted.
+- Esc with a menu or a drop-down list open closes it and changes
+  nothing else (the selection stays).
 - Tools keep their own keys (see `pick-tool.md`, `shape-tool.md` and
-  the tool pages); the Options dialog's Shortcuts page can rebind them.
+  the tool pages); the Commands page of the options can rebind them.
+
+## Your own shortcuts
+
+Tools > Options > Customization > Commands lists every command of the
+menu bar (commands not made yet are left out) as "Menu > Submenu >
+Command" with its built-in shortcut. A search field filters the list by
+name.
+
+- Clicking a command's button ("Set shortcut") makes it wait for keys:
+  the next key pressed, with the Ctrl, Alt and Shift held at the time,
+  becomes its shortcut (shown as `Ctrl+Alt+Shift+Key`). Esc, Tab,
+  Enter, Backspace and Space alone are not taken (they edit text, move
+  focus or close dialogs); Esc stops the wait without closing the
+  options. Changing page or closing the options stops it too.
+- A shortcut of your own runs its command wherever the command's menu
+  item would: the menus are walked without being shown and the item
+  reports a click, so the command does exactly what the menu does. A
+  command not available at that moment (Duplicate with nothing
+  selected, Edit commands with no drawing open) runs nothing and the
+  status bar says so.
+- Your shortcuts are looked at before the built-in ones, so a key a
+  built-in command uses runs your command instead; the page names the
+  commands and tools that lost it. Another command of yours with the
+  same keys loses them. A command's built-in shortcut keeps working
+  beside yours until another command takes it.
+- The menus show your shortcut in place of the built-in one. The x
+  beside a shortcut removes it; Reset to defaults removes all of them,
+  tool keys included. Shortcuts are kept in the preferences
+  (`shortcuts`: the menu item's key and the keys).
+- Tool keys are listed under Tools on the same page: a letter or
+  Shift+letter typed in the field, empty for none.
 
 ## Checks
 
@@ -78,3 +112,12 @@ Media; the Bezier, Pen, Crop and Knife tools have no key.
 - Given a selected object, when Ctrl+Home is pressed, then it is the
   last object of the top layer; Shift+PgDn makes it the first of its
   layer.
+- Given Select All given Alt+Shift+K and nothing selected, when
+  Alt+Shift+K is pressed, then every object is selected and the Edit
+  menu shows Alt+Shift+K beside Select All.
+- Given Select All given Ctrl+D, when Ctrl+D is pressed, then the
+  objects are selected and nothing is duplicated; Ctrl+A still selects
+  all.
+- Given Export waiting for its keys, when Ctrl+D is pressed, then Export
+  has Ctrl+D and the page says it was Duplicate's; Enter alone is not
+  taken and Esc stops waiting with the options still open.

@@ -196,6 +196,9 @@ enum Mark {
 
 /// A separator: a light line from the gutter to the right edge.
 pub(crate) fn sep(ui: &mut Ui) {
+    if invoke::active() {
+        return;
+    }
     let width = ui.min_rect().width().max(MENU_WIDTH);
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(width, SEPARATOR_HEIGHT), egui::Sense::hover());
@@ -231,7 +234,11 @@ fn item_text(
     icon: Option<crate::ui::icons::Action>,
     id: &str,
 ) -> bool {
-    let (r, _) = menu_row(ui, label, shortcut, enabled, Mark::None);
+    if invoke::active() {
+        return invoke::hit(id, shortcut, enabled);
+    }
+    let shortcut = invoke::shown_shortcut(id, shortcut);
+    let (r, _) = menu_row(ui, label, &shortcut, enabled, Mark::None);
     #[cfg(test)]
     if replay::hit(id, enabled) {
         return true;
@@ -309,7 +316,11 @@ fn mark_item(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark) -> bool {
 }
 
 fn mark_item_if(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark, enabled: bool) -> bool {
-    let (r, _) = menu_row(ui, &tr(key), shortcut, enabled, mark);
+    if invoke::active() {
+        return invoke::hit(key, shortcut, enabled);
+    }
+    let shortcut = invoke::shown_shortcut(key, shortcut);
+    let (r, _) = menu_row(ui, &tr(key), &shortcut, enabled, mark);
     #[cfg(test)]
     if replay::hit(key, enabled) {
         return true;
@@ -323,15 +334,30 @@ fn mark_item_if(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark, enabled: boo
 }
 
 fn todo(ui: &mut Ui, key: &str, shortcut: &str) {
+    // Not a command yet: left out of the commands that take shortcuts.
+    if invoke::active() {
+        return;
+    }
     let _ = item(ui, key, shortcut, false);
 }
 
 fn todo_sub(ui: &mut Ui, key: &str) {
+    if invoke::active() {
+        return;
+    }
     menu_row(ui, &tr(key), "", false, Mark::Submenu);
 }
 
 /// A submenu row: the submenu opens beside it while it is hovered.
 pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
+    if invoke::active() {
+        // Walked without the menus on screen: the submenu's items count
+        // as if it were open.
+        invoke::enter(key);
+        let _ = add(ui);
+        invoke::leave();
+        return;
+    }
     #[cfg(test)]
     if replay::active() {
         // Replaying: submenus are laid out inline so their items count.
@@ -351,6 +377,206 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
     });
 }
 
+/// Menu commands without the menus on screen. A shortcut chosen in
+/// Options > Customization > Commands names a menu item by its key; the
+/// menus are then walked invisibly and that item reports a click
+/// ([`run_command`]). The same walk lists every command with its menus
+/// and built-in shortcut ([`commands`]).
+pub(crate) mod invoke {
+    use std::cell::RefCell;
+
+    /// A menu command: its i18n key, built-in shortcut and the keys of
+    /// the menu and submenus it sits in.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Entry {
+        pub key: String,
+        pub shortcut: String,
+        pub path: Vec<String>,
+    }
+
+    enum Mode {
+        Collect { path: Vec<String>, out: Vec<Entry> },
+        Trigger { key: String, fired: bool },
+    }
+
+    thread_local! {
+        static MODE: RefCell<Option<Mode>> = const { RefCell::new(None) };
+        /// The user's shortcuts (`Settings::shortcuts`), for the rows.
+        static BINDINGS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub fn active() -> bool {
+        MODE.with(|m| m.borrow().is_some())
+    }
+
+    pub fn hit(key: &str, shortcut: &str, enabled: bool) -> bool {
+        MODE.with(|m| match m.borrow_mut().as_mut() {
+            Some(Mode::Collect { path, out }) => {
+                if key.starts_with("menu.") && !out.iter().any(|e| e.key == key) {
+                    out.push(Entry {
+                        key: key.to_string(),
+                        shortcut: shortcut.to_string(),
+                        path: path.clone(),
+                    });
+                }
+                false
+            }
+            Some(Mode::Trigger { key: wanted, fired }) if !*fired && enabled && wanted == key => {
+                *fired = true;
+                true
+            }
+            Some(Mode::Trigger { .. }) | None => false,
+        })
+    }
+
+    pub fn enter(key: &str) {
+        MODE.with(|m| {
+            if let Some(Mode::Collect { path, .. }) = m.borrow_mut().as_mut() {
+                path.push(key.to_string());
+            }
+        });
+    }
+
+    pub fn leave() {
+        MODE.with(|m| {
+            if let Some(Mode::Collect { path, .. }) = m.borrow_mut().as_mut() {
+                path.pop();
+            }
+        });
+    }
+
+    pub fn fired() -> bool {
+        MODE.with(|m| matches!(&*m.borrow(), Some(Mode::Trigger { fired: true, .. })))
+    }
+
+    pub(super) fn start_collect() {
+        MODE.with(|m| {
+            *m.borrow_mut() = Some(Mode::Collect {
+                path: Vec::new(),
+                out: Vec::new(),
+            })
+        });
+    }
+
+    pub(super) fn start_trigger(key: &str) {
+        MODE.with(|m| {
+            *m.borrow_mut() = Some(Mode::Trigger {
+                key: key.to_string(),
+                fired: false,
+            })
+        });
+    }
+
+    /// Ends a walk however it ends, so the menus never stay invisible.
+    pub(super) struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            MODE.with(|m| m.borrow_mut().take());
+        }
+    }
+
+    /// End the walk: the commands collected, or whether the item fired.
+    pub(super) fn finish() -> (Vec<Entry>, bool) {
+        MODE.with(|m| match m.borrow_mut().take() {
+            Some(Mode::Collect { out, .. }) => (out, false),
+            Some(Mode::Trigger { fired, .. }) => (Vec::new(), fired),
+            None => (Vec::new(), false),
+        })
+    }
+
+    pub fn set_bindings(bindings: &[(String, String)]) {
+        BINDINGS.with(|b| {
+            let mut b = b.borrow_mut();
+            if b.as_slice() != bindings {
+                *b = bindings.to_vec();
+            }
+        });
+    }
+
+    /// The shortcut a row shows: the user's for `key`, else `default`.
+    pub fn shown_shortcut(key: &str, default: &str) -> String {
+        BINDINGS.with(|b| {
+            b.borrow()
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| default.to_string())
+        })
+    }
+}
+
+/// The menus of the menu bar in order, with their title keys.
+fn all_menus() -> [(&'static str, fn(&mut App, &mut Ui)); 12] {
+    [
+        ("menu.file", file_menu),
+        ("menu.edit", edit_menu),
+        ("menu.view", view_menu),
+        ("menu.layout", layout_menu),
+        ("menu.object", object_menu),
+        ("menu.effects", effects_menu),
+        ("menu.bitmaps", bitmaps_menu),
+        ("menu.text", text_menu),
+        ("menu.table", table_menu),
+        ("menu.tools", tools_menu),
+        ("menu.window", window_menu),
+        ("menu.help", help_menu),
+    ]
+}
+
+/// The menus the bar shows with no drawing open.
+const MENUS_WITHOUT_DRAWING: [&str; 4] = ["menu.file", "menu.tools", "menu.window", "menu.help"];
+
+/// Walk the menus without showing them, in a Ui of their own far off
+/// the screen, so nothing is drawn, hit or laid out beside the real
+/// widgets. `shown_only`: only the menus the bar shows now.
+fn walk_invisibly(app: &mut App, ctx: &egui::Context, shown_only: bool, until_fired: bool) {
+    let far = egui::Rect::from_min_size(
+        egui::pos2(-100_000.0, -100_000.0),
+        egui::vec2(400.0, 50_000.0),
+    );
+    let mut ui = Ui::new(
+        ctx.clone(),
+        egui::Id::new("menu_commands_walk"),
+        egui::UiBuilder::new()
+            .invisible()
+            .max_rect(far)
+            .layer_id(egui::LayerId::new(
+                egui::Order::Background,
+                egui::Id::new("menu_commands_walk"),
+            )),
+    );
+    for (title, body) in all_menus() {
+        if until_fired && invoke::fired() {
+            break;
+        }
+        if shown_only && !app.has_document() && !MENUS_WITHOUT_DRAWING.contains(&title) {
+            continue;
+        }
+        invoke::enter(title);
+        body(app, &mut ui);
+        invoke::leave();
+    }
+}
+
+/// Every command of the menu bar: its key, its built-in shortcut and the
+/// menus it sits in, in menu order.
+pub fn commands(app: &mut App, ctx: &egui::Context) -> Vec<invoke::Entry> {
+    let _guard = invoke::Guard;
+    invoke::start_collect();
+    walk_invisibly(app, ctx, false, false);
+    invoke::finish().0
+}
+
+/// Run the menu command `key` as its item would when clicked; false when
+/// the menus shown now have no enabled item with that key.
+pub fn run_command(app: &mut App, ctx: &egui::Context, key: &str) -> bool {
+    let _guard = invoke::Guard;
+    invoke::start_trigger(key);
+    walk_invisibly(app, ctx, true, true);
+    invoke::finish().1
+}
+
 /// Test hook: "click" the n-th enabled menu row of a menu body without a
 /// pointer, so every menu command can be exercised headlessly.
 #[cfg(test)]
@@ -365,7 +591,7 @@ pub(crate) mod replay {
 
     /// Items that would block on a native file chooser, start another
     /// program (an editor or the web browser) or close the window.
-    const SKIP: [&str; 14] = [
+    const SKIP: [&str; 13] = [
         "menu.file.send_to_mail",
         "menu.help.updates",
         "menu.help.community",
@@ -375,7 +601,6 @@ pub(crate) mod replay {
         "menu.file.save_as",
         "menu.file.save_as_template",
         "menu.file.import",
-        "menu.file.publish_to_pdf",
         "menu.file.exit",
         "menu.bitmaps.edit_bitmap",
         "menu.tools.scripts_run",
@@ -478,6 +703,149 @@ mod tests {
             }
         });
         out.textures_delta.clear();
+    }
+
+    /// A frame of the whole window with `events` as its input.
+    fn root_frame(ctx: &Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// The menus list their commands with the menus they sit in and their
+    /// built-in shortcuts, and run one by its key with nothing shown.
+    #[test]
+    fn menu_commands_are_listed_and_run_by_key() {
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        let mut entries = Vec::new();
+        run_frame(&ctx, |ui| entries = commands(&mut app, ui.ctx()));
+        assert!(!invoke::active());
+        let find = |key: &str| entries.iter().find(|e| e.key == key).cloned();
+        let export = find("menu.file.export").expect("export listed");
+        assert_eq!(export.shortcut, "Ctrl+E");
+        assert_eq!(export.path, ["menu.file"]);
+        let all = find("menu.edit.select_all_objects").expect("submenu items listed");
+        assert_eq!(all.path, ["menu.edit", "menu.edit.select_all"]);
+        assert_eq!(all.shortcut, "Ctrl+A");
+        assert!(find("menu.window.cascade").is_none(), "not made yet");
+        assert!(
+            find("menu.edit.select_all").is_none(),
+            "submenus are not commands"
+        );
+        assert!(entries.len() > 200, "{} commands", entries.len());
+        for (i, e) in entries.iter().enumerate() {
+            assert!(e.key.starts_with("menu."), "{e:?}");
+            assert!(!entries[..i].iter().any(|o| o.key == e.key), "{e:?} twice");
+        }
+        // Run one: nothing selected, then Select All.
+        app.selection.clear();
+        let mut ran = false;
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.edit.select_all_objects")
+        });
+        assert!(ran && !app.selection.is_empty());
+        // Unknown keys and commands not available now run nothing.
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "no.such.key")
+        });
+        assert!(!ran);
+        app.selection.clear();
+        let shapes = app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.edit.duplicate")
+        });
+        assert!(!ran, "Duplicate needs a selection");
+        assert_eq!(
+            app.doc().pages[0]
+                .layers
+                .iter()
+                .map(|l| l.shapes.len())
+                .sum::<usize>(),
+            shapes
+        );
+        assert!(!invoke::active());
+    }
+
+    /// A shortcut of the user's runs its menu command, takes over a
+    /// built-in shortcut and shows in the menu row.
+    #[test]
+    fn shortcuts_of_the_users_run_menu_commands() {
+        use egui::{Key, Modifiers};
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        let count = |app: &App| {
+            app.doc().pages[0]
+                .layers
+                .iter()
+                .map(|l| l.shapes.len())
+                .sum::<usize>()
+        };
+        app.settings
+            .shortcuts
+            .push(("menu.edit.select_all_objects".into(), "Alt+Shift+K".into()));
+        app.selection.clear();
+        root_frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::K, Modifiers::ALT | Modifiers::SHIFT)],
+        );
+        root_frame(&ctx, &mut app, vec![]);
+        assert!(!app.selection.is_empty(), "{}", app.status);
+        assert_eq!(
+            invoke::shown_shortcut("menu.edit.select_all_objects", "Ctrl+A"),
+            "Alt+Shift+K"
+        );
+        assert_eq!(invoke::shown_shortcut("menu.edit.cut", "Ctrl+X"), "Ctrl+X");
+        // Ctrl+D (built in for Duplicate) given to Select All: no copy.
+        app.settings.shortcuts[0].1 = "Ctrl+D".into();
+        app.selection.clear();
+        let before = count(&app);
+        root_frame(&ctx, &mut app, vec![key(Key::D, Modifiers::COMMAND)]);
+        assert_eq!(count(&app), before);
+        assert!(!app.selection.is_empty());
+        // The built-in Ctrl+A still selects everything.
+        app.selection.clear();
+        root_frame(&ctx, &mut app, vec![key(Key::A, Modifiers::COMMAND)]);
+        assert!(!app.selection.is_empty());
+        // A command not available now says so.
+        app.settings
+            .shortcuts
+            .push(("menu.edit.duplicate".into(), "Alt+Shift+J".into()));
+        app.selection.clear();
+        root_frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::J, Modifiers::ALT | Modifiers::SHIFT)],
+        );
+        assert_eq!(count(&app), before);
+        assert!(
+            app.status.contains(&tr("menu.edit.duplicate")),
+            "{}",
+            app.status
+        );
     }
 
     /// Every enabled row of every menu is clicked once against a mixed

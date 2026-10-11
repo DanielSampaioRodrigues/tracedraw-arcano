@@ -699,6 +699,7 @@ pub fn show(app: &mut App, ctx: &Context) {
     // An options dialog replaced by another dialog keeps its changes.
     if !matches!(app.dialog, Dialog::Options) {
         app.options_snapshot = None;
+        app.shortcut_editor.capture = None;
     }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     let mut close = false;

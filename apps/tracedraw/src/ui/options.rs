@@ -457,6 +457,10 @@ fn page_list(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
 
 fn draw_page(app: &mut App, ui: &mut Ui) {
     use OptionsPage::*;
+    // A command waits for its keys only while its page is shown.
+    if !matches!(app.options_page, Commands) {
+        app.shortcut_editor.capture = None;
+    }
     match app.options_page {
         General => general_page(app, ui),
         Display => display_page(app, ui),
@@ -1051,20 +1055,227 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
     );
 }
 
+/// Options > Customization > Commands: the menu commands found, the
+/// search text, the command waiting for its keys and what the last
+/// shortcut set took over.
+#[derive(Debug, Clone, Default)]
+pub struct ShortcutEditor {
+    pub entries: Vec<crate::ui::menus::invoke::Entry>,
+    pub filter: String,
+    pub capture: Option<String>,
+    pub note: Option<String>,
+}
+
+/// The user's shortcut for `id` (a menu key or a tool id).
+fn user_shortcut(app: &App, id: &str) -> Option<String> {
+    app.settings
+        .shortcuts
+        .iter()
+        .find(|(k, _)| k == id)
+        .map(|(_, v)| v.clone())
+}
+
+/// Give the menu command `id` the shortcut `text`. Another command of the
+/// user's with it loses it; commands and tools that have it built in are
+/// named in the note, since the shortcut now runs this command.
+fn set_menu_shortcut(app: &mut App, id: &str, text: &str) {
+    use crate::shortcuts::same;
+    let mut others: Vec<String> = Vec::new();
+    for (k, v) in &app.settings.shortcuts {
+        if k != id && same(v, text) {
+            others.push(menu_or_tool_name(app, k));
+        }
+    }
+    app.settings
+        .shortcuts
+        .retain(|(k, v)| k == id || !same(v, text));
+    for e in &app.shortcut_editor.entries {
+        if e.key != id && same(&e.shortcut, text) && user_shortcut(app, &e.key).is_none() {
+            others.push(command_label(e));
+        }
+    }
+    for t in crate::tools::Tool::ALL {
+        if user_shortcut(app, t.id()).is_none() && t.shortcut().is_some_and(|s| same(s, text)) {
+            others.push(t.name());
+        }
+    }
+    app.settings.shortcuts.retain(|(k, _)| k != id);
+    app.settings
+        .shortcuts
+        .push((id.to_string(), text.to_string()));
+    others.dedup();
+    app.shortcut_editor.note = (!others.is_empty()).then(|| {
+        trf(
+            "options.shortcut_taken",
+            &[("keys", text), ("others", &others.join(", "))],
+        )
+    });
+}
+
+/// "File > Export...": the menus a command sits in and its name.
+fn command_label(e: &crate::ui::menus::invoke::Entry) -> String {
+    let mut parts: Vec<String> = e.path.iter().map(|k| tr(k)).collect();
+    parts.push(tr(&e.key));
+    parts
+        .iter()
+        .map(|p| p.trim_end_matches("...").to_string())
+        .collect::<Vec<_>>()
+        .join(" > ")
+}
+
+fn menu_or_tool_name(app: &App, id: &str) -> String {
+    if let Some(e) = app.shortcut_editor.entries.iter().find(|e| e.key == id) {
+        return command_label(e);
+    }
+    crate::tools::Tool::ALL
+        .iter()
+        .find(|t| t.id() == id)
+        .map(|t| t.name())
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// Columns of the command list: name, built-in keys, the user's keys.
+const NAME_W: f32 = 320.0;
+const KEYS_W: f32 = 105.0;
+const SET_W: f32 = 125.0;
+const ROW_H: f32 = 24.0;
+
+/// A cell of a row: widgets left to right, centred vertically.
+fn cell<R>(ui: &mut Ui, rect: egui::Rect, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        add,
+    )
+    .inner
+}
+
+/// One command: its menus and name, its built-in shortcut, the button
+/// that waits for keys (showing the user's shortcut) and the x that
+/// removes it.
+fn command_row(app: &mut App, ui: &mut Ui, e: &crate::ui::menus::invoke::Entry, striped: bool) {
+    let (row, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ROW_H),
+        egui::Sense::hover(),
+    );
+    if striped {
+        ui.painter()
+            .rect_filled(row, 0.0, ui.visuals().faint_bg_color);
+    }
+    let at = |x: f32, w: f32| {
+        egui::Rect::from_min_size(egui::pos2(row.left() + x, row.top()), egui::vec2(w, ROW_H))
+    };
+    cell(ui, at(4.0, NAME_W - 8.0), |ui| {
+        ui.add(egui::Label::new(command_label(e)).truncate());
+    });
+    cell(ui, at(NAME_W, KEYS_W), |ui| {
+        ui.label(egui::RichText::new(&e.shortcut).color(Tokens::TEXT_DIM));
+    });
+    let custom = user_shortcut(app, &e.key);
+    let capturing = app.shortcut_editor.capture.as_deref() == Some(&e.key);
+    let text = if capturing {
+        tr("options.press_keys")
+    } else {
+        custom.clone().unwrap_or_else(|| tr("options.set_shortcut"))
+    };
+    cell(ui, at(NAME_W + KEYS_W, SET_W), |ui| {
+        let button = ui
+            .selectable_label(capturing, text)
+            .on_hover_text(tr("options.set_shortcut_hint"));
+        if button.clicked() {
+            app.shortcut_editor.capture = (!capturing).then(|| e.key.clone());
+            app.shortcut_editor.note = None;
+            // The keys pressed next are the shortcut, not typing or a
+            // press of this button.
+            ui.ctx().memory_mut(|m| m.stop_text_input());
+            button.surrender_focus();
+        }
+    });
+    if custom.is_some() {
+        cell(ui, at(NAME_W + KEYS_W + SET_W, 24.0), |ui| {
+            if ui
+                .small_button("x")
+                .on_hover_text(tr("options.clear_shortcut"))
+                .clicked()
+            {
+                app.settings.shortcuts.retain(|(k, _)| k != &e.key);
+            }
+        });
+    }
+}
+
 fn commands_page(app: &mut App, ui: &mut Ui) {
+    if app.shortcut_editor.entries.is_empty() {
+        let ctx = ui.ctx().clone();
+        app.shortcut_editor.entries = crate::ui::menus::commands(app, &ctx);
+    }
+    // The command waiting for its keys takes the next key pressed (Shift,
+    // Ctrl and Alt alone keep it waiting).
+    if let Some(target) = app.shortcut_editor.capture.clone() {
+        let pressed = ui.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if !crate::shortcuts::is_modifier(*key) => Some((*key, *modifiers)),
+                _ => None,
+            })
+        });
+        if let Some((key, mods)) = pressed {
+            if crate::shortcuts::allowed(mods, key) {
+                let text = crate::shortcuts::format(mods, key);
+                set_menu_shortcut(app, &target, &text);
+                app.shortcut_editor.capture = None;
+            }
+        }
+    }
+    ui.label(egui::RichText::new(tr("options.commands_hint")).color(Tokens::TEXT_DIM));
+    ui.horizontal(|ui| {
+        ui.label(tr("options.find_command"));
+        ui.add(egui::TextEdit::singleline(&mut app.shortcut_editor.filter).desired_width(220.0));
+    });
+    let filter = app.shortcut_editor.filter.trim().to_lowercase();
+    let entries: Vec<_> = app
+        .shortcut_editor
+        .entries
+        .iter()
+        .filter(|e| filter.is_empty() || command_label(e).to_lowercase().contains(&filter))
+        .cloned()
+        .collect();
+    // Fixed columns and a fixed height, so nothing moves while the list
+    // is filtered.
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        egui::ScrollArea::vertical()
+            .id_salt("menu_shortcuts_scroll")
+            .auto_shrink([false, false])
+            .max_height(230.0)
+            .show_rows(ui, ROW_H, entries.len(), |ui, rows| {
+                for i in rows {
+                    if let Some(e) = entries.get(i) {
+                        command_row(app, ui, e, i % 2 == 1);
+                    }
+                }
+            });
+    });
+    // One line kept for what the last shortcut set took over.
+    let note = app.shortcut_editor.note.clone().unwrap_or_default();
+    ui.label(egui::RichText::new(note).color(Tokens::ACCENT));
+    ui.add_space(6.0);
+    ui.strong(tr("options.tool_shortcuts"));
     ui.label(egui::RichText::new(tr("options.shortcuts_hint")).color(Tokens::TEXT_DIM));
     egui::ScrollArea::vertical()
-        .max_height(300.0)
+        .id_salt("tool_shortcuts_scroll")
+        .auto_shrink([false, false])
+        .max_height(110.0)
         .show(ui, |ui| {
             egui::Grid::new("shortcuts").striped(true).show(ui, |ui| {
                 for t in crate::tools::Tool::ALL {
                     ui.label(t.name());
-                    let current = app
-                        .settings
-                        .shortcuts
-                        .iter()
-                        .find(|(k, _)| k == t.id())
-                        .map(|(_, v)| v.clone())
+                    let current = user_shortcut(app, t.id())
                         .unwrap_or_else(|| t.shortcut().unwrap_or("").to_string());
                     let mut v = current.clone();
                     if ui
@@ -1083,6 +1294,8 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
         });
     if ui.button(tr("options.reset_shortcuts")).clicked() {
         app.settings.shortcuts.clear();
+        app.shortcut_editor.note = None;
+        app.shortcut_editor.capture = None;
     }
 }
 
@@ -1683,5 +1896,89 @@ mod tests {
         // Drawing a page never changes what it shows (fields clamp the
         // values they hold to their ranges).
         assert_eq!(app.star_sharpness, 0.5);
+    }
+
+    /// A frame of the whole window with `events` as its input.
+    fn frame(ctx: &Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn commands_take_the_keys_pressed_as_their_shortcut() {
+        use crate::ui::dialogs::Dialog;
+        use egui::{Key, Modifiers};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.dialog = Dialog::Options;
+        app.options_page = OptionsPage::Commands;
+        frame(&ctx, &mut app, vec![]);
+        assert!(app
+            .shortcut_editor
+            .entries
+            .iter()
+            .any(|e| e.key == "menu.file.export"));
+        // Export waits for its keys; Ctrl+D, Duplicate's, is pressed.
+        app.shortcut_editor.capture = Some("menu.file.export".into());
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(Key::ControlLeft, Modifiers::COMMAND)],
+        );
+        assert!(app.shortcut_editor.capture.is_some(), "Ctrl alone waits");
+        frame(&ctx, &mut app, vec![key(Key::D, Modifiers::COMMAND)]);
+        assert_eq!(
+            user_shortcut(&app, "menu.file.export").as_deref(),
+            Some("Ctrl+D")
+        );
+        assert!(app.shortcut_editor.capture.is_none());
+        let note = app.shortcut_editor.note.clone().unwrap_or_default();
+        assert!(note.contains(&tr("menu.edit.duplicate")), "{note}");
+        // Keys that edit text or close dialogs are not shortcuts alone.
+        app.shortcut_editor.capture = Some("menu.file.import".into());
+        frame(&ctx, &mut app, vec![key(Key::Enter, Modifiers::NONE)]);
+        assert!(user_shortcut(&app, "menu.file.import").is_none());
+        // Esc stops waiting and leaves the options open.
+        frame(&ctx, &mut app, vec![key(Key::Escape, Modifiers::NONE)]);
+        assert!(app.shortcut_editor.capture.is_none());
+        assert!(matches!(app.dialog, Dialog::Options));
+        // Keys of the user's move to the command given them last.
+        set_menu_shortcut(&mut app, "menu.file.import", "ctrl+d");
+        assert!(user_shortcut(&app, "menu.file.export").is_none());
+        assert!(app
+            .shortcut_editor
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains(&tr("menu.file.export").replace("...", ""))));
+        // Another page, or no options, and nothing waits any more.
+        app.shortcut_editor.capture = Some("menu.file.export".into());
+        app.options_page = OptionsPage::General;
+        frame(&ctx, &mut app, vec![]);
+        assert!(app.shortcut_editor.capture.is_none());
+        app.options_page = OptionsPage::Commands;
+        app.shortcut_editor.capture = Some("menu.file.export".into());
+        app.dialog = Dialog::None;
+        frame(&ctx, &mut app, vec![key(Key::F7, Modifiers::COMMAND)]);
+        assert!(app.shortcut_editor.capture.is_none());
+        assert!(user_shortcut(&app, "menu.file.export").is_none());
     }
 }
