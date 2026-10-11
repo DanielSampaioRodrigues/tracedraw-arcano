@@ -28,10 +28,10 @@ pub use color::Color;
 pub use command::Command;
 pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
-    split_spans_at, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners, DefaultKind,
-    DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer, MasterScope,
-    Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle, Shadow, Shape, ShapeKind,
-    StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
+    split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
+    DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer,
+    MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle, Shadow, Shape,
+    ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
     TrackedTask,
 };
 pub use engine::Engine;

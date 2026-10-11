@@ -217,13 +217,23 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
 - Justify: extra space `= (frame_width - line_width) / n_spaces`.
-- Text on path: each glyph is placed at arc length `s + offset`
-  where `s` is the glyph's x-advance midpoint, rotated to the tangent
-  and raised by `distance` along the normal.
+- Text on path: the baseline is the path's first subpath (followed from
+  its end back to its start when mirrored), moved `distance` to its left,
+  towards the letters' tops (corners mitred, at most 4 times the
+  distance out). Each glyph is centred at arc length `start + s` along
+  the baseline, where `s` is the glyph's x-advance midpoint and `start`
+  is `offset`, plus `(length - width) / 2` for centred text or
+  `length - width` for right-aligned text, and turned to the baseline's
+  direction there. On a closed path positions wrap round past the start;
+  on an open one they stop at its ends.
 - Fit text to frame: scale size so the paragraph fills the frame height.
 
 ## Checks
 
+- `document::tests::text_baselines_wrap_round_closed_paths_and_move_by_the_distance`,
+  `document::tests::open_text_baselines_stop_at_their_ends_and_corners_keep_the_distance`
+  (core), `tests::mirrored_text_on_a_path_reads_along_its_other_side` and
+  `tests::text_on_a_closed_path_continues_past_its_start` (text crate).
 - `tests::fonts_are_found_by_their_legacy_family_names`,
   `tests::a_drawing_brings_every_face_of_a_family`,
 - `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`,

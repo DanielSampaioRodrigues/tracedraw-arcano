@@ -866,19 +866,211 @@ impl Table {
     }
 }
 
-/// Text fitted to a path: glyphs follow `path` (local space).
+/// Text fitted to a path: glyphs follow `path` (local space). The letters
+/// stand on the path's [`baseline`](TextOnPath::baseline).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextOnPath {
     pub path: BezPath,
-    /// Start offset along the path, mm.
+    /// Start offset along the baseline, mm (with centred or right-aligned
+    /// text, added to the alignment's own start).
     #[serde(default)]
     pub offset: f64,
-    /// Distance from the path along its normal, mm.
+    /// Distance from the path to the baseline, mm, towards the letters'
+    /// tops (to the left of the path's direction).
     #[serde(default)]
     pub distance: f64,
-    /// Place text on the other side of the path.
+    /// Place the text on the other side of the path, reading the other
+    /// way (the path is followed from its end back to its start).
     #[serde(default)]
     pub mirror: bool,
+}
+
+impl TextOnPath {
+    /// The line the letters stand on: the first subpath of `path`,
+    /// followed backwards when mirrored, moved `distance` to its left.
+    /// Offsets and advances are measured along it.
+    pub fn baseline(&self) -> Baseline {
+        Baseline::new(&self.path, self.distance, self.mirror)
+    }
+}
+
+/// The baseline of a text on a path: a polyline with the arc length at
+/// each point.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Baseline {
+    points: Vec<Point>,
+    lengths: Vec<f64>,
+    closed: bool,
+}
+
+impl Baseline {
+    /// Flattening tolerance, mm.
+    const TOLERANCE: f64 = 0.05;
+    /// Longest corner extension when moving a polyline sideways, as a
+    /// multiple of the distance.
+    const MITER_LIMIT: f64 = 4.0;
+
+    /// The first subpath of `path` as a polyline, reversed when asked,
+    /// then moved `distance` to its left (corners mitred).
+    pub fn new(path: &BezPath, distance: f64, reverse: bool) -> Baseline {
+        let mut pts: Vec<Point> = Vec::new();
+        let mut closed = false;
+        let mut done = false;
+        geometry::flatten(path, Self::TOLERANCE, &mut |el| {
+            if done {
+                return;
+            }
+            match el {
+                geometry::PathEl::MoveTo(p) if pts.is_empty() => pts.push(p),
+                geometry::PathEl::MoveTo(_) => done = true,
+                geometry::PathEl::LineTo(p) => pts.push(p),
+                geometry::PathEl::ClosePath => {
+                    closed = true;
+                    done = true;
+                }
+                _ => {}
+            }
+        });
+        pts.retain(|p| p.x.is_finite() && p.y.is_finite());
+        // Repeated points have no direction.
+        pts.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
+        if let (Some(&first), Some(&last)) = (pts.first(), pts.last()) {
+            if pts.len() > 2 && (first - last).hypot() < 1e-6 {
+                closed = true;
+                pts.pop();
+            }
+            if closed && pts.len() > 2 {
+                pts.push(first);
+            }
+        }
+        closed &= pts.len() > 3;
+        if reverse {
+            pts.reverse();
+        }
+        if distance.is_finite() && distance != 0.0 && pts.len() >= 2 {
+            pts = Self::moved_left(&pts, distance, closed);
+        }
+        let mut lengths = Vec::with_capacity(pts.len());
+        let mut total = 0.0;
+        for (i, p) in pts.iter().enumerate() {
+            if let Some(prev) = i.checked_sub(1).and_then(|j| pts.get(j)) {
+                total += (*p - *prev).hypot();
+            }
+            lengths.push(total);
+        }
+        Baseline {
+            points: pts,
+            lengths,
+            closed,
+        }
+    }
+
+    /// Each point moved `d` to the left of the polyline, along the mean
+    /// of the neighbouring segments' normals, far enough to keep the
+    /// segments `d` away.
+    fn moved_left(pts: &[Point], d: f64, closed: bool) -> Vec<Point> {
+        let normal = |a: Point, b: Point| -> Vec2 {
+            let v = b - a;
+            let len = v.hypot();
+            if len > 0.0 {
+                Vec2::new(-v.y / len, v.x / len)
+            } else {
+                Vec2::ZERO
+            }
+        };
+        let n = pts.len();
+        // Normal of segment i (from point i to point i + 1).
+        let seg: Vec<Vec2> = pts.windows(2).map(|w| normal(w[0], w[1])).collect();
+        let mut out = Vec::with_capacity(n);
+        for (i, p) in pts.iter().enumerate() {
+            let before = if i > 0 {
+                seg.get(i - 1)
+            } else if closed {
+                seg.last()
+            } else {
+                None
+            };
+            let after = if i + 1 < n {
+                seg.get(i)
+            } else if closed {
+                seg.first()
+            } else {
+                None
+            };
+            let (m, reach) = match (before, after) {
+                (Some(a), Some(b)) => {
+                    let sum = *a + *b;
+                    let len = sum.hypot();
+                    if len < 1e-9 {
+                        (*a, 1.0)
+                    } else {
+                        let m = sum / len;
+                        let cos = m.dot(*a).max(1.0 / Self::MITER_LIMIT);
+                        (m, 1.0 / cos)
+                    }
+                }
+                (Some(a), None) | (None, Some(a)) => (*a, 1.0),
+                (None, None) => (Vec2::ZERO, 1.0),
+            };
+            out.push(*p + m * (d * reach));
+        }
+        out
+    }
+
+    /// Length from start to end.
+    pub fn length(&self) -> f64 {
+        self.lengths.last().copied().unwrap_or(0.0)
+    }
+
+    /// The path is closed: positions past the end continue from the start.
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    /// The point at arc length `s` and the unit direction there. Positions
+    /// wrap around a closed baseline and stop at the ends of an open one.
+    pub fn at(&self, s: f64) -> Option<(Point, Vec2)> {
+        let total = self.length();
+        if self.points.len() < 2 || total <= 0.0 || !s.is_finite() {
+            return None;
+        }
+        let s = if self.closed {
+            s.rem_euclid(total)
+        } else {
+            s.clamp(0.0, total)
+        };
+        let i = self
+            .lengths
+            .partition_point(|c| *c <= s)
+            .saturating_sub(1)
+            .min(self.points.len() - 2);
+        let (a, b) = (*self.points.get(i)?, *self.points.get(i + 1)?);
+        let start = *self.lengths.get(i)?;
+        let v = b - a;
+        let len = v.hypot();
+        if len <= 0.0 {
+            return None;
+        }
+        let t = ((s - start) / len).clamp(0.0, 1.0);
+        Some((a + v * t, v / len))
+    }
+
+    /// The shortest distance from `p` to the baseline.
+    pub fn distance_to(&self, p: Point) -> Option<f64> {
+        self.points
+            .windows(2)
+            .map(|w| {
+                let v = w[1] - w[0];
+                let len2 = v.hypot2();
+                let t = if len2 > 0.0 {
+                    ((p - w[0]).dot(v) / len2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (p - (w[0] + v * t)).hypot()
+            })
+            .min_by(|a, b| a.total_cmp(b))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2379,6 +2571,81 @@ impl Document {
 mod tests {
     use super::*;
     use crate::geometry::Point;
+
+    /// A circle of radius `r` about the origin, from its top clockwise.
+    fn clockwise_circle(r: f64) -> BezPath {
+        let mut p = BezPath::new();
+        let n = 64;
+        for i in 0..=n {
+            let a = std::f64::consts::FRAC_PI_2 - i as f64 / n as f64 * std::f64::consts::TAU;
+            let q = Point::new(r * a.cos(), r * a.sin());
+            if i == 0 {
+                p.move_to(q);
+            } else {
+                p.line_to(q);
+            }
+        }
+        p.close_path();
+        p
+    }
+
+    #[test]
+    fn text_baselines_wrap_round_closed_paths_and_move_by_the_distance() {
+        let circle = clockwise_circle(10.0);
+        let plain = Baseline::new(&circle, 0.0, false);
+        assert!(plain.is_closed());
+        let total = plain.length();
+        // 64 chords of a radius 10 circle.
+        let chords = 64.0 * 2.0 * 10.0 * (std::f64::consts::PI / 64.0).sin();
+        assert!((total - chords).abs() < 1e-9, "{total}");
+        // Past the end: round again from the start.
+        let (a, _) = plain.at(1.0).expect("point");
+        let (b, _) = plain.at(total + 1.0).expect("point");
+        let (c, _) = plain.at(1.0 - total).expect("point");
+        assert!((a - b).hypot() < 1e-9 && (a - c).hypot() < 1e-9);
+        // Clockwise, the left is outwards: 2 mm out, radius 12.
+        let out = Baseline::new(&circle, 2.0, false);
+        assert!((out.distance_to(Point::new(0.0, 12.0)).expect("d")).abs() < 0.05);
+        assert!((out.length() / total - 1.2).abs() < 1e-3);
+        // (The corners go a little further, keeping the sides 2 away.)
+        let (top, dir) = out.at(0.0).expect("point");
+        assert!((top - Point::new(0.0, 12.0)).hypot() < 0.01, "{top:?}");
+        assert!(dir.x > 0.99, "{dir:?}");
+        // Followed backwards the left is inwards: radius 8, still from
+        // the top, now running to the left.
+        let back = Baseline::new(&circle, 2.0, true);
+        let (top, dir) = back.at(0.0).expect("point");
+        assert!((top - Point::new(0.0, 8.0)).hypot() < 0.01, "{top:?}");
+        assert!(dir.x < -0.99, "{dir:?}");
+    }
+
+    #[test]
+    fn open_text_baselines_stop_at_their_ends_and_corners_keep_the_distance() {
+        let mut l = BezPath::new();
+        l.move_to((0.0, 0.0));
+        l.line_to((10.0, 0.0));
+        l.line_to((10.0, 10.0));
+        // A second subpath is not followed.
+        l.move_to((50.0, 50.0));
+        l.line_to((60.0, 50.0));
+        let b = Baseline::new(&l, 0.0, false);
+        assert!(!b.is_closed());
+        assert!((b.length() - 20.0).abs() < 1e-9);
+        assert_eq!(b.at(-5.0).map(|(p, _)| p), Some(Point::new(0.0, 0.0)));
+        assert_eq!(b.at(99.0).map(|(p, _)| p), Some(Point::new(10.0, 10.0)));
+        // One to the left of the bend (the inside): its corner at (9, 1).
+        let moved = Baseline::new(&l, 1.0, false);
+        let (corner, _) = moved.at(9.0).expect("point");
+        assert!((corner - Point::new(9.0, 1.0)).hypot() < 1e-9, "{corner:?}");
+        // Nothing to follow: no length, no points, no panic.
+        let empty = Baseline::new(&BezPath::new(), 3.0, true);
+        assert_eq!(empty.length(), 0.0);
+        assert_eq!(empty.at(1.0), None);
+        let mut bad = BezPath::new();
+        bad.move_to((f64::NAN, 0.0));
+        bad.line_to((1.0, f64::INFINITY));
+        assert_eq!(Baseline::new(&bad, 1.0, false).at(0.0), None);
+    }
 
     #[test]
     fn guides_written_before_styles_still_load() {

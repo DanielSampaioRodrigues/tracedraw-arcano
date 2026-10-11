@@ -239,10 +239,23 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
-    /// The text object being read is fitted to a path (a sibling in its
-    /// group supplies the path).
-    pending_on_path: bool,
+    /// The text object being read is fitted to a path (a sibling supplies
+    /// the path).
+    pending_on_path: Option<OnPathText>,
+    /// Texts fitted to a path, by shape, until their list is read and the
+    /// path found among their siblings.
+    on_path: HashMap<tracedraw_core::ShapeId, OnPathText>,
     report: ParseReport,
+}
+
+/// A text the file fits to a path: how it sits on the path and where the
+/// fitted text lies on the page. The path is one of its siblings.
+#[derive(Debug, Clone, Copy, Default)]
+struct OnPathText {
+    settings: Option<text::PathSettings>,
+    /// The fitted text's box on the page (the object's `bbox`, our page
+    /// coordinates).
+    page_box: Option<Rect>,
 }
 
 /// A two-colour pattern tile decoded from `bmpf`.
@@ -269,7 +282,8 @@ impl<'a> Ctx<'a> {
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
-            pending_on_path: false,
+            pending_on_path: None,
+            on_path: HashMap::new(),
             report: ParseReport::default(),
         }
     }
@@ -1226,7 +1240,10 @@ impl<'a> Ctx<'a> {
             self.report.warn(w);
         }
         let parsed = parsed?;
-        self.pending_on_path = parsed.on_path;
+        self.pending_on_path = parsed.on_path.then_some(OnPathText {
+            settings: parsed.path_settings,
+            page_box: None,
+        });
         // Artistic text (type 0x04) keeps its first baseline at the origin
         // even when its text record has the frame layout (version 21; the
         // object's box is then the box of its letters).
@@ -1647,6 +1664,7 @@ impl<'a> Ctx<'a> {
             }
         });
         let loda = loda?;
+        self.pending_on_path = None;
         let transform = trfd
             .map(|t| self.read_transform(t))
             .unwrap_or(Affine::IDENTITY);
@@ -1755,17 +1773,21 @@ impl<'a> Ctx<'a> {
         shape.stroke = stroke;
         shape.name = name;
         shape.opacity = opacity;
-        if std::mem::take(&mut self.pending_on_path) {
-            shape.data.push((ON_PATH_KEY.into(), "1".into()));
+        if let Some(mut fitted) = self.pending_on_path.take() {
+            fitted.page_box = self
+                .object_bbox(oc)
+                .map(|b| recenter.transform_rect_bbox(b));
+            log::debug!("text fitted to a path: {fitted:?}");
+            self.on_path.insert(id, fitted);
         }
         Some(shape)
     }
 
     /// The objects of a layer or group list, bottom to top. Files store
     /// them front to back (confirmed with a version 21 file: text, then a patch,
-    /// then the full-page picture underneath). `grp ` lists become groups;
-    /// a group holding a text fitted to a path and the path itself gets
-    /// the text placed on that path.
+    /// then the full-page picture underneath). `grp ` lists become groups.
+    /// Texts fitted to a path are placed on their path, one of the other
+    /// objects of the list.
     fn read_objects(
         &mut self,
         list: &Chunk,
@@ -1774,10 +1796,26 @@ impl<'a> Ctx<'a> {
         depth: usize,
     ) -> Vec<Shape> {
         let mut out: Vec<Shape> = Vec::new();
+        self.collect_objects(list, ids, page_size, depth, &mut out);
+        out.reverse();
+        self.fit_texts_to_paths(&mut out, list.is(b"grp "));
+        out
+    }
+
+    /// The objects of a list front to back, nested lists other than
+    /// groups taken in place.
+    fn collect_objects(
+        &mut self,
+        list: &Chunk,
+        ids: &mut tracedraw_core::id::IdSource,
+        page_size: Size,
+        depth: usize,
+        out: &mut Vec<Shape>,
+    ) {
         if depth > 64 {
             self.report
                 .warn("group nesting deeper than 64; inner objects skipped");
-            return out;
+            return;
         }
         for c in &list.children {
             if c.is(b"obj ") {
@@ -1792,8 +1830,7 @@ impl<'a> Ctx<'a> {
                     None => self.report.skipped_objects += 1,
                 }
             } else if c.is(b"grp ") {
-                let mut children = self.read_objects(c, ids, page_size, depth + 1);
-                attach_text_to_path(&mut children);
+                let children = self.read_objects(c, ids, page_size, depth + 1);
                 match children.len() {
                     0 => {}
                     1 => out.extend(children),
@@ -1807,11 +1844,68 @@ impl<'a> Ctx<'a> {
             } else if c.list_type.is_some() {
                 // Other lists (`lgob`, `spnd`, ...) are not objects, but
                 // older files nest the object lists one level down.
-                out.extend(self.read_objects(c, ids, page_size, depth + 1));
+                let before = out.len();
+                self.collect_objects(c, ids, page_size, depth + 1, out);
+                if out.len() > before + 1 {
+                    log::debug!(
+                        "{} objects in a nested {:?} list",
+                        out.len() - before,
+                        c.list_type
+                            .map(|t| String::from_utf8_lossy(&t).into_owned())
+                            .unwrap_or_default()
+                    );
+                }
             }
         }
-        out.reverse();
-        out
+    }
+
+    /// Place each text of `shapes` that the file fits to a path on its
+    /// path: in a group of one text and one curve that curve, otherwise
+    /// the curve along which the fitted text's box lies (see
+    /// [`path_for_text`]). Texts whose path is not found stay plain text.
+    fn fit_texts_to_paths(&mut self, shapes: &mut [Shape], group: bool) {
+        let texts: Vec<(usize, OnPathText)> = shapes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| self.on_path.remove(&s.id).map(|f| (i, f)))
+            .filter(|(i, _)| matches!(shapes[*i].kind, ShapeKind::Text { .. }))
+            .collect();
+        if texts.is_empty() {
+            return;
+        }
+        let curves: Vec<usize> = shapes
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                matches!(
+                    s.kind,
+                    ShapeKind::Path { .. }
+                        | ShapeKind::Ellipse { .. }
+                        | ShapeKind::Rect { .. }
+                        | ShapeKind::Polygon { .. }
+                )
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for (ti, fitted) in texts {
+            let curve = match curves.as_slice() {
+                [only] if group => Some(*only),
+                _ => path_for_text(shapes, &curves, &fitted),
+            };
+            let Some(curve) = curve.and_then(|ci| shapes.get(ci)).cloned() else {
+                self.report
+                    .warn("text fitted to a path whose path was not found; drawn straight");
+                continue;
+            };
+            let fits = shapes
+                .get_mut(ti)
+                .map(|t| fit_text(t, &curve, &fitted))
+                .unwrap_or(false);
+            if !fits {
+                self.report
+                    .warn("text fitted to a path that could not be placed on it; drawn straight");
+            }
+        }
     }
 
     /// Opacity argument (8000): 10 unknown bytes (14 from version 13), then a u16
@@ -2172,9 +2266,6 @@ impl<'a> Ctx<'a> {
     }
 }
 
-/// Object data key marking a text that the file fits to a path.
-const ON_PATH_KEY: &str = "cdr.text_on_path";
-
 /// A bitmap with a crop outline becomes a clip frame whose frame is that
 /// outline.
 fn crop_to_clip_frame(
@@ -2203,70 +2294,137 @@ fn crop_to_clip_frame(
     shape
 }
 
-/// In a group that holds a text flagged "fitted to path" and exactly one
-/// curve, place the text on that curve (the curve stays a separate,
-/// usually invisible, object).
-fn attach_text_to_path(children: &mut [Shape]) {
-    let text_idx: Vec<usize> = children
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| {
-            matches!(s.kind, ShapeKind::Text { .. }) && s.data.iter().any(|(k, _)| k == ON_PATH_KEY)
-        })
-        .map(|(i, _)| i)
-        .collect();
-    for s in children.iter_mut() {
-        s.data.retain(|(k, _)| k != ON_PATH_KEY);
+/// The control point distance of a quarter ellipse drawn as one cubic.
+const KAPPA: f64 = 0.552_284_749_830_793_4;
+
+/// An ellipse's outline starting at its top and running clockwise.
+fn ellipse_from_top(rect: Rect) -> BezPath {
+    let c = rect.center();
+    let (rx, ry) = (rect.width() / 2.0, rect.height() / 2.0);
+    let (kx, ky) = (KAPPA * rx, KAPPA * ry);
+    let mut p = BezPath::new();
+    p.move_to((c.x, c.y + ry));
+    p.curve_to((c.x + kx, c.y + ry), (c.x + rx, c.y + ky), (c.x + rx, c.y));
+    p.curve_to((c.x + rx, c.y - ky), (c.x + kx, c.y - ry), (c.x, c.y - ry));
+    p.curve_to((c.x - kx, c.y - ry), (c.x - rx, c.y - ky), (c.x - rx, c.y));
+    p.curve_to((c.x - rx, c.y + ky), (c.x - kx, c.y + ry), (c.x, c.y + ry));
+    p.close_path();
+    p
+}
+
+/// The curve a fitted text follows, on the page: the curve's outline; an
+/// ellipse's starts at its top and runs clockwise.
+fn text_path_of(curve: &Shape) -> BezPath {
+    match &curve.kind {
+        ShapeKind::Ellipse { rect, arc: None } => curve.transform * ellipse_from_top(*rect),
+        _ => curve.page_path(),
     }
-    if text_idx.is_empty() {
-        return;
-    }
-    let curves: Vec<usize> = children
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| {
-            matches!(
-                s.kind,
-                ShapeKind::Path { .. }
-                    | ShapeKind::Ellipse { .. }
-                    | ShapeKind::Rect { .. }
-                    | ShapeKind::Polygon { .. }
-            )
-        })
-        .map(|(i, _)| i)
-        .collect();
-    let [curve] = curves.as_slice() else {
-        return;
+}
+
+/// A fitted text's settings on `path`, whose units are `per_mm` to the
+/// millimetre: the text on the path, its alignment and the position along
+/// the baseline that the settings' offset names (the text's middle when
+/// centred).
+fn text_on(
+    path: BezPath,
+    fitted: &OnPathText,
+    per_mm: f64,
+) -> (tracedraw_core::TextOnPath, TextAlign, f64) {
+    let Some(s) = fitted.settings else {
+        let tp = tracedraw_core::TextOnPath {
+            path,
+            offset: 0.0,
+            distance: 0.0,
+            mirror: false,
+        };
+        return (tp, TextAlign::Left, 0.0);
     };
-    let page_path = children[*curve].page_path();
-    for ti in text_idx {
-        let t = &mut children[ti];
-        let ShapeKind::Text {
-            spans,
-            origin,
-            align,
-            para,
-            ..
-        } = t.kind.clone()
-        else {
+    // The file measures the distance to the left of the path and the
+    // offset from its start, mirrored or not; a mirrored text of ours
+    // follows the path backwards.
+    let mirror = s.mirror_h && s.mirror_v;
+    let distance = f64::from(s.distance) * UNIT_MM * per_mm;
+    let mut tp = tracedraw_core::TextOnPath {
+        path,
+        offset: 0.0,
+        distance: if mirror { -distance } else { distance },
+        mirror,
+    };
+    let total = tp.baseline().length();
+    let mut at = f64::from(s.offset) * UNIT_MM * per_mm;
+    if mirror {
+        at = total - at;
+    }
+    if s.placement == 4 {
+        tp.offset = at - total / 2.0;
+        (tp, TextAlign::Center, at)
+    } else {
+        tp.offset = at;
+        (tp, TextAlign::Left, at)
+    }
+}
+
+/// The curve among `curves` that a fitted text follows: the one whose
+/// baseline puts the point the text's offset names inside the fitted
+/// text's box on the page (1 mm to spare), the nearest such point to the
+/// box's centre when several do.
+fn path_for_text(shapes: &[Shape], curves: &[usize], fitted: &OnPathText) -> Option<usize> {
+    let b = fitted.page_box?.inflate(1.0, 1.0);
+    let mut best: Option<(usize, f64)> = None;
+    for &ci in curves {
+        let Some(curve) = shapes.get(ci) else {
             continue;
         };
-        let local =
-            Affine::translate(-origin.to_vec2()) * t.transform.inverse() * page_path.clone();
-        t.kind = ShapeKind::Text {
-            spans,
-            origin,
-            frame: None,
-            align,
-            para,
-            on_path: Some(tracedraw_core::TextOnPath {
-                path: local,
-                offset: 0.0,
-                distance: 0.0,
-                mirror: false,
-            }),
+        let (tp, _, at) = text_on(text_path_of(curve), fitted, 1.0);
+        let Some((p, _)) = tp.baseline().at(at) else {
+            continue;
         };
+        log::debug!("text on path: curve {ci} puts the text at {p:?} (box {b:?})");
+        if !b.contains(p) {
+            continue;
+        }
+        let d = (p - b.center()).hypot();
+        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            best = Some((ci, d));
+        }
     }
+    best.map(|(ci, _)| ci)
+}
+
+/// Place text `t` on `curve` as `fitted` says. The path is taken into the
+/// text's own space (the text keeps its transform, the curve stays a
+/// separate, often invisible, object).
+fn fit_text(t: &mut Shape, curve: &Shape, fitted: &OnPathText) -> bool {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        align,
+        para,
+        ..
+    } = t.kind.clone()
+    else {
+        return false;
+    };
+    let det = t.transform.determinant();
+    if !det.is_finite() || det.abs() < 1e-12 {
+        return false;
+    }
+    let to_local = Affine::translate(-origin.to_vec2()) * t.transform.inverse();
+    let path = to_local * text_path_of(curve);
+    let (tp, fitted_align, _) = text_on(path, fitted, 1.0 / det.abs().sqrt());
+    t.kind = ShapeKind::Text {
+        spans,
+        origin,
+        frame: None,
+        align: if fitted.settings.is_some() {
+            fitted_align
+        } else {
+            align
+        },
+        para,
+        on_path: Some(tp),
+    };
+    true
 }
 
 fn bounds_of(pts: &[Point]) -> Option<Rect> {
@@ -3766,11 +3924,201 @@ mod tests {
                 let p = on_path.as_ref().expect("text on path");
                 let b = p.path.bounding_box();
                 assert!((b.width() - 50.8).abs() < 1e-6, "{b:?}");
-                assert!(!children[1].data.iter().any(|(k, _)| k == ON_PATH_KEY));
+                assert!(children[1].data.is_empty());
             }
             other => panic!("{other:?}"),
         }
         assert_eq!(rep.shapes, 2);
+    }
+
+    /// A version 21 artistic text record fitted to a path: the frame's
+    /// path settings (placement 4, `offset` and `distance` in file units,
+    /// both mirror flags or none) and 24 bytes of path data per letter.
+    fn txsm21_on_path(text: &str, offset: i32, distance: i32, mirror: bool) -> Vec<u8> {
+        let mut t = u32s(&[0]); // no frame flag (artistic text)
+        t.extend_from_slice(&[0; 32]);
+        t.extend_from_slice(&u16s(&[2100]));
+        t.extend_from_slice(&[0; 3]);
+        t.extend_from_slice(&u32s(&[1, 1])); // one frame, id 1
+        t.extend_from_slice(&[0; 48]);
+        t.extend_from_slice(&u32s(&[1])); // on a path
+        let m = i32::from(mirror);
+        t.extend_from_slice(&i32s(&[0, 4, 0, 16082, offset, 0, distance, 1, m, m]));
+        t.extend_from_slice(&[0; 8]);
+        t.extend_from_slice(&[0; 16]);
+        t.extend_from_slice(&u32s(&[0]));
+        t.extend_from_slice(&u32s(&[1])); // one paragraph
+        t.extend_from_slice(&u32s(&[0]));
+        t.push(0);
+        t.extend_from_slice(&style_string(21, r#"{"character":{"font":5,"size":24}}"#));
+        t.extend_from_slice(&u32s(&[0])); // no style records
+        let n = text.len() as u32;
+        t.extend_from_slice(&u32s(&[n]));
+        for _ in 0..n {
+            t.extend_from_slice(&u16s(&[0]));
+            t.push(0xfe);
+            t.extend_from_slice(&[0; 5]);
+        }
+        t.extend_from_slice(&u32s(&[n]));
+        t.extend_from_slice(text.as_bytes());
+        t.push(1); // path data per letter
+        t.extend_from_slice(&vec![0; 24 * text.len()]);
+        t
+    }
+
+    /// Version 21 texts fitted to a circle they are not grouped with (as
+    /// in a version 21 file: two texts on one circle, the upper one
+    /// inside it, the lower one mirrored). The circle is found from the
+    /// texts' boxes; a larger circle around it is not taken.
+    #[test]
+    fn texts_fitted_to_a_circle_sit_where_the_file_sets_them() {
+        let v = 21u16;
+        let text_obj = |t: Vec<u8>, bbox: [i32; 4]| {
+            list(
+                b"obj ",
+                &[
+                    chunk(b"bbox", &i32s(&bbox)),
+                    chunk(
+                        b"loda",
+                        &loda(OBJ_ARTISTIC_TEXT, &[(ARG_COORDS, i32s(&[0, 0]))]),
+                    ),
+                    // Unfitted, the text would sit off the page.
+                    chunk(b"trfd", &trfd(v, [1.0, 0.0, -3_000_000.0, 0.0, 1.0, 0.0])),
+                    chunk(b"txsm", &t),
+                ]
+                .concat(),
+            )
+        };
+        // A circle of radius `r` units about the page centre (the file's
+        // origin), drawn from (0, 0) downwards as files store them.
+        let circle = |r: i32| {
+            let mut c = i32s(&[2 * r, -2 * r, 0, 0]);
+            c.extend_from_slice(&u32s(&[0]));
+            list(
+                b"obj ",
+                &[
+                    chunk(b"loda", &loda(OBJ_ELLIPSE, &[(ARG_COORDS, c)])),
+                    chunk(
+                        b"trfd",
+                        &trfd(v, [1.0, 0.0, -f64::from(r), 0.0, 1.0, f64::from(r)]),
+                    ),
+                ]
+                .concat(),
+            )
+        };
+        // Radius 50 mm, baselines 10 mm inside: 40 mm, 251.3 mm round.
+        let quarter = (std::f64::consts::PI * 40.0 / 2.0 * 10_000.0).round() as i32;
+        // Its middle a quarter turn clockwise from the top: the right side.
+        let right = text_obj(
+            txsm21_on_path("Right", quarter, -100_000, false),
+            [330_000, -170_000, 480_000, 180_000],
+        );
+        // Mirrored, half a turn from the top: the bottom, reading upright.
+        let bottom = text_obj(
+            txsm21_on_path("Bottom", 2 * quarter, -100_000, true),
+            [-170_000, -470_000, 180_000, -270_000],
+        );
+        // Its box is nowhere near either circle's baseline.
+        let lost = text_obj(
+            txsm21_on_path("Lost", 0, 0, false),
+            [-1_200_000, -1_200_000, -1_100_000, -1_100_000],
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            chunk(b"font", &font_chunk(5, "Georgia")),
+            list(
+                b"page",
+                &list(
+                    b"layr",
+                    &[right, bottom, lost, circle(500_000), circle(800_000)].concat(),
+                ),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRL", &body), v);
+        assert_eq!(rep.shapes, 5, "{:?}", rep.warnings);
+        let text = |s: &str| {
+            doc.pages[0].layers[0]
+                .shapes
+                .iter()
+                .find(|sh| match &sh.kind {
+                    ShapeKind::Text { spans, .. } => spans[0].text == s,
+                    _ => false,
+                })
+                .cloned()
+                .expect("text")
+        };
+        // The point the file's offset names, on the page.
+        let anchor = |sh: &Shape| {
+            let ShapeKind::Text {
+                on_path: Some(tp),
+                origin,
+                align,
+                ..
+            } = &sh.kind
+            else {
+                panic!("not on a path: {:?}", sh.kind);
+            };
+            assert_eq!(*align, TextAlign::Center);
+            let base = tp.baseline();
+            assert!((base.length() - 2.0 * std::f64::consts::PI * 40.0).abs() < 0.5);
+            let (p, dir) = base.at(tp.offset + base.length() / 2.0).expect("point");
+            let page = sh.transform * Affine::translate(origin.to_vec2());
+            (page * p, page * (p + dir) - page * p, tp.clone())
+        };
+        // Page centre (127, 127).
+        let (p, dir, tp) = anchor(&text("Right"));
+        assert!((p - Point::new(167.0, 127.0)).hypot() < 0.5, "{p:?}");
+        assert!(
+            dir.y < -0.99,
+            "runs clockwise, down the right side: {dir:?}"
+        );
+        assert!(!tp.mirror);
+        assert!((tp.distance + 10.0).abs() < 1e-9);
+        let (p, dir, tp) = anchor(&text("Bottom"));
+        assert!((p - Point::new(127.0, 87.0)).hypot() < 0.5, "{p:?}");
+        assert!(dir.x > 0.99, "reads left to right: {dir:?}");
+        assert!(tp.mirror);
+        // Mirrored, the letters' tops point into the circle: the
+        // baseline is 10 mm to the left of the path followed backwards.
+        assert!((tp.distance - 10.0).abs() < 1e-9);
+        let lost = text("Lost");
+        assert!(matches!(lost.kind, ShapeKind::Text { on_path: None, .. }));
+        assert!(
+            rep.warnings
+                .iter()
+                .any(|w| w.contains("path was not found")),
+            "{:?}",
+            rep.warnings
+        );
+    }
+
+    /// Lists nested in a layer keep the file's front-to-back order.
+    #[test]
+    fn objects_of_nested_lists_keep_their_stacking_order() {
+        let rect = |w: i32| {
+            list(
+                b"obj ",
+                &chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, i32s(&[w, w]))])),
+            )
+        };
+        // Front to back: 10 mm, then (nested) 20 and 30 mm, then 40 mm.
+        let nested = list(b"spnd", &[rect(200_000), rect(300_000)].concat());
+        let body = [
+            chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
+            list(
+                b"page",
+                &list(b"layr", &[rect(100_000), nested, rect(400_000)].concat()),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
+        let widths: Vec<i64> = doc.pages[0].layers[0]
+            .shapes
+            .iter()
+            .map(|s| s.bounds().width().round() as i64)
+            .collect();
+        assert_eq!(widths, [40, 30, 20, 10], "{:?}", rep.warnings);
     }
 
     #[test]

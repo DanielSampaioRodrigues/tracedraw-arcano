@@ -44,6 +44,14 @@ full, row-by-row status.
   Every face of an embedded family is used (a bold face next to the
   regular one), fonts are found by legacy names such as "Arial Narrow",
   and the palette keeps colours in the CMY, HSB, HLS, Lab and YIQ models.
+- `.cdr` files: text fitted to a path follows its path when the two are
+  not grouped (it was drawn straight, or off the page), at the offset and
+  distance the file sets, mirrored text reading upright on the other side
+  of the path. Objects of lists nested in a layer keep their stacking
+  order.
+- Text on a path: the letters stand on the path moved by the distance,
+  spaced along it; on closed paths text runs on past the start, and
+  mirrored text reads the right way round on the other side.
 - Outlines thinner than a pixel are drawn one pixel wide on screen and in
   bitmap exports instead of fading out.
 - `tracedraw-cli`: `TRACEDRAW_PAGE` chooses the page a bitmap or single-page

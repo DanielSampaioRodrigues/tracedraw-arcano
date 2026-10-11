@@ -461,7 +461,42 @@ pub(crate) struct Txsm {
     /// At least one frame is fitted to a path (the path itself is a
     /// sibling object in the same group).
     pub on_path: bool,
+    /// How the first frame fitted to a path sits on it (version 16+).
+    pub path_settings: Option<PathSettings>,
     pub paragraphs: Vec<TextParagraph>,
+}
+
+/// How a text fitted to a path sits on it: the 40 bytes after the
+/// on-path flag of a version 16+ `txsm` frame (assumed from a version 21
+/// file: two texts on one circle, at its top and bottom).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PathSettings {
+    /// 4: the middle of the text sits at `offset` (the only value seen).
+    pub placement: u32,
+    /// Along the baseline, from the path's start, in coordinate units.
+    pub offset: i32,
+    /// From the path to the baseline, in coordinate units; negative
+    /// towards the inside of a closed path.
+    pub distance: i32,
+    /// Placed on the other side of the path (both flags seen together).
+    pub mirror_h: bool,
+    pub mirror_v: bool,
+}
+
+impl PathSettings {
+    fn read(b: &[u8]) -> Option<PathSettings> {
+        let word = |i: usize| -> Option<i32> {
+            let w = b.get(i * 4..i * 4 + 4)?;
+            Some(i32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        };
+        Some(PathSettings {
+            placement: word(1)? as u32,
+            offset: word(4)?,
+            distance: word(6)?,
+            mirror_h: word(8)? != 0,
+            mirror_v: word(9)? != 0,
+        })
+    }
 }
 
 /// `txsm`: two layouts, versions 7 to version 15 and version 16+. Versions before 7 are
@@ -546,6 +581,7 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     }
     let mut out = Txsm {
         on_path: any_on_path,
+        path_settings: None,
         paragraphs: Vec::new(),
     };
     for _ in 0..np {
@@ -736,12 +772,16 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         return None;
     }
     let mut any_on_path = false;
+    let mut path_settings = None;
     for _ in 0..nf {
         let _frame_id = r.u32()?;
         r.skip(48);
         let on_path = r.u32()?;
         if on_path != 0 {
             any_on_path = true;
+            if path_settings.is_none() {
+                path_settings = d.get(r.pos..r.pos + 40).and_then(PathSettings::read);
+            }
             r.skip(40);
         }
         r.skip(8);
@@ -757,6 +797,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
     }
     let mut out = Txsm {
         on_path: any_on_path,
+        path_settings,
         paragraphs: Vec::new(),
     };
     for _ in 0..np {

@@ -15,7 +15,7 @@ use tracedraw_core::{
     document::{
         text_outline::TextRequest, DocumentFont, ParagraphStyle, TextAlign, TextOnPath, TextSpan,
     },
-    geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
+    geometry::{Affine, BezPath, Point, Rect, Shape as _},
 };
 
 pub mod hyphen;
@@ -2180,7 +2180,8 @@ fn break_lines(
 }
 
 /// Place artistic text along a path: each glyph is centred on its arc
-/// length position and rotated to the tangent.
+/// length position along the baseline (see [`TextOnPath::baseline`]) and
+/// turned to its direction there. Positions wrap around closed paths.
 fn place_on_path(
     lines: &[Line],
     tp: &TextOnPath,
@@ -2191,21 +2192,11 @@ fn place_on_path(
     let Some(line) = lines.first() else {
         return out;
     };
-    // Flatten the path into a polyline with cumulative lengths.
-    let mut pts: Vec<Point> = Vec::new();
-    kurbo::flatten(tp.path.elements().iter().copied(), 0.05, |el| match el {
-        tracedraw_core::geometry::PathEl::MoveTo(p) => pts.push(p),
-        tracedraw_core::geometry::PathEl::LineTo(p) => pts.push(p),
-        _ => {}
-    });
-    if pts.len() < 2 {
+    let baseline = tp.baseline();
+    let total = baseline.length();
+    if total <= 0.0 {
         return out;
     }
-    let mut cum = vec![0.0f64];
-    for w in pts.windows(2) {
-        cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
-    }
-    let total = *cum.last().unwrap_or(&0.0);
     let text_w: f64 = line.glyphs.iter().map(|g| g.advance).sum();
     let start = tp.offset
         + match align {
@@ -2213,36 +2204,18 @@ fn place_on_path(
             TextAlign::Right => total - text_w,
             _ => 0.0,
         };
-    let sample = |s: f64| -> (Point, Vec2) {
-        let s = s.clamp(0.0, total);
-        let i = cum
-            .partition_point(|c| *c <= s)
-            .saturating_sub(1)
-            .min(pts.len() - 2);
-        let seg = pts[i + 1] - pts[i];
-        let len = seg.hypot().max(1e-9);
-        let t = ((s - cum[i]) / len).clamp(0.0, 1.0);
-        (pts[i] + seg * t, seg / len)
-    };
     let mut pen = start;
     for g in &line.glyphs {
         let mid = pen + g.advance / 2.0;
-        let (p, tan) = sample(mid);
-        let mut normal = Vec2::new(-tan.y, tan.x);
-        let mut angle = tan.y.atan2(tan.x);
-        let mut dist = tp.distance;
-        if tp.mirror {
-            normal = -normal;
-            angle += std::f64::consts::PI;
-            dist = -dist;
-        }
-        let _ = dist;
-        let place = Affine::translate(p.to_vec2() + normal * tp.distance)
-            * Affine::rotate(angle)
+        pen += g.advance;
+        let Some((p, dir)) = baseline.at(mid) else {
+            continue;
+        };
+        let place = Affine::translate(p.to_vec2())
+            * Affine::rotate(dir.y.atan2(dir.x))
             * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset));
         let gp = place * g.path.as_ref().clone();
         out.extend(gp.elements().iter().copied());
-        pen += g.advance;
     }
     out
 }
@@ -2707,6 +2680,76 @@ mod tests {
             b.height() > b.width(),
             "vertical path should give tall text: {b:?}"
         );
+    }
+
+    fn on_path(f: &FontSystem, text: &str, tp: &TextOnPath, align: TextAlign) -> BezPath {
+        let s = span(text);
+        f.layout(&TextRequest {
+            spans: &[s],
+            frame: None,
+            align,
+            para: &ParagraphStyle::default(),
+            on_path: Some(tp),
+        })
+        .path
+    }
+
+    #[test]
+    fn mirrored_text_on_a_path_reads_along_its_other_side() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((100.0, 0.0));
+        let mut tp = TextOnPath {
+            path: line,
+            offset: 0.0,
+            distance: 2.0,
+            mirror: false,
+        };
+        let above = on_path(f, "Fit", &tp, TextAlign::Center);
+        tp.mirror = true;
+        let below = on_path(f, "Fit", &tp, TextAlign::Center);
+        // The same letters turned half round about the line's middle: in
+        // order when the page is turned, 2 mm below the line.
+        let turned = Affine::translate((100.0, 0.0)) * Affine::scale(-1.0) * above.clone();
+        assert_eq!(below.elements().len(), turned.elements().len());
+        let ends = |p: &BezPath| -> Vec<Point> {
+            p.elements().iter().filter_map(|e| e.end_point()).collect()
+        };
+        for (a, b) in ends(&below).iter().zip(ends(&turned).iter()) {
+            assert!((*a - *b).hypot() < 1e-6, "{a:?} {b:?}");
+        }
+        assert!(above.bounding_box().y0 > 1.5);
+        assert!(below.bounding_box().y1 < -1.5);
+    }
+
+    #[test]
+    fn text_on_a_closed_path_continues_past_its_start() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        // A 100 mm square from the origin, counter-clockwise; the text
+        // starts 5 mm before the end of the last side.
+        let mut path = BezPath::new();
+        path.move_to((0.0, 0.0));
+        path.line_to((100.0, 0.0));
+        path.line_to((100.0, 100.0));
+        path.line_to((0.0, 100.0));
+        path.close_path();
+        let tp = TextOnPath {
+            path,
+            offset: 395.0,
+            distance: 0.0,
+            mirror: false,
+        };
+        let b = on_path(f, "MMMMMM", &tp, TextAlign::Left).bounding_box();
+        // On along the first side, not heaped at the corner.
+        assert!(b.x1 > 10.0, "{b:?}");
+        assert!(b.y1 < 10.0, "{b:?}");
     }
 
     /// The bundled interface font (SIL Open Font License).
