@@ -645,7 +645,7 @@ fn display_page(app: &mut App, ui: &mut Ui) {
             app.settings.screen_ppi = 96.0;
         }
     });
-    calibration_rulers(ui, crate::settings::screen_ppi(&app.settings));
+    calibration_rulers(ui, crate::settings::screen_points_per_inch(&app.settings));
 }
 
 /// Two rulers drawn at the calibrated resolution, 100 mm and 4 inches
@@ -1003,9 +1003,9 @@ fn text_page(app: &mut App, ui: &mut Ui) {
 fn appearance_page(app: &mut App, ui: &mut Ui) {
     grid("appearance").show(ui, |ui| {
         row_label(ui, &tr("options.ui_scale"));
-        let label = |s: f32| format!("{:.0} %", crate::ui::ui_zoom(s) * 100.0);
+        let label = |s: f32| format!("{:.0} %", crate::ui::interface_size(s) * 100.0);
         // No choice made yet reads as 100 %.
-        let mut size = crate::ui::ui_zoom(app.settings.ui_size);
+        let mut size = crate::ui::interface_size(app.settings.ui_size);
         egui::ComboBox::from_id_salt("ui_scale")
             .selected_text(label(size))
             .width(170.0)
@@ -1014,7 +1014,7 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
                     ui.selectable_value(&mut size, s, label(s));
                 }
             });
-        if (size - crate::ui::ui_zoom(app.settings.ui_size)).abs() > 1e-6 {
+        if (size - crate::ui::interface_size(app.settings.ui_size)).abs() > 1e-6 {
             app.settings.ui_size = size;
         }
         ui.end_row();

@@ -8,8 +8,20 @@ set -e
 cd "$(dirname "$0")/../.."
 export DISPLAY=:99
 export TRACEDRAW_SHOTS="${TRACEDRAW_SHOTS:-/tmp/tracedraw-visual}"
-mkdir -p "$TRACEDRAW_SHOTS"
+mkdir -p "$TRACEDRAW_SHOTS/config"
 LOG="$TRACEDRAW_SHOTS/app.log"
+# Interface size 125 %: one interface point per pixel on this unscaled
+# screen, as at 100 % on a monitor the system scales by 125 % (the size
+# the scripts' coordinates are taken at).
+python3 - "$TRACEDRAW_SHOTS/config/settings.json" <<'PY'
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    s = {}
+s["ui_size"] = 1.25
+json.dump(s, open(sys.argv[1], "w"), indent=2)
+PY
 Xvfb :99 -screen 0 1600x1000x24 >/dev/null 2>&1 & XPID=$!
 sleep 1
 SCRIPT=$1; shift

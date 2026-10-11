@@ -68,8 +68,9 @@ pub struct Settings {
     pub toolbox_hidden: Vec<String>,
     /// Customization > Appearance > Interface size, relative to the
     /// scaling the system gives the monitor (1.0 = 100 %, the size of
-    /// other programs); 0 is 100 % too. Preferences written before sizes
-    /// were relative kept absolute sizes as `ui_scale`, which is ignored.
+    /// other programs, a zoom of `ui::BASE_ZOOM`); 0 is 100 % too.
+    /// Preferences written before sizes were relative kept absolute sizes
+    /// as `ui_scale`, which is ignored.
     #[serde(default)]
     pub ui_size: f32,
     /// Options > General: show the splash screen while TraceDraw starts.
@@ -124,8 +125,9 @@ pub struct Settings {
     /// Options > Tools > Pick: the Pick tool's pointer is a cross hair.
     #[serde(default)]
     pub crosshair_cursor: bool,
-    /// Options > Display > Ruler calibration: interface points per inch of
-    /// the screen, so that zoom 100% shows real sizes (96 by default).
+    /// Options > Display > Ruler calibration: pixels per inch of the
+    /// screen at the system's scaling, so that zoom 100% shows real sizes
+    /// (96 by default; see `screen_points_per_inch`).
     #[serde(default = "default_screen_ppi")]
     pub screen_ppi: f32,
     /// Options > Tools > Zoom/Pan: a right click with the Zoom tool zooms
@@ -205,13 +207,23 @@ fn default_screen_ppi() -> f32 {
     96.0
 }
 
-/// The calibrated screen resolution, kept within 48 to 400 points per inch.
+/// The calibrated screen resolution, kept within 48 to 400 per inch. It
+/// counts pixels at the system's scaling (the unit other programs size
+/// themselves in), as the interface at 100 % would if its measures were
+/// those of other programs.
 pub fn screen_ppi(s: &Settings) -> f32 {
     if s.screen_ppi.is_finite() {
         s.screen_ppi.clamp(48.0, 400.0)
     } else {
         96.0
     }
+}
+
+/// Interface points per inch of the screen: the calibrated resolution
+/// over the interface's zoom, so that drawings at zoom 100 % keep their
+/// real size whatever the interface size.
+pub fn screen_points_per_inch(s: &Settings) -> f32 {
+    screen_ppi(s) / crate::ui::ui_zoom(s.ui_size)
 }
 
 fn default_undo_levels() -> usize {

@@ -3759,16 +3759,17 @@ impl App {
     }
 
     /// Interface points per mm at 100%: real size at the calibrated screen
-    /// resolution (Options > Display > Ruler calibration, 96 points per
-    /// inch by default), or in the Pixels view one point per document
-    /// pixel.
+    /// resolution (Options > Display > Ruler calibration, 96 per inch by
+    /// default), or in the Pixels view one pixel at the system's scaling
+    /// per document pixel. Both go through the interface's zoom, which
+    /// sizes the menus and bars, never the drawing.
     fn zoom_100(&self) -> f32 {
-        let dpi = if self.view_mode == ViewMode::Pixels {
-            self.document_dpi().max(1.0) as f32
+        let per_inch = if self.view_mode == ViewMode::Pixels {
+            self.document_dpi().max(1.0) as f32 / crate::ui::ui_zoom(self.settings.ui_size)
         } else {
-            crate::settings::screen_ppi(&self.settings)
+            crate::settings::screen_points_per_inch(&self.settings)
         };
-        dpi / 25.4
+        per_inch / 25.4
     }
 
     pub fn zoom_percent(&self) -> f32 {

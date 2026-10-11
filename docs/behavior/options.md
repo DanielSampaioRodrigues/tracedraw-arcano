@@ -69,12 +69,19 @@ bars, icons and dockers are drawn, relative to the scaling the system
 gives the monitor the window is on: 80 %, 90 %, 100 % (the default),
 110 %, 125 %, 150 %, 175 % or 200 %.
 
-- 100 % is the size of the other programs on that monitor: a monitor
-  scaled to 125 % by the system shows TraceDraw at 125 % too, and moving
-  the window to a monitor at 100 % brings it to 100 %. 200 % is twice the
-  system's size.
+- 100 % is the size of the other programs on that monitor, and it
+  follows the monitor: moving the window to a monitor the system scales
+  differently rescales it. 200 % is twice that size.
+- The interface's own measures (13 px text, 20 px icons, 24 px rows) are
+  pixels of a monitor the system scales by 125 %, where other programs
+  at 100 % draw their text and icons that large. So 100 % is a zoom of
+  0.8 over the system's scaling: one interface point per pixel on a
+  monitor at 125 %, 0.8 pixel at 100 %, 1.6 pixels at 200 %; 125 % is
+  one point per pixel at the system's scaling.
 - The size is a zoom factor over the monitor's own scaling, so text stays
   sharp. Values out of 50 % to 400 % count as 100 %.
+- The interface size never changes how large drawings are: zoom 100 %
+  shows them at their real size (see Ruler calibration) at any size.
 - Preferences written before sizes were relative (`ui_scale`, an absolute
   size) are ignored: the size starts at 100 % (`ui_size`).
 - Ctrl+plus and Ctrl+minus zoom the drawing, never the interface.
@@ -82,12 +89,15 @@ gives the monitor the window is on: 80 %, 90 %, 100 % (the default),
 ## Ruler calibration
 
 Options > Display > Ruler calibration sets the screen resolution in
-interface points per inch (96 by default, 48 to 400, `screen_ppi` in the
-preferences) and draws a 100 mm ruler and a 4 inch ruler at that
-resolution: hold a real ruler against the screen and change the value
-until the marks match. Zoom 100% then shows a drawing at its real size
-(the zoom box percentages follow; the Pixels view keeps one point per
-document pixel). Reset puts 96 back.
+pixels per inch at the system's scaling (96 by default, 48 to 400,
+`screen_ppi` in the preferences) and draws a 100 mm ruler and a 4 inch
+ruler at that resolution: hold a real ruler against the screen and
+change the value until the marks match. Zoom 100% then shows a drawing
+at its real size (the zoom box percentages follow; the Pixels view shows
+one pixel at the system's scaling per document pixel). Interface points
+per inch are that resolution over the interface's zoom (120 at 100 %,
+96 at 125 %), so the interface size never changes real sizes. Reset puts
+96 back.
 
 ## Document Options
 

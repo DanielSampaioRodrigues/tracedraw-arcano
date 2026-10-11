@@ -193,10 +193,18 @@ mod tests {
     fn zoom_100_follows_the_ruler_calibration() {
         let mut app = crate::app::App::headless();
         app.canvas_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // 96 pixels per inch at the system's scaling are 120 interface
+        // points at 100 % (one point is 0.8 of such a pixel).
+        let base = crate::ui::BASE_ZOOM;
         app.set_zoom_percent(100.0);
-        assert!((app.view.zoom - 96.0 / 25.4).abs() < 1e-4);
+        assert!((app.view.zoom - 96.0 / base / 25.4).abs() < 1e-4);
         app.settings.screen_ppi = 120.0;
         assert!((app.zoom_percent() - 80.0).abs() < 1e-3);
+        app.set_zoom_percent(100.0);
+        assert!((app.view.zoom - 120.0 / base / 25.4).abs() < 1e-4);
+        // A larger interface leaves real sizes real: at 125 % a point is a
+        // pixel at the system's scaling.
+        app.settings.ui_size = 1.25;
         app.set_zoom_percent(100.0);
         assert!((app.view.zoom - 120.0 / 25.4).abs() < 1e-4);
         // Out of range values are kept within 48 to 400.
