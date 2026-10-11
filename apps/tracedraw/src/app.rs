@@ -692,6 +692,10 @@ pub struct App {
     pub options_labels: bool,
     /// Navigator pop-up (corner of the scrollbars).
     pub navigator_open: bool,
+    /// A right-button drag of the selection and the menu where it ended
+    /// (see drop_menu.rs).
+    pub right_drag: Option<crate::drop_menu::RightDrag>,
+    pub drop_menu: Option<crate::drop_menu::DropMenu>,
     /// Objects docker: layers shown closed, groups shown open.
     pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
     pub objects_open_groups: std::collections::HashSet<ShapeId>,
@@ -1222,6 +1226,8 @@ impl App {
             pending_clone_effect: None,
             options_labels: false,
             navigator_open: false,
+            right_drag: None,
+            drop_menu: None,
             objects_collapsed: Default::default(),
             objects_open_groups: Default::default(),
             navigator_tex: None,

@@ -23,6 +23,7 @@ mod clone_effect;
 mod coords;
 mod corners;
 mod documents;
+mod drop_menu;
 mod effects_ui;
 mod encode;
 mod export;

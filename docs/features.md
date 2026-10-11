@@ -14,6 +14,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 |---|---|
 | Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Tab cycling | works |
 | Second click rotate/skew handles, centre-of-rotation drag | works |
+| Right-button drag of objects: blue outline preview, then Move Here, Copy Here, Copy Fill Here, Copy Outline Here, Copy All Properties, Place Inside, Cancel (see `behavior/pick-tool.md`) | works |
 | Freehand Pick (lasso) | works |
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |

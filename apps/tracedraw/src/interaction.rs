@@ -13,6 +13,11 @@ const HANDLE_PX: f32 = 7.0;
 
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
+        self.hit_test_where(p, |_| false)
+    }
+
+    /// The topmost object at `p` that `skip` does not rule out.
+    pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
         let doc = self.doc();
         let page = doc.page(self.page).ok()?;
         let tol = 3.0 / self.view.zoom as f64;
@@ -21,7 +26,7 @@ impl App {
                 continue;
             }
             for s in layer.shapes.iter().rev() {
-                if s.locked || !s.visible {
+                if s.locked || !s.visible || skip(s.id) {
                     continue;
                 }
                 let b = s.bounds().inflate(tol, tol);
@@ -108,6 +113,12 @@ impl App {
         // Middle button always pans.
         if response.dragged_by(PointerButton::Middle) {
             self.view.pan(response.drag_delta());
+            return;
+        }
+        // Right-button drags of objects end in the drop menu.
+        if matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+            && self.right_drag_input(response, p)
+        {
             return;
         }
 

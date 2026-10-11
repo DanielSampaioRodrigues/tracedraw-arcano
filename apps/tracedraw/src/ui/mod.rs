@@ -416,7 +416,9 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             canvas::draw_effect_nodes(app, &painter);
             canvas::draw_docker_preview(app, &painter);
             canvas::draw_snap_mark(app, &painter);
+            app.draw_right_drag(&painter);
             context::context_menu(app, ui, &response);
+            crate::drop_menu::drop_menu_ui(app, ui);
 
             // Scrollbars, document navigator, page tabs, Navigator button.
             window_bars::window_bars(app, ui, full, canvas_rect, ruler);

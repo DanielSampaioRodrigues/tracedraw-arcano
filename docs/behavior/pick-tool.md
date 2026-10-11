@@ -23,6 +23,26 @@ choice is kept between sessions (`toolbox` in the settings file).
 
 Selecting inside a group: Ctrl+click.
 
+## Dragging with the right mouse button
+
+Pressing the right button on an object (it is selected first if it was
+not) and dragging shows the selection's outline in blue where it would
+go, while the objects stay put; Ctrl keeps the drag horizontal or
+vertical, Esc cancels it. On release a menu opens there:
+
+| Item | Effect |
+|---|---|
+| Move Here | moves the selection by the drag |
+| Copy Here | copies of the selection, moved by the drag, become the selection |
+| Copy Fill Here | the object under the pointer takes the fill of the first selected object |
+| Copy Outline Here | ... its outline |
+| Copy All Properties | ... its fill, outline and transparency |
+| Place Inside | the object under the pointer becomes the clip frame of the selection |
+| Cancel | nothing |
+
+The four items that act on the object under the pointer are dimmed when
+there is none. A right click without a drag opens the context menu.
+
 ## Property bar
 
 With nothing selected the bar shows the page fields (size, orientation,
@@ -39,3 +59,10 @@ presets), Straighten Image and Resample.
 Enter presses OK in every modal dialog (Esc cancels). In the two
 multi-line fields (QR code text and document notes) Enter inserts a line
 break instead.
+
+## Checks
+
+- `drop_menu::tests::move_here_and_copy_here`
+- `drop_menu::tests::fill_outline_and_properties_go_onto_the_target`
+- `drop_menu::tests::place_inside_makes_the_target_a_clip_frame`
+- `drop_menu::tests::a_ctrl_drag_keeps_to_one_direction`
