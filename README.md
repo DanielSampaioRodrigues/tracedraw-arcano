@@ -44,6 +44,7 @@
   <a href="#made-to-be-automated">Automation</a> &middot;
   <a href="#under-the-hood">Under the hood</a> &middot;
   <a href="#get-started">Get started</a> &middot;
+  <a href="#help-wanted">Help wanted</a> &middot;
   <a href="#downloads">Downloads</a>
 </p>
 
@@ -294,6 +295,25 @@ New contributors and AI agents: start with [`AGENTS.md`](AGENTS.md), then
 > Issues with a sample file and a screenshot are the most helpful; there
 > are [templates](https://github.com/igtoth/tracedraw/issues/new/choose)
 > for bugs, `.cdr` files and feature requests.
+
+## Help wanted
+
+Anyone who wants to help is welcome, with or without writing code:
+
+- **Try it on your own files.** A `.cdr` that does not open right, sent
+  in [an issue](https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml),
+  improves the reader more than anything else (only files you may share).
+- **Report bugs** with the steps and a screenshot
+  ([bug report](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml)).
+- **Review a translation** in your language (`apps/tracedraw/lang/`):
+  native speakers catch what no test does.
+- **Pick a row** of [`docs/features.md`](docs/features.md) that is not
+  "works" yet, or a gap in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md),
+  and send a pull request.
+- **Package it** for the system you use (Flatpak, Homebrew, winget, AUR).
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first: clean-room rules, the
+sign-off line and how pull requests are checked.
 
 ## Downloads
 
