@@ -8,6 +8,7 @@ pub mod bitmap_preview;
 pub mod chrome;
 pub mod context;
 pub mod coords_docker;
+pub mod cursors;
 pub mod curve_edit;
 pub mod dialogs;
 pub mod dockers;
@@ -354,27 +355,17 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 rulers::rulers(app, ui, full);
             }
 
-            let cursor = match app.tool {
-                crate::tools::Tool::Pan => egui::CursorIcon::Grab,
-                crate::tools::Tool::Zoom => egui::CursorIcon::ZoomIn,
-                crate::tools::Tool::Text => egui::CursorIcon::Text,
-                crate::tools::Tool::Pick | crate::tools::Tool::FreeformPick
-                    if app.settings.crosshair_cursor =>
-                {
-                    egui::CursorIcon::Crosshair
-                }
-                crate::tools::Tool::Pick | crate::tools::Tool::FreeformPick => {
-                    egui::CursorIcon::Default
-                }
-                _ => egui::CursorIcon::Crosshair,
-            };
-            let cursor = if app.pending_palette_sample {
-                egui::CursorIcon::Crosshair
-            } else {
-                cursor
-            };
-            if response.hovered() {
-                ui.output_mut(|o| o.cursor_icon = cursor);
+            if response.hovered() || response.dragged() {
+                let (shift, primary, middle, pos) = ui.input(|i| {
+                    (
+                        i.modifiers.shift,
+                        i.pointer.primary_down(),
+                        i.pointer.middle_down(),
+                        i.pointer.hover_pos(),
+                    )
+                });
+                let cursor = cursors::for_tool(app, shift, primary, middle);
+                cursors::show(ui.ctx(), cursor, pos);
             }
         });
 
