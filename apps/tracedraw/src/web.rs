@@ -2,12 +2,17 @@
 //! the bundled fonts. Compiled only for `wasm32`.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use wasm_bindgen::JsCast;
 
 thread_local! {
     /// The egui context, so background tasks (file pickers) can ask for a
     /// frame when they finish.
     static CTX: RefCell<Option<egui::Context>> = const { RefCell::new(None) };
+    /// The files of each family in the page's font folder (see
+    /// `font_folder.rs`).
+    static FONT_FILES: RefCell<BTreeMap<String, Vec<String>>> =
+        const { RefCell::new(BTreeMap::new()) };
 }
 
 // Fonts found at build time (see build.rs): Liberation, DejaVu and Noto
@@ -107,6 +112,61 @@ pub fn storage_set(key: &str, value: &str) {
     }
 }
 
+/// The bytes at `url` (relative to the page), or `None` when the request
+/// fails or the server answers with an error.
+async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
+    let window = web_sys::window()?;
+    let response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(url))
+        .await
+        .ok()?;
+    let response: web_sys::Response = response.dyn_into().ok()?;
+    if !response.ok() {
+        return None;
+    }
+    let buffer = wasm_bindgen_futures::JsFuture::from(response.array_buffer().ok()?)
+        .await
+        .ok()?;
+    Some(js_sys::Uint8Array::new(&buffer).to_vec())
+}
+
+/// Read the page's font folder list (`fonts/fonts.json`) and offer its
+/// families to the text engine, which asks for them as text needs them.
+fn load_font_list() {
+    wasm_bindgen_futures::spawn_local(async {
+        let Some(bytes) = fetch_bytes("fonts/fonts.json").await else {
+            log::info!("no font folder next to the page");
+            return;
+        };
+        let list = crate::font_folder::parse_list(&bytes);
+        let families: Vec<String> = list.keys().cloned().collect();
+        log::info!("font folder offers {} families", families.len());
+        FONT_FILES.with(|f| *f.borrow_mut() = list);
+        tracedraw_text::fonts().offer_families(&families);
+        request_repaint();
+    });
+}
+
+/// Fetch the files of the families text asked for since the last frame;
+/// the text engine takes them in as they arrive and the page draws again.
+pub fn fetch_requested_fonts() {
+    for family in tracedraw_text::fonts().take_font_requests() {
+        let files = FONT_FILES.with(|f| f.borrow().get(&family).cloned().unwrap_or_default());
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut data = Vec::new();
+            for file in &files {
+                match fetch_bytes(&format!("fonts/{file}")).await {
+                    Some(bytes) => data.push(bytes),
+                    None => log::warn!("could not fetch the font file {file}"),
+                }
+            }
+            if tracedraw_text::fonts().add_fonts(data).is_empty() {
+                log::warn!("the font folder gave nothing usable for {family}");
+            }
+            request_repaint();
+        });
+    }
+}
+
 /// Register the bundled fonts with the text engine (before first use).
 pub fn register_fonts() {
     for (_, data) in WEB_FONTS {
@@ -158,6 +218,7 @@ pub fn start() {
     guard_shortcuts();
     register_fonts();
     tracedraw_text::install();
+    load_font_list();
     wasm_bindgen_futures::spawn_local(async {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
             return;

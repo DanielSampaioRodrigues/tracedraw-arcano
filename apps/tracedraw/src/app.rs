@@ -742,7 +742,12 @@ pub struct App {
     /// revision (laying text out every frame would be slow).
     pub overflow_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, bool>)>,
     pub wireframe: bool,
+    /// Families the font lists show: installed, carried by drawings, and
+    /// (browser build) offered by the page's font folder.
     pub font_families: Vec<String>,
+    /// `tracedraw_text::fonts().generation()` when `font_families` was
+    /// taken (see `App::sync_fonts`).
+    pub font_generation: u64,
     pub transform_tab: TransformTab,
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
@@ -1341,7 +1346,8 @@ impl App {
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             overflow_cache: Default::default(),
             wireframe: false,
-            font_families: tracedraw_text::fonts().families(),
+            font_families: tracedraw_text::fonts().available_families(),
+            font_generation: tracedraw_text::fonts().generation(),
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
             segment_spot: None,

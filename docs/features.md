@@ -94,6 +94,8 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
 | Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report: stand-ins drawn to the same widths (Liberation for Arial, Times and Courier, Carlito for Calibri, Caladea for Cambria, ...), else of the same style, named in the report | works (see `behavior/text.md`) |
+| Letters a font lacks drawn with a font that has them (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Indic and symbols included); variable fonts drawn at their weight and slant | works (see `behavior/text.md`) |
+| Browser build: about a hundred free font families in a font folder, fetched the first time text needs one | works (see `behavior/web.md`, `web/FONTS.md`) |
 | Fonts carried by a drawing (embedded in an opened `.cdr`, saved in `.tdraw`): used for its text when not installed and the licence allows it | works (see `behavior/text.md`) |
 | Convert text to table and table to text | works |
 | Table: cell typing, Tab navigation, insert/delete rows and columns, merge/split, distribute; fill and border on the property bar | works |

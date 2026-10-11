@@ -19,7 +19,7 @@ browsers refuse to load modules from `file://`).
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |
 | Settings | `settings.json` in the configuration folder | browser local storage (key `tracedraw.settings`) |
 | Recent documents | listed on the Welcome screen | not recorded (uploads have no path to reopen) |
-| Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
+| Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai), each fetched the first time a drawing's text needs it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
 | System clipboard | text and images (arboard) | text through the browser; pasting images from other programs is not available |
 | Help links | system browser | a new tab |
 
@@ -69,5 +69,17 @@ python3 -m http.server -d site 8080   # then open http://localhost:8080
 
 `TRACEDRAW_WEB_FONTS` (folders separated by `:`) points the build at the
 fonts to bundle; without it the usual Linux font folders are searched.
+
+The font folder is optional: `python3 web/font_folder.py web/fonts.txt
+site/fonts` builds it (downloading the google/fonts files at the commit
+`web/fonts.txt` pins, or copying them from a checkout with
+`--google-fonts DIR`; the TeX Gyre and DejaVu files come from the
+`fonts-texgyre` and `fonts-dejavu-*` packages). It writes the files, a
+`licences/` folder and `fonts.json`, which maps each family to its files.
+When the page starts it reads `fonts/fonts.json`; the families join the
+font lists, and text that needs one (set in it, set in a family it
+stands in for, or holding letters only it has) asks for it: the page
+fetches its files, the text engine loads them and the page draws again.
+Without the folder the page works with the bundled fonts.
 `.cargo/config.toml` selects the browser's random number source for
 `getrandom`. `scripts/web/build.sh` runs these steps.

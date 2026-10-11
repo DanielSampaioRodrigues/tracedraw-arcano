@@ -131,7 +131,29 @@ impl App {
     /// rest of the session.
     pub fn add_carried_fonts(&mut self, fonts: &[tracedraw_core::DocumentFont]) {
         if !fonts.is_empty() && !tracedraw_text::fonts().add_document_fonts(fonts).is_empty() {
-            self.font_families = tracedraw_text::fonts().families();
+            self.sync_fonts();
+        }
+    }
+
+    /// Catch up with fonts added since the last frame (fetched by the
+    /// browser build when text asked for them, or carried by a drawing):
+    /// refresh the font lists and the missing-font list, and draw the
+    /// page and the text measurements again, since text drawn with a
+    /// stand-in may now have its own font.
+    pub fn sync_fonts(&mut self) {
+        let fonts = tracedraw_text::fonts();
+        let generation = fonts.generation();
+        if generation == self.font_generation {
+            return;
+        }
+        self.font_generation = generation;
+        self.font_families = fonts.available_families();
+        self.raster.borrow_mut().invalidate();
+        self.navigator_tex = None;
+        *self.overflow_cache.borrow_mut() = Default::default();
+        if !self.missing_fonts.is_empty() {
+            let families = &self.font_families;
+            self.missing_fonts.retain(|f| !families.contains(f));
         }
     }
 
@@ -408,6 +430,22 @@ mod tests {
         // A font nobody brings is reported, inside a group too.
         app.open_document(drawing_with_text_in("Nowhere Grotesk"), None);
         app.check_missing_fonts();
+        assert_eq!(app.missing_fonts, vec!["Nowhere Grotesk".to_string()]);
+    }
+
+    #[test]
+    fn fonts_that_arrive_later_refresh_the_lists() {
+        let mut app = App::headless();
+        app.missing_fonts = vec!["Quicksand".into(), "Nowhere Grotesk".into()];
+        // Nothing new: nothing changes.
+        app.sync_fonts();
+        assert_eq!(app.missing_fonts.len(), 2);
+        // A font arrives, as the browser build's font folder delivers them.
+        let quicksand = include_bytes!("../../../crates/text/testdata/Quicksand-VF.ttf");
+        let _ = tracedraw_text::fonts().add_fonts(vec![quicksand.to_vec()]);
+        app.sync_fonts();
+        assert_eq!(app.font_generation, tracedraw_text::fonts().generation());
+        assert!(app.font_families.iter().any(|f| f == "Quicksand"));
         assert_eq!(app.missing_fonts, vec!["Nowhere Grotesk".to_string()]);
     }
 

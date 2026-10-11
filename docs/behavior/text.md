@@ -173,6 +173,26 @@ the first installed of:
    "marker", ...), else sans-serif.
 3. DejaVu Sans, Arial, the system sans-serif, any font.
 
+Within a run, letters the face lacks are drawn with a face that has
+them: the fonts made for their script first (Noto Sans CJK, WenQuanYi
+and the system faces for Chinese, Japanese and Korean; Noto Sans Arabic,
+Hebrew, Thai, Devanagari and Bengali; DejaVu Sans and Noto Sans for the
+rest), then any installed face that has the letter, upright faces of the
+run's weight first. Spaces, controls and combining marks stay with the
+letter before them. A letter no face has is drawn with the run's face.
+
+Variable fonts draw at weight 400, or 700 for bold, on their weight
+axis (within its range), and slant on their italic or slant axis for
+italic when the face is upright; only what no axis gives is made
+synthetically (bold by drawing the letters twice, italic by slanting
+them).
+
+The browser build offers the families of its font folder (see
+`web/FONTS.md`): the font lists show them, and text asks for one the
+first time it needs it (text set in it, in a family it stands in for,
+or holding letters of a script only it has); the page fetches the files
+and draws again when they arrive.
+
 Names are compared in lower case without spaces, punctuation, style
 words and foundry endings ("Arial-BoldMT" and "Arial MT" are Arial,
 "TimesNewRomanPSMT" is Times New Roman), so names written by PostScript
@@ -191,8 +211,13 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Checks
 
-- `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`
-  (text crate) and
+- `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`,
+  `tests::letters_a_font_lacks_are_drawn_with_a_font_that_has_them`,
+  `tests::variable_fonts_draw_bold_with_their_weight_axis` and
+  `tests::fonts_the_application_offers_are_asked_for_once_and_then_draw`
+  (text crate), `documents::tests::fonts_that_arrive_later_refresh_the_lists`,
+  `font_folder::tests::the_font_list_reads_families_and_keeps_files_in_the_folder`
+  and
   `prefs::tests::opening_tells_what_was_left_out_as_the_warnings_say`.
 - `documents::tests::a_drawing_brings_its_fonts_along`,
   `tests::fonts_a_document_brings_are_loaded_once_unless_installed` and

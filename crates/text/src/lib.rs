@@ -8,6 +8,8 @@
 //! top of the frame at y = 0 for paragraph text. Y is up, as everywhere.
 
 use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
@@ -33,6 +35,19 @@ pub struct FontSystem {
     /// each added.
     carried: RwLock<Vec<(Vec<String>, DocumentFont)>>,
     cache: Mutex<HashMap<String, Arc<BezPath>>>,
+    /// Families the application can fetch when text asks for them (the
+    /// browser build's font folder), sorted; see
+    /// [`FontSystem::offer_families`].
+    offered: RwLock<Vec<String>>,
+    /// Offered families text asked for and the application has not taken
+    /// yet, then every family ever asked for (each is asked for once).
+    requests: Mutex<(Vec<String>, Vec<String>)>,
+    /// The face drawing a letter the span's own face lacks, by letter and
+    /// style (`None`: no face has it).
+    fallbacks: Mutex<HashMap<(char, bool, bool), Option<fontdb::ID>>>,
+    /// Counts the times fonts were added, so views drawn with stand-ins
+    /// know to draw again.
+    generation: AtomicU64,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -237,6 +252,171 @@ pub fn usable_in_documents(data: &[u8]) -> bool {
         })
 }
 
+/// Choose the instance of a variable font: weight 700 for bold text and
+/// 400 otherwise (within the font's range), and its italic or slant axis
+/// for italic text when the face is upright. Returns the weight and
+/// whether the letters slant, which decide the synthetic styles.
+fn set_axes(
+    face: &mut ttf_parser::Face,
+    hb: &mut rustybuzz::Face,
+    bold: bool,
+    italic: bool,
+) -> (u16, bool) {
+    let mut weight = face.weight().to_number();
+    let mut slanted = face.is_italic() || face.is_oblique();
+    if !face.is_variable() {
+        return (weight, slanted);
+    }
+    let mut set: Vec<rustybuzz::Variation> = Vec::new();
+    for axis in face.variation_axes() {
+        let lo = axis.min_value.min(axis.max_value);
+        let hi = axis.max_value.max(axis.min_value);
+        match &axis.tag.to_bytes() {
+            b"wght" => {
+                let v = if bold { 700.0f32 } else { 400.0 }.clamp(lo, hi);
+                set.push(rustybuzz::Variation {
+                    tag: axis.tag,
+                    value: v,
+                });
+                weight = v.round() as u16;
+            }
+            b"ital" if italic && !slanted && hi >= 1.0 => {
+                set.push(rustybuzz::Variation {
+                    tag: axis.tag,
+                    value: 1.0,
+                });
+                slanted = true;
+            }
+            b"slnt" if italic && !slanted && lo < 0.0 => {
+                set.push(rustybuzz::Variation {
+                    tag: axis.tag,
+                    value: lo.max(-12.0),
+                });
+                slanted = true;
+            }
+            _ => {}
+        }
+    }
+    for v in &set {
+        face.set_variation(v.tag, v.value);
+    }
+    hb.set_variations(&set);
+    (weight, slanted)
+}
+
+/// Characters drawn with the face of the letter before them: spaces,
+/// controls, joiners, variation selectors and combining marks.
+fn inherits_face(c: char) -> bool {
+    c.is_whitespace()
+        || c.is_control()
+        || matches!(c,
+            '\u{0300}'..='\u{036F}'
+            | '\u{1AB0}'..='\u{1AFF}'
+            | '\u{1DC0}'..='\u{1DFF}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{20D0}'..='\u{20FF}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FE20}'..='\u{FE2F}')
+}
+
+/// Families made for the script of `c`, best first, tried before any
+/// other face when a span's font lacks the letter. Missing ones are
+/// skipped (or asked for, when the application offers them).
+fn script_fonts(c: char) -> &'static [&'static str] {
+    match c as u32 {
+        // Kana, then the CJK ideographs, punctuation and full-width forms.
+        0x3040..=0x30FF | 0x31F0..=0x31FF => &[
+            "Noto Sans CJK JP",
+            "Noto Sans JP",
+            "Source Han Sans JP",
+            "IPAGothic",
+            "IPAPGothic",
+            "Yu Gothic",
+            "Meiryo",
+            "Hiragino Sans",
+            "Noto Sans CJK SC",
+            "Noto Sans SC",
+        ],
+        0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF => &[
+            "Noto Sans CJK KR",
+            "Noto Sans KR",
+            "Source Han Sans KR",
+            "Malgun Gothic",
+            "NanumGothic",
+            "Gulim",
+            "Apple SD Gothic Neo",
+            "UnDotum",
+        ],
+        0x2E80..=0x2FFF
+        | 0x3000..=0x303F
+        | 0x3100..=0x312F
+        | 0x3190..=0x31EF
+        | 0x3200..=0x9FFF
+        | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFFEF
+        | 0x20000..=0x3FFFF => &[
+            "Noto Sans CJK SC",
+            "Noto Sans SC",
+            "Source Han Sans SC",
+            "WenQuanYi Zen Hei",
+            "WenQuanYi Micro Hei",
+            "Droid Sans Fallback",
+            "SimSun",
+            "SimHei",
+            "PingFang SC",
+            "Hiragino Sans GB",
+            "Noto Sans CJK TC",
+            "Noto Sans TC",
+            "Noto Sans CJK JP",
+            "Noto Sans JP",
+            "IPAGothic",
+        ],
+        0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF | 0xFB50..=0xFDFF | 0xFE70..=0xFEFF => {
+            &[
+                "Noto Sans Arabic",
+                "Noto Naskh Arabic",
+                "DejaVu Sans",
+                "Arial",
+                "Tahoma",
+                "Geeza Pro",
+            ]
+        }
+        0x0590..=0x05FF | 0xFB1D..=0xFB4F => &[
+            "Noto Sans Hebrew",
+            "DejaVu Sans",
+            "Arial",
+            "Arial Hebrew",
+            "Tahoma",
+        ],
+        0x0E00..=0x0E7F => &[
+            "Noto Sans Thai",
+            "Noto Sans Thai UI",
+            "Tahoma",
+            "Leelawadee UI",
+            "Thonburi",
+            "Garuda",
+            "Loma",
+        ],
+        0x0900..=0x097F | 0xA8E0..=0xA8FF => &[
+            "Noto Sans Devanagari",
+            "Nirmala UI",
+            "Mangal",
+            "Lohit Devanagari",
+        ],
+        0x0980..=0x09FF => &["Noto Sans Bengali", "Nirmala UI", "Vrinda", "Lohit Bengali"],
+        _ => &[
+            "DejaVu Sans",
+            "Noto Sans",
+            "Liberation Sans",
+            "FreeSans",
+            "Noto Sans Symbols",
+            "Noto Sans Symbols 2",
+            "DejaVu Sans Mono",
+        ],
+    }
+}
+
 /// One shaped glyph, positioned relative to the pen of its line.
 #[derive(Clone)]
 struct Glyph {
@@ -384,6 +564,11 @@ impl FontSystem {
                 db.load_font_source(fontdb::Source::Binary(source));
             }
         }
+        Self::from_db(db)
+    }
+
+    /// A font system over `db` (tests start from an empty one).
+    fn from_db(db: fontdb::Database) -> Self {
         let mut families: Vec<String> = db
             .faces()
             .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))
@@ -402,7 +587,142 @@ impl FontSystem {
             document_families: RwLock::new(Vec::new()),
             carried: RwLock::new(Vec::new()),
             cache: Mutex::new(HashMap::new()),
+            offered: RwLock::new(Vec::new()),
+            requests: Mutex::new((Vec::new(), Vec::new())),
+            fallbacks: Mutex::new(HashMap::new()),
+            generation: AtomicU64::new(0),
         }
+    }
+
+    /// Fonts were added: drop what was laid out or chosen without them.
+    fn fonts_changed(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            c.clear();
+        }
+        if let Ok(mut f) = self.fallbacks.lock() {
+            f.clear();
+        }
+        self.generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Changes each time fonts are added or offered: a view drawn before
+    /// may now draw its text with other faces.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
+    /// Families the application can fetch on request (the browser build's
+    /// font folder); installed ones are left out. Text set in one of them,
+    /// in a family one of them stands in for, or holding letters only one
+    /// of them has, asks for it while it draws with what is installed:
+    /// [`FontSystem::take_font_requests`] hands the requests over and
+    /// [`FontSystem::add_fonts`] brings the files in.
+    pub fn offer_families(&self, families: &[String]) {
+        let installed = self.families();
+        let mut offered: Vec<String> = families
+            .iter()
+            .filter(|f| !f.is_empty() && !installed.contains(f))
+            .cloned()
+            .collect();
+        offered.sort();
+        offered.dedup();
+        *self.offered.write().unwrap_or_else(|e| e.into_inner()) = offered;
+        self.fonts_changed();
+    }
+
+    /// The families installed and the families offered, sorted: what a
+    /// font list shows.
+    pub fn available_families(&self) -> Vec<String> {
+        let mut all = self.families();
+        all.extend(
+            self.offered
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .cloned(),
+        );
+        all.sort();
+        all.dedup();
+        all
+    }
+
+    /// The offered families text asked for since the last call, each once
+    /// in the session.
+    pub fn take_font_requests(&self) -> Vec<String> {
+        let mut r = self.requests.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut r.0)
+    }
+
+    /// Ask for `family` when it is offered (once); true when it is offered.
+    fn request_offered(&self, family: &str) -> bool {
+        let offered = self
+            .offered
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .binary_search_by(|f| f.as_str().cmp(family))
+            .is_ok();
+        if offered {
+            let mut r = self.requests.lock().unwrap_or_else(|e| e.into_inner());
+            if !r.1.iter().any(|f| f == family) {
+                r.1.push(family.to_string());
+                r.0.push(family.to_string());
+            }
+        }
+        offered
+    }
+
+    /// Text set in `family` asks for the family, or for the first of its
+    /// stand-ins, when that is offered and nothing before it is installed.
+    fn ask_for(&self, family: &str) {
+        if self
+            .offered
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+        {
+            return;
+        }
+        for name in std::iter::once(family).chain(substitutes(family)) {
+            if self.has_family(name) || self.request_offered(name) {
+                return;
+            }
+        }
+    }
+
+    /// Load font files the application supplies (fetched after
+    /// [`FontSystem::take_font_requests`]) for the rest of the session;
+    /// files that do not read as fonts are skipped. Returns the families
+    /// they added.
+    pub fn add_fonts(&self, files: Vec<Vec<u8>>) -> Vec<String> {
+        let mut added = Vec::new();
+        let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
+        for data in files {
+            let source = fontdb::Source::Binary(Arc::new(data));
+            let ids = db.load_font_source(source);
+            for id in ids {
+                if let Some(face) = db.face(id) {
+                    added.extend(face.families.iter().map(|(n, _)| n.clone()));
+                }
+            }
+        }
+        drop(db);
+        added.sort();
+        added.dedup();
+        if added.is_empty() {
+            return added;
+        }
+        let mut families = self.families.write().unwrap_or_else(|e| e.into_inner());
+        families.extend(added.iter().cloned());
+        families.sort();
+        families.dedup();
+        drop(families);
+        self.offered
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|f| !added.contains(f));
+        self.fonts_changed();
+        log::info!("fonts added: {}", added.join(", "));
+        added
     }
 
     /// The font database to read (a lock poisoned by a panic elsewhere
@@ -425,9 +745,7 @@ impl FontSystem {
         }
         if !added.is_empty() {
             // Outlines laid out with a substitute for these families.
-            if let Ok(mut c) = self.cache.lock() {
-                c.clear();
-            }
+            self.fonts_changed();
             log::info!("document fonts loaded: {}", added.join(", "));
         }
         added
@@ -566,6 +884,7 @@ impl FontSystem {
     /// Pick a face for a span: the family itself, else a stand-in (see
     /// [`substitutes`]), else a sans-serif, else anything.
     fn face_for(&self, family: &str, bold: bool, italic: bool) -> Option<fontdb::ID> {
+        self.ask_for(family);
         let weight = if bold {
             fontdb::Weight::BOLD
         } else {
@@ -733,7 +1052,8 @@ impl FontSystem {
     }
 
     /// Shape one run of text in one span's style into glyphs, with the
-    /// paragraph's character and word spacing.
+    /// paragraph's character and word spacing. Letters the span's face
+    /// lacks are drawn with a face that has them.
     fn shape_run(
         &self,
         span: &TextSpan,
@@ -750,20 +1070,167 @@ impl FontSystem {
         let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
             return out;
         };
+        for (range, face) in self.coverage_runs(id, text, span.bold, span.italic) {
+            let before = text[..range.start].chars().count();
+            out.extend(self.shape_with(
+                face,
+                span,
+                span_idx,
+                &text[range],
+                size_scale,
+                char_base + before,
+                para,
+            ));
+        }
+        out
+    }
+
+    /// `text` cut into runs that one face draws: `primary` where it has
+    /// the letters, else the face [`FontSystem::fallback_face`] finds.
+    /// Spaces, controls and combining marks stay with the run before them.
+    fn coverage_runs(
+        &self,
+        primary: fontdb::ID,
+        text: &str,
+        bold: bool,
+        italic: bool,
+    ) -> Vec<(Range<usize>, fontdb::ID)> {
+        let whole = vec![(0..text.len(), primary)];
+        let Some((data, index)) = self.face_data(primary) else {
+            return whole;
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return whole;
+        };
+        if text
+            .chars()
+            .all(|c| inherits_face(c) || face.glyph_index(c).is_some())
+        {
+            return whole;
+        }
+        let mut runs: Vec<(Range<usize>, fontdb::ID)> = Vec::new();
+        for (i, c) in text.char_indices() {
+            let id = if inherits_face(c) {
+                runs.last().map(|r| r.1).unwrap_or(primary)
+            } else if face.glyph_index(c).is_some() {
+                primary
+            } else {
+                self.fallback_face(c, bold, italic).unwrap_or(primary)
+            };
+            let end = i + c.len_utf8();
+            match runs.last_mut() {
+                Some(last) if last.1 == id => last.0.end = end,
+                _ => runs.push((i..end, id)),
+            }
+        }
+        runs
+    }
+
+    /// The face that draws `c` when the span's face lacks it: the fonts
+    /// made for its script (see [`script_fonts`]) first, then any face
+    /// that has it, upright faces of the span's weight first. Offered
+    /// families made for the script are asked for. Remembered per letter
+    /// until fonts are added.
+    fn fallback_face(&self, c: char, bold: bool, italic: bool) -> Option<fontdb::ID> {
+        let key = (c, bold, italic);
+        if let Some(hit) = self
+            .fallbacks
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&key).copied())
+        {
+            return hit;
+        }
+        let found = self.find_fallback(c, bold, italic);
+        if let Ok(mut m) = self.fallbacks.lock() {
+            if m.len() > 20000 {
+                m.clear();
+            }
+            m.insert(key, found);
+        }
+        found
+    }
+
+    fn find_fallback(&self, c: char, bold: bool, italic: bool) -> Option<fontdb::ID> {
+        let weight = if bold {
+            fontdb::Weight::BOLD
+        } else {
+            fontdb::Weight::NORMAL
+        };
+        let style = if italic {
+            fontdb::Style::Italic
+        } else {
+            fontdb::Style::Normal
+        };
+        let covers = |db: &fontdb::Database, id: fontdb::ID| {
+            db.with_face_data(id, |d, i| {
+                ttf_parser::Face::parse(d, i)
+                    .ok()
+                    .and_then(|f| f.glyph_index(c))
+                    .is_some()
+            })
+            .unwrap_or(false)
+        };
+        for name in script_fonts(c) {
+            if !self.has_family(name) {
+                self.request_offered(name);
+                continue;
+            }
+            let db = self.db();
+            let q = fontdb::Query {
+                families: &[fontdb::Family::Name(name)],
+                weight,
+                stretch: fontdb::Stretch::Normal,
+                style,
+            };
+            if let Some(id) = db.query(&q) {
+                if covers(&db, id) {
+                    return Some(id);
+                }
+            }
+        }
+        let db = self.db();
+        let mut any = None;
+        for f in db.faces() {
+            if !covers(&db, f.id) {
+                continue;
+            }
+            if f.style == fontdb::Style::Normal && (f.weight.0 >= 600) == bold {
+                return Some(f.id);
+            }
+            any.get_or_insert(f.id);
+        }
+        any
+    }
+
+    /// Shape `text` with the face `id` (see [`FontSystem::shape_run`]).
+    #[allow(clippy::too_many_arguments)]
+    fn shape_with(
+        &self,
+        id: fontdb::ID,
+        span: &TextSpan,
+        span_idx: usize,
+        text: &str,
+        size_scale: f64,
+        char_base: usize,
+        para: &ParagraphStyle,
+    ) -> Vec<Glyph> {
+        let mut out = Vec::new();
         let Some((data, index)) = self.face_data(id) else {
             return out;
         };
-        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+        let Ok(mut face) = ttf_parser::Face::parse(&data, index) else {
             return out;
         };
-        let Some(hb) = rustybuzz::Face::from_slice(&data, index) else {
+        let Some(mut hb) = rustybuzz::Face::from_slice(&data, index) else {
             return out;
         };
+        let (weight, slanted) = set_axes(&mut face, &mut hb, span.bold, span.italic);
         let size_pt = span.size_pt * size_scale;
         let upem = face.units_per_em() as f64;
         let scale = size_pt * PT_MM / upem;
-        let synth_bold = span.bold && face.weight().to_number() < 600;
-        let synth_italic = span.italic && !face.is_italic();
+        let synth_bold = span.bold && weight < 600;
+        let synth_italic = span.italic && !slanted;
         let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
         let baseline = span.baseline_shift_pt * PT_MM;
         // Character spacing counts in widths of a space; word spacing
@@ -2111,6 +2578,116 @@ mod tests {
     /// The bundled interface font (SIL Open Font License).
     const SELAWIK: &[u8] =
         include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    /// A variable font (weight 300 to 700, 300 by default) with letters
+    /// Selawik lacks ("Ĉ") and without one it has (U+0336).
+    const QUICKSAND: &[u8] = include_bytes!("../testdata/Quicksand-VF.ttf");
+
+    fn system_with(files: &[&[u8]]) -> FontSystem {
+        let mut db = fontdb::Database::new();
+        for f in files {
+            db.load_font_data(f.to_vec());
+        }
+        FontSystem::from_db(db)
+    }
+
+    #[test]
+    fn fonts_the_application_offers_are_asked_for_once_and_then_draw() {
+        let f = system_with(&[]);
+        let _ = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
+        assert!(f.take_font_requests().is_empty(), "nothing offered");
+        let g = f.generation();
+        f.offer_families(&["Quicksand".into(), "Unused Sans".into()]);
+        assert!(f.generation() > g);
+        assert_eq!(f.available_families(), ["Quicksand", "Unused Sans"]);
+        assert!(!f.has_family("Quicksand"));
+        // Text in the family asks for it, once in the session.
+        let _ = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
+        let _ = f.outline(&[TextSpan::new("Hello!", "Quicksand", 24.0)]);
+        assert_eq!(f.take_font_requests(), ["Quicksand"]);
+        let _ = f.outline(&[TextSpan::new("Hello?", "Quicksand", 24.0)]);
+        assert!(f.take_font_requests().is_empty());
+        // The files arrive: the family is installed, no longer offered,
+        // and draws; a file that is not a font is skipped.
+        let g = f.generation();
+        let added = f.add_fonts(vec![QUICKSAND.to_vec(), b"not a font".to_vec()]);
+        assert_eq!(added, ["Quicksand"]);
+        assert!(f.generation() > g);
+        assert!(f.has_family("Quicksand"));
+        assert_eq!(f.available_families(), ["Quicksand", "Unused Sans"]);
+        let l = f.outline(&[TextSpan::new("Hello", "Quicksand", 24.0)]);
+        assert!(l.path.elements().len() > 20);
+        assert!(f.add_fonts(vec![vec![1, 2, 3]]).is_empty());
+
+        // A missing family asks for its stand-in, letters of another
+        // script for the fonts made for it.
+        let f = system_with(&[SELAWIK]);
+        f.offer_families(&["Carlito".into(), "Noto Sans JP".into()]);
+        let _ = f.outline(&[TextSpan::new("Hello", "Calibri", 24.0)]);
+        assert_eq!(f.take_font_requests(), ["Carlito"]);
+        let _ = f.outline(&[TextSpan::new("Hello \u{3042}", "Selawik", 24.0)]);
+        assert_eq!(f.take_font_requests(), ["Noto Sans JP"]);
+    }
+
+    #[test]
+    fn letters_a_font_lacks_are_drawn_with_a_font_that_has_them() {
+        let f = system_with(&[SELAWIK, QUICKSAND]);
+        let one = |family: &str, text: &str| f.outline(&[TextSpan::new(text, family, 100.0)]);
+        // Selawik has no "Ĉ": Quicksand draws it, as it does on its own.
+        let mixed = one("Selawik", "\u{108}");
+        let own = one("Quicksand", "\u{108}");
+        assert!(!own.path.elements().is_empty());
+        assert_eq!(mixed.path.elements().len(), own.path.elements().len());
+        let (a, b) = (mixed.path.bounding_box(), own.path.bounding_box());
+        assert!(
+            (a.x0 - b.x0).abs() < 1e-6 && (a.x1 - b.x1).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
+        // Within a word: each letter from the face that has it, one run of
+        // glyphs, characters in order.
+        let word = one("Selawik", "A\u{108}A");
+        assert_eq!(word.glyphs, 3);
+        let edges = &word.lines[0].edges;
+        assert_eq!(edges.len(), 4);
+        assert!(edges.windows(2).all(|w| w[1] > w[0]), "{edges:?}");
+        // The other way round, and a letter no face has: drawn with the
+        // span's face, no panic.
+        assert!(!one("Quicksand", "A\u{336}").path.elements().is_empty());
+        let _ = one("Selawik", "\u{10FFFD}x");
+    }
+
+    #[test]
+    fn variable_fonts_draw_bold_with_their_weight_axis() {
+        let f = system_with(&[QUICKSAND]);
+        let set = |bold: bool, italic: bool| {
+            let mut s = TextSpan::new("Hello", "Quicksand", 100.0);
+            s.bold = bold;
+            s.italic = italic;
+            f.outline(&[s])
+        };
+        let em = 100.0 * PT_MM;
+        let advance = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        // Regular at weight 400, not the font's default 300: "Hello" is
+        // 2339 units of 1000 wide there with its "lo" kerning of -10
+        // (2295 at 300, 2463 at 700).
+        let regular = set(false, false);
+        assert!(
+            (advance(&regular) - 2.339 * em).abs() < 0.002 * em,
+            "{}",
+            advance(&regular) / em
+        );
+        let bold = set(true, false);
+        assert!(
+            (advance(&bold) - 2.463 * em).abs() < 0.002 * em,
+            "{}",
+            advance(&bold) / em
+        );
+        // The weight comes from the axis, not from drawing the letters twice.
+        assert_eq!(bold.path.elements().len(), regular.path.elements().len());
+        // No slant axis: italic is slanted synthetically.
+        let italic = set(false, true);
+        assert_eq!(italic.path.elements().len(), regular.path.elements().len());
+        assert!(italic.path.bounding_box().x1 > regular.path.bounding_box().x1);
+    }
 
     /// `data` with the OS/2 embedding bits set to `fs_type`.
     fn with_fs_type(data: &[u8], fs_type: u16) -> Vec<u8> {

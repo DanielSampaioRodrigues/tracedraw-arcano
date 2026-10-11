@@ -310,6 +310,17 @@ jobs:
           cp assets/icon/tracedraw-256.png site/icon-256.png
           (cd site && zip -r "../dist/tracedraw-${{ steps.ver.outputs.version }}-web.zip" .)
 
+      # The font folder of the published page (web/fonts.txt): free fonts
+      # the page fetches the first time a drawing's text needs them, so
+      # they cost nothing until used. Not in the release zip, which works
+      # without it.
+      - name: Font folder
+        run: |
+          for p in fonts-texgyre fonts-dejavu-core fonts-dejavu-extra fonts-dejavu-mono; do
+            sudo apt-get install -y --no-install-recommends "$p" || echo "::warning::font package $p is not available"
+          done
+          python3 web/font_folder.py web/fonts.txt site/fonts
+
       # The browser version is a demo on the project's page, not a
       # download: the folder is kept with the run only (its name does not
       # match the release's tracedraw-* artifacts).

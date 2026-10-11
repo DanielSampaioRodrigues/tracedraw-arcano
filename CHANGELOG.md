@@ -32,6 +32,17 @@ full, row-by-row status.
   for the classic PostScript ones), else of the same style (serif,
   monospaced, casual or sans-serif), so text keeps its line breaks; the
   messages name the stand-in, as in "Arial (Liberation Sans)".
+- Letters a font lacks are drawn with a font that has them, so Chinese,
+  Japanese, Korean, Arabic, Hebrew or Thai text set in a Latin font shows
+  its letters instead of empty boxes.
+- Variable fonts draw bold and italic text with their weight and slant
+  axes instead of the default instance.
+- The browser version offers about a hundred free font families (the
+  stand-ins of the same widths for Calibri, Cambria, Georgia, Palatino,
+  Century Gothic and others, popular families such as Open Sans, Roboto,
+  Montserrat, Lato and Poppins, and fonts for Chinese, Japanese, Korean,
+  Arabic, Hebrew and Thai). The font lists show them; a family's files
+  are fetched the first time a drawing's text needs it.
 - `.cdr` files before version 12: text, font names and layer and object
   names written in Cyrillic, Greek, Turkish, Central European, Baltic,
   Hebrew, Arabic, Thai, Vietnamese, Japanese, Chinese or Korean read in

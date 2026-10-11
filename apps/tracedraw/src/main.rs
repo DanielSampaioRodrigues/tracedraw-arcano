@@ -35,6 +35,8 @@ mod export;
 mod eyedropper;
 mod files;
 mod fill_tool;
+#[cfg(any(target_arch = "wasm32", test))]
+mod font_folder;
 mod fx;
 mod grammar;
 mod guides;
@@ -217,6 +219,10 @@ impl eframe::App for Shell {
         let Some(app) = self.app.as_mut() else {
             return;
         };
+        // Fonts text asked for (browser build), and fonts that arrived.
+        #[cfg(target_arch = "wasm32")]
+        web::fetch_requested_fonts();
+        app.sync_fonts();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
         // A Picture Mosaic library indexed on worker threads.

@@ -52,7 +52,10 @@ fn web_fonts() {
             "LiberationSerif-BoldItalic.ttf",
             "LiberationMono-Regular.ttf",
             "LiberationMono-Bold.ttf",
+            "LiberationMono-Italic.ttf",
+            "LiberationMono-BoldItalic.ttf",
             "DejaVuSans.ttf",
+            "DejaVuSans-Bold.ttf",
             "NotoSansDevanagari-Regular.ttf",
             "NotoSansBengali-Regular.ttf",
         ];
