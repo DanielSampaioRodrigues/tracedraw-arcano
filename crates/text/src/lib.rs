@@ -672,10 +672,23 @@ impl FontSystem {
                 Some(w) => {
                     let avail_first = (w - indent_first - para.right_indent).max(1.0);
                     let avail_rest = (w - indent_rest - para.right_indent).max(1.0);
+                    // A drop cap takes the first glyph out of the first
+                    // line and narrows the lines beside it.
+                    let cap = glyphs.first().filter(|_| para.drop_cap_lines > 1).map(|g| {
+                        let step = m.line_height * para.leading_pct / 100.0;
+                        let n = para.drop_cap_lines as f64;
+                        let (scale, _) = drop_cap_placement(&g.path, n, step, 0.0, m.ascent);
+                        DropCap {
+                            width: g.advance * scale + 1.0,
+                            lines: para.drop_cap_lines as usize,
+                            glyph_advance: g.advance,
+                        }
+                    });
                     let broken = break_lines(
                         glyphs,
                         avail_first,
                         avail_rest,
+                        cap,
                         para,
                         &metrics,
                         pi,
@@ -785,15 +798,18 @@ impl FontSystem {
                 0.0
             };
 
-            // Drop cap: the first glyph of a paragraph, scaled over N lines.
+            // Drop cap: the first glyph of a paragraph, scaled so its top
+            // meets the top of the first line's letters and it sits on the
+            // baseline of the Nth line.
             let mut glyphs: &[Glyph] = &line.glyphs;
             let mut x0 = col_x + indent;
             if para.drop_cap_lines > 1 && line.first_in_para && !glyphs.is_empty() && !artistic {
                 let n = para.drop_cap_lines as f64;
                 let g = &glyphs[0];
-                let scale = n * step / m.line_height;
-                let gp =
-                    Affine::translate((x0, y)) * Affine::scale(scale) * g.path.as_ref().clone();
+                let (scale, baseline) = drop_cap_placement(&g.path, n, step, y, m.ascent);
+                let gp = Affine::translate((x0, baseline))
+                    * Affine::scale(scale)
+                    * g.path.as_ref().clone();
                 path.extend(gp.elements().iter().copied());
                 drop_cap_indent = (g.advance * scale + 1.0, para.drop_cap_lines as usize);
                 glyphs = &glyphs[1..];
@@ -990,6 +1006,34 @@ fn line_metrics(glyphs: &[Glyph], metrics: &[Metrics], fallback: Metrics) -> Met
     m
 }
 
+/// Scale and baseline of a drop cap spanning `lines` lines `step` apart,
+/// whose first line has its baseline at `baseline` (y up): the letter sits
+/// on the last line's baseline and its top meets the top of the first
+/// line's letters (the glyph's own height there, or 70 % of `ascent` for
+/// a glyph without outline).
+fn drop_cap_placement(
+    glyph: &BezPath,
+    lines: f64,
+    step: f64,
+    baseline: f64,
+    ascent: f64,
+) -> (f64, f64) {
+    let top = glyph.bounding_box().y1;
+    let letter = if top.is_finite() && top > 1e-6 {
+        top
+    } else {
+        ascent * 0.7
+    };
+    let last = baseline - (lines - 1.0) * step;
+    let height = baseline + letter - last;
+    let scale = if letter > 1e-6 {
+        height / letter
+    } else {
+        lines
+    };
+    (scale.max(1.0), last)
+}
+
 /// Width of a line's glyphs with tab expansion; returns (width, spaces).
 fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> (f64, usize) {
     let mut x = start;
@@ -1020,10 +1064,23 @@ fn next_tab(x: f64, tabs: &[f64]) -> f64 {
 
 /// Greedy line breaking at spaces, with optional hyphenation and a fallback
 /// to breaking inside words that do not fit alone.
+/// The room a drop cap takes from the lines of its paragraph.
+#[derive(Debug, Clone, Copy)]
+struct DropCap {
+    /// The indent of the lines beside it, mm.
+    width: f64,
+    /// How many lines it spans.
+    lines: usize,
+    /// The advance of the letter at text size (it leaves the first line).
+    glyph_advance: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn break_lines(
     glyphs: &[Glyph],
     avail_first: f64,
     avail_rest: f64,
+    cap: Option<DropCap>,
     para: &ParagraphStyle,
     metrics: &[Metrics],
     pi: usize,
@@ -1075,7 +1132,18 @@ fn break_lines(
     let mut first = true;
     let mut i = 0;
     while i < words.len() {
-        let avail = if first { avail_first } else { avail_rest };
+        let base = if first { avail_first } else { avail_rest };
+        let avail = match cap {
+            Some(c) if lines.len() < c.lines => {
+                let back = if lines.is_empty() {
+                    c.glyph_advance
+                } else {
+                    0.0
+                };
+                (base - c.width + back).max(1.0)
+            }
+            _ => base,
+        };
         let word = words[i].clone();
         let fits = trimmed(&[line.as_slice(), word.as_slice()].concat()) <= avail;
         if fits {
@@ -1391,6 +1459,51 @@ mod tests {
             (words - base - 4.0 * space).abs() < 1e-6,
             "{base} {words} {space}"
         );
+    }
+
+    #[test]
+    fn drop_cap_spans_its_lines_without_rising_above_the_text() {
+        // The placement alone: a 2 mm tall letter over 3 lines 5 mm apart
+        // sits on the third baseline and reaches the first line's top.
+        let mut glyph = BezPath::new();
+        glyph.move_to((0.0, 0.0));
+        glyph.line_to((1.0, 2.0));
+        glyph.line_to((2.0, 0.0));
+        glyph.close_path();
+        let (scale, base) = drop_cap_placement(&glyph, 3.0, 5.0, -4.0, 3.0);
+        assert!((base - (-14.0)).abs() < 1e-9, "{base}");
+        assert!((base + 2.0 * scale - (-4.0 + 2.0)).abs() < 1e-9, "{scale}");
+        if !has_fonts() {
+            return;
+        }
+        // In a laid-out paragraph the drop cap neither rises above the
+        // first line nor reaches below the text without one.
+        let f = fonts();
+        let words = "Words in a paragraph long enough to wrap over several lines, \
+                     so the drop cap has room to span three of them.";
+        let lay = |drop_cap_lines: u32| {
+            f.layout(&TextRequest {
+                spans: &[span(words)],
+                frame: Some(Size::new(40.0, 100.0)),
+                align: TextAlign::Left,
+                para: &ParagraphStyle {
+                    drop_cap_lines,
+                    ..Default::default()
+                },
+                on_path: None,
+            })
+        };
+        let plain = lay(0).path.bounding_box();
+        let capped_layout = lay(3);
+        let capped = capped_layout.path.bounding_box();
+        assert!(capped.y1 <= plain.y1 + 0.3, "{capped:?} {plain:?}");
+        assert!(capped.y0 >= plain.y0 - 6.0, "{capped:?} {plain:?}");
+        // The lines beside the drop cap are narrowed, not pushed out of
+        // the frame.
+        for l in &capped_layout.lines {
+            let right = l.edges.last().copied().unwrap_or(0.0);
+            assert!(right <= 40.0 + 0.01, "line ends at {right}");
+        }
     }
 
     #[test]

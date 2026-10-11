@@ -13,10 +13,10 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 | Tracking (range kerning) | 0% of em |
 | Baseline shift | 0 pt |
 | Alignment | left; justify stretches spaces only, last line left |
-| Hyphenation | off; when on, min 3 letters before/after, 2 in a row |
+| Hyphenation | off; when on, at least 2 letters before and 3 after a break, from a compact pattern set (a vowel and consonant rule for words it leaves whole); digraphs (ch, ck, gh, ph, sh, th, wh, qu) stay together; words with a capital letter (names, acronyms) are never broken |
 | Columns | 1, gutter 5 mm |
 | Bullets | off; indent 5 mm, bullet "*" from the paragraph font |
-| Drop cap | off; 3 lines, no indent |
+| Drop cap | off; 3 lines. The paragraph's first letter is scaled so it sits on the baseline of the last line it spans and its top meets the top of the first line's letters; the lines beside it are narrowed by its width plus 1 mm, so they wrap and justify inside the column |
 | Tabs | every 12.7 mm (0.5 in) |
 | Text on path | distance 0, offset 0, orientation "rotate letters" |
 
@@ -110,6 +110,9 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   `text_nodes::tests::spacing_arrows_change_character_word_and_line_spacing`,
   `tests::shifted_and_rotated_characters_leave_the_others_in_place` and
   `tests::character_and_word_spacing_widen_the_text` (text crate).
+- `tests::drop_cap_spans_its_lines_without_rising_above_the_text`,
+  `hyphen::tests::breaks_fall_on_the_pattern_positions` and
+  `hyphen::tests::names_and_acronyms_are_not_broken` (text crate).
 
 - Given "ab" at 100 pt, then the width equals the sum of the two
   advances minus the kerning pair from the font.

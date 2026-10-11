@@ -12,7 +12,7 @@ const MIN_AFTER: usize = 3;
 /// A few common Liang patterns; digits mark odd (allowed) and even
 /// (forbidden) break positions. Enough for ordinary words; the heuristic
 /// handles the rest.
-const PATTERNS_EN: &str = ".ab3a .ad4der .an3ti .ar5s .as3c .be5g .co3e .de3o .dis1 .ex1 .im1p .in1 .mis1 .non1 .out1 .over1 .pre1 .re1 .un1 .un3der 1ba 1be 1bi 1bo 1bu 1ca 1ce 1ci 1co 1cu 1da 1de 1di 1do 1du 1fa 1fe 1fi 1fo 1fu 1ga 1ge 1gi 1go 1gu 1ha 1he 1hi 1ho 1hu 1ja 1je 1jo 1ju 1ka 1ke 1ki 1ko 1la 1le 1li 1lo 1lu 1ma 1me 1mi 1mo 1mu 1na 1ne 1ni 1no 1nu 1pa 1pe 1pi 1po 1pu 1ra 1re 1ri 1ro 1ru 1sa 1se 1si 1so 1su 1ta 1te 1ti 1to 1tu 1va 1ve 1vi 1vo 1vu 1wa 1we 1wi 1wo 1za 1ze 1zo 2ch 2ck 2ll 2ss 2tt 2st 2sh 2th 2ph 2ng 4ed. 4er. 2es. 4ing. 2ly. 1ment 2ness 1tion 1sion 4ful. 2ble. 2ple. 2tle. 2gle. 2cle. 2dle. 2kle. 2zle. 4ous. 1ly 2ed2 3ment. 2ly. 1er 2ers. 1ing 2ngs. 1al 2ally";
+const PATTERNS_EN: &str = ".ab3a .ad4der .an3ti .ar5s .as3c .be5g .co3e .de3o .dis1 .ex1 .im1p .in1 .mis1 .non1 .out1 .over1 .pre1 .re1 .un1 .un3der 1ba 1be 1bi 1bo 1bu 1ca 1ce 1ci 1co 1cu 1da 1de 1di 1do 1du 1fa 1fe 1fi 1fo 1fu 1ga 1ge 1gi 1go 1gu 1ha 1he 1hi 1ho 1hu 1ja 1je 1jo 1ju 1ka 1ke 1ki 1ko 1la 1le 1li 1lo 1lu 1ma 1me 1mi 1mo 1mu 1na 1ne 1ni 1no 1nu 1pa 1pe 1pi 1po 1pu 1ra 1re 1ri 1ro 1ru 1sa 1se 1si 1so 1su 1ta 1te 1ti 1to 1tu 1va 1ve 1vi 1vo 1vu 1wa 1we 1wi 1wo 1za 1ze 1zo 2ch 2ck 2ll 2ss 2tt 2st 2sh 2th 2ph 2ng c2h c2k g2h p2h s2h t2h w2h q2u 4ed. 4er. 2es. 4ing. 2ly. 1ment 2ness 1tion 1sion 4ful. 2ble. 2ple. 2tle. 2gle. 2cle. 2dle. 2kle. 2zle. 4ous. 1ly 2ed2 3ment. 2ly. 1er 2ers. 1ing 2ngs. 1al 2ally";
 
 const PATTERNS_PT: &str = "1ba 1be 1bi 1bo 1bu 1ca 1ce 1ci 1co 1cu 1da 1de 1di 1do 1du 1fa 1fe 1fi 1fo 1fu 1ga 1ge 1gi 1go 1gu 1ja 1je 1ji 1jo 1ju 1la 1le 1li 1lo 1lu 1ma 1me 1mi 1mo 1mu 1na 1ne 1ni 1no 1nu 1pa 1pe 1pi 1po 1pu 1ra 1re 1ri 1ro 1ru 1sa 1se 1si 1so 1su 1ta 1te 1ti 1to 1tu 1va 1ve 1vi 1vo 1vu 1xa 1xe 1xi 1xo 1xu 1za 1ze 1zi 1zo 1zu 1ça 1ço 1çu 2ch 2lh 2nh 2qu 2gu 2rr 2ss 1br 1bl 1cr 1cl 1dr 1fr 1fl 1gr 1gl 1pr 1pl 1tr 1vr 2bs 2ns 2rs 2ls 2ps 1ção 1mente";
 
@@ -51,9 +51,13 @@ fn patterns(lang: &str) -> &'static Patterns {
 
 /// Liang's algorithm over the pattern set, then the heuristic for words
 /// the patterns leave unbroken.
+/// Words with a capital letter (names, acronyms) are not broken.
 pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
     let chars: Vec<char> = word.chars().collect();
-    if chars.len() < MIN_BEFORE + MIN_AFTER || !chars.iter().all(|c| c.is_alphabetic()) {
+    if chars.len() < MIN_BEFORE + MIN_AFTER
+        || !chars.iter().all(|c| c.is_alphabetic())
+        || chars.iter().any(|c| c.is_uppercase())
+    {
         return Vec::new();
     }
     let lower: Vec<char> = chars.iter().flat_map(|c| c.to_lowercase()).collect();
@@ -77,9 +81,10 @@ pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
             }
         }
     }
-    // levels[i] refers to the position before dotted[i]; word index = i - 1.
+    // levels[j] is the gap before dotted[j]; a break after `i` letters of
+    // the word is the gap before lower[i], that is before dotted[i + 1].
     let mut out: Vec<usize> = (1..chars.len())
-        .filter(|&i| levels[i + 1 - 1 + 1] % 2 == 1 || levels[i] % 2 == 1)
+        .filter(|&i| levels.get(i + 1).is_some_and(|l| l % 2 == 1))
         .filter(|&i| i >= MIN_BEFORE && chars.len() - i >= MIN_AFTER)
         .collect();
     if out.is_empty() {
@@ -150,6 +155,25 @@ mod tests {
     fn finds_a_break_in_common_words() {
         assert!(!break_points("hyphenation").is_empty());
         assert!(!break_points_lang("computador", "pt").is_empty());
+    }
+
+    #[test]
+    fn breaks_fall_on_the_pattern_positions() {
+        // "-tion" breaks before the t, never one letter later.
+        let p = break_points("instructions");
+        assert!(p.contains(&7), "{p:?}");
+        assert!(!p.contains(&8), "{p:?}");
+        assert!(break_points("information").contains(&7));
+        // Digraphs stay together.
+        assert!(!break_points("telephone").contains(&5));
+        assert!(!break_points("achievement").contains(&2));
+    }
+
+    #[test]
+    fn names_and_acronyms_are_not_broken() {
+        assert!(break_points("TraceDraw").is_empty());
+        assert!(break_points("Portugal").is_empty());
+        assert!(break_points("UNESCO").is_empty());
     }
 
     #[test]
