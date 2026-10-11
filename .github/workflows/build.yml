@@ -7,6 +7,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per branch or tag at a time: a newer push to main cancels the
+# run still going, so two runs never replace the nightly release at once.
+# Version tags have groups of their own and always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
 
