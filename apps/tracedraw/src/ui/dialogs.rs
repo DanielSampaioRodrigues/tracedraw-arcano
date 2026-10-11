@@ -354,7 +354,10 @@ impl OpenNotes {
         if !self.fonts.is_empty() {
             parts.push(trf(
                 "notes.missing_fonts",
-                &[("name", &self.name), ("fonts", &self.fonts.join(", "))],
+                &[
+                    ("name", &self.name),
+                    ("fonts", &crate::ops2::with_stand_ins(&self.fonts)),
+                ],
             ));
         }
         parts.join("\n\n")
@@ -3405,7 +3408,10 @@ fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, 
             if !missing.is_empty() {
                 ui.colored_label(
                     egui::Color32::from_rgb(180, 80, 0),
-                    trf("dialog.missing_fonts", &[("f", &missing.join(", "))]),
+                    trf(
+                        "dialog.missing_fonts",
+                        &[("f", &crate::ops2::with_stand_ins(&missing))],
+                    ),
                 );
             }
             let filter = st.filter.to_lowercase();

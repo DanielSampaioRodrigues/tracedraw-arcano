@@ -149,6 +149,37 @@ text everywhere in the drawing: on layers, in groups and clip frames,
 in table cells and in symbols; a family is missing when it is neither
 installed nor carried.
 
+## Missing fonts
+
+Text set in a family that is neither installed nor carried keeps its
+font name (saving writes it back unchanged) and is drawn with a stand-in,
+the first installed of:
+
+1. Fonts drawn to the same widths, so lines break where they did:
+   Liberation Sans, Arimo, Nimbus Sans or TeX Gyre Heros for Arial and
+   Helvetica; Liberation Serif, Tinos, Nimbus Roman or TeX Gyre Termes
+   for Times and Times New Roman; Liberation Mono, Cousine, Nimbus Mono
+   or TeX Gyre Cursor for Courier and Courier New; Liberation Sans
+   Narrow for Arial Narrow; Carlito for Calibri; Caladea for Cambria;
+   Gelasio for Georgia; Selawik for Segoe UI; TeX Gyre Pagella for
+   Palatino and Book Antiqua, Bonum for Bookman, Schola for Century
+   Schoolbook, Adventor for Century Gothic and Avant Garde, Chorus for
+   Zapf Chancery (or their URW counterparts); DejaVu Sans for Verdana
+   and Tahoma; Comic Neue for Comic Sans; EB Garamond for Garamond;
+   DejaVu Sans Mono for the programmers' faces.
+2. Fonts of the same style, judged by the name: monospaced ("mono",
+   "courier", "code", ...), serif ("serif", "roman", "garamond",
+   "bodoni", ... and not "sans" or "gothic"), casual ("comic",
+   "marker", ...), else sans-serif.
+3. DejaVu Sans, Arial, the system sans-serif, any font.
+
+Names are compared in lower case without spaces, punctuation, style
+words and foundry endings ("Arial-BoldMT" and "Arial MT" are Arial,
+"TimesNewRomanPSMT" is Times New Roman), so names written by PostScript
+and PDF producers match too. The status bar, the message on opening, the
+Font Manager and the Fonts docker (on the "missing" mark) name the
+stand-in next to each missing family: "Arial (Liberation Sans)".
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
@@ -160,6 +191,9 @@ installed nor carried.
 
 ## Checks
 
+- `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`
+  (text crate) and
+  `prefs::tests::opening_tells_what_was_left_out_as_the_warnings_say`.
 - `documents::tests::a_drawing_brings_its_fonts_along`,
   `tests::fonts_a_document_brings_are_loaded_once_unless_installed` and
   `tests::a_font_licence_decides_whether_a_document_may_use_it` (text

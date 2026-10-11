@@ -25,6 +25,13 @@ full, row-by-row status.
   their colour (stored inline in those files).
 - The missing-font check also looks at text inside groups, clip frames,
   table cells and symbols.
+- A missing font is drawn with a stand-in of the same widths when one is
+  installed (Liberation Sans for Arial and Helvetica, Liberation Serif
+  for Times New Roman, Liberation Mono for Courier New, Carlito for
+  Calibri, Caladea for Cambria, Gelasio for Georgia, the TeX Gyre faces
+  for the classic PostScript ones), else of the same style (serif,
+  monospaced, casual or sans-serif), so text keeps its line breaks; the
+  messages name the stand-in, as in "Arial (Liberation Sans)".
 - `.cdr` files before version 12: text, font names and layer and object
   names written in Cyrillic, Greek, Turkish, Central European, Baltic,
   Hebrew, Arabic, Thai, Vietnamese, Japanese, Chinese or Korean read in

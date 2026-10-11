@@ -2092,7 +2092,11 @@ fn fonts(app: &mut App, ui: &mut Ui) {
                     app.apply_text_font(f);
                 }
                 if missing {
-                    ui.colored_label(egui::Color32::from_rgb(200, 100, 0), tr("docker.missing"));
+                    let label = ui
+                        .colored_label(egui::Color32::from_rgb(200, 100, 0), tr("docker.missing"));
+                    if let Some(s) = tracedraw_text::fonts().substitute(f) {
+                        label.on_hover_text(trf("docker.missing_hint", &[("f", &s)]));
+                    }
                 } else if carried {
                     ui.weak(tr("docker.embedded"))
                         .on_hover_text(tr("docker.embedded_hint"));

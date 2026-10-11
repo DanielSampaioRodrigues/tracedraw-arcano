@@ -447,6 +447,10 @@ mod tests {
             text.contains("a.cdr") && text.contains("Nowhere Sans"),
             "{text}"
         );
+        // With the font that draws its text in the meantime.
+        if let Some(s) = tracedraw_text::fonts().substitute("Nowhere Sans") {
+            assert!(text.contains(&format!("Nowhere Sans ({s})")), "{text}");
+        }
         // Nothing to say, or the warnings turned off: no message.
         app.dialog = Dialog::None;
         app.missing_fonts.clear();

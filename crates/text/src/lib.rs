@@ -67,6 +67,160 @@ pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
 }
 
+/// Families that stand in for `family` when it is not installed, best
+/// first: fonts drawn to the same widths (so text keeps its line breaks:
+/// Liberation, Arimo, Tinos and Cousine for the common office faces,
+/// Carlito, Caladea, Gelasio, Selawik, the TeX Gyre and URW families for
+/// the classic PostScript faces), then fonts of the same style (serif,
+/// monospaced, casual or sans-serif, judged by the name).
+pub fn substitutes(family: &str) -> Vec<&'static str> {
+    const SANS: &[&str] = &[
+        "Liberation Sans",
+        "Arimo",
+        "Nimbus Sans",
+        "Nimbus Sans L",
+        "TeX Gyre Heros",
+        "FreeSans",
+    ];
+    const SERIF: &[&str] = &[
+        "Liberation Serif",
+        "Tinos",
+        "Nimbus Roman",
+        "Nimbus Roman No9 L",
+        "TeX Gyre Termes",
+        "FreeSerif",
+    ];
+    const MONO: &[&str] = &[
+        "Liberation Mono",
+        "Cousine",
+        "Nimbus Mono PS",
+        "Nimbus Mono L",
+        "TeX Gyre Cursor",
+        "FreeMono",
+    ];
+    // Lower case letters and digits only, without the style and the
+    // endings foundries add to names ("Arial MT", "TimesNewRomanPS",
+    // "Arial-BoldMT").
+    let mut key: String = family
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    const ENDINGS: [&str; 13] = [
+        "regular",
+        "bolditalic",
+        "boldoblique",
+        "italic",
+        "oblique",
+        "bold",
+        "psmt",
+        "mt",
+        "ps",
+        "ms",
+        "std",
+        "pro",
+        "lt",
+    ];
+    loop {
+        let before = key.len();
+        for end in ENDINGS {
+            if key.len() > end.len() + 3 {
+                if let Some(k) = key.strip_suffix(end) {
+                    key = k.to_string();
+                }
+            }
+        }
+        if key.len() == before {
+            break;
+        }
+    }
+    let same: &[&'static str] = match key.as_str() {
+        "arial" | "helvetica" | "helveticaneue" | "arialunicode" | "arimo" | "nimbussans"
+        | "liberationsans" => SANS,
+        "arialnarrow" | "helveticanarrow" | "helveticacondensed" | "liberationsansnarrow" => &[
+            "Liberation Sans Narrow",
+            "Nimbus Sans Narrow",
+            "Arial Narrow",
+        ],
+        "timesnewroman" | "times" | "timesroman" | "tmsrmn" | "tinos" | "nimbusroman"
+        | "liberationserif" => SERIF,
+        "couriernew" | "courier" | "cousine" | "liberationmono" => MONO,
+        "calibri" => &["Carlito"],
+        "cambria" => &["Caladea"],
+        "georgia" => &["Gelasio"],
+        "segoeui" => &["Selawik"],
+        "verdana" | "tahoma" => &["DejaVu Sans", "Bitstream Vera Sans"],
+        "palatino" | "palatinolinotype" | "bookantiqua" => {
+            &["TeX Gyre Pagella", "P052", "URW Palladio L"]
+        }
+        "bookman" | "bookmanoldstyle" | "itcbookman" => {
+            &["TeX Gyre Bonum", "URW Bookman", "URW Bookman L"]
+        }
+        "centuryschoolbook" | "newcenturyschoolbook" => {
+            &["TeX Gyre Schola", "C059", "Century Schoolbook L"]
+        }
+        "centurygothic" | "avantgarde" | "avantgardegothic" | "itcavantgardegothic" => {
+            &["TeX Gyre Adventor", "URW Gothic", "URW Gothic L"]
+        }
+        "zapfchancery" | "itczapfchancery" | "monotypecorsiva" => {
+            &["TeX Gyre Chorus", "Z003", "URW Chancery L"]
+        }
+        "comicsans" => &["Comic Neue", "Comic Relief"],
+        "garamond" | "ebgaramond" | "garamondpremier" | "itcgaramond" => {
+            &["EB Garamond", "Cormorant Garamond"]
+        }
+        "consolas" | "lucidaconsole" | "menlo" | "monaco" => &["DejaVu Sans Mono"],
+        _ => &[],
+    };
+    let has = |words: &[&str]| words.iter().any(|w| key.contains(w));
+    let style: &[&'static str] = if has(&[
+        "mono",
+        "courier",
+        "consol",
+        "code",
+        "typewriter",
+        "menlo",
+        "monaco",
+    ]) {
+        MONO
+    } else if !key.contains("sans")
+        && has(&[
+            "serif",
+            "times",
+            "roman",
+            "garamond",
+            "georgia",
+            "bookman",
+            "bodoni",
+            "baskerville",
+            "caslon",
+            "minion",
+            "cambria",
+            "antiqua",
+            "schoolbook",
+            "palatino",
+            "goudy",
+            "didot",
+            "plantin",
+            "century",
+        ])
+        && !key.contains("gothic")
+    {
+        SERIF
+    } else if has(&["comic", "marker", "handwrit", "casual"]) {
+        &["Comic Neue", "Comic Relief", "Liberation Sans", "Arimo"]
+    } else {
+        SANS
+    };
+    let mut out: Vec<&'static str> = same.to_vec();
+    for f in style {
+        if !out.contains(f) {
+            out.push(f);
+        }
+    }
+    out
+}
+
 /// `data` is a font file (or collection) whose every face reads and
 /// allows use in documents: its licence (the OS/2 embedding bits) is not
 /// "restricted" and allows outlines, not just bitmaps.
@@ -409,7 +563,8 @@ impl FontSystem {
             .any(|f| f == family)
     }
 
-    /// Pick a face for a span; falls back to a sans-serif, then to anything.
+    /// Pick a face for a span: the family itself, else a stand-in (see
+    /// [`substitutes`]), else a sans-serif, else anything.
     fn face_for(&self, family: &str, bold: bool, italic: bool) -> Option<fontdb::ID> {
         let weight = if bold {
             fontdb::Weight::BOLD
@@ -421,13 +576,13 @@ impl FontSystem {
         } else {
             fontdb::Style::Normal
         };
-        let fams = [
-            fontdb::Family::Name(family),
-            fontdb::Family::SansSerif,
+        let mut fams = vec![fontdb::Family::Name(family)];
+        fams.extend(substitutes(family).into_iter().map(fontdb::Family::Name));
+        fams.extend([
             fontdb::Family::Name("DejaVu Sans"),
-            fontdb::Family::Name("Liberation Sans"),
             fontdb::Family::Name("Arial"),
-        ];
+            fontdb::Family::SansSerif,
+        ]);
         let q = fontdb::Query {
             families: &fams,
             weight,
@@ -436,6 +591,19 @@ impl FontSystem {
         };
         let db = self.db();
         db.query(&q).or_else(|| db.faces().next().map(|f| f.id))
+    }
+
+    /// The installed family that draws text set in `family` when that is
+    /// not installed: the first of [`substitutes`] that is, else the
+    /// general fallback. `None` when `family` is installed (or no font is).
+    pub fn substitute(&self, family: &str) -> Option<String> {
+        if self.has_family(family) {
+            return None;
+        }
+        let id = self.face_for(family, false, false)?;
+        let db = self.db();
+        let face = db.face(id)?;
+        face.families.first().map(|(name, _)| name.clone())
     }
 
     fn face_data(&self, id: fontdb::ID) -> Option<(Arc<Vec<u8>>, u32)> {
@@ -1961,6 +2129,54 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn missing_fonts_get_stand_ins_with_the_same_widths_or_style() {
+        assert_eq!(substitutes("Arial")[0], "Liberation Sans");
+        assert_eq!(substitutes("ArialMT")[0], "Liberation Sans");
+        assert_eq!(substitutes("Helvetica")[0], "Liberation Sans");
+        assert_eq!(substitutes("Times New Roman")[0], "Liberation Serif");
+        assert_eq!(substitutes("TimesNewRomanPSMT")[0], "Liberation Serif");
+        assert_eq!(substitutes("Courier New")[0], "Liberation Mono");
+        assert_eq!(substitutes("Calibri")[0], "Carlito");
+        assert_eq!(substitutes("Cambria")[0], "Caladea");
+        assert_eq!(substitutes("Arial Narrow")[0], "Liberation Sans Narrow");
+        assert_eq!(substitutes("Palatino Linotype")[0], "TeX Gyre Pagella");
+        // Style words and foundry endings do not hide the family.
+        assert_eq!(substitutes("Arial-BoldMT")[0], "Liberation Sans");
+        assert_eq!(
+            substitutes("Times New Roman Bold Italic")[0],
+            "Liberation Serif"
+        );
+        assert_eq!(substitutes("Comic Sans MS")[0], "Comic Neue");
+        assert_eq!(substitutes("Helvetica Neue LT Std")[0], "Liberation Sans");
+        assert_eq!(substitutes("Menlo")[1], "Liberation Mono");
+        assert_eq!(substitutes("Avenir Book")[0], "Liberation Sans");
+        assert_eq!(substitutes("Minion Pro")[0], "Liberation Serif");
+        // Calibri falls back to a sans-serif, Cambria to a serif.
+        assert!(substitutes("Calibri").contains(&"Liberation Sans"));
+        assert!(substitutes("Cambria").contains(&"Liberation Serif"));
+        // By the name's style when nothing is drawn to its widths.
+        assert_eq!(substitutes("Fancy Serif Display")[0], "Liberation Serif");
+        assert_eq!(substitutes("Bodoni 72")[0], "Liberation Serif");
+        assert_eq!(substitutes("Fira Code")[0], "Liberation Mono");
+        assert_eq!(substitutes("Some Sans Serif")[0], "Liberation Sans");
+        assert_eq!(substitutes("Century Gothic")[0], "TeX Gyre Adventor");
+        assert_eq!(substitutes("Unknown Face")[0], "Liberation Sans");
+        assert_eq!(substitutes("")[0], "Liberation Sans");
+        // With Liberation installed, a missing Arial is drawn with it.
+        let f = fonts();
+        if f.has_family("Liberation Sans") && !f.has_family("Arial") {
+            assert_eq!(f.substitute("Arial").as_deref(), Some("Liberation Sans"));
+            let id = f.face_for("Arial", false, false).expect("face");
+            let db = f.db();
+            let face = db.face(id).expect("info");
+            assert!(face.families.iter().any(|(n, _)| n == "Liberation Sans"));
+        }
+        if let Some(installed) = f.families().first() {
+            assert_eq!(f.substitute(installed), None);
+        }
     }
 
     #[test]

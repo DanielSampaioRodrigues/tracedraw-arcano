@@ -2134,10 +2134,23 @@ impl App {
             .filter(|f| !self.font_families.contains(f))
             .collect();
         if !missing.is_empty() {
-            self.status = trf("status.missing_fonts", &[("f", &missing.join(", "))]);
+            self.status = trf("status.missing_fonts", &[("f", &with_stand_ins(&missing))]);
         }
         self.missing_fonts = missing;
     }
+}
+
+/// Missing families with the installed font that draws their text, for
+/// messages: "Arial (Liberation Sans), Futura (DejaVu Sans)".
+pub(crate) fn with_stand_ins(missing: &[String]) -> String {
+    missing
+        .iter()
+        .map(|f| match tracedraw_text::fonts().substitute(f) {
+            Some(s) if s != *f => format!("{f} ({s})"),
+            _ => f.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
