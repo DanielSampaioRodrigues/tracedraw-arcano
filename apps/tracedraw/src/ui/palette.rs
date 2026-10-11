@@ -167,6 +167,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         vec2(ui.available_width(), ROW_H)
     };
     let (rect, bg) = ui.allocate_exact_size(size, Sense::click());
+    if which == Row::Document {
+        app.doc_palette_rect = Some(rect);
+    }
     let painter = ui.painter_at(rect);
     let ax = Axis {
         vertical,
@@ -460,6 +463,25 @@ fn swatch(
     };
     let resp = resp.on_hover_text(tip);
 
+    // Dragging the colour: inside an object it fills it, on its outline
+    // it colours the outline, on the document palette it joins it.
+    if resp.drag_started() && app.palette_shades.is_none() {
+        app.palette_drag = Some(entry.map(|(_, c)| *c));
+    }
+    if app.palette_drag.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.palette_drag = None;
+    }
+    if resp.dragged() {
+        if let (Some(color), Some(pos)) = (app.palette_drag, ui.ctx().pointer_latest_pos()) {
+            drag_chip(app, ui.ctx(), color, pos);
+        }
+    }
+    if resp.drag_stopped() {
+        if let (Some(color), Some(pos)) = (app.palette_drag.take(), ui.ctx().pointer_latest_pos()) {
+            app.drop_color(color, pos);
+        }
+    }
+
     // Click and hold: the colour's shades.
     if let Some((_, c)) = entry {
         if resp.is_pointer_button_down_on() && app.palette_shades.is_none() {
@@ -513,6 +535,51 @@ fn swatch(
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     }
+}
+
+/// The colour under the pointer while it is dragged: a filled chip over
+/// a fill, a ring over an outline, and a pointer saying whether letting
+/// go changes anything.
+fn drag_chip(app: &App, ctx: &egui::Context, color: Option<Color>, pos: Pos2) {
+    use crate::color_drop::ColorTarget;
+    let target = app.color_target(pos);
+    ctx.set_cursor_icon(if target == ColorTarget::Nothing {
+        egui::CursorIcon::NoDrop
+    } else {
+        egui::CursorIcon::Copy
+    });
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("palette_drag_chip"),
+    ));
+    let r = Rect::from_min_size(pos + vec2(12.0, 12.0), vec2(16.0, 16.0));
+    let fill = color.map(crate::canvas::to_color32);
+    painter.rect_filled(r.expand(1.0), 0.0, Color32::WHITE);
+    match (target, fill) {
+        (ColorTarget::Outline(_), Some(c)) => {
+            painter.rect_stroke(
+                r.shrink(2.0),
+                0.0,
+                Stroke::new(4.0, c),
+                egui::StrokeKind::Inside,
+            );
+        }
+        (_, Some(c)) => {
+            painter.rect_filled(r, 0.0, c);
+        }
+        (_, None) => {
+            painter.line_segment(
+                [r.left_bottom(), r.right_top()],
+                Stroke::new(1.5, NO_COLOR_LINE),
+            );
+        }
+    }
+    painter.rect_stroke(
+        r,
+        0.0,
+        Stroke::new(1.0, Color32::from_gray(0x5A)),
+        egui::StrokeKind::Outside,
+    );
 }
 
 fn shades_fired_id() -> egui::Id {

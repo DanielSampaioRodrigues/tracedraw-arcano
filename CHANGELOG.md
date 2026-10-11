@@ -11,6 +11,9 @@ full, row-by-row status.
   corner, Ctrl keeps a move straight, a right click during a drag leaves
   the original, Space drops a copy, Esc cancels; in rotate mode the side
   handles skew and the centre of rotation can be moved.
+- Drag a colour from the palette onto an object: inside it fills it, on
+  its outline it colours the outline; onto the document palette it joins
+  it.
 - The pointer shows what a press would do: resize arrows on the handles,
   move arrows on the selection, turning and slant arrows in rotate mode,
   and the Shape tool's own arrow with a mark over nodes, control points

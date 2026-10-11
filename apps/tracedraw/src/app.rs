@@ -838,6 +838,10 @@ pub struct App {
     pub recent_thumbs: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     /// The Shelf docker's items, kept across drawings and sessions.
     pub shelf: crate::shelf::Shelf,
+    /// A colour dragged from a palette (`Some(None)`: No Color).
+    pub palette_drag: Option<Option<Color>>,
+    /// Where the document palette is this frame (a drop target).
+    pub doc_palette_rect: Option<egui::Rect>,
     pub shaping_keep_source: bool,
     pub shaping_keep_target: bool,
     pub color_model: usize,
@@ -1323,6 +1327,8 @@ impl App {
             last_auto_backup: None,
             recent_thumbs: Default::default(),
             shelf: Default::default(),
+            palette_drag: None,
+            doc_palette_rect: None,
             page_size_all: true,
             object_origin: (1, 1),
             scale_locked: false,

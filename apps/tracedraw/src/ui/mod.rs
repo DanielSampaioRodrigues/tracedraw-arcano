@@ -127,8 +127,10 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 }
 
 pub fn root(app: &mut App, ui: &mut Ui) {
-    // Dockers set their canvas previews again each frame they are shown.
+    // Dockers set their canvas previews again each frame they are shown;
+    // the document palette says where it is when it is drawn.
     app.docker_preview.clear();
+    app.doc_palette_rect = None;
     app.docker_preview_point = None;
     let ctx = ui.ctx().clone();
     // Pixels are measured at the active drawing's resolution, distances

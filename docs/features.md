@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 172, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
+Counts: works 173, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -15,6 +15,7 @@ Counts: works 172, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Tab cycling | works |
 | Second click rotate/skew handles: rotate about a movable centre of rotation, skew with the side handles, Ctrl steps, Shift about the centre line | works (see `behavior/pick-tool.md`) |
 | Handle modifiers: Shift scales from the centre, Ctrl in 100 % steps (mirror at the same size), Alt frees a corner; Ctrl keeps a move straight; right click during a drag leaves the original; Space drops a copy; Esc cancels | works |
+| Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |
 | Pointer shapes by what is under it: resize arrows on handles, move arrows on the selection, turning and slant arrows in rotate mode; the Shape tool's arrow marks nodes, control points and segments; drawing tools show their icon by the cross hair, the Eraser and brushes their nib (see `behavior/toolbox.md`) | works |
 | Right-button drag of objects: blue outline preview, then Move Here, Copy Here, Copy Fill Here, Copy Outline Here, Copy All Properties, Place Inside, Cancel (see `behavior/pick-tool.md`) | works |
 | Freehand Pick (lasso) | works |
