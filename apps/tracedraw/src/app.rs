@@ -845,7 +845,7 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
-    pub pending_copy_effect: Option<EffectKind>,
+    pub pending_copy_effect: Option<crate::copy_effect::CopyKind>,
     /// Copy Envelope Properties waits for the object to copy from.
     pub pending_copy_envelope: bool,
     pub pending_clone_effect: Option<EffectKind>,

@@ -2,7 +2,7 @@
 //! relative to another object, effects on the stack, bitmap effects and
 //! tracing, text conversions, scripts, palettes.
 
-use crate::app::{App, EffectKind};
+use crate::app::App;
 use crate::corners::JoinKind;
 use crate::i18n::{tr, trf};
 use tracedraw_core::{
@@ -513,54 +513,6 @@ impl App {
             });
         }
         self.set_tool(crate::tools::Tool::Shape);
-    }
-
-    /// Copy the shadow or transparency of `source` to the selection.
-    pub fn copy_effect_from(&mut self, source: ShapeId, kind: EffectKind) {
-        let Some(src) = self.doc().find_shape(source).cloned() else {
-            return;
-        };
-        let shapes: Vec<ShapeId> = self
-            .selection
-            .iter()
-            .copied()
-            .filter(|s| *s != source)
-            .collect();
-        if shapes.is_empty() {
-            return;
-        }
-        match kind {
-            EffectKind::Shadow => self.run(Command::SetShadow {
-                shapes,
-                shadow: src.shadow,
-            }),
-            EffectKind::Transparency => {
-                self.run(Command::SetOpacity {
-                    shapes: shapes.clone(),
-                    opacity: src.opacity,
-                });
-                let t = src
-                    .effects
-                    .iter()
-                    .find(|e| matches!(e, Effect::Transparency { .. }))
-                    .cloned();
-                for id in shapes {
-                    let Some(s) = self.doc().find_shape(id).cloned() else {
-                        continue;
-                    };
-                    let mut effects: Vec<Effect> = s
-                        .effects
-                        .iter()
-                        .filter(|e| !matches!(e, Effect::Transparency { .. }))
-                        .cloned()
-                        .collect();
-                    if let Some(t) = &t {
-                        effects.push(t.clone());
-                    }
-                    self.run(Command::SetEffects { shape: id, effects });
-                }
-            }
-        }
     }
 
     /// Apply the Transparency tool settings to the selection. Uniform

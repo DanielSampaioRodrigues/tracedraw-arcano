@@ -28,6 +28,7 @@ mod color_drop;
 mod common_shapes;
 mod connectors;
 mod coords;
+mod copy_effect;
 mod corners;
 mod crop_tool;
 mod curve_join;

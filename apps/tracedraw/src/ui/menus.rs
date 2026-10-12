@@ -1594,16 +1594,21 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     sub(ui, "menu.object.copy_effect", |ui| {
-        if item(ui, "menu.object.copy_shadow_from", "", has) {
-            app.pending_copy_effect = Some(crate::app::EffectKind::Shadow);
-            app.status = tr("status.click_source_object");
-        }
-        if item(ui, "menu.object.copy_transparency_from", "", has) {
-            app.pending_copy_effect = Some(crate::app::EffectKind::Transparency);
-            app.status = tr("status.click_source_object");
+        use crate::copy_effect::CopyKind;
+        for kind in [CopyKind::Shadow, CopyKind::Transparency] {
+            if item(ui, kind.key(), "", has) {
+                app.pending_copy_effect = Some(kind);
+                app.status = tr("status.click_source_object");
+            }
         }
         if item(ui, "menu.object.copy_envelope_from", "", has) {
             app.start_copy_envelope();
+        }
+        for kind in CopyKind::LIVE {
+            if item(ui, kind.key(), "", has) {
+                app.pending_copy_effect = Some(kind);
+                app.status = tr("status.click_source_object");
+            }
         }
     });
     sub(ui, "menu.object.clone_effect", |ui| {

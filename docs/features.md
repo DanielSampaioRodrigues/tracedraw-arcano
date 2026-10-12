@@ -134,7 +134,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Lens (11 types, frozen, rate, palette rotation) | works |
 | clip frame (place inside, extract, empty frame, text frame, edit in place, lock contents) | works |
 | Symbols (Object > Symbol menu, create, insert, revert, Symbols panel, Ctrl+F3) | works |
-| Copy effect, Clone effect (shadow and transparency follow the source until edited), Clear effect, Clear transformations, Symmetry (live, 1 to 12 mirror lines) | works |
+| Copy effect (drop shadow, transparency, envelope, perspective, distortion, extrude, contour, blend settings, lens, bevel, block shadow; pinned points carried by the box), Clone effect (shadow and transparency follow the source until edited), Clear effect, Clear transformations, Symmetry (live, 1 to 12 mirror lines) | works (see `behavior/copy-effect.md`) |
 | Rollover | not applicable: web-page interactivity with no HTML export target |
 
 ## 7. Colour

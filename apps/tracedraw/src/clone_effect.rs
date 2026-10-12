@@ -92,7 +92,13 @@ impl App {
         if targets.is_empty() {
             return;
         }
-        self.copy_effect_from(source, kind);
+        self.copy_effect_from(
+            source,
+            match kind {
+                EffectKind::Shadow => crate::copy_effect::CopyKind::Shadow,
+                EffectKind::Transparency => crate::copy_effect::CopyKind::Transparency,
+            },
+        );
         let mut cmds = Vec::new();
         for id in targets {
             let Some(s) = self.doc().find_shape(id) else {

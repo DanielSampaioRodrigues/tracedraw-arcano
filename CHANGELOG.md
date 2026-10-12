@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Object > Copy Effect copies perspective, distortion, extrusion,
+  contour, blend settings, lens, bevel and block shadow besides drop
+  shadow, transparency and envelope; a distortion's centre, a
+  perspective's corners and a vanishing point locked to the object sit
+  the same way on the target.
 - Blend keeps the end object as an object of its own: it can be moved,
   resized or recoloured and the steps follow, and selecting it picks the
   blend for the bar and panel. Blending used to delete the end object
