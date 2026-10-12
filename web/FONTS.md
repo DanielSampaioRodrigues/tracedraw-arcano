@@ -32,5 +32,17 @@ holds the licence of every font in the folder.
 | TeX Gyre Pagella, Bonum, Schola, Adventor, Chorus, Heros Cn | GUST Font License |
 | DejaVu Serif, DejaVu Sans Mono | Bitstream Vera Fonts licence and public domain changes |
 
+## The font catalog
+
+Every other family of the google/fonts collection (about 2,000, under
+the SIL Open Font License 1.1, the Apache License 2.0 or the Ubuntu Font
+Licence 1.0) is listed in `fonts/catalog.json` (built by
+`web/font_catalog.py`) with the paths of its files at the commit
+`fonts.txt` pins. The page fetches a family's files from that commit
+through GitHub's file server (`raw.githubusercontent.com`) the first time
+a drawing's text needs it or the pointer rests on it in a font list; each
+family's licence sits next to its files in that repository. The page
+does not copy these files.
+
 The desktop builds bundle no fonts: they use the fonts installed on the
 computer.

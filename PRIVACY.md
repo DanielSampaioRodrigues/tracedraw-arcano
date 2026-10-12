@@ -53,8 +53,11 @@ Only when you ask it to:
 
 The browser version at <https://igtoth.github.io/tracedraw/> is a set of static
 files served by GitHub Pages. TraceDraw itself sends nothing (AI Drawing
-aside, as above, from your browser to the service you set up); GitHub, as
-the host, may log visits as described in the
+aside, as above, from your browser to the service you set up). When a
+drawing's text needs a font of the page's font catalog, or the pointer
+rests on one in a font list, the page fetches that font's files from
+GitHub's file server (`raw.githubusercontent.com`). GitHub, as the host
+of both, may log visits as described in the
 [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
 Files you open in it stay in your browser.
 

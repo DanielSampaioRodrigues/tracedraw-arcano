@@ -20,7 +20,7 @@ refuse to load modules from `file://`).
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |
 | Settings | `settings.json` in the configuration folder | browser local storage (key `tracedraw.settings`) |
 | Recent documents | listed on the Welcome screen | not recorded (uploads have no path to reopen) |
-| Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai), each fetched the first time a drawing's text needs it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
+| Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai) and its font catalog every other family of the google/fonts collection (about 2,000), each fetched the first time a drawing's text needs it or a font list's pointer rests on it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
 | System clipboard | text and images (arboard) | text through the browser; pasting images from other programs is not available |
 | Help links | system browser | a new tab |
 
@@ -100,5 +100,16 @@ font lists, and text that needs one (set in it, set in a family it
 stands in for, or holding letters only it has) asks for it: the page
 fetches its files, the text engine loads them and the page draws again.
 Without the folder the page works with the bundled fonts.
+The font catalog: `python3 web/font_catalog.py web/fonts.txt site/fonts`
+writes `fonts/catalog.json`, every family of the google/fonts collection
+at the commit `web/fonts.txt` pins that the folder does not hold, with the
+paths of its files (from each family's `METADATA.pb`, read through a
+sparse fetch of just those files; `--google-fonts DIR` reads a checkout
+instead). The page reads it with the folder's list and fetches a family's
+files from `https://raw.githubusercontent.com/google/fonts/<commit>/`
+the first time text needs it; a catalog under another address, or not
+at a commit, is ignored, and so are paths that are not plain. Checks:
+`font_folder::tests::the_catalog_reads_plain_paths_under_one_commit`,
+`font_folder::tests::the_catalog_script_and_the_page_agree`.
 `.cargo/config.toml` selects the browser's random number source for
 `getrandom`. `scripts/web/build.sh` runs these steps.

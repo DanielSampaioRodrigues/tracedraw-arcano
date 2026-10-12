@@ -14,14 +14,17 @@ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 sed -e "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" -e "s/@VERSION@/$version/" \
     web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
-# The font folder (web/fonts.txt) when asked for: TRACEDRAW_FONT_FOLDER=1,
+# The font folder (web/fonts.txt) and the font catalog when asked for:
+# TRACEDRAW_FONT_FOLDER=1,
 # with TRACEDRAW_GOOGLE_FONTS pointing at a google/fonts checkout to copy
 # from instead of downloading.
 if [ -n "$TRACEDRAW_FONT_FOLDER" ]; then
     if [ -n "$TRACEDRAW_GOOGLE_FONTS" ]; then
         python3 web/font_folder.py web/fonts.txt site/fonts --google-fonts "$TRACEDRAW_GOOGLE_FONTS"
+        python3 web/font_catalog.py web/fonts.txt site/fonts --google-fonts "$TRACEDRAW_GOOGLE_FONTS"
     else
         python3 web/font_folder.py web/fonts.txt site/fonts
+        python3 web/font_catalog.py web/fonts.txt site/fonts
     fi
 fi
 echo "Built ./site; serve it with: python3 -m http.server -d site 8080"

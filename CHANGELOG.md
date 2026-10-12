@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The browser version offers every family of the google/fonts collection
+  (about 2,000 more), fetched from GitHub the first time a drawing's text
+  needs one or the pointer rests on it in the font list; they show in
+  the font lists with the download mark.
 - A new font list in the property bar, the Text and Glyphs dockers and
   Options: type in the field to find a family (the name, then names
   starting with it, then the rest; Down, Up, Enter, Escape), the number

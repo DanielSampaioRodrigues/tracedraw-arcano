@@ -13,6 +13,9 @@ thread_local! {
     /// `font_folder.rs`).
     static FONT_FILES: RefCell<BTreeMap<String, Vec<String>>> =
         const { RefCell::new(BTreeMap::new()) };
+    /// The font catalog: every other family of the google/fonts collection
+    /// (see `font_folder.rs`).
+    static CATALOG: RefCell<crate::font_folder::Catalog> = RefCell::new(Default::default());
 }
 
 // Fonts found at build time (see build.rs): Liberation, DejaVu and Noto
@@ -129,18 +132,39 @@ async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
     Some(js_sys::Uint8Array::new(&buffer).to_vec())
 }
 
-/// Read the page's font folder list (`fonts/fonts.json`) and offer its
-/// families to the text engine, which asks for them as text needs them.
+/// Read the page's font folder list (`fonts/fonts.json`) and font catalog
+/// (`fonts/catalog.json`) and offer their families to the text engine,
+/// which asks for them as text (or a font list) needs them; a family both
+/// have comes from the folder.
 fn load_font_list() {
     wasm_bindgen_futures::spawn_local(async {
-        let Some(bytes) = fetch_bytes("fonts/fonts.json").await else {
-            log::info!("no font folder next to the page");
-            return;
+        let list = match fetch_bytes("fonts/fonts.json").await {
+            Some(bytes) => crate::font_folder::parse_list(&bytes),
+            None => {
+                log::info!("no font folder next to the page");
+                Default::default()
+            }
         };
-        let list = crate::font_folder::parse_list(&bytes);
-        let families: Vec<String> = list.keys().cloned().collect();
-        log::info!("font folder offers {} families", families.len());
+        let catalog = match fetch_bytes("fonts/catalog.json").await {
+            Some(bytes) => crate::font_folder::parse_catalog(&bytes),
+            None => {
+                log::info!("no font catalog next to the page");
+                Default::default()
+            }
+        };
+        let mut families: Vec<String> = list.keys().cloned().collect();
+        families.extend(catalog.families.keys().cloned());
+        families.sort();
+        families.dedup();
+        log::info!(
+            "fonts to fetch: {} in the folder, {} in the catalog",
+            list.len(),
+            catalog.families.len()
+        );
         FONT_FILES.with(|f| *f.borrow_mut() = list);
+        CATALOG.with(|c| *c.borrow_mut() = catalog);
+        // The font lists take them in with the next frame (the fonts'
+        // generation changes).
         tracedraw_text::fonts().offer_families(&families);
         request_repaint();
     });
@@ -150,13 +174,22 @@ fn load_font_list() {
 /// the text engine takes them in as they arrive and the page draws again.
 pub fn fetch_requested_fonts() {
     for family in tracedraw_text::fonts().take_font_requests() {
-        let files = FONT_FILES.with(|f| f.borrow().get(&family).cloned().unwrap_or_default());
+        // The folder's files, else the catalog's.
+        let mut urls: Vec<String> = FONT_FILES.with(|f| {
+            f.borrow()
+                .get(&family)
+                .map(|files| files.iter().map(|file| format!("fonts/{file}")).collect())
+                .unwrap_or_default()
+        });
+        if urls.is_empty() {
+            urls = CATALOG.with(|c| c.borrow().urls(&family));
+        }
         wasm_bindgen_futures::spawn_local(async move {
             let mut data = Vec::new();
-            for file in &files {
-                match fetch_bytes(&format!("fonts/{file}")).await {
+            for url in &urls {
+                match fetch_bytes(url).await {
                     Some(bytes) => data.push(bytes),
-                    None => log::warn!("could not fetch the font file {file}"),
+                    None => log::warn!("could not fetch the font file {url}"),
                 }
             }
             if tracedraw_text::fonts().add_fonts(data).is_empty() {

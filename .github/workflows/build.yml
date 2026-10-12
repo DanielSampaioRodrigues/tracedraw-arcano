@@ -328,6 +328,12 @@ jobs:
           done
           python3 web/font_folder.py web/fonts.txt site/fonts
 
+      # The font catalog: every other family of the google/fonts collection
+      # at the pinned commit, fetched by the page from GitHub's file server
+      # the first time a drawing's text needs it (web/font_catalog.py).
+      - name: Font catalog
+        run: python3 web/font_catalog.py web/fonts.txt site/fonts
+
       # The browser version is published on the project's page, not as a
       # download: the folder is kept with the run only (its name does not
       # match the release's tracedraw-* artifacts).
