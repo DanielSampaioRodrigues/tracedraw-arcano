@@ -345,9 +345,10 @@ pub fn parse_document_with(
     // Before version 7 the fill table chunk is called `fill`. Bitmaps,
     // pattern tiles and arrowheads go first because fills and outlines
     // refer to them.
+    let mut bitmaps: Vec<&Chunk> = Vec::new();
     tree.root.walk(&mut |c, _| {
         if c.is(b"bmp ") {
-            ctx.read_bitmap(c);
+            bitmaps.push(c);
         } else if c.is(b"bmpf") {
             ctx.read_pattern_tile(c);
         } else if c.is(b"arrw") {
@@ -356,6 +357,7 @@ pub fn parse_document_with(
             ctx.read_font(c);
         }
     });
+    ctx.read_bitmaps(&bitmaps);
     ctx.name_charset = ctx.common_charset();
     tree.root.walk(&mut |c, _| {
         if c.is(b"fild") || c.is(b"fill") {
@@ -2283,64 +2285,15 @@ impl<'a> Ctx<'a> {
     /// `bmp `: embedded bitmap. Header fields are at fixed positions after
     /// a version dependent gap; pixels are a device-independent bitmap body
     /// (rows padded to 4 bytes, bottom-up). We re-encode as PNG.
-    fn read_bitmap(&mut self, c: &Chunk) {
-        let d = self.data(c);
+    /// `bmp ` chunks: embedded bitmaps, decoded side by side where the
+    /// platform has threads (opening a file with many large pictures
+    /// spends most of its time here).
+    fn read_bitmaps(&mut self, chunks: &[&Chunk]) {
         let v = self.v;
-        let mut r = self.reader(d);
-        let Some(image_id) = r.uint() else { return };
-        r.skip(if v < 6 {
-            14
-        } else if v < 7 {
-            46
-        } else {
-            50
-        });
-        let (Some(color_model), _, Some(width), Some(height), _, Some(bpp), _, Some(size)) = (
-            r.u32(),
-            r.skip(4),
-            r.u32(),
-            r.u32(),
-            r.skip(4),
-            r.u32(),
-            r.skip(4),
-            r.u32(),
-        ) else {
-            return;
-        };
-        r.skip(32);
-        if width == 0 || height == 0 || width > 32_768 || height > 32_768 {
-            self.report
-                .warn(format!("bitmap {image_id}: size {width}x{height} rejected"));
-            return;
-        }
-        let mut palette: Vec<[u8; 3]> = Vec::new();
-        if bpp < 24 && color_model != 5 && color_model != 6 {
-            r.skip(2);
-            let n = r.u16().unwrap_or(0) as usize;
-            let n = n.min(r.remaining() / 3).min(256);
-            for _ in 0..n {
-                let (Some(b), Some(g), Some(rr)) = (r.u8(), r.u8(), r.u8()) else {
-                    break;
-                };
-                palette.push([rr, g, b]);
-            }
-        }
-        let stride = (width as usize * bpp as usize).div_ceil(32) * 4;
-        let needed = stride.saturating_mul(height as usize);
-        let Some(pixels) = d.get(r.pos..r.pos.saturating_add(size as usize)) else {
-            return;
-        };
-        if pixels.len() < needed {
-            self.report.warn(format!(
-                "bitmap {image_id}: {} pixel bytes, {needed} expected; skipped",
-                pixels.len()
-            ));
-            return;
-        }
-        // Colour model 3 (CMYK, 32 bits): bytes C, M, Y, K with 0 for no
-        // ink (seen in a version 22 file; its export matches only that
-        // way), converted through the file's CMYK profile when it has one.
-        let cmyk = color_model == BITMAP_CMYK && bpp == 32;
+        let datas: Vec<&'a [u8]> = chunks.iter().map(|c| self.data(c)).collect();
+        let cmyk = datas
+            .iter()
+            .any(|d| bitmap_header(d, v).is_some_and(|h| h.model == BITMAP_CMYK && h.bpp == 32));
         if cmyk && self.cmyk_lut.is_none() {
             self.cmyk_lut = self.cmyk_profile.as_ref().and_then(|p| {
                 let t = tracedraw_core::icc::Transform::new(
@@ -2352,61 +2305,204 @@ impl<'a> Ctx<'a> {
                 tracedraw_core::icc::CmykLut::new(&t)
             });
         }
-        let lut = if cmyk { self.cmyk_lut.as_ref() } else { None };
-        let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-        for row in 0..height as usize {
-            // Bottom-up rows.
-            let src = &pixels[(height as usize - 1 - row) * stride..][..stride];
-            for x in 0..width as usize {
-                let px: [u8; 4] = match bpp {
-                    32 if cmyk => {
-                        let ink = [src[x * 4], src[x * 4 + 1], src[x * 4 + 2], src[x * 4 + 3]];
-                        cmyk_pixel(ink, lut)
-                    }
-                    32 => [src[x * 4 + 2], src[x * 4 + 1], src[x * 4], 255],
-                    24 => [src[x * 3 + 2], src[x * 3 + 1], src[x * 3], 255],
-                    8 => {
-                        let i = src[x] as usize;
-                        match palette.get(i) {
-                            Some(c) => [c[0], c[1], c[2], 255],
-                            None => [src[x], src[x], src[x], 255],
-                        }
-                    }
-                    1 => {
-                        let bit = (src[x / 8] >> (7 - (x % 8))) & 1;
-                        match palette.get(bit as usize) {
-                            Some(c) => [c[0], c[1], c[2], 255],
-                            None => {
-                                let g = if bit == 0 { 0 } else { 255 };
-                                [g, g, g, 255]
-                            }
-                        }
-                    }
-                    other => {
-                        self.report.warn(format!(
-                            "bitmap {image_id}: {other} bits per pixel not supported"
-                        ));
-                        return;
-                    }
-                };
-                rgba.extend_from_slice(&px);
+        let lut = self.cmyk_lut.as_ref();
+        for decoded in parallel_map(&datas, |d| decode_bitmap(d, v, lut)) {
+            match decoded {
+                Some(Ok((id, def))) => {
+                    self.bitmaps.insert(id, def);
+                }
+                Some(Err(note)) => self.report.warn(note),
+                None => {}
             }
         }
-        if let Some(alpha) = bitmap_mask(d, width, height) {
-            for (px, a) in rgba.chunks_exact_mut(4).zip(alpha) {
-                px[3] = a;
-            }
-        }
-        let png = encode_png(width, height, &rgba);
-        self.bitmaps.insert(
-            image_id,
-            BitmapDef {
-                width_px: width,
-                height_px: height,
-                png,
-            },
-        );
     }
+
+    #[cfg(test)]
+    fn read_bitmap(&mut self, c: &Chunk) {
+        self.read_bitmaps(&[c]);
+    }
+}
+
+/// The header of a `bmp ` chunk.
+struct BitmapHeader {
+    id: u32,
+    model: u32,
+    width: u32,
+    height: u32,
+    bpp: u32,
+    size: u32,
+    /// Where the palette (if any) and the pixels start.
+    body: usize,
+}
+
+/// Image id (u32; u16 before 6), a version dependent gap, colour model,
+/// 4, width, height, 4, bits per pixel, 4, size, 32.
+fn bitmap_header(d: &[u8], v: u16) -> Option<BitmapHeader> {
+    let mut r = Reader::new(d, v < 6);
+    let id = r.uint()?;
+    r.skip(if v < 6 {
+        14
+    } else if v < 7 {
+        46
+    } else {
+        50
+    });
+    let model = r.u32()?;
+    r.skip(4);
+    let width = r.u32()?;
+    let height = r.u32()?;
+    r.skip(4);
+    let bpp = r.u32()?;
+    r.skip(4);
+    let size = r.u32()?;
+    r.skip(32);
+    Some(BitmapHeader {
+        id,
+        model,
+        width,
+        height,
+        bpp,
+        size,
+        body: r.pos,
+    })
+}
+
+/// A `bmp ` chunk's picture as (image id, picture), a note on why it is
+/// left out, or `None` for a chunk too short to tell. Rows are padded to 4
+/// bytes and stored bottom-up; 32 and 24 bits are BGR(x), colour model 3
+/// with 32 bits is CMYK (bytes C, M, Y, K with 0 for no ink, converted
+/// through `lut`), 8 and 1 bits index the palette.
+fn decode_bitmap(
+    d: &[u8],
+    v: u16,
+    lut: Option<&tracedraw_core::icc::CmykLut>,
+) -> Option<Result<(u32, BitmapDef), String>> {
+    let h = bitmap_header(d, v)?;
+    let (image_id, width, height, bpp) = (h.id, h.width, h.height, h.bpp);
+    if width == 0 || height == 0 || width > 32_768 || height > 32_768 {
+        return Some(Err(format!(
+            "bitmap {image_id}: size {width}x{height} rejected"
+        )));
+    }
+    let mut r = Reader::new(d, v < 6);
+    r.pos = h.body;
+    let mut palette: Vec<[u8; 3]> = Vec::new();
+    if bpp < 24 && h.model != 5 && h.model != 6 {
+        r.skip(2);
+        let n = r.u16().unwrap_or(0) as usize;
+        let n = n.min(r.remaining() / 3).min(256);
+        for _ in 0..n {
+            let (Some(b), Some(g), Some(rr)) = (r.u8(), r.u8(), r.u8()) else {
+                break;
+            };
+            palette.push([rr, g, b]);
+        }
+    }
+    let stride = (width as usize * bpp as usize).div_ceil(32) * 4;
+    let needed = stride.saturating_mul(height as usize);
+    let pixels = d.get(r.pos..r.pos.saturating_add(h.size as usize))?;
+    if pixels.len() < needed {
+        return Some(Err(format!(
+            "bitmap {image_id}: {} pixel bytes, {needed} expected; skipped",
+            pixels.len()
+        )));
+    }
+    if !matches!(bpp, 32 | 24 | 8 | 1) {
+        return Some(Err(format!(
+            "bitmap {image_id}: {bpp} bits per pixel not supported"
+        )));
+    }
+    let cmyk = h.model == BITMAP_CMYK && bpp == 32;
+    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+    for row in 0..height as usize {
+        // Bottom-up rows.
+        let src = &pixels[(height as usize - 1 - row) * stride..][..stride];
+        for x in 0..width as usize {
+            let px: [u8; 4] = match bpp {
+                32 if cmyk => {
+                    let ink = [src[x * 4], src[x * 4 + 1], src[x * 4 + 2], src[x * 4 + 3]];
+                    cmyk_pixel(ink, lut)
+                }
+                32 => [src[x * 4 + 2], src[x * 4 + 1], src[x * 4], 255],
+                24 => [src[x * 3 + 2], src[x * 3 + 1], src[x * 3], 255],
+                8 => {
+                    let i = src[x] as usize;
+                    match palette.get(i) {
+                        Some(c) => [c[0], c[1], c[2], 255],
+                        None => [src[x], src[x], src[x], 255],
+                    }
+                }
+                _ => {
+                    let bit = (src[x / 8] >> (7 - (x % 8))) & 1;
+                    match palette.get(bit as usize) {
+                        Some(c) => [c[0], c[1], c[2], 255],
+                        None => {
+                            let g = if bit == 0 { 0 } else { 255 };
+                            [g, g, g, 255]
+                        }
+                    }
+                }
+            };
+            rgba.extend_from_slice(&px);
+        }
+    }
+    if let Some(alpha) = bitmap_mask(d, width, height) {
+        for (px, a) in rgba.chunks_exact_mut(4).zip(alpha) {
+            px[3] = a;
+        }
+    }
+    let png = encode_png(width, height, &rgba);
+    Some(Ok((
+        image_id,
+        BitmapDef {
+            width_px: width,
+            height_px: height,
+            png,
+        },
+    )))
+}
+
+/// `f` over `items` in order, on up to four threads where the platform
+/// has them (a browser does not).
+fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(4)
+            .min(items.len());
+        if threads > 1 {
+            let next = std::sync::atomic::AtomicUsize::new(0);
+            let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+                let workers: Vec<_> = (0..threads)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            let mut out = Vec::new();
+                            loop {
+                                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                let Some(item) = items.get(i) else {
+                                    break;
+                                };
+                                out.push((i, f(item)));
+                            }
+                            out
+                        })
+                    })
+                    .collect();
+                workers
+                    .into_iter()
+                    .flat_map(|w| w.join().unwrap_or_default())
+                    .collect()
+            });
+            if done.len() == items.len() {
+                done.sort_by_key(|(i, _)| *i);
+                return done.into_iter().map(|(_, r)| r).collect();
+            }
+            // A worker failed: do it all again in order.
+        }
+    }
+    items.iter().map(f).collect()
 }
 
 /// A paragraph frame (`origin` its lower left, `size`) under `transform`
@@ -2803,41 +2899,42 @@ pub(crate) fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
     (path, closed)
 }
 
-/// Minimal PNG encoder: 8-bit RGBA, no filtering, one IDAT chunk.
+/// Minimal PNG encoder: 8-bit RGBA, no filtering, one IDAT chunk. The
+/// rows go straight into a fast zlib stream: the PNG only carries the
+/// pixels inside the document, and the default level made opening files
+/// with large pictures several times slower.
 fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     use std::io::Write;
-    fn crc32(data: &[u8]) -> u32 {
-        let mut crc = 0xffff_ffffu32;
-        for &b in data {
-            crc ^= b as u32;
-            for _ in 0..8 {
-                let mask = (crc & 1).wrapping_neg();
-                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
-            }
-        }
-        !crc
-    }
     fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], body: &[u8]) {
         out.extend_from_slice(&(body.len() as u32).to_be_bytes());
-        let mut c = tag.to_vec();
-        c.extend_from_slice(body);
-        out.extend_from_slice(&c);
-        out.extend_from_slice(&crc32(&c).to_be_bytes());
+        let mut crc = flate2::Crc::new();
+        crc.update(tag);
+        crc.update(body);
+        out.extend_from_slice(tag);
+        out.extend_from_slice(body);
+        out.extend_from_slice(&crc.sum().to_be_bytes());
     }
-    let mut raw = Vec::with_capacity((width as usize * 4 + 1) * height as usize);
     let row = width as usize * 4;
+    let mut enc = flate2::write::ZlibEncoder::new(
+        Vec::with_capacity(rgba.len() / 4),
+        flate2::Compression::fast(),
+    );
+    let blank = vec![0u8; row];
+    let mut ok = true;
     for y in 0..height as usize {
-        raw.push(0);
-        let line = rgba.get(y * row..(y + 1) * row).unwrap_or(&[]);
-        raw.extend_from_slice(line);
-        raw.resize((row + 1) * (y + 1), 0);
+        let line = rgba.get(y * row..(y + 1) * row).unwrap_or(&blank[..]);
+        ok &= enc
+            .write_all(&[0])
+            .and_then(|_| enc.write_all(line))
+            .is_ok();
     }
-    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    let idat = enc
-        .write_all(&raw)
-        .and_then(|_| enc.finish())
-        .unwrap_or_default();
-    let mut out = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    let idat = if ok {
+        enc.finish().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut out = Vec::with_capacity(idat.len() + 64);
+    out.extend_from_slice(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
     let mut ihdr = Vec::with_capacity(13);
     ihdr.extend_from_slice(&width.to_be_bytes());
     ihdr.extend_from_slice(&height.to_be_bytes());
@@ -5109,6 +5206,14 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
+    }
+
+    #[test]
+    fn work_shared_between_threads_comes_back_in_order() {
+        let items: Vec<u64> = (0..257).collect();
+        let squares = parallel_map(&items, |x| x * x);
+        assert_eq!(squares, items.iter().map(|x| x * x).collect::<Vec<_>>());
+        assert!(parallel_map(&[] as &[u8], |x| *x).is_empty());
     }
 
     #[test]

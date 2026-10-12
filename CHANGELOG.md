@@ -17,6 +17,10 @@ full, row-by-row status.
   corners of rectangles in version 15 and later files have their real
   size, and shapes of version 14 and 15 files that have no outline of
   their own take their style's.
+- Files with many large pictures open more than twice as fast (a 297 MB
+  flyer: 20 to 8.6 seconds on two cores): pictures are decoded side by
+  side and kept compressed more lightly, and a page keeps its decoded
+  pictures between draws instead of decoding them again every time.
 - Contour: the tool's drag draws a live contour (outside when dragged
   away from the object's middle, inside toward it); its bar used to wait
   for Apply and then made a static group of copies. The bar and the

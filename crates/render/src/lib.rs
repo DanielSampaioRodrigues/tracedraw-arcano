@@ -4,6 +4,8 @@
 //! must match this one.
 
 #![allow(clippy::field_reassign_with_default)]
+mod image_cache;
+
 use tiny_skia::{
     Color as SkColor, FillRule, GradientStop, LineCap, LineJoin, LinearGradient, Paint,
     Path as SkPath, PathBuilder, Pixmap, RadialGradient, SpreadMode, Stroke as SkStroke,
@@ -427,7 +429,7 @@ impl Renderer<'_> {
         } = &shape.kind
         {
             if !self.flags.wireframe {
-                if let Ok(img) = Pixmap::decode_png(png) {
+                if let Some(img) = image_cache::decode(png) {
                     // Image pixel space (y down) to local rect (y up) to screen.
                     let sx = rect.width() / (*width_px).max(1) as f64;
                     let sy = rect.height() / (*height_px).max(1) as f64;
@@ -445,7 +447,7 @@ impl Renderer<'_> {
                     paint.anti_alias = self.flags.anti_alias;
                     paint.blend_mode = self.blend_for(shape.overprint_fill);
                     paint.shader = tiny_skia::Pattern::new(
-                        img.as_ref(),
+                        Pixmap::as_ref(&img),
                         SpreadMode::Pad,
                         tiny_skia::FilterQuality::Bilinear,
                         1.0,
@@ -1082,12 +1084,12 @@ impl Renderer<'_> {
                 size_mm,
                 ..
             } => {
-                let Ok(img) = Pixmap::decode_png(png) else {
+                let Some(img) = image_cache::decode(png) else {
                     return;
                 };
                 let scale = (size_mm * self.zoom) as f32 / (*width_px).max(1) as f32;
                 paint.shader = tiny_skia::Pattern::new(
-                    img.as_ref(),
+                    Pixmap::as_ref(&img),
                     SpreadMode::Repeat,
                     tiny_skia::FilterQuality::Bilinear,
                     1.0,
