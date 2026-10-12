@@ -229,7 +229,8 @@ pub enum Command {
         layer: LayerId,
         name: String,
     },
-    /// Move a layer to another index within its page (z-order).
+    /// Move a layer to another index within its page, or a master layer
+    /// within the master layers (z-order).
     ReorderLayer {
         layer: LayerId,
         index: usize,
@@ -443,15 +444,11 @@ impl Command {
                 doc.pages.insert(to, p);
             }
             Command::DeleteLayer { layer } => {
-                let page = doc
-                    .pages
-                    .iter_mut()
-                    .find(|p| p.layers.iter().any(|l| l.id == *layer))
-                    .ok_or(Error::LayerNotFound(*layer))?;
-                if page.layers.len() <= 1 {
+                let (layers, master) = layer_list_mut(doc, *layer)?;
+                if !master && layers.len() <= 1 {
                     return Err(Error::LastLayer);
                 }
-                page.layers.retain(|l| l.id != *layer);
+                layers.retain(|l| l.id != *layer);
             }
             Command::SetLayerVisible { layer, visible } => {
                 doc.layer_mut(*layer)?.visible = *visible
@@ -816,19 +813,14 @@ impl Command {
             }
             Command::RenameLayer { layer, name } => doc.layer_mut(*layer)?.name = name.clone(),
             Command::ReorderLayer { layer, index } => {
-                let page = doc
-                    .pages
-                    .iter_mut()
-                    .find(|p| p.layers.iter().any(|l| l.id == *layer))
-                    .ok_or(Error::LayerNotFound(*layer))?;
-                let i = page
-                    .layers
+                let (layers, _) = layer_list_mut(doc, *layer)?;
+                let i = layers
                     .iter()
                     .position(|l| l.id == *layer)
                     .ok_or(Error::LayerNotFound(*layer))?;
-                let l = page.layers.remove(i);
-                let index = (*index).min(page.layers.len());
-                page.layers.insert(index, l);
+                let l = layers.remove(i);
+                let index = (*index).min(layers.len());
+                layers.insert(index, l);
             }
             Command::SetShadow { shapes, shadow } => {
                 for id in shapes {
@@ -883,6 +875,20 @@ fn any(doc: &Document, id: ShapeId) -> Result<&Shape> {
 /// Any object to change, nested ones too.
 fn any_mut(doc: &mut Document, id: ShapeId) -> Result<&mut Shape> {
     doc.find_shape_mut(id).ok_or(Error::ShapeNotFound(id))
+}
+
+/// The list holding `layer`: the master layers (then true) or the layers
+/// of its page.
+fn layer_list_mut(doc: &mut Document, layer: LayerId) -> Result<(&mut Vec<Layer>, bool)> {
+    if doc.master.iter().any(|l| l.id == layer) {
+        return Ok((&mut doc.master, true));
+    }
+    doc.pages
+        .iter_mut()
+        .map(|p| &mut p.layers)
+        .find(|layers| layers.iter().any(|l| l.id == layer))
+        .map(|layers| (layers, false))
+        .ok_or(Error::LayerNotFound(layer))
 }
 
 /// Take the objects `ids` out of `shapes`, inside groups and clip frames
@@ -1291,5 +1297,43 @@ mod tests {
         .apply(&mut doc)
         .unwrap_err();
         assert!(matches!(err, Error::ShapeNotFound(_)));
+    }
+
+    #[test]
+    fn master_layers_reorder_and_delete_down_to_none() {
+        let mut doc = Document::default();
+        for name in ["Back", "Front"] {
+            Command::AddMasterLayer {
+                name: name.into(),
+                scope: MasterScope::All,
+            }
+            .apply(&mut doc)
+            .unwrap();
+        }
+        let names =
+            |doc: &Document| -> Vec<String> { doc.master.iter().map(|l| l.name.clone()).collect() };
+        let back = doc.master[0].id;
+        Command::ReorderLayer {
+            layer: back,
+            index: 1,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(names(&doc), ["Front", "Back"]);
+        for l in doc.master.iter().map(|l| l.id).collect::<Vec<_>>() {
+            Command::DeleteLayer { layer: l }.apply(&mut doc).unwrap();
+        }
+        assert!(doc.master.is_empty());
+        // A page keeps its last layer.
+        assert_eq!(doc.pages[0].layers.len(), 1);
+        let last = doc.pages[0].layers[0].id;
+        let err = Command::DeleteLayer { layer: last }
+            .apply(&mut doc)
+            .unwrap_err();
+        assert!(matches!(err, Error::LastLayer));
+        let err = Command::DeleteLayer { layer: back }
+            .apply(&mut doc)
+            .unwrap_err();
+        assert!(matches!(err, Error::LayerNotFound(_)));
     }
 }

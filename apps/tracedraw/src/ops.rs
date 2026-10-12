@@ -531,12 +531,9 @@ impl App {
 impl App {
     /// Tab / Shift+Tab: select the next or previous object in z-order.
     pub fn cycle_selection(&mut self, forward: bool) {
-        let Ok(page) = self.doc().page(self.page) else {
-            return;
-        };
-        let ids: Vec<tracedraw_core::ShapeId> = page
-            .layers
-            .iter()
+        let ids: Vec<tracedraw_core::ShapeId> = self
+            .page_layers()
+            .into_iter()
             .filter(|l| !l.locked)
             .flat_map(|l| &l.shapes)
             .filter(|s| !s.locked)

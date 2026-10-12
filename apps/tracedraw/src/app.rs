@@ -851,6 +851,14 @@ pub struct App {
     /// Objects docker: layers shown closed, groups shown open.
     pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
     pub objects_open_groups: std::collections::HashSet<ShapeId>,
+    /// Objects docker: the page and the Master Page nodes are shown
+    /// closed.
+    pub objects_page_closed: bool,
+    pub objects_master_closed: bool,
+    /// The layer made active in the Objects docker: new objects go there
+    /// while it is one of the current page's layers or a master layer
+    /// showing on it, visible and unlocked (see [`App::active_layer`]).
+    pub picked_layer: Option<LayerId>,
     pub navigator_tex: Option<egui::TextureHandle>,
     pub options_label_index: usize,
     pub options_current_only: bool,
@@ -1429,6 +1437,9 @@ impl App {
             drop_menu: None,
             objects_collapsed: Default::default(),
             objects_open_groups: Default::default(),
+            objects_page_closed: false,
+            objects_master_closed: false,
+            picked_layer: None,
             navigator_tex: None,
             options_label_index: 0,
             options_current_only: false,
@@ -2164,10 +2175,21 @@ impl App {
         Rect::from_origin_size((0.0, 0.0), self.page_size())
     }
 
-    /// The layer new objects go to: the topmost visible, unlocked layer
-    /// (hidden layers cannot take new objects); with none visible, the
-    /// topmost unlocked one.
+    /// The layer new objects go to: the one made active in the Objects
+    /// docker while it shows on the current page, visible and unlocked;
+    /// else the page's topmost visible, unlocked layer (hidden layers
+    /// cannot take new objects); with none visible, the topmost unlocked
+    /// one.
     pub fn active_layer(&self) -> Option<LayerId> {
+        if let Some(id) = self.picked_layer {
+            if self
+                .page_layers()
+                .iter()
+                .any(|l| l.id == id && l.visible && !l.locked)
+            {
+                return Some(id);
+            }
+        }
         let page = self.doc().page(self.page).ok()?;
         page.layers
             .iter()
@@ -2175,6 +2197,13 @@ impl App {
             .find(|l| !l.locked && l.visible)
             .or_else(|| page.layers.iter().rev().find(|l| !l.locked))
             .map(|l| l.id)
+    }
+
+    /// The layers drawn on the current page, bottom to top: the master
+    /// layers showing on it, then its own. Clicks, marquees, snapping and
+    /// Select All take objects from these.
+    pub fn page_layers(&self) -> Vec<&tracedraw_core::Layer> {
+        self.doc().layers_for_page(self.page).unwrap_or_default()
     }
 
     /// The selected objects, each in page space (an object inside a group
@@ -2593,16 +2622,14 @@ impl App {
     }
 
     pub fn select_all(&mut self) {
-        if let Ok(p) = self.doc().page(self.page) {
-            let ids = p
-                .layers
-                .iter()
-                .filter(|l| !l.locked)
-                .flat_map(|l| &l.shapes)
-                .map(|s| s.id)
-                .collect();
-            self.select(ids);
-        }
+        let ids = self
+            .page_layers()
+            .into_iter()
+            .filter(|l| !l.locked)
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .collect();
+        self.select(ids);
     }
 
     pub fn copy(&mut self) {
@@ -2676,17 +2703,15 @@ impl App {
         }
         let shapes = std::mem::take(&mut self.selection);
         self.run(Command::Group { shapes });
-        let doc = self.doc();
-        if let Ok(p) = doc.page(self.page) {
-            if let Some(g) = p
-                .layers
-                .iter()
-                .flat_map(|l| &l.shapes)
-                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
-                .max_by_key(|s| s.id)
-            {
-                self.selection = vec![g.id];
-            }
+        let group = self
+            .page_layers()
+            .into_iter()
+            .flat_map(|l| &l.shapes)
+            .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
+            .max_by_key(|s| s.id)
+            .map(|g| g.id);
+        if let Some(g) = group {
+            self.selection = vec![g];
         }
     }
 

@@ -265,10 +265,14 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
                 crate::ui::hints::hints_docker(app, ui);
                 return;
             }
+            // Objects keeps its New Layer and Delete bar under the tree.
+            if app.docker_tab == DockerTab::Objects {
+                crate::ui::objects_docker::objects_docker(app, ui);
+                return;
+            }
             egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
                 DockerTab::Properties => properties(app, ui),
-                DockerTab::Objects => crate::ui::objects_docker::objects(app, ui),
-                DockerTab::Hints => {}
+                DockerTab::Hints | DockerTab::Objects => {}
                 DockerTab::Transformations => transformations(app, ui),
                 DockerTab::Undo => undo_docker(app, ui),
                 other => crate::ui::dockers2::show(app, ui, other),

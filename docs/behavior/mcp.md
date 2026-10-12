@@ -65,10 +65,11 @@ request with a JSON-RPC error (-32000) saying how to turn the option on.
 | `document_info` | | Title, file, modified flag, pages with size, layers with visibility and lock, every object with id, type, name, bounds in mm, fill, outline, opacity, text and font, group children, effect count; the selection |
 | `undo`, `redo` | | One step back or forward, then the description |
 
-New objects go to the active layer: the topmost layer that is visible
-and unlocked (a hidden layer never receives objects; with every layer
-hidden, the topmost unlocked one). The same rule applies to drawing in
-the window.
+New objects go to the active layer: the layer picked in the Objects
+docker while it shows on the page, visible and unlocked, else the
+topmost layer that is visible and unlocked (a hidden layer never
+receives objects; with every layer hidden, the topmost unlocked one).
+The same rule applies to drawing in the window.
 
 ## Checks
 

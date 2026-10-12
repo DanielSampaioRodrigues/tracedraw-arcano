@@ -31,6 +31,8 @@ pub struct DocSlot {
     pub units: crate::app::Units,
     /// Centres of rotation moved in this drawing.
     pub pivots: crate::app::Pivots,
+    /// The layer made active in the Objects docker.
+    pub picked_layer: Option<tracedraw_core::LayerId>,
 }
 
 impl App {
@@ -57,6 +59,7 @@ impl App {
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
         std::mem::swap(&mut self.units, &mut slot.units);
         std::mem::swap(&mut self.pivots, &mut slot.pivots);
+        std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
         // A page id from another drawing means nothing here.
         if self.engine.document().page(self.page).is_err() {
             if let Some(p) = self.engine.document().pages.first() {
@@ -125,6 +128,7 @@ impl App {
         self.missing_fonts.clear();
         self.units = units;
         self.pivots = Default::default();
+        self.picked_layer = None;
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
         self.show_welcome = false;
@@ -196,6 +200,7 @@ impl App {
             self.page_numbers = PageNumberSettings::default();
             self.missing_fonts.clear();
             self.pivots = Default::default();
+            self.picked_layer = None;
             self.active_doc = 0;
             self.show_welcome = true;
             return;

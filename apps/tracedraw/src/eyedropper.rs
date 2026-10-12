@@ -74,8 +74,7 @@ impl App {
         if let Some(id) = self.hit_test(p) {
             return Some(id);
         }
-        let page = self.doc().page(self.page).ok()?;
-        for layer in page.layers.iter().rev() {
+        for layer in self.page_layers().into_iter().rev() {
             if !layer.visible || layer.locked {
                 continue;
             }

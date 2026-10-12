@@ -6,6 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Objects docker shows the page and the Master Page as a tree: the
+  master layers, the guides (show, lock all) and the document grid (show)
+  under the Master Page; each layer has a printer to turn printing and
+  export on or off; the active layer, where new objects go, is in bold
+  and is picked by clicking a layer (or an object on it); New Layer, New
+  Master Layer (all pages, or odd or even from its context menu) and
+  Delete (the selection, else the active layer) are at the bottom. A
+  master layer can be moved, deleted and set to all, odd or even pages
+  from its context menu, and its objects can be clicked, marquee
+  selected and snapped to on every page it shows on.
 - The Properties docker: its sections come open, in the order Outline,
   Fill, Transparency (new there: the Transparency tool's settings), the
   kind's own (corners, effects, character) and Summary, each with a header

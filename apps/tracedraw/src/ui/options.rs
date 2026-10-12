@@ -1833,11 +1833,7 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
             (tracedraw_core::MasterScope::Even, "options.new_master_even"),
         ] {
             if ui.button(tr(k)).clicked() {
-                let n = app.doc().master.len() + 1;
-                app.run(Command::AddMasterLayer {
-                    name: format!("Master {n}"),
-                    scope: s,
-                });
+                crate::ui::objects_docker::new_master_layer(app, s);
             }
         }
     });

@@ -78,20 +78,18 @@ impl App {
             }
         }
         if s.objects && bounds {
-            if let Ok(p) = self.doc().page(self.page) {
-                for sh in p
-                    .layers
-                    .iter()
-                    .filter(|l| l.visible)
-                    .flat_map(|l| &l.shapes)
-                {
-                    if exclude.contains(&sh.id) {
-                        continue;
-                    }
-                    let b = sh.bounds();
-                    xs.extend([b.x0, b.x1, b.center().x]);
-                    ys.extend([b.y0, b.y1, b.center().y]);
+            for sh in self
+                .page_layers()
+                .into_iter()
+                .filter(|l| l.visible)
+                .flat_map(|l| &l.shapes)
+            {
+                if exclude.contains(&sh.id) {
+                    continue;
                 }
+                let b = sh.bounds();
+                xs.extend([b.x0, b.x1, b.center().x]);
+                ys.extend([b.y0, b.y1, b.center().y]);
             }
         }
         (xs, ys)
@@ -193,21 +191,19 @@ impl App {
             snap_points::page_geometry(self.page_rect(), &mut g);
         }
         if self.snap.objects {
-            if let Ok(page) = self.doc().page(self.page) {
-                for sh in page
-                    .layers
-                    .iter()
-                    .filter(|l| l.visible)
-                    .flat_map(|l| &l.shapes)
-                {
-                    if exclude.contains(&sh.id) || !sh.visible {
-                        continue;
-                    }
-                    if !sh.bounds().inflate(tol, tol).contains(p) {
-                        continue;
-                    }
-                    snap_points::geometry(sh, Affine::IDENTITY, &text_baselines, &mut g);
+            for sh in self
+                .page_layers()
+                .into_iter()
+                .filter(|l| l.visible)
+                .flat_map(|l| &l.shapes)
+            {
+                if exclude.contains(&sh.id) || !sh.visible {
+                    continue;
                 }
+                if !sh.bounds().inflate(tol, tol).contains(p) {
+                    continue;
+                }
+                snap_points::geometry(sh, Affine::IDENTITY, &text_baselines, &mut g);
             }
         }
         g

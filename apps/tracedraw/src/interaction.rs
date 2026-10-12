@@ -111,11 +111,9 @@ impl App {
 
     /// The topmost object at `p` that `skip` does not rule out.
     pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
-        let doc = self.doc();
-        let page = doc.page(self.page).ok()?;
         let tol = 3.0 / self.view.zoom as f64;
-        page.layers
-            .iter()
+        self.page_layers()
+            .into_iter()
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
@@ -201,10 +199,6 @@ impl App {
     /// `deep` the innermost objects inside groups (Alt+click digs through
     /// these, Ctrl+Alt+click through the deep ones).
     pub fn hits_at(&self, p: Point, deep: bool) -> Vec<ShapeId> {
-        let doc = self.doc();
-        let Ok(page) = doc.page(self.page) else {
-            return Vec::new();
-        };
         let tol = 3.0 / self.view.zoom as f64;
         let mut out = Vec::new();
         fn leaves(
@@ -222,9 +216,9 @@ impl App {
                 leaves(app, c, p, tol, out);
             }
         }
-        for s in page
-            .layers
-            .iter()
+        for s in self
+            .page_layers()
+            .into_iter()
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
@@ -244,9 +238,6 @@ impl App {
     /// not locked or hidden.
     pub fn select_in_region(&mut self, region: crate::select_region::Region, touching: bool) {
         let doc = self.doc();
-        let Ok(page) = doc.page(self.page) else {
-            return;
-        };
         let fill_open = doc.metadata.fill_open_curves;
         let all_filled = self.settings.treat_all_filled;
         let fill_counts = |s: &tracedraw_core::Shape| {
@@ -255,9 +246,9 @@ impl App {
                     && (fill_open || !matches!(s.kind, ShapeKind::Path { closed: false, .. })))
         };
         let mut ids = self.selection.clone();
-        for s in page
-            .layers
-            .iter()
+        for s in self
+            .page_layers()
+            .into_iter()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| &l.shapes)
             .filter(|s| s.visible && !s.locked)

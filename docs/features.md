@@ -175,8 +175,8 @@ Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Multiple pages, insert/duplicate/rename/delete/move, go to page, page sorter | works |
 | Page size presets and orientation, custom sizes, bleed, printable area | works |
 | Page background: solid or bitmap | works |
-| Master layers (all, odd, even pages), layer visibility, lock, printable | works |
-| Objects panel: layers with collapse arrow, eye, padlock and layer icon; objects by name (or what they are) with a fill and outline swatch; groups open to their objects; double-click renames a layer or an object (see `behavior/objects-panel.md`) | works |
+| Master layers (all, odd, even pages; their objects selectable on the pages they show on), layer visibility, lock, printable | works |
+| Objects panel: the page and the Master Page (master layers, guides, document grid) as a tree; layers with collapse arrow, eye, printer, padlock and layer icon; the active layer in bold, picked by a click (new objects go there; a click on an object makes its layer active); objects by name (or what they are) with a fill and outline swatch; groups open to their objects; double-click renames a layer or an object; New Layer, New Master Layer (all, odd or even pages) and Delete at the bottom (see `behavior/objects-panel.md`) | works |
 | Document properties and metadata, rendering resolution, baseline grid | works |
 | Guidelines panel, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
 | Insert page number (active layer, all, odd, even) | works |
