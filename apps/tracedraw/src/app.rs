@@ -874,6 +874,8 @@ pub struct App {
     pub context_menu: Option<(egui::Pos2, Point)>,
     pub scripts_output: Vec<String>,
     pub script_source: String,
+    /// AI Drawing: the request, the key in use, the conversation.
+    pub ai: crate::ai::AiSession,
     pub find_state: crate::ui::dialogs::FindReplaceState,
     pub step_repeat: crate::ops2::StepRepeat,
     pub align_to: crate::ops2::AlignTo,
@@ -1083,10 +1085,11 @@ pub enum DockerTab {
     VectorMosaic,
     PictureMosaic,
     Shelf,
+    AiDrawing,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 36] = [
+    pub const ALL: [DockerTab; 37] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1123,6 +1126,7 @@ impl DockerTab {
         DockerTab::VectorMosaic,
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
+        DockerTab::AiDrawing,
     ];
 
     /// i18n key of the docker's title.
@@ -1164,6 +1168,7 @@ impl DockerTab {
             DockerTab::VectorMosaic => "docker.vector_mosaic",
             DockerTab::PictureMosaic => "docker.picture_mosaic",
             DockerTab::Shelf => "docker.shelf",
+            DockerTab::AiDrawing => "docker.ai_drawing",
         }
     }
 
@@ -1439,6 +1444,7 @@ impl App {
             context_menu: None,
             scripts_output: Vec::new(),
             script_source: String::new(),
+            ai: Default::default(),
             find_state: Default::default(),
             step_repeat: Default::default(),
             align_to: Default::default(),
@@ -1681,6 +1687,7 @@ impl App {
 
     /// Apply a set of preferences to the running editor.
     pub fn apply_settings(&mut self, s: crate::settings::Settings) {
+        self.ai.key = crate::ai::remembered_key(&s.ai);
         let lang = if s.language.is_empty() {
             crate::i18n::system_language().to_string()
         } else {

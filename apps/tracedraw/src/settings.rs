@@ -163,6 +163,9 @@ pub struct Settings {
     /// Options > Global > File Formats.
     #[serde(default)]
     pub formats: crate::prefs::FormatPrefs,
+    /// AI Drawing: the service, address, model and (when asked) the key.
+    #[serde(default)]
+    pub ai: crate::ai::AiPrefs,
     /// Options > Global > Bitmap Tracing.
     #[serde(default)]
     pub tracing: crate::prefs::TracePrefs,
@@ -642,6 +645,7 @@ impl Default for Settings {
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),
             formats: Default::default(),
+            ai: Default::default(),
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),

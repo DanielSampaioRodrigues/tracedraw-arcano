@@ -2331,6 +2331,13 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
             app.toggle_recording();
         }
     });
+    if item(ui, "menu.tools.ai_drawing", "", true) {
+        if !app.open_dockers.contains(&DockerTab::AiDrawing) {
+            app.open_dockers.push(DockerTab::AiDrawing);
+        }
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::AiDrawing;
+    }
     if item(ui, "menu.tools.font_manager", "", true) {
         app.dialog = Dialog::FontManager(Default::default());
     }

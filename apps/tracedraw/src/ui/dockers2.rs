@@ -59,6 +59,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::VectorMosaic => crate::ui::vector_mosaic_docker::vector_mosaic(app, ui),
         DockerTab::PictureMosaic => crate::ui::picture_mosaic_docker::picture_mosaic(app, ui),
         DockerTab::Shelf => crate::ui::shelf_docker::shelf(app, ui),
+        DockerTab::AiDrawing => crate::ui::ai_docker::ai_drawing(app, ui),
         _ => {}
     }
 }

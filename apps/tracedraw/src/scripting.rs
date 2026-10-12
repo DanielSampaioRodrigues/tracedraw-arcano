@@ -3,12 +3,14 @@
 //! `ActivePage`, `ActiveLayer`, `Shapes`, `Shape` with `Fill`, `Outline`,
 //! `Move`, `Rotate`, `Stretch`, `Delete`, `Duplicate`, `ConvertToCurves`,
 //! plus `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`,
-//! `CreateCurve`, `CreatePolygon`. Recorded macros are plain scripts.
+//! `CreateCurve`, `CreatePath` (SVG path data), `CreatePolygon`. Recorded
+//! macros are plain scripts.
 //!
 //! Implementation: one native dispatcher `__td(method, argsJson)` works on
 //! a snapshot of the document and records commands; the JS prelude builds
 //! the object model on top. After the script the commands run as one
-//! undo step.
+//! undo step. Scripts an AI service wrote run untrusted
+//! ([`run_untrusted`]): without file access, with limits, all or nothing.
 
 use crate::app::App;
 use boa_engine::{
@@ -31,7 +33,27 @@ struct HostInner {
     commands: Vec<Command>,
     output: Vec<String>,
     next_id: u64,
+    trust: Trust,
 }
+
+/// How far a script is trusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Trust {
+    /// The user's own scripts: every method; the changes made before an
+    /// error are kept.
+    User,
+    /// Scripts an AI service wrote (AI Drawing): no file access, loops,
+    /// recursion and changes limited, nothing kept unless all of it runs.
+    Untrusted,
+}
+
+/// Untrusted scripts: loop iterations per function call, call depth and
+/// changes to the drawing.
+const UNTRUSTED_LOOP_LIMIT: u64 = 1_000_000;
+const UNTRUSTED_RECURSION_LIMIT: usize = 400;
+const UNTRUSTED_MAX_CHANGES: usize = 20_000;
+/// Methods that reach files, refused to untrusted scripts.
+const FILE_METHODS: [&str; 2] = ["export", "import_bitmap"];
 
 struct Host(RefCell<HostInner>);
 
@@ -141,6 +163,7 @@ class Layer {
   CreateLineSegment(x1, y1, x2, y2) { return new Shape(__call('create_curve', {layer:this.id, points:[[x1,y1],[x2,y2]], closed:false}).id); }
   CreateCurve(points, closed) { return new Shape(__call('create_curve', {layer:this.id, points:points, closed:!!closed}).id); }
   CreateCurveSegment(points) { return this.CreateCurve(points, false); }
+  CreatePath(d) { return new Shape(__call('create_path', {layer:this.id, d:d}).id); }
   ImportBitmap(path) { return new Shape(__call('import_bitmap', {layer:this.id, path:path}).id); }
 }
 class Layers {
@@ -182,6 +205,7 @@ class Document {
   CreateRectangle(x, y, w, h, r) { return this.ActiveLayer.CreateRectangle(x, y, w, h, r); }
   CreateEllipse(x, y, w, h) { return this.ActiveLayer.CreateEllipse(x, y, w, h); }
   CreateArtisticText(x, y, t, f, s) { return this.ActiveLayer.CreateArtisticText(x, y, t, f, s); }
+  CreatePath(d) { return this.ActiveLayer.CreatePath(d); }
   Export(path, format) { __call('export', {path:path, format:format||''}); }
   BeginCommandGroup(name) { }
   EndCommandGroup() { }
@@ -207,6 +231,27 @@ function MsgBox(t) { print(t); }
 
 /// Run a script against the app; returns the printed lines.
 pub fn run(app: &mut App, src: &str) -> Result<Vec<String>, String> {
+    run_with(app, src, Trust::User, "Script").map(|(output, _)| output)
+}
+
+/// Run a script an AI service wrote: no file access, loops, call depth
+/// and changes limited, and nothing applied unless the whole script runs.
+/// Its changes are one undo step named `label`. Returns the printed lines
+/// and the number of changes.
+pub fn run_untrusted(
+    app: &mut App,
+    src: &str,
+    label: &'static str,
+) -> Result<(Vec<String>, usize), String> {
+    run_with(app, src, Trust::Untrusted, label)
+}
+
+fn run_with(
+    app: &mut App,
+    src: &str,
+    trust: Trust,
+    label: &'static str,
+) -> Result<(Vec<String>, usize), String> {
     let host = Host(RefCell::new(HostInner {
         doc: app.engine.document().clone(),
         page: app.page,
@@ -215,8 +260,14 @@ pub fn run(app: &mut App, src: &str) -> Result<Vec<String>, String> {
         commands: Vec::new(),
         output: Vec::new(),
         next_id: app.engine.document().ids().peek_next(),
+        trust,
     }));
     let mut ctx = Context::default();
+    if trust == Trust::Untrusted {
+        let limits = ctx.runtime_limits_mut();
+        limits.set_loop_iteration_limit(UNTRUSTED_LOOP_LIMIT);
+        limits.set_recursion_limit(UNTRUSTED_RECURSION_LIMIT);
+    }
     ctx.insert_data(host);
     let dispatcher = NativeFunction::from_fn_ptr(dispatch);
     let global = ObjectInitializer::new(&mut ctx).build();
@@ -240,18 +291,27 @@ pub fn run(app: &mut App, src: &str) -> Result<Vec<String>, String> {
             }
         }
         Err(e) => {
-            // Apply what ran before the error.
-            apply(app, inner.commands, inner.selection, inner.page);
+            // The user's scripts keep what ran before the error.
+            if trust == Trust::User {
+                apply(app, inner.commands, inner.selection, inner.page, label);
+            }
             return Err(e.to_string());
         }
     }
-    apply(app, inner.commands, inner.selection, inner.page);
-    Ok(output)
+    let changes = inner.commands.len();
+    apply(app, inner.commands, inner.selection, inner.page, label);
+    Ok((output, changes))
 }
 
-fn apply(app: &mut App, commands: Vec<Command>, selection: Vec<ShapeId>, page: PageId) {
+fn apply(
+    app: &mut App,
+    commands: Vec<Command>,
+    selection: Vec<ShapeId>,
+    page: PageId,
+    label: &'static str,
+) {
     if !commands.is_empty() {
-        if let Err(e) = app.engine.run_batch("Script", &commands) {
+        if let Err(e) = app.engine.run_batch(label, &commands) {
             app.status = e.to_string();
         }
     }
@@ -304,6 +364,11 @@ fn color_from(v: &Value) -> Option<Color> {
 
 impl HostInner {
     fn run(&mut self, cmd: Command) -> Result<(), String> {
+        if self.trust == Trust::Untrusted && self.commands.len() >= UNTRUSTED_MAX_CHANGES {
+            return Err(format!(
+                "more than {UNTRUSTED_MAX_CHANGES} changes; draw fewer objects"
+            ));
+        }
         cmd.apply(&mut self.doc).map_err(|e| e.to_string())?;
         self.commands.push(cmd);
         Ok(())
@@ -339,6 +404,9 @@ impl HostInner {
     }
 
     fn call(&mut self, method: &str, a: &Value) -> Result<Value, String> {
+        if self.trust == Trust::Untrusted && FILE_METHODS.contains(&method) {
+            return Err(format!("{method} is not available here: no file access"));
+        }
         Ok(match method {
             "version" => json!({"version": env!("CARGO_PKG_VERSION")}),
             "log" => {
@@ -929,6 +997,24 @@ impl HostInner {
                 }
                 let closed = a.get("closed").and_then(|c| c.as_bool()).unwrap_or(false);
                 let path = tracedraw_core::geometry::polyline_path(&pts, closed);
+                let s = Shape::new(ShapeId(0), ShapeKind::Path { path, closed });
+                self.add(layer, s)?
+            }
+            "create_path" => {
+                let layer = self.layer_for(a)?;
+                let d = a
+                    .get("d")
+                    .and_then(|d| d.as_str())
+                    .ok_or("missing path data")?;
+                let path = tracedraw_core::geometry::BezPath::from_svg(d)
+                    .map_err(|e| format!("path data: {e}"))?;
+                if path.elements().len() < 2 {
+                    return Err("path data draws nothing".into());
+                }
+                let closed = path
+                    .elements()
+                    .iter()
+                    .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath));
                 let s = Shape::new(ShapeId(0), ShapeKind::Path { path, closed });
                 self.add(layer, s)?
             }

@@ -8,7 +8,8 @@ macOS and Linux packages), `tracedraw-cli` and the browser demo.
 
 Nothing. TraceDraw has no accounts, no telemetry, no analytics, no crash
 reporting and no advertising. It does not send your drawings, your files
-or anything about you or your computer anywhere.
+or anything about you or your computer anywhere, except what you ask AI
+Drawing to send to the AI service you set up yourself (see below).
 
 ## What stays on your computer
 
@@ -19,6 +20,11 @@ or anything about you or your computer anywhere.
   Global > Reset all settings puts the preferences back as they came.
 - Automatic backups of open drawings, in the folder set in Options > Save
   (by default a `TraceDraw` folder in your system's temporary folder).
+- AI Drawing's settings (service, address, model) with the preferences;
+  your API key only if you tick "Remember the key on this computer", and
+  then in plain text in the preferences file (in the browser demo: the
+  page's local storage). Otherwise the key is forgotten when TraceDraw
+  closes.
 
 ## When TraceDraw uses the network
 
@@ -30,11 +36,19 @@ Only when you ask it to:
   send it.
 - `tracedraw --mcp` talks over standard input and output with the
   program that started it, on your computer; it opens no network port.
+- AI Drawing (Tools > AI Drawing), only when you press Draw: it sends
+  your request, the earlier requests of the same conversation and a
+  description of the active page (its size, layers and objects: types,
+  positions, colours and text; no file names or pictures) to the AI
+  service whose address you entered, with your API key. That service
+  handles them under its own terms and privacy policy. TraceDraw has no
+  AI service of its own and sends nothing to its authors.
 
 ## The browser demo
 
 The demo at <https://igtoth.github.io/tracedraw/> is a set of static
-files served by GitHub Pages. TraceDraw itself sends nothing; GitHub, as
+files served by GitHub Pages. TraceDraw itself sends nothing (AI Drawing
+aside, as above, from your browser to the service you set up); GitHub, as
 the host, may log visits as described in the
 [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
 Files you open in the demo stay in your browser.
@@ -44,4 +58,4 @@ Files you open in the demo stay in your browser.
 Questions about this policy: open an issue at
 <https://github.com/igtoth/tracedraw/issues>.
 
-Last updated: 2026-10-11.
+Last updated: 2026-10-12.

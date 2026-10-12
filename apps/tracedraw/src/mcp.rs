@@ -9,9 +9,9 @@
 //! the way a user does: every change is a command with undo.
 
 use crate::app::App;
+use crate::describe::document as describe;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
-use tracedraw_core::{document::ShapeKind, Fill};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -280,86 +280,6 @@ fn export_to(app: &App, path: &std::path::Path, page_index: usize, dpi: f64) -> 
         }
         other => Err(format!("unsupported export format: {other}")),
     }
-}
-
-fn fill_summary(f: &Fill) -> Value {
-    match f {
-        Fill::None => json!("none"),
-        Fill::Solid(c) => json!({"solid": crate::app::color_description(*c)}),
-        Fill::Fountain(ft) => {
-            json!({"fountain": format!("{:?}", ft.kind), "stops": ft.stops.len()})
-        }
-        Fill::Pattern(_) => json!("pattern"),
-        Fill::Texture(_) => json!("texture"),
-        Fill::Mesh(_) => json!("mesh"),
-    }
-}
-
-fn shape_json(s: &tracedraw_core::document::Shape) -> Value {
-    let b = s.bounds();
-    let kind = match &s.kind {
-        ShapeKind::Rect { .. } => "rectangle",
-        ShapeKind::Ellipse { .. } => "ellipse",
-        ShapeKind::Polygon { .. } => "polygon",
-        ShapeKind::Path { .. } => "curve",
-        ShapeKind::Text { .. } => "text",
-        ShapeKind::Group { .. } => "group",
-        ShapeKind::ClipFrame { .. } => "clip_frame",
-        ShapeKind::Table(_) => "table",
-        ShapeKind::SymbolInstance { .. } => "symbol",
-        ShapeKind::Bitmap { .. } => "bitmap",
-    };
-    let mut v = json!({
-        "id": s.id.0,
-        "type": kind,
-        "name": s.name,
-        "bounds_mm": {"x0": round(b.x0), "y0": round(b.y0), "x1": round(b.x1), "y1": round(b.y1)},
-        "fill": fill_summary(&s.fill),
-        "outline": s.stroke.as_ref().map(|st| json!({
-            "colour": crate::app::color_description(st.color),
-            "width_mm": round(st.width),
-        })),
-        "opacity": s.opacity,
-    });
-    if let ShapeKind::Text { spans, .. } = &s.kind {
-        v["text"] = json!(spans.iter().map(|sp| sp.text.as_str()).collect::<String>());
-        if let Some(sp) = spans.first() {
-            v["font"] = json!({"family": sp.font_family, "size_pt": sp.size_pt, "bold": sp.bold, "italic": sp.italic});
-        }
-    }
-    if let ShapeKind::Group { children } = &s.kind {
-        v["children"] = json!(children.iter().map(shape_json).collect::<Vec<_>>());
-    }
-    if !s.effects.is_empty() {
-        v["effects"] = json!(s.effects.len());
-    }
-    v
-}
-
-fn round(v: f64) -> f64 {
-    (v * 1000.0).round() / 1000.0
-}
-
-pub fn describe(app: &App) -> Value {
-    let doc = app.engine.document();
-    json!({
-        "title": doc.title,
-        "file": app.file.as_ref().map(|p| p.display().to_string()),
-        "modified": app.engine.is_dirty(),
-        "pages": doc.pages.iter().map(|p| json!({
-            "id": p.id.0,
-            "name": p.name,
-            "size_mm": {"width": round(p.size.width), "height": round(p.size.height)},
-            "layers": p.layers.iter().map(|l| json!({
-                "id": l.id.0,
-                "name": l.name,
-                "visible": l.visible,
-                "locked": l.locked,
-                "objects": l.shapes.iter().map(shape_json).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-        })).collect::<Vec<_>>(),
-        "selection": app.selection.iter().map(|id| id.0).collect::<Vec<_>>(),
-    })
 }
 
 #[cfg(test)]

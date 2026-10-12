@@ -87,6 +87,14 @@ full, row-by-row status.
   width scale from the right place, guide and grid layers stay hidden,
   and empty master layers no longer show up as layers of their own.
 - File > Close All closes every drawing (it closed only the active one).
+- AI Drawing (Tools > AI Drawing): describe what to draw or change and
+  an AI service you set up with your own key (the Messages API, or any
+  chat completions service, local model servers included) writes a
+  script for the object model; it runs as one undo step, without file
+  access and all or nothing, and a failing script is sent back once with
+  its error. The key stays in memory unless you ask to remember it.
+  Works on the desktop and in the browser.
+- Scripts: `CreatePath(d)` draws curves from SVG path data.
 
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
   app (the windowing layer delivers them as clipboard events, not as

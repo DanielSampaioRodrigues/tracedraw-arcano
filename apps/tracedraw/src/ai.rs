@@ -1,0 +1,1096 @@
+//! AI Drawing: a request in words becomes a program for the scripting
+//! object model (`scripting.rs`), written by an AI service the user sets
+//! up with their own key, and run as one undo step.
+//!
+//! Two kinds of service are spoken to: the Messages API and the chat
+//! completions API that many services and local model servers offer. The
+//! request carries a description of the object model, the user's words
+//! and a description of the active page (`describe.rs`); the reply's code
+//! block runs as an untrusted script (no file access, limits). A script
+//! that fails is sent back once with its error for a corrected one.
+//! Nothing is sent until the user asks; the key stays in memory unless the
+//! user asks to remember it. See docs/behavior/ai-drawing.md.
+
+use crate::app::App;
+use crate::i18n::{tr, trf};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+/// The kinds of service AI Drawing talks to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Provider {
+    /// The Messages API.
+    #[default]
+    Anthropic,
+    /// The chat completions API, offered by many services and by local
+    /// model servers.
+    OpenAiCompatible,
+}
+
+impl Provider {
+    pub const ALL: [Provider; 2] = [Provider::Anthropic, Provider::OpenAiCompatible];
+
+    /// i18n key of the name shown in the list.
+    pub fn key(self) -> &'static str {
+        match self {
+            Provider::Anthropic => "ai.provider_anthropic",
+            Provider::OpenAiCompatible => "ai.provider_openai_compatible",
+        }
+    }
+
+    /// The address requests go to when none is set.
+    pub fn default_endpoint(self) -> &'static str {
+        match self {
+            Provider::Anthropic => "https://api.anthropic.com/v1/messages",
+            Provider::OpenAiCompatible => "https://api.openai.com/v1/chat/completions",
+        }
+    }
+
+    /// The model asked for when none is set (none for services whose
+    /// models vary).
+    pub fn default_model(self) -> &'static str {
+        match self {
+            Provider::Anthropic => "claude-sonnet-5-5",
+            Provider::OpenAiCompatible => "",
+        }
+    }
+
+    /// Requests need a key (local model servers often take none).
+    pub fn needs_key(self) -> bool {
+        matches!(self, Provider::Anthropic)
+    }
+}
+
+/// The connection, kept with the preferences. The key is kept here only
+/// while `remember_key` is on; otherwise it lives in the session.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AiPrefs {
+    pub provider: Provider,
+    /// Empty: the provider's usual address.
+    pub endpoint: String,
+    /// Empty: the provider's usual model.
+    pub model: String,
+    pub key: String,
+    pub remember_key: bool,
+}
+
+impl AiPrefs {
+    /// The address requests go to.
+    pub fn endpoint(&self) -> String {
+        let e = self.endpoint.trim();
+        if e.is_empty() {
+            self.provider.default_endpoint().to_string()
+        } else {
+            e.to_string()
+        }
+    }
+
+    /// The model asked for.
+    pub fn model(&self) -> String {
+        let m = self.model.trim();
+        if m.is_empty() {
+            self.provider.default_model().to_string()
+        } else {
+            m.to_string()
+        }
+    }
+}
+
+/// The key a session starts with: the remembered one, if any.
+pub fn remembered_key(prefs: &AiPrefs) -> String {
+    if prefs.remember_key {
+        prefs.key.clone()
+    } else {
+        String::new()
+    }
+}
+
+/// One HTTP POST, as both kinds of service take it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HttpRequest {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+/// What the service answered.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+/// A response, or why none came (network, address, certificate).
+pub type HttpResult = Result<HttpResponse, String>;
+
+/// Who says a message of the conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    User,
+    Assistant,
+}
+
+impl Role {
+    fn name(self) -> &'static str {
+        match self {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        }
+    }
+}
+
+/// An earlier request and the reply that drew it, sent along with the
+/// next request so "make it bigger" means something.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Turn {
+    pub request: String,
+    pub reply: String,
+}
+
+/// Earlier turns sent with a request.
+pub const MAX_HISTORY: usize = 3;
+/// Objects of the active page described to the service.
+pub const MAX_OBJECTS: usize = 300;
+/// Longest reply taken as a script, in bytes.
+const MAX_SCRIPT: usize = 256 * 1024;
+/// Tokens the Messages API may answer with.
+const MAX_TOKENS: u32 = 8000;
+/// The undo step of a drawing made by AI Drawing.
+const UNDO_LABEL: &str = "AI Drawing";
+
+/// Where a request stands.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum AiStatus {
+    #[default]
+    Idle,
+    /// Sent; waiting for the reply.
+    Waiting,
+    /// The first script failed; a corrected one was asked for.
+    Retrying,
+    /// Drawn, with this many changes.
+    Done(usize),
+    /// Nothing drawn, and why.
+    Failed(String),
+}
+
+/// A request on its way.
+struct Pending {
+    rx: std::sync::mpsc::Receiver<HttpResult>,
+    /// The messages sent, to continue the conversation on a retry.
+    messages: Vec<(Role, String)>,
+    /// The user's words, for the history.
+    request: String,
+    /// This is already the corrected attempt.
+    retried: bool,
+}
+
+/// AI Drawing's state for the session (the docker's fields and the
+/// conversation).
+#[derive(Default)]
+pub struct AiSession {
+    /// What to draw, in the user's words.
+    pub request: String,
+    /// The key in use (also in the preferences when remembered).
+    pub key: String,
+    pub status: AiStatus,
+    /// The last script received.
+    pub script: String,
+    /// What the last script printed.
+    pub output: Vec<String>,
+    pub history: Vec<Turn>,
+    pending: Option<Pending>,
+    /// Tests: answers requests at once instead of the network.
+    pub fake: Option<fn(&HttpRequest) -> HttpResult>,
+    /// Tests: the requests sent, newest last.
+    pub sent: Vec<HttpRequest>,
+}
+
+impl AiSession {
+    /// A request is on its way.
+    pub fn busy(&self) -> bool {
+        self.pending.is_some()
+    }
+}
+
+/// What the service is told about the job and the object model.
+pub const SYSTEM_PROMPT: &str = r#"You are the drawing assistant of TraceDraw, a vector illustration editor. You draw by writing one JavaScript program for TraceDraw's object model. Reply with the whole program in a single ```javascript code block and nothing else.
+
+Units and axes: lengths in millimetres; the origin is the bottom-left corner of the page; x grows to the right and y upwards. Angles in degrees, counter-clockwise. Text sizes in points.
+
+Colours: Color.RGB(r, g, b) with 0 to 255; Color.CMYK(c, m, y, k) with 0 to 100; Color.Gray(v) with 0 black to 100 white.
+
+Creating objects (each returns a Shape; new objects go on the active layer, in front of the others; they have no fill and a thin black outline, text is black without outline):
+  ActiveLayer.CreateRectangle(x, y, width, height, cornerRadius)   x, y: bottom-left corner
+  ActiveLayer.CreateEllipse(x, y, width, height)                    the bounding box from its bottom-left corner
+  ActiveLayer.CreatePolygon(x, y, width, height, sides)
+  ActiveLayer.CreateStar(x, y, width, height, points, sharpness)    sharpness 0 to 1
+  ActiveLayer.CreateLineSegment(x1, y1, x2, y2)
+  ActiveLayer.CreateCurve([[x, y], [x, y], ...], closed)            straight segments through the points
+  ActiveLayer.CreatePath("M 10 10 C 20 40, 40 40, 50 10 Z")        SVG path data (M L H V C S Q T A Z) in page coordinates, y up
+  ActiveLayer.CreateArtisticText(x, y, text, fontFamily, sizePt)    x, y: start of the baseline
+  ActiveLayer.CreateParagraphText(x, y, width, height, text, fontFamily, sizePt)
+
+Shape methods and properties:
+  s.Fill.ApplyUniformFill(color)   s.Fill.ApplyFountainFill(fromColor, toColor, angle)   s.Fill.ApplyNoFill()
+  s.Outline.SetProperties(widthMm, color)   s.Outline.SetNoOutline()
+  s.Move(dx, dy)   s.SetPosition(x, y) (bottom-left of its bounding box)   s.SetSize(width, height)
+  s.Rotate(angle) (about its centre)   s.Stretch(sx, sy)   s.Skew(angleX, angleY)
+  s.Duplicate(dx, dy) returns the copy   s.Delete()   s.OrderToFront()   s.OrderToBack()
+  s.SetOpacity(transparencyPercent) (0 opaque, 100 invisible)   s.AddDropShadow(dx, dy, opacityPercent)
+  s.Name and s.Text (text objects) can be read and set; s.id, s.PositionX, s.PositionY, s.SizeWidth, s.SizeHeight, s.CenterX, s.CenterY can be read
+
+Several objects: new ShapeRange([a.id, b.id]).Group() groups them and returns the group. ActivePage.Shapes.All and ActiveDocument.Selection are ShapeRanges with Count, Item(i) (from 1), forEach(f), Move(dx, dy), Delete(), AlignLeft(), AlignRight(), AlignTop(), AlignBottom(), AlignCentersHorizontally(), AlignCentersVertically().
+Existing objects: new Shape(id) with an id from the description of the page; ActiveLayer.Shapes.FindShape(name).
+Pages and layers: ActivePage.SizeWidth, ActivePage.SizeHeight, ActivePage.SetSize(width, height), ActivePage.CreateLayer(name) returns a layer with the same Create methods.
+print(text) shows a short message to the user.
+
+Rules: keep the drawing on the page unless asked otherwise, in proportion and tidy; use common font families such as Arial, Times New Roman or Georgia; change existing objects through their ids; delete only what the request asks to; files cannot be read or written."#;
+
+/// The user's message: the request, then (for the newest request) the
+/// page as it is.
+pub fn user_message(request: &str, page: Option<&Value>) -> String {
+    match page {
+        Some(p) => format!("Request: {request}\n\nThe page as it is now (JSON):\n{p}"),
+        None => format!("Request: {request}"),
+    }
+}
+
+/// The message asking for a corrected script.
+fn retry_message(error: &str) -> String {
+    format!(
+        "The program failed with this error: {error}\nNothing was drawn. Reply with the whole corrected program."
+    )
+}
+
+/// The HTTP request for `messages` (oldest first, starting and ending
+/// with the user's) to the service `prefs` describe.
+pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) -> HttpRequest {
+    let key = key.trim();
+    let msgs: Vec<Value> = messages
+        .iter()
+        .map(|(role, text)| json!({"role": role.name(), "content": text}))
+        .collect();
+    match prefs.provider {
+        Provider::Anthropic => {
+            let mut headers = vec![
+                ("content-type".to_string(), "application/json".to_string()),
+                ("x-api-key".to_string(), key.to_string()),
+                ("anthropic-version".to_string(), "2023-06-01".to_string()),
+            ];
+            // The service answers a browser only when it is told the key
+            // is the user's own, used from their browser.
+            if crate::files::WEB {
+                headers.push((
+                    "anthropic-dangerous-direct-browser-access".to_string(),
+                    "true".to_string(),
+                ));
+            }
+            HttpRequest {
+                url: prefs.endpoint(),
+                headers,
+                body: json!({
+                    "model": prefs.model(),
+                    "max_tokens": MAX_TOKENS,
+                    "system": SYSTEM_PROMPT,
+                    "messages": msgs,
+                })
+                .to_string(),
+            }
+        }
+        Provider::OpenAiCompatible => {
+            let mut headers = vec![("content-type".to_string(), "application/json".to_string())];
+            if !key.is_empty() {
+                headers.push(("authorization".to_string(), format!("Bearer {key}")));
+            }
+            let mut all = vec![json!({"role": "system", "content": SYSTEM_PROMPT})];
+            all.extend(msgs);
+            HttpRequest {
+                url: prefs.endpoint(),
+                headers,
+                body: json!({"model": prefs.model(), "messages": all}).to_string(),
+            }
+        }
+    }
+}
+
+/// The text of a reply, or why there is none (as shown to the user).
+pub fn parse_reply(provider: Provider, r: &HttpResponse) -> Result<String, String> {
+    let v: Option<Value> = serde_json::from_str(&r.body).ok();
+    if !(200..300).contains(&r.status) {
+        let message = v
+            .as_ref()
+            .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()))
+            .map(str::to_string)
+            .unwrap_or_else(|| r.body.chars().take(200).collect());
+        return Err(trf(
+            "ai.http_error",
+            &[
+                ("status", &r.status.to_string()),
+                ("message", message.trim()),
+            ],
+        ));
+    }
+    let Some(v) = v else {
+        return Err(tr("ai.unreadable_reply"));
+    };
+    let (text, cut) = match provider {
+        Provider::Anthropic => {
+            let text: String = v
+                .get("content")
+                .and_then(|c| c.as_array())
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let cut = v.get("stop_reason").and_then(|s| s.as_str()) == Some("max_tokens");
+            (text, cut)
+        }
+        Provider::OpenAiCompatible => {
+            let text = v
+                .pointer("/choices/0/message/content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cut = v
+                .pointer("/choices/0/finish_reason")
+                .and_then(|s| s.as_str())
+                == Some("length");
+            (text, cut)
+        }
+    };
+    if cut {
+        return Err(tr("ai.cut_short"));
+    }
+    if text.trim().is_empty() {
+        return Err(tr("ai.no_script"));
+    }
+    Ok(text)
+}
+
+/// The program in a reply: its JavaScript code block (or its first code
+/// block), or the whole reply when it has no block but reads as code.
+pub fn extract_script(reply: &str) -> Option<String> {
+    let mut blocks: Vec<(String, String)> = Vec::new();
+    let mut rest = reply;
+    while let Some(start) = rest.find("```") {
+        let after = &rest[start + 3..];
+        let Some(nl) = after.find('\n') else {
+            break;
+        };
+        let lang = after[..nl].trim().to_ascii_lowercase();
+        let body = &after[nl + 1..];
+        match body.find("```") {
+            Some(end) => {
+                blocks.push((lang, body[..end].to_string()));
+                rest = &body[end + 3..];
+            }
+            // A reply cut off inside its block: take what came.
+            None => {
+                blocks.push((lang, body.to_string()));
+                break;
+            }
+        }
+    }
+    let code = blocks
+        .iter()
+        .find(|(lang, _)| matches!(lang.as_str(), "javascript" | "js" | ""))
+        .or(blocks.first())
+        .map(|(_, body)| body.trim().to_string())
+        .or_else(|| {
+            let t = reply.trim();
+            let looks_like_code =
+                t.contains("ActiveLayer") || t.contains("ActivePage") || t.contains("Create");
+            looks_like_code.then(|| t.to_string())
+        })?;
+    (!code.is_empty()).then_some(code)
+}
+
+/// Send `req` and deliver the answer on `tx`: on a thread on the
+/// desktop, as a fetch in a browser.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
+    std::thread::spawn(move || {
+        let _ = tx.send(post(&req));
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = tx.send(post(req).await);
+        crate::web::request_repaint();
+    });
+}
+
+/// One POST over HTTPS (or HTTP for local servers), waiting up to five
+/// minutes. Certificates are checked against the system's trusted ones;
+/// proxies come from the usual environment variables.
+#[cfg(not(target_arch = "wasm32"))]
+fn post(req: &HttpRequest) -> HttpResult {
+    use ureq::tls::{RootCerts, TlsConfig};
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(300)))
+        .http_status_as_error(false)
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .build()
+        .into();
+    let mut r = agent.post(&req.url);
+    for (name, value) in &req.headers {
+        r = r.header(name, value);
+    }
+    let mut resp = r.send(req.body.as_str()).map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let body = resp
+        .body_mut()
+        .with_config()
+        .limit(8 * 1024 * 1024)
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
+    Ok(HttpResponse { status, body })
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn post(req: HttpRequest) -> HttpResult {
+    use wasm_bindgen::JsCast;
+    let js = |e: wasm_bindgen::JsValue| {
+        e.as_string()
+            .or_else(|| {
+                e.dyn_ref::<js_sys::Error>()
+                    .map(|e| String::from(e.message()))
+            })
+            .unwrap_or_else(|| "the request failed".to_string())
+    };
+    let init = web_sys::RequestInit::new();
+    init.set_method("POST");
+    init.set_mode(web_sys::RequestMode::Cors);
+    init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
+    let headers = web_sys::Headers::new().map_err(js)?;
+    for (name, value) in &req.headers {
+        headers.set(name, value).map_err(js)?;
+    }
+    init.set_headers(headers.as_ref());
+    let request = web_sys::Request::new_with_str_and_init(&req.url, &init).map_err(js)?;
+    let window = web_sys::window().ok_or("no browser window")?;
+    let resp = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(js)?;
+    let resp: web_sys::Response = resp.dyn_into().map_err(js)?;
+    let status = resp.status();
+    let text = wasm_bindgen_futures::JsFuture::from(resp.text().map_err(js)?)
+        .await
+        .map_err(js)?;
+    Ok(HttpResponse {
+        status,
+        body: text.as_string().unwrap_or_default(),
+    })
+}
+
+impl App {
+    /// AI Drawing's Draw: send the request with the page as it is.
+    pub fn ai_draw(&mut self) {
+        if self.ai.busy() {
+            return;
+        }
+        let request = self.ai.request.trim().to_string();
+        let prefs = self.settings.ai.clone();
+        let problem = if request.is_empty() {
+            Some("ai.need_request")
+        } else if prefs.provider.needs_key() && self.ai.key.trim().is_empty() {
+            Some("ai.need_key")
+        } else if prefs.model().is_empty() {
+            Some("ai.need_model")
+        } else if !self.has_document() {
+            Some("ai.need_document")
+        } else {
+            None
+        };
+        if let Some(key) = problem {
+            self.ai.status = AiStatus::Failed(tr(key));
+            return;
+        }
+        let page = crate::describe::active_page(self, MAX_OBJECTS);
+        let mut messages = Vec::new();
+        for t in &self.ai.history {
+            messages.push((Role::User, user_message(&t.request, None)));
+            messages.push((Role::Assistant, t.reply.clone()));
+        }
+        messages.push((Role::User, user_message(&request, Some(&page))));
+        self.ai_send(messages, request, false);
+    }
+
+    /// Send `messages`; the reply is taken in by [`App::poll_ai`] (at once
+    /// with a test transport).
+    fn ai_send(&mut self, messages: Vec<(Role, String)>, request: String, retried: bool) {
+        let http = build_request(&self.settings.ai, &self.ai.key, &messages);
+        self.ai.status = if retried {
+            AiStatus::Retrying
+        } else {
+            AiStatus::Waiting
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        match self.ai.fake {
+            Some(fake) => {
+                let _ = tx.send(fake(&http));
+            }
+            None => spawn(http.clone(), tx),
+        }
+        self.ai.sent.push(http);
+        if self.ai.sent.len() > 8 {
+            self.ai.sent.remove(0);
+        }
+        self.ai.pending = Some(Pending {
+            rx,
+            messages,
+            request,
+            retried,
+        });
+        if self.ai.fake.is_some() {
+            self.poll_ai();
+        }
+    }
+
+    /// Stop waiting for the reply (it is dropped when it comes).
+    pub fn ai_cancel(&mut self) {
+        if self.ai.pending.take().is_some() {
+            self.ai.status = AiStatus::Idle;
+        }
+    }
+
+    /// Forget the earlier requests: the next one starts afresh.
+    pub fn ai_new_conversation(&mut self) {
+        self.ai.history.clear();
+        self.ai.script.clear();
+        self.ai.output.clear();
+        if !self.ai.busy() {
+            self.ai.status = AiStatus::Idle;
+        }
+    }
+
+    /// Take in a reply that arrived. True while a request is still on its
+    /// way (the frame loop then looks again shortly).
+    pub fn poll_ai(&mut self) -> bool {
+        let Some(p) = &self.ai.pending else {
+            return false;
+        };
+        let result = match p.rx.try_recv() {
+            Ok(r) => r,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(tr("ai.connection_lost")),
+        };
+        let Some(p) = self.ai.pending.take() else {
+            return false;
+        };
+        self.ai_receive(result, p);
+        self.ai.busy()
+    }
+
+    fn ai_receive(&mut self, result: HttpResult, p: Pending) {
+        let provider = self.settings.ai.provider;
+        let reply = match result.and_then(|r| parse_reply(provider, &r)) {
+            Ok(text) => text,
+            Err(e) => {
+                self.ai.status = AiStatus::Failed(e);
+                return;
+            }
+        };
+        let Some(script) = extract_script(&reply) else {
+            self.ai.status = AiStatus::Failed(tr("ai.no_script"));
+            return;
+        };
+        if script.len() > MAX_SCRIPT {
+            self.ai.status = AiStatus::Failed(tr("ai.script_too_long"));
+            return;
+        }
+        self.ai.script = script.clone();
+        match crate::scripting::run_untrusted(self, &script, UNDO_LABEL) {
+            Ok((output, changes)) => {
+                self.ai.output = output;
+                self.ai.status = AiStatus::Done(changes);
+                self.ai.history.push(Turn {
+                    request: p.request,
+                    reply,
+                });
+                while self.ai.history.len() > MAX_HISTORY {
+                    self.ai.history.remove(0);
+                }
+                self.status = trf("status.ai_drawn", &[("n", &changes.to_string())]);
+            }
+            Err(e) if !p.retried => {
+                let mut messages = p.messages;
+                messages.push((Role::Assistant, reply));
+                messages.push((Role::User, retry_message(&e)));
+                self.ai_send(messages, p.request, true);
+            }
+            Err(e) => {
+                self.ai.output.clear();
+                self.ai.status = AiStatus::Failed(trf("ai.script_failed", &[("e", &e)]));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn anthropic_reply(text: &str) -> HttpResult {
+        Ok(HttpResponse {
+            status: 200,
+            body: json!({
+                "content": [{"type": "text", "text": text}],
+                "stop_reason": "end_turn",
+            })
+            .to_string(),
+        })
+    }
+
+    fn app() -> App {
+        let mut app = App::headless();
+        app.settings.ai = AiPrefs::default();
+        app.ai.key = "sk-test".into();
+        app
+    }
+
+    fn shapes(app: &App) -> usize {
+        app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum()
+    }
+
+    #[test]
+    fn requests_are_built_for_both_kinds_of_service() {
+        let mut prefs = AiPrefs::default();
+        let messages = vec![
+            (Role::User, "Request: a".to_string()),
+            (Role::Assistant, "```js\nx\n```".to_string()),
+            (Role::User, "Request: b".to_string()),
+        ];
+        let r = build_request(&prefs, " k1 ", &messages);
+        assert_eq!(r.url, "https://api.anthropic.com/v1/messages");
+        let header = |r: &HttpRequest, name: &str| {
+            r.headers
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(header(&r, "x-api-key").as_deref(), Some("k1"));
+        assert_eq!(
+            header(&r, "anthropic-version").as_deref(),
+            Some("2023-06-01")
+        );
+        let body: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(body["model"], "claude-sonnet-5-5");
+        assert_eq!(body["system"], SYSTEM_PROMPT);
+        assert_eq!(body["messages"].as_array().map(Vec::len), Some(3));
+        assert_eq!(body["messages"][1]["role"], "assistant");
+        assert!(body["max_tokens"].as_u64().is_some());
+        // Chat completions: the system message first, a bearer key only
+        // when there is one, the address and model as set.
+        prefs.provider = Provider::OpenAiCompatible;
+        prefs.endpoint = " http://localhost:11434/v1/chat/completions ".into();
+        prefs.model = "llama3".into();
+        let r = build_request(&prefs, "", &messages);
+        assert_eq!(r.url, "http://localhost:11434/v1/chat/completions");
+        assert!(header(&r, "authorization").is_none());
+        let body: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(body["model"], "llama3");
+        assert_eq!(body["messages"][0]["role"], "system");
+        assert_eq!(body["messages"].as_array().map(Vec::len), Some(4));
+        let r = build_request(&prefs, "k2", &messages);
+        assert_eq!(header(&r, "authorization").as_deref(), Some("Bearer k2"));
+    }
+
+    #[test]
+    fn replies_and_errors_are_read() {
+        let ok = anthropic_reply("```javascript\nprint(1)\n```").expect("reply");
+        assert!(parse_reply(Provider::Anthropic, &ok)
+            .expect("text")
+            .contains("print(1)"));
+        let chat = HttpResponse {
+            status: 200,
+            body: json!({"choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}]})
+                .to_string(),
+        };
+        assert_eq!(
+            parse_reply(Provider::OpenAiCompatible, &chat).as_deref(),
+            Ok("hi")
+        );
+        // The service's own message for an error.
+        let denied = HttpResponse {
+            status: 401,
+            body: json!({"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
+                .to_string(),
+        };
+        let e = parse_reply(Provider::Anthropic, &denied).expect_err("an error");
+        assert!(e.contains("401") && e.contains("invalid x-api-key"), "{e}");
+        // Not JSON at all.
+        let page = HttpResponse {
+            status: 502,
+            body: "<html>Bad gateway</html>".into(),
+        };
+        assert!(parse_reply(Provider::OpenAiCompatible, &page)
+            .expect_err("an error")
+            .contains("502"));
+        // Cut short, and empty.
+        let cut = HttpResponse {
+            status: 200,
+            body: json!({"content": [{"type": "text", "text": "```js\nActiveLayer."}], "stop_reason": "max_tokens"})
+                .to_string(),
+        };
+        assert!(parse_reply(Provider::Anthropic, &cut).is_err());
+        let empty = HttpResponse {
+            status: 200,
+            body: json!({"choices": [{"message": {"content": ""}}]}).to_string(),
+        };
+        assert!(parse_reply(Provider::OpenAiCompatible, &empty).is_err());
+    }
+
+    #[test]
+    fn the_program_is_taken_from_its_code_block() {
+        let reply =
+            "Here you go:\n```javascript\nActiveLayer.CreateEllipse(0, 0, 5, 5);\n```\nEnjoy.";
+        assert_eq!(
+            extract_script(reply).as_deref(),
+            Some("ActiveLayer.CreateEllipse(0, 0, 5, 5);")
+        );
+        // The JavaScript block wins over others; a bare block counts.
+        let two = "```text\nnot this\n```\n```js\nprint(2)\n```";
+        assert_eq!(extract_script(two).as_deref(), Some("print(2)"));
+        assert_eq!(
+            extract_script("```\nprint(3)\n```").as_deref(),
+            Some("print(3)")
+        );
+        // A reply that is only code, and one that is not.
+        assert_eq!(
+            extract_script("ActiveLayer.CreateRectangle(0, 0, 1, 1);").as_deref(),
+            Some("ActiveLayer.CreateRectangle(0, 0, 1, 1);")
+        );
+        assert_eq!(extract_script("Sorry, I cannot help with that."), None);
+        assert_eq!(extract_script("```js\n\n```"), None);
+        // Unterminated block.
+        assert_eq!(
+            extract_script("```js\nprint(4)").as_deref(),
+            Some("print(4)")
+        );
+    }
+
+    #[test]
+    fn a_request_draws_through_the_service_as_one_undo_step() {
+        let mut app = app();
+        let before = shapes(&app);
+        app.ai.fake = Some(|req| {
+            let body: Value = serde_json::from_str(&req.body).expect("json");
+            let last = body["messages"]
+                .as_array()
+                .and_then(|m| m.last())
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("");
+            assert!(last.starts_with("Request: a red circle"), "{last}");
+            assert!(last.contains("\"width_mm\""), "the page goes along");
+            anthropic_reply(
+                "```javascript\nconst c = ActiveLayer.CreateEllipse(80, 120, 50, 50);\nc.Fill.ApplyUniformFill(Color.RGB(255, 0, 0));\nprint('circle');\n```",
+            )
+        });
+        app.ai.request = "a red circle".into();
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Done(2));
+        assert_eq!(app.ai.output, vec!["circle".to_string()]);
+        assert_eq!(shapes(&app), before + 1);
+        assert_eq!(app.ai.history.len(), 1);
+        assert!(app.ai.script.contains("CreateEllipse"));
+        // One undo step takes it all back.
+        app.undo();
+        assert_eq!(shapes(&app), before);
+        // The next request carries the earlier one, without its page.
+        app.ai.fake = Some(|req| {
+            let body: Value = serde_json::from_str(&req.body).expect("json");
+            let m = body["messages"].as_array().cloned().unwrap_or_default();
+            assert_eq!(m.len(), 3, "{m:?}");
+            assert_eq!(m[0]["content"], "Request: a red circle");
+            anthropic_reply("```js\nActiveLayer.CreateRectangle(0, 0, 10, 10);\n```")
+        });
+        app.ai.request = "now a square".into();
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Done(1));
+        app.ai_new_conversation();
+        assert!(app.ai.history.is_empty());
+    }
+
+    #[test]
+    fn a_failing_script_is_sent_back_once_and_nothing_half_drawn_stays() {
+        let mut app = app();
+        let before = shapes(&app);
+        // Draws one object, then fails: the corrected script is asked for
+        // with the error, and the half-drawn object does not stay.
+        app.ai.fake = Some(|req| {
+            let body: Value = serde_json::from_str(&req.body).expect("json");
+            let m = body["messages"].as_array().cloned().unwrap_or_default();
+            if m.len() == 1 {
+                anthropic_reply(
+                    "```js\nActiveLayer.CreateRectangle(0, 0, 5, 5);\nnoSuchFunction();\n```",
+                )
+            } else {
+                let last = m.last().and_then(|m| m["content"].as_str()).unwrap_or("");
+                assert!(last.contains("noSuchFunction"), "{last}");
+                assert_eq!(m[1]["role"], "assistant");
+                anthropic_reply("```js\nActiveLayer.CreateRectangle(0, 0, 5, 5);\n```")
+            }
+        });
+        app.ai.request = "a square".into();
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Done(1));
+        assert_eq!(shapes(&app), before + 1);
+        assert_eq!(app.ai.sent.len(), 2);
+        // A script that fails twice draws nothing and says why.
+        app.ai.fake = Some(|_| {
+            anthropic_reply("```js\nActiveLayer.CreateRectangle(0, 0, 5, 5);\nboom();\n```")
+        });
+        app.ai.request = "another".into();
+        app.ai_draw();
+        assert!(
+            matches!(&app.ai.status, AiStatus::Failed(e) if e.contains("boom")),
+            "{:?}",
+            app.ai.status
+        );
+        assert_eq!(shapes(&app), before + 1);
+    }
+
+    #[test]
+    fn scripts_from_the_service_cannot_reach_files_or_run_forever() {
+        let mut app = app();
+        let dir = std::env::temp_dir().join(format!("tracedraw-ai-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join("x.svg");
+        let src = format!(
+            "ActiveDocument.Export('{}', 'svg');",
+            target.display().to_string().replace('\\', "/")
+        );
+        let e = crate::scripting::run_untrusted(&mut app, &src, "AI Drawing").expect_err("refused");
+        assert!(e.contains("file"), "{e}");
+        assert!(!target.exists());
+        let e = crate::scripting::run_untrusted(
+            &mut app,
+            "ActiveLayer.ImportBitmap('/etc/passwd');",
+            "AI Drawing",
+        )
+        .expect_err("refused");
+        assert!(e.contains("file"), "{e}");
+        // An endless loop stops at the limit.
+        let e = crate::scripting::run_untrusted(&mut app, "while (true) {}", "AI Drawing")
+            .expect_err("stopped");
+        assert!(e.to_lowercase().contains("loop"), "{e}");
+        // The user's own scripts still export.
+        assert!(crate::scripting::run(&mut app, &src).is_ok());
+        assert!(target.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn requests_need_words_a_key_and_a_model() {
+        let mut app = app();
+        app.ai.fake = Some(|_| panic!("nothing is sent"));
+        app.ai.request = "  ".into();
+        app.ai_draw();
+        assert!(matches!(app.ai.status, AiStatus::Failed(_)));
+        app.ai.request = "a tree".into();
+        app.ai.key.clear();
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Failed(tr("ai.need_key")));
+        // A local server takes no key but needs a model name.
+        app.settings.ai.provider = Provider::OpenAiCompatible;
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Failed(tr("ai.need_model")));
+        assert!(app.ai.sent.is_empty());
+    }
+
+    #[test]
+    fn errors_of_the_service_and_the_network_are_shown() {
+        let mut app = app();
+        app.ai.request = "a tree".into();
+        app.ai.fake = Some(|_| Err("connection refused".into()));
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Failed("connection refused".into()));
+        app.ai.fake = Some(|_| {
+            Ok(HttpResponse {
+                status: 429,
+                body: json!({"error": {"message": "slow down"}}).to_string(),
+            })
+        });
+        app.ai_draw();
+        assert!(matches!(&app.ai.status, AiStatus::Failed(e) if e.contains("slow down")));
+        app.ai.fake = Some(|_| anthropic_reply("I would rather not."));
+        app.ai_draw();
+        assert_eq!(app.ai.status, AiStatus::Failed(tr("ai.no_script")));
+        assert!(!app.ai.busy());
+    }
+
+    /// The desktop transport against a server on this computer: the
+    /// request as sent, a reply, an error reply with its body, and no
+    /// server at all.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_desktop_transport_posts_and_reads_error_replies() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let addr = listener.local_addr().expect("address");
+        let server = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for (status, body) in [
+                (200, r#"{"ok":true}"#),
+                (401, r#"{"error":{"message":"bad key"}}"#),
+            ] {
+                let Ok((mut s, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = s.read(&mut chunk).unwrap_or(0);
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    let done = text.find("\r\n\r\n").is_some_and(|end| {
+                        let len = text[..end]
+                            .lines()
+                            .find_map(|l| {
+                                let l = l.to_ascii_lowercase();
+                                l.strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        buf.len() >= end + 4 + len
+                    });
+                    if done || n == 0 {
+                        break;
+                    }
+                }
+                seen.push(String::from_utf8_lossy(&buf).to_string());
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+            seen
+        });
+        let req = HttpRequest {
+            url: format!("http://{addr}/v1/chat/completions"),
+            headers: vec![
+                ("content-type".into(), "application/json".into()),
+                ("authorization".into(), "Bearer k".into()),
+            ],
+            body: r#"{"a":1}"#.into(),
+        };
+        let r = post(&req).expect("answered");
+        assert_eq!((r.status, r.body.as_str()), (200, r#"{"ok":true}"#));
+        let r = post(&req).expect("answered");
+        assert_eq!(r.status, 401);
+        assert!(parse_reply(Provider::OpenAiCompatible, &r)
+            .expect_err("an error")
+            .contains("bad key"));
+        let seen = server.join().expect("server");
+        assert!(
+            seen[0].starts_with("POST /v1/chat/completions"),
+            "{}",
+            seen[0]
+        );
+        assert!(seen[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer k"));
+        assert!(seen[0].ends_with(r#"{"a":1}"#));
+        // Nobody listening.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let gone = closed.local_addr().expect("address");
+        drop(closed);
+        let dead = HttpRequest {
+            url: format!("http://{gone}/"),
+            ..req
+        };
+        assert!(post(&dead).is_err());
+    }
+
+    /// A real service refuses a made-up key with its own message (needs
+    /// the network: `cargo test -p tracedraw -- --ignored the_real`).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn the_real_service_refuses_a_made_up_key() {
+        let prefs = AiPrefs::default();
+        let req = build_request(
+            &prefs,
+            "not-a-key",
+            &[(Role::User, user_message("a dot", None))],
+        );
+        let r = post(&req).expect("the service answers");
+        assert_eq!(r.status, 401, "{}", r.body);
+        let e = parse_reply(prefs.provider, &r).expect_err("refused");
+        assert!(e.contains("401"), "{e}");
+    }
+
+    #[test]
+    fn paths_in_svg_syntax_draw_curves() {
+        let mut app = app();
+        let before = shapes(&app);
+        let out = crate::scripting::run(
+            &mut app,
+            "const p = ActiveLayer.CreatePath('M 10 10 C 20 40, 40 40, 50 10 Z'); print(p.SizeWidth > 39 && p.SizeWidth < 41);",
+        )
+        .expect("ran");
+        assert_eq!(out, vec!["true".to_string()]);
+        assert_eq!(shapes(&app), before + 1);
+        assert!(crate::scripting::run(&mut app, "ActiveLayer.CreatePath('Q nonsense');").is_err());
+    }
+
+    #[test]
+    fn the_reference_names_only_methods_the_object_model_has() {
+        for name in [
+            "CreateRectangle",
+            "CreateEllipse",
+            "CreatePolygon",
+            "CreateStar",
+            "CreateLineSegment",
+            "CreateCurve",
+            "CreatePath",
+            "CreateArtisticText",
+            "CreateParagraphText",
+            "ApplyUniformFill",
+            "ApplyFountainFill",
+            "ApplyNoFill",
+            "SetProperties",
+            "SetNoOutline",
+            "SetPosition",
+            "SetSize",
+            "Rotate",
+            "Stretch",
+            "Skew",
+            "Duplicate",
+            "OrderToFront",
+            "OrderToBack",
+            "SetOpacity",
+            "AddDropShadow",
+            "FindShape",
+            "CreateLayer",
+            "AlignCentersHorizontally",
+        ] {
+            assert!(SYSTEM_PROMPT.contains(name), "{name} described");
+            let src = format!("print(typeof ActiveLayer.{name} + typeof new Shape(0).{name} + typeof new Shape(0).Fill.{name} + typeof new Shape(0).Outline.{name} + typeof new ShapeRange([]).{name} + typeof ActivePage.{name} + typeof ActiveLayer.Shapes.{name});");
+            let mut app = App::headless();
+            let out = crate::scripting::run(&mut app, &src).expect("ran");
+            assert!(
+                out.first().is_some_and(|o| o.contains("function")),
+                "{name} exists: {out:?}"
+            );
+        }
+    }
+}

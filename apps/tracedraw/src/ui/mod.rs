@@ -4,6 +4,7 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
+pub mod ai_docker;
 pub mod bars;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;

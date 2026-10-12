@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
+Counts: works 178, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -212,6 +212,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from | works |
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model, run, record macro, load/save | works |
+| AI Drawing panel: a request in words drawn by an AI service the user sets up (Messages API or any chat completions service, local model servers included) with their own key; the reply's script runs without file access, all or nothing, as one undo step; a failing script is sent back once with its error | works (see `behavior/ai-drawing.md`) |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout, Touch (the interface 1.4 times larger, two-finger pan and pinch zoom); toolbar toggles | works (see `behavior/workspaces.md`) |
 | Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, Curve tools, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
 | Options > Global > Printing (what the Print dialog starts with, remember the last print, preflight in the dialog), File Formats (what Export starts with, remember the last export, imported objects centred or as in the file), Bitmap Tracing (Quick Trace preset, what every trace starts with), Warnings (unread objects, missing fonts, Shelf removal; each message can be turned off) | works (see `behavior/options.md`) |
@@ -246,7 +247,7 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 |---|---|
 | Menu bar, standard toolbar (icons, Open/Undo/Redo lists, zoom box, view toggles, Snap Off, Snap To, Launch), property bar (stacked fields, page bar, object bar with object origin, shape parts, outline part, zoom bar), toolbox with flyouts, rulers, document tabs, bottom palette, panel tab strip, navigator, status bar | works |
 | Icons | painted vector icons, one per tool, close in style; not pixel-identical |
-| Panels (36): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic, Shelf | works |
+| Panels (37): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic, Shelf, AI Drawing | works |
 | Welcome Screen with tabs | works |
 | About box with the banner, icon, facts (author, license, source code, co-author) and copyright; opens from the Welcome Screen too (see `behavior/about-and-startup.md`) | works |
 | Splash screen while starting (artwork, status, progress), then the main window maximized or at its kept size; can be turned off (see `behavior/about-and-startup.md`) | works |

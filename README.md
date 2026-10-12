@@ -259,6 +259,13 @@ for (let i = 0; i < 12; i++) {
 
 See [`docs/behavior/mcp.md`](docs/behavior/mcp.md) for the MCP tools.
 
+**AI Drawing** (Tools > AI Drawing) writes those scripts for you: describe
+what to draw or change, and an AI service you set up with your own key
+(the Messages API, any chat completions service, or a model server on
+your own computer) writes the script, which runs as one undo step without
+access to your files. TraceDraw has no AI service or account of its own;
+see [`docs/behavior/ai-drawing.md`](docs/behavior/ai-drawing.md).
+
 ## Under the hood
 
 - **Engine first:** a plain-data document model and a command engine in

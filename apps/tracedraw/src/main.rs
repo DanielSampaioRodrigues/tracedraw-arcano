@@ -10,6 +10,7 @@
 
 //! TraceDraw desktop app: a thin egui shell over the engine.
 
+mod ai;
 mod anchors;
 mod app;
 mod autocorrect;
@@ -26,6 +27,7 @@ mod coords;
 mod corners;
 mod curve_join;
 mod defaults;
+mod describe;
 mod documents;
 mod drawing_scale;
 mod drop_menu;
@@ -226,6 +228,11 @@ impl eframe::App for Shell {
         app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
+        // A reply of the AI service (AI Drawing).
+        if app.poll_ai() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
         // A Picture Mosaic library indexed on worker threads.
         if app.poll_picture_mosaic_index() {
             ui.ctx()
