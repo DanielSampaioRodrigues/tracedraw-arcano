@@ -127,6 +127,163 @@ pub fn list_dir(path: impl AsRef<Path>) -> Vec<PathBuf> {
     }
 }
 
+/// One entry of a folder listing (the Save Drawing dialog).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    /// Bytes (files).
+    pub size: u64,
+    /// Seconds since 1970, when known.
+    pub modified: Option<i64>,
+}
+
+/// The folders and files directly inside `dir`: folders first, then by
+/// name ignoring case; hidden ones (a leading dot) left out. Empty in a
+/// browser or when the folder cannot be read.
+pub fn list_entries(dir: impl AsRef<Path>) -> Vec<DirEntry> {
+    if WEB {
+        return Vec::new();
+    }
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<DirEntry> = read
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                return None;
+            }
+            let path = e.path();
+            // Follow links: a link to a folder lists as a folder.
+            let meta = std::fs::metadata(&path).ok();
+            let is_dir = meta.as_ref().is_some_and(|m| m.is_dir());
+            let size = meta.as_ref().map_or(0, |m| m.len());
+            let modified = meta
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64);
+            Some(DirEntry {
+                name,
+                path,
+                is_dir,
+                size,
+                modified,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    out
+}
+
+/// True for a folder on disk (never in a browser).
+pub fn is_dir(path: impl AsRef<Path>) -> bool {
+    !WEB && path.as_ref().is_dir()
+}
+
+/// Make a folder (nothing in a browser).
+pub fn create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    std::fs::create_dir(path)
+}
+
+/// A folder worth a shortcut in the Save Drawing dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    Home,
+    Desktop,
+    Documents,
+    Downloads,
+    Pictures,
+    /// A drive or the file system's root.
+    Root,
+}
+
+/// The user's home folder.
+pub fn home_dir() -> Option<PathBuf> {
+    if WEB {
+        return None;
+    }
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+}
+
+/// The shortcuts that exist on this computer: home, desktop, documents,
+/// downloads and pictures (the names the system gives them, read from
+/// the user's folder settings on Linux), then the drives (Windows) or
+/// the root. Empty in a browser.
+pub fn places() -> Vec<(Place, PathBuf)> {
+    let mut out = Vec::new();
+    let Some(home) = home_dir() else {
+        return out;
+    };
+    out.push((Place::Home, home.clone()));
+    let xdg = xdg_user_dirs(&home);
+    for (place, key, default) in [
+        (Place::Desktop, "XDG_DESKTOP_DIR", "Desktop"),
+        (Place::Documents, "XDG_DOCUMENTS_DIR", "Documents"),
+        (Place::Downloads, "XDG_DOWNLOAD_DIR", "Downloads"),
+        (Place::Pictures, "XDG_PICTURES_DIR", "Pictures"),
+    ] {
+        let dir = xdg
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, p)| p.clone())
+            .unwrap_or_else(|| home.join(default));
+        if dir.is_dir() && dir != home {
+            out.push((place, dir));
+        }
+    }
+    if cfg!(windows) {
+        for letter in b'C'..=b'Z' {
+            let root = PathBuf::from(format!("{}:\\", letter as char));
+            if root.is_dir() {
+                out.push((Place::Root, root));
+            }
+        }
+    } else {
+        out.push((Place::Root, PathBuf::from("/")));
+    }
+    out
+}
+
+/// The `XDG_*_DIR` folders of `~/.config/user-dirs.dirs` (Linux), with
+/// `$HOME` expanded.
+fn xdg_user_dirs(home: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(text) = std::fs::read_to_string(home.join(".config/user-dirs.dirs")) else {
+        return Vec::new();
+    };
+    parse_user_dirs(&text, home)
+}
+
+/// Read `KEY="$HOME/Folder"` lines.
+pub(crate) fn parse_user_dirs(text: &str, home: &Path) -> Vec<(String, PathBuf)> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.starts_with('#') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim().trim_matches('"');
+            let path = match value.strip_prefix("$HOME") {
+                Some(rest) => home.join(rest.trim_start_matches('/')),
+                None => PathBuf::from(value),
+            };
+            Some((key.trim().to_string(), path))
+        })
+        .collect()
+}
+
 /// Decode an image file (any format the image crate was built with).
 pub fn open_image(path: impl AsRef<Path>) -> Result<image::DynamicImage, String> {
     let bytes = read(path).map_err(|e| e.to_string())?;

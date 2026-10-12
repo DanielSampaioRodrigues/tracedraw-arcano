@@ -515,8 +515,8 @@ pub enum Dialog {
     PublishPdf(Box<crate::ui::publish_pdf::PublishState>),
     PdfPassword(crate::ui::pdf_password::PdfPasswordState),
     ChangeDefaults(crate::ui::defaults_dialog::State),
-    /// Saving a `.cdr` file: its version (and in a browser the format).
-    SaveCdr(crate::ui::save_cdr::SaveCdrState),
+    /// File > Save As: folder, name, type, `.cdr` version, properties.
+    SaveAs(crate::ui::save_as::SaveAsState),
 }
 
 /// Convert to Bitmap: Resolution (a list and a value), Color mode,
@@ -787,7 +787,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::PublishPdf(st) => crate::ui::publish_pdf::dialog(app, ctx, st, &mut close),
         Dialog::PdfPassword(st) => crate::ui::pdf_password::dialog(app, ctx, st, &mut close),
         Dialog::ChangeDefaults(st) => crate::ui::defaults_dialog::dialog(app, ctx, st, &mut close),
-        Dialog::SaveCdr(st) => crate::ui::save_cdr::dialog(app, ctx, st, &mut close),
+        Dialog::SaveAs(st) => crate::ui::save_as::dialog(app, ctx, st, &mut close),
         Dialog::BitmapDuotone(st) => {
             crate::ui::bitmap_dialogs::duotone_dialog(app, ctx, st, &mut close)
         }

@@ -3322,23 +3322,7 @@ impl App {
                 return;
             }
         }
-        let name = self.default_save_name();
-        // A browser has no save dialog to choose the type in: ours asks
-        // for the format of the download.
-        if crate::files::WEB {
-            self.dialog =
-                crate::ui::dialogs::Dialog::SaveCdr(crate::ui::save_cdr::SaveCdrState::download(
-                    PathBuf::from(name),
-                    self.cdr_version.is_some(),
-                    self.cdr_save_version(),
-                ));
-            return;
-        }
-        crate::files::Dialog::new()
-            .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
-            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
-            .set_file_name(name)
-            .save_file(self, |app, path| app.save_as_to(path));
+        self.save_as_dialog();
     }
 
     /// The `.cdr` version the active drawing is saved in.
@@ -3349,17 +3333,6 @@ impl App {
         )
     }
 
-    /// Save As chose `path`: a `.cdr` file first asks for the version.
-    pub(crate) fn save_as_to(&mut self, path: PathBuf) {
-        if is_cdr_path(&path) {
-            self.dialog = crate::ui::dialogs::Dialog::SaveCdr(
-                crate::ui::save_cdr::SaveCdrState::new(path, self.cdr_save_version()),
-            );
-        } else {
-            self.save_to(path);
-        }
-    }
-
     /// Save to the `.cdr` file `path` in `version`, which the drawing then
     /// keeps (Save writes it again) and new drawings start with.
     pub(crate) fn save_cdr_to(&mut self, path: PathBuf, version: u16) {
@@ -3367,20 +3340,6 @@ impl App {
         self.cdr_version = Some(version);
         self.settings.formats.cdr_version = version;
         self.save_to(path);
-    }
-
-    /// File name offered by Save: the open file's, else the document
-    /// title with the native extension.
-    fn default_save_name(&self) -> String {
-        if let Some(name) = self.file.as_ref().and_then(|p| p.file_name()) {
-            return name.to_string_lossy().to_string();
-        }
-        let title = self.doc().title.trim().to_string();
-        if title.is_empty() {
-            "Graphic1.tdraw".into()
-        } else {
-            format!("{title}.tdraw")
-        }
     }
 
     pub(crate) fn save_to(&mut self, path: PathBuf) {

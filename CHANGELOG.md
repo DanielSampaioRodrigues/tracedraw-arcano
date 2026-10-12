@@ -72,15 +72,20 @@ full, row-by-row status.
   names written in Cyrillic, Greek, Turkish, Central European, Baltic,
   Hebrew, Arabic, Thai, Vietnamese, Japanese, Chinese or Korean read in
   their own code page (they came out as Western European letters).
-- Save As `.cdr` writes any version from 7 to 22, chosen in a dialog
+- File > Save As opens a Save Drawing dialog of its own: folder bar,
+  shortcuts (home, desktop, documents, downloads, pictures, drives), the
+  folder's contents with dates, types and sizes, file name, type, the
+  `.cdr` version and the document's title, subject and rating, asking
+  before replacing a file; in the browser it keeps the name, type,
+  version and properties of the download.
+- Save As `.cdr` writes any version from 7 to 22, chosen in that dialog
   (programs open files of their own version and older ones). Versions 7
   to 13 are RIFF files, 14 and 15 ZIP archives around one, 16 on ZIP
   archives with the chunk tree apart from its data, each with the
   records, tables, master page and layers of that version. A drawing
   opened from a `.cdr` file saves in its version unless another is
   chosen; Options > Global > File Formats sets the version of new
-  drawings (12 at first). In the browser, Save asks for the format
-  (TraceDraw or `.cdr`) and the version. `tracedraw-cli` reads the
+  drawings (12 at first). `tracedraw-cli` reads the
   version from `TRACEDRAW_CDR_VERSION` and the MCP `save` tool takes a
   `version`.
 - `.cdr` writing: files of versions 21 and 22 carry the configuration

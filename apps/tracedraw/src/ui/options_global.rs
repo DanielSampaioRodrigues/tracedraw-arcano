@@ -146,8 +146,8 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
             ui,
             "opt_cdr_version",
             &mut f.cdr_version,
-            &crate::ui::save_cdr::version_choices(),
-            crate::ui::save_cdr::version_label,
+            &crate::ui::save_as::version_choices(),
+            crate::ui::save_as::version_label,
             130.0,
         );
         ui.end_row();
