@@ -236,6 +236,18 @@ fn subpaths(path: &BezPath) -> Vec<Sub> {
     if let Some(s) = cur.take() {
         out.push(s);
     }
+    // A subpath that ends where it started is closed (an ellipse has no
+    // closing element).
+    for s in &mut out {
+        if !s.closed
+            && s.segs.len() > 1
+            && s.segs
+                .last()
+                .is_some_and(|g| (g.end() - s.start).hypot() < 1e-6)
+        {
+            s.closed = true;
+        }
+    }
     out
 }
 
@@ -600,6 +612,16 @@ mod tests {
         // near the square's.
         let b = t.bounding_box();
         assert!(b.width() < 30.0 && b.width() > 18.0, "{b:?}");
+        // An ellipse (no closing element, but closed) stays closed.
+        let e = crate::geometry::ellipse_path(Rect::new(0.0, 0.0, 30.0, 20.0));
+        let te = distort(
+            &e,
+            Distort::Twister {
+                angle_deg: 60.0,
+                center: None,
+            },
+        );
+        assert_eq!((subpath_count(&te), closes(&te)), (1, 1));
         // Zero: unchanged; an odd centre falls back to the middle.
         let z = Distort::Twister {
             angle_deg: 0.0,

@@ -1,5 +1,5 @@
-//! Settings held by the effect dockers (Lens, Bevel, Extrude,
-//! Transparency) before they are applied as live effects.
+//! Settings held by the effect dockers (Lens, Bevel, Transparency)
+//! before they are applied as live effects.
 
 use tracedraw_core::{live::MergeMode, Color, Fill};
 
@@ -22,35 +22,6 @@ impl Default for BevelSettings {
             style: 0,
             shadow_color: Color::BLACK,
             light_color: Color::WHITE,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExtrudeSettings {
-    pub depth: tracedraw_core::Vec2,
-    pub use_vanishing: bool,
-    pub amount: f64,
-    pub shade: bool,
-    pub shade_from: Color,
-    pub shade_to: Color,
-    pub light_angle: f64,
-    pub light_intensity: f64,
-    pub bevel: f64,
-}
-
-impl Default for ExtrudeSettings {
-    fn default() -> Self {
-        ExtrudeSettings {
-            depth: tracedraw_core::Vec2::new(8.0, -8.0),
-            use_vanishing: false,
-            amount: 0.2,
-            shade: true,
-            shade_from: Color::rgb8(200, 200, 200),
-            shade_to: Color::rgb8(80, 80, 80),
-            light_angle: 135.0,
-            light_intensity: 50.0,
-            bevel: 0.0,
         }
     }
 }

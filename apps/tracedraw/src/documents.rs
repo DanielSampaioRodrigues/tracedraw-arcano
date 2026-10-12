@@ -109,7 +109,8 @@ impl App {
         self.effect_node_drag = None;
         self.selected_effect_node = None;
         self.lens_synced_to = None;
-        self.extrude_synced_to = None;
+        self.extrude_drag = None;
+        self.distort_drag = None;
         self.context_menu = None;
         self.navigator_tex = None;
         self.last_repeatable = None;

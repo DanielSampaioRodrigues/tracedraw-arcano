@@ -151,40 +151,7 @@ impl App {
                 }
             }
             Tool::Envelope => self.envelope_tool_input(response, p),
-            Tool::Extrude => {
-                if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
-                        self.select(vec![id]);
-                        self.drag = Drag::ContourDrag { start: p };
-                    }
-                }
-                if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::ContourDrag { start } = self.drag {
-                        let depth = p - start;
-                        self.extrude.depth = depth;
-                        let e = self.extrude.clone();
-                        self.push_effect(
-                            Effect::Extrude {
-                                depth,
-                                vanishing: None,
-                                amount: e.amount,
-                                shade_from: e.shade.then_some(e.shade_from),
-                                shade_to: e.shade.then_some(e.shade_to),
-                                light_angle: e.light_angle,
-                                light_intensity: e.light_intensity,
-                                bevel: e.bevel,
-                            },
-                            true,
-                        );
-                    }
-                }
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => self.select(vec![id]),
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
+            Tool::Extrude => self.extrude_input(response, p),
             Tool::Distort => self.distort_input(response, p),
             Tool::AreaFill => {
                 if response.clicked_by(PointerButton::Primary) {

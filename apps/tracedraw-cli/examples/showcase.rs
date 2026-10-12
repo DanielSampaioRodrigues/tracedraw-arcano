@@ -544,6 +544,9 @@ fn effects(dir: &Path) {
         light_angle: 45.0,
         light_intensity: 0.5,
         bevel: 0.0,
+        kind: None,
+        on_object: false,
+        solid: None,
     });
     b.add(t, "Extrude");
 

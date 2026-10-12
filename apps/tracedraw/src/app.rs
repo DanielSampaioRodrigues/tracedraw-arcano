@@ -704,7 +704,6 @@ pub struct App {
     pub media_angle: f64,
     pub dimension_points: Vec<Point>,
     pub blend_steps: u32,
-    pub extrude_depth: Vec2,
     /// The Distort tool's values (its bar) and its drag under way.
     pub distort: crate::distort_tool::DistortSettings,
     pub distort_drag: Option<crate::distort_tool::DistortDrag>,
@@ -926,7 +925,9 @@ pub struct App {
     /// An envelope node or handle being dragged.
     pub envelope_drag: Option<crate::envelope_edit::EnvelopeDrag>,
     pub bevel: crate::effects_ui::BevelSettings,
-    pub extrude: crate::effects_ui::ExtrudeSettings,
+    /// The Extrude tool's and panel's values and the tool's drag.
+    pub extrude: crate::extrude_tool::ExtrudeSettings,
+    pub extrude_drag: Option<crate::extrude_tool::ExtrudeDrag>,
     pub transparency_default: crate::effects_ui::TransparencySettings,
     pub glyph_filter: String,
     pub table_edit: Option<crate::table::TableEdit>,
@@ -951,7 +952,6 @@ pub struct App {
     /// The Color docker's views, hue and palette.
     pub color_docker: crate::ui::color_docker::ColorDockerState,
     pub lens_synced_to: Option<ShapeId>,
-    pub extrude_synced_to: Option<ShapeId>,
     pub pending_blend_path: bool,
     /// The document palette's eyedropper waits for a click on the drawing.
     pub pending_palette_sample: bool,
@@ -1447,7 +1447,6 @@ impl App {
             media_angle: 45.0,
             dimension_points: Vec::new(),
             blend_steps: 5,
-            extrude_depth: Vec2::new(8.0, -8.0),
             distort: Default::default(),
             distort_drag: None,
             brush_radius: 10.0,
@@ -1586,6 +1585,7 @@ impl App {
             envelope_drag: None,
             bevel: Default::default(),
             extrude: Default::default(),
+            extrude_drag: None,
             transparency_default: Default::default(),
             glyph_filter: String::new(),
             table_edit: None,
@@ -1596,7 +1596,6 @@ impl App {
             mixer_color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
             color_docker: Default::default(),
             lens_synced_to: None,
-            extrude_synced_to: None,
             pending_blend_path: false,
             pending_palette_sample: false,
             envelope_keep_lines: false,
@@ -2053,6 +2052,7 @@ impl App {
             dimension_style: self.dimension_style.clone(),
             callout_style: self.callout_style.clone(),
             distort: self.distort,
+            extrude: self.extrude,
             connector_radius: self.connector_radius,
             recognize: self.recognize,
             sketch: self.sketch,
@@ -2118,6 +2118,7 @@ impl App {
         self.connector_radius = finite(t.connector_radius, 0.0, 1000.0, 3.0);
         self.callout_style = t.callout_style.clamped();
         self.distort = t.distort.clamped();
+        self.extrude = t.extrude.clamped();
         self.recognize = crate::recognize::RecognizeSettings {
             recognition: t.recognize.recognition.min(5),
             smoothing: t.recognize.smoothing.min(5),

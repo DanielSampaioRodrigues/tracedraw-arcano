@@ -735,33 +735,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::BSpline
             | Tool::ThreePointCurve => curve_tool_properties(app, ui),
             Tool::Blend => crate::ui::effect_bars::blend_bar(app, ui),
-            Tool::Extrude => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.extrude_depth"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                let mut dx = app.extrude_depth.x;
-                let mut dy = app.extrude_depth.y;
-                ui.add(
-                    crate::ui::field::NumField::new(&mut dx)
-                        .speed(0.2)
-                        .suffix(" mm"),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut dy)
-                        .speed(0.2)
-                        .suffix(" mm"),
-                );
-                app.extrude_depth = tracedraw_core::geometry::Vec2::new(dx, dy);
-                vsep(ui);
-                if ui
-                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
-                    .clicked()
-                {
-                    app.apply_extrude();
-                }
-            }
+            Tool::Extrude => crate::ui::extrude_bar::extrude_bar(app, ui),
             Tool::Envelope => crate::ui::envelope_ui::envelope_bar(app, ui),
             Tool::Distort => crate::ui::distort_bar::distort_bar(app, ui),
             Tool::Eraser => {

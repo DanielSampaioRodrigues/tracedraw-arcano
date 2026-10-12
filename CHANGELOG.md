@@ -6,6 +6,19 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Extrude: six types (small and big, back and front, toward a vanishing
+  point that can be locked to the object or the page, and back or
+  front parallel), each with its depth; the body is coloured from the
+  object, one solid colour or a shade per face, lit by one light. Only
+  the faces that face the viewer are drawn, a curved side is one
+  outlined surface instead of a row of slats, and every subpath is
+  extruded (only the first was, so text and holes came out wrong). The
+  tool's drag runs a parallel body along it or puts the vanishing point
+  where it ends, its handle can be dragged, and the bar (its Apply used
+  to add a separate static extrusion) and the Extrude panel share the
+  same controls, showing and editing the selected extrusion.
+- An outline that ends where it started (an ellipse) is treated as
+  closed by Distort and Extrude.
 - Distort: Push and Pull moves the nodes and bows the segments the other
   way (spikes or petals); it only scaled the object before. Zipper puts
   teeth on every segment, with Random, Smooth and Local; Twister takes

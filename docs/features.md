@@ -127,7 +127,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the centre marker dragged, the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |
 | Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |
 | Perspective (Add Perspective, node drag) | works |
-| Extrude (depth, vanishing point, bevel, lighting), live | works |
+| Extrude, live: six types (small and big back and front toward a vanishing point locked to the object or the page, back and front parallel), depth, colour from the object, solid or a shade, one light; hidden faces left out, curved sides as one outlined surface, every subpath extruded; the tool's drag and handle, a bar and the panel editing the selected extrusion (see `behavior/extrude.md`); 3D rotation, several lights and bevels not done | partial |
 | Bevel (soft edge, emboss) | works |
 | Block shadow (depth, direction, colour, gap on the property bar) | works |
 | Transparency: uniform, gradient, pattern, texture; merge modes; fill/outline/all | works |

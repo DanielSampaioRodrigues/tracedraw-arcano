@@ -30,6 +30,7 @@ pub mod drawing_bars;
 pub mod effect_bars;
 pub mod effect_dialog;
 pub mod envelope_ui;
+pub mod extrude_bar;
 pub mod field;
 pub mod fill_tool_bars;
 pub mod font_list;
@@ -583,6 +584,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     dimension_bar::draw_preview(app, &painter);
     callout_bar::draw_preview(app, &painter);
     distort_bar::draw_centers(app, &painter);
+    extrude_bar::draw_handles(app, &painter);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

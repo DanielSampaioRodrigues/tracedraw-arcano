@@ -71,6 +71,17 @@ pub enum Effect {
         light_angle: f64,
         light_intensity: f64,
         bevel: f64,
+        /// How the body runs; older files have none (Back parallel, or
+        /// Small back with a vanishing point). See [`crate::extrude`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kind: Option<crate::extrude::ExtrudeKind>,
+        /// The vanishing point is in the object's own space (it moves with
+        /// the object) instead of the page's.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        on_object: bool,
+        /// One colour for the whole body.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<Color>,
     },
     /// Bevel inside the outline: an inset band lit from `light_angle`.
     Bevel {
@@ -507,18 +518,25 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 shade_to,
                 light_angle,
                 light_intensity,
-                bevel: _,
+                kind,
+                on_object,
+                solid,
+                ..
             } => {
-                below.extend(extrude(
+                if let Some(body) = extrude_body(
                     &main,
                     *depth,
                     *vanishing,
                     *amount,
-                    *shade_from,
-                    *shade_to,
-                    *light_angle,
-                    *light_intensity,
-                ));
+                    (*shade_from, *shade_to, *solid),
+                    (*light_angle, *light_intensity),
+                    *kind,
+                    *on_object,
+                ) {
+                    let faces = body.faces(&main);
+                    below.extend(faces.below);
+                    above.extend(faces.above);
+                }
             }
             Effect::Bevel {
                 distance,
@@ -737,103 +755,54 @@ fn blend(
     out
 }
 
+/// The body an extrude effect on `main` describes (older files: Back
+/// parallel, or Small back with a vanishing point). `None` for a body
+/// that needs a vanishing point and has none.
 #[allow(clippy::too_many_arguments)]
-fn extrude(
-    shape: &Shape,
+pub fn extrude_body(
+    main: &Shape,
     depth: Vec2,
     vanishing: Option<Point>,
     amount: f64,
-    shade_from: Option<Color>,
-    shade_to: Option<Color>,
-    light_angle: f64,
-    light_intensity: f64,
-) -> Vec<Shape> {
-    let front = shape.page_path();
-    // Exact vertices keep the corners sharp; very dense outlines are
-    // resampled so the weld stays cheap.
-    let mut pts = crate::effects::flat_points(&front);
-    if pts.len() > 400 {
-        pts = crate::effects::resample(&front, 400);
-    }
-    if pts.len() < 3 {
-        return Vec::new();
-    }
-    let back_pts: Vec<Point> = match vanishing {
-        None => pts.iter().map(|p| *p + depth).collect(),
-        Some(v) => pts
-            .iter()
-            .map(|p| *p + (v - *p) * amount.clamp(0.0, 0.95))
-            .collect(),
+    (shade_from, shade_to, solid): (Option<Color>, Option<Color>, Option<Color>),
+    (light_angle, light_intensity): (f64, f64),
+    kind: Option<crate::extrude::ExtrudeKind>,
+    on_object: bool,
+) -> Option<crate::extrude::Body> {
+    use crate::extrude::{Body, Coloring, ExtrudeKind};
+    let kind = kind.unwrap_or(if vanishing.is_some() {
+        ExtrudeKind::SmallBack
+    } else {
+        ExtrudeKind::BackParallel
+    });
+    let vp = match (kind.parallel(), vanishing) {
+        (true, _) => Point::ZERO,
+        (false, Some(v)) if on_object => main.transform * v,
+        (false, Some(v)) => v,
+        (false, None) => return None,
     };
-    let base = shape.fill.preview_color().unwrap_or(Color::WHITE);
-    let from = shade_from.unwrap_or(base);
-    let to = shade_to.unwrap_or_else(|| lerp_color(base, Color::BLACK, 0.5));
-    let light = Vec2::new(
-        light_angle.to_radians().cos(),
-        light_angle.to_radians().sin(),
-    );
-    let mut faces: Vec<(f64, Shape)> = Vec::new();
-    let dir = match vanishing {
-        None => depth,
-        Some(v) => v - front.bounding_box().center(),
+    let base = main.fill.preview_color().unwrap_or(Color::WHITE);
+    let coloring = match (solid, shade_from) {
+        (Some(c), _) => Coloring::Solid(c),
+        (None, Some(f)) => Coloring::Shade(
+            f,
+            shade_to.unwrap_or_else(|| lerp_color(base, Color::BLACK, 0.5)),
+        ),
+        (None, None) => Coloring::Object,
     };
-    for i in 0..pts.len() - 1 {
-        let (a, b) = (pts[i], pts[i + 1]);
-        let (a2, b2) = (back_pts[i], back_pts[i + 1]);
-        let quad = crate::effects::polygon(&[a, b, b2, a2]);
-        let edge = b - a;
-        let mut normal = Vec2::new(edge.y, -edge.x);
-        if normal.hypot() > 1e-9 {
-            normal = normal.normalize();
-        }
-        // Faces pointing away from the extrusion direction are hidden.
-        let facing = normal.dot(dir.normalize());
-        let shade = 0.55
-            + 0.45 * ((normal.dot(light) + 1.0) / 2.0) * (light_intensity / 100.0).clamp(0.0, 1.0)
-            + 0.45 * (1.0 - (light_intensity / 100.0).clamp(0.0, 1.0));
-        let mid =
-            (a + b.to_vec2() + a2.to_vec2() + b2.to_vec2().to_point().to_vec2()).to_vec2() / 4.0;
-        let depth_key = mid.dot(dir.normalize());
-        let mut s = shape.clone();
-        s.effects.clear();
-        s.shadow = None;
-        s.transform = Affine::IDENTITY;
-        s.kind = ShapeKind::Path {
-            path: quad,
-            closed: true,
-        };
-        let c = lerp_color(from, to, 0.5);
-        s.fill = Fill::Solid(scale_color(c, shade.clamp(0.2, 1.0)));
-        if let Some(st) = &mut s.stroke {
-            st.width = st.width.min(0.1);
-        }
-        let _ = facing;
-        faces.push((depth_key, s));
-    }
-    // Painter's order: farthest first.
-    faces.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let mut out = Vec::new();
-    let mut back = shape.clone();
-    back.effects.clear();
-    back.shadow = None;
-    back.transform = Affine::IDENTITY;
-    back.kind = ShapeKind::Path {
-        path: crate::effects::polygon(&back_pts),
-        closed: true,
-    };
-    back.fill = Fill::Solid(to);
-    out.push(back);
-    out.extend(faces.into_iter().map(|(_, s)| s));
-    out
-}
-
-fn scale_color(c: Color, k: f64) -> Color {
-    let [r, g, b] = c.to_rgb8();
-    Color::rgb8(
-        (r as f64 * k).round().clamp(0.0, 255.0) as u8,
-        (g as f64 * k).round().clamp(0.0, 255.0) as u8,
-        (b as f64 * k).round().clamp(0.0, 255.0) as u8,
-    )
+    Some(Body {
+        kind,
+        vector: depth,
+        vanishing: vp,
+        depth: if amount.is_finite() {
+            amount.clamp(0.0, 0.99)
+        } else {
+            0.0
+        },
+        coloring,
+        light_angle,
+        light_intensity,
+    })
 }
 
 fn bevel(
@@ -1244,9 +1213,14 @@ mod tests {
             light_angle: 135.0,
             light_intensity: 50.0,
             bevel: 0.0,
+            kind: None,
+            on_object: false,
+            solid: None,
         });
         let ev = evaluate(&s);
-        assert!(ev.below.len() > 4);
+        // The far face and the two faces that show (toward the vector),
+        // each outlined.
+        assert_eq!(ev.below.len(), 5);
         let back = ev.below[0].bounds();
         assert!((back.x0 - 10.0).abs() < 0.5);
     }
