@@ -641,6 +641,11 @@ pub struct ToolPrefs {
     pub text_font: String,
     pub text_size_pt: f64,
     pub text_hyphenation: bool,
+    /// The envelope editing mode and the mapping and Keep Lines new
+    /// envelopes take (ids of `tracedraw_core::envelope`).
+    pub envelope_mode: String,
+    pub envelope_mapping: String,
+    pub envelope_keep_lines: bool,
 }
 
 impl Default for ToolPrefs {
@@ -668,6 +673,9 @@ impl Default for ToolPrefs {
             text_font: "Arial".into(),
             text_size_pt: 24.0,
             text_hyphenation: false,
+            envelope_mode: tracedraw_core::envelope::Mode::default().id().into(),
+            envelope_mapping: tracedraw_core::envelope::Mapping::default().id().into(),
+            envelope_keep_lines: false,
         }
     }
 }

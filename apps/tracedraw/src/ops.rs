@@ -73,7 +73,7 @@ impl App {
     /// The box Align and Distribute use for `s`: its bounds, grown by
     /// half its outline width with Use Outline.
     fn align_box(&self, s: &Shape) -> Rect {
-        let b = s.bounds();
+        let b = self.visual_bounds(s);
         match (&s.stroke, self.align_use_outline) {
             (Some(st), true) if st.width.is_finite() && st.width > 0.0 => {
                 b.inflate(st.width / 2.0, st.width / 2.0)

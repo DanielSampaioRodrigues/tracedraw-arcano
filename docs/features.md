@@ -124,7 +124,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Contour (steps, offset, direction, colour blend), live | works |
 | Blend (steps, rotation, accelerations, path), live | works |
 | Distort (push/pull, zipper, twister), live | works |
-| Envelope (presets, keep lines, node drag), live | works |
+| Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |
 | Perspective (Add Perspective, node drag) | works |
 | Extrude (depth, vanishing point, bevel, lighting), live | works |
 | Bevel (soft edge, emboss) | works |

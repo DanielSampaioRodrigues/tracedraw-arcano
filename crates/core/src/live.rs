@@ -41,9 +41,22 @@ pub enum Effect {
     },
     /// Geometry distortions (push/pull, zipper, twister).
     Distort(crate::effects::Distort),
-    /// Envelope: 8 control points (4 corners + 4 edge midpoints) in local
-    /// space, mapping the shape's bounding box through a Coons patch.
-    Envelope { nodes: Vec<Point>, keep_lines: bool },
+    /// Envelope: a frame of nodes in local space (see
+    /// [`crate::envelope`]) the shape's bounding box is mapped into.
+    Envelope {
+        nodes: Vec<Point>,
+        keep_lines: bool,
+        /// The handles of the segment from each node to the next; older
+        /// files have none (each side is then the arc through its nodes).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        handles: Vec<[Point; 2]>,
+        /// The corner nodes (bottom-left, bottom-right, top-right,
+        /// top-left); older files have none (nodes 0, 2, 4 and 6 of 8).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        corners: Vec<usize>,
+        #[serde(default)]
+        mapping: crate::envelope::Mapping,
+    },
     /// Perspective: the four corners of the bounding box moved.
     Perspective { corners: [Point; 4] },
     /// Extrusion with optional vanishing point and shading.
@@ -321,6 +334,87 @@ impl Lens {
     }
 }
 
+impl Shape {
+    /// The object, or an object in its groups, has live effects.
+    pub fn has_live_effects(&self) -> bool {
+        !self.effects.is_empty()
+            || matches!(&self.kind, ShapeKind::Group { children } if children.iter().any(Shape::has_live_effects))
+    }
+
+    /// The bounds of what the object draws: the outline its live effects
+    /// warp it to and the objects they add (contours, blends, extrusions)
+    /// included. The same as [`Shape::bounds`] without live effects.
+    pub fn visual_bounds(&self) -> Rect {
+        if !self.has_live_effects() {
+            return self.bounds();
+        }
+        if self.effects.is_empty() {
+            if let ShapeKind::Group { children } = &self.kind {
+                return children
+                    .iter()
+                    .map(|c| {
+                        let mut c = c.clone();
+                        c.transform = self.transform * c.transform;
+                        c.visual_bounds()
+                    })
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_else(|| self.bounds());
+            }
+        }
+        let ev = evaluate(self);
+        std::iter::once(&ev.main)
+            .chain(ev.below.iter())
+            .chain(ev.above.iter())
+            .map(Shape::bounds)
+            .filter(|b| {
+                b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()
+            })
+            .reduce(|a, b| a.union(b))
+            .unwrap_or_else(|| self.bounds())
+    }
+}
+
+impl Effect {
+    /// A fresh envelope around `b` (Putty mapping): the object stays as it
+    /// is until the frame changes.
+    pub fn envelope_around(b: Rect, keep_lines: bool) -> Effect {
+        Effect::from_envelope(
+            &crate::envelope::Frame::around(b),
+            keep_lines,
+            crate::envelope::Mapping::default(),
+        )
+    }
+
+    /// An envelope effect holding `frame`.
+    pub fn from_envelope(
+        frame: &crate::envelope::Frame,
+        keep_lines: bool,
+        mapping: crate::envelope::Mapping,
+    ) -> Effect {
+        Effect::Envelope {
+            nodes: frame.nodes.clone(),
+            keep_lines,
+            handles: frame.handles.clone(),
+            corners: frame.corners.to_vec(),
+            mapping,
+        }
+    }
+
+    /// The frame of an envelope effect (None for other effects and for an
+    /// envelope with too few nodes).
+    pub fn envelope_frame(&self) -> Option<crate::envelope::Frame> {
+        match self {
+            Effect::Envelope {
+                nodes,
+                handles,
+                corners,
+                ..
+            } => crate::envelope::Frame::from_parts(nodes, handles, corners),
+            _ => None,
+        }
+    }
+}
+
 /// Result of evaluating a shape's effect stack.
 pub struct Evaluated {
     pub below: Vec<Shape>,
@@ -340,9 +434,18 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 let p = crate::effects::distort(&main.local_path(), *how);
                 set_path(&mut main, p);
             }
-            Effect::Envelope { nodes, keep_lines } => {
-                let p = envelope(&main.local_path(), nodes, *keep_lines);
-                set_path(&mut main, p);
+            Effect::Envelope {
+                nodes,
+                keep_lines,
+                handles,
+                corners,
+                mapping,
+            } => {
+                if let Some(frame) = crate::envelope::Frame::from_parts(nodes, handles, corners) {
+                    let p =
+                        crate::envelope::apply(&main.local_path(), &frame, *keep_lines, *mapping);
+                    set_path(&mut main, p);
+                }
             }
             Effect::Perspective { corners } => {
                 let p = perspective(&main.local_path(), corners);
@@ -854,86 +957,9 @@ fn block_shadow(shape: &Shape, offset: Vec2, color: Color, gap: f64) -> Vec<Shap
     vec![s]
 }
 
-/// Default envelope nodes for a bounding box: corners and edge midpoints,
-/// ordered clockwise from the bottom-left: BL, BM, BR, RM, TR, TM, TL, LM.
-pub fn envelope_default(b: Rect) -> Vec<Point> {
-    vec![
-        Point::new(b.x0, b.y0),
-        Point::new(b.center().x, b.y0),
-        Point::new(b.x1, b.y0),
-        Point::new(b.x1, b.center().y),
-        Point::new(b.x1, b.y1),
-        Point::new(b.center().x, b.y1),
-        Point::new(b.x0, b.y1),
-        Point::new(b.x0, b.center().y),
-    ]
-}
-
-/// Map a path through the envelope: each edge is the quadratic through its
-/// corner, midpoint and corner; the interior is a Coons patch.
-pub fn envelope(path: &BezPath, nodes: &[Point], keep_lines: bool) -> BezPath {
-    if nodes.len() < 8 {
-        return path.clone();
-    }
-    let b = path.bounding_box();
-    if b.width() < 1e-9 || b.height() < 1e-9 {
-        return path.clone();
-    }
-    let q = |a: Point, m: Point, c: Point, t: f64| -> Point {
-        // Quadratic through a, m (at t=0.5), c.
-        let ctrl = Point::new(2.0 * m.x - 0.5 * (a.x + c.x), 2.0 * m.y - 0.5 * (a.y + c.y));
-        let u = 1.0 - t;
-        Point::new(
-            u * u * a.x + 2.0 * u * t * ctrl.x + t * t * c.x,
-            u * u * a.y + 2.0 * u * t * ctrl.y + t * t * c.y,
-        )
-    };
-    let bottom = |u: f64| q(nodes[0], nodes[1], nodes[2], u);
-    let right = |v: f64| q(nodes[2], nodes[3], nodes[4], v);
-    let top = |u: f64| q(nodes[6], nodes[5], nodes[4], u);
-    let left = |v: f64| q(nodes[0], nodes[7], nodes[6], v);
-    let map = |p: Point| -> Point {
-        let u = ((p.x - b.x0) / b.width()).clamp(0.0, 1.0);
-        let v = ((p.y - b.y0) / b.height()).clamp(0.0, 1.0);
-        let bu = bottom(u);
-        let tu = top(u);
-        let lv = left(v);
-        let rv = right(v);
-        let p00 = nodes[0];
-        let p10 = nodes[2];
-        let p01 = nodes[6];
-        let p11 = nodes[4];
-        let x = (1.0 - v) * bu.x + v * tu.x + (1.0 - u) * lv.x + u * rv.x
-            - ((1.0 - u) * (1.0 - v) * p00.x
-                + u * (1.0 - v) * p10.x
-                + (1.0 - u) * v * p01.x
-                + u * v * p11.x);
-        let y = (1.0 - v) * bu.y + v * tu.y + (1.0 - u) * lv.y + u * rv.y
-            - ((1.0 - u) * (1.0 - v) * p00.y
-                + u * (1.0 - v) * p10.y
-                + (1.0 - u) * v * p01.y
-                + u * v * p11.y);
-        Point::new(x, y)
-    };
-    if keep_lines {
-        let mut out = BezPath::new();
-        for el in path.elements() {
-            out.push(match *el {
-                PathEl::MoveTo(p) => PathEl::MoveTo(map(p)),
-                PathEl::LineTo(p) => PathEl::LineTo(map(p)),
-                PathEl::QuadTo(a, p) => PathEl::QuadTo(map(a), map(p)),
-                PathEl::CurveTo(a, c, p) => PathEl::CurveTo(map(a), map(c), map(p)),
-                PathEl::ClosePath => PathEl::ClosePath,
-            });
-        }
-        return out;
-    }
-    warp(path, b, map)
-}
-
 /// Flatten, subdivide long segments and map every point through `map`, so
 /// straight edges bend with the warp.
-fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> BezPath {
+pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> BezPath {
     let step = (b.width().max(b.height()) / 64.0).max(0.05);
     let mut out = BezPath::new();
     let mut last: Option<Point> = None;
@@ -1114,21 +1140,59 @@ mod tests {
     }
 
     #[test]
+    fn visual_bounds_follow_the_live_effects() {
+        let mut s = rect_shape();
+        let plain = s.bounds();
+        assert_eq!(s.visual_bounds(), plain);
+        let mut nodes = crate::envelope::default_nodes(plain);
+        nodes[5].y += 10.0;
+        let frame = crate::envelope::Frame::from_parts(&nodes, &[], &[]).expect("frame");
+        s.effects.push(Effect::from_envelope(
+            &frame,
+            false,
+            crate::envelope::Mapping::Putty,
+        ));
+        assert!(s.has_live_effects());
+        // The arch rises above the rectangle; plain bounds do not see it.
+        assert!((s.visual_bounds().y1 - (plain.y1 + 10.0)).abs() < 0.5);
+        assert_eq!(s.bounds(), plain);
+        // In a group too.
+        let g = Shape::new(
+            crate::ShapeId(99),
+            ShapeKind::Group {
+                children: vec![s.clone()],
+            },
+        );
+        assert!(g.has_live_effects());
+        assert!((g.visual_bounds().y1 - (plain.y1 + 10.0)).abs() < 0.5);
+    }
+
+    #[test]
     fn identity_envelope_keeps_geometry() {
-        let s = rect_shape();
-        let b = s.bounds();
-        let p = envelope(&s.local_path(), &envelope_default(b), false);
-        let pb = p.bounding_box();
+        let mut s = rect_shape();
+        s.effects.push(Effect::envelope_around(s.bounds(), false));
+        let pb = evaluate(&s).main.bounds();
         assert!((pb.x1 - 20.0).abs() < 1e-6 && (pb.y1 - 20.0).abs() < 1e-6);
     }
 
     #[test]
     fn envelope_moves_top_centre() {
-        let s = rect_shape();
-        let mut nodes = envelope_default(s.bounds());
+        let mut s = rect_shape();
+        let mut nodes = crate::envelope::default_nodes(s.bounds());
         nodes[5].y += 10.0;
-        let p = envelope(&s.local_path(), &nodes, false);
-        assert!((p.bounding_box().y1 - 30.0).abs() < 0.5);
+        // As older files store it: the nodes alone.
+        let json = serde_json::json!({
+            "effect": "envelope",
+            "nodes": nodes,
+            "keep_lines": false,
+        });
+        let e: Effect = serde_json::from_value(json).expect("older envelope");
+        s.effects.push(e.clone());
+        assert!((evaluate(&s).main.bounds().y1 - 30.0).abs() < 0.5);
+        // Written back as it was read.
+        let back = serde_json::to_value(&e).expect("json");
+        assert!(back.get("handles").is_none() && back.get("corners").is_none());
+        assert_eq!(back.get("mapping").and_then(|m| m.as_str()), Some("putty"));
     }
 
     #[test]

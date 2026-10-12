@@ -8,7 +8,6 @@ use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use egui::Ui;
-use tracedraw_core::geometry::Shape as _;
 use tracedraw_core::{document::ShapeKind, live::Effect, Color, Command, Fill, ShapeId};
 
 fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
@@ -42,7 +41,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Lens => lens(app, ui),
         DockerTab::Blend => blend(app, ui),
         DockerTab::Contour => contour(app, ui),
-        DockerTab::Envelope => envelope(app, ui),
+        DockerTab::Envelope => crate::ui::envelope_ui::envelope_docker(app, ui),
         DockerTab::Extrude => extrude(app, ui),
         DockerTab::Bevel => bevel(app, ui),
         DockerTab::BrushStrokes => brush_strokes(app, ui),
@@ -993,70 +992,6 @@ fn contour(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-}
-
-fn envelope(app: &mut App, ui: &mut Ui) {
-    ui.horizontal_wrapped(|ui| {
-        for m in crate::effects_ui::EnvelopeMode::ALL {
-            if ui
-                .selectable_label(app.envelope_mode == m, tr(m.key()))
-                .clicked()
-            {
-                app.envelope_mode = m;
-            }
-        }
-    });
-    ui.checkbox(&mut app.envelope_keep_lines, tr("docker.keep_lines"));
-    let has = !app.selection.is_empty();
-    let cur = current_effect(app, |e| matches!(e, Effect::Envelope { .. }));
-    ui.horizontal(|ui| {
-        if cur.is_none()
-            && ui
-                .add_enabled(has, egui::Button::new(tr("docker.add_new")))
-                .clicked()
-        {
-            for s in app.selected_shapes() {
-                let b = s.local_path().bounding_box();
-                let nodes = tracedraw_core::live::envelope_default(b);
-                let mut effects = s.effects.clone();
-                effects.push(Effect::Envelope {
-                    nodes,
-                    keep_lines: app.envelope_keep_lines,
-                });
-                app.run(Command::SetEffects {
-                    shape: s.id,
-                    effects,
-                });
-            }
-            app.set_tool(crate::tools::Tool::Envelope);
-        }
-        if cur.is_some() {
-            if ui.button(tr("docker.remove")).clicked() {
-                app.remove_effects_of_kind(&Effect::Envelope {
-                    nodes: Vec::new(),
-                    keep_lines: false,
-                });
-            }
-            if ui.button(tr("docker.break_apart")).clicked() {
-                app.flatten_effects();
-            }
-        }
-    });
-    ui.strong(tr("docker.presets"));
-    ui.horizontal_wrapped(|ui| {
-        for (k, preset) in [
-            ("docker.preset_arch", 0),
-            ("docker.preset_bulge", 1),
-            ("docker.preset_flag", 2),
-            ("docker.preset_perspective", 3),
-            ("docker.preset_circle", 4),
-        ] {
-            if ui.add_enabled(has, egui::Button::new(tr(k))).clicked() {
-                app.apply_envelope_preset(preset);
-            }
-        }
-    });
-    dim(ui, tr("docker.envelope_hint"));
 }
 
 fn extrude(app: &mut App, ui: &mut Ui) {

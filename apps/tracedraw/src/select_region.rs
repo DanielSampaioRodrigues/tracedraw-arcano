@@ -171,6 +171,24 @@ pub fn takes(
     touching: bool,
     fill_counts: &dyn Fn(&Shape) -> bool,
 ) -> bool {
+    if !s.effects.is_empty() {
+        // What the object draws: its warped outline and the objects its
+        // effects add; wholly inside means all of them.
+        let ev = tracedraw_core::live::evaluate(s);
+        let parts: Vec<Shape> = std::iter::once(ev.main)
+            .chain(ev.below)
+            .chain(ev.above)
+            .map(|mut part| {
+                part.effects.clear();
+                part
+            })
+            .collect();
+        return if touching {
+            parts.iter().any(|q| takes(region, q, true, fill_counts))
+        } else {
+            parts.iter().all(|q| takes(region, q, false, fill_counts))
+        };
+    }
     let b = s.bounds();
     if !b.x0.is_finite() || !b.y0.is_finite() || !b.x1.is_finite() || !b.y1.is_finite() {
         return false;

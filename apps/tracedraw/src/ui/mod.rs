@@ -22,6 +22,7 @@ pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;
 pub mod effect_dialog;
+pub mod envelope_ui;
 pub mod field;
 pub mod font_list;
 pub mod hints;
@@ -570,6 +571,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     canvas::draw_guides(app, &painter, canvas_rect);
     rulers::draw_origin_drag(app, &painter, canvas_rect);
     canvas::draw_effect_nodes(app, &painter);
+    envelope_ui::draw_envelopes(app, &painter);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

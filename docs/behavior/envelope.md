@@ -1,28 +1,119 @@
 # Envelope
 
-Deforms an object into a bounding frame with 8 or more nodes.
+An envelope is a frame of nodes around an object; the object is mapped
+into it and follows when the nodes move. It is a live effect: the object
+keeps its own geometry and the envelope can be edited, replaced or
+cleared at any time (Effects > Envelope opens the Envelope panel,
+Ctrl+F7).
 
-| Control | Default | Range |
-|---|---|---|
-| Mode | Putty | Straight line, Single arc, Double arc, Unconstrained, Putty |
-| Mapping | Putty | Horizontal, Original, Putty, Vertical |
-| Presets | none | circle, arch, heart... |
-| Keep lines | off | |
+## The frame
 
-Shortcut: Ctrl+F7.
+- A new frame has eight nodes: the four corners of the object's bounding
+  box and the middle of each side, joined by straight segments. Nodes run
+  from the bottom-left corner along the bottom, up the right side, back
+  along the top and down the left side.
+- Each segment, from a node to the next, is a cubic curve with two
+  handles. Corners cannot be removed; other nodes can, down to four.
+- The frame is kept in the object's own space, so moving, scaling or
+  turning the object takes the envelope along.
+- Stored as `Effect::Envelope { nodes, handles, corners, keep_lines,
+  mapping }`. Files written before handles existed have only the eight
+  nodes: each side is then the single arc through its three nodes (the
+  quadratic through corner, middle and corner), which is what they showed.
 
-## Formulas
+## Envelope tool (Effects group of the toolbox)
 
-The envelope is a cubic Coons patch defined by four Bezier edges
-(8 nodes: 4 corners, 4 edge midpoints, each with handles). A point
-`(u, v)` of the source bounding box in 0..1 maps to
-`P(u, v) = (1-v) B(u) + v T(u) + (1-u) L(v) + u R(v)
- - [(1-u)(1-v) P00 + u(1-v) P10 + (1-u)v P01 + uv P11]`.
-Every node and handle of the source path is mapped; with "keep lines"
-straight segments stay straight (only endpoints are mapped).
+- A click on an object selects it and gives it an envelope if it has
+  none; a click on nothing clears the selection.
+- Dragging a node moves it the way the mode says; the whole drag is one
+  undo step, measured from where it began.
+- In the Unconstrained mode a click on a node selects it and shows its two
+  handles (the end of the segment coming in and the start of the one
+  going out); dragging a handle bends that segment alone.
+- Double-click on the frame adds a node there (the curve keeps its
+  shape); double-click on a node that is not a corner removes it.
+- The Shape tool edits the frame of a selected enveloped object the same
+  way. Other tools do not show it; the Envelope tool does not show the
+  selection handles.
+- Over a node or a handle the pointer is the Shape tool's arrow with the
+  node or handle mark.
+
+## Modes
+
+How dragging a node reshapes the sides it is on (both sides for a
+corner); the mode is a setting of the tool, not of the envelope, and it
+is kept in the preferences (`tools.envelope_mode`).
+
+| Mode | The sides the moved node is on become |
+|---|---|
+| Straight line | straight from node to node (handles a third and two thirds along each segment) |
+| Single arc | one smooth arc through their nodes: tangents `(p[i+1] - p[i-1]) / 2` inside, `2 (p[1] - p[0]) - t[1]` and `2 (p[m] - p[m-1]) - t[m-1]` at the ends (three nodes make the quadratic through them) |
+| Double arc | S curves: each segment leaves and reaches its nodes along the side (across for the bottom and the top, upright for the sides), handles a third of the way along |
+| Unconstrained (first choice) | unchanged: the node takes its two handles along, and handles move on their own |
+
+## Mapping
+
+How the object's bounding box fills the frame; it belongs to the
+envelope (new envelopes take the last one chosen, `tools.envelope_mapping`).
+
+| Mapping | A point `(u, v)` of the box (0 to 1 across and up) goes to |
+|---|---|
+| Putty (first choice) | the Coons patch of the four sides, each side's segments taking equal parts of it: `(1-v) B(u) + v T(u) + (1-u) L(v) + u R(v) - [(1-u)(1-v) P00 + u(1-v) P10 + (1-u)v P01 + uv P11]` |
+| Original | the same patch with each side measured by its length, so the object spreads evenly along the frame however its nodes are spaced |
+| Horizontal | height `v` of the frame's height; across, from where that row meets the frame's outline on the left to where it leaves on the right |
+| Vertical | `u` of the frame's width; up, from where that column meets the outline at the bottom to where it leaves at the top |
+
+Keep Lines (`keep_lines`) maps only the nodes and control points of the
+object, so its straight segments stay straight; without it the object
+is divided finely enough to bend (segments of 1/64 of its larger side).
+
+## Property bar (Envelope tool)
+
+Presets list | Straight Line, Single Arc, Double Arc, Unconstrained | (in
+the Unconstrained mode) Add Node, Delete Node | Add New Envelope,
+Mapping list, Keep Lines | Copy Envelope Properties, Clear Envelope; with
+nothing selected, how to start.
+
+- Presets: Arch, Bulge, Squeeze, Flag, Perspective, Circle; one replaces
+  each selected object's last envelope (or gives it one), fitted to the
+  object as the envelope takes it, in one undo step.
+- Add Node puts a node halfway along the segment after the selected node;
+  Delete Node removes the selected node (pale on a corner).
+- Add New Envelope puts a fresh frame around each selected object as it
+  now looks; an envelope it already has stays under the new one.
+- The mapping list and Keep Lines show the first selected envelope's;
+  changing them changes the selected envelopes (one undo step) and what
+  new envelopes take.
+- Copy Envelope Properties (also Object > Copy Effect > Envelope From):
+  the next click picks the object to copy from; the selected objects take
+  its last envelope, stretched from its box to theirs, with its mapping
+  and Keep Lines. A right click cancels.
+- Clear Envelope removes each selected object's last envelope.
+
+## Panel
+
+The four modes as pictures with the chosen one's name and what it does;
+Add New Envelope (which also takes the Envelope tool), Copy Envelope
+Properties, Clear Envelope, Break Apart; the mapping list; Keep Lines;
+the presets as buttons; a line on editing the frame.
+
+## Selection and picking
+
+The selection box, the property bar's position and size, alignment, a
+click and a marquee all go by what an object with live effects draws
+(`Shape::visual_bounds`): a click on the arch above an enveloped
+rectangle selects it, and the selection box reaches the top of the arch.
 
 ## Checks
 
-- Given an unchanged envelope, then the object is identical.
-- Given the top edge midpoint moved up by 10 mm (single arc), then the
-  top-centre node of a rectangle moves up by 10 mm and corners stay.
+- `tracedraw_core::envelope::tests::a_fresh_frame_changes_nothing`
+- `tracedraw_core::envelope::tests::older_envelopes_are_single_arcs`
+- `tracedraw_core::envelope::tests::the_modes_shape_the_sides_a_node_moves`
+- `tracedraw_core::envelope::tests::nodes_are_added_and_removed`
+- `tracedraw_core::envelope::tests::the_mappings_fill_the_frame_differently`
+- `tracedraw_core::live::tests::visual_bounds_follow_the_live_effects`
+- `envelope_edit::tests::dragging_a_node_is_one_step_in_the_chosen_mode`
+- `envelope_edit::tests::handles_and_nodes_in_the_unconstrained_mode`
+- `envelope_edit::tests::enveloped_objects_are_hit_and_boxed_as_drawn`
+- `envelope_edit::tests::presets_settings_clear_and_copy`
+- `ui::envelope_ui::tests::the_bar_and_the_docker_draw`

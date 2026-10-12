@@ -14,6 +14,7 @@ pub mod corner_cut;
 pub mod document;
 pub mod effects;
 pub mod engine;
+pub mod envelope;
 pub mod geometry;
 pub mod icc;
 pub mod id;

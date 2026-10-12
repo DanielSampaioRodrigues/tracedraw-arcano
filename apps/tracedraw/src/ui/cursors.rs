@@ -189,6 +189,12 @@ fn shape_cursor(app: &App, pos: Option<Pos2>) -> ToolCursor {
 /// What the Shape tool's arrow points at: what is being dragged, else
 /// what is under `pos` (screen).
 fn shape_mark(app: &App, pos: Option<Pos2>) -> ShapeMark {
+    if let Some(d) = &app.envelope_drag {
+        return match d.part {
+            crate::envelope_edit::Part::Node(_) => ShapeMark::Node,
+            crate::envelope_edit::Part::Handle { .. } => ShapeMark::Control,
+        };
+    }
     match &app.drag {
         Drag::Node { .. } | Drag::NodeMove { .. } | Drag::KindNode { .. } => {
             return ShapeMark::Node
@@ -202,6 +208,11 @@ fn shape_mark(app: &App, pos: Option<Pos2>) -> ShapeMark {
         return ShapeMark::Nothing;
     };
     let p = app.view.to_page(pos);
+    match app.envelope_part_at(p) {
+        Some((_, crate::envelope_edit::Part::Node(_))) => return ShapeMark::Node,
+        Some((_, crate::envelope_edit::Part::Handle { .. })) => return ShapeMark::Control,
+        None => {}
+    }
     if app.ctrl_handle_at(p).is_some() {
         ShapeMark::Control
     } else if app.node_at(p).is_some()
@@ -253,6 +264,13 @@ pub fn for_tool(
         }
         Tool::Pick | Tool::FreeformPick => ToolCursor::System(egui::CursorIcon::Default),
         Tool::Shape => shape_cursor(app, pos),
+        // Over an envelope's node or handle: the Shape tool's arrow.
+        Tool::Envelope
+            if app.envelope_drag.is_some()
+                || pos.is_some_and(|s| app.envelope_part_at(app.view.to_page(s)).is_some()) =>
+        {
+            ToolCursor::ShapeArrow(shape_mark(app, pos))
+        }
         // The fill's handles move.
         Tool::InteractiveFill
             if matches!(app.drag, Drag::FountainHandle { .. })

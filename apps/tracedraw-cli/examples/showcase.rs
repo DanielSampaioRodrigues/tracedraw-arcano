@@ -14,7 +14,7 @@
 //! and Lora) and fall back to the system's when missing.
 
 use std::path::{Path, PathBuf};
-use tracedraw_core::live::{envelope_default, Effect};
+use tracedraw_core::live::Effect;
 use tracedraw_core::{
     effects::Distort, Affine, BezPath, Color, Document, Fill, Fountain, FountainKind, Layer,
     LayerId, Mesh, ParagraphStyle, Pattern, PatternTile, Point, Rect, Shadow, Shape, ShapeKind,
@@ -599,17 +599,16 @@ fn effects(dir: &Path) {
     let lb = t.local_path();
     let bb = tracedraw_core::geometry::Shape::bounding_box(&lb);
     if bb.width() > 1.0 {
-        let mut nodes = envelope_default(bb);
+        use tracedraw_core::envelope::{Frame, Mapping, Mode};
+        let mut frame = Frame::around(bb);
         let lift = bb.height() * 0.55;
-        // BL, BM, BR, RM, TR, TM, TL, LM: raise the middles, drop the sides.
-        nodes[1].y += lift;
-        nodes[5].y += lift;
-        nodes[3].y -= lift * 0.15;
-        nodes[7].y -= lift * 0.15;
-        t.effects.push(Effect::Envelope {
-            nodes,
-            keep_lines: false,
-        });
+        // BL, BM, BR, RM, TR, TM, TL, LM: raise the middles, drop the sides,
+        // each side one arc.
+        for (i, d) in [(1, lift), (5, lift), (3, -lift * 0.15), (7, -lift * 0.15)] {
+            frame.move_node(i, Vec2::new(0.0, d), Mode::SingleArc);
+        }
+        t.effects
+            .push(Effect::from_envelope(&frame, false, Mapping::Putty));
     }
     b.add(t, "Envelope");
 

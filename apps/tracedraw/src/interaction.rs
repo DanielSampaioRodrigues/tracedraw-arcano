@@ -127,8 +127,20 @@ impl App {
     /// document fills open curves, unfilled ones too with "Treat all
     /// objects as filled"); otherwise near the outline.
     fn shape_hit(&self, s: &tracedraw_core::Shape, p: Point, tol: f64) -> bool {
-        if !s.bounds().inflate(tol, tol).contains(p) {
+        if !self.visual_bounds(s).inflate(tol, tol).contains(p) {
             return false;
+        }
+        if !s.effects.is_empty() {
+            // What the object draws: its warped outline and the objects
+            // its effects add.
+            let ev = tracedraw_core::live::evaluate(s);
+            return std::iter::once(ev.main)
+                .chain(ev.below)
+                .chain(ev.above)
+                .any(|mut part| {
+                    part.effects.clear();
+                    self.shape_hit(&part, p, tol)
+                });
         }
         if matches!(
             s.kind,
@@ -581,7 +593,7 @@ impl App {
         match self.tool {
             Tool::Pick | Tool::FreeformPick => self.pick_input(response, p, screen, mods),
             Tool::Shape => {
-                if !self.effect_node_input(response, p) {
+                if !self.envelope_input(response, p) && !self.effect_node_input(response, p) {
                     self.shape_input(response, p, mods)
                 }
             }

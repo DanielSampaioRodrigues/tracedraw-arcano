@@ -68,6 +68,8 @@ impl App {
         std::mem::swap(&mut self.pivots, &mut slot.pivots);
         std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
         std::mem::swap(self.raster.get_mut(), &mut slot.raster);
+        // Measured in the other drawing.
+        *self.visual_cache.get_mut() = (u64::MAX, Default::default());
         std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
         // A page id from another drawing means nothing here.
         if self.engine.document().page(self.page).is_err() {
@@ -99,6 +101,8 @@ impl App {
         self.pending_order = None;
         self.pending_copy_properties = false;
         self.pending_copy_effect = None;
+        self.pending_copy_envelope = false;
+        self.envelope_drag = None;
         self.pending_clone_effect = None;
         self.pending_blend_path = false;
         self.anchor_sel = None;

@@ -742,6 +742,9 @@ pub struct App {
     /// All colours of a palette at once (the expand button): which row.
     pub palette_expanded: Option<crate::ui::palette::Row>,
     pub raster: std::cell::RefCell<crate::raster::Raster>,
+    /// The visual bounds of objects with live effects, for the document
+    /// revision they were measured at (see [`App::visual_bounds`]).
+    pub visual_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, Rect>)>,
     /// Where the canvas began on screen when it was last drawn, so the
     /// drawing stays put in its window when the window moves (see
     /// `App::anchor_view`).
@@ -844,6 +847,8 @@ pub struct App {
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
     pub pending_copy_effect: Option<EffectKind>,
+    /// Copy Envelope Properties waits for the object to copy from.
+    pub pending_copy_envelope: bool,
     pub pending_clone_effect: Option<EffectKind>,
     /// Document Options > Page Size state.
     pub options_labels: bool,
@@ -914,7 +919,12 @@ pub struct App {
     /// or across the page.
     pub distribute_to: crate::ops::DistributeTo,
     pub lens: crate::lens::LensSettings,
-    pub envelope_mode: crate::effects_ui::EnvelopeMode,
+    /// How dragging an envelope node reshapes its sides.
+    pub envelope_mode: tracedraw_core::envelope::Mode,
+    /// The mapping new envelopes take.
+    pub envelope_mapping: tracedraw_core::envelope::Mapping,
+    /// An envelope node or handle being dragged.
+    pub envelope_drag: Option<crate::envelope_edit::EnvelopeDrag>,
     pub bevel: crate::effects_ui::BevelSettings,
     pub extrude: crate::effects_ui::ExtrudeSettings,
     pub transparency_default: crate::effects_ui::TransparencySettings,
@@ -1416,6 +1426,7 @@ impl App {
             palette_shades: None,
             palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
+            visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
             view_anchor: None,
             window_layout: Default::default(),
             window_layout_seen: None,
@@ -1476,6 +1487,7 @@ impl App {
             scale_locked: false,
             pending_copy_properties: false,
             pending_copy_effect: None,
+            pending_copy_envelope: false,
             pending_clone_effect: None,
             options_labels: false,
             navigator_open: false,
@@ -1522,6 +1534,8 @@ impl App {
             distribute_to: Default::default(),
             lens: Default::default(),
             envelope_mode: Default::default(),
+            envelope_mapping: Default::default(),
+            envelope_drag: None,
             bevel: Default::default(),
             extrude: Default::default(),
             transparency_default: Default::default(),
@@ -1953,6 +1967,9 @@ impl App {
             text_font: self.text_font.clone(),
             text_size_pt: self.text_size_pt,
             text_hyphenation: self.text_hyphenation,
+            envelope_mode: self.envelope_mode.id().into(),
+            envelope_mapping: self.envelope_mapping.id().into(),
+            envelope_keep_lines: self.envelope_keep_lines,
         }
     }
 
@@ -1993,6 +2010,9 @@ impl App {
         }
         self.text_size_pt = finite(t.text_size_pt, 0.5, 3000.0, 24.0);
         self.text_hyphenation = t.text_hyphenation;
+        self.envelope_mode = tracedraw_core::envelope::Mode::from_id(&t.envelope_mode);
+        self.envelope_mapping = tracedraw_core::envelope::Mapping::from_id(&t.envelope_mapping);
+        self.envelope_keep_lines = t.envelope_keep_lines;
     }
 
     /// What the drawing window shows now (see
@@ -2494,11 +2514,35 @@ impl App {
         self.rotate_mode = !self.rotate_mode;
     }
 
+    /// The selection's bounds as drawn: live effects (an envelope, a
+    /// contour...) included.
     pub fn selection_bounds(&self) -> Option<Rect> {
         self.selected_shapes()
             .iter()
-            .map(Shape::bounds)
+            .map(|s| self.visual_bounds(s))
             .reduce(|a, b| a.union(b))
+    }
+
+    /// The bounds of what `s` (in page space) draws, its live effects
+    /// included; measured once per change of the drawing.
+    pub fn visual_bounds(&self, s: &Shape) -> Rect {
+        if !s.has_live_effects() {
+            return s.bounds();
+        }
+        let revision = self.engine.revision();
+        let Ok(mut cache) = self.visual_cache.try_borrow_mut() else {
+            return s.visual_bounds();
+        };
+        if cache.0 != revision {
+            cache.0 = revision;
+            cache.1.clear();
+        }
+        if let Some(b) = cache.1.get(&s.id) {
+            return *b;
+        }
+        let b = s.visual_bounds();
+        cache.1.insert(s.id, b);
+        b
     }
 
     pub fn run(&mut self, cmd: Command) {
@@ -4757,6 +4801,9 @@ mod tests {
         app.color_docker.shown = [false, true, true];
         app.align_to = crate::ops2::AlignTo::PageCenter;
         app.distribute_to = crate::ops::DistributeTo::Page;
+        app.envelope_mode = tracedraw_core::envelope::Mode::DoubleArc;
+        app.envelope_mapping = tracedraw_core::envelope::Mapping::Vertical;
+        app.envelope_keep_lines = true;
         // The palette starts at the bottom; moved to the right, it stays.
         use crate::ui::bars::{move_bar, Bar, Dock};
         assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
@@ -4779,6 +4826,15 @@ mod tests {
         assert_eq!(next.align_to, crate::ops2::AlignTo::PageCenter);
         assert_eq!(next.distribute_to, crate::ops::DistributeTo::Page);
         assert_eq!(next.settings.bars.dock(Bar::Palette), Dock::Right);
+        assert_eq!(
+            next.envelope_mode,
+            tracedraw_core::envelope::Mode::DoubleArc
+        );
+        assert_eq!(
+            next.envelope_mapping,
+            tracedraw_core::envelope::Mapping::Vertical
+        );
+        assert!(next.envelope_keep_lines);
         // Values out of range in a file edited by hand are brought in.
         let mut odd = next.settings.clone();
         odd.tools.polygon_points = 0;

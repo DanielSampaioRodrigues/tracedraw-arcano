@@ -118,6 +118,16 @@ pub enum Pic {
     ScaleMirror,
     SizeBox,
     SkewBox,
+    // Envelopes (drawn in `ui::envelope_ui`): the four modes, Add New,
+    // Clear, Copy and Keep Lines.
+    EnvelopeStraight,
+    EnvelopeSingleArc,
+    EnvelopeDoubleArc,
+    EnvelopeUnconstrained,
+    EnvelopeAddNew,
+    EnvelopeClear,
+    EnvelopeCopy,
+    KeepLines,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -178,6 +188,14 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
         );
     };
     match pic {
+        Pic::EnvelopeStraight
+        | Pic::EnvelopeSingleArc
+        | Pic::EnvelopeDoubleArc
+        | Pic::EnvelopeUnconstrained
+        | Pic::EnvelopeAddNew
+        | Pic::EnvelopeClear
+        | Pic::EnvelopeCopy
+        | Pic::KeepLines => crate::ui::envelope_ui::draw_envelope_pic(painter, r, pic, color),
         Pic::Width => {
             line((2.0, 3.0), (2.0, 13.0), thin);
             line((14.0, 3.0), (14.0, 13.0), thin);

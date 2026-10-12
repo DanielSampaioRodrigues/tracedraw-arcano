@@ -33,6 +33,7 @@ mod drawing_scale;
 mod drop_menu;
 mod effects_ui;
 mod encode;
+mod envelope_edit;
 mod export;
 mod eyedropper;
 mod files;

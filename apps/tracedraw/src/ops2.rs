@@ -2008,53 +2008,6 @@ impl App {
         }
     }
 
-    /// Envelope presets applied to the selection: 0 arch, 1 bulge, 2 flag,
-    /// 3 perspective, 4 circle.
-    pub fn apply_envelope_preset(&mut self, preset: usize) {
-        for s in self.selected_shapes() {
-            let b = s.local_path().bounding_box();
-            let mut n = tracedraw_core::live::envelope_default(b);
-            let h = b.height();
-            let w = b.width();
-            match preset {
-                0 => n[5].y += h * 0.3,
-                1 => {
-                    n[1].y -= h * 0.2;
-                    n[5].y += h * 0.2;
-                    n[3].x += w * 0.2;
-                    n[7].x -= w * 0.2;
-                }
-                2 => {
-                    n[1].y -= h * 0.2;
-                    n[5].y -= h * 0.2;
-                    n[0].y += h * 0.1;
-                    n[6].y += h * 0.1;
-                }
-                3 => {
-                    n[4].x -= w * 0.2;
-                    n[6].x += w * 0.2;
-                }
-                _ => {
-                    let k = 0.4142; // (sqrt2 - 1) so midpoints sit on the circle
-                    n[1].y -= h * k * 0.5;
-                    n[5].y += h * k * 0.5;
-                    n[3].x += w * k * 0.5;
-                    n[7].x -= w * k * 0.5;
-                }
-            }
-            let mut effects = s.effects.clone();
-            effects.retain(|e| !matches!(e, Effect::Envelope { .. }));
-            effects.push(Effect::Envelope {
-                nodes: n,
-                keep_lines: self.envelope_keep_lines,
-            });
-            self.run(Command::SetEffects {
-                shape: s.id,
-                effects,
-            });
-        }
-    }
-
     pub fn create_symbol_from_selection(&mut self) {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {

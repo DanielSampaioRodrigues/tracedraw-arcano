@@ -737,14 +737,16 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         return;
     }
     let view = &app.view;
+    // What the objects draw (live effects included), moved by the
+    // transform being previewed.
     let bounds = shapes
         .iter()
         .map(|s| {
-            let mut s = s.clone();
-            if let Some(t) = preview {
-                s.transform = t * s.transform;
+            let b = app.visual_bounds(s);
+            match preview {
+                Some(t) => t.transform_rect_bbox(b),
+                None => b,
             }
-            s.bounds()
         })
         .reduce(|a, b| a.union(b))
         .unwrap_or(Rect::ZERO);
@@ -752,6 +754,10 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
 
     if app.tool == Tool::Shape {
         draw_nodes(app, painter);
+        return;
+    }
+    // The Envelope tool shows the frames instead (`ui::envelope_ui`).
+    if app.tool == Tool::Envelope {
         return;
     }
     // Options > Display > Hide bounding box for curve tools.
@@ -1715,8 +1721,8 @@ fn draw_snap_glyph_halo(painter: &Painter, c: Pos2, mode: crate::snap_points::Sn
     draw_snap_glyph_width(painter, c, mode, Tokens::HANDLE, 1.3);
 }
 
-/// Effect nodes (envelope, perspective, mesh) of the selection when the
-/// Shape tool is active: small blue squares joined by a dotted frame.
+/// Effect nodes (perspective, mesh) of the selection when the Shape tool
+/// is active: small blue squares joined by a frame.
 pub fn draw_effect_nodes(app: &App, painter: &Painter) {
     if app.tool != crate::tools::Tool::Shape {
         return;
@@ -1727,17 +1733,7 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
             continue;
         }
         let blue = egui::Color32::from_rgb(40, 110, 220);
-        // Envelope and perspective frames.
-        let env: Vec<egui::Pos2> = nodes
-            .iter()
-            .filter(|(i, _)| *i < 100)
-            .map(|(_, p)| app.view.to_screen(*p))
-            .collect();
-        if env.len() == 8 {
-            let mut pts = env.clone();
-            pts.push(env[0]);
-            painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
-        }
+        // The perspective frame (envelopes: `ui::envelope_ui`).
         let persp: Vec<egui::Pos2> = nodes
             .iter()
             .filter(|(i, _)| (100..200).contains(i))

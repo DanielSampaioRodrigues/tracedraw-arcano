@@ -741,7 +741,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     app.apply_extrude();
                 }
             }
-            Tool::Distort | Tool::Envelope => {
+            Tool::Envelope => crate::ui::envelope_ui::envelope_bar(app, ui),
+            Tool::Distort => {
                 use crate::tools2::DistortMode;
                 for (m, n) in [
                     (DistortMode::PushPull, tr("toolbar.push_pull")),
@@ -778,13 +779,6 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .clicked()
                 {
                     app.apply_distort();
-                }
-                if app.tool == Tool::Envelope {
-                    ui.label(
-                        egui::RichText::new(tr("toolbar.envelope_presets_hint"))
-                            .color(Tokens::TEXT_DIM)
-                            .size(11.0),
-                    );
                 }
             }
             Tool::Eraser => {

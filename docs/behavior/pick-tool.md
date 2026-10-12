@@ -2,7 +2,7 @@
 
 | Action | Behaviour |
 |---|---|
-| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds) |
+| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds); an object with live effects counts where it is drawn: its warped outline and the objects its effects add, and its selection box encloses them |
 | Shift+click | add or remove from the selection |
 | Ctrl+click | the object inside a group: the innermost object under the pointer (in nested groups too); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
 | Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups; Shift+Alt adds it |
@@ -108,6 +108,8 @@ multi-line fields (QR code text and document notes) Enter inserts a line
 break instead.
 
 ## Checks
+
+- `envelope_edit::tests::enveloped_objects_are_hit_and_boxed_as_drawn`
 
 - `ui::propbar::tests::shaping_and_grouping_show_for_several_objects_groups_and_parts`
 - `pick_drag_tests::ctrl_keeps_a_move_straight`

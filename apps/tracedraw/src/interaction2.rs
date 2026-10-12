@@ -20,6 +20,7 @@ impl App {
         let waiting = self.pending_order.is_some()
             || self.pending_copy_properties
             || self.pending_copy_effect.is_some()
+            || self.pending_copy_envelope
             || self.pending_clone_effect.is_some()
             || self.pending_blend_path
             || self.pending_palette_sample;
@@ -30,6 +31,7 @@ impl App {
             self.pending_order = None;
             self.pending_copy_properties = false;
             self.pending_copy_effect = None;
+            self.pending_copy_envelope = false;
             self.pending_clone_effect = None;
             self.pending_blend_path = false;
             self.pending_palette_sample = false;
@@ -62,6 +64,11 @@ impl App {
         } else if let Some(kind) = self.pending_copy_effect.take() {
             if let Some(t) = target {
                 self.copy_effect_from(t, kind);
+            }
+        } else if self.pending_copy_envelope {
+            self.pending_copy_envelope = false;
+            if let Some(t) = target {
+                self.copy_envelope_from(t);
             }
         } else if let Some(kind) = self.pending_clone_effect.take() {
             if let Some(t) = target {
@@ -179,29 +186,7 @@ impl App {
                     }
                 }
             }
-            Tool::Envelope => {
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => {
-                            self.select(vec![id]);
-                            let has_env = self
-                                .doc()
-                                .find_shape(id)
-                                .map(|s| {
-                                    s.effects
-                                        .iter()
-                                        .any(|e| matches!(e, Effect::Envelope { .. }))
-                                })
-                                .unwrap_or(false);
-                            if !has_env {
-                                self.apply_envelope_preset(99);
-                            }
-                            self.set_tool(Tool::Shape);
-                        }
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
+            Tool::Envelope => self.envelope_tool_input(response, p),
             Tool::Extrude => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
@@ -1058,24 +1043,16 @@ impl App {
     }
 }
 
-/// Page-space positions of the editable nodes of a shape's effects and
-/// mesh fill, with a global index: envelope 0..8, perspective 100..104,
-/// mesh 200 + k.
+/// Page-space positions of the editable nodes of a shape's perspective
+/// and mesh fill, with a global index: perspective 100..104, mesh 200 + k
+/// (envelopes have their own editing, see `envelope_edit`).
 pub fn effect_nodes(s: &Shape) -> Vec<(usize, Point)> {
     let mut out = Vec::new();
     for e in &s.effects {
-        match e {
-            Effect::Envelope { nodes, .. } => {
-                for (i, n) in nodes.iter().enumerate() {
-                    out.push((i, s.transform * *n));
-                }
+        if let Effect::Perspective { corners } = e {
+            for (i, c) in corners.iter().enumerate() {
+                out.push((100 + i, s.transform * *c));
             }
-            Effect::Perspective { corners } => {
-                for (i, c) in corners.iter().enumerate() {
-                    out.push((100 + i, s.transform * *c));
-                }
-            }
-            _ => {}
         }
     }
     if let Fill::Mesh(m) = &s.fill {
@@ -1088,16 +1065,10 @@ pub fn effect_nodes(s: &Shape) -> Vec<(usize, Point)> {
 
 fn move_effect_node(effects: &mut [Effect], fill: &mut Fill, index: usize, d: Vec2) {
     for e in effects.iter_mut() {
-        match e {
-            Effect::Envelope { nodes, .. } if index < 100 => {
-                if let Some(n) = nodes.get_mut(index) {
-                    *n += d;
-                }
+        if let Effect::Perspective { corners } = e {
+            if let Some(c) = index.checked_sub(100).and_then(|i| corners.get_mut(i)) {
+                *c += d;
             }
-            Effect::Perspective { corners } if (100..104).contains(&index) => {
-                corners[index - 100] += d;
-            }
-            _ => {}
         }
     }
     if let Fill::Mesh(m) = fill {

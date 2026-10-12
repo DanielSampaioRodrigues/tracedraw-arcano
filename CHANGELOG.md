@@ -6,6 +6,20 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Envelopes rebuilt. The Envelope tool keeps its own property bar
+  (presets, the four modes, Add New, mapping, Keep Lines, Copy, Clear)
+  instead of the distortion controls, and edits the frame itself. The
+  modes now shape the frame (they were only buttons): Straight Line,
+  Single Arc, Double Arc and Unconstrained, where the selected node's
+  handles bend a segment alone. Double-clicking the frame adds a node,
+  a node removes it. The mappings Horizontal, Original, Putty and
+  Vertical change how the object fills the frame. Keep Lines and the
+  mapping change the selected envelope at once. Envelopes from earlier
+  files look as they did.
+- Objects with live effects are picked and boxed where they are drawn:
+  a click on the arch of an enveloped object selects it, and the
+  selection box, the property bar's size and alignment take the warped
+  outline and the objects the effects add.
 - View > Proof Colors changes the drawing on screen: its colours go to
   CMYK and back, through the CMYK profile in use or the built-in model,
   so colours CMYK cannot print show duller. Before, the button only

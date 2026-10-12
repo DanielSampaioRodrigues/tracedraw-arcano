@@ -1,33 +1,7 @@
-//! Settings held by the effect dockers (Lens, Envelope, Bevel, Extrude,
+//! Settings held by the effect dockers (Lens, Bevel, Extrude,
 //! Transparency) before they are applied as live effects.
 
 use tracedraw_core::{live::MergeMode, Color, Fill};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EnvelopeMode {
-    StraightLine,
-    SingleArc,
-    DoubleArc,
-    #[default]
-    Unconstrained,
-}
-
-impl EnvelopeMode {
-    pub const ALL: [EnvelopeMode; 4] = [
-        EnvelopeMode::StraightLine,
-        EnvelopeMode::SingleArc,
-        EnvelopeMode::DoubleArc,
-        EnvelopeMode::Unconstrained,
-    ];
-    pub fn key(self) -> &'static str {
-        match self {
-            EnvelopeMode::StraightLine => "envelope.straight_line",
-            EnvelopeMode::SingleArc => "envelope.single_arc",
-            EnvelopeMode::DoubleArc => "envelope.double_arc",
-            EnvelopeMode::Unconstrained => "envelope.unconstrained",
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BevelSettings {
