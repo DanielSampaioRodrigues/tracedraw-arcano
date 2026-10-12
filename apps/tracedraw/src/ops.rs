@@ -19,38 +19,105 @@ pub enum Align {
     CenterPage,
 }
 
+/// What Distribute spreads evenly: the left edges, centres or right
+/// edges, or the gaps, along x; the same along y (Top and Bottom are the
+/// top and bottom edges).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Distribute {
-    SpacingH,
-    SpacingV,
+    Left,
     CentersH,
+    Right,
+    SpacingH,
+    Top,
     CentersV,
+    Bottom,
+    SpacingV,
+}
+
+/// Where Distribute spreads the objects: between the outermost ones, or
+/// across the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DistributeTo {
+    #[default]
+    Selection,
+    Page,
+}
+
+/// The nearest multiple of `step` from `origin` to `v`.
+fn nearest_line(v: f64, origin: f64, step: f64) -> f64 {
+    if !(step.is_finite() && step > 1e-9) {
+        return v;
+    }
+    origin + ((v - origin) / step).round() * step
 }
 
 impl App {
-    /// Align to the last-selected object; with one object, to the page.
+    /// The box Align and Distribute use for `s`: its bounds, grown by
+    /// half its outline width with Use Outline.
+    fn align_box(&self, s: &Shape) -> Rect {
+        let b = s.bounds();
+        match (&s.stroke, self.align_use_outline) {
+            (Some(st), true) if st.width.is_finite() && st.width > 0.0 => {
+                b.inflate(st.width / 2.0, st.width / 2.0)
+            }
+            _ => b,
+        }
+    }
+
+    /// Align to the last-selected object; with one object, to the page
+    /// (the menu, the L, R, T, B, E, C and P keys and scripts).
     pub fn align(&mut self, how: Align) {
+        self.align_with(how, crate::ops2::AlignTo::ActiveObject);
+    }
+
+    /// Align the selected objects: to the last-selected object (to the
+    /// page when there is only one), the page's edges, its centre, or each
+    /// to the nearest grid line. Center to Page always takes the page
+    /// centre.
+    pub fn align_with(&mut self, how: Align, to: crate::ops2::AlignTo) {
+        use crate::ops2::AlignTo;
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
             return;
         }
         let page = self.page_rect();
-        let target: Rect = if shapes.len() == 1 || how == Align::CenterPage {
-            page
-        } else {
-            shapes.last().map(Shape::bounds).unwrap_or(page)
+        let c = page.center();
+        let target: Rect = match to {
+            _ if how == Align::CenterPage => page,
+            AlignTo::ActiveObject if shapes.len() > 1 => {
+                shapes.last().map(|s| self.align_box(s)).unwrap_or(page)
+            }
+            AlignTo::ActiveObject | AlignTo::PageEdge | AlignTo::Grid => page,
+            AlignTo::PageCenter => Rect::new(c.x, c.y, c.x, c.y),
         };
+        let grid = self.doc().metadata.grid;
+        let rulers = self.doc().metadata.rulers.clone();
+        let on_grid = to == AlignTo::Grid && how != Align::CenterPage;
+        let gx = |v: f64| nearest_line(v, rulers.origin_x, grid.spacing_x);
+        let gy = |v: f64| nearest_line(v, rulers.origin_y, grid.spacing_y);
         let mut cmds = Vec::new();
         for s in &shapes {
-            let b = s.bounds();
-            let d = match how {
-                Align::Left => Vec2::new(target.x0 - b.x0, 0.0),
-                Align::Right => Vec2::new(target.x1 - b.x1, 0.0),
-                Align::Top => Vec2::new(0.0, target.y1 - b.y1),
-                Align::Bottom => Vec2::new(0.0, target.y0 - b.y0),
-                Align::CenterH => Vec2::new(0.0, target.center().y - b.center().y),
-                Align::CenterV => Vec2::new(target.center().x - b.center().x, 0.0),
-                Align::CenterPage => target.center() - b.center(),
+            let b = self.align_box(s);
+            let d = if on_grid {
+                match how {
+                    Align::Left => Vec2::new(gx(b.x0) - b.x0, 0.0),
+                    Align::Right => Vec2::new(gx(b.x1) - b.x1, 0.0),
+                    Align::CenterV => Vec2::new(gx(b.center().x) - b.center().x, 0.0),
+                    Align::Top => Vec2::new(0.0, gy(b.y1) - b.y1),
+                    Align::Bottom => Vec2::new(0.0, gy(b.y0) - b.y0),
+                    Align::CenterH => Vec2::new(0.0, gy(b.center().y) - b.center().y),
+                    Align::CenterPage => Vec2::ZERO,
+                }
+            } else {
+                match how {
+                    Align::Left => Vec2::new(target.x0 - b.x0, 0.0),
+                    Align::Right => Vec2::new(target.x1 - b.x1, 0.0),
+                    Align::Top => Vec2::new(0.0, target.y1 - b.y1),
+                    Align::Bottom => Vec2::new(0.0, target.y0 - b.y0),
+                    Align::CenterH => Vec2::new(0.0, target.center().y - b.center().y),
+                    Align::CenterV => Vec2::new(target.center().x - b.center().x, 0.0),
+                    Align::CenterPage => target.center() - b.center(),
+                }
             };
             if d.hypot() > 1e-9 {
                 cmds.push(Command::TransformShapes {
@@ -64,87 +131,110 @@ impl App {
         }
     }
 
+    /// Distribute between the outermost selected objects (the menu).
     pub fn distribute(&mut self, how: Distribute) {
-        let mut shapes = self.selected_shapes();
-        if shapes.len() < 3 {
+        self.distribute_with(how, DistributeTo::Selection);
+    }
+
+    /// How many objects `to` needs: three between the outermost ones, two
+    /// across the page.
+    pub fn can_distribute(&self, to: DistributeTo) -> bool {
+        let need = match to {
+            DistributeTo::Selection => 3,
+            DistributeTo::Page => 2,
+        };
+        self.selection.len() >= need
+    }
+
+    /// Spread the selected objects evenly along x or y: their left edges,
+    /// centres or right edges (top, centres, bottom), or the gaps between
+    /// them. Between the outermost objects they stay put; across the page
+    /// the first and last touch its edges.
+    pub fn distribute_with(&mut self, how: Distribute, to: DistributeTo) {
+        if !self.can_distribute(to) {
             return;
         }
-        let horizontal = matches!(how, Distribute::SpacingH | Distribute::CentersH);
-        shapes.sort_by(|a, b| {
-            let (ba, bb) = (a.bounds(), b.bounds());
-            let (ka, kb) = if horizontal {
-                (ba.center().x, bb.center().x)
-            } else {
-                (ba.center().y, bb.center().y)
-            };
-            ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal)
+        let mut shapes = self.selected_shapes();
+        let horizontal = matches!(
+            how,
+            Distribute::Left | Distribute::CentersH | Distribute::Right | Distribute::SpacingH
+        );
+        // Along the axis: the low and high edge of a box.
+        let lo = |b: &Rect| if horizontal { b.x0 } else { b.y0 };
+        let hi = |b: &Rect| if horizontal { b.x1 } else { b.y1 };
+        // 0: low edges, 1: centres, 2: high edges, 3: gaps. Top is the
+        // high edge along y (y grows upwards).
+        let kind = match how {
+            Distribute::Left | Distribute::Bottom => 0,
+            Distribute::CentersH | Distribute::CentersV => 1,
+            Distribute::Right | Distribute::Top => 2,
+            Distribute::SpacingH | Distribute::SpacingV => 3,
+        };
+        let key = |b: &Rect| match kind {
+            0 => lo(b),
+            2 => hi(b),
+            _ => (lo(b) + hi(b)) / 2.0,
+        };
+        let mut boxes: Vec<(Shape, Rect)> = shapes
+            .drain(..)
+            .map(|s| {
+                let b = self.align_box(&s);
+                (s, b)
+            })
+            .collect();
+        boxes.sort_by(|a, b| {
+            key(&a.1)
+                .partial_cmp(&key(&b.1))
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let bounds: Vec<Rect> = shapes.iter().map(Shape::bounds).collect();
-        let n = bounds.len();
+        let n = boxes.len();
+        let (first, last) = (boxes[0].1, boxes[n - 1].1);
+        let page = self.page_rect();
+        let (e0, e1) = (lo(&page), hi(&page));
         let mut cmds = Vec::new();
-        match how {
-            Distribute::CentersH | Distribute::CentersV => {
-                let first = if horizontal {
-                    bounds[0].center().x
+        let mut shift = |s: &Shape, d: f64| {
+            if d.abs() > 1e-9 {
+                let v = if horizontal {
+                    Vec2::new(d, 0.0)
                 } else {
-                    bounds[0].center().y
+                    Vec2::new(0.0, d)
                 };
-                let last = if horizontal {
-                    bounds[n - 1].center().x
-                } else {
-                    bounds[n - 1].center().y
-                };
-                let step = (last - first) / (n - 1) as f64;
-                for (i, (s, b)) in shapes.iter().zip(&bounds).enumerate() {
-                    let want = first + step * i as f64;
-                    let have = if horizontal {
-                        b.center().x
-                    } else {
-                        b.center().y
-                    };
-                    let d = if horizontal {
-                        Vec2::new(want - have, 0.0)
-                    } else {
-                        Vec2::new(0.0, want - have)
-                    };
-                    cmds.push(Command::TransformShapes {
-                        shapes: vec![s.id],
-                        transform: Affine::translate(d),
-                    });
-                }
+                cmds.push(Command::TransformShapes {
+                    shapes: vec![s.id],
+                    transform: Affine::translate(v),
+                });
             }
-            Distribute::SpacingH | Distribute::SpacingV => {
-                let total: f64 = bounds
-                    .iter()
-                    .map(|b| if horizontal { b.width() } else { b.height() })
-                    .sum();
-                let span = if horizontal {
-                    bounds[n - 1].x1 - bounds[0].x0
-                } else {
-                    bounds[n - 1].y1 - bounds[0].y0
-                };
-                let gap = (span - total) / (n - 1) as f64;
-                let mut cursor = if horizontal {
-                    bounds[0].x0
-                } else {
-                    bounds[0].y0
-                };
-                for (s, b) in shapes.iter().zip(&bounds) {
-                    let have = if horizontal { b.x0 } else { b.y0 };
-                    let d = if horizontal {
-                        Vec2::new(cursor - have, 0.0)
-                    } else {
-                        Vec2::new(0.0, cursor - have)
-                    };
-                    cmds.push(Command::TransformShapes {
-                        shapes: vec![s.id],
-                        transform: Affine::translate(d),
-                    });
-                    cursor += if horizontal { b.width() } else { b.height() } + gap;
-                }
+        };
+        if kind == 3 {
+            let total: f64 = boxes.iter().map(|(_, b)| hi(b) - lo(b)).sum();
+            let (start, end) = match to {
+                DistributeTo::Selection => (lo(&first), hi(&last)),
+                DistributeTo::Page => (e0, e1),
+            };
+            let gap = (end - start - total) / (n - 1) as f64;
+            let mut cursor = start;
+            for (s, b) in &boxes {
+                shift(s, cursor - lo(b));
+                cursor += hi(b) - lo(b) + gap;
+            }
+        } else {
+            let len = |b: &Rect| hi(b) - lo(b);
+            let (k0, k1) = match to {
+                DistributeTo::Selection => (key(&first), key(&last)),
+                DistributeTo::Page => match kind {
+                    0 => (e0, e1 - len(&last)),
+                    1 => (e0 + len(&first) / 2.0, e1 - len(&last) / 2.0),
+                    _ => (e0 + len(&first), e1),
+                },
+            };
+            let step = (k1 - k0) / (n - 1) as f64;
+            for (i, (s, b)) in boxes.iter().enumerate() {
+                shift(s, k0 + step * i as f64 - key(b));
             }
         }
-        let _ = self.engine.run_batch("Distribute", &cmds);
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Distribute", &cmds);
+        }
     }
 
     /// Copies of the selection right on top of it, which become the

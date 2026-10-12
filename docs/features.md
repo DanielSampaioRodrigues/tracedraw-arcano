@@ -71,7 +71,7 @@ Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Convert to curves, Convert outline to object | works |
 | Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes | works |
 | Lock, hide, order (front/back of page and layer, one step, in front of, behind, reverse) | works |
-| Align and Distribute (all modes, align to page/edge/centre/grid/active object) | works |
+| Align and Distribute: six aligns to the active object, the page's edges, its centre or the grid, with Use Outline; eight distributes (edges, centres, gaps along x and y) between the outermost objects or across the page; picture buttons in the panel (see `behavior/align-distribute.md`) | works |
 | Transformations panel: Position, Rotate, Scale and Mirror, Size and Skew pages (Alt+F7 to Alt+F10, Object > Transformations) with a 3 x 3 reference point, relative or absolute position and centre, mirror buttons, proportional scale and size, skew about the anchor point, and copies in one undo step (see `behavior/transformations.md`) | works |
 | Step and Repeat | works |
 | Align with pixel grid | works |

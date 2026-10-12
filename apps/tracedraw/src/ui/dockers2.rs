@@ -28,7 +28,7 @@ fn dim(ui: &mut Ui, text: String) {
 
 pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
     match tab {
-        DockerTab::AlignDistribute => align_distribute(app, ui),
+        DockerTab::AlignDistribute => crate::ui::align_docker::align_distribute(app, ui),
         DockerTab::Shaping => shaping(app, ui),
         DockerTab::StepAndRepeat => step_and_repeat(app, ui),
         DockerTab::Text => text(app, ui),
@@ -61,64 +61,6 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Shelf => crate::ui::shelf_docker::shelf(app, ui),
         DockerTab::AiDrawing => crate::ui::ai_docker::ai_drawing(app, ui),
         _ => {}
-    }
-}
-
-fn align_distribute(app: &mut App, ui: &mut Ui) {
-    use crate::ops::{Align, Distribute};
-    use crate::ops2::AlignTo;
-    let has = !app.selection.is_empty();
-    ui.strong(tr("docker.align"));
-    ui.horizontal_wrapped(|ui| {
-        for (key, a) in [
-            ("menu.object.align_left", Align::Left),
-            ("menu.object.align_centers_h", Align::CenterH),
-            ("menu.object.align_right", Align::Right),
-            ("menu.object.align_top", Align::Top),
-            ("menu.object.align_centers_v", Align::CenterV),
-            ("menu.object.align_bottom", Align::Bottom),
-        ] {
-            if ui.add_enabled(has, egui::Button::new(tr(key))).clicked() {
-                app.align(a);
-            }
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label(tr("docker.align_to"));
-        for (k, v) in [
-            ("docker.align_active", AlignTo::ActiveObject),
-            ("docker.align_page_edge", AlignTo::PageEdge),
-            ("docker.align_page_center", AlignTo::PageCenter),
-            ("docker.align_grid", AlignTo::Grid),
-        ] {
-            if ui.selectable_label(app.align_to == v, tr(k)).clicked() {
-                app.align_to = v;
-            }
-        }
-    });
-    if ui
-        .add_enabled(has, egui::Button::new(tr("menu.object.center_to_page")))
-        .clicked()
-    {
-        app.align(Align::CenterPage);
-    }
-    ui.separator();
-    ui.strong(tr("docker.distribute"));
-    let three = app.selection.len() >= 3;
-    ui.horizontal_wrapped(|ui| {
-        for (key, d) in [
-            ("menu.object.distribute_centers_h", Distribute::CentersH),
-            ("menu.object.distribute_spacing_h", Distribute::SpacingH),
-            ("menu.object.distribute_centers_v", Distribute::CentersV),
-            ("menu.object.distribute_spacing_v", Distribute::SpacingV),
-        ] {
-            if ui.add_enabled(three, egui::Button::new(tr(key))).clicked() {
-                app.distribute(d);
-            }
-        }
-    });
-    if !three {
-        dim(ui, tr("docker.distribute_hint"));
     }
 }
 

@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Align and Distribute docker has picture buttons. Align To (the
+  active object, the page's edges, the page's centre, the grid) now does
+  what it says, where before every choice aligned to the active object;
+  Use Outline aligns the outer edges of the outlines. Distribute adds
+  left, right, top and bottom edges to centres and gaps, and can spread
+  the objects across the page (two objects are enough there); the
+  Object menu lists the new ones too.
 - The Transformations docker has picture buttons for its pages
   (Position, Rotate, Scale and Mirror, Size, Skew), a 3 x 3 reference
   point, Copies and one Apply: copies are made in one undo step, each the

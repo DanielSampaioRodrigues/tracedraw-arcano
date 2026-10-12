@@ -6,6 +6,7 @@
 pub mod about;
 pub mod ai_bar;
 pub mod ai_docker;
+pub mod align_docker;
 pub mod bars;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;

@@ -892,6 +892,11 @@ pub struct App {
     pub find_state: crate::ui::dialogs::FindReplaceState,
     pub step_repeat: crate::ops2::StepRepeat,
     pub align_to: crate::ops2::AlignTo,
+    /// Align and Distribute use the boxes with half the outline width.
+    pub align_use_outline: bool,
+    /// Align and Distribute docker: spread between the outermost objects
+    /// or across the page.
+    pub distribute_to: crate::ops::DistributeTo,
     pub lens: crate::lens::LensSettings,
     pub envelope_mode: crate::effects_ui::EnvelopeMode,
     pub bevel: crate::effects_ui::BevelSettings,
@@ -1466,6 +1471,8 @@ impl App {
             find_state: Default::default(),
             step_repeat: Default::default(),
             align_to: Default::default(),
+            align_use_outline: false,
+            distribute_to: Default::default(),
             lens: Default::default(),
             envelope_mode: Default::default(),
             bevel: Default::default(),

@@ -1634,10 +1634,14 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         sep(ui);
         let three = app.selection.len() >= 3;
         for (key, d) in [
+            ("menu.object.distribute_left", Distribute::Left),
             ("menu.object.distribute_centers_h", Distribute::CentersH),
-            ("menu.object.distribute_centers_v", Distribute::CentersV),
             ("menu.object.distribute_spacing_h", Distribute::SpacingH),
+            ("menu.object.distribute_right", Distribute::Right),
+            ("menu.object.distribute_top", Distribute::Top),
+            ("menu.object.distribute_centers_v", Distribute::CentersV),
             ("menu.object.distribute_spacing_v", Distribute::SpacingV),
+            ("menu.object.distribute_bottom", Distribute::Bottom),
         ] {
             if item(ui, key, "", three) {
                 app.distribute(d);
