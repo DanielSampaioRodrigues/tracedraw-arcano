@@ -3,26 +3,123 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TraceDraw</title>
+  <title>TraceDraw: open-source vector editor</title>
+  <meta name="description" content="TraceDraw is an open-source vector editor written in Rust that opens .cdr files. The browser version of the desktop app, in alpha.">
   <link rel="icon" type="image/png" href="icon-256.png">
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #d4d4d4; }
     canvas#tracedraw { position: absolute; inset: 0; width: 100%; height: 100%; outline: none; }
     #loading {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      font: 15px system-ui, sans-serif; color: #333; text-align: center; padding: 16px;
+      box-sizing: border-box; padding: 16px; overflow: auto;
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #262626;
     }
+    #loading .card {
+      box-sizing: border-box; width: 100%; max-width: 480px; margin: auto; padding: 24px;
+      background: #fff; border: 1px solid #b4b4b4; border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12); text-align: center;
+    }
+    #loading img { width: 64px; height: 64px; }
+    #loading h1 { margin: 8px 0 4px; font-size: 22px; }
+    #loading .alpha {
+      display: inline-block; padding: 0 6px; border-radius: 4px; vertical-align: middle;
+      background: #fbe3b4; color: #6b4500; font-size: 12px; font-weight: 600;
+    }
+    #loading .what { margin: 0 0 4px; font-size: 16px; }
+    #loading .meta { margin: 0 0 16px; color: #555; font-size: 13px; }
+    #loading-status { min-height: 1.45em; }
+    #loading-bar { width: 100%; height: 10px; margin-top: 8px; }
+    #loading .note { margin: 16px 0 0; color: #555; font-size: 13px; }
+    #loading .links { margin: 16px 0 0; }
+    #loading a { color: #0b5cad; }
+    #loading .links a { white-space: nowrap; }
   </style>
 </head>
-<body>
+<!-- data-wasm-size: the module's size in bytes, filled in by the build
+     (scripts/web/build.sh, CI) so the download shows its progress. -->
+<body data-wasm-size="0">
   <canvas id="tracedraw" tabindex="0"></canvas>
-  <div id="loading">Loading TraceDraw...</div>
+  <div id="loading">
+    <div class="card">
+      <img src="icon-256.png" alt="">
+      <h1>TraceDraw <span class="alpha">alpha</span></h1>
+      <p class="what">Open-source vector editor that opens .cdr files.</p>
+      <p class="meta">Written in Rust, free under the MIT or Apache-2.0 license. This is the browser version of the desktop app.</p>
+      <div id="loading-status" role="status">Loading TraceDraw...</div>
+      <progress id="loading-bar" max="100" hidden></progress>
+      <p class="note">Works best in a desktop browser with a mouse and keyboard. On a tablet choose Window &gt; Workspace &gt; Touch; a phone screen is too small for editing. Large drawings are slower here than in the desktop app.</p>
+      <p class="links">
+        <a href="https://github.com/igtoth/tracedraw/releases/latest">Download the desktop app</a> &middot;
+        <a href="https://github.com/igtoth/tracedraw">Source code</a> &middot;
+        <a href="https://github.com/igtoth/tracedraw/issues">Report a problem</a>
+      </p>
+      <noscript><p>TraceDraw needs JavaScript, WebAssembly and WebGL 2 to run in the browser.</p></noscript>
+    </div>
+  </div>
   <script type="module">
     import init from "./tracedraw.js";
-    init().catch((e) => {
-      document.getElementById("loading").textContent =
-        "TraceDraw could not start: " + e + ". A browser with WebAssembly and WebGL 2 is needed.";
-    });
+
+    const status = document.getElementById("loading-status");
+    const bar = document.getElementById("loading-bar");
+    const total = Number(document.body.dataset.wasmSize) || 0;
+    const mb = (n) => (n / 1048576).toFixed(1);
+    const say = (text) => { status.textContent = text; };
+
+    // The module, downloaded here rather than by init() so the page can
+    // show how far along it is.
+    async function download() {
+      const res = await fetch(new URL("tracedraw_bg.wasm", import.meta.url));
+      if (!res.ok) {
+        throw new Error("the editor could not be downloaded (HTTP " + res.status + ")");
+      }
+      if (!res.body || !res.body.getReader) {
+        return new Uint8Array(await res.arrayBuffer());
+      }
+      const reader = res.body.getReader();
+      const parts = [];
+      let got = 0;
+      bar.hidden = false;
+      if (!total) {
+        bar.removeAttribute("value");
+      }
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        parts.push(value);
+        got += value.length;
+        if (total) {
+          const pct = Math.min(100, Math.floor((got * 100) / total));
+          bar.value = pct;
+          say("Downloading the editor: " + mb(got) + " of " + mb(total) + " MB (" + pct + "%)");
+        } else {
+          say("Downloading the editor: " + mb(got) + " MB");
+        }
+      }
+      const bytes = new Uint8Array(got);
+      let at = 0;
+      for (const p of parts) {
+        bytes.set(p, at);
+        at += p.length;
+      }
+      return bytes;
+    }
+
+    async function start() {
+      try {
+        const bytes = await download();
+        say("Starting the editor...");
+        bar.hidden = false;
+        bar.removeAttribute("value");
+        await init({ module_or_path: bytes });
+      } catch (e) {
+        bar.hidden = true;
+        say("TraceDraw could not start: " + e + ". A browser with WebAssembly and WebGL 2 is needed; the desktop app works without one.");
+      }
+    }
+
+    start();
   </script>
 </body>
 </html>

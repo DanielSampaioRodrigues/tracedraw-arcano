@@ -243,10 +243,25 @@ pub fn start() {
         if let Some(loading) = document.get_element_by_id("loading") {
             match &result {
                 Ok(()) => loading.remove(),
-                Err(e) => loading.set_inner_html(&format!(
-                    "TraceDraw could not start: {e:?}. A browser with WebGL 2 is needed."
-                )),
+                Err(e) => {
+                    // The page's status line, keeping its links to the
+                    // downloads; the progress bar goes.
+                    if let Some(bar) = document.get_element_by_id("loading-bar") {
+                        bar.remove();
+                    }
+                    let text = format!(
+                        "TraceDraw could not start: {e:?}. A browser with WebGL 2 is needed."
+                    );
+                    document
+                        .get_element_by_id("loading-status")
+                        .unwrap_or(loading)
+                        .set_inner_html(&escape_html(&text));
+                }
             }
         }
     });
+}
+
+fn escape_html(text: &str) -> String {
+    crate::web_page::escape_html(text)
 }

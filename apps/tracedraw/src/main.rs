@@ -95,6 +95,8 @@ mod vector_mosaic;
 mod view;
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(any(target_arch = "wasm32", test))]
+mod web_page;
 mod workspace_file;
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -6,7 +6,10 @@ cargo build --target wasm32-unknown-unknown --profile web -p tracedraw
 rm -rf site && mkdir -p site
 wasm-bindgen --target web --no-typescript --out-dir site \
     target/wasm32-unknown-unknown/web/tracedraw.wasm
-cp web/index.html web/FONTS.md site/
+cp web/FONTS.md site/
+# The page with the module's size, so the download shows its progress.
+size=$(wc -c < site/tracedraw_bg.wasm | tr -d ' ')
+sed "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
 # The font folder (web/fonts.txt) when asked for: TRACEDRAW_FONT_FOLDER=1,
 # with TRACEDRAW_GOOGLE_FONTS pointing at a google/fonts checkout to copy

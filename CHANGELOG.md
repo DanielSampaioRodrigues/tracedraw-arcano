@@ -6,6 +6,23 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` writing, made to match the sample files table by table: each
+  page now lists the master page's guides, desktop and grid layers by the
+  master layers' own GUIDs (they had GUIDs of their own, and the grid
+  entry was missing), and the style table numbers its entries once and
+  gives every style a fill, an outline, fonts for all three scripts,
+  spacing and decoration settings that exist (styles named entry 0
+  before). Text objects get numbers of their own and graphics a graphic
+  style. These are the likeliest reasons written files closed the
+  program that opened them.
+- The browser version's loading page says what TraceDraw is (an
+  open-source vector editor that opens `.cdr` files, alpha, written in
+  Rust, MIT or Apache-2.0), which screens it suits, links to the desktop
+  downloads, the code and the issues, and shows the download's progress
+  in megabytes and percent.
+- The `.cdr` issue form asks for the file's version and what the drawing
+  uses (B-splines, lenses, live effects, pattern fills, paragraph
+  settings, fitted text, pictures, pages).
 - With two or more objects selected (or a group, or a curve of several
   parts) the Pick tool's property bar shows Group, Ungroup, Ungroup All,
   Combine, Break Apart, the shaping operations (Weld, Trim, Intersect,

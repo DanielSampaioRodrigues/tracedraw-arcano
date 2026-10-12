@@ -34,10 +34,43 @@ body:
       label: What the reader sees
       description: The output of `tracedraw-cli info yourfile.cdr` (tracedraw-cli comes with every download, next to the editor).
       render: text
+  - type: dropdown
+    id: format
+    attributes:
+      label: The file's version
+      description: The `version:` line of `tracedraw-cli info yourfile.cdr`, or the version chosen when the file was saved.
+      options:
+        - I don't know
+        - Older than 7
+        - 7 to 13
+        - "14"
+        - "15"
+        - "16"
+        - "17"
+        - "18"
+        - "19"
+        - "20"
+        - "21"
+        - "22"
+        - Newer than 22
   - type: input
     id: origin
     attributes:
       label: The program and version that saved the file, if you know it
+  - type: checkboxes
+    id: features
+    attributes:
+      label: What the drawing uses
+      description: Tick what you know is in it; these are the parts TraceDraw does not read yet or reads only in part.
+      options:
+        - label: B-spline curves
+        - label: Lenses
+        - label: Live effects (blend, contour, extrude, drop shadow, envelope, distort, perspective)
+        - label: Pattern, texture or PostScript fills
+        - label: Paragraph text with tabs, bullets or drop caps
+        - label: Text fitted to a path
+        - label: Pictures (bitmaps), cropped or with transparency
+        - label: Several pages or master page content
   - type: input
     id: version
     attributes:

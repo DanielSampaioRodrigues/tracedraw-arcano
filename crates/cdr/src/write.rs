@@ -85,14 +85,18 @@ const ARG_PROPS: u32 = 12000;
 const ARG_GUID: u32 = 40050;
 /// On text objects of version 16 and later: 1.
 const ARG_TEXT_LINK: u32 = 16015;
+/// On guides layers of version 17 and later: 2.
+const ARG_GUIDES_MODE: u32 = 16001;
 /// Layer kinds stored as the `loda` object type of a layer.
 const LAYER_PLAIN: u32 = 0;
 const LAYER_GRID: u32 = 0x0b;
 const LAYER_GUIDES: u32 = 0x0c;
 const LAYER_DESKTOP: u32 = 0x11;
-/// The style every object refers to; text paragraphs refer to the one of
-/// their alignment (`style_for`).
+/// The first text style; text paragraphs refer to the one of their
+/// alignment (`style_for`).
 const STYLE_ID: u32 = 1;
+/// The style graphics refer to (before version 16, argument 200).
+const GRAPHIC_STYLE_ID: u32 = STYLE_ID + STYLE_ALIGNS.len() as u32;
 
 /// Alignments of the style table, in style id order from `STYLE_ID`:
 /// left, centre, right, justify, as alignment codes (0 none, 1 left,
@@ -270,7 +274,8 @@ fn style_string(v: Ver, s: &str) -> Vec<u8> {
     b.done()
 }
 
-/// Sixteen pseudo-random bytes, the same for the same seed and counter.
+/// A random-looking GUID (version 4, as files carry them, in the byte
+/// order files store), the same for the same seed and counter.
 fn guid(seed: u64, n: u64) -> [u8; 16] {
     let mut x = seed ^ n.wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut out = [0u8; 16];
@@ -282,6 +287,10 @@ fn guid(seed: u64, n: u64) -> [u8; 16] {
         x ^= x >> 33;
         chunk.copy_from_slice(&x.to_le_bytes());
     }
+    // Version 4 in the high bits of the third field, variant 10 in the
+    // fourth.
+    out[7] = (out[7] & 0x0f) | 0x40;
+    out[8] = (out[8] & 0x3f) | 0x80;
     out
 }
 
@@ -972,64 +981,138 @@ fn font_record(v: Ver, id: u16, family: &str) -> Vec<u8> {
     b.done()
 }
 
-/// `stlt`: the style table with a style per alignment (ids from
-/// `STYLE_ID`), set in font `font_id` at 12 pt, at 100 % line spacing;
-/// the version's table layout (see `text::read_stlt`).
-fn stlt(v: Ver, font_id: u16) -> Vec<u8> {
+/// What the style table's styles use: the fill records of text (black) and
+/// of graphics (none), the outline record (none) and the font.
+#[derive(Debug, Clone, Copy)]
+struct StyleUses {
+    text_fill: u32,
+    graphic_fill: u32,
+    outline: u32,
+    font: u16,
+}
+
+/// Decoration lines of the character settings (`set5`), as files of every
+/// version carry them: (position, thickness) in millionths of the font
+/// size, for underline (single thin, single thick, double), overline and
+/// strikethrough; a double line has two entries.
+const DECORATION_LINES: [(i32, i32); 12] = [
+    (-90_909, 45_455),
+    (-90_909, 90_909),
+    (-90_909, 45_455),
+    (-181_819, 45_455),
+    (845_455, 45_455),
+    (868_182, 90_909),
+    (800_000, 45_455),
+    (890_910, 45_455),
+    (333_333, 45_455),
+    (356_060, 90_909),
+    (378_788, 45_455),
+    (287_878, 45_455),
+];
+
+/// `stlt`: the style table. Its tables (fills, outlines, fonts,
+/// alignments, spacings, character settings, then empty tab, bullet,
+/// indent, hyphenation and drop cap tables, and from version 9 one set11
+/// entry) number their entries in one sequence from 1, as files do, and
+/// every style names an entry of each table it uses: a style per
+/// alignment for artistic text (ids from `STYLE_ID`, 12 pt, 100 % line
+/// spacing) and one for graphics (`GRAPHIC_STYLE_ID`). The version's
+/// layout is the one `text::read_stlt` reads.
+fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     let n = v.0;
+    let mut next = 0u32;
+    let mut id = || {
+        next += 1;
+        next
+    };
+    let (text_fill, graphic_fill) = (id(), id());
+    let outline = id();
+    let font = id();
+    let aligns: Vec<u32> = STYLE_ALIGNS.iter().map(|_| id()).collect();
+    let (interval, set5) = (id(), id());
+    let set11 = id();
     let mut t = Buf::default();
-    t.u32(STYLE_ALIGNS.len() as u32); // records
-    t.u32(0); // fills
-    t.u32(0); // outlines
-              // Fonts: id, unknown (12 before 10, 20 after), font id, encoding, 8,
-              // size, 8, style flags, 8 (from 10).
-    t.u32(1).u32(1).zeros(if n < 10 { 12 } else { 20 });
-    t.u16(font_id)
-        .u16(0)
-        .zeros(8)
-        .i32((12.0 * 254000.0 / 72.0) as i32)
-        .zeros(8)
-        .u32(0x40);
+    t.u32(STYLE_ALIGNS.len() as u32 + 1); // records
+                                          // Fills: id, 4 unknown, the fill record, from 13 the fill's matrix.
+    t.u32(2);
+    for (entry, record) in [
+        (text_fill, uses.text_fill),
+        (graphic_fill, uses.graphic_fill),
+    ] {
+        t.u32(entry).u32(0).u32(record);
+        if v.tagged() {
+            t.bytes(&identity_matrix());
+        }
+    }
+    // Outlines: id, 4 unknown, the outline record.
+    t.u32(1).u32(outline).u32(0).u32(uses.outline);
+    // Fonts: id, a mask (12 bytes before 10, 20 after), then the font,
+    // size and style of the three scripts (Latin, Asian, other), all in
+    // the one font: font id u16 and character set u16, two more font
+    // references, sizes, style flags (one before 10).
+    let size = (12.0 * 254000.0 / 72.0) as i32;
+    let script_font = u32::from(uses.font);
+    let mask = if v.redirects() { 0xff } else { 0xffff };
+    t.u32(1).u32(font).u32(0).u32(mask).u32(mask);
     if n >= 10 {
-        t.zeros(8);
+        t.u32(mask).u32(if v.redirects() { u32::MAX } else { 1 });
+    }
+    t.u16(uses.font).u16(0).u32(script_font).u32(script_font);
+    t.i32(size).i32(size).i32(size).u32(0x40);
+    if n >= 10 {
+        t.u32(0x40).u32(0x40);
     }
     // Alignments: id, 4 unknown, value.
     t.u32(STYLE_ALIGNS.len() as u32);
-    for (i, (_, code)) in STYLE_ALIGNS.iter().enumerate() {
-        t.u32(i as u32 + 1).u32(0).u32(*code);
+    for (entry, (_, code)) in aligns.iter().zip(STYLE_ALIGNS.iter()) {
+        t.u32(*entry).u32(0).u32(*code);
     }
-    // Intervals: id, 8, character spacing, 8, line spacing, 24.
-    t.u32(1)
-        .u32(1)
-        .zeros(8)
-        .u32(0)
-        .zeros(8)
-        .u32(1_000_000)
-        .zeros(24);
-    // set5, tabs, bullets, indents, hyphens, drop caps (and set11 from 9):
-    // empty.
-    for _ in 0..if n >= 9 { 7 } else { 6 } {
+    // Spacings: id, 0, a mask (0xffff, from 16 0x3ff), character spacing
+    // 0, then 0, 100 %, the line spacing (100 %), 100 %, 0, 200 %, 60 %,
+    // 300 % and 0 in millionths: the values every sample file has, of
+    // which only the character and line spacings are understood.
+    t.u32(1).u32(interval).u32(0);
+    t.u32(if v.redirects() { 0x3ff } else { 0xffff });
+    t.u32(0).u32(0).u32(1_000_000).u32(1_000_000).u32(1_000_000);
+    t.u32(0).u32(2_000_000).u32(600_000).u32(3_000_000).u32(0);
+    // Character settings: id, 0, then each decoration line as 0,
+    // position, thickness.
+    t.u32(1).u32(set5).u32(0);
+    for (position, thickness) in DECORATION_LINES {
+        t.u32(0).i32(position).i32(thickness);
+    }
+    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 9.
+    for _ in 0..5 {
         t.u32(0);
     }
-    // The records: 3 sections, id, no parent, 8 unknown, the name, then
-    // the table entries they use.
-    for (i, name) in ["Default", "Centred", "Right", "Justified"]
-        .iter()
-        .enumerate()
-    {
-        t.u32(3).u32(STYLE_ID + i as u32).u32(0).zeros(8);
-        if v.unicode() {
-            t.u32(name.len() as u32).bytes(&utf16(name));
-        } else {
-            t.u32(name.len() as u32).bytes(name.as_bytes());
-        }
-        t.u32(0).u32(0); // fill and outline refs
-        t.u32(1).u32(i as u32 + 1).u32(1).u32(0); // font, alignment, interval, set5
-        if n >= 9 {
-            t.u32(0); // set11
-        }
-        t.u32(0).u32(0).u32(0).u32(0).u32(0); // tab, bullet, indent, hyphen, drop cap
+    if n >= 9 {
+        t.u32(1).u32(set11).u32(0).u32(0);
     }
+    // The records: sections (1: fill and outline; 2: also the character
+    // and paragraph settings), id, no parent, 8 unknown, the name (none
+    // from 16, as files have it), then the entries they use.
+    let name = |t: &mut Buf, s: &str| {
+        let s = if v.redirects() { "" } else { s };
+        t.u32(s.chars().count() as u32);
+        if v.unicode() {
+            t.bytes(&utf16(s));
+        } else {
+            t.bytes(s.as_bytes());
+        }
+    };
+    let labels = ["Default", "Centred", "Right", "Justified"];
+    for (i, (label, align)) in labels.iter().zip(&aligns).enumerate() {
+        t.u32(2).u32(STYLE_ID + i as u32).u32(0).zeros(8);
+        name(&mut t, label);
+        t.u32(text_fill).u32(outline);
+        t.u32(font).u32(*align).u32(interval).u32(set5);
+        if n >= 9 {
+            t.u32(set11);
+        }
+    }
+    t.u32(1).u32(GRAPHIC_STYLE_ID).u32(0).zeros(8);
+    name(&mut t, "Default Graphic");
+    t.u32(graphic_fill).u32(outline);
     t.done()
 }
 
@@ -1333,9 +1416,48 @@ struct Writer<'a> {
     next_fill: u32,
     next_outline: u32,
     next_bitmap: u32,
+    /// The next text object's `spnd` number.
+    next_spnd: u32,
     guid_seed: u64,
     guids: u64,
+    /// The GUIDs of the master page's guides, desktop and grid layers,
+    /// which each page's entries for them repeat.
+    master_guids: [[u8; 16]; 3],
     has_text: bool,
+}
+
+/// The master page's layers, in the order of `Writer::master_guids`.
+#[derive(Debug, Clone, Copy)]
+enum MasterLayer {
+    Guides,
+    Desktop,
+    Grid,
+}
+
+impl MasterLayer {
+    fn flags(self) -> [u8; 4] {
+        match self {
+            MasterLayer::Guides => [0x0a, 0, 1, 0x98],
+            MasterLayer::Desktop => [0x08, 0, 1, 0x98],
+            MasterLayer::Grid => [0x1a, 1, 1, 0x98],
+        }
+    }
+
+    fn kind(self) -> u32 {
+        match self {
+            MasterLayer::Guides => LAYER_GUIDES,
+            MasterLayer::Desktop => LAYER_DESKTOP,
+            MasterLayer::Grid => LAYER_GRID,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            MasterLayer::Guides => "Guides",
+            MasterLayer::Desktop => "Desktop",
+            MasterLayer::Grid => "Document Grid",
+        }
+    }
 }
 
 /// Where a written object sits: its box and the box with its outline.
@@ -1349,6 +1471,7 @@ impl<'a> Writer<'a> {
         let seed = title.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
             (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
         });
+        let master_guids = [guid(seed, 1), guid(seed, 2), guid(seed, 3)];
         Writer {
             v,
             symbols,
@@ -1363,15 +1486,17 @@ impl<'a> Writer<'a> {
             next_fill: 1,
             next_outline: 1,
             next_bitmap: 1,
+            next_spnd: 1,
             guid_seed: seed,
-            guids: 0,
+            guids: master_guids.len() as u64,
+            master_guids,
             has_text: false,
         }
     }
 
-    fn guid(&mut self) -> Vec<u8> {
+    fn guid(&mut self) -> [u8; 16] {
         self.guids += 1;
-        guid(self.guid_seed, self.guids).to_vec()
+        guid(self.guid_seed, self.guids)
     }
 
     fn fill_id(&mut self, fill: &Fill) -> u32 {
@@ -1468,10 +1593,14 @@ impl<'a> Writer<'a> {
                 .collect();
             docl.push(list(b"fntt", fonts));
         }
-        // Every object refers to a fill and an outline; keep the tables
-        // non-empty.
-        self.fill_id(&Fill::None);
-        self.outline_id(None);
+        // Every object refers to a fill and an outline, and the styles to
+        // the fills of text (black) and graphics (none) and to no outline.
+        let uses = StyleUses {
+            text_fill: self.fill_id(&Fill::Solid(Color::BLACK)),
+            graphic_fill: self.fill_id(&Fill::None),
+            outline: self.outline_id(None),
+            font: self.fonts.first().map(|(id, _)| *id).unwrap_or(1),
+        };
         let fills = std::mem::take(&mut self.fills)
             .into_iter()
             .map(|f| list(b"filc", vec![chunk(b"fild", f)]))
@@ -1482,8 +1611,7 @@ impl<'a> Writer<'a> {
             .map(|o| chunk(b"outl", o))
             .collect();
         docl.push(list(b"otlt", outlines));
-        let font = self.fonts.first().map(|(id, _)| *id).unwrap_or(0);
-        let styles = stlt(v, font);
+        let styles = stlt(v, uses);
         if v.redirects() {
             docl.push(chunk(b"stlt", styles));
         } else {
@@ -1496,23 +1624,40 @@ impl<'a> Writer<'a> {
         out
     }
 
-    /// A layer list: its flags, its properties (kind, a GUID, the colour
-    /// and the name) and its objects.
-    fn layer(&mut self, flags: [u8; 4], kind: u32, name: &str, objects: Vec<Node>) -> Node {
+    /// A layer list: its flags, its properties (kind, a GUID from version
+    /// 14, the colour and, unless it is a page's entry for a master layer,
+    /// the name) and its objects.
+    fn layer_entry(
+        &mut self,
+        flags: [u8; 4],
+        kind: u32,
+        name: Option<&str>,
+        guid: [u8; 16],
+        objects: Vec<Node>,
+    ) -> Node {
         let v = self.v;
         let colour_bytes = match kind {
             LAYER_GUIDES => Color::rgb8(0, 0, 255),
             LAYER_GRID => Color::rgb8(194, 194, 193),
             _ => Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
         };
-        let mut args = vec![(ARG_NAME, name_bytes(v, name))];
+        let mut args = Vec::new();
+        if let Some(name) = name {
+            args.push((ARG_NAME, name_bytes(v, name)));
+        }
         if v.tagged() {
             args.push((ARG_LAYER_COLOR, colour_props(v, colour_bytes)));
         } else {
             args.push((ARG_LAYER_COLOR, colour(colour_bytes).to_vec()));
         }
+        if v.0 >= 17 {
+            args.push((ARG_PROPS, vec![0; 4]));
+            if kind == LAYER_GUIDES {
+                args.push((ARG_GUIDES_MODE, 2u32.to_le_bytes().to_vec()));
+            }
+        }
         if v.zip() {
-            args.push((ARG_GUID, self.guid()));
+            args.push((ARG_GUID, guid.to_vec()));
         }
         let mut children = vec![
             chunk(b"flgs", flags.to_vec()),
@@ -1520,6 +1665,20 @@ impl<'a> Writer<'a> {
         ];
         children.extend(objects);
         list(b"layr", children)
+    }
+
+    /// A layer of its own, with a new GUID.
+    fn layer(&mut self, flags: [u8; 4], kind: u32, name: &str, objects: Vec<Node>) -> Node {
+        let guid = self.guid();
+        self.layer_entry(flags, kind, Some(name), guid, objects)
+    }
+
+    /// A layer of the master page (`page` false), or a page's entry for it:
+    /// the same flags and GUID, and from version 14 no name.
+    fn master_layer(&mut self, which: MasterLayer, page: bool) -> Node {
+        let guid = self.master_guids[which as usize];
+        let name = (!page || !self.v.zip()).then(|| which.name());
+        self.layer_entry(which.flags(), which.kind(), name, guid, Vec::new())
     }
 
     /// The master page: guides, desktop and grid layers, no objects.
@@ -1538,9 +1697,9 @@ impl<'a> Writer<'a> {
             children.push(chunk(b"bbox", vec![0; 16]));
         }
         let layers = vec![
-            self.layer([0x0a, 0, 1, 0x98], LAYER_GUIDES, "Guides", Vec::new()),
-            self.layer([0x08, 0, 1, 0x98], LAYER_DESKTOP, "Desktop", Vec::new()),
-            self.layer([0x1a, 1, 1, 0x98], LAYER_GRID, "Document Grid", Vec::new()),
+            self.master_layer(MasterLayer::Guides, false),
+            self.master_layer(MasterLayer::Desktop, false),
+            self.master_layer(MasterLayer::Grid, false),
         ];
         children.push(list(b"gobj", layers));
         if v.redirects() {
@@ -1549,14 +1708,15 @@ impl<'a> Writer<'a> {
         list(b"page", children)
     }
 
-    /// A page: its flags, the box of its objects, the master's guides and
-    /// desktop layers, its own guides layer and its layers.
+    /// A page: its flags, the box of its objects, its entries for the
+    /// master's guides and desktop layers, its own guides layer (from
+    /// version 14), its layers and its entry for the master's grid layer.
     fn page(&mut self, page: &tracedraw_core::document::Page) -> (Node, Option<Rect>) {
         let v = self.v;
         let centre = Point::new(page.size.width / 2.0, page.size.height / 2.0);
         let mut layers = vec![
-            self.layer([0x0a, 0, 1, 0x98], LAYER_GUIDES, "Guides", Vec::new()),
-            self.layer([0x08, 0, 1, 0x98], LAYER_DESKTOP, "Desktop", Vec::new()),
+            self.master_layer(MasterLayer::Guides, true),
+            self.master_layer(MasterLayer::Desktop, true),
         ];
         if v.zip() {
             layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", Vec::new()));
@@ -1574,6 +1734,7 @@ impl<'a> Writer<'a> {
             };
             layers.push(self.layer([0, 0, 0, 0x98], LAYER_PLAIN, &layer.name, objects));
         }
+        layers.push(self.master_layer(MasterLayer::Grid, true));
         let page_box = content.map(|c| c - centre.to_vec2()).unwrap_or(Rect::ZERO);
         let mut children = vec![chunk(
             b"flgs",
@@ -1582,9 +1743,6 @@ impl<'a> Writer<'a> {
         children.push(chunk(b"bbox", box_bytes(page_box)));
         children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
         children.push(list(b"gobj", layers));
-        if v.redirects() {
-            children.push(list(b"lgob", vec![chunk(b"loda", loda(0, Vec::new()))]));
-        }
         (list(b"page", children), content)
     }
 
@@ -1736,8 +1894,11 @@ impl<'a> Writer<'a> {
             a.u32(1).bytes(&style_string(v, &json));
             args.push((ARG_STYLE_STRING, a.done()));
         } else {
-            // Text refers to the style of its alignment, as its paragraphs.
-            let style = text.as_ref().map_or(STYLE_ID, |(_, _, style)| *style);
+            // Text refers to the style of its alignment, as its paragraphs;
+            // graphics to the graphic style.
+            let style = text
+                .as_ref()
+                .map_or(GRAPHIC_STYLE_ID, |(_, _, style)| *style);
             args.push((ARG_STYLE, style.to_le_bytes().to_vec()));
         }
         if v.zip() {
@@ -1750,13 +1911,17 @@ impl<'a> Writer<'a> {
             args.push((ARG_OPACITY, opacity_arg(v, s.opacity)));
         }
         let outline = s.stroke.as_ref().map(|st| st.width / 2.0).unwrap_or(0.0);
-        // Text objects start with their style id (`spnd`) and are flagged
-        // 9 instead of 8.
+        // Text objects start with a number of their own (`spnd`: 1, 2, ...
+        // in the order written, as files number them) and before version
+        // 18 are flagged 9 instead of 8.
         let mut body = Vec::new();
         let mut flags = [0, 2, 0, 8];
-        if let Some((_, _, style)) = &text {
-            body.push(chunk(b"spnd", style.to_le_bytes().to_vec()));
-            flags[3] = 9;
+        if text.is_some() {
+            body.push(chunk(b"spnd", self.next_spnd.to_le_bytes().to_vec()));
+            self.next_spnd += 1;
+            if v.0 < 18 {
+                flags[3] = 9;
+            }
         }
         body.extend(self.head(flags, page_box, outline, centre));
         let recenter = Affine::translate(-centre.to_vec2());

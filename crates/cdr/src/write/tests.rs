@@ -687,11 +687,12 @@ fn files_are_laid_out_as_the_versions_have_them() {
         let pages = ids.iter().filter(|i| i.trim() == "page").count();
         assert_eq!(pages, 2, "{v}: master page and page");
         // A page lists the master's guides and desktop layers, from 14 its
-        // own guides, then the drawing's layer.
+        // own guides, then the drawing's layer and the master's grid.
         let layers = ids.iter().filter(|i| i.trim() == "layr").count();
-        assert_eq!(layers, if v >= 14 { 3 + 4 } else { 3 + 3 }, "{v}: {ids:?}");
+        assert_eq!(layers, if v >= 14 { 3 + 5 } else { 3 + 4 }, "{v}: {ids:?}");
         // Every object: flags, boxes, static id, attributes with the
-        // transform; the text starts with its style and ends with its record.
+        // transform; the text starts with its number and ends with its
+        // record.
         let obj = ids.iter().position(|i| i.trim() == "obj").expect("object");
         let next: Vec<&str> = ids[obj + 1..obj + 9].iter().map(|s| s.trim()).collect();
         assert_eq!(
@@ -706,12 +707,352 @@ fn files_are_laid_out_as_the_versions_have_them() {
                 flags.push(tree.data(&riff, ch).to_vec());
             }
         });
-        assert!(flags.contains(&vec![0, 2, 0, 9]), "{v}: text flags");
+        // Text is flagged 9 before version 18, 8 (as other objects) after.
+        assert_eq!(flags.contains(&vec![0, 2, 0, 9]), v < 18, "{v}: text flags");
         assert!(flags.contains(&vec![0, 2, 0, 8]), "{v}: object flags");
         assert!(
             flags.iter().any(|f| f.get(2..4) == Some(&[1, 0x90])),
             "{v}: master page"
         );
+    }
+}
+
+/// `loda` arguments: (type, body).
+type Args = Vec<(u32, Vec<u8>)>;
+
+/// The arguments of a `loda` record, in the order its offsets table lists
+/// them.
+fn loda_args(loda: &[u8]) -> Args {
+    let u = |at: usize| {
+        loda.get(at..at + 4)
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, u32::from_le_bytes) as usize
+    };
+    let (n, offsets, types) = (u(4), u(8), u(12));
+    (0..n)
+        .map(|i| {
+            let ty = u(types + 4 * (n - 1 - i)) as u32;
+            let body = loda.get(u(offsets + 4 * i)..u(offsets + 4 * i + 4));
+            (ty, body.unwrap_or(&[]).to_vec())
+        })
+        .collect()
+}
+
+/// A layer list's flags and its `loda` arguments.
+fn layer_args(
+    tree: &crate::riff::Tree,
+    riff: &[u8],
+    layer: &crate::riff::Chunk,
+) -> ([u8; 4], Args) {
+    let flags = layer
+        .find(b"flgs")
+        .and_then(|f| tree.data(riff, f).try_into().ok())
+        .unwrap_or([0; 4]);
+    let loda = layer
+        .find(b"lgob")
+        .and_then(|l| l.find(b"loda"))
+        .map(|c| tree.data(riff, c))
+        .unwrap_or(&[]);
+    (flags, loda_args(loda))
+}
+
+/// Pages list the master page's guides, desktop and grid layers by the
+/// master's GUIDs, as every sample file of versions 14 to 22 does (entries
+/// with GUIDs of their own are the likeliest reason earlier files closed
+/// the program that opened them; not confirmed yet).
+#[test]
+fn pages_refer_to_the_master_layers_by_their_guids() {
+    let mut doc = doc_with(Vec::new());
+    let mut second = doc.pages[0].clone();
+    second.layers[0].name = "Second".into();
+    doc.pages.push(second);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut pages = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"page") {
+                pages.push(c);
+            }
+        });
+        assert_eq!(pages.len(), 3, "{v}: the master page and two pages");
+        let entries = |page: &crate::riff::Chunk| -> Vec<([u8; 4], Args)> {
+            page.find(b"gobj")
+                .map(|g| {
+                    g.find_all(b"layr")
+                        .map(|l| layer_args(&tree, &riff, l))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let arg = |args: &[(u32, Vec<u8>)], ty: u32| {
+            args.iter().find(|(t, _)| *t == ty).map(|(_, b)| b.clone())
+        };
+        let master = entries(pages[0]);
+        let master_flags: Vec<[u8; 4]> = master.iter().map(|(f, _)| *f).collect();
+        assert_eq!(
+            master_flags,
+            [[0x0a, 0, 1, 0x98], [0x08, 0, 1, 0x98], [0x1a, 1, 1, 0x98]],
+            "{v}"
+        );
+        // The master page closes with an empty object list from 16; pages
+        // do not.
+        assert_eq!(pages[0].find(b"lgob").is_some(), v >= 16, "{v}");
+        let mut own_guids = Vec::new();
+        for page in &pages[1..] {
+            assert!(page.find(b"lgob").is_none(), "{v}");
+            let layers = entries(page);
+            let flags: Vec<[u8; 4]> = layers.iter().map(|(f, _)| *f).collect();
+            let mut expect = vec![[0x0a, 0, 1, 0x98], [0x08, 0, 1, 0x98]];
+            if v >= 14 {
+                expect.push([0x0a, 0, 0, 0x98]);
+            }
+            expect.push([0, 0, 0, 0x98]);
+            expect.push([0x1a, 1, 1, 0x98]);
+            assert_eq!(flags, expect, "{v}");
+            for (f, args) in &layers {
+                let guid = arg(args, ARG_GUID);
+                let name = arg(args, ARG_NAME);
+                match master.iter().find(|(mf, _)| mf == f) {
+                    // An entry for a master layer: its GUID, from 14 no name.
+                    Some((_, m)) => {
+                        assert_eq!(guid, arg(m, ARG_GUID), "{v}: {f:?}");
+                        assert_eq!(name.is_none(), v >= 14, "{v}: {f:?}");
+                    }
+                    // A layer of the page's own: a GUID no other layer has.
+                    None => {
+                        assert!(name.is_some(), "{v}");
+                        if let Some(g) = guid.clone() {
+                            assert_eq!(g.len(), 16);
+                            assert_eq!(g[7] >> 4, 4, "version 4 GUID");
+                            assert_eq!(g[8] >> 6, 2, "variant bits");
+                            assert!(!master
+                                .iter()
+                                .any(|(_, m)| arg(m, ARG_GUID) == Some(g.clone())));
+                            assert!(!own_guids.contains(&g), "{v}: GUIDs differ");
+                            own_guids.push(g);
+                        }
+                    }
+                }
+                assert_eq!(guid.is_some(), v >= 14, "{v}");
+                // Guides layers carry 16001 = 2 from 17, every layer 12000.
+                if v >= 17 {
+                    assert_eq!(arg(args, ARG_PROPS), Some(vec![0; 4]), "{v}");
+                }
+                assert_eq!(
+                    arg(args, ARG_GUIDES_MODE),
+                    (v >= 17 && f[0] == 0x0a).then(|| vec![2, 0, 0, 0]),
+                    "{v}: {f:?}"
+                );
+            }
+        }
+        // It still reads back as two pages of one layer each.
+        let (back, _) = crate::open_bytes(&bytes, "t").expect("opens");
+        assert_eq!(back.pages.len(), 2, "{v}");
+        let names: Vec<&str> = back
+            .pages
+            .iter()
+            .map(|p| p.layers[0].name.as_str())
+            .collect();
+        assert_eq!(names, ["Ink", "Second"], "{v}");
+        assert!(back.pages.iter().all(|p| p.layers.len() == 1), "{v}");
+    }
+}
+
+/// The style table numbers the entries of all its tables in one sequence,
+/// and every style names entries that exist, with the three script fonts
+/// filled in, as the sample files of versions 11 to 22 have them (styles
+/// naming entry 0 or one id in two tables are the second likeliest reason
+/// earlier files closed the program that opened them; not confirmed yet).
+#[test]
+fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
+    let uses = StyleUses {
+        text_fill: 7,
+        graphic_fill: 8,
+        outline: 9,
+        font: 3,
+    };
+    for v in versions() {
+        let d = stlt(Ver(v), uses);
+        let at = std::cell::Cell::new(0usize);
+        let mut u = || {
+            let x = d
+                .get(at.get()..at.get() + 4)
+                .and_then(|b| b.try_into().ok())
+                .map_or(u32::MAX, u32::from_le_bytes);
+            at.set(at.get() + 4);
+            x
+        };
+        let records = u();
+        assert_eq!(records, 5, "{v}");
+        let mut ids: Vec<u32> = Vec::new();
+        // Fills, outlines: id, 0, record (fills from 13 with a matrix).
+        let entry = |n: u32, tail: usize, ids: &mut Vec<u32>, u: &mut dyn FnMut() -> u32| {
+            let mut values = Vec::new();
+            for _ in 0..n {
+                ids.push(u());
+                assert_eq!(u(), 0);
+                values.push(u());
+                for _ in 0..tail / 4 {
+                    u();
+                }
+            }
+            values
+        };
+        let n = u();
+        let fills = entry(n, if v >= 13 { 48 } else { 0 }, &mut ids, &mut u);
+        assert_eq!(fills, [7, 8], "{v}");
+        let n = u();
+        assert_eq!(entry(n, 0, &mut ids, &mut u), [9], "{v}");
+        // One font: three scripts in font 3 at 12 pt.
+        assert_eq!(u(), 1, "{v}");
+        ids.push(u());
+        let mask: Vec<u32> = (0..if v >= 10 { 5 } else { 3 }).map(|_| u()).collect();
+        assert_eq!(mask[0], 0, "{v}");
+        assert_eq!(u(), 3, "{v}: font 3, character set 0");
+        assert_eq!((u(), u()), (3, 3), "{v}: the other scripts' fonts");
+        assert_eq!((u(), u(), u()), (42333, 42333, 42333), "{v}: sizes");
+        for _ in 0..if v >= 10 { 3 } else { 1 } {
+            assert_eq!(u(), 0x40, "{v}");
+        }
+        let n = u();
+        assert_eq!(
+            entry(n, 0, &mut ids, &mut u),
+            [1, 3, 2, 4],
+            "{v}: alignments"
+        );
+        // One spacing entry: 100 % lines.
+        assert_eq!(u(), 1, "{v}");
+        ids.push(u());
+        let spacing: Vec<u32> = (0..12).map(|_| u()).collect();
+        assert_eq!(spacing[5], 1_000_000, "{v}: line spacing");
+        assert_eq!(spacing[2], 0, "{v}: character spacing");
+        // One set of decoration lines.
+        assert_eq!(u(), 1, "{v}");
+        ids.push(u());
+        assert_eq!(u(), 0);
+        for (pos, thick) in DECORATION_LINES {
+            assert_eq!((u(), u() as i32, u() as i32), (0, pos, thick), "{v}");
+        }
+        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 9.
+        for _ in 0..5 {
+            assert_eq!(u(), 0, "{v}");
+        }
+        if v >= 9 {
+            assert_eq!(u(), 1, "{v}");
+            ids.push(u());
+            assert_eq!((u(), u()), (0, 0));
+        }
+        // One sequence from 1, no id twice.
+        let expect: Vec<u32> = (1..=ids.len() as u32).collect();
+        assert_eq!(ids, expect, "{v}: entry ids");
+        // Styles: four for text and one for graphics, naming entries that
+        // exist (never 0).
+        for style in 1..=5u32 {
+            let sections = u();
+            assert_eq!(sections, if style < 5 { 2 } else { 1 }, "{v}");
+            assert_eq!(u(), style, "{v}");
+            assert_eq!(u(), 0, "{v}: no parent");
+            u();
+            u();
+            let len = u() as usize;
+            if v >= 16 {
+                assert_eq!(len, 0, "{v}: no names from 16");
+            }
+            at.set(at.get() + len * if v >= 12 { 2 } else { 1 });
+            let refs = if style < 5 {
+                6 + usize::from(v >= 9)
+            } else {
+                2
+            };
+            for _ in 0..refs {
+                let r = u();
+                assert!(ids.contains(&r), "{v}: style {style} names entry {r}");
+            }
+        }
+        assert_eq!(at.get(), d.len(), "{v}: nothing after the styles");
+        // The reader resolves every style.
+        let styles = crate::text::read_stlt(&d, v, &mut |w| panic!("{w}"));
+        assert_eq!(styles.len(), 5, "{v}");
+        for (id, rec) in &styles {
+            let s = &rec.style;
+            if *id == GRAPHIC_STYLE_ID {
+                assert_eq!((s.fill_id, s.outl_id), (Some(8), Some(9)), "{v}");
+            } else {
+                assert_eq!(
+                    (s.fill_id, s.outl_id, s.font_id),
+                    (Some(7), Some(9), Some(3)),
+                    "{v}"
+                );
+                assert!((s.size_pt.unwrap_or(0.0) - 12.0).abs() < 0.01, "{v}");
+                assert_eq!(s.line_spacing, Some(1.0), "{v}");
+                let code = STYLE_ALIGNS[(*id - STYLE_ID) as usize].1;
+                assert_eq!(s.align, Some(code), "{v}");
+            }
+        }
+    }
+}
+
+/// Graphics refer to the graphic style (before version 16) and text
+/// objects carry numbers of their own, as files have them.
+#[test]
+fn graphics_refer_to_the_graphic_style_and_texts_are_numbered() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    let texts: Vec<Shape> = (0..3)
+        .map(|_| {
+            text_shape(
+                &mut ids,
+                vec![TextSpan::new("Hi", "Arial", 12.0)],
+                TextAlign::Left,
+            )
+        })
+        .collect();
+    doc.pages[0].layers[0].shapes = std::iter::once(r).chain(texts).collect();
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut spnd = Vec::new();
+        let mut styles = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"obj ") {
+                if let Some(s) = c.find(b"spnd") {
+                    spnd.push(tree.data(&riff, s).to_vec());
+                }
+                let loda = c.find(b"lgob").and_then(|l| l.find(b"loda"));
+                if let Some(l) = loda {
+                    let d = tree.data(&riff, l);
+                    let kind = d.get(16).copied();
+                    if let Some((_, s)) = loda_args(d).into_iter().find(|(t, _)| *t == ARG_STYLE) {
+                        styles.push((kind, s));
+                    }
+                }
+            }
+        });
+        let numbers: Vec<Vec<u8>> = (1u32..=3).map(|n| n.to_le_bytes().to_vec()).collect();
+        assert_eq!(spnd, numbers, "{v}: one number per text, in order");
+        if v < 16 {
+            for (kind, s) in &styles {
+                let want = if *kind == Some(OBJ_ARTISTIC_TEXT as u8) {
+                    style_for(TextAlign::Left)
+                } else {
+                    GRAPHIC_STYLE_ID
+                };
+                assert_eq!(s, &want.to_le_bytes().to_vec(), "{v}: kind {kind:?}");
+            }
+            assert_eq!(styles.len(), 4, "{v}");
+        } else {
+            assert!(styles.is_empty(), "{v}: style strings from 16");
+        }
     }
 }
 

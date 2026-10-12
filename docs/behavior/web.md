@@ -29,12 +29,27 @@ browsers refuse to load modules from `file://`).
 The browser version is for trying TraceDraw without installing it, and
 tells the visitor what that means and where the desktop app is:
 
-- The loading page only says "Loading TraceDraw...". Each time the page
-  opens, once TraceDraw is up, a message says it is a demo, slower on
-  heavy work and limited to the fonts that come with it, with an OK
-  button. The desktop downloads
-  (`https://github.com/igtoth/tracedraw/releases/latest`) are linked
-  from the Welcome Screen and the menu bar.
+- While the editor loads, the page says what it is before anything else
+  can: "TraceDraw" with an "alpha" mark, "Open-source vector editor that
+  opens .cdr files.", that it is written in Rust and free under the MIT or
+  Apache-2.0 license, and that it is the browser version of the desktop
+  app. It says which screens it is for (a desktop browser with a mouse
+  and keyboard; on a tablet the Touch workspace; a phone screen is too
+  small for editing; large drawings are slower than in the desktop app)
+  and links to the desktop downloads
+  (`https://github.com/igtoth/tracedraw/releases/latest`), the source
+  code and the issues, so a visitor whose browser stalls still has
+  somewhere to go.
+- The page downloads the module itself and shows its progress: a bar and
+  "Downloading the editor: 3.5 of 5.7 MB (61%)" (the build writes the
+  module's size into the page as `data-wasm-size`; without it the page
+  counts the megabytes and the bar runs without an end), then "Starting
+  the editor..." while the browser compiles it. When it cannot start,
+  the status line says why and the links stay.
+- Each time the page opens, once TraceDraw is up, a message says it is a
+  demo, slower on heavy work and limited to the fonts that come with it,
+  with an OK button. The desktop downloads are also linked from the
+  Welcome Screen and the menu bar.
 - The Welcome Screen's Get Started page shows the same in place of the
   recent documents (a browser keeps none), with a "Download the desktop
   app" button.
@@ -63,10 +78,19 @@ cargo install wasm-bindgen-cli --version 0.2.129   # must match Cargo.lock
 cargo build --target wasm32-unknown-unknown --profile web -p tracedraw
 wasm-bindgen --target web --no-typescript --out-dir site \
     target/wasm32-unknown-unknown/web/tracedraw.wasm
-cp web/index.html web/FONTS.md site/
+cp web/FONTS.md site/
+size=$(wc -c < site/tracedraw_bg.wasm | tr -d ' ')
+sed "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
 python3 -m http.server -d site 8080   # then open http://localhost:8080
 ```
+
+Checks: the page keeps what it says, its links and the elements the
+module uses (`web_page::tests::the_loading_page_says_what_it_is_and_where_to_go`),
+and both builds fill in the module's size
+(`web_page::tests::the_builds_fill_in_the_modules_size`). Checked in a
+browser with a stand-in module: the progress, the start, an error with
+the links kept, on a desktop and a phone-sized window.
 
 `TRACEDRAW_WEB_FONTS` (folders separated by `:`) points the build at the
 fonts to bundle; without it the usual Linux font folders are searched.

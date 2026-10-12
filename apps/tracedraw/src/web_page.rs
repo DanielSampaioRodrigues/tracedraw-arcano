@@ -1,0 +1,83 @@
+//! The browser version's page (`web/index.html`): what the module needs
+//! from it, and checks that the page and the build keep their parts. See
+//! docs/behavior/web.md.
+
+/// Text made safe to put into the page as HTML.
+pub fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PAGE: &str = include_str!("../../../web/index.html");
+    const BUILD_SCRIPT: &str = include_str!("../../../scripts/web/build.sh");
+    const CI: &str = include_str!("../../../.github/workflows/build.yml");
+
+    #[test]
+    fn text_is_escaped() {
+        assert_eq!(
+            escape_html("<b>\"a\" & 'b'</b>"),
+            "&lt;b&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/b&gt;"
+        );
+        assert_eq!(escape_html("plain"), "plain");
+    }
+
+    /// The loading page says what TraceDraw is before the editor is up,
+    /// links to the downloads and the code, and has the elements the
+    /// module and its loader use.
+    #[test]
+    fn the_loading_page_says_what_it_is_and_where_to_go() {
+        for needed in [
+            // What it is, how ready it is, what it is made of and its terms.
+            "Open-source vector editor that opens .cdr files.",
+            ">alpha<",
+            "Written in Rust",
+            "MIT or Apache-2.0",
+            // Where to go when loading stalls.
+            "https://github.com/igtoth/tracedraw/releases/latest",
+            "https://github.com/igtoth/tracedraw\"",
+            "https://github.com/igtoth/tracedraw/issues",
+            // Which screens it is for.
+            "desktop browser",
+            "Window &gt; Workspace &gt; Touch",
+            "phone",
+            // The elements web.rs and the loader use.
+            "id=\"tracedraw\"",
+            "id=\"loading\"",
+            "id=\"loading-status\"",
+            "id=\"loading-bar\"",
+            // The module's size for the progress, and the module itself.
+            "data-wasm-size=\"0\"",
+            "import init from \"./tracedraw.js\"",
+            "tracedraw_bg.wasm",
+            "init({ module_or_path: bytes })",
+        ] {
+            assert!(PAGE.contains(needed), "the page lacks {needed:?}");
+        }
+        assert!(!PAGE.contains('\u{2014}'));
+    }
+
+    /// Both builds of the page fill in the module's size.
+    #[test]
+    fn the_builds_fill_in_the_modules_size() {
+        for (name, text) in [("scripts/web/build.sh", BUILD_SCRIPT), ("build.yml", CI)] {
+            assert!(
+                text.contains("data-wasm-size=\\\"0\\\"") && text.contains("tracedraw_bg.wasm"),
+                "{name} does not fill in the module's size"
+            );
+        }
+    }
+}
