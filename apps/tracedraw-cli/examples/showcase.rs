@@ -325,6 +325,7 @@ fn poster(dir: &Path) -> Document {
         rotation: 0.0,
         path: None,
         rotate_on_path: false,
+        end_id: None,
     });
     b.add(glint, "Sun reflection");
 
@@ -505,6 +506,7 @@ fn effects(dir: &Path) {
         rotation: 0.0,
         path: None,
         rotate_on_path: false,
+        end_id: None,
     });
     b.add(start, "Blend");
 

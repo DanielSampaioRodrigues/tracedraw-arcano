@@ -998,6 +998,9 @@ pub struct App {
     /// The document revision callouts were last fitted at (see
     /// [`App::refresh_callouts`]).
     pub callouts_checked: u64,
+    /// The document revision blends were last brought up to date with
+    /// their end objects (see [`App::refresh_blends`]).
+    pub blends_checked: u64,
     /// Rounded connectors' corner radius, mm.
     pub connector_radius: f64,
     /// The document revision connectors were last checked at (see
@@ -1628,6 +1631,7 @@ impl App {
             dimension_dragging: false,
             callout_style: Default::default(),
             callouts_checked: 0,
+            blends_checked: 0,
             connector_radius: 3.0,
             connectors_checked: u64::MAX,
             connector_radius_step: None,

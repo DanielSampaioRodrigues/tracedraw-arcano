@@ -1973,28 +1973,14 @@ pub fn apply_case(text: &str, mode: CaseMode) -> String {
 }
 
 impl App {
-    /// Blend the two selected objects: the first becomes the start with a
-    /// live Blend effect, the second is removed (it lives inside the effect).
-    /// Clear Blend: the selected objects lose their blends.
+    /// Clear Blend: the selection's blends go (both objects stay).
     pub fn clear_blend(&mut self) {
-        self.remove_effects_of_kind(&Effect::Blend {
-            end: Box::new(tracedraw_core::Shape::new(
-                ShapeId(0),
-                tracedraw_core::ShapeKind::Rect {
-                    rect: Default::default(),
-                    radius: 0.0,
-                    corners: None,
-                },
-            )),
-            steps: 1,
-            accel_objects: 0.0,
-            accel_colors: 0.0,
-            rotation: 0.0,
-            path: None,
-            rotate_on_path: false,
-        });
+        self.change_blends("Clear Blend", |_| None);
     }
 
+    /// Blend the two selected objects: the first becomes the start with a
+    /// live Blend effect, the second stays an object of its own, the
+    /// blend's end (see `blend_link`).
     pub fn blend_selection(
         &mut self,
         steps: u32,
@@ -2007,27 +1993,25 @@ impl App {
             return;
         }
         let start = &shapes[0];
-        let end = shapes[1].clone();
+        let Some(end) = self.doc().shape_on_page(shapes[1].id) else {
+            return;
+        };
         let mut effects = start.effects.clone();
         effects.retain(|e| !matches!(e, Effect::Blend { .. }));
         effects.push(Effect::Blend {
-            end: Box::new(end.clone()),
+            end: Box::new(crate::blend_link::end_copy(&end)),
             steps,
             accel_objects,
             accel_colors,
             rotation,
             path: None,
             rotate_on_path: false,
+            end_id: Some(end.id),
         });
-        let cmds = vec![
-            Command::SetEffects {
-                shape: start.id,
-                effects,
-            },
-            Command::DeleteShapes {
-                shapes: vec![end.id],
-            },
-        ];
+        let cmds = vec![Command::SetEffects {
+            shape: start.id,
+            effects,
+        }];
         if let Err(e) = self.engine.run_batch("Blend", &cmds) {
             self.status = e.to_string();
         }

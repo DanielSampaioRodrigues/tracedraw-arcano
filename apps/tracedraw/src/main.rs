@@ -17,6 +17,7 @@ mod autocorrect;
 mod barcode;
 mod bitmap_fx;
 mod bitmap_modes;
+mod blend_link;
 mod border_grommet;
 mod brushes;
 mod callouts;
@@ -273,6 +274,8 @@ impl eframe::App for Shell {
         app.refresh_connectors();
         // Callouts follow their text.
         app.refresh_callouts();
+        // Blends follow their end objects.
+        app.refresh_blends();
         #[cfg(not(target_arch = "wasm32"))]
         splash::remember_window(ui.ctx(), &mut app.settings);
         // Preferences changed this frame last without waiting for the

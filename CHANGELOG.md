@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend keeps the end object as an object of its own: it can be moved,
+  resized or recoloured and the steps follow, and selecting it picks the
+  blend for the bar and panel. Blending used to delete the end object
+  and keep a copy only inside the effect, so it could not be selected
+  again; Clear Blend lost it.
 - Segment Delete removes the stretch of an outline between the places
   where it crosses other outlines or itself, so overlapping lines can be
   trimmed back to their crossings; a drag removes every such stretch

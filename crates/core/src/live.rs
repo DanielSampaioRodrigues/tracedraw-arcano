@@ -38,6 +38,12 @@ pub enum Effect {
         /// Optional path the blend follows (page space).
         path: Option<BezPath>,
         rotate_on_path: bool,
+        /// The end object, when it is an object of the drawing: `end` is
+        /// then a copy of it kept up to date (in page space), and the
+        /// object draws itself. Older files have none (the end lives only
+        /// in the effect and is drawn with the steps).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_id: Option<crate::ShapeId>,
     },
     /// Geometry distortions (push/pull, zipper, twister).
     Distort(crate::effects::Distort),
@@ -496,6 +502,7 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 rotation,
                 path,
                 rotate_on_path,
+                end_id,
             } => {
                 let shapes = blend(
                     &main,
@@ -508,7 +515,10 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                     *rotate_on_path,
                 );
                 above.extend(shapes);
-                above.push((**end).clone());
+                // An end object of the drawing draws itself.
+                if end_id.is_none() {
+                    above.push((**end).clone());
+                }
             }
             Effect::Extrude {
                 depth,
@@ -1187,16 +1197,23 @@ mod tests {
         b.fill = Fill::Solid(Color::rgb8(0, 0, 255));
         let mut s = a.clone();
         s.effects.push(Effect::Blend {
-            end: Box::new(b),
+            end: Box::new(b.clone()),
             steps: 9,
             accel_objects: 0.0,
             accel_colors: 0.0,
             rotation: 0.0,
             path: None,
             rotate_on_path: false,
+            end_id: None,
         });
         let ev = evaluate(&s);
         assert_eq!(ev.above.len(), 10);
+        // With an end object of the drawing, the steps only.
+        let mut linked = s.clone();
+        if let Some(Effect::Blend { end_id, .. }) = linked.effects.last_mut() {
+            *end_id = Some(b.id);
+        }
+        assert_eq!(evaluate(&linked).above.len(), 9);
         let mid = ev.above[4].bounds().center();
         assert!((mid.x - 60.0).abs() < 1.0, "{mid:?}");
     }

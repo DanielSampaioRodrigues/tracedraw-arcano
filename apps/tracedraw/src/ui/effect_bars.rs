@@ -13,14 +13,9 @@ fn dim(ui: &mut Ui, text: String) {
     ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
 }
 
-/// The selected object's blend.
+/// The selection's blend (of a selected start or end object).
 fn selected_blend(app: &App) -> Option<Effect> {
-    app.selected_shapes().first().and_then(|s| {
-        s.effects
-            .iter()
-            .find(|e| matches!(e, Effect::Blend { .. }))
-            .cloned()
-    })
+    app.selected_blends().into_iter().next().map(|(_, e)| e)
 }
 
 /// The bar.
@@ -73,25 +68,26 @@ pub fn blend_bar(app: &mut App, ui: &mut Ui) {
     app.blend_accel_colors = accel_c;
     crate::ui::propbar::sep(ui);
     match cur {
-        Some(Effect::Blend {
-            end,
-            path,
-            rotate_on_path,
-            ..
-        }) => {
+        Some(Effect::Blend { .. }) => {
             if changed {
-                app.push_effect(
-                    Effect::Blend {
-                        end,
-                        steps: steps.clamp(1, 999),
-                        accel_objects: accel_o,
-                        accel_colors: accel_c,
-                        rotation,
-                        path,
-                        rotate_on_path,
-                    },
-                    true,
-                );
+                let steps = steps.clamp(1, 999);
+                app.change_blends("Blend", |e| {
+                    let mut e = e.clone();
+                    if let Effect::Blend {
+                        steps: s,
+                        accel_objects,
+                        accel_colors,
+                        rotation: r,
+                        ..
+                    } = &mut e
+                    {
+                        *s = steps;
+                        *accel_objects = accel_o;
+                        *accel_colors = accel_c;
+                        *r = rotation;
+                    }
+                    Some(e)
+                });
             }
             if ui.button(tr("docker.clear_blend")).clicked() {
                 app.clear_blend();
@@ -150,28 +146,14 @@ mod tests {
         draw(&mut app);
         let depth = app.engine.history_labels().0.len();
         // Three changes in a row from the bar: one step.
-        for steps in [6, 7, 8] {
-            let Some(Effect::Blend {
-                end,
-                path,
-                rotate_on_path,
-                ..
-            }) = selected_blend(&app)
-            else {
-                panic!("no blend");
-            };
-            app.push_effect(
-                Effect::Blend {
-                    end,
-                    steps,
-                    accel_objects: 0.0,
-                    accel_colors: 0.0,
-                    rotation: 0.0,
-                    path,
-                    rotate_on_path,
-                },
-                true,
-            );
+        for n in [6, 7, 8] {
+            app.change_blends("Blend", |e| {
+                let mut e = e.clone();
+                if let Effect::Blend { steps, .. } = &mut e {
+                    *steps = n;
+                }
+                Some(e)
+            });
         }
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
         assert!(matches!(

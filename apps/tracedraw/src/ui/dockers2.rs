@@ -744,7 +744,7 @@ fn lens(app: &mut App, ui: &mut Ui) {
 }
 
 fn blend(app: &mut App, ui: &mut Ui) {
-    let cur = current_effect(app, |e| matches!(e, Effect::Blend { .. }));
+    let cur = app.selected_blends().into_iter().next().map(|(_, e)| e);
     let (mut steps, mut accel_o, mut accel_c, mut rot, mut rotate_on_path) = match &cur {
         Some(Effect::Blend {
             steps,
@@ -789,20 +789,27 @@ fn blend(app: &mut App, ui: &mut Ui) {
         .checkbox(&mut rotate_on_path, tr("docker.rotate_all_objects"))
         .changed();
     app.blend_steps = steps;
-    if let Some(Effect::Blend { end, path, .. }) = cur {
+    if let Some(Effect::Blend { .. }) = cur {
         if changed {
-            app.push_effect(
-                Effect::Blend {
-                    end,
-                    steps,
-                    accel_objects: accel_o,
-                    accel_colors: accel_c,
-                    rotation: rot,
-                    path,
-                    rotate_on_path,
-                },
-                true,
-            );
+            app.change_blends("Blend", |e| {
+                let mut e = e.clone();
+                if let Effect::Blend {
+                    steps: s,
+                    accel_objects,
+                    accel_colors,
+                    rotation,
+                    rotate_on_path: r,
+                    ..
+                } = &mut e
+                {
+                    *s = steps;
+                    *accel_objects = accel_o;
+                    *accel_colors = accel_c;
+                    *rotation = rot;
+                    *r = rotate_on_path;
+                }
+                Some(e)
+            });
         }
         ui.horizontal(|ui| {
             if ui.button(tr("docker.new_path")).clicked() {

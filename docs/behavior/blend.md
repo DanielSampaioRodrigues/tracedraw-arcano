@@ -23,6 +23,25 @@ line on dragging from one object to another.
 Interactive: drag from the start object to the end object; the start
 and end are the two selected objects' order on drop.
 
+## Start and end objects
+
+Both objects stay objects of the drawing. The start object holds the
+Blend effect, which names the end object and keeps a copy of it in page
+space (its own effects left out) for drawing the steps; the end object
+draws itself (`blend_link.rs`). After every change of the drawing, in
+the same undo step:
+
+- the end object moved, resized, turned or recoloured: the copy is
+  brought up to date and the steps follow;
+- the start object changed: the steps follow (they are drawn from it);
+- the end object deleted: the blend goes with it (Undo brings both
+  back).
+
+Selecting either object picks the blend for the bar and the Blend
+panel. Clear Blend removes the blend and leaves both objects; Break
+Apart turns the steps into objects. Files from before this kept the end
+only inside the effect; such a blend draws its end with the steps.
+
 ## Formulas
 
 For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)`):
@@ -43,6 +62,7 @@ For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)
 ## Checks
 
 - `ui::effect_bars::tests::the_blend_bar_edits_the_selected_blend`
+- `blend_link::tests::the_end_object_stays_and_the_steps_follow_it`
 
 - Given two 10 mm circles 100 mm apart, 9 steps, then the 5th step is
   centred at 50 mm and has a 10 mm diameter.
