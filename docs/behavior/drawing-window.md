@@ -41,7 +41,41 @@ From the left, after the ruler's width:
 The Navigator button (a magnifier over a cross) sits in the corner under
 the vertical scrollbar; see `zoom-and-pan.md`.
 
+## Windows
+
+With drawings open, Window > Cascade, Tile Horizontally and Tile
+Vertically put every drawing in a window of its own inside the drawing
+area (`ui/windows.rs`); Combine Windows and Dock Window bring the tabs
+back. The tabs stay above the area and still choose the active drawing.
+
+- Tile Horizontally: the windows one above the other, each as wide as
+  the area and an equal share of its height. Tile Vertically: side by
+  side, each as tall as the area. Cascade: windows of 72 % of the area
+  (at least 320 x 240 px, at most the area), each 28 px down and to the
+  right of the one before, starting again at the top left when the next
+  one would leave the area; the area behind them is `#BEBEBE`.
+- A window has a 24 px title bar: the drawing's name (an asterisk while
+  it has unsaved changes; bold on `#CEE3FF` for the active drawing, on
+  `#E6E6E6` for the others), then a button that brings the tabs back with
+  this drawing active (as a double click on the bar does) and one that
+  closes the drawing (asking to save first when it has changes). The
+  active window has a 1 px accent frame, the others a grey one.
+- The active window is drawn on top with its rulers, scrollbars, page
+  tabs and tools. The others show their page, grids, objects and
+  guidelines as their own view left them (each drawing keeps its view
+  and its rendered page), without the editing going on in the active
+  window; a click on one makes its drawing the active one.
+- A new arrangement, another number of windows, or the tabs again fit
+  every page into its window. Otherwise a drawing stays where it was in
+  its window when the window moves or the canvas begins elsewhere (the
+  rulers shown or hidden, a bar docked on another side): its view moves
+  with the canvas.
+- Window > New Window (a second window of the same drawing) is not made.
+
 ## Checks
 
+- `ui::windows::tests::windows_tile_and_cascade_inside_the_area`
+- `ui::windows::tests::tiled_windows_draw_every_drawing_and_switch`
+- `ui::windows::tests::the_view_stays_put_in_a_window_that_moves`
 - `ui::window_bars::tests::insert_page_before_and_after_the_current_one`
 - `ui::window_bars::tests::the_page_border_and_shadow_are_hit_but_not_the_page_inside`

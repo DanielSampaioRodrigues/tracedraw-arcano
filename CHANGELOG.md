@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Window > Cascade, Tile Horizontally and Tile Vertically put every open
+  drawing in a window of its own, with a title bar, a button back to the
+  tabs and a close button; the active one has its rulers and tools, the
+  others show their page, and a click makes one active. Combine Windows
+  and Dock Window bring the tabs back. Each drawing keeps its rendered
+  page and its place in its window.
 - Preferences are saved as they change (looked at once a second), not
   only when TraceDraw closes, so they last in the browser too (in its
   local storage) and after a crash. More of them are kept: the tool

@@ -747,7 +747,8 @@ mod tests {
         let all = find("menu.edit.select_all_objects").expect("submenu items listed");
         assert_eq!(all.path, ["menu.edit", "menu.edit.select_all"]);
         assert_eq!(all.shortcut, "Ctrl+A");
-        assert!(find("menu.window.cascade").is_none(), "not made yet");
+        assert!(find("menu.window.new_window").is_none(), "not made yet");
+        assert!(find("menu.window.cascade").is_some());
         assert!(
             find("menu.edit.select_all").is_none(),
             "submenus are not commands"
@@ -2377,11 +2378,29 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         app.close_all_documents();
     }
     sep(ui);
-    todo(ui, "menu.window.cascade", "");
-    todo(ui, "menu.window.tile_horizontally", "");
-    todo(ui, "menu.window.tile_vertically", "");
-    todo(ui, "menu.window.combine_windows", "");
-    todo(ui, "menu.window.dock_window", "");
+    {
+        use crate::ui::windows::{set_layout, WindowLayout};
+        let has = app.has_document();
+        let arranged = app.window_layout != WindowLayout::Tabs;
+        for (key, layout) in [
+            ("menu.window.cascade", WindowLayout::Cascade),
+            (
+                "menu.window.tile_horizontally",
+                WindowLayout::TileHorizontal,
+            ),
+            ("menu.window.tile_vertically", WindowLayout::TileVertical),
+        ] {
+            if item(ui, key, "", has) {
+                app.show_welcome = false;
+                set_layout(app, layout);
+            }
+        }
+        for key in ["menu.window.combine_windows", "menu.window.dock_window"] {
+            if item(ui, key, "", arranged) {
+                set_layout(app, WindowLayout::Tabs);
+            }
+        }
+    }
     sep(ui);
     sub(ui, "menu.window.workspace", |ui| {
         for (key, ws) in [

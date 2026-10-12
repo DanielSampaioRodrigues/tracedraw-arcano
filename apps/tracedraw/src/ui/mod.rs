@@ -52,6 +52,7 @@ pub mod transform_docker;
 pub mod vector_mosaic_docker;
 pub mod welcome;
 pub mod window_bars;
+pub mod windows;
 
 use crate::app::App;
 use crate::canvas;
@@ -465,122 +466,133 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .frame(Frame::NONE)
         .show(ui, |ui| {
             let full = ui.available_rect_before_wrap();
-            let ruler = if app.show_rulers { Tokens::RULER } else { 0.0 };
-            let sb = window_bars::BAR;
-            let canvas_rect = egui::Rect::from_min_max(
-                full.min + egui::vec2(ruler, ruler),
-                full.max - egui::vec2(sb, sb),
-            );
-            app.canvas_rect = canvas_rect;
-
-            if app.fit_pending {
-                app.view.fit(app.page_rect(), canvas_rect);
-                app.fit_pending = false;
-            }
-
-            let response = ui.allocate_rect(canvas_rect, Sense::click_and_drag());
-            let painter = ui.painter_at(canvas_rect);
-
-            // Wheel: with the default setting the wheel zooms about the
-            // pointer, Ctrl+wheel scrolls vertically and Alt+wheel
-            // horizontally; with the scroll setting the wheel scrolls,
-            // Shift+wheel horizontally and Ctrl+wheel zooms. Pinch zooms.
-            if response.hovered() {
-                let (scroll, notches, zoom_delta, mods) = ui.input(|i| {
-                    // Wheel notches this frame (the smoothed delta is spread
-                    // over several frames, so the zoom steps come from the
-                    // raw events: one notch is one line or 50 points).
-                    let notches: f32 = i
-                        .events
-                        .iter()
-                        .map(|e| match e {
-                            egui::Event::MouseWheel { unit, delta, .. } => match unit {
-                                egui::MouseWheelUnit::Line => delta.y,
-                                egui::MouseWheelUnit::Point => delta.y / 50.0,
-                                egui::MouseWheelUnit::Page => delta.y * 10.0,
-                            },
-                            _ => 0.0,
-                        })
-                        .sum();
-                    (i.smooth_scroll_delta, notches, i.zoom_delta(), i.modifiers)
-                });
-                if let Some(h) = response.hover_pos() {
-                    let zoom_factor = 1.15f32.powf(notches);
-                    if zoom_delta != 1.0 {
-                        app.view.zoom_at(h, zoom_delta);
-                    } else if app.settings.wheel_zooms {
-                        if mods.alt && scroll != egui::Vec2::ZERO {
-                            app.view.pan(egui::vec2(scroll.y, scroll.x));
-                        } else if mods.ctrl && scroll != egui::Vec2::ZERO {
-                            app.view.pan(scroll);
-                        } else if notches != 0.0 {
-                            app.view.zoom_at(h, zoom_factor);
-                        }
-                    } else if mods.ctrl && notches != 0.0 {
-                        app.view.zoom_at(h, zoom_factor);
-                    } else if scroll != egui::Vec2::ZERO {
-                        app.view.pan(if mods.shift {
-                            egui::vec2(scroll.y, scroll.x)
-                        } else {
-                            scroll
-                        });
-                    }
-                }
-            }
-            let mods = ui.input(|i| i.modifiers);
-
-            // Two fingers on a touch screen pan (and pinch zooms, above):
-            // what the first finger began is dropped, so the gesture does
-            // not also drag a marquee or an object.
-            let two_fingers = ui.input(|i| i.multi_touch());
-            if let Some(t) = two_fingers {
-                if response.rect.contains(t.center_pos) {
-                    app.view.pan(t.translation_delta);
-                }
-                if !matches!(app.drag, crate::app::Drag::None) {
-                    app.drag = crate::app::Drag::None;
-                    app.drag_copy = false;
-                }
-            }
-
-            // A guideline or the ruler origin dragged out of the rulers
-            // follows the pointer until release.
-            if two_fingers.is_none() && !rulers::ruler_drag(app, ui) {
-                app.canvas_input(&response, mods);
-            }
-
-            canvas::draw_canvas(app, &painter, canvas_rect);
-            canvas::draw_guides(app, &painter, canvas_rect);
-            rulers::draw_origin_drag(app, &painter, canvas_rect);
-            canvas::draw_effect_nodes(app, &painter);
-            canvas::draw_docker_preview(app, &painter);
-            canvas::draw_snap_mark(app, &painter);
-            app.draw_right_drag(&painter);
-            context::context_menu(app, ui, &response);
-            crate::drop_menu::drop_menu_ui(app, ui);
-
-            // Scrollbars, document navigator, page tabs, Navigator button.
-            window_bars::window_bars(app, ui, full, canvas_rect, ruler);
-
-            if app.show_rulers {
-                rulers::rulers(app, ui, full);
-            }
-
-            if response.hovered() || response.dragged() {
-                let (shift, primary, middle, pos) = ui.input(|i| {
-                    (
-                        i.modifiers.shift,
-                        i.pointer.primary_down(),
-                        i.pointer.middle_down(),
-                        i.pointer.hover_pos(),
-                    )
-                });
-                let cursor = cursors::for_tool(app, shift, primary, middle, pos);
-                cursors::show(ui.ctx(), cursor, pos);
+            if app.window_layout == windows::WindowLayout::Tabs || app.docs.is_empty() {
+                drawing_window(app, ui, full);
+            } else {
+                windows::arranged(app, ui, full);
             }
         });
 
     dialogs::show(app, &ctx);
+}
+
+/// The active drawing's window in `full`: rulers, the canvas with its
+/// tools, scrollbars, the page tabs and the navigator.
+pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
+    let ruler = if app.show_rulers { Tokens::RULER } else { 0.0 };
+    let sb = window_bars::BAR;
+    let canvas_rect = egui::Rect::from_min_max(
+        full.min + egui::vec2(ruler, ruler),
+        full.max - egui::vec2(sb, sb),
+    );
+    app.canvas_rect = canvas_rect;
+    app.anchor_view(canvas_rect.min);
+
+    if app.fit_pending {
+        app.view.fit(app.page_rect(), canvas_rect);
+        app.fit_pending = false;
+    }
+
+    let response = ui.allocate_rect(canvas_rect, Sense::click_and_drag());
+    let painter = ui.painter_at(canvas_rect);
+
+    // Wheel: with the default setting the wheel zooms about the
+    // pointer, Ctrl+wheel scrolls vertically and Alt+wheel
+    // horizontally; with the scroll setting the wheel scrolls,
+    // Shift+wheel horizontally and Ctrl+wheel zooms. Pinch zooms.
+    if response.hovered() {
+        let (scroll, notches, zoom_delta, mods) = ui.input(|i| {
+            // Wheel notches this frame (the smoothed delta is spread
+            // over several frames, so the zoom steps come from the
+            // raw events: one notch is one line or 50 points).
+            let notches: f32 = i
+                .events
+                .iter()
+                .map(|e| match e {
+                    egui::Event::MouseWheel { unit, delta, .. } => match unit {
+                        egui::MouseWheelUnit::Line => delta.y,
+                        egui::MouseWheelUnit::Point => delta.y / 50.0,
+                        egui::MouseWheelUnit::Page => delta.y * 10.0,
+                    },
+                    _ => 0.0,
+                })
+                .sum();
+            (i.smooth_scroll_delta, notches, i.zoom_delta(), i.modifiers)
+        });
+        if let Some(h) = response.hover_pos() {
+            let zoom_factor = 1.15f32.powf(notches);
+            if zoom_delta != 1.0 {
+                app.view.zoom_at(h, zoom_delta);
+            } else if app.settings.wheel_zooms {
+                if mods.alt && scroll != egui::Vec2::ZERO {
+                    app.view.pan(egui::vec2(scroll.y, scroll.x));
+                } else if mods.ctrl && scroll != egui::Vec2::ZERO {
+                    app.view.pan(scroll);
+                } else if notches != 0.0 {
+                    app.view.zoom_at(h, zoom_factor);
+                }
+            } else if mods.ctrl && notches != 0.0 {
+                app.view.zoom_at(h, zoom_factor);
+            } else if scroll != egui::Vec2::ZERO {
+                app.view.pan(if mods.shift {
+                    egui::vec2(scroll.y, scroll.x)
+                } else {
+                    scroll
+                });
+            }
+        }
+    }
+    let mods = ui.input(|i| i.modifiers);
+
+    // Two fingers on a touch screen pan (and pinch zooms, above):
+    // what the first finger began is dropped, so the gesture does
+    // not also drag a marquee or an object.
+    let two_fingers = ui.input(|i| i.multi_touch());
+    if let Some(t) = two_fingers {
+        if response.rect.contains(t.center_pos) {
+            app.view.pan(t.translation_delta);
+        }
+        if !matches!(app.drag, crate::app::Drag::None) {
+            app.drag = crate::app::Drag::None;
+            app.drag_copy = false;
+        }
+    }
+
+    // A guideline or the ruler origin dragged out of the rulers
+    // follows the pointer until release.
+    if two_fingers.is_none() && !rulers::ruler_drag(app, ui) {
+        app.canvas_input(&response, mods);
+    }
+
+    canvas::draw_canvas(app, &painter, canvas_rect);
+    canvas::draw_guides(app, &painter, canvas_rect);
+    rulers::draw_origin_drag(app, &painter, canvas_rect);
+    canvas::draw_effect_nodes(app, &painter);
+    canvas::draw_docker_preview(app, &painter);
+    canvas::draw_snap_mark(app, &painter);
+    app.draw_right_drag(&painter);
+    context::context_menu(app, ui, &response);
+    crate::drop_menu::drop_menu_ui(app, ui);
+
+    // Scrollbars, document navigator, page tabs, Navigator button.
+    window_bars::window_bars(app, ui, full, canvas_rect, ruler);
+
+    if app.show_rulers {
+        rulers::rulers(app, ui, full);
+    }
+
+    if response.hovered() || response.dragged() {
+        let (shift, primary, middle, pos) = ui.input(|i| {
+            (
+                i.modifiers.shift,
+                i.pointer.primary_down(),
+                i.pointer.middle_down(),
+                i.pointer.hover_pos(),
+            )
+        });
+        let cursor = cursors::for_tool(app, shift, primary, middle, pos);
+        cursors::show(ui.ctx(), cursor, pos);
+    }
 }
 
 /// The Navigator: the small button in the corner between the scrollbars

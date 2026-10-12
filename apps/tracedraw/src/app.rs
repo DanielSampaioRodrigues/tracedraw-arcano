@@ -742,6 +742,15 @@ pub struct App {
     /// All colours of a palette at once (the expand button): which row.
     pub palette_expanded: Option<crate::ui::palette::Row>,
     pub raster: std::cell::RefCell<crate::raster::Raster>,
+    /// Where the canvas began on screen when it was last drawn, so the
+    /// drawing stays put in its window when the window moves (see
+    /// `App::anchor_view`).
+    pub view_anchor: Option<egui::Pos2>,
+    /// How the drawings' windows are arranged (Window > Cascade, Tile
+    /// Horizontally, Tile Vertically; tabs otherwise), and the
+    /// arrangement and number of windows last laid out.
+    pub window_layout: crate::ui::windows::WindowLayout,
+    pub window_layout_seen: Option<(crate::ui::windows::WindowLayout, usize)>,
     /// Whether each paragraph text overflows its frame, by document
     /// revision (laying text out every frame would be slow).
     pub overflow_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, bool>)>,
@@ -1407,6 +1416,9 @@ impl App {
             palette_shades: None,
             palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
+            view_anchor: None,
+            window_layout: Default::default(),
+            window_layout_seen: None,
             overflow_cache: Default::default(),
             wireframe: false,
             font_families: tracedraw_text::fonts().available_families(),
@@ -2402,6 +2414,16 @@ impl App {
 
     pub fn doc(&self) -> &tracedraw_core::Document {
         self.engine.document()
+    }
+
+    /// Keep the drawing where it was in its window when the canvas begins
+    /// at `at` on screen: the view moves with the canvas (a window tiled,
+    /// cascaded or moved, a bar docked elsewhere, the rulers shown).
+    pub fn anchor_view(&mut self, at: egui::Pos2) {
+        if let Some(before) = self.view_anchor {
+            self.view.origin += at - before;
+        }
+        self.view_anchor = Some(at);
     }
 
     pub fn page_size(&self) -> Size {

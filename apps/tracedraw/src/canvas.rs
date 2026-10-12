@@ -93,72 +93,6 @@ pub fn on_page_frame(app: &App, s: Pos2) -> bool {
 
 pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
-    painter.rect_filled(rect, 0.0, app.desktop_color());
-
-    // Page: a flat grey shadow offset right and down, the white page, a
-    // one-pixel grey border (pixel-aligned so it stays crisp).
-    let paper = page_screen_rect(app);
-    if app.show_page_border {
-        painter.rect_filled(
-            paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
-            0.0,
-            Tokens::PAGE_SHADOW,
-        );
-    }
-    painter.rect_filled(paper, 0.0, Tokens::PAGE);
-    if app.show_page_border {
-        painter.rect_stroke(
-            paper,
-            0.0,
-            EStroke::new(1.0, Tokens::PAGE_BORDER),
-            epaint::StrokeKind::Outside,
-        );
-    }
-    if app.show_bleed {
-        let b = app.doc().metadata.bleed.max(0.0);
-        if b > 0.0 {
-            let r = view.rect_to_screen(app.page_rect().inflate(b, b));
-            painter.rect_stroke(
-                r,
-                0.0,
-                EStroke::new(1.0, Tokens::PAGE_BORDER),
-                epaint::StrokeKind::Outside,
-            );
-        }
-    }
-    if app.show_printable_area {
-        // Printable area: the page minus the printer's typical 5 mm hardware margin.
-        let r = view.rect_to_screen(app.page_rect().inflate(-5.0, -5.0));
-        let dash = 4.0;
-        for (a, b) in [
-            (r.left_top(), r.right_top()),
-            (r.right_top(), r.right_bottom()),
-            (r.right_bottom(), r.left_bottom()),
-            (r.left_bottom(), r.left_top()),
-        ] {
-            let len = (b - a).length();
-            let n = (len / (dash * 2.0)).floor() as usize;
-            for k in 0..n {
-                let t0 = (k as f32 * dash * 2.0) / len;
-                let t1 = ((k as f32 * dash * 2.0) + dash) / len;
-                painter.line_segment(
-                    [a + (b - a) * t0, a + (b - a) * t1],
-                    EStroke::new(1.0, Tokens::TEXT_DIM),
-                );
-            }
-        }
-    }
-
-    if app.show_grid {
-        draw_grid(app, painter, rect);
-    }
-    if app.show_baseline_grid {
-        draw_baseline_grid(app, painter, rect, paper);
-    }
-
-    // Objects, rasterized with tiny-skia into a texture; the live drag preview
-    // is applied to the selection during the render.
-    let doc: &Document = app.doc();
     let preview = match &app.drag {
         Drag::Move { total, .. } if total.hypot() > 0.0 => Some(Affine::translate(*total)),
         d @ (Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. }) => {
@@ -166,39 +100,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         }
         _ => None,
     };
-    // Paragraph text being resized keeps its letters while the frame
-    // follows the drag (the text flows anew on release).
-    let preview_ids = preview.map(|t| {
-        let ids: Vec<_> = app
-            .selection
-            .iter()
-            .copied()
-            .filter(|id| !app.resizes_text_frame(*id, t))
-            .collect();
-        (ids, t)
-    });
-    if let Some(tex) = app.raster.borrow_mut().texture(
-        painter.ctx(),
-        doc,
-        app.page,
-        view,
-        rect,
-        preview_ids,
-        app.engine.revision(),
-        app.wireframe,
-        app.simulate_overprints,
-        app.rasterize_complex_effects,
-    ) {
-        painter.image(
-            tex,
-            rect,
-            ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
-    }
-
-    draw_pixel_grid(app, painter, rect);
-    draw_empty_clip_frames(app, painter);
+    draw_page(app, painter, rect, preview);
+    let doc: &Document = app.doc();
     draw_text_frames(app, painter, preview);
 
     // Selection.
@@ -383,6 +286,121 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             );
         }
     }
+}
+
+/// The window's background, the page with its shadow and border, bleed
+/// and printable area, the grids, and the objects rendered (`preview`
+/// moves the selection while it is dragged).
+fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>) {
+    let view = &app.view;
+    painter.rect_filled(rect, 0.0, app.desktop_color());
+
+    // Page: a flat grey shadow offset right and down, the white page, a
+    // one-pixel grey border (pixel-aligned so it stays crisp).
+    let paper = page_screen_rect(app);
+    if app.show_page_border {
+        painter.rect_filled(
+            paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
+            0.0,
+            Tokens::PAGE_SHADOW,
+        );
+    }
+    painter.rect_filled(paper, 0.0, Tokens::PAGE);
+    if app.show_page_border {
+        painter.rect_stroke(
+            paper,
+            0.0,
+            EStroke::new(1.0, Tokens::PAGE_BORDER),
+            epaint::StrokeKind::Outside,
+        );
+    }
+    if app.show_bleed {
+        let b = app.doc().metadata.bleed.max(0.0);
+        if b > 0.0 {
+            let r = view.rect_to_screen(app.page_rect().inflate(b, b));
+            painter.rect_stroke(
+                r,
+                0.0,
+                EStroke::new(1.0, Tokens::PAGE_BORDER),
+                epaint::StrokeKind::Outside,
+            );
+        }
+    }
+    if app.show_printable_area {
+        // Printable area: the page minus the printer's typical 5 mm hardware margin.
+        let r = view.rect_to_screen(app.page_rect().inflate(-5.0, -5.0));
+        let dash = 4.0;
+        for (a, b) in [
+            (r.left_top(), r.right_top()),
+            (r.right_top(), r.right_bottom()),
+            (r.right_bottom(), r.left_bottom()),
+            (r.left_bottom(), r.left_top()),
+        ] {
+            let len = (b - a).length();
+            let n = (len / (dash * 2.0)).floor() as usize;
+            for k in 0..n {
+                let t0 = (k as f32 * dash * 2.0) / len;
+                let t1 = ((k as f32 * dash * 2.0) + dash) / len;
+                painter.line_segment(
+                    [a + (b - a) * t0, a + (b - a) * t1],
+                    EStroke::new(1.0, Tokens::TEXT_DIM),
+                );
+            }
+        }
+    }
+
+    if app.show_grid {
+        draw_grid(app, painter, rect);
+    }
+    if app.show_baseline_grid {
+        draw_baseline_grid(app, painter, rect, paper);
+    }
+
+    // Objects, rasterized with tiny-skia into a texture; the live drag preview
+    // is applied to the selection during the render.
+    let doc: &Document = app.doc();
+    // Paragraph text being resized keeps its letters while the frame
+    // follows the drag (the text flows anew on release).
+    let preview_ids = preview.map(|t| {
+        let ids: Vec<_> = app
+            .selection
+            .iter()
+            .copied()
+            .filter(|id| !app.resizes_text_frame(*id, t))
+            .collect();
+        (ids, t)
+    });
+    if let Some(tex) = app.raster.borrow_mut().texture(
+        painter.ctx(),
+        doc,
+        app.page,
+        view,
+        rect,
+        preview_ids,
+        app.engine.revision(),
+        app.wireframe,
+        app.simulate_overprints,
+        app.rasterize_complex_effects,
+    ) {
+        painter.image(
+            tex,
+            rect,
+            ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
+
+    draw_pixel_grid(app, painter, rect);
+    draw_empty_clip_frames(app, painter);
+}
+
+/// The drawing of a window that is not the active one (Window > Cascade
+/// or Tile): its page, grids and objects as its view shows them, and its
+/// guidelines; nothing of the editing going on in the active window.
+pub fn draw_parked(app: &App, painter: &Painter, rect: ERect) {
+    draw_page(app, painter, rect, None);
+    draw_text_frames(app, painter, None);
+    draw_guides(app, painter, rect);
 }
 
 /// Liang-Barsky clip of a screen segment against a rectangle.

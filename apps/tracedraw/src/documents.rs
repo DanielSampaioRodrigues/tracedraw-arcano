@@ -33,6 +33,12 @@ pub struct DocSlot {
     pub pivots: crate::app::Pivots,
     /// The layer made active in the Objects docker.
     pub picked_layer: Option<tracedraw_core::LayerId>,
+    /// The drawing's rendered page, kept while another drawing is active
+    /// (its window shows it when windows are tiled or cascaded).
+    pub raster: crate::raster::Raster,
+    /// Where the drawing's canvas began on screen when it was last drawn
+    /// (see `App::anchor_view`).
+    pub view_anchor: Option<egui::Pos2>,
 }
 
 impl App {
@@ -41,8 +47,9 @@ impl App {
         !self.docs.is_empty()
     }
 
-    /// Swap the active-drawing fields with slot `i`.
-    fn swap_with_slot(&mut self, i: usize) {
+    /// Swap the active-drawing fields with slot `i` (twice puts everything
+    /// back, which is how a window that is not the active one is drawn).
+    pub(crate) fn swap_with_slot(&mut self, i: usize) {
         let Some(slot) = self.docs.get_mut(i) else {
             return;
         };
@@ -60,6 +67,8 @@ impl App {
         std::mem::swap(&mut self.units, &mut slot.units);
         std::mem::swap(&mut self.pivots, &mut slot.pivots);
         std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
+        std::mem::swap(self.raster.get_mut(), &mut slot.raster);
+        std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
         // A page id from another drawing means nothing here.
         if self.engine.document().page(self.page).is_err() {
             if let Some(p) = self.engine.document().pages.first() {
@@ -129,6 +138,8 @@ impl App {
         self.units = units;
         self.pivots = Default::default();
         self.picked_layer = None;
+        *self.raster.get_mut() = Default::default();
+        self.view_anchor = None;
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
         self.show_welcome = false;
@@ -156,6 +167,9 @@ impl App {
         self.font_generation = generation;
         self.font_families = fonts.available_families();
         self.raster.borrow_mut().invalidate();
+        for slot in &mut self.docs {
+            slot.raster.invalidate();
+        }
         self.navigator_tex = None;
         *self.overflow_cache.borrow_mut() = Default::default();
         if !self.missing_fonts.is_empty() {
@@ -201,6 +215,8 @@ impl App {
             self.missing_fonts.clear();
             self.pivots = Default::default();
             self.picked_layer = None;
+            *self.raster.get_mut() = Default::default();
+            self.view_anchor = None;
             self.active_doc = 0;
             self.show_welcome = true;
             return;
