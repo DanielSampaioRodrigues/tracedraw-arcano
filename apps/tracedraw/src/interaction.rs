@@ -641,8 +641,8 @@ impl App {
                 }
             }
             Tool::InteractiveFill => self.fill_input(response, p),
+            Tool::Crop => self.crop_input(response, p),
             Tool::Contour
-            | Tool::Crop
             | Tool::Knife
             | Tool::Spiral
             | Tool::CommonShapes
@@ -2038,10 +2038,17 @@ impl App {
             }
         }
         if pressed(Key::Enter, Modifiers::NONE) {
+            if self.tool == Tool::Crop && self.crop_area.is_some() {
+                self.apply_crop();
+            }
             self.finish_curve();
         }
         // Esc with a menu or a list open only closes it.
-        if pressed(Key::Escape, Modifiers::NONE) && !egui::Popup::is_any_open(ctx) {
+        // Esc with a crop area waiting only clears it.
+        if pressed(Key::Escape, Modifiers::NONE)
+            && !egui::Popup::is_any_open(ctx)
+            && self.crop_area.take().is_none()
+        {
             self.curve = None;
             self.dimension_points.clear();
             self.eyedropper_reset();

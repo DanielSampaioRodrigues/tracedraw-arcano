@@ -838,13 +838,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
-            Tool::Crop => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.crop_hint"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::Crop => crate::ui::crop_bar::crop_bar(app, ui),
             Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),
             Tool::Spiral => {
                 ui.label(

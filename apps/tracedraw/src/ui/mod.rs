@@ -18,6 +18,7 @@ pub mod color_docker;
 pub mod connector_bar;
 pub mod context;
 pub mod coords_docker;
+pub mod crop_bar;
 pub mod cursors;
 pub mod curve_edit;
 pub mod defaults_dialog;
@@ -585,6 +586,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     callout_bar::draw_preview(app, &painter);
     distort_bar::draw_centers(app, &painter);
     extrude_bar::draw_handles(app, &painter);
+    crop_bar::draw_area(app, &painter, canvas_rect);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

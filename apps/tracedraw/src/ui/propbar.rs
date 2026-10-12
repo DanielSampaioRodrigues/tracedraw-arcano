@@ -1161,7 +1161,7 @@ pub(crate) fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
 }
 
 /// A text label before a field ("X:", "Units:").
-fn label_text(ui: &mut Ui, text: &str) {
+pub(crate) fn label_text(ui: &mut Ui, text: &str) {
     ui.add_sized(
         [16.0, ROW],
         egui::Label::new(egui::RichText::new(text).size(12.0)),
@@ -1171,7 +1171,13 @@ fn label_text(ui: &mut Ui, text: &str) {
 /// A distance field in the ruler unit, through the drawing scale (a
 /// position, a size, an offset); with spin arrows when `step` is given (in
 /// the unit). Returns the new value in mm once committed.
-fn distance(ui: &mut Ui, app: &App, mm: f64, width: f32, step: Option<f64>) -> Option<f64> {
+pub(crate) fn distance(
+    ui: &mut Ui,
+    app: &App,
+    mm: f64,
+    width: f32,
+    step: Option<f64>,
+) -> Option<f64> {
     distance_in(ui, app, mm, width, step, app.units.world_mm())
 }
 
@@ -1252,7 +1258,7 @@ fn spin(ui: &mut Ui) -> Option<f64> {
 }
 
 /// Two rows stacked in the bar's height.
-fn stacked<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+pub(crate) fn stacked<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     ui.allocate_ui_with_layout(
         Vec2::new(0.0, BAR_H),
         egui::Layout::top_down(egui::Align::Min),
@@ -1267,7 +1273,7 @@ fn stacked<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     .inner
 }
 
-fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+pub(crate) fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.spacing_mut().button_padding.y = 0.0;

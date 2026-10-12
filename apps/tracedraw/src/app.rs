@@ -928,6 +928,10 @@ pub struct App {
     /// The Extrude tool's and panel's values and the tool's drag.
     pub extrude: crate::extrude_tool::ExtrudeSettings,
     pub extrude_drag: Option<crate::extrude_tool::ExtrudeDrag>,
+    /// The Crop tool's area waiting to be applied (page space) and its
+    /// drag.
+    pub crop_area: Option<Rect>,
+    pub crop_drag: Option<crate::crop_tool::CropDrag>,
     pub transparency_default: crate::effects_ui::TransparencySettings,
     pub glyph_filter: String,
     pub table_edit: Option<crate::table::TableEdit>,
@@ -1586,6 +1590,8 @@ impl App {
             bevel: Default::default(),
             extrude: Default::default(),
             extrude_drag: None,
+            crop_area: None,
+            crop_drag: None,
             transparency_default: Default::default(),
             glyph_filter: String::new(),
             table_edit: None,
@@ -2702,6 +2708,9 @@ impl App {
             self.finish_text();
             self.table_edit = None;
             self.three_point_base = None;
+            self.crop_area = None;
+            self.crop_drag = None;
+            self.dimension_points.clear();
             self.previous_tool = self.tool;
             self.tool = tool;
             self.rotate_mode = false;

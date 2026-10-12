@@ -158,7 +158,7 @@ impl App {
                     }
                 }
             }
-            Tool::Crop | Tool::Knife => {
+            Tool::Knife => {
                 let p = self.snap_point(p);
                 if response.drag_started_by(PointerButton::Primary) {
                     self.drag = Drag::Box {
@@ -345,12 +345,6 @@ impl App {
                 }
                 true
             }
-            Tool::Crop => {
-                if rect.width() > 0.1 && rect.height() > 0.1 {
-                    self.crop_to(rect);
-                }
-                true
-            }
             Tool::Knife => {
                 if (current - start).hypot() > 0.5 {
                     self.knife(start, current);
@@ -359,65 +353,6 @@ impl App {
             }
             _ => false,
         }
-    }
-
-    /// Clip every object (or the selection) to a rectangle.
-    pub fn crop_to(&mut self, rect: Rect) {
-        let page = self.page;
-        let targets: Vec<Shape> = if self.selection.is_empty() {
-            self.doc()
-                .page(page)
-                .map(|p| {
-                    p.layers
-                        .iter()
-                        .filter(|l| !l.locked)
-                        .flat_map(|l| l.shapes.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            self.selected_shapes()
-        };
-        let clip = rect.to_path(0.01);
-        let mut cmds = Vec::new();
-        let mut removed = Vec::new();
-        for s in targets {
-            if matches!(s.kind, ShapeKind::Bitmap { .. }) {
-                continue;
-            }
-            let b = s.bounds();
-            if rect.contains_rect(b) {
-                continue;
-            }
-            let pp = s.page_path();
-            let clipped = shaping::overlay(&pp, &clip, shaping::Op::Intersect);
-            if clipped.elements().is_empty() {
-                removed.push(s.id);
-            } else {
-                let local = s.transform.inverse() * clipped;
-                cmds.push(Command::SetShapeKind {
-                    shape: s.id,
-                    kind: ShapeKind::Path {
-                        path: local,
-                        closed: true,
-                    },
-                });
-            }
-        }
-        if !removed.is_empty() {
-            cmds.push(Command::DeleteShapes { shapes: removed });
-        }
-        if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Crop", &cmds);
-        }
-        let doc = self.engine.document();
-        let keep: Vec<ShapeId> = self
-            .selection
-            .iter()
-            .copied()
-            .filter(|id| doc.shape(*id).is_ok())
-            .collect();
-        self.selection = keep;
     }
 
     /// Cut objects along a line into two pieces each.

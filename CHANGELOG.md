@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Crop: the area stays on the page with handles to move and resize it
+  (and fields for its position and size) until a double-click inside,
+  Enter or Crop applies it; Escape or Clear Crop Area drops it. It used
+  to crop at once on release. Bitmaps are cropped (into a clip frame;
+  Crop Bitmap led to a tool that skipped them), groups member by member
+  (they were turned into one plain curve, losing their members), and
+  open curves keep the parts inside instead of being closed.
 - Extrude: six types (small and big, back and front, toward a vanishing
   point that can be locked to the object or the page, and back or
   front parallel), each with its depth; the body is coloured from the

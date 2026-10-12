@@ -2,11 +2,33 @@
 
 ## Crop
 
-- Drag a rectangle. Every object on unlocked layers (or the selection,
-  when there is one) is intersected with it: curves become their clipped
-  outline (shaping intersect on flattened paths, 0.02 mm), bitmaps keep
-  their pixels inside a clip frame frame of the crop rectangle, groups
-  are cropped member by member. Objects entirely outside are deleted.
+- A drag draws the crop area. It stays on the page until it is applied
+  or cleared: the drawing outside it is dimmed, its edge is dashed and
+  it has eight handles (corners and side middles). A drag inside moves
+  it, a drag on a handle (within 6 pixels) resizes it (past the
+  opposite side it turns round), a drag outside draws a new one. Points
+  snap as drawing does.
+- Applied by a double-click inside it, Enter or the bar's Crop button;
+  cleared by Escape (which then does nothing else), a click outside it,
+  Clear Crop Area, or another tool. An area smaller than 0.1 mm is
+  dropped.
+- The objects cropped are the selection, or with nothing selected every
+  unlocked object on the page's unlocked, visible layers (`crop_tool.rs`):
+  - wholly inside: left as they are; wholly outside: deleted;
+  - closed outlines (a subpath that ends where it started counts) are
+    intersected with the area; open curves are cut where they cross its
+    edge and the pieces inside are kept, still open; text becomes its
+    outlines first; the result is a curve in the object's own space,
+    with its fill, outline and effects;
+  - bitmaps, tables and symbols go into a clip frame of the area (no
+    fill or outline), so their content stays whole and can be taken
+    out again (Extract Contents);
+  - groups are cropped member by member (a group left empty is
+    deleted); a clip frame by its frame.
+- One undo step; the deleted objects leave the selection.
+- The bar (with an area): X and Y of the area's point at the object
+  origin, W and H (sized about that point), Crop, Clear Crop Area.
+- Not done: turning the crop area.
 
 ## Knife
 
@@ -50,6 +72,10 @@
 
 ## Checks
 
+- `crop_tool::tests::the_area_waits_and_moves_until_it_is_applied`
+- `crop_tool::tests::open_curves_groups_bitmaps_and_text`
+- `crop_tool::tests::handles_and_resizing_stay_sane`
+- `ui::crop_bar::tests::the_bar_and_the_area_draw`
 - `knife::tests::straight_cuts_split_closed_objects`
 - `knife::tests::freehand_cuts_and_open_curves`
 

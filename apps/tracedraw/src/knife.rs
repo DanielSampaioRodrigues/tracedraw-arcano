@@ -67,7 +67,7 @@ fn cut_line(points: &[Point], reach: Rect) -> Vec<Point> {
 }
 
 /// Where the open path `path` crosses the polyline `cut`: (segment, t).
-fn crossings(path: &BezPath, cut: &[Point]) -> Vec<(usize, f64)> {
+pub(crate) fn crossings(path: &BezPath, cut: &[Point]) -> Vec<(usize, f64)> {
     let mut out = Vec::new();
     for (i, seg) in path.segments().enumerate() {
         for w in cut.windows(2) {
@@ -85,7 +85,7 @@ fn crossings(path: &BezPath, cut: &[Point]) -> Vec<(usize, f64)> {
 }
 
 /// `path` (one open subpath) split at `cuts` (segment, t), in order.
-fn split_open(path: &BezPath, cuts: &[(usize, f64)]) -> Vec<BezPath> {
+pub(crate) fn split_open(path: &BezPath, cuts: &[(usize, f64)]) -> Vec<BezPath> {
     let segs: Vec<PathSeg> = path.segments().collect();
     let mut pieces = Vec::new();
     let mut cur = BezPath::new();

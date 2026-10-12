@@ -28,6 +28,7 @@ mod common_shapes;
 mod connectors;
 mod coords;
 mod corners;
+mod crop_tool;
 mod curve_join;
 mod defaults;
 mod describe;
