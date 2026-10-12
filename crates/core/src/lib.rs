@@ -32,7 +32,7 @@ pub use document::{
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer,
     MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle, Shadow, Shape,
     ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
-    TrackedTask,
+    TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

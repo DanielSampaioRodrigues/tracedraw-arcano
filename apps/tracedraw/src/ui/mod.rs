@@ -45,6 +45,7 @@ pub mod shelf_docker;
 pub mod status;
 pub mod straighten_dialog;
 pub mod tabs;
+pub mod text_docker;
 pub mod time_tracker;
 pub mod toolbar;
 pub mod toolbox;

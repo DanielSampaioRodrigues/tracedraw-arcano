@@ -1883,7 +1883,7 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
 }
 
 /// The font size: a field and an arrow dropping the usual sizes.
-fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
+pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
     let mut size = app.text_size_pt;
     let mut picked: Option<f64> = None;
     let ctx = ui.ctx().clone();

@@ -84,7 +84,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Font family, size, bold, italic, alignment, underline, strikethrough | works |
 | Properties docker: sections in the order Outline, Fill, Transparency, the kind's own, Summary, open by default with header bars and a row of buttons, closed ones kept; fill kinds as pictures; the Transparency tool's settings in its own section | works (see `behavior/workspaces.md`, Properties docker) |
 | Font list: type to find a family, count and filter (all, installed, in this drawing, to download), the five used last, names drawn in their own fonts with an icon of how each is built, styles under each family, sample size slider, preview with guide lines | works (see `behavior/text.md`, Font list) |
-| Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap | works |
+| Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap; vertical alignment of paragraph text in its frame (top, middle, bottom); Text docker with Character, Paragraph and Frame sections (see `behavior/text.md`, Text docker) | works |
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |
 | Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) | works |

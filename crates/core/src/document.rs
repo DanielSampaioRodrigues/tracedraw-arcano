@@ -716,6 +716,20 @@ pub struct ParagraphStyle {
     /// top of the frame (Text > Align to Baseline Grid); 0 = off. Only
     /// paragraph text snaps.
     pub baseline_grid_mm: f64,
+    /// Where paragraph text sits in its frame from top to bottom.
+    pub vertical_align: VerticalAlign,
+}
+
+/// Where paragraph text sits in its frame (the Text docker's Frame
+/// section): at the top, in the middle or at the bottom of the room its
+/// lines leave. Text that overflows the frame starts at the top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerticalAlign {
+    #[default]
+    Top,
+    Center,
+    Bottom,
 }
 
 impl Default for ParagraphStyle {
@@ -739,6 +753,7 @@ impl Default for ParagraphStyle {
             hyphenate: false,
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
+            vertical_align: VerticalAlign::Top,
         }
     }
 }

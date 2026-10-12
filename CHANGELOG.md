@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Text docker has Character, Paragraph and Frame sections with
+  header bars and buttons to open and close them (kept), the size list
+  and bold, italic and underline as on the property bar, alignment
+  pictures, and fields in rows. The new Frame section sets columns and
+  their gutter, bullets, drop caps, hyphenation, fitting the text to the
+  frame and where paragraph text sits from top to bottom: at the top, in
+  the middle or at the bottom of its frame (new, saved with the drawing).
 - Window > Cascade, Tile Horizontally and Tile Vertically put every open
   drawing in a window of its own, with a title bar, a button back to the
   tabs and a close button; the active one has its rulers and tools, the

@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
         text_outline::TextRequest, DocumentFont, ParagraphStyle, TextAlign, TextOnPath, TextSpan,
+        VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _},
 };
@@ -2051,6 +2052,28 @@ impl FontSystem {
             min_y = min_y.min(y - m.descent);
         }
 
+        // Vertical alignment in the frame: the lines move down together
+        // by the room left under them (half of it for the middle). Text
+        // that overflows stays at the top.
+        if let (Some(h), false) = (frame_h, overflow) {
+            let share = match para.vertical_align {
+                VerticalAlign::Top => 0.0,
+                VerticalAlign::Center => 0.5,
+                VerticalAlign::Bottom => 1.0,
+            };
+            let dy = -(h + min_y).max(0.0) * share;
+            if dy.abs() > 1e-9 {
+                path.apply_affine(Affine::translate((0.0, dy)));
+                for b in &mut line_baselines {
+                    b.1 += dy;
+                }
+                for lb in &mut line_boxes {
+                    lb.baseline += dy;
+                }
+                min_y += dy;
+            }
+        }
+
         let top = if artistic {
             lines.first().map(|l| l.metrics.ascent).unwrap_or(0.0)
         } else {
@@ -2673,6 +2696,54 @@ mod tests {
             on_path: None,
         });
         assert!(tall.path.elements().len() > over.path.elements().len());
+    }
+
+    #[test]
+    fn paragraph_text_sits_at_the_top_middle_or_bottom_of_its_frame() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one\ntwo");
+        let lay = |v: VerticalAlign, h: f64| {
+            let para = ParagraphStyle {
+                vertical_align: v,
+                ..ParagraphStyle::default()
+            };
+            f.layout(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: Some(Size::new(100.0, h)),
+                align: TextAlign::Left,
+                para: &para,
+                on_path: None,
+            })
+        };
+        let top = lay(VerticalAlign::Top, 100.0);
+        let mid = lay(VerticalAlign::Center, 100.0);
+        let bottom = lay(VerticalAlign::Bottom, 100.0);
+        // The bottom of the text: at the frame's bottom for Bottom, the
+        // room shared evenly above and below for Center.
+        let room = 100.0 + top.bounds.y0;
+        assert!(room > 10.0, "{:?}", top.bounds);
+        assert!(
+            (bottom.bounds.y0 + 100.0).abs() < 1e-6,
+            "{:?}",
+            bottom.bounds
+        );
+        assert!((mid.bounds.y0 - (top.bounds.y0 - room / 2.0)).abs() < 1e-6);
+        // Every baseline and the caret lines move with the text.
+        for (a, b) in top.baselines.iter().zip(&bottom.baselines) {
+            assert!((b.1 - (a.1 - room)).abs() < 1e-6);
+        }
+        assert!((bottom.lines[0].baseline - (top.lines[0].baseline - room)).abs() < 1e-6);
+        use kurbo::Shape as _;
+        let (tb, bb) = (top.path.bounding_box(), bottom.path.bounding_box());
+        assert!((bb.y0 - (tb.y0 - room)).abs() < 1e-6);
+        // Text that overflows starts at the top.
+        let small = lay(VerticalAlign::Bottom, 3.0);
+        let small_top = lay(VerticalAlign::Top, 3.0);
+        assert!(small.overflow);
+        assert_eq!(small.baselines, small_top.baselines);
     }
 
     #[test]

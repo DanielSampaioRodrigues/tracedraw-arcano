@@ -120,6 +120,34 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   text scales as a whole. With other objects in the selection each is
   scaled as usual, all in one undo step.
 
+## Text docker
+
+Ctrl+T, the property bar's Text Properties button and Window > Panels >
+Text. Three sections, each under a header bar with a triangle; the
+buttons at the top ("A", the pilcrow and a frame) show which are open
+and open or close them, as a click on a header does. All come open; the
+ones closed are kept in the preferences (`text_sections_closed`).
+
+- Character: the font list, the size list (as on the property bar),
+  bold, italic and underline; then, for the first selected text,
+  tracking (-50 to 200 %), the characters' horizontal and vertical
+  offsets and angle, strikethrough and the OpenType features
+  (ligatures, small capitals, old-style numerals, fractions, swashes).
+- Paragraph: left, centre, right and full justification as picture
+  buttons; then line spacing (0 to 2000 %), character spacing (-100 to
+  2000 %), word spacing (0 to 2000 %), space before and after
+  paragraphs, first-line, left and right indents in the ruler unit.
+- Frame, for paragraph text: columns (1 to 8) and the gutter between
+  them, the vertical alignment (top, middle, bottom: the lines move down
+  together by the room left under them in the frame, half of it for the
+  middle; text that overflows starts at the top), Bullets and Drop Cap
+  (their dialogs; pushed in while the text has them), Hyphenate and Fit
+  Text to Frame. With artistic text the section says it is for
+  paragraph text.
+- The font, size, style and alignment become those of new text too; the
+  other fields change the first selected text, one undo step each.
+- Labels in the sections show without a trailing colon.
+
 ## Character offsets, angle and spacing
 
 - Each character can be shifted and turned: Horizontal character offset
@@ -271,6 +299,11 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Checks
 
+- The Text docker: `ui::text_docker::tests::the_sections_open_close_and_draw_for_any_text`,
+  `ui::text_docker::tests::vertical_alignment_is_kept_with_the_text`;
+  `tests::paragraph_text_sits_at_the_top_middle_or_bottom_of_its_frame`
+  (text crate). Checked on screen: Bottom moved "Hello world" to the
+  frame's bottom edge.
 - The font list: typing finds the name, then names starting with it,
   then the rest (`ui::font_list::tests::typing_finds_the_name_then_names_starting_with_it_then_the_rest`);
   the fonts used last keep the newest five

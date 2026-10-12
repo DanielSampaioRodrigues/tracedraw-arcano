@@ -173,6 +173,10 @@ pub struct Settings {
     /// The Properties docker's sections closed ("outline", "fill" ...).
     #[serde(default)]
     pub properties_closed: Vec<String>,
+    /// The Text docker's sections closed ("character", "paragraph",
+    /// "frame").
+    #[serde(default)]
+    pub text_sections_closed: Vec<String>,
     /// The font lists' sample size, in points.
     #[serde(default = "default_font_sample")]
     pub font_sample_px: f32,
@@ -827,6 +831,7 @@ impl Default for Settings {
             dockers: None,
             recent_fonts: Vec::new(),
             properties_closed: Vec::new(),
+            text_sections_closed: Vec::new(),
             font_sample_px: default_font_sample(),
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),
