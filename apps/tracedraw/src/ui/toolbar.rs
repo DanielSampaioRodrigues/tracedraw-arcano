@@ -636,6 +636,17 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Pick | Tool::FreeformPick
                 if shapes
                     .iter()
+                    .all(|s| crate::connectors::Connection::of(s).is_some()) =>
+            {
+                // Connectors selected with the Pick tool: the object
+                // fields, then how they run and their outline.
+                object_properties(app, ui);
+                vsep(ui);
+                crate::ui::connector_bar::connector_bar(app, ui);
+            }
+            Tool::Pick | Tool::FreeformPick
+                if shapes
+                    .iter()
                     .all(|s| crate::dimensions::Dimension::of(s).is_some()) =>
             {
                 // Dimensions selected with the Pick tool: the object
@@ -1097,12 +1108,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::HorizontalVerticalDimension
             | Tool::SegmentDimension
             | Tool::AngularDimension => crate::ui::dimension_bar::dimension_bar(app, ui),
-            Tool::Connector => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drag_between_objects"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
+            Tool::Connector | Tool::RightAngleConnector | Tool::RoundedConnector => {
+                crate::ui::connector_bar::connector_bar(app, ui)
             }
             Tool::AnchorEditing => {
                 let id = app.selection.first().copied();

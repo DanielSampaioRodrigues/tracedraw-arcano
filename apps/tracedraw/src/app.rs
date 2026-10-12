@@ -989,6 +989,14 @@ pub struct App {
     pub dimensions_checked: u64,
     /// A linear dimension's first point was given by pressing to drag.
     pub dimension_dragging: bool,
+    /// Rounded connectors' corner radius, mm.
+    pub connector_radius: f64,
+    /// The document revision connectors were last checked at (see
+    /// [`App::refresh_connectors`]).
+    pub connectors_checked: u64,
+    /// The revision and selection of the last connector radius change,
+    /// so a drag of the field is one undo step.
+    pub connector_radius_step: Option<(u64, Vec<ShapeId>)>,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1596,6 +1604,9 @@ impl App {
             dimension_style: Default::default(),
             dimensions_checked: u64::MAX,
             dimension_dragging: false,
+            connector_radius: 3.0,
+            connectors_checked: u64::MAX,
+            connector_radius_step: None,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,

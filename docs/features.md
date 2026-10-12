@@ -42,7 +42,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
 | Dimensions: parallel, horizontal/vertical, angular, segment (a click on a segment), 3-point callout; live preview; the bar's precision, units, prefix, suffix, text position and size; dynamic (drawn again when moved or scaled) (see `behavior/dimensions.md`) | works |
-| Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
+| Connectors: straight, right-angle, rounded right-angle, attached (they follow the objects they join), with a bar (kind, corner radius, outline); Anchor Editing tool (add, move, delete anchors; connectors snap to them) (see `behavior/connectors-and-anchors.md`) | works |
 | Text (artistic and paragraph), Table | works |
 | Browser version (WebAssembly, WebGL 2): opens, edits and exports documents with uploads and downloads | works |
 | Import of HPGL plotter files (PLT) and export of pages as pen strokes | works |

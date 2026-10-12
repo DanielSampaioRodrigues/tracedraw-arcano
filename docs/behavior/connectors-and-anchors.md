@@ -35,15 +35,43 @@ are:
 
 Right-angle connectors go from the start anchor to an elbow at the
 midpoint of the dominant axis and then to the end anchor; the rounded
-variant replaces the two corners by quadratic arcs of radius
-`min(3 mm, length / 4)`. The result is a plain open path named
-"Connector" with no fill, so it edits like any curve.
+variant replaces the two corners by quadratic arcs of the bar's corner
+radius (3 mm at first), never more than a quarter of the distance or half
+a leg. The connector is an open path named "Connector" with no fill and
+the default outline (`connectors.rs`).
+
+## Staying attached
+
+The connector keeps what it joins in its object data (`connector`): the
+two objects, each anchor as fractions of its object's bounds, how it runs,
+the corner radius and where its ends were last put. After every change of
+the drawing:
+
+- its objects moved, scaled or reshaped while the connector did not: it
+  runs again between their anchors, in the same undo step;
+- moved together with its objects: it stays attached;
+- moved on its own (or pasted elsewhere): it is let go and stays where it
+  is as a plain line (Undo attaches it again);
+- one of its objects deleted: it stays where it is, and follows again if
+  Undo brings the object back.
+
+## Property bar
+
+With the connector tools, and when the Pick tool's selection is all
+connectors (after the position and size fields): Straight, Right angle,
+Rounded right angle (with nothing selected they pick the tool; with
+connectors selected they change how those run), the corner radius of
+rounded ones (a drag of the field is one undo step), then for selected
+connectors the outline: width, style, arrowheads.
 
 While a connector is dragged the anchors of both objects are shown, and
 the rubber-band line starts at the anchor that will be used.
 
 ## Checks
 
+- `connectors::tests::connectors_follow_their_objects`
+- `connectors::tests::right_angle_and_rounded_routes`
+- `connectors::tests::selected_connectors_change_kind`
 - Given a custom anchor at the top-right corner of a 10 mm square, when
   the square is scaled by 2, then the anchor is still at the top-right
   corner (fractions, not millimetres).

@@ -534,6 +534,8 @@ impl App {
 
     /// Right-angle and rounded connectors: an elbow path between the
     /// facing sides of two objects.
+    /// The right-angle connector tools' drop: a connector at right angles
+    /// (`rounded`: with rounded corners) to the object under the drop.
     pub fn finish_elbow_connector(
         &mut self,
         from: ShapeId,
@@ -541,54 +543,14 @@ impl App {
         at: Point,
         rounded: bool,
     ) {
-        let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) else {
-            return;
-        };
-        let Some((pa, pb)) = self.connector_anchors(from, start, to, at) else {
-            return;
-        };
-        let horizontal = (pb.x - pa.x).abs() > (pb.y - pa.y).abs();
-        let mid = if horizontal {
-            Point::new((pa.x + pb.x) / 2.0, pa.y)
-        } else {
-            Point::new(pa.x, (pa.y + pb.y) / 2.0)
-        };
-        let c1 = mid;
-        let c2 = if horizontal {
-            Point::new(mid.x, pb.y)
-        } else {
-            Point::new(pb.x, mid.y)
-        };
-        let mut path = BezPath::new();
-        path.move_to(pa);
-        if rounded {
-            let r = 3.0_f64.min((pb - pa).hypot() / 4.0);
-            let dir1 = (c1 - pa).normalize();
-            let dir2 = (c2 - c1).normalize();
-            let dir3 = (pb - c2).normalize();
-            path.line_to(c1 - dir1 * r);
-            path.quad_to(c1, c1 + dir2 * r);
-            path.line_to(c2 - dir2 * r);
-            path.quad_to(c2, c2 + dir3 * r);
-            path.line_to(pb);
-        } else {
-            path.line_to(c1);
-            path.line_to(c2);
-            path.line_to(pb);
-        }
-        if let Some(id) = self.new_shape(ShapeKind::Path {
-            path,
-            closed: false,
-        }) {
-            let _ = self.engine.run(&Command::SetShapeName {
-                shape: id,
-                name: Some("Connector".into()),
-            });
-            let _ = self.engine.run(&Command::SetFill {
-                shapes: vec![id],
-                fill: Fill::None,
-            });
-            self.select(vec![id]);
+        use crate::connectors::ConnectorKind;
+        if let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) {
+            let kind = if rounded {
+                ConnectorKind::Rounded
+            } else {
+                ConnectorKind::RightAngle
+            };
+            self.connect(from, start, to, at, kind);
         }
     }
 

@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Connectors stay attached: move, scale or reshape an object and the
+  connectors joined to it follow, in the same undo step; moved on its
+  own, a connector is let go. They used to be plain lines. The connector
+  tools have a property bar: straight, right angle or rounded (changing
+  selected connectors too), the corner radius, and the outline of the
+  selected ones.
 - Dimensions: the tools have a property bar (precision, units, show
   units, prefix, suffix, text above, in or below the line, label size),
   shown also when dimensions are selected, and changing it redraws them.

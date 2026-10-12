@@ -573,27 +573,17 @@ impl App {
         }
     }
 
+    /// The Connector tool's drop: a straight connector to the object under
+    /// the drop.
     pub fn finish_connector(&mut self, from: ShapeId, start: Point, at: Point) {
-        let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) else {
-            return;
-        };
-        // Leave from the anchor nearest the drag start, arrive at the one
-        // nearest the drop (custom anchors from the Anchor Editing tool).
-        let Some((pa, pb)) = self.connector_anchors(from, start, to, at) else {
-            return;
-        };
-        let mut path = BezPath::new();
-        path.move_to(pa);
-        path.line_to(pb);
-        if let Some(id) = self.new_shape(ShapeKind::Path {
-            path,
-            closed: false,
-        }) {
-            let _ = self.engine.run(&Command::SetShapeName {
-                shape: id,
-                name: Some("Connector".into()),
-            });
-            self.select(vec![id]);
+        if let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) {
+            self.connect(
+                from,
+                start,
+                to,
+                at,
+                crate::connectors::ConnectorKind::Straight,
+            );
         }
     }
 

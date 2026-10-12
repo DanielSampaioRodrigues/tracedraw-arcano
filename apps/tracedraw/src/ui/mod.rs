@@ -14,6 +14,7 @@ pub mod brand;
 pub mod brush_bars;
 pub mod chrome;
 pub mod color_docker;
+pub mod connector_bar;
 pub mod context;
 pub mod coords_docker;
 pub mod cursors;

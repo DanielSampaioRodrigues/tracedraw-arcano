@@ -24,6 +24,7 @@ mod clipboard;
 mod clone_effect;
 mod color_drop;
 mod common_shapes;
+mod connectors;
 mod coords;
 mod corners;
 mod curve_join;
@@ -261,6 +262,8 @@ impl eframe::App for Shell {
         ui::root(app, ui);
         // Dimensions moved or scaled this frame show their new values.
         app.bake_dimensions();
+        // Connectors follow the objects they join.
+        app.refresh_connectors();
         #[cfg(not(target_arch = "wasm32"))]
         splash::remember_window(ui.ctx(), &mut app.settings);
         // Preferences changed this frame last without waiting for the
