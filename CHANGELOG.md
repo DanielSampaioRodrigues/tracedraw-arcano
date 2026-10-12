@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Knife: a freehand cut besides the two-point line, a gap along the cut,
+  and the pieces kept apart or as one object, from its property bar.
+  Every separate piece becomes an object of its own, and open curves are
+  split where the cut crosses them (they were closed into filled pieces).
 - The Blend tool's bar sets the rotation and the object and colour
   accelerations besides the steps, for the next blend and live for a
   selected one, with Clear Blend and Break Apart. Dragging a slider in an

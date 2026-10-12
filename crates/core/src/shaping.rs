@@ -78,6 +78,24 @@ pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
     from_shapes(result)
 }
 
+/// Combine `subject` and `clip` as [`overlay`] does, each separate piece
+/// of the result (its outline with its holes) a path of its own.
+pub fn overlay_parts(subject: &BezPath, clip: &BezPath, op: Op) -> Vec<BezPath> {
+    let subj = contours(subject);
+    let clp = contours(clip);
+    let rule = match op {
+        Op::Weld => OverlayRule::Union,
+        Op::Intersect => OverlayRule::Intersect,
+        Op::Trim => OverlayRule::Difference,
+        Op::Exclude => OverlayRule::Xor,
+    };
+    subj.overlay(&clp, rule, IFill::EvenOdd)
+        .into_iter()
+        .map(|shape| from_shapes(vec![shape]))
+        .filter(|p| !p.elements().is_empty())
+        .collect()
+}
+
 /// Offset a closed path outward (positive) or inward (negative) by `d` mm,
 /// with round corners. Used by Contour and outline-to-object.
 pub fn offset(path: &BezPath, d: f64) -> BezPath {

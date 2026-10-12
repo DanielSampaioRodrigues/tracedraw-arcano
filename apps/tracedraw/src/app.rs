@@ -1008,6 +1008,8 @@ pub struct App {
     pub blend_rotation: f64,
     pub blend_accel_objects: f64,
     pub blend_accel_colors: f64,
+    /// The Knife's mode, gap and pieces (its bar).
+    pub knife: crate::knife::KnifeSettings,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1624,6 +1626,7 @@ impl App {
             blend_rotation: 0.0,
             blend_accel_objects: 0.0,
             blend_accel_colors: 0.0,
+            knife: Default::default(),
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,
@@ -2045,6 +2048,7 @@ impl App {
             connector_radius: self.connector_radius,
             recognize: self.recognize,
             sketch: self.sketch,
+            knife: self.knife,
         }
     }
 
@@ -2107,6 +2111,10 @@ impl App {
         self.recognize = crate::recognize::RecognizeSettings {
             recognition: t.recognize.recognition.min(5),
             smoothing: t.recognize.smoothing.min(5),
+        };
+        self.knife = crate::knife::KnifeSettings {
+            gap: finite(t.knife.gap, 0.0, 1000.0, 0.0),
+            ..t.knife
         };
         self.sketch = crate::recognize::SketchSettings {
             join_distance: finite(t.sketch.join_distance, 0.0, 1000.0, 5.0),

@@ -898,13 +898,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
             }
-            Tool::Knife => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.knife_hint"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),
             Tool::Spiral => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.revolutions"))

@@ -668,6 +668,8 @@ pub struct ToolPrefs {
     /// Shape Recognition's levels and Sketch's settings.
     pub recognize: crate::recognize::RecognizeSettings,
     pub sketch: crate::recognize::SketchSettings,
+    /// The Knife's mode, gap and pieces.
+    pub knife: crate::knife::KnifeSettings,
 }
 
 impl Default for ToolPrefs {
@@ -712,6 +714,7 @@ impl Default for ToolPrefs {
             connector_radius: 3.0,
             recognize: Default::default(),
             sketch: Default::default(),
+            knife: Default::default(),
         }
     }
 }

@@ -142,6 +142,22 @@ impl App {
                     }
                 }
             }
+            Tool::Knife if self.knife.mode == crate::knife::KnifeMode::Freehand => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    self.drag = Drag::Freehand { points: vec![p] };
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Freehand { points } = &mut self.drag {
+                        if points
+                            .last()
+                            .map(|l| (*l - p).hypot() > 0.2)
+                            .unwrap_or(true)
+                        {
+                            points.push(p);
+                        }
+                    }
+                }
+            }
             Tool::Crop | Tool::Knife => {
                 let p = self.snap_point(p);
                 if response.drag_started_by(PointerButton::Primary) {
@@ -405,87 +421,6 @@ impl App {
     }
 
     /// Cut objects along a line into two pieces each.
-    pub fn knife(&mut self, a: Point, b: Point) {
-        let targets: Vec<Shape> = if self.selection.is_empty() {
-            self.doc()
-                .page(self.page)
-                .map(|p| {
-                    p.layers
-                        .iter()
-                        .filter(|l| !l.locked)
-                        .flat_map(|l| l.shapes.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            self.selected_shapes()
-        };
-        let dir = (b - a).normalize();
-        let n = Vec2::new(-dir.y, dir.x);
-        let big = 10_000.0;
-        let half = |sign: f64| -> BezPath {
-            let o = a - dir * big;
-            let e = a + dir * big;
-            let mut p = BezPath::new();
-            p.move_to(o);
-            p.line_to(e);
-            p.line_to(e + n * big * sign);
-            p.line_to(o + n * big * sign);
-            p.close_path();
-            p
-        };
-        let (left, right) = (half(1.0), half(-1.0));
-        let mut cmds = Vec::new();
-        let mut new_ids = Vec::new();
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        for s in targets {
-            if matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }) {
-                continue;
-            }
-            let bb = s.bounds();
-            if !crosses(bb, a, b) {
-                continue;
-            }
-            let pp = s.page_path();
-            let p1 = shaping::overlay(&pp, &left, shaping::Op::Intersect);
-            let p2 = shaping::overlay(&pp, &right, shaping::Op::Intersect);
-            if p1.elements().is_empty() || p2.elements().is_empty() {
-                continue;
-            }
-            cmds.push(Command::SetShapeKind {
-                shape: s.id,
-                kind: ShapeKind::Path {
-                    path: s.transform.inverse() * p1,
-                    closed: true,
-                },
-            });
-            let id = self.engine.new_shape_id();
-            let mut piece = Shape::new(
-                id,
-                ShapeKind::Path {
-                    path: s.transform.inverse() * p2,
-                    closed: true,
-                },
-            );
-            piece.transform = s.transform;
-            piece.fill = s.fill.clone();
-            piece.stroke = s.stroke.clone();
-            piece.opacity = s.opacity;
-            cmds.push(Command::AddShape {
-                layer,
-                shape: piece,
-            });
-            new_ids.push(s.id);
-            new_ids.push(id);
-        }
-        if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Knife", &cmds);
-            self.select(new_ids);
-        }
-    }
-
     pub fn apply_contour(&mut self) {
         let shapes = self.selected_shapes();
         let Some(layer) = self.active_layer() else {
@@ -675,12 +610,6 @@ impl App {
             self.select(ids);
         }
     }
-}
-
-fn crosses(bb: Rect, a: Point, b: Point) -> bool {
-    // Conservative: the segment's bounding box overlaps the object bounds.
-    !bb.intersect(Rect::from_points(a, b).inflate(0.01, 0.01))
-        .is_zero_area()
 }
 
 fn lerp_color(a: Color, b: Color, t: f32) -> Color {

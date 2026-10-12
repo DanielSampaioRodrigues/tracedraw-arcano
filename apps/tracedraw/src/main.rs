@@ -52,6 +52,7 @@ mod imposition;
 mod interaction;
 mod interaction2;
 mod kind_nodes;
+mod knife;
 mod lens;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp;

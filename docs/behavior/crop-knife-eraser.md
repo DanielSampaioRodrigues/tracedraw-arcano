@@ -10,10 +10,22 @@
 
 ## Knife
 
-- Drag a straight cut. Objects crossed by the line (selection, or every
-  unlocked object) are split into the part on each side of the line;
-  each part keeps the fill and outline and becomes its own object; the
-  original is removed. Bitmaps and groups are not cut.
+- Two-point line (first choice): drag a straight cut; it runs on past
+  both ends across the objects. Freehand: drag a line of any shape; the
+  cut follows it as drawn.
+- The objects cut are the selection, or with nothing selected every
+  visible object on the page's unlocked layers; bitmaps, groups and text
+  are not cut (`knife.rs`).
+- Closed objects lose a band along the cut: Split (first choice) takes a
+  hair (0.01 mm), so the pieces meet; Gap takes the width beside it.
+  Each separate piece becomes an object of its own (Keep as one object:
+  the pieces of each object stay one object of several parts); a cut
+  that leaves one piece changes nothing. Open curves are split where the
+  cut crosses them and stay open.
+- Pieces keep the fill, outline and opacity; the first keeps the
+  object's place. The pieces are selected; one undo step.
+- The bar: Two-point line, Freehand; Split, Gap and its width; Keep as
+  one object; kept in the preferences (`tools.knife`).
 
 ## Segment delete
 
@@ -37,6 +49,9 @@
   masking is not implemented).
 
 ## Checks
+
+- `knife::tests::straight_cuts_split_closed_objects`
+- `knife::tests::freehand_cuts_and_open_curves`
 
 - Given a 40 x 20 mm rectangle and a 4 mm vertical band through its
   middle, when erased, then the object is a path with two subpaths and

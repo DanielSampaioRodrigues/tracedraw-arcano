@@ -1399,6 +1399,7 @@ impl App {
                 current,
             } => self.finish_connector(from, start, current),
             Drag::Freehand { points } if self.tool == Tool::Eraser => self.erase_along(&points),
+            Drag::Freehand { points } if self.tool == Tool::Knife => self.knife_cut(&points),
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }
