@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="https://github.com/igtoth/tracedraw/releases"><b>Download</b></a> &middot;
-  <a href="https://igtoth.github.io/tracedraw/">Try it in the browser (demo)</a> &middot;
+  <a href="https://igtoth.github.io/tracedraw/">Open it in the browser</a> &middot;
   <a href="docs/features.md">Feature status</a> &middot;
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
@@ -344,7 +344,7 @@ names is the version number.
 | Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (not signed yet: if SmartScreen warns, More info > Run anyway) |
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
 | Linux (x86_64) | `.deb`, `tracedraw-<version>-linux-x86_64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` |
-| Web | no download: [the hosted demo](https://igtoth.github.io/tracedraw/) to try it without installing (slower on heavy work, only the bundled fonts) |
+| Web | no download: [open it in the browser](https://igtoth.github.io/tracedraw/), nothing to install |
 
 Each download includes `tracedraw-cli` next to the editor. Packaging sources
 are in [`packaging/`](packaging/); the browser build is described in

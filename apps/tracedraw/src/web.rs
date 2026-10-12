@@ -244,18 +244,24 @@ pub fn start() {
             match &result {
                 Ok(()) => loading.remove(),
                 Err(e) => {
-                    // The page's status line, keeping its links to the
-                    // downloads; the progress bar goes.
-                    if let Some(bar) = document.get_element_by_id("loading-bar") {
-                        bar.remove();
-                    }
+                    // The splash says so and the reason shows under it,
+                    // keeping the page's links to the downloads.
                     let text = format!(
                         "TraceDraw could not start: {e:?}. A browser with WebGL 2 is needed."
                     );
-                    document
-                        .get_element_by_id("loading-status")
-                        .unwrap_or(loading)
-                        .set_inner_html(&escape_html(&text));
+                    if let Some(status) = document.get_element_by_id("loading-status") {
+                        status.set_inner_html("TraceDraw could not start");
+                    }
+                    if let Some(bar) = document.get_element_by_id("loading-bar") {
+                        bar.set_attribute("fill", "#e0533d").ok();
+                    }
+                    match document.get_element_by_id("loading-error") {
+                        Some(error) => {
+                            error.set_inner_html(&escape_html(&text));
+                            error.remove_attribute("hidden").ok();
+                        }
+                        None => loading.set_inner_html(&escape_html(&text)),
+                    }
                 }
             }
         }

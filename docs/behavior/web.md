@@ -1,12 +1,12 @@
 # Browser version
 
 The same editor compiled to WebAssembly (`wasm32-unknown-unknown`) and
-drawn with WebGL 2 by eframe, as a demo to try TraceDraw without
-installing it. CI publishes it to GitHub Pages; it is not one of the
-release downloads. Each run keeps the folder as the `web-demo-site`
-artifact (`tracedraw-<version>-web.zip`, a static folder: serve it from
-any web server; opening `index.html` from disk does not work because
-browsers refuse to load modules from `file://`).
+drawn with WebGL 2 by eframe, so TraceDraw runs in a browser with nothing
+to install. CI publishes it to GitHub Pages; it is not one of the
+release downloads. Each run keeps the folder as the `web-site` artifact
+(`tracedraw-<version>-web.zip`, a static folder: serve it from any web
+server; opening `index.html` from disk does not work because browsers
+refuse to load modules from `file://`).
 
 ## What differs from the desktop
 
@@ -24,37 +24,29 @@ browsers refuse to load modules from `file://`).
 | System clipboard | text and images (arboard) | text through the browser; pasting images from other programs is not available |
 | Help links | system browser | a new tab |
 
-## A demo, and it says so
+## Loading
 
-The browser version is for trying TraceDraw without installing it, and
-tells the visitor what that means and where the desktop app is:
+While the module downloads, the page shows the desktop app's splash
+screen on the grey of the drawing window: the same artwork (`splash.rs`,
+`ui/brand.rs`), name, tagline, copyright and version, with the status
+"Loading TraceDraw: 3.5 of 5.7 MB (61%)" and the progress bar under it
+(the build writes the module's size into the page as `data-wasm-size`
+and the version for `@VERSION@`; without the size the page counts the
+megabytes and the bar creeps towards 90 %). The download fills the bar
+to 90 %, "Preparing the workspace..." the rest while the browser
+compiles the module; the splash goes when the editor is up. Under the
+splash, small: "TraceDraw (alpha): open-source vector editor that opens
+.cdr files. Written in Rust, free under the MIT or Apache-2.0 license.",
+which screens it suits (a desktop browser with a mouse and keyboard; on
+a tablet the Touch workspace; a phone screen is too small for editing)
+and links to the desktop downloads
+(`https://github.com/igtoth/tracedraw/releases/latest`), the source
+code and the issues. When the editor cannot start, the splash says so,
+its bar turns red and the reason shows under it, with the links.
 
-- While the editor loads, the page says what it is before anything else
-  can: "TraceDraw" with an "alpha" mark, "Open-source vector editor that
-  opens .cdr files.", that it is written in Rust and free under the MIT or
-  Apache-2.0 license, and that it is the browser version of the desktop
-  app. It says which screens it is for (a desktop browser with a mouse
-  and keyboard; on a tablet the Touch workspace; a phone screen is too
-  small for editing; large drawings are slower than in the desktop app)
-  and links to the desktop downloads
-  (`https://github.com/igtoth/tracedraw/releases/latest`), the source
-  code and the issues, so a visitor whose browser stalls still has
-  somewhere to go.
-- The page downloads the module itself and shows its progress: a bar and
-  "Downloading the editor: 3.5 of 5.7 MB (61%)" (the build writes the
-  module's size into the page as `data-wasm-size`; without it the page
-  counts the megabytes and the bar runs without an end), then "Starting
-  the editor..." while the browser compiles it. When it cannot start,
-  the status line says why and the links stay.
-- Each time the page opens, once TraceDraw is up, a message says it is a
-  demo, slower on heavy work and limited to the fonts that come with it,
-  with an OK button. The desktop downloads are also linked from the
-  Welcome Screen and the menu bar.
-- The Welcome Screen's Get Started page shows the same in place of the
-  recent documents (a browser keeps none), with a "Download the desktop
-  app" button.
-- The menu bar ends with a link to the downloads ("Browser demo: get the
-  desktop app"); its tooltip repeats what the demo leaves out.
+Once the editor is up it simply runs: no message at the start, nothing
+in the menu bar, and the Welcome Screen's Get Started page leaves out
+the recent documents a browser cannot keep.
 
 Heavy work is slower than on the desktop because the build is optimised
 for download size (`profile.web`, `opt-level = "s"`), runs on one thread
@@ -80,17 +72,19 @@ wasm-bindgen --target web --no-typescript --out-dir site \
     target/wasm32-unknown-unknown/web/tracedraw.wasm
 cp web/FONTS.md site/
 size=$(wc -c < site/tracedraw_bg.wasm | tr -d ' ')
-sed "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" web/index.html > site/index.html
+sed -e "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" -e "s/@VERSION@/0.4.0/" \
+    web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
 python3 -m http.server -d site 8080   # then open http://localhost:8080
 ```
 
-Checks: the page keeps what it says, its links and the elements the
-module uses (`web_page::tests::the_loading_page_says_what_it_is_and_where_to_go`),
-and both builds fill in the module's size
-(`web_page::tests::the_builds_fill_in_the_modules_size`). Checked in a
-browser with a stand-in module: the progress, the start, an error with
-the links kept, on a desktop and a phone-sized window.
+Checks: the page keeps the splash, what it says, its links and the
+elements the module uses, and never says "demo"
+(`web_page::tests::the_loading_page_shows_the_splash_and_says_what_it_is`);
+both builds fill in the module's size and the version
+(`web_page::tests::the_builds_fill_in_the_modules_size_and_the_version`).
+Checked in a browser with a stand-in module: the progress, the start, an
+error with the links kept, on a desktop and a phone-sized window.
 
 `TRACEDRAW_WEB_FONTS` (folders separated by `:`) points the build at the
 fonts to bundle; without it the usual Linux font folders are searched.

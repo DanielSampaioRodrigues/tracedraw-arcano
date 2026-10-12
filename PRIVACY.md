@@ -2,7 +2,7 @@
 
 TraceDraw is a vector editor that runs on your own computer. This policy
 covers the desktop program (installer, portable zip, Microsoft Store,
-macOS and Linux packages), `tracedraw-cli` and the browser demo.
+macOS and Linux packages), `tracedraw-cli` and the browser version.
 
 ## What TraceDraw collects
 
@@ -15,14 +15,14 @@ Drawing to send to the AI service you set up yourself (see below).
 
 - Your drawings, where you save them.
 - Preferences, the Shelf and thumbnails of recent drawings, in
-  TraceDraw's preferences folder (in the browser demo: the page's local
+  TraceDraw's preferences folder (in the browser version: the page's local
   storage in your browser). Deleting that folder removes them; Options >
   Global > Reset all settings puts the preferences back as they came.
 - Automatic backups of open drawings, in the folder set in Options > Save
   (by default a `TraceDraw` folder in your system's temporary folder).
 - AI Drawing's settings (service, address, model) with the preferences;
   your API key only if you tick "Remember the key on this computer", and
-  then in plain text in the preferences file (in the browser demo: the
+  then in plain text in the preferences file (in the browser version: the
   page's local storage). Otherwise the key is forgotten when TraceDraw
   closes.
 
@@ -49,14 +49,14 @@ Only when you ask it to:
   handles them under its own terms and privacy policy. TraceDraw has no
   AI service of its own and sends nothing to its authors.
 
-## The browser demo
+## The browser version
 
-The demo at <https://igtoth.github.io/tracedraw/> is a set of static
+The browser version at <https://igtoth.github.io/tracedraw/> is a set of static
 files served by GitHub Pages. TraceDraw itself sends nothing (AI Drawing
 aside, as above, from your browser to the service you set up); GitHub, as
 the host, may log visits as described in the
 [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
-Files you open in the demo stay in your browser.
+Files you open in it stay in your browser.
 
 ## Contact
 

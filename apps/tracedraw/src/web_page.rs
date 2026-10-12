@@ -35,14 +35,26 @@ mod tests {
         assert_eq!(escape_html("plain"), "plain");
     }
 
-    /// The loading page says what TraceDraw is before the editor is up,
-    /// links to the downloads and the code, and has the elements the
-    /// module and its loader use.
+    /// The loading page shows the splash screen of the desktop app (name,
+    /// tagline, status, progress bar, copyright and version), says what
+    /// TraceDraw is, links to the downloads and the code, and has the
+    /// elements the module and its loader use.
     #[test]
-    fn the_loading_page_says_what_it_is_and_where_to_go() {
+    fn the_loading_page_shows_the_splash_and_says_what_it_is() {
         for needed in [
+            // The splash: its artwork's colours, the name, the tagline,
+            // the footer.
+            "id=\"splash\"",
+            "#244475",
+            "#1a3158",
+            "#0e192d",
+            "#5caeff",
+            "Trace<tspan fill=\"#7fc3ff\">Draw</tspan>",
+            "Vector illustration editor",
+            "Ighor Toth and the TraceDraw contributors",
+            "v@VERSION@",
             // What it is, how ready it is, what it is made of and its terms.
-            "Open-source vector editor that opens .cdr files.",
+            "open-source vector editor that opens .cdr files",
             ">alpha<",
             "Written in Rust",
             "MIT or Apache-2.0",
@@ -59,6 +71,7 @@ mod tests {
             "id=\"loading\"",
             "id=\"loading-status\"",
             "id=\"loading-bar\"",
+            "id=\"loading-error\"",
             // The module's size for the progress, and the module itself.
             "data-wasm-size=\"0\"",
             "import init from \"./tracedraw.js\"",
@@ -67,16 +80,22 @@ mod tests {
         ] {
             assert!(PAGE.contains(needed), "the page lacks {needed:?}");
         }
+        // No word of a demo, and the house style.
+        assert!(!PAGE.to_lowercase().contains("demo"));
         assert!(!PAGE.contains('\u{2014}'));
     }
 
-    /// Both builds of the page fill in the module's size.
+    /// Both builds of the page fill in the module's size and the version.
     #[test]
-    fn the_builds_fill_in_the_modules_size() {
+    fn the_builds_fill_in_the_modules_size_and_the_version() {
         for (name, text) in [("scripts/web/build.sh", BUILD_SCRIPT), ("build.yml", CI)] {
             assert!(
                 text.contains("data-wasm-size=\\\"0\\\"") && text.contains("tracedraw_bg.wasm"),
                 "{name} does not fill in the module's size"
+            );
+            assert!(
+                text.contains("s/@VERSION@/"),
+                "{name} does not fill in the version"
             );
         }
     }

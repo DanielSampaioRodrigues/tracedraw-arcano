@@ -1536,17 +1536,7 @@ impl App {
                 }
             }
         }
-        if crate::files::WEB {
-            app.show_web_demo_notice();
-        }
         app
-    }
-
-    /// Each time the browser version opens: a message with what the demo
-    /// leaves out, the link to the desktop app and an OK button (the
-    /// loading page says no more than that TraceDraw is loading).
-    pub fn show_web_demo_notice(&mut self) {
-        self.dialog = crate::ui::dialogs::Dialog::WebDemo;
     }
 
     /// A new document with localised default page and layer names.
@@ -4314,18 +4304,6 @@ mod tests {
         assert!(carried_cmyk_profile(&doc).is_none());
         doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new("Junk", vec![1, 2, 3]));
         assert!(carried_cmyk_profile(&doc).is_none());
-    }
-
-    #[test]
-    fn the_browser_demo_message_shows_at_every_visit() {
-        let mut app = App::headless();
-        app.show_web_demo_notice();
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::WebDemo));
-        // OK closes it; the next visit (a new App) shows it again.
-        app.dialog = crate::ui::dialogs::Dialog::None;
-        let mut next = App::headless();
-        next.show_web_demo_notice();
-        assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::WebDemo));
     }
 
     #[test]

@@ -463,9 +463,6 @@ pub enum Dialog {
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
     ConfirmResetSettings,
-    /// The browser version, each time the page opens: what the demo
-    /// leaves out, with OK.
-    WebDemo,
     /// After a drawing opens: objects that could not be read, fonts that
     /// are not installed (Options > Global > Warnings).
     OpenNotes(OpenNotes),
@@ -1052,23 +1049,6 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 Some(_) => close = true,
                 None => {}
-            }
-        }
-        Dialog::WebDemo => {
-            let text = format!(
-                "{}\n\n{}",
-                tr("welcome.web_demo_title"),
-                tr("welcome.web_demo_text")
-            );
-            if crate::ui::chrome::message_box(
-                ctx,
-                crate::ui::chrome::MessageIcon::Info,
-                &text,
-                &[&tr("dialog.ok")],
-            )
-            .is_some()
-            {
-                close = true;
             }
         }
         Dialog::Export(st) => export_dialog(app, ctx, st, &mut close),
@@ -3618,7 +3598,6 @@ mod tests {
             Dialog::DocumentProperties,
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
-            Dialog::WebDemo,
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),

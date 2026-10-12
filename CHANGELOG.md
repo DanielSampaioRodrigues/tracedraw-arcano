@@ -15,11 +15,14 @@ full, row-by-row status.
   before). Text objects get numbers of their own and graphics a graphic
   style. These are the likeliest reasons written files closed the
   program that opened them.
-- The browser version's loading page says what TraceDraw is (an
+- The browser version loads behind the desktop app's splash screen on
+  the grey of the drawing window, with the download's progress in
+  megabytes and percent on its bar, and under it what TraceDraw is (an
   open-source vector editor that opens `.cdr` files, alpha, written in
-  Rust, MIT or Apache-2.0), which screens it suits, links to the desktop
-  downloads, the code and the issues, and shows the download's progress
-  in megabytes and percent.
+  Rust, MIT or Apache-2.0), which screens it suits and links to the
+  desktop downloads, the code and the issues. Once up it simply runs:
+  the demo message at the start, the menu bar's demo link and the
+  Welcome Screen's demo note are gone.
 - The `.cdr` issue form asks for the file's version and what the drawing
   uses (B-splines, lenses, live effects, pattern fills, paragraph
   settings, fitted text, pictures, pages).
