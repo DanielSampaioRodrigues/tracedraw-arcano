@@ -20,6 +20,7 @@ pub mod cursors;
 pub mod curve_edit;
 pub mod defaults_dialog;
 pub mod dialogs;
+pub mod dimension_bar;
 pub mod dockers;
 pub mod dockers2;
 pub mod effect_dialog;
@@ -574,6 +575,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     rulers::draw_origin_drag(app, &painter, canvas_rect);
     canvas::draw_effect_nodes(app, &painter);
     envelope_ui::draw_envelopes(app, &painter);
+    dimension_bar::draw_preview(app, &painter);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

@@ -8,8 +8,8 @@ use crate::i18n::tr;
 use crate::tools::Tool;
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
-    document::{Shape, ShapeKind, TextSpan},
-    geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
+    document::{Shape, ShapeKind},
+    geometry::{BezPath, Point, Rect, Shape as _, Vec2},
     shaping, Color, Command, Fill, ShapeId, Stroke,
 };
 
@@ -196,16 +196,7 @@ impl App {
                     }
                 }
             }
-            Tool::ParallelDimension => {
-                let p = self.snap_point(p);
-                if response.clicked_by(PointerButton::Primary) {
-                    self.dimension_points.push(p);
-                    if self.dimension_points.len() == 3 {
-                        let pts = std::mem::take(&mut self.dimension_points);
-                        self.create_dimension(pts[0], pts[1], pts[2]);
-                    }
-                }
-            }
+            Tool::ParallelDimension => self.dimension_input(response, p),
             Tool::Connector => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test_inside(p) {
@@ -580,79 +571,6 @@ impl App {
             let n = groups.len();
             self.selection = gids.into_iter().rev().take(n).collect();
         }
-    }
-
-    pub fn create_dimension(&mut self, a: Point, b: Point, offset_at: Point) {
-        let dir = (b - a).normalize();
-        let n = Vec2::new(-dir.y, dir.x);
-        let off = (offset_at - a).dot(n);
-        let (a2, b2) = (a + n * off, b + n * off);
-        let len = (b - a).hypot();
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let mut path = BezPath::new();
-        // Extension lines, dimension line and arrowheads.
-        for (p, q) in [(a, a2 + n * 2.0), (b, b2 + n * 2.0)] {
-            path.move_to(p);
-            path.line_to(q);
-        }
-        path.move_to(a2);
-        path.line_to(b2);
-        let arrow = |path: &mut BezPath, tip: Point, d: Vec2| {
-            let back = tip - d * 3.0;
-            path.move_to(tip);
-            path.line_to(back + n * 1.0);
-            path.line_to(back - n * 1.0);
-            path.close_path();
-        };
-        arrow(&mut path, a2, -dir);
-        arrow(&mut path, b2, dir);
-        let line_id = self.engine.new_shape_id();
-        let mut line = Shape::new(
-            line_id,
-            ShapeKind::Path {
-                path,
-                closed: false,
-            },
-        );
-        line.fill = Fill::Solid(Color::BLACK);
-        line.stroke = Some(Stroke::hairline(Color::BLACK));
-        let text_id = self.engine.new_shape_id();
-        let label = format!(
-            "{:.2} {}",
-            self.units.world_from_mm(len),
-            self.units.short()
-        );
-        let mid = a2.midpoint(b2) + n * 1.5;
-        let mut text = Shape::new(
-            text_id,
-            ShapeKind::Text {
-                spans: vec![TextSpan {
-                    text: label,
-                    ..TextSpan::new("", self.text_font.clone(), 10.0)
-                }],
-                origin: Point::ZERO,
-                frame: None,
-                align: tracedraw_core::TextAlign::Left,
-                para: Default::default(),
-                on_path: None,
-            },
-        );
-        let angle = dir.atan2();
-        text.transform = Affine::translate(mid.to_vec2())
-            * Affine::rotate(angle)
-            * Affine::translate((-len / 4.0, 0.0));
-        text.fill = Fill::Solid(Color::BLACK);
-        text.stroke = None;
-        let cmds = vec![
-            Command::AddShape { layer, shape: line },
-            Command::AddShape { layer, shape: text },
-            Command::Group {
-                shapes: vec![line_id, text_id],
-            },
-        ];
-        let _ = self.engine.run_batch("Dimension", &cmds);
     }
 
     pub fn finish_connector(&mut self, from: ShapeId, start: Point, at: Point) {

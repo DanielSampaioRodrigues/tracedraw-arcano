@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dimensions: the tools have a property bar (precision, units, show
+  units, prefix, suffix, text above, in or below the line, label size),
+  shown also when dimensions are selected, and changing it redraws them.
+  Dimensions are dynamic: scaled or skewed, they read the new length with
+  upright text. The label is centred (it sat a quarter of the length to
+  the left), extension lines run past the line on its side, and the one
+  being placed follows the pointer. Parallel and Horizontal or Vertical
+  take a drag as their hints said; Segment measures the segment clicked.
 - The shaping brushes have their own bars: Attract and Repel, Smudge and
   Roughen showed only their name and could not change the nib size.
   Smooth has a rate, Smear and Smudge a pressure, Twirl a speed and its

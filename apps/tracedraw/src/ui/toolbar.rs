@@ -636,6 +636,17 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Pick | Tool::FreeformPick
                 if shapes
                     .iter()
+                    .all(|s| crate::dimensions::Dimension::of(s).is_some()) =>
+            {
+                // Dimensions selected with the Pick tool: the object
+                // fields, then the dimension style.
+                object_properties(app, ui);
+                vsep(ui);
+                crate::ui::dimension_bar::dimension_bar(app, ui);
+            }
+            Tool::Pick | Tool::FreeformPick
+                if shapes
+                    .iter()
                     .all(|s| matches!(s.kind, ShapeKind::Bitmap { .. })) =>
             {
                 // Bitmaps selected with the Pick tool: the object fields,
@@ -1082,15 +1093,10 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .suffix("°"),
                 );
             }
-            Tool::ParallelDimension => {
-                let n = app.dimension_points.len();
-                let msg = match n {
-                    0 => tr("toolbar.dimension_first_point"),
-                    1 => tr("toolbar.dimension_second_point"),
-                    _ => tr("toolbar.dimension_place_line"),
-                };
-                ui.label(egui::RichText::new(msg).color(Tokens::TEXT_DIM).size(11.0));
-            }
+            Tool::ParallelDimension
+            | Tool::HorizontalVerticalDimension
+            | Tool::SegmentDimension
+            | Tool::AngularDimension => crate::ui::dimension_bar::dimension_bar(app, ui),
             Tool::Connector => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.drag_between_objects"))

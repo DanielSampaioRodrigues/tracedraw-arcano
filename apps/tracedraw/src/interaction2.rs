@@ -113,35 +113,8 @@ impl App {
                     }
                 }
             }
-            Tool::HorizontalVerticalDimension | Tool::SegmentDimension => {
-                let p = self.snap_point(p);
-                if response.clicked_by(PointerButton::Primary) {
-                    self.dimension_points.push(p);
-                    if self.dimension_points.len() == 3 {
-                        let pts = std::mem::take(&mut self.dimension_points);
-                        let (a, b) = if self.tool == Tool::HorizontalVerticalDimension {
-                            // Snap to the dominant axis.
-                            if (pts[1].x - pts[0].x).abs() >= (pts[1].y - pts[0].y).abs() {
-                                (pts[0], Point::new(pts[1].x, pts[0].y))
-                            } else {
-                                (pts[0], Point::new(pts[0].x, pts[1].y))
-                            }
-                        } else {
-                            (pts[0], pts[1])
-                        };
-                        self.create_dimension(a, b, pts[2]);
-                    }
-                }
-            }
-            Tool::AngularDimension => {
-                let p = self.snap_point(p);
-                if response.clicked_by(PointerButton::Primary) {
-                    self.dimension_points.push(p);
-                    if self.dimension_points.len() == 4 {
-                        let pts = std::mem::take(&mut self.dimension_points);
-                        self.create_angular_dimension(pts[0], pts[1], pts[2], pts[3]);
-                    }
-                }
+            Tool::HorizontalVerticalDimension | Tool::SegmentDimension | Tool::AngularDimension => {
+                self.dimension_input(response, p)
             }
             Tool::Callout => {
                 let p = self.snap_point(p);
@@ -506,72 +479,6 @@ impl App {
         }) {
             self.select(vec![id]);
         }
-    }
-
-    pub fn create_angular_dimension(&mut self, center: Point, a: Point, b: Point, label_at: Point) {
-        let a0 = (a - center).atan2();
-        let a1 = (b - center).atan2();
-        let mut sweep = a1 - a0;
-        if sweep < 0.0 {
-            sweep += std::f64::consts::TAU;
-        }
-        let r = (label_at - center).hypot().max(1.0);
-        let mut path = BezPath::new();
-        path.move_to(center);
-        path.line_to(center + Vec2::new(a0.cos(), a0.sin()) * (r + 2.0));
-        path.move_to(center);
-        path.line_to(center + Vec2::new(a1.cos(), a1.sin()) * (r + 2.0));
-        let n = 24;
-        for i in 0..=n {
-            let t = a0 + sweep * i as f64 / n as f64;
-            let q = center + Vec2::new(t.cos(), t.sin()) * r;
-            if i == 0 {
-                path.move_to(q);
-            } else {
-                path.line_to(q);
-            }
-        }
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let id = self.engine.new_shape_id();
-        let mut line = Shape::new(
-            id,
-            ShapeKind::Path {
-                path,
-                closed: false,
-            },
-        );
-        line.fill = Fill::None;
-        line.stroke = Some(Stroke::hairline(Color::BLACK));
-        let tid = self.engine.new_shape_id();
-        let mid = a0 + sweep / 2.0;
-        let lp = center + Vec2::new(mid.cos(), mid.sin()) * (r + 3.0);
-        let mut text = Shape::new(
-            tid,
-            ShapeKind::Text {
-                spans: vec![tracedraw_core::TextSpan::new(
-                    format!("{:.1}°", sweep.to_degrees()),
-                    self.text_font.clone(),
-                    10.0,
-                )],
-                origin: lp,
-                frame: None,
-                align: tracedraw_core::TextAlign::Left,
-                para: Default::default(),
-                on_path: None,
-            },
-        );
-        text.fill = Fill::Solid(Color::BLACK);
-        text.stroke = None;
-        let cmds = vec![
-            Command::AddShape { layer, shape: line },
-            Command::AddShape { layer, shape: text },
-            Command::Group {
-                shapes: vec![id, tid],
-            },
-        ];
-        let _ = self.engine.run_batch("Angular Dimension", &cmds);
     }
 
     pub fn create_callout(&mut self, tip: Point, elbow: Point, text_at: Point) {

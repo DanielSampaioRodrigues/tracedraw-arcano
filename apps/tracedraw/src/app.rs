@@ -982,6 +982,13 @@ pub struct App {
     pub brush: crate::ui::brush_bars::BrushSettings,
     /// A step of the brush stroke under way is on the undo list.
     pub brush_stepped: bool,
+    /// The style new dimensions take (the dimension tools' bar).
+    pub dimension_style: crate::dimensions::DimensionStyle,
+    /// The document revision dimensions were last checked at for moves
+    /// to bake (see [`App::bake_dimensions`]).
+    pub dimensions_checked: u64,
+    /// A linear dimension's first point was given by pressing to drag.
+    pub dimension_dragging: bool,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1586,6 +1593,9 @@ impl App {
             roughen_amount: 2.0,
             brush: Default::default(),
             brush_stepped: false,
+            dimension_style: Default::default(),
+            dimensions_checked: u64::MAX,
+            dimension_dragging: false,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,
@@ -2003,6 +2013,7 @@ impl App {
             brush_radius: self.brush_radius,
             roughen_amount: self.roughen_amount,
             brush: self.brush,
+            dimension_style: self.dimension_style.clone(),
         }
     }
 
@@ -2056,6 +2067,11 @@ impl App {
         self.brush_radius = finite(t.brush_radius, 0.5, 500.0, 10.0);
         self.roughen_amount = finite(t.roughen_amount, 0.05, 50.0, 2.0);
         self.brush = t.brush.clamped();
+        self.dimension_style = crate::dimensions::DimensionStyle {
+            precision: t.dimension_style.precision.min(6),
+            text_size: finite(t.dimension_style.text_size, 1.0, 500.0, 10.0),
+            ..t.dimension_style.clone()
+        };
     }
 
     /// What the drawing window shows now (see

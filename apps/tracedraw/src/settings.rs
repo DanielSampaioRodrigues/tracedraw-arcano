@@ -661,6 +661,8 @@ pub struct ToolPrefs {
     pub brush_radius: f64,
     pub roughen_amount: f64,
     pub brush: crate::ui::brush_bars::BrushSettings,
+    /// The style new dimensions take.
+    pub dimension_style: crate::dimensions::DimensionStyle,
 }
 
 impl Default for ToolPrefs {
@@ -701,6 +703,7 @@ impl Default for ToolPrefs {
             brush_radius: 10.0,
             roughen_amount: 2.0,
             brush: Default::default(),
+            dimension_style: Default::default(),
         }
     }
 }

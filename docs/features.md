@@ -41,7 +41,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve; lines from an end node of the selected curve continue it (join, close, merge subpaths); Freehand smoothing; outline, arrowheads and Close Curve on the property bar | works (see `behavior/curve-tools.md`) |
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
-| Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
+| Dimensions: parallel, horizontal/vertical, angular, segment (a click on a segment), 3-point callout; live preview; the bar's precision, units, prefix, suffix, text position and size; dynamic (drawn again when moved or scaled) (see `behavior/dimensions.md`) | works |
 | Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
 | Text (artistic and paragraph), Table | works |
 | Browser version (WebAssembly, WebGL 2): opens, edits and exports documents with uploads and downloads | works |

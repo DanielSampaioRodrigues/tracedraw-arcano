@@ -29,6 +29,7 @@ mod corners;
 mod curve_join;
 mod defaults;
 mod describe;
+mod dimensions;
 mod documents;
 mod drawing_scale;
 mod drop_menu;
@@ -258,6 +259,8 @@ impl eframe::App for Shell {
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         ui::root(app, ui);
+        // Dimensions moved or scaled this frame show their new values.
+        app.bake_dimensions();
         #[cfg(not(target_arch = "wasm32"))]
         splash::remember_window(ui.ctx(), &mut app.settings);
         // Preferences changed this frame last without waiting for the
