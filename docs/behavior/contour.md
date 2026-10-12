@@ -1,30 +1,67 @@
 # Contour
 
-Concentric copies of an object's outline, inside, outside or to centre.
+Concentric copies of an object's outline, inside, outside or to the
+centre, as a live effect (`Effect::Contour`): the object keeps its own
+outline and the steps are drawn from it, so the contour can be changed or
+cleared at any time. The tool is `contour_tool.rs`; its bar and the
+Contour panel share the controls in `ui/contour_bar.rs`.
 
 | Control | Default | Range |
 |---|---|---|
-| Direction | Outside | To centre, Inside, Outside |
-| Steps | 1 | 1..999 (to centre: computed) |
-| Offset | 1.0 mm | 0.001..300 mm |
-| Outline colour, fill colour | object's | |
-| Colour blend | direct | direct, clockwise, counter-clockwise (HSB) |
-| Corner type | Mitered | Mitered, Round, Bevel |
+| To centre, Inside, Outside | Outside | |
+| Steps | 3 | 1 to 999 (to centre: as many as fit) |
+| Offset | 2 mm | 0.001 to 1000 mm, between steps |
+| Corners | Mitred | Mitred, Round, Bevelled |
+| Colour direction | Direct | Direct, Clockwise, Counterclockwise (through the hues) |
+| Last step's fill and outline colours | white, black | |
+| Object acceleration, colour acceleration | 0 % | -100 to 100 % |
 
-Shortcut: Ctrl+F9 opens the Contour panel. Interactive: drag outward
-from the object for outside, inward for inside; the drag distance sets
-`steps * offset`.
+Ctrl+F9 opens the Contour panel.
 
 ## Formulas
 
-Step `i` (1-based) is the Minkowski offset of the source path by
-`sign * i * offset` (polygon offset with the chosen join); for "to
-centre" steps continue until the offset path is empty. Colours step
-linearly from the object colour to the end colour over `steps`.
+- With `n` steps, step `i` (1 to `n`) is the object's outline offset by
+  `n * offset * accelerate(i / n, objects)`: outward for Outside, inward
+  for Inside. To centre: inward by `i * offset` until nothing is left.
+- `accelerate(t, a) = t ^ (4 ^ a)`: 0 spaces the steps evenly, positive
+  values pack them toward the object, negative ones toward the last
+  step.
+- Corners: the offset outline's corners are mitred (sharp; corners under
+  about 9 degrees are cut off), round, or bevelled. Contours from older
+  files, which have no corner setting, are round.
+- Colours: step `i` of the `n` drawn takes `accelerate(i / n, colours)`
+  of the way from the object's fill (and outline) colour to the last
+  step's colours, mixed directly or through the hues clockwise or
+  counterclockwise. An object without fill gives unfilled steps.
+- Outside steps are drawn behind the object, farthest first; inside
+  steps in front of it, outermost first.
+
+## The tool
+
+- A drag starting on an object (inside it counts, filled or not): away
+  from the object's middle gives an outside contour, toward it an
+  inside one (To centre stays to centre); the distance from the start
+  is `steps * offset` (the steps kept, the offset following). The
+  contour is drawn live while dragging; one undo step.
+- A click selects the object under the pointer (or nothing). Groups and
+  bitmaps get no contour.
+
+## Property bar and panel
+
+- The controls show the selected object's contour and edit the selected
+  contours live (a run of changes is one undo step). Apply (shown when
+  a selected object has no contour) adds the contour; Clear Contour
+  removes it; Break Apart turns the steps into objects.
+- The values are kept in the preferences (`tools.contour`).
 
 ## Checks
 
-- Given a 50 mm square, outside, 3 steps, 2 mm, then step 3 is a
-  62 mm square (mitered) and its fill is the end colour.
-- Given inside, to centre, offset 5 on a 20 mm square, then 2 steps
-  are produced (10 mm and 0 mm).
+- `live::tests::contour_outside_three_steps`
+- `shaping::tests::offset_corners_are_mitred_round_or_bevelled`
+- `contour_tool::tests::a_drag_draws_a_live_contour`
+- `contour_tool::tests::the_bar_edits_the_selected_contour`
+- `ui::contour_bar::tests::the_bar_and_the_panel_draw`
+- Given a 20 mm square, outside, 3 steps of 2 mm, mitred, then the
+  outermost step is a 32 mm square and its fill is the end colour.
+- Given a 10 mm square offset by 2 mm, then the area is 196 mm2 mitred,
+  `180 + 4 pi` round and 188 bevelled.

@@ -96,16 +96,45 @@ pub fn overlay_parts(subject: &BezPath, clip: &BezPath, op: Op) -> Vec<BezPath> 
         .collect()
 }
 
+/// How an offset outline turns its corners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Join {
+    /// Sharp, the sides run on until they meet (very sharp corners, under
+    /// about 9 degrees, are cut off).
+    #[default]
+    Miter,
+    Round,
+    /// Cut off straight.
+    Bevel,
+}
+
+/// The smallest corner a mitred join keeps sharp, radians.
+const MITER_MIN: f64 = 0.15;
+
 /// Offset a closed path outward (positive) or inward (negative) by `d` mm,
 /// with round corners. Used by Contour and outline-to-object.
 pub fn offset(path: &BezPath, d: f64) -> BezPath {
+    offset_with(path, d, Join::Round)
+}
+
+/// Offset a closed path outward (positive) or inward (negative) by `d` mm,
+/// the corners turned as `join` says.
+pub fn offset_with(path: &BezPath, d: f64, join: Join) -> BezPath {
     use i_overlay::float::simplify::SimplifyShape;
     use i_overlay::mesh::float::outline::offset::OutlineOffset;
     use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    if !d.is_finite() {
+        return BezPath::new();
+    }
     let subj = contours(path);
     // Simplify guarantees orientation (outer CCW, holes CW) and no self-intersections.
     let clean = subj.simplify_shape(IFill::EvenOdd);
-    let style = OutlineStyle::new(d).line_join(LineJoin::Round(0.05));
+    let style = OutlineStyle::new(d).line_join(match join {
+        Join::Miter => LineJoin::Miter(MITER_MIN),
+        Join::Round => LineJoin::Round(0.05),
+        Join::Bevel => LineJoin::Bevel,
+    });
     let out = clean.outline(&style);
     from_shapes(out)
 }
@@ -131,7 +160,7 @@ pub fn stroke_band(points: &[Point], width: f64, square: bool) -> BezPath {
     let pts: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
     let style = if square {
         StrokeStyle::new(width)
-            .line_join(LineJoin::Miter(4.0))
+            .line_join(LineJoin::Miter(MITER_MIN))
             .start_cap(LineCap::Square)
             .end_cap(LineCap::Square)
     } else {
@@ -295,6 +324,30 @@ mod tests {
             (b.x0 - 2.0).abs() < 0.05 && (b.x1 - 8.0).abs() < 0.05,
             "{b:?}"
         );
+    }
+
+    #[test]
+    fn offset_corners_are_mitred_round_or_bevelled() {
+        let area = |j: Join| offset_with(&square(0.0), 2.0, j).area().abs();
+        assert!(
+            (area(Join::Miter) - 196.0).abs() < 0.2,
+            "{}",
+            area(Join::Miter)
+        );
+        let round = 180.0 + std::f64::consts::PI * 4.0;
+        assert!(
+            (area(Join::Round) - round).abs() < 0.3,
+            "{}",
+            area(Join::Round)
+        );
+        assert!(
+            (area(Join::Bevel) - 188.0).abs() < 0.2,
+            "{}",
+            area(Join::Bevel)
+        );
+        assert!(offset_with(&square(0.0), f64::NAN, Join::Miter)
+            .elements()
+            .is_empty());
     }
 
     #[test]

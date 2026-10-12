@@ -642,8 +642,8 @@ impl App {
             }
             Tool::InteractiveFill => self.fill_input(response, p),
             Tool::Crop => self.crop_input(response, p),
-            Tool::Contour
-            | Tool::Knife
+            Tool::Contour => self.contour_input(response, p),
+            Tool::Knife
             | Tool::Spiral
             | Tool::CommonShapes
             | Tool::Table

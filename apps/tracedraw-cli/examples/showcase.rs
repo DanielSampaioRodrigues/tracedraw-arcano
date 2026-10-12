@@ -237,6 +237,9 @@ fn poster(dir: &Path) -> Document {
         fill_to: hex("#EE8F86"),
         outline_to: None,
         color_blend: 0,
+        corners: None,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
     });
     b.add(sun, "Sun");
     for (i, (x, y, s)) in [(52.0, 214.0, 1.0), (61.0, 208.0, 0.75), (148.0, 222.0, 0.9)]
@@ -523,6 +526,9 @@ fn effects(dir: &Path) {
         fill_to: hex("#FF3D7F"),
         outline_to: None,
         color_blend: 0,
+        corners: None,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
     });
     b.add(sq, "Contour");
 

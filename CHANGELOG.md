@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Contour: the tool's drag draws a live contour (outside when dragged
+  away from the object's middle, inside toward it); its bar used to wait
+  for Apply and then made a static group of copies. The bar and the
+  Contour panel share the controls: To centre, Inside, Outside, steps,
+  offset, the corners (mitred, round or bevelled, round only before),
+  the colour direction, the end colours and object and colour
+  accelerations. To centre now spreads the colours over all its steps.
 - Object > Copy Effect copies perspective, distortion, extrusion,
   contour, blend settings, lens, bevel and block shadow besides drop
   shadow, transparency and envelope; a distortion's centre, a

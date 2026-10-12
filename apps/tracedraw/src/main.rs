@@ -27,6 +27,7 @@ mod clone_effect;
 mod color_drop;
 mod common_shapes;
 mod connectors;
+mod contour_tool;
 mod coords;
 mod copy_effect;
 mod corners;

@@ -1848,6 +1848,9 @@ mod tests {
             fill_to: Color::rgb8(0, 0, 255),
             outline_to: None,
             color_blend: 0,
+            corners: None,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
         });
         let (doc, page) = doc_with(vec![s]);
         let pm = render_page_image(&doc, page, 25.4).unwrap();

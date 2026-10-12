@@ -10,14 +10,8 @@ use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{BezPath, Point, Rect, Shape as _, Vec2},
-    shaping, Color, Command, Fill, ShapeId, Stroke,
+    shaping, Command, Fill, ShapeId, Stroke,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContourDirection {
-    Inside,
-    Outside,
-}
 
 pub use crate::common_shapes::CommonShape;
 
@@ -113,35 +107,6 @@ pub fn calligraphic_path(points: &[Point], width: f64, angle_deg: f64) -> BezPat
 impl App {
     pub fn tools2_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         match self.tool {
-            Tool::Contour => {
-                if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
-                        self.select(vec![id]);
-                        self.drag = Drag::ContourDrag { start: p };
-                    }
-                }
-                if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::ContourDrag { start, .. } = self.drag {
-                        let d = (p - start).hypot();
-                        self.contour_offset = (d / self.contour_steps.max(1) as f64).max(0.1);
-                        self.contour_direction = if self
-                            .selection_bounds()
-                            .map(|b| b.contains(p))
-                            .unwrap_or(false)
-                        {
-                            ContourDirection::Inside
-                        } else {
-                            ContourDirection::Outside
-                        };
-                    }
-                }
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => self.select(vec![id]),
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
             Tool::Knife if self.knife.mode == crate::knife::KnifeMode::Freehand => {
                 if response.drag_started_by(PointerButton::Primary) {
                     self.drag = Drag::Freehand { points: vec![p] };
@@ -359,94 +324,6 @@ impl App {
         }
     }
 
-    /// Cut objects along a line into two pieces each.
-    pub fn apply_contour(&mut self) {
-        let shapes = self.selected_shapes();
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let steps = self.contour_steps.max(1);
-        let mut cmds = Vec::new();
-        let mut groups = Vec::new();
-        for s in shapes {
-            if matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }) {
-                continue;
-            }
-            let base = s.page_path();
-            let from = match &s.fill {
-                Fill::Solid(c) => *c,
-                _ => Color::WHITE,
-            };
-            let to = self.contour_color;
-            let sign = if self.contour_direction == ContourDirection::Outside {
-                1.0
-            } else {
-                -1.0
-            };
-            let mut ids = vec![s.id];
-            let (_, idx) = self.doc().locate(s.id).unwrap_or((layer, 0));
-            let mut new_shapes = Vec::new();
-            for i in 1..=steps {
-                let d = sign * self.contour_offset * i as f64;
-                let path = shaping::offset(&base, d);
-                if path.elements().is_empty() {
-                    break;
-                }
-                let t = i as f32 / steps as f32;
-                let color = lerp_color(from, to, t);
-                let id = self.engine.new_shape_id();
-                let mut c = Shape::new(id, ShapeKind::Path { path, closed: true });
-                c.fill = Fill::Solid(color);
-                c.stroke = s.stroke.clone().map(|mut st| {
-                    st.color = color;
-                    st
-                });
-                c.opacity = s.opacity;
-                ids.push(id);
-                new_shapes.push(c);
-            }
-            // Outside contours go behind the object (outermost first); inside ones on top.
-            let outside = self.contour_direction == ContourDirection::Outside;
-            for (k, c) in new_shapes.into_iter().enumerate() {
-                let cid = c.id;
-                cmds.push(Command::AddShape { layer, shape: c });
-                let index = if outside {
-                    idx.saturating_sub(0)
-                } else {
-                    idx + 1 + k
-                };
-                cmds.push(Command::Reorder {
-                    shape: cid,
-                    layer,
-                    index,
-                });
-            }
-            groups.push(ids);
-        }
-        if cmds.is_empty() {
-            return;
-        }
-        for g in &groups {
-            cmds.push(Command::Group { shapes: g.clone() });
-        }
-        if let Err(e) = self.engine.run_batch("Contour", &cmds) {
-            self.status = e.to_string();
-        }
-        // Select the resulting groups.
-        let doc = self.doc();
-        if let Ok(p) = doc.page(self.page) {
-            let gids: Vec<ShapeId> = p
-                .layers
-                .iter()
-                .flat_map(|l| &l.shapes)
-                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
-                .map(|s| s.id)
-                .collect();
-            let n = groups.len();
-            self.selection = gids.into_iter().rev().take(n).collect();
-        }
-    }
-
     /// The Connector tool's drop: a straight connector to the object under
     /// the drop.
     pub fn finish_connector(&mut self, from: ShapeId, start: Point, at: Point) {
@@ -549,13 +426,6 @@ impl App {
             self.select(ids);
         }
     }
-}
-
-fn lerp_color(a: Color, b: Color, t: f32) -> Color {
-    let [r1, g1, b1] = a.to_rgb8();
-    let [r2, g2, b2] = b.to_rgb8();
-    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    Color::rgb8(l(r1, r2), l(g1, g2), l(b1, b2))
 }
 
 /// Flattened subpaths of a page path as point lists with a closed flag.

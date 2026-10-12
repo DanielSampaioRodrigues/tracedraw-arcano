@@ -679,10 +679,9 @@ pub struct App {
     /// corner only.
     pub rect_corner_selected: Option<(tracedraw_core::ShapeId, usize)>,
     pub ellipse_arc: Option<tracedraw_core::EllipseArc>,
-    pub contour_steps: u32,
-    pub contour_offset: f64,
-    pub contour_direction: crate::tools2::ContourDirection,
-    pub contour_color: Color,
+    /// The Contour tool's and panel's values and the tool's drag.
+    pub contour: crate::contour_tool::ContourSettings,
+    pub contour_drag: Option<crate::contour_tool::ContourDrag>,
     pub spiral_revolutions: u32,
     pub spiral_logarithmic: bool,
     pub common_shape: crate::tools2::CommonShape,
@@ -1432,10 +1431,8 @@ impl App {
             corners_together: true,
             rect_corner_selected: None,
             ellipse_arc: None,
-            contour_steps: 3,
-            contour_offset: 2.0,
-            contour_direction: crate::tools2::ContourDirection::Outside,
-            contour_color: Color::WHITE,
+            contour: Default::default(),
+            contour_drag: None,
             spiral_revolutions: 4,
             spiral_logarithmic: false,
             common_shape: crate::tools2::CommonShape::RightArrow,
@@ -2039,8 +2036,7 @@ impl App {
             graph_rows: self.graph_rows,
             graph_cols: self.graph_cols,
             blend_steps: self.blend_steps,
-            contour_steps: self.contour_steps,
-            contour_offset: self.contour_offset,
+            contour: self.contour,
             eraser_width: self.eraser_width,
             eraser_square: self.eraser_square,
             text_font: self.text_font.clone(),
@@ -2098,8 +2094,7 @@ impl App {
         self.graph_rows = t.graph_rows.clamp(1, 1000);
         self.graph_cols = t.graph_cols.clamp(1, 1000);
         self.blend_steps = t.blend_steps.clamp(1, 999);
-        self.contour_steps = t.contour_steps.clamp(1, 999);
-        self.contour_offset = finite(t.contour_offset, 0.001, 1000.0, 2.0);
+        self.contour = t.contour.clamped();
         self.eraser_width = finite(t.eraser_width, 0.025, 2540.0, 6.35);
         self.eraser_square = t.eraser_square;
         if !t.text_font.trim().is_empty() {

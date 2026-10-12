@@ -25,6 +25,15 @@ pub enum Effect {
         outline_to: Option<Color>,
         /// 0 = direct RGB, 1 = clockwise HSB, 2 = counter-clockwise HSB.
         color_blend: u8,
+        /// How the steps turn their corners; older files have none (round).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corners: Option<crate::shaping::Join>,
+        /// Acceleration of the steps' spacing and of their colours, -1 to
+        /// 1 (0: even).
+        #[serde(default, skip_serializing_if = "is_zero")]
+        accel_objects: f64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        accel_colors: f64,
     },
     /// Intermediate objects between this shape and `end`.
     Blend {
@@ -476,16 +485,24 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 fill_to,
                 outline_to,
                 color_blend,
+                corners,
+                accel_objects,
+                accel_colors,
             } => {
                 let shapes = contour(
                     &main,
-                    *steps,
-                    *offset,
-                    *outside,
-                    *to_center,
-                    *fill_to,
-                    *outline_to,
-                    *color_blend,
+                    &ContourParams {
+                        steps: *steps,
+                        offset: *offset,
+                        outside: *outside,
+                        to_center: *to_center,
+                        fill_to: *fill_to,
+                        outline_to: *outline_to,
+                        color_blend: *color_blend,
+                        corners: corners.unwrap_or(crate::shaping::Join::Round),
+                        accel_objects: *accel_objects,
+                        accel_colors: *accel_colors,
+                    },
                 );
                 if *outside {
                     // Outermost first so the object stays on top.
@@ -630,49 +647,93 @@ fn mix(a: Color, b: Color, t: f64, mode: u8) -> Color {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn contour(
-    shape: &Shape,
-    steps: u32,
-    offset: f64,
-    outside: bool,
-    to_center: bool,
-    fill_to: Color,
-    outline_to: Option<Color>,
-    color_blend: u8,
-) -> Vec<Shape> {
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
+/// What a contour is drawn from.
+pub struct ContourParams {
+    pub steps: u32,
+    pub offset: f64,
+    pub outside: bool,
+    pub to_center: bool,
+    pub fill_to: Color,
+    pub outline_to: Option<Color>,
+    pub color_blend: u8,
+    pub corners: crate::shaping::Join,
+    pub accel_objects: f64,
+    pub accel_colors: f64,
+}
+
+/// `t` (0 to 1) bent by an acceleration `a` (-1 to 1): `t ^ 4^a`, so a
+/// positive acceleration packs the steps toward the start and a negative
+/// one toward the end.
+pub fn accelerate(t: f64, a: f64) -> f64 {
+    let a = if a.is_finite() {
+        a.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    t.clamp(0.0, 1.0).powf(4f64.powf(a))
+}
+
+/// The most steps a contour draws.
+const MAX_CONTOUR_STEPS: u32 = 999;
+
+/// The contour steps of `shape`: step `i` of `n` is its outline offset by
+/// `n * offset * accelerate(i / n, accel_objects)` (to the centre: by
+/// `i * offset` until nothing is left), coloured `accelerate(i / n,
+/// accel_colors)` of the way to the end colours.
+fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
     let base = shape.local_path();
     let from_fill = shape.fill.preview_color().unwrap_or(Color::WHITE);
     let from_outline = shape.stroke.as_ref().map(|s| s.color);
-    let n = if to_center { 999 } else { steps.max(1) };
-    let sign = if outside { 1.0 } else { -1.0 };
-    let mut out = Vec::new();
-    for i in 1..=n {
-        let p = crate::shaping::offset(&base, sign * offset * i as f64);
-        if p.elements().is_empty() {
-            break;
+    let sign = if p.outside && !p.to_center { 1.0 } else { -1.0 };
+    let offset = if p.offset.is_finite() {
+        p.offset.abs().max(1e-3)
+    } else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    if p.to_center {
+        for i in 1..=MAX_CONTOUR_STEPS {
+            let q = crate::shaping::offset_with(&base, sign * offset * i as f64, p.corners);
+            if q.elements().is_empty() {
+                break;
+            }
+            paths.push(q);
         }
-        let t = if to_center {
-            (i as f64 / 20.0).min(1.0)
-        } else {
-            i as f64 / n as f64
-        };
-        let mut s = shape.clone();
-        s.effects.clear();
-        s.shadow = None;
-        s.kind = ShapeKind::Path {
-            path: p,
-            closed: true,
-        };
-        if !matches!(shape.fill, Fill::None) {
-            s.fill = Fill::Solid(mix(from_fill, fill_to, t, color_blend));
+    } else {
+        let n = p.steps.clamp(1, MAX_CONTOUR_STEPS);
+        let total = offset * n as f64;
+        for i in 1..=n {
+            let d = total * accelerate(i as f64 / n as f64, p.accel_objects);
+            let q = crate::shaping::offset_with(&base, sign * d, p.corners);
+            if q.elements().is_empty() {
+                break;
+            }
+            paths.push(q);
         }
-        if let (Some(st), Some(from)) = (&mut s.stroke, from_outline) {
-            st.color = mix(from, outline_to.unwrap_or(fill_to), t, color_blend);
-        }
-        out.push(s);
     }
-    out
+    let n = paths.len().max(1) as f64;
+    paths
+        .into_iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let t = accelerate((i + 1) as f64 / n, p.accel_colors);
+            let mut s = shape.clone();
+            s.effects.clear();
+            s.shadow = None;
+            s.kind = ShapeKind::Path { path, closed: true };
+            if !matches!(shape.fill, Fill::None) {
+                s.fill = Fill::Solid(mix(from_fill, p.fill_to, t, p.color_blend));
+            }
+            if let (Some(st), Some(from)) = (&mut s.stroke, from_outline) {
+                st.color = mix(from, p.outline_to.unwrap_or(p.fill_to), t, p.color_blend);
+            }
+            s
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1110,12 +1171,49 @@ mod tests {
             fill_to: Color::WHITE,
             outline_to: None,
             color_blend: 0,
+            corners: Some(crate::shaping::Join::Miter),
+            accel_objects: 0.0,
+            accel_colors: 0.0,
         });
         let ev = evaluate(&s);
         assert_eq!(ev.below.len(), 3);
         let outer = ev.below[0].bounds();
         assert!((outer.width() - 32.0).abs() < 0.5, "{outer:?}");
         assert_eq!(ev.below[0].fill, Fill::Solid(Color::WHITE));
+        // Mitred: the outermost step is a full square.
+        let area = ev.below[0].local_path().area().abs();
+        assert!((area - 32.0 * 32.0).abs() < 1.0, "{area}");
+        // Accelerated: the first step lies nearer the object.
+        if let Some(Effect::Contour { accel_objects, .. }) = s.effects.last_mut() {
+            *accel_objects = 1.0;
+        }
+        let ev = evaluate(&s);
+        let first = ev.below[2].bounds().width();
+        assert!(first < 22.0 && first > 20.0, "{first}");
+        // To the centre: steps until nothing is left, the last in the
+        // end colour.
+        let mut c = rect_shape();
+        c.fill = Fill::Solid(Color::BLACK);
+        c.effects.push(Effect::Contour {
+            steps: 1,
+            offset: 2.0,
+            outside: false,
+            to_center: true,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: None,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        });
+        let ev = evaluate(&c);
+        assert!(ev.above.len() >= 4, "{}", ev.above.len());
+        assert_eq!(
+            ev.above.last().map(|s| s.fill.clone()),
+            Some(Fill::Solid(Color::WHITE))
+        );
+        assert!((accelerate(0.5, 0.0) - 0.5).abs() < 1e-12);
+        assert!(accelerate(0.5, 1.0) < 0.1 && accelerate(0.5, -1.0) > 0.8);
     }
 
     #[test]

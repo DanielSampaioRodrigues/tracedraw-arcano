@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; New Window and system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 182, partial 2 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels), missing 2 (CMX import; New Window and system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -122,7 +122,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Capability | Status |
 |---|---|
 | Drop shadow (offset, opacity, feather, colour), live | works |
-| Contour (steps, offset, direction, colour blend), live | works |
+| Contour (to centre, inside, outside; steps, offset, mitred, round or bevelled corners, colour direction, end colours, object and colour accelerations), live; the tool's drag and bar edit it like the panel (see `behavior/contour.md`) | works |
 | Blend (steps, rotation, accelerations, path), live, both objects kept and the steps following either (see `behavior/blend.md`) | works |
 | Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the centre marker dragged, the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |
 | Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |

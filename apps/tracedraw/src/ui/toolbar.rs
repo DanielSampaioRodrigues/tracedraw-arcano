@@ -782,62 +782,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::AttractRepel
             | Tool::Smudge
             | Tool::Roughen => crate::ui::brush_bars::brush_bar(app, ui),
-            Tool::Contour => {
-                use crate::tools2::ContourDirection;
-                ui.label(
-                    egui::RichText::new(tr("docker.contour"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                for (d, n) in [
-                    (ContourDirection::Inside, tr("docker.inside")),
-                    (ContourDirection::Outside, tr("docker.outside")),
-                ] {
-                    if ui.selectable_label(app.contour_direction == d, n).clicked() {
-                        app.contour_direction = d;
-                    }
-                }
-                ui.label(
-                    egui::RichText::new(tr("docker.steps"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.contour_steps).range(1..=50));
-                ui.label(
-                    egui::RichText::new(tr("docker.offset"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut app.contour_offset)
-                        .speed(0.1)
-                        .range(0.05..=200.0)
-                        .suffix(" mm"),
-                );
-                let [r, g, b] = app.contour_color.to_rgb8();
-                let mut rgb = [r, g, b];
-                if ui
-                    .color_edit_button_srgb(&mut rgb)
-                    .on_hover_text(tr("toolbar.outermost_contour_color"))
-                    .changed()
-                {
-                    app.contour_color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
-                }
-                vsep(ui);
-                if ui
-                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
-                    .clicked()
-                {
-                    app.apply_contour();
-                }
-                if shapes.is_empty() {
-                    ui.label(
-                        egui::RichText::new(tr("toolbar.contour_hint"))
-                            .color(Tokens::TEXT_DIM)
-                            .size(11.0),
-                    );
-                }
-            }
+            Tool::Contour => crate::ui::contour_bar::contour_bar(app, ui),
             Tool::Crop => crate::ui::crop_bar::crop_bar(app, ui),
             Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),
             Tool::SegmentDelete => {

@@ -282,6 +282,9 @@ mod tests {
                     fill_to: tracedraw_core::Color::BLACK,
                     outline_to: None,
                     color_blend: 0,
+                    corners: None,
+                    accel_objects: 0.0,
+                    accel_colors: 0.0,
                 },
             ],
         });
