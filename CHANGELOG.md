@@ -6,6 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening .cdr files: letters beyond Latin-1 (Czech, Polish, Turkish and
+  other accented letters) in text of version 17 and later files read
+  right; they showed as boxes and could break lines in the middle of a
+  word. CMYK pictures show their own colours, converted through the
+  colour profile the file carries; they looked inverted. Cut-out
+  pictures keep their transparency instead of a white box. Paragraph
+  text in a frame that was resized keeps its size and starts at the
+  frame's top instead of being squashed or drawn above it. Rounded
+  corners of rectangles in version 15 and later files have their real
+  size, and shapes of version 14 and 15 files that have no outline of
+  their own take their style's.
 - Contour: the tool's drag draws a live contour (outside when dragged
   away from the object's middle, inside toward it); its bar used to wait
   for Apply and then made a static group of copies. The bar and the

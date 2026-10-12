@@ -245,6 +245,13 @@ struct Ctx<'a> {
     /// Texts fitted to a path, by shape, until their list is read and the
     /// path found among their siblings.
     on_path: HashMap<tracedraw_core::ShapeId, OnPathText>,
+    /// The transform of the paragraph text being read when its frame took
+    /// the object's scale (see [`unscaled_frame`]).
+    pending_text_transform: Option<Affine>,
+    /// The CMYK profile the file carries, for CMYK bitmaps.
+    cmyk_profile: Option<tracedraw_core::icc::Profile>,
+    /// CMYK to RGB through that profile, built for the first CMYK bitmap.
+    cmyk_lut: Option<tracedraw_core::icc::CmykLut>,
     report: ParseReport,
 }
 
@@ -284,14 +291,32 @@ impl<'a> Ctx<'a> {
             pending_crop: None,
             pending_on_path: None,
             on_path: HashMap::new(),
+            pending_text_transform: None,
+            cmyk_profile: None,
+            cmyk_lut: None,
             report: ParseReport::default(),
         }
     }
 }
 
 pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, ParseReport) {
+    parse_document_with(tree, main, version, None)
+}
+
+/// [`parse_document`] with the CMYK profile the file carries (an ICC
+/// profile's bytes): CMYK bitmaps are converted to RGB through it, else
+/// with the plain formula.
+pub fn parse_document_with(
+    tree: &Tree,
+    main: &[u8],
+    version: Version,
+    cmyk_profile: Option<&[u8]>,
+) -> (Document, ParseReport) {
     let mut ctx = Ctx::new(main, tree, version.0);
     ctx.report.version = Some(version);
+    ctx.cmyk_profile = cmyk_profile
+        .and_then(|b| tracedraw_core::icc::Profile::parse(b).ok())
+        .filter(|p| p.color_space() == tracedraw_core::icc::ColorSpace::Cmyk);
 
     // The `vrsn` chunk carries the version as a number (1300 = version 13, 801 =
     // CDR 8 bidi); prefer it over the form-type letter when it is sane.
@@ -1228,7 +1253,11 @@ impl<'a> Ctx<'a> {
                 let w = r.coord()?;
                 let h = r.coord()?;
                 if w.is_finite() && h.is_finite() && w.abs() > 1e-6 && h.abs() > 1e-6 {
+                    // The frame hangs from (0, 0), its top left (seen in a
+                    // version 22 file: the transform moves (0, 0) to the
+                    // top left of the object's box).
                     frame = Some(Size::new(w.abs(), h.abs()));
+                    origin = Point::new(0.0, -h.abs());
                 }
             } else {
                 origin = Point::new(r.coord()?, r.coord()?);
@@ -1271,6 +1300,18 @@ impl<'a> Ctx<'a> {
                 None => self
                     .report
                     .warn("paragraph text without a readable frame; treated as artistic text"),
+            }
+        }
+        // Paragraph text keeps its letters' size when its frame is scaled:
+        // the frame takes the transform's scale and the text is laid out
+        // in it unscaled (a version 22 file's export draws text at its
+        // point size in frames scaled to 39 % and 72 % of their height).
+        if kind_code == OBJ_PARAGRAPH_TEXT {
+            if let Some((t, o, s)) = frame.and_then(|f| unscaled_frame(hints.transform, origin, f))
+            {
+                origin = o;
+                frame = Some(s);
+                self.pending_text_transform = Some(t);
             }
         }
         // The object's own style string (version 16+: its paragraph
@@ -1681,6 +1722,7 @@ impl<'a> Ctx<'a> {
         });
         let loda = loda?;
         self.pending_on_path = None;
+        self.pending_text_transform = None;
         let transform = trfd
             .map(|t| self.read_transform(t))
             .unwrap_or(Affine::IDENTITY);
@@ -1750,6 +1792,22 @@ impl<'a> Ctx<'a> {
             }
         }
 
+        // A shape without an outline argument takes its style's outline
+        // (versions 7 to 15, whose objects name a `stlt` style): seen in
+        // version 14 and 15 files whose previews and exports draw such
+        // shapes with the default style's hairline.
+        let shape_kind = matches!(
+            kind_code,
+            OBJ_RECT | OBJ_ELLIPSE | OBJ_CURVE | OBJ_POLYGON | OBJ_PATH
+        );
+        if shape_kind && self.v >= 7 && !l.args.iter().any(|a| a.ty == ARG_OUTLINE) {
+            if let Some(o) = style_id
+                .and_then(|sid| self.style_defaults(sid).outl_id)
+                .and_then(|o| self.outlines.get(&o))
+            {
+                stroke = o.stroke.clone();
+            }
+        }
         let kind = match kind_code {
             OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT => {
                 let frame = FrameHints {
@@ -1783,6 +1841,7 @@ impl<'a> Ctx<'a> {
 
         // The page origin is the page centre; ours is the bottom-left.
         let recenter = Affine::translate((page_size.width / 2.0, page_size.height / 2.0));
+        let transform = self.pending_text_transform.take().unwrap_or(transform);
         let mut shape = Shape::new(id, kind);
         shape.transform = recenter * transform;
         shape.fill = fill;
@@ -1995,21 +2054,26 @@ impl<'a> Ctx<'a> {
                     // version 15+: width and height as doubles in coordinate
                     // units, the scale the transform applies (it is in
                     // `trfd` too, so it is not applied again), a flag, and
-                    // four radii in inches each followed by corner data we
-                    // skip.
+                    // four radii each followed by corner data we skip. A
+                    // radius is a share of half the shorter side (1.0 =
+                    // half of it): a version 22 file's preview shows a
+                    // 0.0929 corner on a 369.8 x 499.0 mm frame drawn at
+                    // 17.2 mm, and a version 17 file's 2.7604 on a 36.8 mm
+                    // side is exactly 2 inches.
                     let w = r.f64_coord()?;
                     let h = r.f64_coord()?;
                     let _sx = r.f64();
                     let _sy = r.f64();
                     let _scale_with = r.u8();
                     r.skip(7);
+                    let half = w.abs().min(h.abs()) / 2.0;
                     // Each radius is followed by 16 bytes of corner data
                     // (corner type and unknown fields) except the last.
                     let mut radii = Vec::new();
                     for gap in [16usize, 16, 16, 0] {
                         let Some(raw) = r.f64() else { break };
                         if raw.is_finite() {
-                            radii.push(raw * 25.4);
+                            radii.push(raw * half);
                         }
                         r.skip(gap);
                     }
@@ -2235,12 +2299,32 @@ impl<'a> Ctx<'a> {
             ));
             return;
         }
+        // Colour model 3 (CMYK, 32 bits): bytes C, M, Y, K with 0 for no
+        // ink (seen in a version 22 file; its export matches only that
+        // way), converted through the file's CMYK profile when it has one.
+        let cmyk = color_model == BITMAP_CMYK && bpp == 32;
+        if cmyk && self.cmyk_lut.is_none() {
+            self.cmyk_lut = self.cmyk_profile.as_ref().and_then(|p| {
+                let t = tracedraw_core::icc::Transform::new(
+                    p,
+                    &tracedraw_core::icc::Profile::srgb(),
+                    tracedraw_core::icc::Intent::default(),
+                    false,
+                )?;
+                tracedraw_core::icc::CmykLut::new(&t)
+            });
+        }
+        let lut = if cmyk { self.cmyk_lut.as_ref() } else { None };
         let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
         for row in 0..height as usize {
             // Bottom-up rows.
             let src = &pixels[(height as usize - 1 - row) * stride..][..stride];
             for x in 0..width as usize {
                 let px: [u8; 4] = match bpp {
+                    32 if cmyk => {
+                        let ink = [src[x * 4], src[x * 4 + 1], src[x * 4 + 2], src[x * 4 + 3]];
+                        cmyk_pixel(ink, lut)
+                    }
                     32 => [src[x * 4 + 2], src[x * 4 + 1], src[x * 4], 255],
                     24 => [src[x * 3 + 2], src[x * 3 + 1], src[x * 3], 255],
                     8 => {
@@ -2270,6 +2354,11 @@ impl<'a> Ctx<'a> {
                 rgba.extend_from_slice(&px);
             }
         }
+        if let Some(alpha) = bitmap_mask(d, width, height) {
+            for (px, a) in rgba.chunks_exact_mut(4).zip(alpha) {
+                px[3] = a;
+            }
+        }
         let png = encode_png(width, height, &rgba);
         self.bitmaps.insert(
             image_id,
@@ -2280,6 +2369,93 @@ impl<'a> Ctx<'a> {
             },
         );
     }
+}
+
+/// A paragraph frame (`origin` its lower left, `size`) under `transform`
+/// as the same frame on the page with the transform's scale taken into it:
+/// the transform without its scale, the frame's new lower left and size.
+/// `None` for a transform that slants or has no size.
+fn unscaled_frame(transform: Affine, origin: Point, size: Size) -> Option<(Affine, Point, Size)> {
+    let [a, b, c, d, e, f] = transform.as_coeffs();
+    let sx = a.hypot(b);
+    let sy = c.hypot(d);
+    if !(sx > 1e-9 && sy > 1e-9 && sx.is_finite() && sy.is_finite()) {
+        return None;
+    }
+    if (a * c + b * d).abs() > 1e-6 * sx * sy {
+        return None;
+    }
+    if (sx - 1.0).abs() < 1e-9 && (sy - 1.0).abs() < 1e-9 {
+        return None;
+    }
+    let t = Affine::new([a / sx, b / sx, c / sy, d / sy, e, f]);
+    Some((
+        t,
+        Point::new(origin.x * sx, origin.y * sy),
+        Size::new(size.width * sx, size.height * sy),
+    ))
+}
+
+/// The transparency of a `bmp ` chunk `d` of `width` x `height` pixels,
+/// top row first (255 opaque, 0 clear), when it has one: a u32 at byte
+/// 24 gives the place of a second image block counted from byte 8, which
+/// is tagged "RI", has its block length, a header of 78 bytes and one byte
+/// per pixel in rows padded to 4 bytes, bottom row first (seen in version
+/// 21 and 22 files: cut-out photos whose exports show the page through the
+/// zero values).
+fn bitmap_mask(d: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+    let u32_at = |at: usize| -> Option<u32> {
+        d.get(at..at.checked_add(4)?)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let offset = u32_at(24)? as usize;
+    if offset == 0 {
+        return None;
+    }
+    let at = offset.checked_add(8)?;
+    let header = u32_at(at.checked_add(10)?)? as usize;
+    let ok = d.get(at..at + 2) == Some(b"RI".as_slice())
+        && u32_at(at + 22)? == width
+        && u32_at(at + 26)? == height
+        && u32_at(at + 34)? == 8
+        && header >= 42;
+    if !ok {
+        return None;
+    }
+    let (w, h) = (width as usize, height as usize);
+    let stride = w.div_ceil(4) * 4;
+    let pixels = d.get(at.checked_add(header)?..)?;
+    if pixels.len() < stride.checked_mul(h)? {
+        return None;
+    }
+    let mut out = Vec::with_capacity(w * h);
+    for row in 0..h {
+        let src = pixels.get((h - 1 - row) * stride..)?.get(..w)?;
+        out.extend_from_slice(src);
+    }
+    Some(out)
+}
+
+/// The bitmap colour model of CMYK images.
+const BITMAP_CMYK: u32 = 3;
+
+/// One CMYK pixel (ink bytes, 255 = full ink) as opaque RGBA: through
+/// `lut` when given, else one minus the ink times one minus the black.
+fn cmyk_pixel(ink: [u8; 4], lut: Option<&tracedraw_core::icc::CmykLut>) -> [u8; 4] {
+    let f = |v: u8| v as f32 / 255.0;
+    let rgb = match lut {
+        Some(l) => l.eval([f(ink[0]), f(ink[1]), f(ink[2]), f(ink[3])]),
+        None => {
+            let k = 1.0 - f(ink[3]);
+            [
+                (1.0 - f(ink[0])) * k,
+                (1.0 - f(ink[1])) * k,
+                (1.0 - f(ink[2])) * k,
+            ]
+        }
+    };
+    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    [b(rgb[0]), b(rgb[1]), b(rgb[2]), 255]
 }
 
 /// A bitmap with a crop outline becomes a clip frame whose frame is that
@@ -3187,14 +3363,15 @@ mod tests {
 
     #[test]
     fn rectangle_version_15_doubles_and_scale() {
-        // 1 x 0.5 inch with corners of 0.1 inch (radii are in inches, as a
-        // version 17 file shows); the scale is the transform's, so the
-        // rectangle keeps its own size.
+        // 1 x 0.5 inch with corners of 0.4 (radii are shares of half the
+        // shorter side, here 6.35 mm, as version 17 and 22 files show: so
+        // 2.54 mm); the scale is the transform's, so the rectangle keeps
+        // its own size.
         let mut c = f64s(&[254000.0, 127000.0]);
         c.extend_from_slice(&f64s(&[2.0, 2.0])); // scale
         c.push(0); // scale_with
         c.extend_from_slice(&[0; 7]);
-        for (r, gap) in [(0.1f64, 16usize), (0.1, 16), (0.1, 16), (0.1, 0)] {
+        for (r, gap) in [(0.4f64, 16usize), (0.4, 16), (0.4, 16), (0.4, 0)] {
             c.extend_from_slice(&f64s(&[r]));
             c.extend_from_slice(&vec![0u8; gap]);
         }
@@ -3560,6 +3737,119 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn bitmap_masks_make_pixels_clear() {
+        // 2 x 2, 24 bpp, then a mask block: "RI", its length, 4 zero bytes,
+        // a 78-byte header (model 99, 1, width, height, 1 plane, 8 bits,
+        // stride, size) and one byte per pixel, bottom row first.
+        let mut bmp = u32s(&[42]);
+        bmp.extend_from_slice(&[0; 50]);
+        bmp.extend_from_slice(&u32s(&[1, 0, 2, 2, 0, 24, 0, 16]));
+        bmp.extend_from_slice(&[0; 32]);
+        bmp.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0]);
+        bmp.extend_from_slice(&[255, 0, 0, 255, 255, 255, 0, 0]);
+        let mask_at = bmp.len();
+        bmp[24..28].copy_from_slice(&((mask_at - 8) as u32).to_le_bytes());
+        let mut mask = b"RI".to_vec();
+        mask.extend_from_slice(&u32s(&[78 + 8, 0, 78, 99, 1, 2, 2, 1, 8, 4, 8]));
+        mask.resize(78, 0);
+        mask.extend_from_slice(&[255, 0, 0, 0]); // bottom row: opaque, clear
+        mask.extend_from_slice(&[0, 128, 0, 0]); // top row: clear, half
+        bmp.extend_from_slice(&mask);
+        let alpha = |bmp: &[u8]| {
+            let mut c = i32s(&[0, 0, 254000, 254000]);
+            c.extend_from_slice(&[0; 32]);
+            c.extend_from_slice(&u32s(&[42]));
+            c.extend_from_slice(&[0; 20]);
+            c.extend_from_slice(&u32s(&[0]));
+            let obj = list(
+                b"obj ",
+                &chunk(b"loda", &loda(OBJ_BITMAP, &[(ARG_COORDS, c)])),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
+                chunk(b"bmp ", bmp),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            let ShapeKind::Bitmap { png, .. } = &first_shape(&doc).kind else {
+                panic!("a bitmap");
+            };
+            let idat_len = u32::from_be_bytes([png[33], png[34], png[35], png[36]]) as usize;
+            let mut raw = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(&png[41..41 + idat_len]),
+                &mut raw,
+            )
+            .unwrap();
+            // Rows of a filter byte and two RGBA pixels, top row first.
+            [raw[4], raw[8], raw[13], raw[17]]
+        };
+        assert_eq!(alpha(&bmp), [0, 128, 255, 0]);
+        // A mask that does not match the image is ignored.
+        let mut odd = bmp.clone();
+        odd[mask_at + 22] = 3; // width 3
+        assert_eq!(alpha(&odd), [255; 4]);
+        let mut odd = bmp.clone();
+        odd[mask_at] = b'X';
+        assert_eq!(alpha(&odd), [255; 4]);
+        let mut short = bmp.clone();
+        short.truncate(short.len() - 3);
+        assert_eq!(alpha(&short), [255; 4]);
+    }
+
+    #[test]
+    fn cmyk_bitmaps_are_read_as_ink() {
+        // 2 x 1, colour model 3, 32 bpp: C, M, Y, K bytes, 0 for no ink.
+        let mut bmp = u32s(&[42]);
+        bmp.extend_from_slice(&[0; 50]);
+        bmp.extend_from_slice(&u32s(&[BITMAP_CMYK, 0, 2, 1, 0, 32, 0, 8]));
+        bmp.extend_from_slice(&[0; 32]);
+        bmp.extend_from_slice(&[255, 0, 0, 0, 0, 0, 0, 128]); // cyan, half black
+        let mut c = i32s(&[0, 0, 254000, 254000]);
+        c.extend_from_slice(&[0; 32]);
+        c.extend_from_slice(&u32s(&[42]));
+        c.extend_from_slice(&[0; 20]);
+        c.extend_from_slice(&u32s(&[0]));
+        let obj = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_BITMAP, &[(ARG_COORDS, c)])),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
+            chunk(b"bmp ", &bmp),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let ShapeKind::Bitmap { png, .. } = &first_shape(&doc).kind else {
+            panic!("a bitmap");
+        };
+        let idat_len = u32::from_be_bytes([png[33], png[34], png[35], png[36]]) as usize;
+        let mut raw = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(&png[41..41 + idat_len]),
+            &mut raw,
+        )
+        .unwrap();
+        // Without a profile: one minus the ink, times one minus the black.
+        assert_eq!(&raw[1..5], &[0, 255, 255, 255]);
+        assert_eq!(&raw[5..9], &[127, 127, 127, 255]);
+        // Through a table, the table decides.
+        let lut =
+            tracedraw_core::icc::CmykLut::with_points(3, |[c, _, _, k]| Some([1.0 - c, 0.5, k]))
+                .unwrap();
+        assert_eq!(cmyk_pixel([255, 0, 0, 255], Some(&lut)), [0, 128, 255, 255]);
+        // A profile that is not CMYK is not used.
+        let tree = crate::riff::parse(&riff(b"CDRD", &body)).unwrap();
+        let (doc, _) =
+            parse_document_with(&tree, &riff(b"CDRD", &body), Version(13), Some(b"junk"));
+        assert!(matches!(first_shape(&doc).kind, ShapeKind::Bitmap { .. }));
     }
 
     #[test]
@@ -4417,12 +4707,12 @@ mod tests {
                 "{:?}",
                 rep.warnings
             );
-            first_shape(&doc).kind.clone()
+            first_shape(&doc).clone()
         };
         // Artistic text (type 0x04): the first baseline starts at the
         // origin of the coordinates (as in the file: 0 and 8 units); the
         // box only bounds the letters.
-        match read(OBJ_ARTISTIC_TEXT, i32s(&[0, 8])) {
+        match read(OBJ_ARTISTIC_TEXT, i32s(&[0, 8])).kind {
             ShapeKind::Text {
                 spans,
                 frame,
@@ -4441,24 +4731,68 @@ mod tests {
             other => panic!("{other:?}"),
         }
         // Paragraph text (type 0x06) without a size in its coordinates:
-        // the frame is the box, as wide as the style's columns.
-        match read(OBJ_PARAGRAPH_TEXT, vec![0u8; 12]) {
+        // the frame is the box, as wide as the style's columns (60 mm)
+        // times the transform's scale (0.75), and the text is not scaled.
+        match read(OBJ_PARAGRAPH_TEXT, vec![0u8; 12]).kind {
             ShapeKind::Text { frame, origin, .. } => {
                 let f = frame.expect("frame");
-                assert!((f.width - 60.0).abs() < 1e-6, "{f:?}");
+                assert!((f.width - 45.0).abs() < 1e-6, "{f:?}");
                 assert!((f.height - 12.0).abs() < 1e-6, "{f:?}");
-                // (10 - 11) / 0.75 and 20 - 22, in the object's own space.
-                assert!((origin.x - (-1.0 / 0.75)).abs() < 1e-6, "{origin:?}");
+                // 10 - 11 and 20 - 22 from the transform's origin.
+                assert!((origin.x - (-1.0)).abs() < 1e-6, "{origin:?}");
                 assert!((origin.y - (-2.0)).abs() < 1e-6, "{origin:?}");
             }
             other => panic!("{other:?}"),
         }
+        // A frame size in the coordinates (60 x 10 mm): the frame hangs
+        // from (0, 0), the transform's scale goes into the frame and the
+        // object keeps only its place.
+        let s = read(OBJ_PARAGRAPH_TEXT, i32s(&[0, 600_000, 100_000]));
+        match &s.kind {
+            ShapeKind::Text { frame, origin, .. } => {
+                let f = frame.expect("frame");
+                assert!(
+                    (f.width - 45.0).abs() < 1e-6 && (f.height - 10.0).abs() < 1e-6,
+                    "{f:?}"
+                );
+                assert!(
+                    origin.x.abs() < 1e-6 && (origin.y + 10.0).abs() < 1e-6,
+                    "{origin:?}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        let [a, b, c, d, ..] = s.transform.as_coeffs();
+        assert!(
+            (a - 1.0).abs() < 1e-9 && b.abs() < 1e-9 && c.abs() < 1e-9 && (d - 1.0).abs() < 1e-9
+        );
     }
 
     #[test]
-    fn text_from_version_17_on_is_stored_one_byte_per_character() {
-        // Confirmed with a version 21 file: six letters as 6 bytes for 6 characters.
-        let v = 21u16;
+    fn frames_keep_their_scale_only_when_they_slant() {
+        let size = Size::new(10.0, 4.0);
+        let o = Point::new(0.0, -4.0);
+        let (t, o2, s2) =
+            unscaled_frame(Affine::new([2.0, 0.0, 0.0, 0.5, 3.0, 4.0]), o, size).expect("scaled");
+        assert_eq!(t, Affine::translate((3.0, 4.0)));
+        assert_eq!((o2, s2), (Point::new(0.0, -2.0), Size::new(20.0, 2.0)));
+        // A turned and scaled frame keeps its turn.
+        let turn = Affine::rotate(0.5) * Affine::scale(2.0);
+        let (t, _, s2) = unscaled_frame(turn, o, size).expect("turned");
+        assert!((t.determinant() - 1.0).abs() < 1e-9);
+        assert!((s2.width - 20.0).abs() < 1e-9);
+        // Slanted, unscaled or degenerate: left alone.
+        assert!(unscaled_frame(Affine::skew(0.3, 0.0), o, size).is_none());
+        assert!(unscaled_frame(Affine::translate((5.0, 5.0)), o, size).is_none());
+        assert!(unscaled_frame(Affine::scale(0.0), o, size).is_none());
+        assert!(
+            unscaled_frame(Affine::new([f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0]), o, size).is_none()
+        );
+    }
+
+    /// The text of a version 17+ artistic text whose characters are
+    /// `chars`: (flags of the character's record, its bytes).
+    fn text_of_v17_chars(v: u16, chars: &[(u16, &[u8])]) -> (String, Vec<String>) {
         let mut t = u32s(&[0]); // no frame flag (artistic text)
         t.extend_from_slice(&[0; 32]);
         t.extend_from_slice(&u16s(&[1800]));
@@ -4475,14 +4809,15 @@ mod tests {
         t.push(0);
         t.extend_from_slice(&style_string(v, r#"{"character":{"font":5,"size":12}}"#));
         t.extend_from_slice(&u32s(&[0])); // no style records
-        t.extend_from_slice(&u32s(&[6]));
-        for _ in 0..6 {
-            t.extend_from_slice(&u16s(&[0]));
+        t.extend_from_slice(&u32s(&[chars.len() as u32]));
+        for (flags, _) in chars {
+            t.extend_from_slice(&u16s(&[*flags]));
             t.push(0xfe);
             t.extend_from_slice(&[0; 5]);
         }
-        t.extend_from_slice(&u32s(&[6]));
-        t.extend_from_slice(b"PANELS");
+        let bytes: Vec<u8> = chars.iter().flat_map(|(_, b)| b.iter().copied()).collect();
+        t.extend_from_slice(&u32s(&[bytes.len() as u32]));
+        t.extend_from_slice(&bytes);
         t.push(0);
         let tables = chunk(b"font", &font_chunk(5, "Georgia"));
         let coords = i32s(&[0, 0]);
@@ -4496,12 +4831,44 @@ mod tests {
         );
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
         match &first_shape(&doc).kind {
-            ShapeKind::Text { spans, .. } => {
-                let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-                assert_eq!(text, "PANELS");
-            }
+            ShapeKind::Text { spans, .. } => (
+                spans.iter().map(|s| s.text.as_str()).collect(),
+                rep.warnings.clone(),
+            ),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn text_from_version_17_on_is_stored_one_byte_per_character() {
+        // Confirmed with a version 21 file: six letters as 6 bytes for 6 characters.
+        let chars: Vec<(u16, &[u8])> = b"PANELS"
+            .iter()
+            .map(|b| (0, std::slice::from_ref(b)))
+            .collect();
+        assert_eq!(text_of_v17_chars(21, &chars).0, "PANELS");
+    }
+
+    #[test]
+    fn letters_beyond_latin_1_take_two_bytes() {
+        // As in a version 22 file: "Průmyslová" with "ů" stored as the
+        // UTF-16 unit 6F 01 (its record's flag bit 0 set), "á" as one
+        // byte E1; "č" (0D 01) is a letter, not a line break.
+        let mut chars: Vec<(u16, &[u8])> =
+            b"Pr".iter().map(|b| (0, std::slice::from_ref(b))).collect();
+        chars.push((1, &[0x6f, 0x01]));
+        chars.extend(b"myslov".iter().map(|b| (0u16, std::slice::from_ref(b))));
+        chars.push((0, &[0xe1]));
+        chars.push((0x41, &[0x0d, 0x01])); // other flag bits set as well
+        let (text, warnings) = text_of_v17_chars(22, &chars);
+        assert_eq!(text, "Průmyslováč");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        // Widths that do not add up: one byte per character, with a note.
+        let (text, warnings) = text_of_v17_chars(22, &[(1, b"A"), (0, b"B")]);
+        assert_eq!(text, "AB");
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("one byte per character")));
     }
 
     #[test]
@@ -4575,6 +4942,56 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn shapes_without_an_outline_take_their_styles() {
+        // A style table whose one graphic style (55) has outline 1.
+        let v = 13u16;
+        let mut st = u32s(&[1]); // one record
+        st.extend_from_slice(&u32s(&[0])); // fills
+        st.extend_from_slice(&u32s(&[1, 900, 0, 1])); // outline ref 900 -> outline 1
+        for _ in 0..3 {
+            st.extend_from_slice(&u32s(&[0])); // fonts, aligns, intervals
+        }
+        for _ in 0..3 {
+            st.extend_from_slice(&u32s(&[0])); // set5, tabs, bullets
+        }
+        for _ in 0..4 {
+            st.extend_from_slice(&u32s(&[0])); // indents, hyphens, drop caps, set11
+        }
+        st.extend_from_slice(&u32s(&[1, 55, 0, 0, 0, 0])); // num 1, style 55, no name
+        st.extend_from_slice(&u32s(&[0, 900])); // fill and outline refs
+        let rect = |args: &[(u32, Vec<u8>)]| {
+            let mut a = vec![(ARG_COORDS, i32s(&[254000, 127000, 0, 0, 0, 0]))];
+            a.extend_from_slice(args);
+            list(b"obj ", &chunk(b"loda", &loda(OBJ_RECT, &a)))
+        };
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            chunk(b"outl", &outl_v13(1, 0, 0)),
+            list(b"stlt", &st),
+            list(
+                b"page",
+                &list(
+                    b"layr",
+                    &[
+                        // Front to back: an explicit unknown outline, then
+                        // the style's.
+                        rect(&[(ARG_STYLE, u32s(&[55])), (ARG_OUTLINE, u32s(&[404]))]),
+                        rect(&[(ARG_STYLE, u32s(&[55]))]),
+                    ]
+                    .concat(),
+                ),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), v);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        let s = shapes[0].stroke.as_ref().expect("the style's outline");
+        assert!((s.width - 0.254).abs() < 1e-9, "{s:?}");
+        assert!(shapes[1].stroke.is_none());
     }
 
     #[test]

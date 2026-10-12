@@ -1795,6 +1795,92 @@ impl Transform {
     }
 }
 
+/// A CMYK to RGB transform sampled on a grid, fast enough for whole images:
+/// each colour is read back from the five grid points of the simplex it
+/// falls in (simplex interpolation in four dimensions).
+#[derive(Debug, Clone)]
+pub struct CmykLut {
+    /// Grid points per channel.
+    n: usize,
+    /// RGB (0..1) at each grid point, C the slowest index, K the fastest.
+    grid: Vec<[f32; 3]>,
+}
+
+impl CmykLut {
+    /// Grid points per channel of [`CmykLut::new`].
+    pub const POINTS: usize = 17;
+
+    /// Sample `t`; `None` unless it takes CMYK to RGB.
+    pub fn new(t: &Transform) -> Option<CmykLut> {
+        Self::with_points(Self::POINTS, |cmyk| t.cmyk_to_rgb(cmyk))
+    }
+
+    /// Sample `f` on `n` points per channel (2 at least).
+    pub fn with_points(n: usize, f: impl Fn([f32; 4]) -> Option<[f32; 3]>) -> Option<CmykLut> {
+        if !(2..=64).contains(&n) {
+            return None;
+        }
+        let step = 1.0 / (n - 1) as f32;
+        let mut grid = Vec::with_capacity(n * n * n * n);
+        for c in 0..n {
+            for m in 0..n {
+                for y in 0..n {
+                    for k in 0..n {
+                        let rgb = f([
+                            c as f32 * step,
+                            m as f32 * step,
+                            y as f32 * step,
+                            k as f32 * step,
+                        ])?;
+                        grid.push(rgb.map(|v| {
+                            if v.is_finite() {
+                                v.clamp(0.0, 1.0)
+                            } else {
+                                0.0
+                            }
+                        }));
+                    }
+                }
+            }
+        }
+        Some(CmykLut { n, grid })
+    }
+
+    /// RGB (0..1) of a CMYK colour (0..1, clamped).
+    pub fn eval(&self, cmyk: [f32; 4]) -> [f32; 3] {
+        let n = self.n;
+        let last = (n - 1) as f32;
+        let mut base = [0usize; 4];
+        let mut frac = [0.0f32; 4];
+        for i in 0..4 {
+            let v = if cmyk[i].is_finite() {
+                cmyk[i].clamp(0.0, 1.0) * last
+            } else {
+                0.0
+            };
+            let b = (v.floor() as usize).min(n - 2);
+            base[i] = b;
+            frac[i] = v - b as f32;
+        }
+        let strides = [n * n * n, n * n, n, 1];
+        let mut index: usize = (0..4).map(|i| base[i] * strides[i]).sum();
+        // Walk from the base corner along the axes, largest fraction first.
+        let mut order = [0usize, 1, 2, 3];
+        order.sort_by(|a, b| frac[*b].total_cmp(&frac[*a]));
+        let at = |i: usize| self.grid.get(i).copied().unwrap_or([0.0; 3]);
+        let mut out = at(index).map(|v| v * (1.0 - frac[order[0]]));
+        for (j, &axis) in order.iter().enumerate() {
+            index += strides[axis];
+            let next = at(index);
+            let w = frac[axis] - order.get(j + 1).map(|a| frac[*a]).unwrap_or(0.0);
+            for ch in 0..3 {
+                out[ch] += next[ch] * w;
+            }
+        }
+        out
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test profile builders (shared with color.rs tests)
 // ---------------------------------------------------------------------------
@@ -2200,6 +2286,63 @@ mod tests {
         // Transforming with fewer channels than needed does not panic.
         assert_eq!(t.transform(&[1.0]).len(), 3);
         assert_eq!(t.transform(&[]).len(), 3);
+    }
+
+    #[test]
+    fn the_cmyk_table_follows_its_transform() {
+        let cmyk = Profile::parse(&lut16_cmyk_profile()).unwrap();
+        let t =
+            Transform::new(&cmyk, &Profile::srgb(), Intent::RelativeColorimetric, false).unwrap();
+        let lut = CmykLut::new(&t).expect("a CMYK to RGB transform");
+        // Grid points exactly, colours between them closely.
+        let mut seed = 7u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (seed >> 8) as f32 / (1u32 << 24) as f32
+        };
+        for _ in 0..200 {
+            let c = [next(), next(), next(), next()];
+            let want = t.cmyk_to_rgb(c).unwrap();
+            let got = lut.eval(c);
+            for ch in 0..3 {
+                assert!(
+                    (want[ch] - got[ch]).abs() < 0.02,
+                    "{c:?}: {want:?} vs {got:?}"
+                );
+            }
+        }
+        let corner = [1.0, 0.0, 0.0, 0.0];
+        let want = t.cmyk_to_rgb(corner).unwrap();
+        let got = lut.eval(corner);
+        assert!((0..3).all(|ch| (want[ch] - got[ch]).abs() < 1e-5));
+        // Odd input stays in range; an RGB transform has no table.
+        assert!(lut
+            .eval([f32::NAN, -3.0, 9.0, f32::INFINITY])
+            .iter()
+            .all(|v| (0.0..=1.0).contains(v)));
+        let rgb = Transform::new(
+            &Profile::srgb(),
+            &Profile::srgb(),
+            Intent::RelativeColorimetric,
+            false,
+        )
+        .unwrap();
+        assert!(CmykLut::new(&rgb).is_none());
+        // A plain formula: one minus ink, times one minus black.
+        let plain = CmykLut::with_points(9, |[c, m, y, k]| {
+            Some([
+                (1.0 - c) * (1.0 - k),
+                (1.0 - m) * (1.0 - k),
+                (1.0 - y) * (1.0 - k),
+            ])
+        })
+        .unwrap();
+        let got = plain.eval([0.3, 0.6, 0.0, 0.2]);
+        assert!(
+            (got[0] - 0.56).abs() < 0.01 && (got[2] - 0.8).abs() < 0.01,
+            "{got:?}"
+        );
+        assert!(CmykLut::with_points(1, |_| Some([0.0; 3])).is_none());
     }
 
     #[test]

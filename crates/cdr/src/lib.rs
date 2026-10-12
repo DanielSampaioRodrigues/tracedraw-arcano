@@ -28,7 +28,7 @@ pub mod write;
 use std::path::Path;
 
 pub use container::{Container, Version};
-pub use parse::{parse_document, ParseReport};
+pub use parse::{parse_document, parse_document_with, ParseReport};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -64,7 +64,13 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
     let riff = container::riff_stream(bytes, &container)?;
     let externals = container::external_streams(bytes, &container);
     let root = riff::parse_with_externals(&riff, externals, container.version.0)?;
-    let mut doc_report = parse::parse_document(&root, &riff, container.version);
+    let cmyk_profile = container::cmyk_profile(bytes, &container);
+    let mut doc_report = parse::parse_document_with(
+        &root,
+        &riff,
+        container.version,
+        cmyk_profile.as_ref().map(|p| p.data.as_slice()),
+    );
     doc_report.0.title = title.to_string();
     doc_report.0.palette = container::document_palette(bytes, &container)
         .into_iter()
@@ -72,7 +78,7 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
         .collect();
     let (fonts, notes) = container::embedded_fonts(bytes, &container);
     doc_report.0.fonts = fonts;
-    doc_report.0.cmyk_profile = container::cmyk_profile(bytes, &container);
+    doc_report.0.cmyk_profile = cmyk_profile;
     for n in notes {
         doc_report.1.warn(n);
     }

@@ -44,6 +44,38 @@ pub(crate) fn decode_cp1252(b: &[u8]) -> String {
         .collect()
 }
 
+/// Decode version 17+ text whose characters are one byte each (Windows-1252)
+/// except those flagged `wide`, which are a UTF-16LE unit of two bytes:
+/// letters beyond Latin-1 such as "č" (0D 01) or "ř" (59 01). `None` when
+/// the widths do not add up to the bytes stored.
+pub(crate) fn decode_mixed_width(b: &[u8], wide: &[bool]) -> Option<String> {
+    let needed: usize = wide.iter().map(|w| if *w { 2 } else { 1 }).sum();
+    if needed != b.len() {
+        return None;
+    }
+    let mut units: Vec<u16> = Vec::with_capacity(wide.len());
+    let mut pos = 0;
+    for w in wide {
+        if *w {
+            units.push(u16::from_le_bytes([*b.get(pos)?, *b.get(pos + 1)?]));
+            pos += 2;
+        } else {
+            let c = *b.get(pos)?;
+            let u = if (0x80..0xa0).contains(&c) {
+                match CP1252_HIGH[(c - 0x80) as usize] {
+                    0 => 0xfffd,
+                    u => u,
+                }
+            } else {
+                c as u16
+            };
+            units.push(u);
+            pos += 1;
+        }
+    }
+    Some(String::from_utf16_lossy(&units))
+}
+
 /// Decode UTF-16LE text, stopping at the first NUL unit.
 pub(crate) fn decode_utf16le(b: &[u8]) -> String {
     let units: Vec<u16> = b
@@ -842,11 +874,13 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
             return finish(out, warn, "character count");
         }
         let mut overrides = Vec::with_capacity(nc);
+        let mut wide = Vec::with_capacity(nc);
         for _ in 0..nc {
-            let _flags = r.u16()?;
+            let flags = r.u16()?;
             let idx = r.u8()? >> 1;
             r.skip(5);
             overrides.push(idx as usize);
+            wide.push(flags & 1 != 0);
         }
         let nbytes = r.u32()? as usize;
         let text = d.get(r.pos..r.pos.checked_add(nbytes)?)?;
@@ -855,16 +889,21 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        // From version 17 the text is stored one byte per character
-        // (UTF-8 when valid, else Windows-1252); earlier version 16+ files use UTF-16LE.
-        // Confirmed with a version 21 file: six letters stored as 6 bytes for 6 chars.
-        let text = if v >= 17 && nbytes == nc {
-            match std::str::from_utf8(text) {
-                Ok(s) => s.to_string(),
-                Err(_) => decode_cp1252(text),
+        // From version 17 a character is one byte (Windows-1252) unless
+        // its record's flag bit 0 is set: then it is a UTF-16LE unit of
+        // two bytes (seen in a version 22 file: "č" stored as 0D 01, "ř" as
+        // 59 01, "í" as ED). Version 16 files use UTF-16LE throughout.
+        let text = if v >= 17 {
+            match decode_mixed_width(text, &wide) {
+                Some(s) => s,
+                None if nbytes == nc * 2 => decode_utf16le(text),
+                None => {
+                    warn(format!(
+                        "text of {nc} characters in {nbytes} bytes; read one byte per character"
+                    ));
+                    decode_cp1252(text)
+                }
             }
-        } else if v >= 17 && nbytes != nc * 2 {
-            String::from_utf8_lossy(text).into_owned()
         } else {
             decode_utf16le(text)
         };
