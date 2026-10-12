@@ -18,6 +18,7 @@ mod barcode;
 mod bitmap_fx;
 mod bitmap_modes;
 mod border_grommet;
+mod brushes;
 mod canvas;
 mod clipboard;
 mod clone_effect;

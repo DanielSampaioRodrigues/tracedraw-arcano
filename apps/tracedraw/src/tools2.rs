@@ -821,7 +821,7 @@ pub enum DistortMode {
 }
 
 impl App {
-    pub fn effects_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
+    pub fn effects_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         match self.tool {
             Tool::Blend => {
                 if response.drag_started_by(PointerButton::Primary) {
@@ -866,63 +866,8 @@ impl App {
                     }
                 }
             }
-            Tool::Smooth | Tool::Smear | Tool::Twirl => self.brush_input(response, p),
+            Tool::Smooth | Tool::Smear | Tool::Twirl => self.brush_input(response, p, mods),
             _ => {}
-        }
-    }
-
-    fn brush_input(&mut self, response: &Response, p: Point) {
-        if response.drag_started_by(PointerButton::Primary) {
-            if self.selection.is_empty() {
-                if let Some(id) = self.hit_test(p) {
-                    self.select(vec![id]);
-                }
-            }
-            // Brushes work on curves; convert first.
-            self.convert_to_curves();
-            self.drag = Drag::Node { last: p };
-        }
-        if response.dragged_by(PointerButton::Primary) {
-            if let Drag::Node { last } = self.drag {
-                let delta = p - last;
-                let radius = self.brush_radius;
-                let shapes = self.selected_shapes();
-                let mut cmds = Vec::new();
-                for s in shapes {
-                    let ShapeKind::Path { path, closed } = &s.kind else {
-                        continue;
-                    };
-                    let inv = s.transform.inverse();
-                    let lp = inv * p;
-                    let ld = (inv * (Point::ZERO + delta)) - (inv * Point::ZERO);
-                    let new_path = match self.tool {
-                        Tool::Smear => tracedraw_core::effects::smear(path, lp, ld, radius),
-                        Tool::Twirl => {
-                            tracedraw_core::effects::twirl(path, lp, delta.hypot() * 0.05, radius)
-                        }
-                        _ => tracedraw_core::effects::smooth(path, lp, radius, 0.3),
-                    };
-                    cmds.push(Command::SetShapeKind {
-                        shape: s.id,
-                        kind: ShapeKind::Path {
-                            path: new_path,
-                            closed: *closed,
-                        },
-                    });
-                }
-                if !cmds.is_empty() {
-                    let label = match self.tool {
-                        Tool::Smear => "Smear",
-                        Tool::Twirl => "Twirl",
-                        _ => "Smooth",
-                    };
-                    if self.engine.undo_label() == Some(label) {
-                        let _ = self.engine.undo();
-                    }
-                    let _ = self.engine.run_batch(label, &cmds);
-                }
-                self.drag = Drag::Node { last: p };
-            }
         }
     }
 

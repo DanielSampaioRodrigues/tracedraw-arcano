@@ -975,6 +975,13 @@ pub struct App {
     pub free_transform_duplicate: bool,
     pub free_transform_reflected: bool,
     pub roughen_amount: f64,
+    /// The shaping brushes' settings (see `ui::brush_bars`), 1 to 100 where
+    /// a percentage: Smooth's rate, Smear's and Smudge's pressure, Twirl's
+    /// speed and turn, Attract and Repel's speed and mode, Roughen's spikes
+    /// per 10 mm.
+    pub brush: crate::ui::brush_bars::BrushSettings,
+    /// A step of the brush stroke under way is on the undo list.
+    pub brush_stepped: bool,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1577,6 +1584,8 @@ impl App {
             free_transform_duplicate: false,
             free_transform_reflected: false,
             roughen_amount: 2.0,
+            brush: Default::default(),
+            brush_stepped: false,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,
@@ -1991,6 +2000,9 @@ impl App {
             smart_outline_mode: self.area_outline_mode,
             smart_outline_width: self.area_outline_width,
             smart_outline_color: self.area_outline_color,
+            brush_radius: self.brush_radius,
+            roughen_amount: self.roughen_amount,
+            brush: self.brush,
         }
     }
 
@@ -2041,6 +2053,9 @@ impl App {
         self.area_outline_mode = t.smart_outline_mode.min(2);
         self.area_outline_width = finite(t.smart_outline_width, 0.0, 1000.0, 0.2);
         self.area_outline_color = t.smart_outline_color;
+        self.brush_radius = finite(t.brush_radius, 0.5, 500.0, 10.0);
+        self.roughen_amount = finite(t.roughen_amount, 0.05, 50.0, 2.0);
+        self.brush = t.brush.clamped();
     }
 
     /// What the drawing window shows now (see

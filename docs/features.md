@@ -69,7 +69,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
 | Coordinates panel: rectangle, square, ellipse, circle, polygon, regular polygon, star, complex star, 2-point line and multipoint curve from typed coordinates (origin point, size, angle, bounding box, bounding circle, points list), set interactively by clicking or dragging, live preview, Create object and Replace object | works (see `behavior/coordinates.md`) |
 | Convert to curves, Convert outline to object | works |
-| Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes | works |
+| Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes, each with its bar (nib size; rate, pressure, speed and turn, attract or repel, spike frequency and size), one undo step per stroke, per subpath (see `behavior/brushes.md`) | works |
 | Lock, hide, order (front/back of page and layer, one step, in front of, behind, reverse) | works |
 | Align and Distribute: six aligns to the active object, the page's edges, its centre or the grid, with Use Outline; eight distributes (edges, centres, gaps along x and y) between the outermost objects or across the page; picture buttons in the panel (see `behavior/align-distribute.md`) | works |
 | Transformations panel: Position, Rotate, Scale and Mirror, Size and Skew pages (Alt+F7 to Alt+F10, Object > Transformations) with a 3 x 3 reference point, relative or absolute position and centre, mirror buttons, proportional scale and size, skew about the anchor point, and copies in one undo step (see `behavior/transformations.md`) | works |

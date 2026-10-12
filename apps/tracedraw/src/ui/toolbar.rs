@@ -819,24 +819,12 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
             }
-            Tool::Smooth | Tool::Smear | Tool::Twirl => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.nib_size"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut app.brush_radius)
-                        .speed(0.5)
-                        .range(1.0..=200.0)
-                        .suffix(" mm"),
-                );
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drag_over_selected"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::Smooth
+            | Tool::Smear
+            | Tool::Twirl
+            | Tool::AttractRepel
+            | Tool::Smudge
+            | Tool::Roughen => crate::ui::brush_bars::brush_bar(app, ui),
             Tool::Contour => {
                 use crate::tools2::ContourDirection;
                 ui.label(

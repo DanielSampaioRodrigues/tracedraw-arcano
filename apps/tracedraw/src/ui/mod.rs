@@ -11,6 +11,7 @@ pub mod bars;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;
 pub mod brand;
+pub mod brush_bars;
 pub mod chrome;
 pub mod color_docker;
 pub mod context;

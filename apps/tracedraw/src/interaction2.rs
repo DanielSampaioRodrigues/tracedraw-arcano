@@ -90,7 +90,7 @@ impl App {
         match self.tool {
             Tool::FreeTransform => self.free_transform_input(response, p, mods),
             Tool::AttractRepel | Tool::Smudge | Tool::Roughen => {
-                self.brush3_input(response, p, mods)
+                self.brush_input(response, p, mods)
             }
             Tool::SegmentDelete => {
                 if response.clicked_by(PointerButton::Primary) {
@@ -330,66 +330,6 @@ impl App {
             match self.hit_test(p) {
                 Some(id) => self.select(vec![id]),
                 None => self.select(Vec::new()),
-            }
-        }
-    }
-
-    fn brush3_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
-        if response.drag_started_by(PointerButton::Primary) {
-            if self.selection.is_empty() {
-                if let Some(id) = self.hit_test(p) {
-                    self.select(vec![id]);
-                }
-            }
-            self.convert_to_curves();
-            self.drag = Drag::Node { last: p };
-        }
-        if response.dragged_by(PointerButton::Primary) {
-            if let Drag::Node { last } = self.drag {
-                let delta = p - last;
-                let radius = self.brush_radius;
-                let mut cmds = Vec::new();
-                for s in self.selected_shapes() {
-                    let ShapeKind::Path { path, closed } = &s.kind else {
-                        continue;
-                    };
-                    let inv = s.transform.inverse();
-                    let lp = inv * p;
-                    let new_path = match self.tool {
-                        Tool::AttractRepel => attract_repel(
-                            path,
-                            lp,
-                            radius,
-                            if mods.shift { -1.0 } else { 1.0 } * delta.hypot() * 0.3,
-                        ),
-                        Tool::Smudge => tracedraw_core::effects::smear(
-                            &tracedraw_core::effects::smooth(path, lp, radius, 0.2),
-                            lp,
-                            (inv * (Point::ZERO + delta)) - (inv * Point::ZERO),
-                            radius,
-                        ),
-                        _ => roughen(path, lp, radius, self.roughen_amount),
-                    };
-                    cmds.push(Command::SetShapeKind {
-                        shape: s.id,
-                        kind: ShapeKind::Path {
-                            path: new_path,
-                            closed: *closed,
-                        },
-                    });
-                }
-                if !cmds.is_empty() {
-                    let label = match self.tool {
-                        Tool::AttractRepel => "Attract",
-                        Tool::Smudge => "Smudge",
-                        _ => "Roughen",
-                    };
-                    if self.engine.undo_label() == Some(label) {
-                        let _ = self.engine.undo();
-                    }
-                    let _ = self.engine.run_batch(label, &cmds);
-                }
-                self.drag = Drag::Node { last: p };
             }
         }
     }
@@ -1084,62 +1024,6 @@ fn move_effect_node(effects: &mut [Effect], fill: &mut Fill, index: usize, d: Ve
             }
         }
     }
-}
-
-/// Pull (amount > 0) or push (amount < 0) points within `radius` of `at`.
-fn attract_repel(path: &BezPath, at: Point, radius: f64, amount: f64) -> BezPath {
-    use tracedraw_core::geometry::PathEl;
-    let f = |p: Point| -> Point {
-        let v = at - p;
-        let d = v.hypot();
-        if d > radius || d < 1e-9 {
-            return p;
-        }
-        let k = (1.0 - d / radius) * amount;
-        p + v * (k / d).min(0.9)
-    };
-    let mut out = BezPath::new();
-    for el in path.elements() {
-        out.push(match *el {
-            PathEl::MoveTo(p) => PathEl::MoveTo(f(p)),
-            PathEl::LineTo(p) => PathEl::LineTo(f(p)),
-            PathEl::QuadTo(a, p) => PathEl::QuadTo(f(a), f(p)),
-            PathEl::CurveTo(a, b, p) => PathEl::CurveTo(f(a), f(b), f(p)),
-            PathEl::ClosePath => PathEl::ClosePath,
-        });
-    }
-    out
-}
-
-/// Jagged edge within `radius` of `at`.
-fn roughen(path: &BezPath, at: Point, radius: f64, amount: f64) -> BezPath {
-    let pts = tracedraw_core::effects::resample(path, 200);
-    if pts.len() < 3 {
-        return path.clone();
-    }
-    let mut seed = 17u32;
-    let mut rnd = || {
-        seed ^= seed << 13;
-        seed ^= seed >> 17;
-        seed ^= seed << 5;
-        (seed % 1000) as f64 / 500.0 - 1.0
-    };
-    let n = pts.len();
-    let out: Vec<Point> = (0..n)
-        .map(|i| {
-            let p = pts[i];
-            let d = (p - at).hypot();
-            if d > radius {
-                return p;
-            }
-            let prev = pts[(i + n - 1) % n];
-            let next = pts[(i + 1) % n];
-            let t = (next - prev).normalize();
-            let nrm = Vec2::new(-t.y, t.x);
-            p + nrm * (rnd() * amount * (1.0 - d / radius))
-        })
-        .collect();
-    tracedraw_core::geometry::polyline_path(&out[..n - 1], true)
 }
 
 pub fn _unused(_: Rect) {}

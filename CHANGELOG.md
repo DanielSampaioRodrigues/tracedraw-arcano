@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The shaping brushes have their own bars: Attract and Repel, Smudge and
+  Roughen showed only their name and could not change the nib size.
+  Smooth has a rate, Smear and Smudge a pressure, Twirl a speed and its
+  turn, Attract and Repel a speed and the mode, Roughen the spike
+  frequency and size. A stroke is one undo step (two strokes in a row
+  used to merge). The brushes work on each subpath they reach: before,
+  brushing one part of a compound object joined all its parts into one
+  outline, and Roughen closed open curves.
 - Mesh Fill tool: its property bar sets the rows and columns (new meshes
   take them; the selected mesh changes and keeps its colours), Smooth
   colour, the selected node's transparency and Clear Mesh. A palette
