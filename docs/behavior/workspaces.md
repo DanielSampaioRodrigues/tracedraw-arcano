@@ -22,17 +22,39 @@ Checks: `ui::tests::the_touch_workspace_is_larger_and_keeps_real_sizes`,
 
 ## Kept across restarts
 
-Everything below is part of the preferences (`settings.json`, or the
-browser's local storage) and comes back when TraceDraw starts again:
-where each bar sits (`bars`), which bars show (`shown_bars`: standard
-toolbar, property bar, toolbox, status bar, panels, rulers, Text, Zoom
-and Transform toolbars), the tool each toolbox group shows, hidden
-flyouts, shortcuts, palette options, interface size and desktop colour,
-and the dockers (`dockers`: the dockers in the tab column, in order, and
-the one in front). Preferences written before the bars shown were kept
-have no `shown_bars`: the built-in workspace's bars show, as before;
-without `dockers` the column holds Hints, Properties and Objects.
-Picking a built-in workspace sets its own bars, as it always did.
+Everything below is part of the preferences (`settings.json` in the
+configuration folder, or the browser's local storage under
+`tracedraw.settings`, which belongs to that browser on that computer)
+and comes back when TraceDraw starts again: every page of Options, where
+each bar sits (`bars`), which bars show (`shown_bars`: standard toolbar,
+property bar, toolbox, status bar, panels, rulers, Text, Zoom and
+Transform toolbars), the tool each toolbox group shows, hidden flyouts,
+shortcuts, palette options, interface size and desktop colour, the
+dockers (`dockers`: the dockers in the tab column, in order, and the one
+in front), the units, nudge and duplicate distances, snapping (`snap`:
+what it snaps to, alignment and dynamic guides, snapping off), the tool
+settings new objects take (`tools`: polygon and star points, sharpness,
+rectangle corners, ellipse arcs, spiral revolutions, table and graph
+paper rows and columns, blend and contour steps, contour offset, eraser
+width and shape, text font, size and hyphenation), what the window
+shows (`view`: grid, guidelines, page border, bleed, printable area,
+pixel and baseline grids, objects that will not print, proof colours,
+overprints, the view mode) and the dockers' own choices (`panels`: the
+Color docker's model and views, Align To, Use Outline, Distribute To).
+
+The preferences are saved whenever they change, looked at once a second
+(so a change lasts even when TraceDraw does not close normally, and in
+the browser, where closing the tab saves nothing), on Options' OK, and
+when TraceDraw closes; not while Options is open, whose Cancel puts them
+back. Values out of range in a file edited by hand are brought into
+range, and names TraceDraw does not know fall back to the defaults.
+Preferences written before the bars shown were kept have no
+`shown_bars`: the built-in workspace's bars show, as before; without
+`dockers` the column holds Hints, Properties and Objects; without
+`tools`, `view` or `panels` they start as on a first start. Picking a
+built-in workspace sets its own bars, as it always did.
+Checks: `app::tests::tools_view_snapping_and_dockers_survive_a_restart`,
+`app::tests::preferences_are_saved_when_they_change`.
 
 ## Dockers
 

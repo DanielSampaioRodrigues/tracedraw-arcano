@@ -43,6 +43,24 @@ pub enum DistributeTo {
     Page,
 }
 
+impl DistributeTo {
+    /// The name kept in the preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            DistributeTo::Selection => "selection",
+            DistributeTo::Page => "page",
+        }
+    }
+
+    /// The extent a name stands for (the selection for an unknown name).
+    pub fn from_id(id: &str) -> DistributeTo {
+        match id {
+            "page" => DistributeTo::Page,
+            _ => DistributeTo::Selection,
+        }
+    }
+}
+
 /// The nearest multiple of `step` from `origin` to `v`.
 fn nearest_line(v: f64, origin: f64, step: f64) -> f64 {
     if !(step.is_finite() && step > 1e-9) {

@@ -137,6 +137,15 @@ pub struct Settings {
     /// Options > Customization > Color Palette.
     #[serde(default)]
     pub palette: PalettePrefs,
+    /// Tool settings new objects take.
+    #[serde(default)]
+    pub tools: ToolPrefs,
+    /// What the drawing window shows.
+    #[serde(default)]
+    pub view: ViewPrefs,
+    /// Dockers' own choices.
+    #[serde(default)]
+    pub panels: PanelPrefs,
     /// The Time Tracker's toolbar and idle time.
     #[serde(default)]
     pub time_tracker: TimeTrackerPrefs,
@@ -571,19 +580,159 @@ pub struct SnapPrefs {
     pub show_marks: bool,
     /// Name the point snapped to next to its mark.
     pub screen_tips: bool,
+    /// Snap to whole pixels, to the baseline grid; alignment and dynamic
+    /// guides; all snapping off (Alt+Q).
+    pub pixels: bool,
+    pub baseline_grid: bool,
+    pub alignment_guides: bool,
+    pub dynamic_guides: bool,
+    pub off: bool,
 }
 
 impl Default for SnapPrefs {
     fn default() -> Self {
+        let s = crate::snap::SnapSettings::default();
         SnapPrefs {
-            grid: false,
-            guides: true,
-            objects: true,
-            page: true,
+            grid: s.grid,
+            guides: s.guides,
+            objects: s.objects,
+            page: s.page,
             threshold_px: 10.0,
             modes: crate::snap_points::SnapModes::default(),
             show_marks: true,
             screen_tips: true,
+            pixels: s.pixels,
+            baseline_grid: s.baseline_grid,
+            alignment_guides: s.alignment_guides,
+            dynamic_guides: s.dynamic_guides,
+            off: s.off,
+        }
+    }
+}
+
+/// The tool settings new objects take (Options > Tools and the property
+/// bars), kept between sessions. The defaults are those of a first start.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToolPrefs {
+    pub polygon_points: u32,
+    pub star_sharpness: f64,
+    pub star_complex: bool,
+    pub complex_points: u32,
+    pub complex_sharpness: u32,
+    pub rect_corners: tracedraw_core::Corners,
+    pub corners_together: bool,
+    pub ellipse_arc: Option<tracedraw_core::EllipseArc>,
+    pub spiral_revolutions: u32,
+    pub spiral_logarithmic: bool,
+    pub table_rows: u32,
+    pub table_cols: u32,
+    pub graph_rows: u32,
+    pub graph_cols: u32,
+    pub blend_steps: u32,
+    pub contour_steps: u32,
+    pub contour_offset: f64,
+    pub eraser_width: f64,
+    pub eraser_square: bool,
+    pub text_font: String,
+    pub text_size_pt: f64,
+    pub text_hyphenation: bool,
+}
+
+impl Default for ToolPrefs {
+    fn default() -> Self {
+        ToolPrefs {
+            polygon_points: 5,
+            star_sharpness: 0.5,
+            star_complex: false,
+            complex_points: 9,
+            complex_sharpness: 2,
+            rect_corners: tracedraw_core::Corners::default(),
+            corners_together: true,
+            ellipse_arc: None,
+            spiral_revolutions: 4,
+            spiral_logarithmic: false,
+            table_rows: 3,
+            table_cols: 4,
+            graph_rows: 4,
+            graph_cols: 3,
+            blend_steps: 5,
+            contour_steps: 3,
+            contour_offset: 2.0,
+            eraser_width: 6.35,
+            eraser_square: false,
+            text_font: "Arial".into(),
+            text_size_pt: 24.0,
+            text_hyphenation: false,
+        }
+    }
+}
+
+/// What the drawing window shows (the View menu, Options > Display, the
+/// document grid page), kept between sessions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewPrefs {
+    pub grid: bool,
+    pub guides: bool,
+    pub page_border: bool,
+    pub bleed: bool,
+    pub printable_area: bool,
+    pub pixel_grid: bool,
+    pub baseline_grid: bool,
+    pub non_printing: bool,
+    pub proof_colors: bool,
+    pub simulate_overprints: bool,
+    pub rasterize_complex_effects: bool,
+    /// Wireframe, normal, enhanced or pixels (`ViewMode::id`).
+    pub mode: String,
+    /// The grid page shows lines per unit instead of their spacing.
+    pub grid_frequency: bool,
+}
+
+impl Default for ViewPrefs {
+    fn default() -> Self {
+        ViewPrefs {
+            grid: false,
+            guides: true,
+            page_border: true,
+            bleed: false,
+            printable_area: false,
+            pixel_grid: true,
+            baseline_grid: false,
+            non_printing: false,
+            proof_colors: false,
+            simulate_overprints: false,
+            rasterize_complex_effects: true,
+            mode: "enhanced".into(),
+            grid_frequency: false,
+        }
+    }
+}
+
+/// Dockers' own choices kept between sessions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PanelPrefs {
+    /// The Color docker's slider model (`Color::convert_to` names) and
+    /// its viewer, sliders and palette views.
+    pub color_model: String,
+    pub color_views: [bool; 3],
+    /// Align and Distribute: the target (`AlignTo::id`), Use Outline and
+    /// where Distribute spreads (`DistributeTo::id`).
+    pub align_to: String,
+    pub align_use_outline: bool,
+    pub distribute_to: String,
+}
+
+impl Default for PanelPrefs {
+    fn default() -> Self {
+        PanelPrefs {
+            color_model: "CMYK".into(),
+            color_views: [true, true, false],
+            align_to: "active".into(),
+            align_use_outline: false,
+            distribute_to: "selection".into(),
         }
     }
 }
@@ -655,6 +804,9 @@ impl Default for Settings {
             screen_ppi: default_screen_ppi(),
             zoom_right_click_out: true,
             palette: PalettePrefs::default(),
+            tools: ToolPrefs::default(),
+            view: ViewPrefs::default(),
+            panels: PanelPrefs::default(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,

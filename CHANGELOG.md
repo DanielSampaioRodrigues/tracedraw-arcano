@@ -6,6 +6,15 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Preferences are saved as they change (looked at once a second), not
+  only when TraceDraw closes, so they last in the browser too (in its
+  local storage) and after a crash. More of them are kept: the tool
+  settings new objects take (polygon points, star sharpness, corners,
+  spiral revolutions, table and graph paper size, eraser, text font and
+  size, ...), what the window shows (grid, guidelines, page border,
+  bleed, printable area, pixel and baseline grids, view mode, ...), all
+  snapping toggles, and the Color and Align and Distribute dockers'
+  choices.
 - The Color docker has a color viewer (a saturation and brightness
   square beside a hue strip), the sliders and a palette's swatches, each
   shown or hidden by a button at the top; the selected object's colour

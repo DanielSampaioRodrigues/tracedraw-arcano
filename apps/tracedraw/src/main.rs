@@ -256,6 +256,9 @@ impl eframe::App for Shell {
         ui::root(app, ui);
         #[cfg(not(target_arch = "wasm32"))]
         splash::remember_window(ui.ctx(), &mut app.settings);
+        // Preferences changed this frame last without waiting for the
+        // exit (the browser has none).
+        app.autosave_settings(Some(ui.ctx()));
     }
 
     /// Keep the toolbox, dockers and other preferences for the next session.

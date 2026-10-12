@@ -12,13 +12,18 @@ mkdir -p "$TRACEDRAW_SHOTS/config"
 LOG="$TRACEDRAW_SHOTS/app.log"
 # Interface size 125 %: one interface point per pixel on this unscaled
 # screen, as at 100 % on a monitor the system scales by 125 % (the size
-# the scripts' coordinates are taken at).
-python3 - "$TRACEDRAW_SHOTS/config/settings.json" <<'PY'
+# the scripts' coordinates are taken at). TraceDraw saves its preferences
+# as they change, so each run starts from the defaults (the layout the
+# coordinates are taken at) unless TRACEDRAW_KEEP_SETTINGS=1 keeps what
+# the last run left.
+python3 - "$TRACEDRAW_SHOTS/config/settings.json" "${TRACEDRAW_KEEP_SETTINGS:-0}" <<'PY'
 import json, sys
-try:
-    s = json.load(open(sys.argv[1]))
-except (OSError, ValueError):
-    s = {}
+s = {}
+if sys.argv[2] == "1":
+    try:
+        s = json.load(open(sys.argv[1]))
+    except (OSError, ValueError):
+        s = {}
 s["ui_size"] = 1.25
 json.dump(s, open(sys.argv[1], "w"), indent=2)
 PY

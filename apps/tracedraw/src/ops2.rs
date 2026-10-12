@@ -62,6 +62,29 @@ pub enum AlignTo {
     Grid,
 }
 
+impl AlignTo {
+    /// The name kept in the preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            AlignTo::ActiveObject => "active",
+            AlignTo::PageEdge => "page_edge",
+            AlignTo::PageCenter => "page_center",
+            AlignTo::Grid => "grid",
+        }
+    }
+
+    /// The target a name stands for (the active object for an unknown
+    /// name).
+    pub fn from_id(id: &str) -> AlignTo {
+        match id {
+            "page_edge" => AlignTo::PageEdge,
+            "page_center" => AlignTo::PageCenter,
+            "grid" => AlignTo::Grid,
+            _ => AlignTo::ActiveObject,
+        }
+    }
+}
+
 impl App {
     // ----- layout ----------------------------------------------------------------
 

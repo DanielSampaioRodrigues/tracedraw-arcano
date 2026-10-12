@@ -855,6 +855,13 @@ pub struct App {
     /// closed.
     pub objects_page_closed: bool,
     pub objects_master_closed: bool,
+    /// When `autosave_settings` last wrote the preferences, and the
+    /// preferences as last saved or looked at (JSON), to save them only
+    /// when they changed.
+    pub settings_written: Option<web_time::Instant>,
+    pub settings_saved: Option<String>,
+    /// A change waits to be written (see `autosave_settings`).
+    pub settings_pending: bool,
     /// The layer made active in the Objects docker: new objects go there
     /// while it is one of the current page's layers or a master layer
     /// showing on it, visible and unlocked (see [`App::active_layer`]).
@@ -1014,6 +1021,29 @@ pub enum ViewMode {
     Normal,
     Enhanced,
     Pixels,
+}
+
+impl ViewMode {
+    /// The name kept in the preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            ViewMode::Wireframe => "wireframe",
+            ViewMode::Normal => "normal",
+            ViewMode::Enhanced => "enhanced",
+            ViewMode::Pixels => "pixels",
+        }
+    }
+
+    /// The mode a name from the preferences stands for (enhanced for an
+    /// unknown name).
+    pub fn from_id(id: &str) -> ViewMode {
+        match id {
+            "wireframe" => ViewMode::Wireframe,
+            "normal" => ViewMode::Normal,
+            "pixels" => ViewMode::Pixels,
+            _ => ViewMode::Enhanced,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1443,6 +1473,9 @@ impl App {
             drop_menu: None,
             objects_collapsed: Default::default(),
             objects_open_groups: Default::default(),
+            settings_written: None,
+            settings_saved: None,
+            settings_pending: false,
             objects_page_closed: false,
             objects_master_closed: false,
             picked_layer: None,
@@ -1727,6 +1760,14 @@ impl App {
         self.snap.guides = s.snap.guides;
         self.snap.objects = s.snap.objects;
         self.snap.page = s.snap.page;
+        self.snap.pixels = s.snap.pixels;
+        self.snap.baseline_grid = s.snap.baseline_grid;
+        self.snap.alignment_guides = s.snap.alignment_guides;
+        self.snap.dynamic_guides = s.snap.dynamic_guides;
+        self.snap.off = s.snap.off;
+        self.apply_tool_prefs(&s.tools);
+        self.apply_view_prefs(&s.view);
+        self.apply_panel_prefs(&s.panels);
         self.nudge_mm = s.nudge_mm;
         self.apply_toolbox_picks(&s.toolbox);
         self.duplicate_offset = Vec2::new(s.duplicate_offset_mm[0], s.duplicate_offset_mm[1]);
@@ -1843,6 +1884,8 @@ impl App {
     pub fn save_settings(&mut self) {
         self.sync_settings();
         self.settings.save();
+        self.settings_saved = serde_json::to_string(&self.settings).ok();
+        self.settings_pending = false;
     }
 
     /// Copy the editor's state (workspace, snapping, toolbox, units...)
@@ -1853,6 +1896,14 @@ impl App {
         self.settings.snap.guides = self.snap.guides;
         self.settings.snap.objects = self.snap.objects;
         self.settings.snap.page = self.snap.page;
+        self.settings.snap.pixels = self.snap.pixels;
+        self.settings.snap.baseline_grid = self.snap.baseline_grid;
+        self.settings.snap.alignment_guides = self.snap.alignment_guides;
+        self.settings.snap.dynamic_guides = self.snap.dynamic_guides;
+        self.settings.snap.off = self.snap.off;
+        self.settings.tools = self.tool_prefs();
+        self.settings.view = self.view_prefs();
+        self.settings.panels = self.panel_prefs();
         self.settings.nudge_mm = self.nudge_mm;
         self.settings.toolbox = self
             .toolbox_last
@@ -1864,6 +1915,186 @@ impl App {
         self.settings.language = crate::i18n::language();
         self.settings.shown_bars = Some(self.shown_bars());
         self.settings.dockers = Some(self.docker_setup());
+    }
+
+    /// The tool settings now (see [`crate::settings::ToolPrefs`]).
+    pub fn tool_prefs(&self) -> crate::settings::ToolPrefs {
+        crate::settings::ToolPrefs {
+            polygon_points: self.polygon_points,
+            star_sharpness: self.star_sharpness,
+            star_complex: self.star_complex,
+            complex_points: self.complex_points,
+            complex_sharpness: self.complex_sharpness,
+            rect_corners: self.rect_corners,
+            corners_together: self.corners_together,
+            ellipse_arc: self.ellipse_arc,
+            spiral_revolutions: self.spiral_revolutions,
+            spiral_logarithmic: self.spiral_logarithmic,
+            table_rows: self.table_rows,
+            table_cols: self.table_cols,
+            graph_rows: self.graph_rows,
+            graph_cols: self.graph_cols,
+            blend_steps: self.blend_steps,
+            contour_steps: self.contour_steps,
+            contour_offset: self.contour_offset,
+            eraser_width: self.eraser_width,
+            eraser_square: self.eraser_square,
+            text_font: self.text_font.clone(),
+            text_size_pt: self.text_size_pt,
+            text_hyphenation: self.text_hyphenation,
+        }
+    }
+
+    /// Take the tool settings of `t`, each brought into its range (a
+    /// preferences file edited by hand cannot ask for a 0-sided polygon).
+    pub fn apply_tool_prefs(&mut self, t: &crate::settings::ToolPrefs) {
+        let finite = |v: f64, lo: f64, hi: f64, or: f64| {
+            if v.is_finite() {
+                v.clamp(lo, hi)
+            } else {
+                or
+            }
+        };
+        self.polygon_points = t.polygon_points.clamp(3, 500);
+        self.star_sharpness = finite(t.star_sharpness, 0.0, 1.0, 0.5);
+        self.star_complex = t.star_complex;
+        use tracedraw_core::geometry::{complex_star_max_sharpness, COMPLEX_STAR_MIN_POINTS};
+        self.complex_points = t.complex_points.clamp(COMPLEX_STAR_MIN_POINTS, 500);
+        self.complex_sharpness = t
+            .complex_sharpness
+            .clamp(1, complex_star_max_sharpness(self.complex_points));
+        self.rect_corners = t.rect_corners;
+        self.corners_together = t.corners_together;
+        self.ellipse_arc = t.ellipse_arc;
+        self.spiral_revolutions = t.spiral_revolutions.clamp(1, 100);
+        self.spiral_logarithmic = t.spiral_logarithmic;
+        self.table_rows = t.table_rows.clamp(1, 1000);
+        self.table_cols = t.table_cols.clamp(1, 1000);
+        self.graph_rows = t.graph_rows.clamp(1, 1000);
+        self.graph_cols = t.graph_cols.clamp(1, 1000);
+        self.blend_steps = t.blend_steps.clamp(1, 999);
+        self.contour_steps = t.contour_steps.clamp(1, 999);
+        self.contour_offset = finite(t.contour_offset, 0.001, 1000.0, 2.0);
+        self.eraser_width = finite(t.eraser_width, 0.025, 2540.0, 6.35);
+        self.eraser_square = t.eraser_square;
+        if !t.text_font.trim().is_empty() {
+            self.text_font = t.text_font.clone();
+        }
+        self.text_size_pt = finite(t.text_size_pt, 0.5, 3000.0, 24.0);
+        self.text_hyphenation = t.text_hyphenation;
+    }
+
+    /// What the drawing window shows now (see
+    /// [`crate::settings::ViewPrefs`]).
+    pub fn view_prefs(&self) -> crate::settings::ViewPrefs {
+        crate::settings::ViewPrefs {
+            grid: self.show_grid,
+            guides: self.show_guides,
+            page_border: self.show_page_border,
+            bleed: self.show_bleed,
+            printable_area: self.show_printable_area,
+            pixel_grid: self.show_pixel_grid,
+            baseline_grid: self.show_baseline_grid,
+            non_printing: self.show_non_printing,
+            proof_colors: self.proof_colors,
+            simulate_overprints: self.simulate_overprints,
+            rasterize_complex_effects: self.rasterize_complex_effects,
+            mode: self.view_mode.id().into(),
+            grid_frequency: self.grid_frequency,
+        }
+    }
+
+    pub fn apply_view_prefs(&mut self, v: &crate::settings::ViewPrefs) {
+        self.show_grid = v.grid;
+        self.show_guides = v.guides;
+        self.show_page_border = v.page_border;
+        self.show_bleed = v.bleed;
+        self.show_printable_area = v.printable_area;
+        self.show_pixel_grid = v.pixel_grid;
+        self.show_baseline_grid = v.baseline_grid;
+        self.show_non_printing = v.non_printing;
+        self.proof_colors = v.proof_colors;
+        self.simulate_overprints = v.simulate_overprints;
+        self.rasterize_complex_effects = v.rasterize_complex_effects;
+        self.view_mode = ViewMode::from_id(&v.mode);
+        self.grid_frequency = v.grid_frequency;
+    }
+
+    /// Dockers' own choices now (see [`crate::settings::PanelPrefs`]).
+    pub fn panel_prefs(&self) -> crate::settings::PanelPrefs {
+        crate::settings::PanelPrefs {
+            color_model: crate::ui::color_docker::MODELS
+                .get(self.color_model)
+                .copied()
+                .unwrap_or("CMYK")
+                .into(),
+            color_views: self.color_docker.shown,
+            align_to: self.align_to.id().into(),
+            align_use_outline: self.align_use_outline,
+            distribute_to: self.distribute_to.id().into(),
+        }
+    }
+
+    pub fn apply_panel_prefs(&mut self, p: &crate::settings::PanelPrefs) {
+        if let Some(i) = crate::ui::color_docker::MODELS
+            .iter()
+            .position(|m| *m == p.color_model)
+        {
+            if i != self.color_model {
+                self.color_model = i;
+                self.mixer_color = self.mixer_color.convert_to(&p.color_model);
+            }
+        }
+        self.color_docker.shown = p.color_views;
+        self.align_to = crate::ops2::AlignTo::from_id(&p.align_to);
+        self.align_use_outline = p.align_use_outline;
+        self.distribute_to = crate::ops::DistributeTo::from_id(&p.distribute_to);
+    }
+
+    /// Save the preferences when they changed: looked at every frame, so a
+    /// change in Options, the menus, the bars or the dockers lasts even
+    /// when TraceDraw does not close normally (and in the browser, where
+    /// closing the tab saves nothing); written at most once a second (a
+    /// window being resized changes them every frame), with a frame asked
+    /// for when a write has to wait. Not while Options is open: its Cancel
+    /// puts them back.
+    pub fn autosave_settings(&mut self, ctx: Option<&egui::Context>) {
+        if self.options_snapshot.is_some() {
+            return;
+        }
+        if self.settings_changed() {
+            self.settings_pending = true;
+        }
+        if !self.settings_pending {
+            return;
+        }
+        let now = web_time::Instant::now();
+        let gap = std::time::Duration::from_secs(1);
+        let wait = self
+            .settings_written
+            .map(|t| gap.saturating_sub(now.duration_since(t)))
+            .unwrap_or_default();
+        if wait.is_zero() {
+            self.settings.save();
+            self.settings_written = Some(now);
+            self.settings_pending = false;
+        } else if let Some(ctx) = ctx {
+            ctx.request_repaint_after(wait);
+        }
+    }
+
+    /// Copy the editor's state into the preferences; true when they differ
+    /// from the ones last saved or looked at, which are then remembered.
+    pub fn settings_changed(&mut self) -> bool {
+        self.sync_settings();
+        let Ok(now) = serde_json::to_string(&self.settings) else {
+            return false;
+        };
+        if self.settings_saved.as_deref() == Some(now.as_str()) {
+            return false;
+        }
+        self.settings_saved = Some(now);
+        true
     }
 
     /// The docker tab column now (see [`crate::settings::DockerSetup`]).
@@ -4475,6 +4706,104 @@ mod tests {
         let mut fifth = App::headless();
         fifth.apply_settings(old);
         assert_eq!(fifth.open_dockers, DockerTab::default_strip());
+    }
+
+    /// Tool settings, what the window shows, snapping and the dockers'
+    /// choices come back the next time, through the preferences file
+    /// (JSON, as in the browser's storage).
+    #[test]
+    fn tools_view_snapping_and_dockers_survive_a_restart() {
+        let mut app = App::headless();
+        // A first start has the preferences' defaults.
+        assert_eq!(app.tool_prefs(), crate::settings::ToolPrefs::default());
+        assert_eq!(app.view_prefs(), crate::settings::ViewPrefs::default());
+        assert_eq!(app.panel_prefs(), crate::settings::PanelPrefs::default());
+        app.polygon_points = 8;
+        app.spiral_revolutions = 7;
+        app.text_font = "Georgia".into();
+        app.text_size_pt = 36.0;
+        app.eraser_square = true;
+        app.show_grid = true;
+        app.show_page_border = false;
+        app.view_mode = ViewMode::Wireframe;
+        app.snap.dynamic_guides = true;
+        app.snap.off = true;
+        app.color_model = 0;
+        app.color_docker.shown = [false, true, true];
+        app.align_to = crate::ops2::AlignTo::PageCenter;
+        app.distribute_to = crate::ops::DistributeTo::Page;
+        app.sync_settings();
+        let json = serde_json::to_string(&app.settings).expect("json");
+        let saved: crate::settings::Settings = serde_json::from_str(&json).expect("read back");
+        let mut next = App::headless();
+        next.apply_settings(saved);
+        assert_eq!(next.polygon_points, 8);
+        assert_eq!(next.spiral_revolutions, 7);
+        assert_eq!(next.text_font, "Georgia");
+        assert_eq!(next.text_size_pt, 36.0);
+        assert!(next.eraser_square);
+        assert!(next.show_grid && !next.show_page_border);
+        assert_eq!(next.view_mode, ViewMode::Wireframe);
+        assert!(next.snap.dynamic_guides && next.snap.off);
+        assert_eq!(next.color_model, 0);
+        assert_eq!(next.color_docker.shown, [false, true, true]);
+        assert_eq!(next.align_to, crate::ops2::AlignTo::PageCenter);
+        assert_eq!(next.distribute_to, crate::ops::DistributeTo::Page);
+        // Values out of range in a file edited by hand are brought in.
+        let mut odd = next.settings.clone();
+        odd.tools.polygon_points = 0;
+        odd.tools.text_size_pt = f64::NAN;
+        odd.tools.text_font = " ".into();
+        odd.view.mode = "no.such.key".into();
+        next.apply_settings(odd);
+        assert_eq!(next.polygon_points, 3);
+        assert_eq!(next.text_size_pt, 24.0);
+        assert_eq!(next.text_font, "Georgia");
+        assert_eq!(next.view_mode, ViewMode::Enhanced);
+        // Preferences written before these existed start as the defaults.
+        let old: crate::settings::Settings =
+            serde_json::from_str(r#"{"language":"en"}"#).expect("old file");
+        assert_eq!(old.tools, crate::settings::ToolPrefs::default());
+        assert_eq!(old.view, crate::settings::ViewPrefs::default());
+        assert!(old.snap.alignment_guides && !old.snap.off);
+    }
+
+    /// The preferences are saved when something changed, not every
+    /// second, and not while Options is open (Cancel puts them back).
+    #[test]
+    fn preferences_are_saved_when_they_change() {
+        let mut app = App::headless();
+        // The first look finds nothing saved yet.
+        assert!(app.settings_changed());
+        assert!(!app.settings_changed());
+        app.polygon_points = 12;
+        assert!(app.settings_changed());
+        assert!(!app.settings_changed());
+        // A save remembers what it wrote.
+        app.show_grid = !app.show_grid;
+        app.save_settings();
+        assert!(!app.settings_changed());
+        // Options open: autosave waits; after the dialog closes the first
+        // look sees the change and writes it.
+        app.options_snapshot = Some(crate::ui::options::OptionsSnapshot::take(&app));
+        app.polygon_points = 9;
+        app.autosave_settings(None);
+        assert!(app.settings_written.is_none() && !app.settings_pending);
+        app.options_snapshot = None;
+        app.autosave_settings(None);
+        assert!(app.settings_written.is_some() && !app.settings_pending);
+        assert_eq!(app.settings.tools.polygon_points, 9);
+        // Another change within the second waits for the next frame after
+        // it, which it asks for.
+        app.polygon_points = 10;
+        let ctx = egui::Context::default();
+        app.autosave_settings(Some(&ctx));
+        assert!(app.settings_pending);
+        app.settings_written = app
+            .settings_written
+            .and_then(|t| t.checked_sub(std::time::Duration::from_secs(2)));
+        app.autosave_settings(Some(&ctx));
+        assert!(!app.settings_pending);
     }
 
     #[test]

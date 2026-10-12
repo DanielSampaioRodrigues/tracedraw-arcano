@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
+Counts: works 181, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -220,6 +220,7 @@ Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Options > Global > Printing (what the Print dialog starts with, remember the last print, preflight in the dialog), File Formats (what Export starts with, remember the last export, imported objects centred or as in the file), Bitmap Tracing (Quick Trace preset, what every trace starts with), Warnings (unread objects, missing fonts, Shelf removal; each message can be turned off) | works (see `behavior/options.md`) |
 | Options pages for pen pressure, tablet mode, VBA and plug-ins | not applicable: no pen pressure input, own workspaces, JavaScript scripting, no plug-in host |
 | Save settings as default | works |
+| Preferences kept across restarts and saved as they change (desktop file, browser local storage): Options, bars, dockers, units, snapping, tool settings, what the window shows, dockers' choices (see `behavior/workspaces.md`, Kept across restarts) | works |
 | Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |
 | Vector Mosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
