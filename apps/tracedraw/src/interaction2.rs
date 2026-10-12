@@ -10,7 +10,7 @@ use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, BezPath, Point, Rect, Vec2},
     live::Effect,
-    Color, Command, Fill, ShapeId, Stroke,
+    Command, Fill, ShapeId, Stroke,
 };
 
 impl App {
@@ -116,16 +116,7 @@ impl App {
             Tool::HorizontalVerticalDimension | Tool::SegmentDimension | Tool::AngularDimension => {
                 self.dimension_input(response, p)
             }
-            Tool::Callout => {
-                let p = self.snap_point(p);
-                if response.clicked_by(PointerButton::Primary) {
-                    self.dimension_points.push(p);
-                    if self.dimension_points.len() == 3 {
-                        let pts = std::mem::take(&mut self.dimension_points);
-                        self.create_callout(pts[0], pts[1], pts[2]);
-                    }
-                }
-            }
+            Tool::Callout => self.callout_input(response, p),
             Tool::AnchorEditing => self.anchor_input(response, p),
             Tool::RightAngleConnector | Tool::RoundedConnector => {
                 if response.drag_started_by(PointerButton::Primary) {
@@ -426,57 +417,6 @@ impl App {
         }) {
             self.select(vec![id]);
         }
-    }
-
-    pub fn create_callout(&mut self, tip: Point, elbow: Point, text_at: Point) {
-        let mut path = BezPath::new();
-        path.move_to(tip);
-        path.line_to(elbow);
-        path.line_to(text_at);
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let id = self.engine.new_shape_id();
-        let mut line = Shape::new(
-            id,
-            ShapeKind::Path {
-                path,
-                closed: false,
-            },
-        );
-        line.fill = Fill::None;
-        line.stroke = Some(Stroke {
-            end_arrow: tracedraw_core::Arrowhead::None,
-            start_arrow: tracedraw_core::Arrowhead::Arrow,
-            ..Stroke::hairline(Color::BLACK)
-        });
-        let tid = self.engine.new_shape_id();
-        let mut text = Shape::new(
-            tid,
-            ShapeKind::Text {
-                spans: vec![tracedraw_core::TextSpan::new(
-                    tr("tool.callout_text"),
-                    self.text_font.clone(),
-                    10.0,
-                )],
-                origin: text_at + Vec2::new(1.0, 1.0),
-                frame: None,
-                align: tracedraw_core::TextAlign::Left,
-                para: Default::default(),
-                on_path: None,
-            },
-        );
-        text.fill = Fill::Solid(Color::BLACK);
-        text.stroke = None;
-        let cmds = vec![
-            Command::AddShape { layer, shape: line },
-            Command::AddShape { layer, shape: text },
-            Command::Group {
-                shapes: vec![id, tid],
-            },
-        ];
-        let _ = self.engine.run_batch("Callout", &cmds);
-        self.begin_text_edit(tid);
     }
 
     /// Right-angle and rounded connectors: an elbow path between the

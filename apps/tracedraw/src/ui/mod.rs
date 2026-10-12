@@ -12,6 +12,7 @@ pub mod bitmap_dialogs;
 pub mod bitmap_preview;
 pub mod brand;
 pub mod brush_bars;
+pub mod callout_bar;
 pub mod chrome;
 pub mod color_docker;
 pub mod connector_bar;
@@ -579,6 +580,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     canvas::draw_effect_nodes(app, &painter);
     envelope_ui::draw_envelopes(app, &painter);
     dimension_bar::draw_preview(app, &painter);
+    callout_bar::draw_preview(app, &painter);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

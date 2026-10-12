@@ -65,10 +65,62 @@ undistorted text of its size, and the group keeps no transform.
 
 ## 3-point callout
 
-- Three clicks: the tip (what the callout points at), the elbow, and
-  where the text starts. The callout is a two-segment line with an
-  arrowhead at the tip, and a text object that opens for typing right
-  away.
+A callout is a group of its leader (an open path from the tip through
+the elbow to the text, with a head at the tip), the shape round its text
+when its style has one, and its text, with the tip, the elbow and the
+style in the group's object data (`callout`; `callouts.rs`).
+
+### Placing one
+
+- A drag from the tip (what the callout points at) to the elbow, or a
+  click on each, then a click where the text goes. While the next point
+  is wanted, the leader so far follows the pointer, drawn thin in blue;
+  the property bar says what to click next and Escape starts again.
+  Points snap as drawing does.
+- The text goes on the side of the elbow the third click is on: to its
+  right, left aligned, or to its left, right aligned, so it grows away
+  from the leader. It is placed so the leader ends at the third click,
+  in the current font, size, bold and italic.
+- The text opens for typing at once with its sample text ("Callout
+  text") selected, so typing replaces it. One undo step makes the
+  callout; the typing is another.
+
+### Fitting
+
+After every change of the drawing, in the same undo step:
+
+- the leader ends at the middle of the text's side, `gap` away; with an
+  underline it runs on under the text, `gap` below it and `gap` past
+  both ends; with a rectangle, a rounded rectangle (corner radius 30 %
+  of the shorter side, at most 3 mm) or an ellipse (through the corners
+  of the text's box grown by `gap`), it ends at the middle of the
+  shape's side;
+- typed text, a new size or the text moved on its own (Ctrl+click it)
+  take the leader's end and the shape along;
+- a tip or an elbow moved with the Shape tool stays where it was put
+  (they are read back from the leader's first two nodes); the leader's
+  end always goes back to the text.
+
+The group can be moved, scaled and turned as any group. The text's box
+is its lines, from the left of the first character to the right of the
+last and from the lowest descent to the highest ascent.
+
+### Property bar
+
+With the 3-point callout tool, when the Pick tool's selection is all
+callouts (after the position and size fields), and while a new
+callout's text is typed. Changes apply to the selected callouts (one
+undo step; only what changed, so a leader's colour stays) and to the
+ones made next; the style is kept in the preferences
+(`tools.callout_style`).
+
+| Control | Default | Range |
+|---|---|---|
+| Outline width | Hairline | Hairline, 0.1 to 3 mm (leader and shape) |
+| Line style | solid | the outline dash presets |
+| Head at the tip | arrow | the arrowhead presets (None for a plain line) |
+| Callout shape | None | None, Underline, Rectangle, Rounded rectangle, Ellipse |
+| Gap | 1 mm | 0 to 100 mm |
 
 ## Checks
 
@@ -78,3 +130,8 @@ undistorted text of its size, and the group keeps no transform.
 - `dimensions::tests::dimensions_redraw_for_their_style_and_their_size`
 - `dimensions::tests::previews_and_segments`
 - `ui::dimension_bar::tests::the_bar_and_the_preview_draw`
+- `callouts::tests::a_callout_ends_at_its_text_and_follows_it`
+- `callouts::tests::a_tip_moved_with_the_shape_tool_stays`
+- `callouts::tests::text_left_of_the_elbow_is_right_aligned_and_shapes_fit`
+- `callouts::tests::odd_callout_data_is_left_alone`
+- `ui::callout_bar::tests::the_bar_and_the_preview_draw`

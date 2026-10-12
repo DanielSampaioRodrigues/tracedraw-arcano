@@ -647,6 +647,17 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Pick | Tool::FreeformPick
                 if shapes
                     .iter()
+                    .all(|s| crate::callouts::Callout::of(s).is_some()) =>
+            {
+                // Callouts selected with the Pick tool: the object fields,
+                // then the callout style.
+                object_properties(app, ui);
+                vsep(ui);
+                crate::ui::callout_bar::callout_bar(app, ui);
+            }
+            Tool::Pick | Tool::FreeformPick
+                if shapes
+                    .iter()
                     .all(|s| crate::dimensions::Dimension::of(s).is_some()) =>
             {
                 // Dimensions selected with the Pick tool: the object
@@ -1090,6 +1101,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::HorizontalVerticalDimension
             | Tool::SegmentDimension
             | Tool::AngularDimension => crate::ui::dimension_bar::dimension_bar(app, ui),
+            Tool::Callout => crate::ui::callout_bar::callout_bar(app, ui),
             Tool::Connector | Tool::RightAngleConnector | Tool::RoundedConnector => {
                 crate::ui::connector_bar::connector_bar(app, ui)
             }

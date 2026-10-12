@@ -41,7 +41,8 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve; lines from an end node of the selected curve continue it (join, close, merge subpaths); Freehand smoothing; outline, arrowheads and Close Curve on the property bar | works (see `behavior/curve-tools.md`) |
 | Shape Recognition (lines, rectangles and ellipses at any tilt, triangles, four-sided shapes; recognition and smoothing levels) and Sketch (stroke joining with distance and smoothing) (see `behavior/curve-tools.md`) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
-| Dimensions: parallel, horizontal/vertical, angular, segment (a click on a segment), 3-point callout; live preview; the bar's precision, units, prefix, suffix, text position and size; dynamic (drawn again when moved or scaled) (see `behavior/dimensions.md`) | works |
+| Dimensions: parallel, horizontal/vertical, angular, segment (a click on a segment); live preview; the bar's precision, units, prefix, suffix, text position and size; dynamic (drawn again when moved or scaled) (see `behavior/dimensions.md`) | works |
+| 3-point callout: a drag or two clicks for the leader, a click for the text (typed at once); its bar's outline width, line style, head, shape round the text (underline, rectangle, rounded, ellipse) and gap; leader and shape fitted to the text as it is typed or moved (see `behavior/dimensions.md`) | works |
 | Connectors: straight, right-angle, rounded right-angle, attached (they follow the objects they join), with a bar (kind, corner radius, outline); Anchor Editing tool (add, move, delete anchors; connectors snap to them) (see `behavior/connectors-and-anchors.md`) | works |
 | Text (artistic and paragraph), Table | works |
 | Browser version (WebAssembly, WebGL 2): opens, edits and exports documents with uploads and downloads | works |

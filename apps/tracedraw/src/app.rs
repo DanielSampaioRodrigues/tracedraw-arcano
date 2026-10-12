@@ -989,6 +989,11 @@ pub struct App {
     pub dimensions_checked: u64,
     /// A linear dimension's first point was given by pressing to drag.
     pub dimension_dragging: bool,
+    /// The style new 3-point callouts take (the callout tool's bar).
+    pub callout_style: crate::callouts::CalloutStyle,
+    /// The document revision callouts were last fitted at (see
+    /// [`App::refresh_callouts`]).
+    pub callouts_checked: u64,
     /// Rounded connectors' corner radius, mm.
     pub connector_radius: f64,
     /// The document revision connectors were last checked at (see
@@ -1617,6 +1622,8 @@ impl App {
             dimension_style: Default::default(),
             dimensions_checked: u64::MAX,
             dimension_dragging: false,
+            callout_style: Default::default(),
+            callouts_checked: 0,
             connector_radius: 3.0,
             connectors_checked: u64::MAX,
             connector_radius_step: None,
@@ -2045,6 +2052,7 @@ impl App {
             roughen_amount: self.roughen_amount,
             brush: self.brush,
             dimension_style: self.dimension_style.clone(),
+            callout_style: self.callout_style.clone(),
             connector_radius: self.connector_radius,
             recognize: self.recognize,
             sketch: self.sketch,
@@ -2108,6 +2116,7 @@ impl App {
             ..t.dimension_style.clone()
         };
         self.connector_radius = finite(t.connector_radius, 0.0, 1000.0, 3.0);
+        self.callout_style = t.callout_style.clamped();
         self.recognize = crate::recognize::RecognizeSettings {
             recognition: t.recognize.recognition.min(5),
             smoothing: t.recognize.smoothing.min(5),
@@ -4922,6 +4931,8 @@ mod tests {
         app.mesh_rows = 4;
         app.area_outline_mode = 1;
         app.area_outline_width = 1.5;
+        app.callout_style.shape = crate::callouts::CalloutShape::Ellipse;
+        app.callout_style.gap = 2.5;
         // The palette starts at the bottom; moved to the right, it stays.
         use crate::ui::bars::{move_bar, Bar, Dock};
         assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
@@ -4955,17 +4966,23 @@ mod tests {
         assert!(next.envelope_keep_lines);
         assert_eq!(next.mesh_rows, 4);
         assert_eq!((next.area_outline_mode, next.area_outline_width), (1, 1.5));
+        assert_eq!(
+            (next.callout_style.shape, next.callout_style.gap),
+            (crate::callouts::CalloutShape::Ellipse, 2.5)
+        );
         // Values out of range in a file edited by hand are brought in.
         let mut odd = next.settings.clone();
         odd.tools.polygon_points = 0;
         odd.tools.text_size_pt = f64::NAN;
         odd.tools.text_font = " ".into();
+        odd.tools.callout_style.gap = f64::NAN;
         odd.view.mode = "no.such.key".into();
         next.apply_settings(odd);
         assert_eq!(next.polygon_points, 3);
         assert_eq!(next.text_size_pt, 24.0);
         assert_eq!(next.text_font, "Georgia");
         assert_eq!(next.view_mode, ViewMode::Enhanced);
+        assert_eq!(next.callout_style.gap, 1.0);
         // Preferences written before these existed start as the defaults.
         let old: crate::settings::Settings =
             serde_json::from_str(r#"{"language":"en"}"#).expect("old file");

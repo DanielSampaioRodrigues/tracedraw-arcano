@@ -19,6 +19,7 @@ mod bitmap_fx;
 mod bitmap_modes;
 mod border_grommet;
 mod brushes;
+mod callouts;
 mod canvas;
 mod clipboard;
 mod clone_effect;
@@ -266,6 +267,8 @@ impl eframe::App for Shell {
         app.bake_dimensions();
         // Connectors follow the objects they join.
         app.refresh_connectors();
+        // Callouts follow their text.
+        app.refresh_callouts();
         #[cfg(not(target_arch = "wasm32"))]
         splash::remember_window(ui.ctx(), &mut app.settings);
         // Preferences changed this frame last without waiting for the

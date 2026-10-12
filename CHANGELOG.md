@@ -6,6 +6,15 @@ full, row-by-row status.
 
 ## Unreleased
 
+- 3-point callout: a drag from the tip to the elbow works besides two
+  clicks (the hint said so; only clicks were taken), the text goes on
+  the side of the elbow it was placed on and opens with its sample text
+  selected, so typing replaces it (it was typed after it). The leader
+  and a new shape round the text (underline, rectangle, rounded
+  rectangle or ellipse) follow the text as it is typed, resized or
+  moved; a tip or elbow moved with the Shape tool stays. The tool has a
+  property bar (outline width, line style, head at the tip, shape, gap),
+  also for callouts selected with the Pick tool.
 - Knife: a freehand cut besides the two-point line, a gap along the cut,
   and the pieces kept apart or as one object, from its property bar.
   Every separate piece becomes an object of its own, and open curves are

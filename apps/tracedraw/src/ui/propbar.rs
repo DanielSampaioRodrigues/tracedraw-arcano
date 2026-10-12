@@ -1149,7 +1149,7 @@ pub fn sep(ui: &mut Ui) {
 }
 
 /// A small label picture before a field.
-fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
+pub(crate) fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(16.0, ROW), Sense::hover());
     draw_pic(
         ui.painter(),
@@ -1643,7 +1643,8 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
 }
 
 /// Outline widths the list offers.
-const OUTLINE_WIDTHS_MM: [f64; 10] = [0.1, 0.2, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+pub(crate) const OUTLINE_WIDTHS_MM: [f64; 10] =
+    [0.1, 0.2, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
 
 /// Text for an outline width in the ruler unit ("Hairline", "None").
 pub fn outline_text(app: &App, width: Option<f64>) -> String {
@@ -1771,7 +1772,7 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
 }
 
 /// Dash presets (multiples of the outline width); the first is solid.
-const DASHES: &[&[f64]] = &[
+pub(crate) const DASHES: &[&[f64]] = &[
     &[],
     &[4.0, 2.0],
     &[1.0, 2.0],
@@ -1780,7 +1781,7 @@ const DASHES: &[&[f64]] = &[
     &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0],
 ];
 
-fn dash_label(d: &[f64]) -> String {
+pub(crate) fn dash_label(d: &[f64]) -> String {
     if d.is_empty() {
         return "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}".into();
     }
