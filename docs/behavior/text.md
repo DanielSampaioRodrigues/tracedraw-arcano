@@ -23,8 +23,13 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 ## Property bar
 
 Text tool, and the Pick tool with only text selected (after the object
-fields): font family, size in points, Bold, Italic, Underline, and the
-alignment (Left, Center, Right, Justify). Each change applies to the
+fields): the font list (below), the size in points (a field and an arrow
+dropping 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48,
+60, 72, 96, 144 and 288), Bold, Italic, Underline, the alignment (a
+button with the alignment's picture dropping Left, Center, Right and
+Full justify), Bullets and Drop Cap (for paragraph text; they open their
+dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
+(Ctrl+Shift+T). Each change applies to the
 selected text objects at once (every span takes the font, size and
 style; the object takes the alignment) as one "Text Style" undo step,
 and becomes the default for the next text. Double-clicking text with the

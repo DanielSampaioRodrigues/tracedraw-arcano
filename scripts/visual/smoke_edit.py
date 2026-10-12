@@ -12,7 +12,7 @@ for k, (x0, y0, x1, y1) in [("F6", (450, 200, 550, 280)), ("F7", (600, 200, 700,
 key("F5"); drag(450, 450, 600, 520); time.sleep(0.2)
 key("F8"); click(470, 600); typestr("Smoke test"); key("Escape"); time.sleep(0.2)
 check("drawn")
-combo("Control_L", "a"); click(546, 893); check("palette")
+combo("Control_L", "a"); click(1588, 540); check("palette")
 combo("Control_L", "z"); combo("Control_L", "Shift_L", "z"); check("undo redo")
 key("F10"); click(800, 240); drag(850, 240, 870, 260); check("node drag")
 key("space"); click(500, 240); click(500, 240, button=3); time.sleep(0.4); key("Escape"); check("context menu")

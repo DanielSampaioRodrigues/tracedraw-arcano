@@ -57,11 +57,6 @@ pub fn palette_column(app: &mut App, ui: &mut Ui) {
     row(app, ui, Row::Main, true);
 }
 
-/// The document palette as a column.
-pub fn document_palette_column(app: &mut App, ui: &mut Ui) {
-    row(app, ui, Row::Document, true);
-}
-
 /// A strip's geometry: the row's design (left to right, the swatches
 /// along it, 25 px across) laid along x for a row or along y for a
 /// column.

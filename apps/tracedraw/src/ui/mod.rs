@@ -309,9 +309,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| standard(app, ui));
     }
 
-    // The palettes as columns on a side lie outermost; as rows they come
-    // after the dockers (below). The default palette lies next to the
-    // window, the document palette outside it.
+    // The default palette as a column on a side lies outermost (by
+    // default at the right edge, outside the dockers); as a row it comes
+    // after the dockers (below). The document palette is a row under the
+    // drawing window (over it when the palette is docked at the top).
     let palette_frame = Frame::new().fill(Tokens::PANEL);
     let palette_dock = bars_layout.dock(Bar::Palette);
     let show_palette = app.settings.palette.show_palette;
@@ -324,11 +325,6 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 Panel::right(id)
             }
         };
-        if show_doc_palette {
-            side(panel("document_palette"), palette::ROW_H)
-                .frame(palette_frame)
-                .show(ui, |ui| palette::document_palette_column(app, ui));
-        }
         if show_palette {
             side(panel("palette"), palette::ROW_H)
                 .frame(palette_frame)
@@ -404,8 +400,9 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             )
             .show(ui, |ui| toolbox::toolbox(app, ui, dock));
     }
-    // The palettes as rows under (or over) the drawing window.
-    if matches!(palette_dock, Dock::Bottom | Dock::Top) {
+    // The palettes as rows under (or over) the drawing window; the
+    // document palette is always a row.
+    {
         let panel = |id: &'static str| {
             if palette_dock == Dock::Top {
                 Panel::top(id)
@@ -418,7 +415,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 .frame(palette_frame)
                 .show(ui, |ui| palette::document_palette_row(app, ui));
         }
-        if show_palette {
+        if show_palette && matches!(palette_dock, Dock::Bottom | Dock::Top) {
             side(panel("palette"), palette::ROW_H)
                 .frame(palette_frame)
                 .show(ui, |ui| palette::palette_row(app, ui));

@@ -666,6 +666,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if !app.selection.is_empty() {
                     crate::ui::propbar::sep(ui);
                     crate::ui::propbar::outline_part(app, ui);
+                    crate::ui::propbar::sep(ui);
+                    crate::ui::propbar::order_part(app, ui);
                 }
             }
             Tool::Ellipse | Tool::ThreePointEllipse => {
@@ -675,6 +677,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if !app.selection.is_empty() {
                     crate::ui::propbar::sep(ui);
                     crate::ui::propbar::outline_part(app, ui);
+                    crate::ui::propbar::sep(ui);
+                    crate::ui::propbar::order_part(app, ui);
                 }
             }
             Tool::Polygon | Tool::Star => {
@@ -685,6 +689,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if !app.selection.is_empty() {
                     crate::ui::propbar::sep(ui);
                     crate::ui::propbar::outline_part(app, ui);
+                    crate::ui::propbar::sep(ui);
+                    crate::ui::propbar::order_part(app, ui);
                 }
             }
             Tool::Text => text_properties(app, ui),
@@ -1756,76 +1762,245 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The point sizes the font size list offers.
+pub const TEXT_SIZES: [f64; 22] = [
+    6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 40.0,
+    48.0, 60.0, 72.0, 96.0, 144.0, 288.0,
+];
+
+/// The alignments of the alignment list, with their pictures and names.
+const TEXT_ALIGNS: [(tracedraw_core::TextAlign, crate::ui::propbar::Pic, &str); 4] = [
+    (
+        tracedraw_core::TextAlign::Left,
+        crate::ui::propbar::Pic::TextLeft,
+        "toolbar.align_left",
+    ),
+    (
+        tracedraw_core::TextAlign::Center,
+        crate::ui::propbar::Pic::TextCenter,
+        "toolbar.align_center",
+    ),
+    (
+        tracedraw_core::TextAlign::Right,
+        crate::ui::propbar::Pic::TextRight,
+        "toolbar.align_right",
+    ),
+    (
+        tracedraw_core::TextAlign::Justify,
+        crate::ui::propbar::Pic::TextJustify,
+        "toolbar.full_justify",
+    ),
+];
+
+/// The text part of the property bar: the font list, the size list, bold,
+/// italic and underline, the alignment list, bullets and drop cap (for
+/// paragraph text), the Text docker and Edit Text.
 fn text_properties(app: &mut App, ui: &mut Ui) {
-    ui.label(
-        egui::RichText::new(tr("toolbar.font"))
-            .color(Tokens::TEXT_DIM)
-            .size(11.0),
-    );
-    let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 170.0);
-    let mut size = app.text_size_pt;
-    if ui
-        .add(
-            crate::ui::field::NumField::new(&mut size)
-                .speed(0.5)
-                .range(1.0..=999.0)
-                .suffix(" pt")
-                .width(60.0),
-        )
-        .changed()
-    {
-        app.text_size_pt = size;
-        changed = true;
-    }
-    changed |= ui
-        .selectable_label(app.text_bold, egui::RichText::new("B").strong())
-        .clicked()
-        .then(|| app.text_bold = !app.text_bold)
-        .is_some();
-    changed |= ui
-        .selectable_label(app.text_italic, egui::RichText::new("I").italics())
-        .clicked()
-        .then(|| app.text_italic = !app.text_italic)
-        .is_some();
-    changed |= ui
-        .selectable_label(app.text_underline, egui::RichText::new("U").underline())
-        .clicked()
-        .then(|| app.text_underline = !app.text_underline)
-        .is_some();
-    vsep(ui);
-    for (a, label, tip) in [
+    use crate::ui::propbar::{pic_button, Pic};
+    let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0);
+    changed |= text_size_list(app, ui);
+    for (on, label, key) in [
         (
-            tracedraw_core::TextAlign::Left,
-            tr("docker.align_left_short"),
-            tr("toolbar.align_left"),
+            app.text_bold,
+            egui::RichText::new("B").strong(),
+            "toolbar.bold",
         ),
         (
-            tracedraw_core::TextAlign::Center,
-            tr("docker.align_center_short"),
-            tr("toolbar.align_center"),
+            app.text_italic,
+            egui::RichText::new("I").italics(),
+            "toolbar.italic",
         ),
         (
-            tracedraw_core::TextAlign::Right,
-            tr("docker.align_right_short"),
-            tr("toolbar.align_right"),
-        ),
-        (
-            tracedraw_core::TextAlign::Justify,
-            tr("docker.align_justify_short"),
-            tr("toolbar.full_justify"),
+            app.text_underline,
+            egui::RichText::new("U").underline(),
+            "toolbar.underline",
         ),
     ] {
         if ui
-            .selectable_label(app.text_align == a, label)
-            .on_hover_text(tip)
+            .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
+            .on_hover_text(tr(key))
             .clicked()
         {
-            app.text_align = a;
+            match key {
+                "toolbar.bold" => app.text_bold = !app.text_bold,
+                "toolbar.italic" => app.text_italic = !app.text_italic,
+                _ => app.text_underline = !app.text_underline,
+            }
             changed = true;
         }
     }
+    vsep(ui);
+    changed |= text_align_list(app, ui);
+    vsep(ui);
+    let shapes = app.selected_shapes();
+    let is_text = shapes
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Text { .. }));
+    let is_para = shapes
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Text { frame: Some(_), .. }));
+    if pic_button(ui, Pic::Bullets, &tr("menu.text.bullets"), is_para, false).clicked() {
+        app.dialog = crate::ui::dialogs::Dialog::TextBullets;
+    }
+    if pic_button(ui, Pic::DropCap, &tr("menu.text.drop_cap"), is_para, false).clicked() {
+        app.dialog = crate::ui::dialogs::Dialog::TextDropCap;
+    }
+    vsep(ui);
+    let docker_open = app.show_dockers && app.docker_tab == crate::app::DockerTab::Text;
+    if pic_button(
+        ui,
+        Pic::TextProperties,
+        &format!("{} (Ctrl+T)", tr("toolbar.text_properties")),
+        true,
+        docker_open,
+    )
+    .clicked()
+    {
+        app.toggle_docker(crate::app::DockerTab::Text);
+    }
+    if pic_button(
+        ui,
+        Pic::EditText,
+        &format!("{} (Ctrl+Shift+T)", tr("menu.text.edit_text")),
+        is_text,
+        false,
+    )
+    .clicked()
+    {
+        app.edit_selected_text();
+    }
     if changed {
         app.apply_text_style();
+    }
+}
+
+/// The font size: a field and an arrow dropping the usual sizes.
+fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
+    let mut size = app.text_size_pt;
+    let mut picked: Option<f64> = None;
+    let ctx = ui.ctx().clone();
+    let popup_id = ui.make_persistent_id("text_size_list");
+    let inner = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let field = ui
+            .add(
+                crate::ui::field::NumField::new(&mut size)
+                    .speed(0.5)
+                    .range(1.0..=3000.0)
+                    .suffix(" pt")
+                    .width(62.0),
+            )
+            .on_hover_text(tr("toolbar.font_size"));
+        let (arrow_rect, arrow) =
+            ui.allocate_exact_size(egui::vec2(16.0, field.rect.height()), egui::Sense::click());
+        if arrow.hovered() {
+            ui.painter()
+                .rect_filled(arrow_rect.shrink(1.0), 1.0, Tokens::TOOL_HOVER);
+        }
+        let c = arrow_rect.center();
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            vec![
+                c + egui::vec2(-4.0, -2.0),
+                c + egui::vec2(4.0, -2.0),
+                c + egui::vec2(0.0, 3.0),
+            ],
+            Tokens::ICON,
+            egui::Stroke::NONE,
+        ));
+        if arrow.clicked() {
+            egui::Popup::toggle_id(&ctx, popup_id);
+        }
+        let anchor = field.rect.union(arrow_rect);
+        (field, anchor)
+    });
+    let (field, anchor) = inner.inner;
+    let current = app.text_size_pt;
+    egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
+        .open_memory(None)
+        .width(anchor.width())
+        .show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    for s in TEXT_SIZES {
+                        let label = format!("{s} pt");
+                        if ui
+                            .selectable_label((current - s).abs() < 1e-6, label)
+                            .clicked()
+                        {
+                            picked = Some(s);
+                        }
+                    }
+                });
+        });
+    if let Some(s) = picked {
+        app.text_size_pt = s;
+        egui::Popup::close_id(&ctx, popup_id);
+        return true;
+    }
+    if field.changed() {
+        app.text_size_pt = size;
+        return true;
+    }
+    false
+}
+
+/// The alignment: a button with the alignment's picture dropping the
+/// alignments.
+fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
+    use crate::ui::propbar::{draw_pic, pic_button, Pic};
+    let ctx = ui.ctx().clone();
+    let popup_id = ui.make_persistent_id("text_align_list");
+    let pic = TEXT_ALIGNS
+        .iter()
+        .find(|(a, _, _)| *a == app.text_align)
+        .map_or(Pic::TextLeft, |(_, p, _)| *p);
+    let button = pic_button(ui, pic, &tr("toolbar.text_alignment"), true, false);
+    if button.clicked() {
+        egui::Popup::toggle_id(&ctx, popup_id);
+    }
+    let mut picked = None;
+    let current = app.text_align;
+    egui::Popup::new(popup_id, ctx.clone(), button.rect, ui.layer_id())
+        .open_memory(None)
+        .width(170.0)
+        .show(|ui| {
+            for (align, pic, key) in TEXT_ALIGNS {
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(170.0, 24.0), egui::Sense::click());
+                if align == current {
+                    ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+                } else if resp.hovered() {
+                    ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+                }
+                draw_pic(
+                    ui.painter(),
+                    egui::Rect::from_center_size(
+                        egui::pos2(rect.left() + 14.0, rect.center().y),
+                        egui::vec2(16.0, 16.0),
+                    ),
+                    pic,
+                    Tokens::ICON,
+                );
+                ui.painter().text(
+                    egui::pos2(rect.left() + 30.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    tr(key),
+                    egui::FontId::proportional(13.0),
+                    Tokens::TEXT,
+                );
+                if resp.clicked() {
+                    picked = Some(align);
+                }
+            }
+        });
+    match picked {
+        Some(a) => {
+            app.text_align = a;
+            egui::Popup::close_id(&ctx, popup_id);
+            true
+        }
+        None => false,
     }
 }
 

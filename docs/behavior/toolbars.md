@@ -110,7 +110,7 @@ and the status bar move (`ui/bars.rs`).
 | Bar | Places | First place |
 |---|---|---|
 | Toolbox | top, bottom, left, right, floating | left |
-| Colour palette | top, bottom, left, right, floating | bottom |
+| Colour palette | top, bottom, left, right, floating | right (the outermost column, beyond the dockers) |
 | Standard toolbar | top, bottom, floating | top |
 | Property bar | top, bottom, floating | top |
 | Status bar | top, bottom | bottom |
@@ -134,9 +134,10 @@ and the status bar move (`ui/bars.rs`).
   it (Window > Toolbars shows it again). The floating toolbox is a grid
   two buttons wide whose flyouts open to its right; the floating palette
   is one row 460 px wide.
-- The palette on a side is a column: the swatches run downwards, the
-  arrows sit at its ends and the document palette is the column beside
-  it; the expanded palette opens beside the column (below a palette
+- The palette on a side is a column: the swatches run downwards and the
+  arrows sit at its ends; the expanded palette opens beside the column
+  (below a palette along the top). Wherever the palette is, the document
+  palette is a row under the drawing window (over it when the palette is
   along the top). The toolbox along the top or the bottom is a row with
   its flyouts opening below or above it.
 - Right-clicking a grip, an empty part of a toolbar or of the status bar,
@@ -148,7 +149,10 @@ and the status bar move (`ui/bars.rs`).
   the menu. Reset Bar Positions puts every bar at its first place and
   shows it; the lock stays as it was.
 - The layout and the lock are kept in the preferences (`bars`); older
-  preferences without it start with the first places.
+  preferences without it start with the first places. Preferences from
+  before the palette's first place became the right edge (`bars.version`
+  0) move a palette left at the bottom there; one put anywhere else
+  stays (`ui::bars::tests::the_palette_moves_to_the_right_edge_unless_it_was_put_elsewhere`).
 
 ## Checks
 

@@ -1684,7 +1684,8 @@ impl App {
     }
 
     /// Apply a set of preferences to the running editor.
-    pub fn apply_settings(&mut self, s: crate::settings::Settings) {
+    pub fn apply_settings(&mut self, mut s: crate::settings::Settings) {
+        s.bars.migrate();
         self.ai.key = crate::ai::remembered_key(&s.ai);
         let lang = if s.language.is_empty() {
             crate::i18n::system_language().to_string()

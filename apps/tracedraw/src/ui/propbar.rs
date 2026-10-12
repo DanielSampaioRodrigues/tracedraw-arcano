@@ -102,6 +102,17 @@ pub enum Pic {
     BackMinusFront,
     Boundary,
     AlignDistribute,
+    // Text: alignments, bullets, drop cap, the Text docker, editing, and
+    // wrapping paragraph text around an object.
+    TextLeft,
+    TextCenter,
+    TextRight,
+    TextJustify,
+    Bullets,
+    DropCap,
+    TextProperties,
+    EditText,
+    WrapText,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -473,6 +484,77 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                     0.0,
                     color,
                 );
+            }
+        }
+        Pic::TextLeft | Pic::TextCenter | Pic::TextRight | Pic::TextJustify => {
+            // Lines of text of different lengths, set as the alignment.
+            for (i, w) in [12.0, 8.0, 11.0, 7.0].iter().enumerate() {
+                let y = 3.0 + i as f32 * 3.3;
+                let w = if pic == Pic::TextJustify && i < 3 {
+                    12.0
+                } else {
+                    *w
+                };
+                let x0 = match pic {
+                    Pic::TextLeft | Pic::TextJustify => 2.0,
+                    Pic::TextCenter => 8.0 - w / 2.0,
+                    _ => 14.0 - w,
+                };
+                line((x0, y), (x0 + w, y), Stroke::new(1.3 * k, color));
+            }
+        }
+        Pic::Bullets => {
+            for i in 0..3 {
+                let y = 3.5 + i as f32 * 4.5;
+                painter.circle_filled(q(r, 3.0, y), 1.3 * k, color);
+                line((6.0, y), (14.5, y), Stroke::new(1.2 * k, color));
+            }
+        }
+        Pic::DropCap => {
+            // A large letter over two lines, then the lines below it.
+            outline(&[(1.5, 1.5), (7.5, 1.5), (7.5, 8.5), (1.5, 8.5)], thin);
+            line((3.0, 7.0), (4.5, 3.0), s);
+            line((4.5, 3.0), (6.0, 7.0), s);
+            line((3.6, 5.6), (5.4, 5.6), thin);
+            for (x0, y) in [(9.5, 2.5), (9.5, 5.5), (9.5, 8.5), (1.5, 11.5), (1.5, 14.5)] {
+                line((x0, y), (14.5, y), Stroke::new(1.2 * k, color));
+            }
+        }
+        Pic::TextProperties => {
+            // A letter beside a paragraph's lines.
+            line((1.5, 13.5), (4.5, 3.0), s);
+            line((4.5, 3.0), (7.5, 13.5), s);
+            line((2.6, 9.6), (6.4, 9.6), thin);
+            for y in [4.0, 7.5, 11.0, 14.0] {
+                line((9.5, y), (14.5, y), Stroke::new(1.2 * k, color));
+            }
+        }
+        Pic::EditText => {
+            // "ab" and a text cursor.
+            painter.text(
+                q(r, 6.0, 9.0),
+                egui::Align2::CENTER_CENTER,
+                "ab",
+                egui::FontId::proportional(8.5 * k),
+                color,
+            );
+            line((12.0, 2.5), (12.0, 14.0), s);
+            line((10.5, 2.5), (13.5, 2.5), thin);
+            line((10.5, 14.0), (13.5, 14.0), thin);
+        }
+        Pic::WrapText => {
+            // Lines of text going round a square.
+            poly(
+                &[(6.0, 5.5), (10.0, 5.5), (10.0, 10.5), (6.0, 10.5)],
+                color,
+                Stroke::NONE,
+            );
+            for y in [2.5, 13.5] {
+                line((1.5, y), (14.5, y), Stroke::new(1.2 * k, color));
+            }
+            for y in [6.0, 10.0] {
+                line((1.5, y), (4.5, y), Stroke::new(1.2 * k, color));
+                line((11.5, y), (14.5, y), Stroke::new(1.2 * k, color));
             }
         }
         _ => draw_node_pic(painter, r, pic, color),
@@ -2366,7 +2448,25 @@ pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
     true
 }
 
+/// Wrap Paragraph Text, To Front and To Back of the layer and Convert to
+/// Curves, for the selected objects.
 pub fn order_part(app: &mut App, ui: &mut Ui) {
+    let wrap = app.selected_shapes().iter().any(|s| s.wrap_text);
+    if pic_button(
+        ui,
+        Pic::WrapText,
+        &tr("context.wrap_paragraph_text"),
+        !app.selection.is_empty(),
+        wrap,
+    )
+    .clicked()
+    {
+        let ids = app.selection.clone();
+        app.run(tracedraw_core::Command::SetWrapText {
+            shapes: ids,
+            wrap: !wrap,
+        });
+    }
     if pic_button(ui, Pic::ToFront, &tr("toolbar.to_front"), true, false).clicked() {
         app.order(0);
     }

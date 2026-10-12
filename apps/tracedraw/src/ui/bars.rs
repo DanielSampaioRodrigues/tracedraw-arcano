@@ -90,7 +90,8 @@ impl Bar {
     pub fn default_dock(self) -> Dock {
         match self {
             Bar::Toolbox => Dock::Left,
-            Bar::Palette | Bar::Status => Dock::Bottom,
+            Bar::Palette => Dock::Right,
+            Bar::Status => Dock::Bottom,
             Bar::Standard | Bar::Property => Dock::Top,
         }
     }
@@ -147,13 +148,20 @@ pub struct BarLayout {
     pub standard_pos: [f32; 2],
     pub property_pos: [f32; 2],
     pub locked: bool,
+    /// The layout's version: preferences written before 1 had the palette
+    /// at the bottom by default (see [`BarLayout::migrate`]).
+    #[serde(default)]
+    pub version: u32,
 }
+
+/// The current layout version.
+pub const LAYOUT_VERSION: u32 = 1;
 
 impl Default for BarLayout {
     fn default() -> Self {
         BarLayout {
             toolbox: Dock::Left,
-            palette: Dock::Bottom,
+            palette: Dock::Right,
             standard: Dock::Top,
             property: Dock::Top,
             status: Dock::Bottom,
@@ -162,11 +170,22 @@ impl Default for BarLayout {
             standard_pos: [200.0, 140.0],
             property_pos: [200.0, 200.0],
             locked: false,
+            version: LAYOUT_VERSION,
         }
     }
 }
 
 impl BarLayout {
+    /// Bring a layout of older preferences up to date: the palette, which
+    /// stood at the bottom by default, stands at the right edge (where it
+    /// was left elsewhere, it stays).
+    pub fn migrate(&mut self) {
+        if self.version < 1 && self.palette == Dock::Bottom {
+            self.palette = Dock::Right;
+        }
+        self.version = self.version.max(LAYOUT_VERSION);
+    }
+
     pub fn dock(&self, bar: Bar) -> Dock {
         let d = match bar {
             Bar::Toolbox => self.toolbox,
@@ -693,7 +712,7 @@ mod tests {
         Bar::Standard.set_visible(&mut app, false);
         app.settings.bars.locked = true;
         reset(&mut app);
-        assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
+        assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Right);
         assert_eq!(app.settings.bars.dock(Bar::Toolbox), Dock::Left);
         assert!(Bar::ALL.iter().all(|b| b.visible(&app)));
         assert!(app.settings.bars.locked);
@@ -712,8 +731,34 @@ mod tests {
         let json = serde_json::to_string(&l).expect("json");
         let back: BarLayout = serde_json::from_str(&json).expect("back");
         assert_eq!(back, l);
-        // Older preferences without bars read as the default layout.
-        let empty: BarLayout = serde_json::from_str("{}").expect("empty");
+        // Older preferences without bars read as the default layout, once
+        // brought up to date.
+        let mut empty: BarLayout = serde_json::from_str("{}").expect("empty");
+        empty.migrate();
         assert_eq!(empty, BarLayout::default());
+    }
+
+    #[test]
+    fn the_palette_moves_to_the_right_edge_unless_it_was_put_elsewhere() {
+        // Preferences of before: the palette at the bottom, where it stood
+        // by default, goes to the right; anywhere else it stays.
+        let old = r#"{"toolbox": "left", "palette": "bottom", "standard": "top",
+                      "property": "top", "status": "bottom"}"#;
+        let mut l: BarLayout = serde_json::from_str(old).expect("old");
+        assert_eq!(l.version, 0);
+        l.migrate();
+        assert_eq!((l.palette, l.version), (Dock::Right, LAYOUT_VERSION));
+        let mut left: BarLayout =
+            serde_json::from_str(&old.replace("\"palette\": \"bottom\"", "\"palette\": \"left\""))
+                .expect("left");
+        left.migrate();
+        assert_eq!(left.palette, Dock::Left);
+        // Put at the bottom again after that, it stays there.
+        let mut l = BarLayout::default();
+        assert!(l.set_dock(Bar::Palette, Dock::Bottom));
+        let mut back: BarLayout =
+            serde_json::from_str(&serde_json::to_string(&l).expect("json")).expect("back");
+        back.migrate();
+        assert_eq!(back.palette, Dock::Bottom);
     }
 }

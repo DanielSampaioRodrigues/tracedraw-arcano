@@ -6,6 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The text property bar: the font size has a list of the usual sizes, the
+  alignment is one button with its picture and a list, and Bullets, Drop
+  Cap, Text Properties and Edit Text have buttons. The shape tools' bars
+  (rectangle, ellipse, polygon, star) with an object selected end with
+  Wrap Paragraph Text, To Front, To Back and Convert to Curves, as the
+  Pick tool's bar does (Wrap Paragraph Text is new there too).
+- The colour palette stands at the right edge of the window by default,
+  outside the dockers, and the document palette stays a row under the
+  drawing window wherever the palette is. A palette left at the bottom
+  by earlier preferences moves to the right; one put elsewhere stays.
 - The browser version offers every family of the google/fonts collection
   (about 2,000 more), fetched from GitHub the first time a drawing's text
   needs one or the pointer rests on it in the font list; they show in
