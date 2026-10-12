@@ -83,6 +83,10 @@ full, row-by-row status.
   (TraceDraw or `.cdr`) and the version. `tracedraw-cli` reads the
   version from `TRACEDRAW_CDR_VERSION` and the MCP `save` tool takes a
   `version`.
+- `.cdr` writing: files of versions 21 and 22 carry the configuration
+  record of those versions (page orientation, ruler origin, grid,
+  units, nudge, duplicate offset, drawing scales) instead of an empty
+  one, and every file has a font table for its styles.
 - `.cdr` files: version 13 and later outlines read their nib angle and
   width scale from the right place, guide and grid layers stay hidden,
   and empty master layers no longer show up as layers of their own.

@@ -802,13 +802,16 @@ fn ftil() -> Vec<u8> {
     identity_matrix()
 }
 
-/// `mcfg`: the document configuration. Only the page size is known; the
-/// rest keeps the length files of the version have.
+/// `mcfg`: the document configuration. Versions before 21 get the page
+/// size and the length files of the version have; from 21 the record has
+/// the layout of those files with the fields that are understood (see
+/// `docs/cdr-format.md`, Writing).
 fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    if v.0 >= 21 {
+        return mcfg_21(w_mm, h_mm);
+    }
     let mut b = Buf::default();
-    let size: usize = if v.0 >= 22 {
-        7944
-    } else if v.0 >= 15 {
+    let size: usize = if v.0 >= 15 {
         8323
     } else if v.tagged() {
         8197
@@ -816,8 +819,7 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
         4088
     };
     if v.tagged() {
-        let tag = if v.0 >= 22 { 2100 } else { SINCE_13 };
-        b.u32(tag).u32(size as u32 - 8).zeros(4);
+        b.u32(SINCE_13).u32(size as u32 - 8).zeros(4);
     } else if v.0 >= 9 {
         b.zeros(4);
     }
@@ -827,6 +829,126 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
         .u32(1)
         .pad_to(size);
     b.done()
+}
+
+/// Write `bytes` into `rec` at `at` (records are built to their size
+/// first, so the offsets are always inside).
+fn put(rec: &mut [u8], at: usize, bytes: &[u8]) {
+    if let Some(dst) = rec.get_mut(at..at + bytes.len()) {
+        dst.copy_from_slice(bytes);
+    }
+}
+
+/// The version 21 and 22 configuration record (7944 bytes): page size and
+/// orientation, ruler origin, grid, units, duplicate offset and nudge,
+/// drawing scales and the isometric drawing profile, with the values the
+/// files of those versions have for a metric drawing. Text fields of the
+/// record (a folder for web publishing) are left empty.
+fn mcfg_21(w_mm: f64, h_mm: f64) -> Vec<u8> {
+    const SIZE: usize = 7944;
+    /// Units: 1 inch, 2 millimetre.
+    const MM: u16 = 2;
+    let mut r = vec![0u8; SIZE];
+    let (w, h) = (units(w_mm), units(h_mm));
+    put(&mut r, 0, &2100u32.to_le_bytes());
+    put(&mut r, 4, &(SIZE as u32 - 8).to_le_bytes());
+    put(&mut r, 12, &w.to_le_bytes());
+    put(&mut r, 16, &h.to_le_bytes());
+    // Paper preset (0: custom size) and orientation (1: landscape).
+    put(&mut r, 20, &0u16.to_le_bytes());
+    put(&mut r, 22, &u16::from(w > h).to_le_bytes());
+    put(&mut r, 24, &1u32.to_le_bytes());
+    put(&mut r, 34, &1u32.to_le_bytes());
+    put(&mut r, 38, &1u32.to_le_bytes());
+    // 1/8 inch, in every version 19 to 21 file seen.
+    put(&mut r, 42, &31750u32.to_le_bytes());
+    // Ruler origin: the page's bottom-left corner, from the page centre.
+    put(&mut r, 670, &(-(w / 2)).to_le_bytes());
+    put(&mut r, 674, &(-(h / 2)).to_le_bytes());
+    // Grid: 4 a unit across and down, in millimetres.
+    put(&mut r, 678, &4.0f64.to_le_bytes());
+    put(&mut r, 686, &4.0f64.to_le_bytes());
+    put(&mut r, 694, &MM.to_le_bytes());
+    put(&mut r, 696, &1.0f64.to_le_bytes());
+    // Horizontal and vertical units.
+    put(&mut r, 704, &MM.to_le_bytes());
+    put(&mut r, 706, &MM.to_le_bytes());
+    put(&mut r, 708, &1u16.to_le_bytes());
+    // A 46.5 inch square twice, with three flags between.
+    for (at, x) in [
+        (716, 11_811_024i32),
+        (720, 11_811_024),
+        (724, 1),
+        (728, 1),
+        (732, 1),
+        (736, 11_811_024),
+        (740, 11_811_024),
+        (744, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    put(&mut r, 760, &[0x01, 0x0c]);
+    put(&mut r, 767, &[0x05]);
+    put(&mut r, 777, &[0x07, 0x10]);
+    put(&mut r, 811, &1u32.to_le_bytes());
+    put(&mut r, 815, &1u32.to_le_bytes());
+    put(&mut r, 819, &[1]);
+    // Duplicate offset (5 mm across and down), nudge (0.1 mm), super
+    // nudge times 2, micro nudge divided by 2.
+    for (at, x) in [
+        (827, 1i32),
+        (831, 50_000),
+        (835, 50_000),
+        (839, 1_000),
+        (843, 2),
+        (847, 2),
+        (851, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    put(&mut r, 859, &MM.to_le_bytes());
+    put(&mut r, 861, &12_700u16.to_le_bytes());
+    for at in [869, 873, 877] {
+        put(&mut r, at, &[1]);
+    }
+    put(&mut r, 885, &[0x01, 0x0c, 0, 0, 0, 0x05, 0, 0x05]);
+    put(&mut r, 898, &[0xff, 0, 0, 0, 0x07, 0x10]);
+    put(&mut r, 928, &[0x01, 0x0c, 0, 0, 0, 0x05, 0, 0x05]);
+    put(&mut r, 942, &[0x64, 0, 0, 0x07, 0x10]);
+    put(&mut r, 971, &[1]);
+    put(&mut r, 1007, &[1]);
+    // Four scales of 1, then 2, 0.2, 1 and a 4 by 4 grid.
+    for k in 0..4 {
+        put(&mut r, 1019 + 8 * k, &1.0f64.to_le_bytes());
+    }
+    put(&mut r, 1051, &2u32.to_le_bytes());
+    put(&mut r, 1055, &0.2f64.to_le_bytes());
+    put(&mut r, 1063, &1u32.to_le_bytes());
+    put(&mut r, 1067, &4.0f64.to_le_bytes());
+    put(&mut r, 1075, &4.0f64.to_le_bytes());
+    put(&mut r, 1083, &[4, 1]);
+    put(&mut r, 1100, &[1]);
+    // The drawing profile: 12, three flags, three scales of 0.8165, the
+    // axes at 330, 90 and 210 degrees (millionths) and its name.
+    put(&mut r, 7360, &12.0f64.to_le_bytes());
+    for at in [7368, 7372, 7376] {
+        put(&mut r, at, &1u32.to_le_bytes());
+    }
+    for k in 0..3 {
+        put(&mut r, 7380 + 8 * k, &0.8165f64.to_le_bytes());
+    }
+    for (k, a) in [330_000_000i32, 90_000_000, 210_000_000]
+        .into_iter()
+        .enumerate()
+    {
+        put(&mut r, 7404 + 4 * k, &a.to_le_bytes());
+    }
+    let name: Vec<u8> = "Isometric"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    put(&mut r, 7416, &name);
+    r
 }
 
 /// `font`: id, character set, style flags, 10 bytes of classification,
@@ -1334,7 +1456,8 @@ impl<'a> Writer<'a> {
         let content = content.unwrap_or(Rect::ZERO);
         let centre = Point::new(first.width / 2.0, first.height / 2.0);
         docl.push(chunk(b"ptrt", box_bytes(content - centre.to_vec2())));
-        if self.has_text && self.fonts.is_empty() {
+        // The styles name a font, so the font table is never empty.
+        if self.fonts.is_empty() {
             self.font_id("Arial");
         }
         if !self.fonts.is_empty() {

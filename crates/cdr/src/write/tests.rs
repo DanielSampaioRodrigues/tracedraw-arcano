@@ -761,3 +761,35 @@ fn records_have_the_sizes_of_the_versions_files() {
         "a stop grows by 21 bytes in 15"
     );
 }
+
+#[test]
+fn the_version_21_configuration_record_has_its_fields() {
+    let rec = mcfg(Ver(21), 297.0, 210.0);
+    assert_eq!(rec.len(), 7944);
+    let u32_at = |at: usize| u32::from_le_bytes(rec[at..at + 4].try_into().unwrap_or([0; 4]));
+    let i32_at = |at: usize| i32::from_le_bytes(rec[at..at + 4].try_into().unwrap_or([0; 4]));
+    let u16_at = |at: usize| u16::from_le_bytes(rec[at..at + 2].try_into().unwrap_or([0; 2]));
+    let f64_at = |at: usize| f64::from_le_bytes(rec[at..at + 8].try_into().unwrap_or([0; 8]));
+    assert_eq!((u32_at(0), u32_at(4)), (2100, 7936));
+    assert_eq!((i32_at(12), i32_at(16)), (2_970_000, 2_100_000));
+    assert_eq!(u16_at(22), 1, "landscape");
+    assert_eq!((i32_at(670), i32_at(674)), (-1_485_000, -1_050_000));
+    assert_eq!((f64_at(678), f64_at(686)), (4.0, 4.0));
+    assert_eq!((u16_at(704), u16_at(706)), (2, 2), "millimetres");
+    assert_eq!(f64_at(696), 1.0);
+    assert_eq!(
+        (i32_at(831), i32_at(835), i32_at(839)),
+        (50_000, 50_000, 1_000)
+    );
+    assert!((0..4).all(|k| f64_at(1019 + 8 * k) == 1.0));
+    assert_eq!(f64_at(7360), 12.0);
+    assert_eq!(&rec[7416..7418], b"I\0");
+    // The same layout in version 22; earlier versions keep theirs.
+    assert_eq!(mcfg(Ver(22), 210.0, 297.0).len(), 7944);
+    assert_eq!(mcfg(Ver(20), 210.0, 297.0).len(), 8323);
+    // The page size reads back from it.
+    let doc = Document::new("t", tracedraw_core::geometry::Size::new(297.0, 210.0));
+    let bytes = document_to_cdr_version(&doc, 21);
+    let (back, _) = crate::open_bytes(&bytes, "t").expect("opens");
+    assert!((back.pages[0].size.width - 297.0).abs() < 0.01);
+}
