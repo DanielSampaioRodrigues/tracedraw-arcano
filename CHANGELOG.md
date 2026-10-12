@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- A new font list in the property bar, the Text and Glyphs dockers and
+  Options: type in the field to find a family (the name, then names
+  starting with it, then the rest; Down, Up, Enter, Escape), the number
+  of fonts and what to show (all, installed, in this drawing, to
+  download), the five used last, every name drawn in its own font with
+  an icon of how it is built (TrueType, OpenType, variable, came with the
+  drawing, to download), the styles of each family under it, a slider for
+  the sample size and a preview of "AaBbYyZz" with its guide lines.
 - Dockers: the close button and a tab's Close Docker take the docker out
   of the tab column (Hints, Properties and Objects could not be closed),
   and the column with the docker in front is kept when TraceDraw closes,

@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 178, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
+Counts: works 179, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -82,6 +82,7 @@ Counts: works 178, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 |---|---|
 | Artistic text and paragraph text frames (dashed frames, Show Text Frames, resizing a frame with the Pick tool reflows the text), in-place editing | works (see `behavior/text.md`) |
 | Font family, size, bold, italic, alignment, underline, strikethrough | works |
+| Font list: type to find a family, count and filter (all, installed, in this drawing, to download), the five used last, names drawn in their own fonts with an icon of how each is built, styles under each family, sample size slider, preview with guide lines | works (see `behavior/text.md`, Font list) |
 | Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap | works |
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |
 | Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |

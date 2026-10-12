@@ -236,22 +236,7 @@ fn text(app: &mut App, ui: &mut Ui) {
         .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
         .collect();
     ui.strong(tr("docker.character"));
-    let mut changed = false;
-    egui::ComboBox::from_id_salt("dk_font")
-        .selected_text(app.text_font.clone())
-        .width(180.0)
-        .show_ui(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for f in app.font_families.clone() {
-                        if ui.selectable_label(app.text_font == f, &f).clicked() {
-                            app.text_font = f;
-                            changed = true;
-                        }
-                    }
-                });
-        });
+    let mut changed = crate::ui::font_list::text_font_list(app, ui, "docker_text_font", 200.0);
     ui.horizontal(|ui| {
         changed |= ui
             .add(
@@ -449,20 +434,7 @@ fn text(app: &mut App, ui: &mut Ui) {
 fn glyphs(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tr("docker.font"));
-        egui::ComboBox::from_id_salt("gl_font")
-            .selected_text(app.text_font.clone())
-            .width(160.0)
-            .show_ui(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        for f in app.font_families.clone() {
-                            if ui.selectable_label(app.text_font == f, &f).clicked() {
-                                app.text_font = f;
-                            }
-                        }
-                    });
-            });
+        crate::ui::font_list::text_font_list(app, ui, "glyphs_font", 180.0);
     });
     ui.horizontal(|ui| {
         ui.label(tr("docker.filter"));

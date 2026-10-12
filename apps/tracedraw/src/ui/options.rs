@@ -995,16 +995,7 @@ fn text_page(app: &mut App, ui: &mut Ui) {
         });
         ui.end_row();
         row_label(ui, &tr("options.default_font"));
-        egui::ComboBox::from_id_salt("opt_font")
-            .selected_text(app.text_font.clone())
-            .width(200.0)
-            .show_ui(ui, |ui| {
-                for f in app.font_families.clone() {
-                    if ui.selectable_label(app.text_font == f, &f).clicked() {
-                        app.text_font = f;
-                    }
-                }
-            });
+        crate::ui::font_list::text_font_list(app, ui, "options_default_font", 220.0);
         ui.end_row();
         row_label(ui, &tr("options.default_size"));
         ui.add(

@@ -158,6 +158,12 @@ pub struct Settings {
     /// (the default dockers then show).
     #[serde(default)]
     pub dockers: Option<DockerSetup>,
+    /// The font lists' fonts used last, newest first.
+    #[serde(default)]
+    pub recent_fonts: Vec<String>,
+    /// The font lists' sample size, in points.
+    #[serde(default = "default_font_sample")]
+    pub font_sample_px: f32,
     /// Options > Workspaces: the parts a workspace file exports and
     /// imports.
     #[serde(default)]
@@ -506,6 +512,10 @@ impl Default for BackupPrefs {
     }
 }
 
+fn default_font_sample() -> f32 {
+    crate::ui::font_list::DEFAULT_SAMPLE
+}
+
 fn default_super_nudge() -> f64 {
     0.2 * 25.4
 }
@@ -660,6 +670,8 @@ impl Default for Settings {
             defaults: crate::defaults::DefaultsPrefs::default(),
             shown_bars: None,
             dockers: None,
+            recent_fonts: Vec::new(),
+            font_sample_px: default_font_sample(),
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),
             formats: Default::default(),

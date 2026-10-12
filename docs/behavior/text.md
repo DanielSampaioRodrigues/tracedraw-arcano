@@ -30,6 +30,42 @@ style; the object takes the alignment) as one "Text Style" undo step,
 and becomes the default for the next text. Double-clicking text with the
 Pick tool edits it in place.
 
+## Font list
+
+The family is picked from a font list, the same in the property bar, the
+Text and Glyphs dockers and Options (default font):
+
+- A field with the family and an arrow. A click in the field selects the
+  name, so typing replaces it, and opens the list; typing narrows the
+  list to the families holding the letters typed, ignoring case: the name
+  itself first, then names starting with them, then the rest. Down and Up
+  move through the list, Enter takes the highlighted family, Escape
+  closes the list and puts the name back.
+- At the top of the list, the number of families shown and what to show:
+  all fonts, installed fonts, the fonts in this drawing, or (in the
+  browser) the fonts to download.
+- "Used last": the last five families picked in any font list, newest
+  first (kept in the preferences, `recent_fonts`), while nothing is typed.
+- Every family, its name drawn in its own font (in the interface font for
+  a symbol font and for a family not here yet), with an icon of how it is
+  built: T TrueType, O OpenType (PostScript outlines), V variable, D came
+  with the drawing, a downward arrow downloaded the first time it is used
+  (the tooltip says which). The family in use is marked and brought into
+  view. A family with more than one face has an arrow that shows its
+  styles under it (Regular, Italic, Bold, Light ..., each drawn in itself);
+  picking a style sets Bold and Italic as its weight (600 or more is bold)
+  and slant say.
+- The sample size: a slider from 12 to 40 points (18 at first, kept in
+  the preferences, `font_sample_px`); the rows grow with it.
+- The preview: "AaBbYyZz" in the family (and style) under the pointer,
+  else the one the keys reached, else the family in use, between its top,
+  baseline and bottom lines, with "Family (Style)" under it.
+- In the browser, resting the pointer on a family to download for 0.4 s
+  fetches it, and its row and preview then draw in it.
+
+Names are drawn by the text engine into pictures of the screen's
+resolution, only for the rows in view, and kept until fonts are added.
+
 ## Editing in place
 
 Clicking text with the Text tool (or double-clicking it with the Pick
@@ -230,6 +266,19 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Checks
 
+- The font list: typing finds the name, then names starting with it,
+  then the rest (`ui::font_list::tests::typing_finds_the_name_then_names_starting_with_it_then_the_rest`);
+  the fonts used last keep the newest five
+  (`ui::font_list::tests::the_fonts_used_last_keep_the_newest_first`);
+  names are drawn in their own font, and a family not installed or no
+  text draws nothing (`ui::font_list::tests::names_are_drawn_in_their_own_font`);
+  the list draws with every filter, a family's styles shown and typed text
+  (`ui::font_list::tests::the_list_draws_in_every_state`); families tell
+  how they are built, their style names, whether they came with a drawing
+  or are to download (`tests::families_tell_how_they_are_built_and_their_styles`
+  in `crates/text`). Checked on screen: the list open, typing "lib" left
+  three families, Down and Enter took one, and it showed first among the
+  fonts used last the next time.
 - `document::tests::text_baselines_wrap_round_closed_paths_and_move_by_the_distance`,
   `document::tests::open_text_baselines_stop_at_their_ends_and_corners_keep_the_distance`
   (core), `tests::mirrored_text_on_a_path_reads_along_its_other_side` and

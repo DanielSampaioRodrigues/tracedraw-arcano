@@ -271,6 +271,71 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
     .unwrap_or_default()
 }
 
+/// How a family's fonts are built, for the icons of font lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontKind {
+    /// TrueType outlines.
+    TrueType,
+    /// OpenType with PostScript (CFF) outlines.
+    OpenType,
+    /// A variable font: weights or widths along axes.
+    Variable,
+    /// Not installed: the application fetches it when asked (the browser
+    /// build's font folder and catalog).
+    Offered,
+}
+
+/// One face of a family, for a font list's styles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FaceStyle {
+    /// The style name the font gives ("Bold Italic", "Light"), else one
+    /// made from the weight and slant.
+    pub name: String,
+    pub weight: u16,
+    pub italic: bool,
+}
+
+/// What a font list shows about a family (see
+/// [`FontSystem::family_info`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FamilyInfo {
+    pub kind: FontKind,
+    /// Its faces, upright first, by weight; empty for an offered family.
+    pub faces: Vec<FaceStyle>,
+    /// The family came with a document: it is not installed.
+    pub embedded: bool,
+    /// A symbol font (its character map is the symbol encoding): its
+    /// letters are pictures, so its name reads in another font.
+    pub symbol: bool,
+}
+
+/// A face's style name: the typographic subfamily (name ID 17), else the
+/// subfamily (name ID 2), in English where the font has it.
+fn face_style_name(f: &ttf_parser::Face) -> Option<String> {
+    let mut best: Option<(u8, String)> = None;
+    for name in f.names() {
+        let rank = match name.name_id {
+            ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY => 0,
+            ttf_parser::name_id::SUBFAMILY => 2,
+            _ => continue,
+        };
+        let english =
+            name.language_id == 0x409 || name.platform_id == ttf_parser::PlatformId::Macintosh;
+        let rank = rank + u8::from(!english);
+        let Some(text) = name.to_string() else {
+            continue;
+        };
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(r, _)| rank < *r) {
+            best = Some((rank, text));
+        }
+    }
+    best.map(|(_, t)| t)
+}
+
 /// `data` is a font file (or collection) whose every face reads and
 /// allows use in documents: its licence (the OS/2 embedding bits) is not
 /// "restricted" and allows outlines, not just bitmaps.
@@ -990,6 +1055,108 @@ impl FontSystem {
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// What a font list shows about `family`: how its fonts are built,
+    /// its faces with their style names, whether it came with a document
+    /// and whether it is a symbol font. `None` when it is neither installed
+    /// nor offered.
+    pub fn family_info(&self, family: &str) -> Option<FamilyInfo> {
+        let ids: Vec<fontdb::ID> = {
+            let db = self.db();
+            let mut ids: Vec<fontdb::ID> = db
+                .faces()
+                .filter(|f| f.families.iter().any(|(n, _)| n == family))
+                .map(|f| f.id)
+                .collect();
+            if ids.is_empty() {
+                let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
+                ids = legacy.get(family).cloned().unwrap_or_default();
+            }
+            ids
+        };
+        if ids.is_empty() {
+            let offered = self
+                .offered
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .binary_search_by(|f| f.as_str().cmp(family))
+                .is_ok();
+            return offered.then(|| FamilyInfo {
+                kind: FontKind::Offered,
+                faces: Vec::new(),
+                embedded: false,
+                symbol: false,
+            });
+        }
+        let db = self.db();
+        let mut kind = FontKind::TrueType;
+        let mut symbol = false;
+        let mut faces: Vec<FaceStyle> = Vec::new();
+        for id in ids {
+            let Some(info) = db.face(id) else {
+                continue;
+            };
+            let read = db.with_face_data(id, |data, index| {
+                let f = ttf_parser::Face::parse(data, index).ok()?;
+                let tables = f.tables();
+                let face_kind = if tables.fvar.is_some() {
+                    FontKind::Variable
+                } else if tables.cff.is_some() || tables.cff2.is_some() {
+                    FontKind::OpenType
+                } else {
+                    FontKind::TrueType
+                };
+                let symbol = tables.cmap.is_some_and(|c| {
+                    c.subtables.into_iter().any(|s| {
+                        s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0
+                    })
+                });
+                let style = face_style_name(&f);
+                Some((face_kind, symbol, style))
+            });
+            let Some(Some((face_kind, face_symbol, style))) = read else {
+                continue;
+            };
+            // A family is as its most capable face shows it.
+            kind = match (kind, face_kind) {
+                (FontKind::Variable, _) | (_, FontKind::Variable) => FontKind::Variable,
+                (FontKind::OpenType, _) | (_, FontKind::OpenType) => FontKind::OpenType,
+                _ => FontKind::TrueType,
+            };
+            symbol |= face_symbol;
+            let italic = info.style != fontdb::Style::Normal;
+            let name = style.unwrap_or_else(|| {
+                match (info.weight.0 >= 600, italic) {
+                    (false, false) => "Regular",
+                    (false, true) => "Italic",
+                    (true, false) => "Bold",
+                    (true, true) => "Bold Italic",
+                }
+                .to_string()
+            });
+            if !faces.iter().any(|f| f.name == name) {
+                faces.push(FaceStyle {
+                    name,
+                    weight: info.weight.0,
+                    italic,
+                });
+            }
+        }
+        faces.sort_by_key(|f| (f.italic, f.weight));
+        Some(FamilyInfo {
+            kind,
+            faces,
+            embedded: self.is_document_family(family),
+            symbol,
+        })
+    }
+
+    /// Ask for an offered family now (a font list showing it), as text set
+    /// in it would; true when it is offered. The application fetches it
+    /// after [`FontSystem::take_font_requests`].
+    pub fn request_family(&self, family: &str) -> bool {
+        self.request_offered(family)
     }
 
     /// Whether a family exists (missing fonts are substituted and reported).
@@ -2765,6 +2932,40 @@ mod tests {
             db.load_font_data(f.to_vec());
         }
         FontSystem::from_db(db)
+    }
+
+    #[test]
+    fn families_tell_how_they_are_built_and_their_styles() {
+        const SELAWIK_BOLD: &[u8] =
+            include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+        let f = system_with(&[SELAWIK, SELAWIK_BOLD, QUICKSAND]);
+        let selawik = f.family_info("Selawik").expect("installed");
+        assert_eq!(selawik.kind, FontKind::TrueType);
+        let names: Vec<&str> = selawik.faces.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Regular", "Bold"]);
+        assert!(selawik.faces[1].weight >= 600 && !selawik.faces[1].italic);
+        assert!(!selawik.embedded && !selawik.symbol);
+        let quicksand = f.family_info("Quicksand").expect("installed");
+        assert_eq!(quicksand.kind, FontKind::Variable);
+        assert_eq!(quicksand.faces.len(), 1);
+        // Found by its legacy name too.
+        assert_eq!(
+            f.family_info("Quicksand Light").map(|i| i.kind),
+            Some(FontKind::Variable)
+        );
+        // An offered family: fetched when asked for, here by a font list.
+        assert_eq!(f.family_info("Far Away"), None);
+        f.offer_families(&["Far Away".to_string()]);
+        let offered = f.family_info("Far Away").expect("offered");
+        assert_eq!(offered.kind, FontKind::Offered);
+        assert!(offered.faces.is_empty());
+        assert!(f.request_family("Far Away"));
+        assert!(!f.request_family("Nowhere"));
+        assert_eq!(f.take_font_requests(), ["Far Away"]);
+        // A family that came with a document says so.
+        let g = system_with(&[]);
+        g.add_document_fonts(&[DocumentFont::new("Selawik", SELAWIK.to_vec())]);
+        assert!(g.family_info("Selawik").is_some_and(|i| i.embedded));
     }
 
     #[test]

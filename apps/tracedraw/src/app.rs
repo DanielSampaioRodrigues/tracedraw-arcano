@@ -749,6 +749,8 @@ pub struct App {
     /// Families the font lists show: installed, carried by drawings, and
     /// (browser build) offered by the page's font folder.
     pub font_families: Vec<String>,
+    /// The font lists' pictures of family names in their own fonts.
+    pub font_previews: crate::ui::font_list::FontPreviews,
     /// `tracedraw_text::fonts().generation()` when `font_families` was
     /// taken (see `App::sync_fonts`).
     pub font_generation: u64,
@@ -1363,6 +1365,7 @@ impl App {
             overflow_cache: Default::default(),
             wireframe: false,
             font_families: tracedraw_text::fonts().available_families(),
+            font_previews: Default::default(),
             font_generation: tracedraw_text::fonts().generation(),
             color_profile_key: None,
             transform_tab: TransformTab::Position,
