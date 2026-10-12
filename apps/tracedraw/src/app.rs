@@ -970,8 +970,6 @@ pub struct App {
     pub area_fill_color: Color,
     pub mesh_rows: u32,
     pub mesh_cols: u32,
-    /// Context menu > Frame Type > Text: next click/drag adds a text frame.
-    pub pending_text_frame: bool,
     /// Shape tool elastic mode: dragging one node pulls its neighbours.
     pub elastic_mode: bool,
     /// Shape tool: the node transform mode on the property bar.
@@ -1559,7 +1557,6 @@ impl App {
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             mesh_rows: 2,
             mesh_cols: 2,
-            pending_text_frame: false,
             elastic_mode: false,
             node_transform: Default::default(),
             reflect_nodes: (false, false),

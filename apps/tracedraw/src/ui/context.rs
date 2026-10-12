@@ -244,27 +244,22 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         app.status = tr("status.click_frame");
     }
     sub(ui, "context.frame_type", |ui| {
-        if ci(ui, close, "context.frame_none", "", true) {
-            app.apply_outline_color(None);
+        let empty_frames = !app.empty_clip_frames().is_empty();
+        if ci(ui, close, "context.frame_none", "", empty_frames) {
+            app.frames_to_objects();
         }
-        if ci(ui, close, "context.frame_empty_clip_frame", "", true) {
-            let shapes = app.selection.clone();
-            for id in shapes {
-                let Some(s) = app.doc().find_shape(id).cloned() else {
-                    continue;
-                };
-                let frame = Box::new(s.clone());
-                app.run(Command::SetShapeKind {
-                    shape: id,
-                    kind: ShapeKind::ClipFrame {
-                        frame,
-                        contents: Vec::new(),
-                    },
-                });
-            }
+        let framable = !app.framable().is_empty();
+        if ci(ui, close, "context.frame_empty_clip_frame", "", framable) {
+            app.objects_to_clip_frames();
         }
-        if ci(ui, close, "context.frame_text", "", true) {
-            app.pending_text_frame = true;
+        if ci(
+            ui,
+            close,
+            "context.frame_text",
+            "",
+            app.selection.len() == 1,
+        ) {
+            app.object_to_text_frame();
         }
     });
     sep(ui);

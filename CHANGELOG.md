@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The object context menu's Frame Type works: Create Empty Clip Frame
+  makes clip frames that stay in place when the object was turned (they
+  were turned twice), No Frame turns empty clip frames back into their
+  objects (it used to remove the outline), and Create Empty Text Frame
+  replaces the object with an empty paragraph text frame of its size (it
+  did nothing).
 - Shaping: Trim keeps the objects that cut and Intersect keeps the
   originals, as their pictures always showed; Weld and the others
   replace them. The Shaping panel's "Leave original" boxes now do what

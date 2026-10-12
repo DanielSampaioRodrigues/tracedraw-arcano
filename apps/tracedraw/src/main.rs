@@ -39,6 +39,7 @@ mod files;
 mod fill_tool;
 #[cfg(any(target_arch = "wasm32", test))]
 mod font_folder;
+mod frame_type;
 mod fx;
 mod grammar;
 mod guides;
