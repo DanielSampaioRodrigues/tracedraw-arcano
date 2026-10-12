@@ -1000,6 +1000,14 @@ pub struct App {
     /// Shape Recognition's levels and Sketch's settings (their bars).
     pub recognize: crate::recognize::RecognizeSettings,
     pub sketch: crate::recognize::SketchSettings,
+    /// The revision, objects and effect kind of the last effect edit from
+    /// a panel or bar, so a slider drag is one undo step.
+    pub effect_edit_step: Option<(u64, Vec<ShapeId>, String)>,
+    /// What new blends take besides their steps: rotation (degrees) and
+    /// the object and colour accelerations (-1 to 1).
+    pub blend_rotation: f64,
+    pub blend_accel_objects: f64,
+    pub blend_accel_colors: f64,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1612,6 +1620,10 @@ impl App {
             connector_radius_step: None,
             recognize: Default::default(),
             sketch: Default::default(),
+            effect_edit_step: None,
+            blend_rotation: 0.0,
+            blend_accel_objects: 0.0,
+            blend_accel_colors: 0.0,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,

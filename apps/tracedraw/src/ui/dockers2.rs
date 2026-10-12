@@ -810,22 +810,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
                 app.status = tr("status.click_blend_path");
             }
             if ui.button(tr("docker.clear_blend")).clicked() {
-                app.remove_effects_of_kind(&Effect::Blend {
-                    end: Box::new(tracedraw_core::Shape::new(
-                        ShapeId(0),
-                        ShapeKind::Rect {
-                            rect: Default::default(),
-                            radius: 0.0,
-                            corners: None,
-                        },
-                    )),
-                    steps: 1,
-                    accel_objects: 0.0,
-                    accel_colors: 0.0,
-                    rotation: 0.0,
-                    path: None,
-                    rotate_on_path: false,
-                });
+                app.clear_blend();
             }
             if ui.button(tr("docker.break_apart")).clicked() {
                 app.flatten_effects();

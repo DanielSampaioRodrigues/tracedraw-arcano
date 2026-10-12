@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Blend tool's bar sets the rotation and the object and colour
+  accelerations besides the steps, for the next blend and live for a
+  selected one, with Clear Blend and Break Apart. Dragging a slider in an
+  effect panel (blend, contour, extrude and the others) or the drop and
+  block shadow drags made an undo step per movement; a run of changes is
+  now one step.
 - Shape Recognition keeps shapes as drawn: a tilted rectangle or ellipse
   stays tilted (they came out level in the stroke's box), triangles and
   other four-sided shapes keep their corners (they became regular

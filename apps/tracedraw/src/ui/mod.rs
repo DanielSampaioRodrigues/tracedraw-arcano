@@ -25,6 +25,7 @@ pub mod dimension_bar;
 pub mod dockers;
 pub mod dockers2;
 pub mod drawing_bars;
+pub mod effect_bars;
 pub mod effect_dialog;
 pub mod envelope_ui;
 pub mod field;

@@ -723,19 +723,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::TwoPointLine
             | Tool::BSpline
             | Tool::ThreePointCurve => curve_tool_properties(app, ui),
-            Tool::Blend => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.blend_steps"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.blend_steps).range(1..=200));
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drag_between_objects"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::Blend => crate::ui::effect_bars::blend_bar(app, ui),
             Tool::Extrude => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.extrude_depth"))

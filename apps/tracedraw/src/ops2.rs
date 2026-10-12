@@ -242,6 +242,7 @@ impl App {
     /// Add or replace a live effect on the selected objects.
     pub fn push_effect(&mut self, effect: Effect, replace_same_kind: bool) {
         let shapes = self.selected_shapes();
+        let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
         let mut cmds = Vec::new();
         for s in shapes {
             let mut effects = s.effects.clone();
@@ -254,11 +255,28 @@ impl App {
                 effects,
             });
         }
-        if !cmds.is_empty() {
-            if let Err(e) = self.engine.run_batch("Effect", &cmds) {
-                self.status = e.to_string();
-            }
+        if cmds.is_empty() {
+            return;
         }
+        // A slider dragged or a field typed in a panel or on the bar: the
+        // changes of one effect on the same objects, with nothing else in
+        // between, are one undo step.
+        let key = (
+            self.engine.revision(),
+            ids,
+            format!("{:?}", std::mem::discriminant(&effect)),
+        );
+        if replace_same_kind
+            && self.engine.undo_label() == Some("Effect")
+            && self.effect_edit_step.as_ref() == Some(&key)
+        {
+            let _ = self.engine.undo();
+        }
+        if let Err(e) = self.engine.run_batch("Effect", &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        self.effect_edit_step = Some((self.engine.revision(), key.1, key.2));
     }
 
     pub fn remove_effects_of_kind(&mut self, like: &Effect) {
@@ -1946,6 +1964,26 @@ pub fn apply_case(text: &str, mode: CaseMode) -> String {
 impl App {
     /// Blend the two selected objects: the first becomes the start with a
     /// live Blend effect, the second is removed (it lives inside the effect).
+    /// Clear Blend: the selected objects lose their blends.
+    pub fn clear_blend(&mut self) {
+        self.remove_effects_of_kind(&Effect::Blend {
+            end: Box::new(tracedraw_core::Shape::new(
+                ShapeId(0),
+                tracedraw_core::ShapeKind::Rect {
+                    rect: Default::default(),
+                    radius: 0.0,
+                    corners: None,
+                },
+            )),
+            steps: 1,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+        });
+    }
+
     pub fn blend_selection(
         &mut self,
         steps: u32,
