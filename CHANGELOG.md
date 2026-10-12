@@ -88,10 +88,12 @@ full, row-by-row status.
   (rectangle, ellipse, polygon, star) with an object selected end with
   Wrap Paragraph Text, To Front, To Back and Convert to Curves, as the
   Pick tool's bar does (Wrap Paragraph Text is new there too).
-- The colour palette stands at the right edge of the window by default,
-  outside the dockers, and the document palette stays a row under the
-  drawing window wherever the palette is. A palette left at the bottom
-  by earlier preferences moves to the right; one put elsewhere stays.
+- The document palette stays a row under the drawing window wherever the
+  colour palette is (on a side it was a column beside it). The colour
+  palette starts at the bottom; moved to a side, along the top or
+  floating, it stays there across restarts, in the browser too. Nightly
+  builds that stood it at the right edge by default put it back at the
+  bottom once.
 - The browser version offers every family of the google/fonts collection
   (about 2,000 more), fetched from GitHub the first time a drawing's text
   needs one or the pointer rests on it in the font list; they show in

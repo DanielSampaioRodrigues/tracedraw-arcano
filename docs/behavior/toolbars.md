@@ -110,7 +110,7 @@ and the status bar move (`ui/bars.rs`).
 | Bar | Places | First place |
 |---|---|---|
 | Toolbox | top, bottom, left, right, floating | left |
-| Colour palette | top, bottom, left, right, floating | right (the outermost column, beyond the dockers) |
+| Colour palette | top, bottom, left, right, floating | bottom (on a side: the outermost column, beyond the dockers) |
 | Standard toolbar | top, bottom, floating | top |
 | Property bar | top, bottom, floating | top |
 | Status bar | top, bottom | bottom |
@@ -148,11 +148,13 @@ and the status bar move (`ui/bars.rs`).
 - Lock Toolbars hides the grips, stops every drag and greys the places in
   the menu. Reset Bar Positions puts every bar at its first place and
   shows it; the lock stays as it was.
-- The layout and the lock are kept in the preferences (`bars`); older
-  preferences without it start with the first places. Preferences from
-  before the palette's first place became the right edge (`bars.version`
-  0) move a palette left at the bottom there; one put anywhere else
-  stays (`ui::bars::tests::the_palette_moves_to_the_right_edge_unless_it_was_put_elsewhere`).
+- The layout and the lock are kept in the preferences (`bars`; in the
+  browser, its local storage) as soon as they change; older preferences
+  without it start with the first places. Layouts of version 1
+  (`bars.version`), whose palette stood at the right edge by default,
+  put a palette found there back at the bottom once; a palette anywhere
+  else stays, and wherever the user puts it after that is kept
+  (`ui::bars::tests::the_palette_starts_at_the_bottom_and_stays_where_it_is_put`).
 
 ## Checks
 

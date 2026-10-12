@@ -315,10 +315,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| standard(app, ui));
     }
 
-    // The default palette as a column on a side lies outermost (by
-    // default at the right edge, outside the dockers); as a row it comes
-    // after the dockers (below). The document palette is a row under the
-    // drawing window (over it when the palette is docked at the top).
+    // The default palette as a column on a side lies outermost (outside
+    // the dockers); as a row (at the bottom by default) it comes after the
+    // dockers (below). The document palette is a row under the drawing
+    // window (over it when the palette is docked at the top).
     let palette_frame = Frame::new().fill(Tokens::PANEL);
     let palette_dock = bars_layout.dock(Bar::Palette);
     let show_palette = app.settings.palette.show_palette;

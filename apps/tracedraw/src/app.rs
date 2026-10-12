@@ -4757,6 +4757,10 @@ mod tests {
         app.color_docker.shown = [false, true, true];
         app.align_to = crate::ops2::AlignTo::PageCenter;
         app.distribute_to = crate::ops::DistributeTo::Page;
+        // The palette starts at the bottom; moved to the right, it stays.
+        use crate::ui::bars::{move_bar, Bar, Dock};
+        assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
+        move_bar(&mut app, Bar::Palette, Dock::Right, None);
         app.sync_settings();
         let json = serde_json::to_string(&app.settings).expect("json");
         let saved: crate::settings::Settings = serde_json::from_str(&json).expect("read back");
@@ -4774,6 +4778,7 @@ mod tests {
         assert_eq!(next.color_docker.shown, [false, true, true]);
         assert_eq!(next.align_to, crate::ops2::AlignTo::PageCenter);
         assert_eq!(next.distribute_to, crate::ops::DistributeTo::Page);
+        assert_eq!(next.settings.bars.dock(Bar::Palette), Dock::Right);
         // Values out of range in a file edited by hand are brought in.
         let mut odd = next.settings.clone();
         odd.tools.polygon_points = 0;
