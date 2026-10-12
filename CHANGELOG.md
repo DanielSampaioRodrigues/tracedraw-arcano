@@ -16,7 +16,9 @@ full, row-by-row status.
   frame's top instead of being squashed or drawn above it. Rounded
   corners of rectangles in version 15 and later files have their real
   size, and shapes of version 14 and 15 files that have no outline of
-  their own take their style's.
+  their own take their style's. Invert lenses of version 13 and later
+  files show what lies beneath in its complementary colours instead of
+  a solid box.
 - Files with many large pictures open more than twice as fast (a 297 MB
   flyer: 20 to 8.6 seconds on two cores): pictures are decoded side by
   side and kept compressed more lightly, and a page keeps its decoded

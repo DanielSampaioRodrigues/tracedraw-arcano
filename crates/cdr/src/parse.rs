@@ -1793,13 +1793,16 @@ impl<'a> Ctx<'a> {
         let mut style_id: Option<u32> = None;
         let mut style_string: Option<String> = None;
         let mut opacity = 1.0;
+        let mut lens: Option<tracedraw_core::live::Lens> = None;
 
         for arg in &l.args {
             match arg.ty {
                 ARG_STYLE => style_id = self.reader_at(d, arg.off).uint(),
                 ARG_STYLE_STRING => style_string = self.read_object_style_string(d, *arg),
                 ARG_OPACITY => {
-                    if let Some(o) = self.read_opacity(d, *arg) {
+                    if let Some(l) = self.read_lens(d, *arg) {
+                        lens = Some(l);
+                    } else if let Some(o) = self.read_opacity(d, *arg) {
                         opacity = o;
                     }
                 }
@@ -1888,6 +1891,9 @@ impl<'a> Ctx<'a> {
         shape.stroke = stroke;
         shape.name = name;
         shape.opacity = opacity;
+        if let Some(l) = lens {
+            shape.effects.push(tracedraw_core::live::Effect::Lens(l));
+        }
         if let Some(mut fitted) = self.pending_on_path.take() {
             fitted.page_box = self
                 .object_bbox(oc)
@@ -2028,6 +2034,37 @@ impl<'a> Ctx<'a> {
     /// or transparency; files observed so far store a transparency
     /// (0 = opaque), so we read it that way. Values above 1.0 are taken as
     /// percent in thousandths.
+    /// A lens in the transparency argument of a version 13+ object: a
+    /// record tagged 1300 whose body starts with 1, then a u32 id and the
+    /// lens type (u8), then two colour slots. Only type 3 is known: an
+    /// invert lens (a version 15 file whose preview shows each colour
+    /// beneath the object as its complement). Other types are reported and
+    /// read as before, as a transparency.
+    fn read_lens(&mut self, d: &'a [u8], arg: Arg) -> Option<tracedraw_core::live::Lens> {
+        if self.v < 13 {
+            return None;
+        }
+        let data = d.get(..arg.end)?;
+        let mut r = self.reader_at(data, arg.off);
+        if r.u32()? != 0x514 {
+            return None;
+        }
+        let len = r.u32()? as usize;
+        let body = data.get(r.pos..r.pos.checked_add(len)?)?;
+        if body.first() != Some(&1) {
+            return None;
+        }
+        match body.get(5).copied()? {
+            3 => Some(tracedraw_core::live::Lens::Invert),
+            other => {
+                self.report.warn(format!(
+                    "lens type {other} not read; drawn without its lens"
+                ));
+                None
+            }
+        }
+    }
+
     fn read_opacity(&mut self, d: &'a [u8], arg: Arg) -> Option<f64> {
         let data = d.get(..arg.end)?;
         let mut r = self.reader_at(data, arg.off);
@@ -5425,6 +5462,64 @@ mod tests {
         let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
         assert!((first_shape(&doc).opacity - 0.6).abs() < 1e-9);
+    }
+
+    /// A one-rectangle version 14 page whose transparency argument is a
+    /// record tagged 1300 with `body`.
+    fn rect_with_transparency_record(body: &[u8]) -> (tracedraw_core::Document, ParseReport) {
+        let mut op = u32s(&[0x514, body.len() as u32]);
+        op.extend_from_slice(body);
+        let obj = list(
+            b"obj ",
+            &chunk(
+                b"loda",
+                &loda(
+                    OBJ_RECT,
+                    &[(ARG_COORDS, i32s(&[254000, 254000, 0])), (ARG_OPACITY, op)],
+                ),
+            ),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(14, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        parse(&riff(b"CDRE", &body), 14)
+    }
+
+    #[test]
+    fn lens_records_in_the_transparency_argument() {
+        use tracedraw_core::live::{Effect, Lens};
+        // As in a version 15 file: kind 1, an id, type 3 (invert), then
+        // two colour slots (CMYK white, the empty colour) and padding.
+        let mut lens = vec![1u8, 0x48, 0x8b, 0x06, 0x0b, 3, 0, 0];
+        lens.extend_from_slice(&[1, 12, 0, 0, 0, 2, 0, 5, 0]);
+        lens.resize(126, 0);
+        let (doc, rep) = rect_with_transparency_record(&lens);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let s = first_shape(&doc);
+        assert_eq!(s.effects, vec![Effect::Lens(Lens::Invert)]);
+        assert_eq!(s.opacity, 1.0);
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+
+        // Another lens type: reported, the object read as before.
+        lens[5] = 7;
+        let (doc, rep) = rect_with_transparency_record(&lens);
+        assert!(first_shape(&doc).effects.is_empty());
+        assert!(rep.warnings.iter().any(|w| w.contains("lens type 7")));
+
+        // A record of another kind keeps its transparency in thousandths.
+        let mut t = vec![0u8; 6];
+        t.extend_from_slice(&u16s(&[400]));
+        t.resize(40, 0);
+        let (doc, rep) = rect_with_transparency_record(&t);
+        assert!(first_shape(&doc).effects.is_empty());
+        assert!((first_shape(&doc).opacity - 0.6).abs() < 1e-9);
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+
+        // Truncated records read as no lens.
+        let (doc, _) = rect_with_transparency_record(&[1, 0, 0]);
+        assert!(first_shape(&doc).effects.is_empty());
     }
 
     // Arrowheads.
