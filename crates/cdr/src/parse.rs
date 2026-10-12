@@ -619,6 +619,12 @@ impl<'a> Ctx<'a> {
             let raw = r.u32()?;
             (model, raw.to_le_bytes())
         };
+        // Model 0 with a zero value is the empty colour some records keep
+        // in place of one (seen in version 15 and 22 files, where nothing
+        // shows it): black, as before, but without a warning.
+        if model == 0 && b == [0; 4] {
+            return Some(Color::BLACK);
+        }
         Some(match color_from_model(model, b) {
             Some(c) => c,
             None => {
@@ -825,45 +831,77 @@ impl<'a> Ctx<'a> {
         }))
     }
 
-    /// Colour bitmap (9) and texture (11) fill body. version 13+ bodies start with
-    /// optional records (a 0x640 word followed by 0x640 bytes, or a bare
-    /// 0x514 word); then the
-    /// pattern id, tile width and height, tile offsets or 4 unknown bytes,
-    /// rcp offset, flags, 21 (17 from version 13) unknown bytes and the pattern id
-    /// again (version 6+). The pattern id names a `bmp ` image.
+    /// Colour bitmap (9) and texture (11) fill body: the pattern id, tile
+    /// width and height, tile offsets or 4 unknown bytes, rcp offset,
+    /// flags, 21 (17 from version 13) unknown bytes and the pattern id again
+    /// (version 6+), which names a `bmp ` image. From version 13 that
+    /// layout is the body of a record tagged 1300 (0x514) with its length,
+    /// after other tagged records such as 1600 (0x640): a version 22 file
+    /// has a 16-byte 1600 record and a 36-byte 1300 record whose last u32
+    /// names the image.
     fn read_image_fill(&mut self, body: &'a [u8], id: u32, ftype: u16) -> Option<Fill> {
         let v = self.v;
-        let mut r = self.reader(body);
-        if v >= 13 {
+        // The layout at `pos`: (image id, tile width, flags). In a record
+        // of `len` bytes the image id is its last u32.
+        let layout_at = |pos: usize, len: Option<usize>| -> Option<(u32, u32, u8)> {
+            let mut r = self.reader_at(body, pos);
+            let first = r.uint()?;
+            let w = r.uint()?;
+            let _h = r.uint()?;
+            r.skip(4); // tile offsets (before 9) or unknown
+            let _rcp = r.u16()?;
+            let flags = r.u8()?;
+            let image = match len {
+                Some(l) => self.reader_at(body, (pos + l).checked_sub(4)?).u32()?,
+                None => {
+                    r.skip(if v >= 13 { 17 } else { 21 });
+                    if v >= 6 {
+                        r.u32().unwrap_or(first)
+                    } else {
+                        first
+                    }
+                }
+            };
+            Some((image, w, flags))
+        };
+        let reading = if v >= 13 {
+            // Tagged records with their lengths, up to the 1300 one.
+            let mut pos = 0;
+            let mut tagged = None;
             for _ in 0..64 {
-                let Some(tag) = self.reader_at(body, r.pos).u32() else {
+                let mut peek = self.reader_at(body, pos);
+                let (Some(tag), Some(len)) = (peek.u32(), peek.u32()) else {
                     break;
                 };
-                // The 0x640 word is a block length (1600 bytes follow);
-                // 0x514 is a bare version tag.
-                if tag == 0x640 {
-                    r.skip(4 + 0x640);
-                } else if tag == 0x514 {
-                    r.skip(4);
-                } else {
+                let len = len as usize;
+                if len > peek.remaining() || !(tag == 0x640 || tag == 0x514) {
                     break;
                 }
+                if tag == 0x514 {
+                    tagged = layout_at(pos + 8, Some(len));
+                    break;
+                }
+                pos += 8 + len;
+            }
+            // The public notes' reading: a 0x640 word followed by 0x640
+            // bytes, or a bare 0x514 word, before the layout.
+            let mut pos = 0;
+            for _ in 0..64 {
+                match self.reader_at(body, pos).u32() {
+                    Some(0x640) => pos += 4 + 0x640,
+                    Some(0x514) => pos += 4,
+                    _ => break,
+                }
+            }
+            let bare = layout_at(pos, None);
+            match tagged {
+                Some(t) if self.bitmaps.contains_key(&t.0) => Some(t),
+                _ => bare.or(tagged),
             }
         } else {
-            r.skip(2);
-        }
-        let pattern_id = r.uint()?;
-        let w = r.uint()?;
-        let _h = r.uint()?;
-        r.skip(4); // tile offsets (before 9) or unknown
-        let _rcp = r.u16()?;
-        let flags = r.u8()?;
-        r.skip(if v >= 13 { 17 } else { 21 });
-        let pattern_id = if v >= 6 {
-            r.u32().unwrap_or(pattern_id)
-        } else {
-            pattern_id
+            layout_at(2, None)
         };
+        let (pattern_id, w, flags) = reading?;
         let relative = flags & 0x04 != 0 && v < 9;
         let unit = if v < 6 { UNIT16_MM } else { UNIT_MM };
         let mut size_mm = if relative { 10.0 } else { w as f64 * unit };
@@ -5071,6 +5109,75 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
+    }
+
+    #[test]
+    fn the_empty_colour_reads_quietly() {
+        let main = riff(b"CDRV", &[]);
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 22);
+        let empty = [0u8; 12];
+        let mut r = ctx.reader(&empty);
+        assert_eq!(ctx.read_color(&mut r), Some(Color::BLACK));
+        assert!(ctx.report.warnings.is_empty());
+        // An unknown model with a value still warns.
+        let mut odd = [0u8; 12];
+        odd[0] = 0x7f;
+        odd[8] = 9;
+        let mut r = ctx.reader(&odd);
+        assert_eq!(ctx.read_color(&mut r), Some(Color::BLACK));
+        assert_eq!(ctx.report.warnings.len(), 1);
+    }
+
+    #[test]
+    fn bitmap_fills_in_tagged_records() {
+        // As in a version 22 file: a 1600 record of 16 bytes, then a 1300
+        // record of 36 bytes whose last u32 names the image (41).
+        let mut p = u32s(&[0x640, 16, 0, 500_000, 500_000, 0]);
+        p.extend_from_slice(&u32s(&[
+            0x514, 36, 682_203, 500_000, 0, 0, 0, 500_000, 500_000, 0, 41,
+        ]));
+        p.extend_from_slice(&[0; 12]);
+        let mut fild = u32s(&[1, 1300, (p.len() + 2) as u32]);
+        fild.extend_from_slice(&u16s(&[9]));
+        fild.extend_from_slice(&p);
+        // A small first id (5) that a bare-word reading would misread.
+        let mut q = u32s(&[0x514, 5, 254_000, 254_000]);
+        q.extend_from_slice(&[0; 4]);
+        q.extend_from_slice(&u16s(&[0]));
+        q.push(0);
+        q.extend_from_slice(&[0; 17]);
+        q.extend_from_slice(&u32s(&[5]));
+        let mut fild2 = u32s(&[2, 1300, (q.len() + 2) as u32]);
+        fild2.extend_from_slice(&u16s(&[9]));
+        fild2.extend_from_slice(&q);
+        let main = riff(
+            b"CDRV",
+            &[
+                chunk(b"bmp ", &bmp_2x2(41)),
+                chunk(b"bmp ", &bmp_2x2(5)),
+                chunk(b"fild", &fild),
+                chunk(b"fild", &fild2),
+            ]
+            .concat(),
+        );
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 22);
+        for c in tree.root.find_all(b"bmp ") {
+            ctx.read_bitmap(c);
+        }
+        for c in tree.root.find_all(b"fild") {
+            ctx.read_fill(c);
+        }
+        assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
+        for (fill, size) in [(1, 50.0), (2, 25.4)] {
+            match &ctx.fills[&fill].fill {
+                Fill::Pattern(Pattern::Bitmap { size_mm, .. }) => {
+                    assert!((size_mm - size).abs() < 1e-9, "{fill}: {size_mm}");
+                }
+                other => panic!("{other:?}"),
+            }
+        }
     }
 
     #[test]
