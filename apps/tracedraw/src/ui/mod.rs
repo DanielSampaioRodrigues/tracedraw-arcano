@@ -24,6 +24,7 @@ pub mod dockers2;
 pub mod effect_dialog;
 pub mod envelope_ui;
 pub mod field;
+pub mod fill_tool_bars;
 pub mod font_list;
 pub mod hints;
 pub mod icons;

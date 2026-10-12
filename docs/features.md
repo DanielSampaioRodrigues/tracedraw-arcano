@@ -109,8 +109,8 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
 | Gradient fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
-| Mesh fill with node editing | works |
-| Area Fill (enclosed region) | works |
+| Mesh fill: Mesh Fill tool and bar (rows and columns keeping colours, Smooth colour, node transparency, Clear Mesh), nodes dragged and coloured from the palette, grid lines added and removed (see `behavior/mesh-fill.md`) | works |
+| Area Fill (enclosed region; fill and outline: default, own or none) (see `behavior/area-fill.md`) | works |
 | Interactive Fill tool: property bar with fill type and gradient fields, axis and centre handles on the canvas | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |

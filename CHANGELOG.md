@@ -6,6 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Mesh Fill tool: its property bar sets the rows and columns (new meshes
+  take them; the selected mesh changes and keeps its colours), Smooth
+  colour, the selected node's transparency and Clear Mesh. A palette
+  colour now colours the selected node; before, it replaced the whole
+  mesh with a flat fill. Delete removes the grid lines through the
+  selected node. Smooth colour now draws (it was only a checkbox): the
+  colours flow through the nodes. The tool stays the Mesh Fill tool
+  after making a mesh.
+- Area Fill: the property bar chooses the fill (default, a colour, none)
+  and the outline (default, a width and colour, none) of the objects it
+  makes; objects with live effects count as drawn.
 - Envelopes rebuilt. The Envelope tool keeps its own property bar
   (presets, the four modes, Add New, mapping, Keep Lines, Copy, Clear)
   instead of the distortion controls, and edits the frame itself. The

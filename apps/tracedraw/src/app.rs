@@ -966,6 +966,8 @@ pub struct App {
     pub font_filter: String,
     /// Envelope/perspective node being dragged with the Shape tool: (shape, index).
     pub effect_node_drag: Option<(ShapeId, usize)>,
+    /// A step of the effect node drag under way is on the undo list.
+    pub effect_node_stepped: bool,
     /// Dockers added to the tab strip beyond the defaults.
     pub open_dockers: Vec<DockerTab>,
     pub free_transform_last: Point,
@@ -978,6 +980,13 @@ pub struct App {
     /// (0 fill, 1 outline), set by F11 and F12.
     pub properties_open: Option<usize>,
     pub area_fill_color: Color,
+    /// Smart Fill: the fill of the objects it makes (0 the default fill,
+    /// 1 `area_fill_color`, 2 none) and their outline (0 the default
+    /// outline, 1 `area_outline_width` in `area_outline_color`, 2 none).
+    pub area_fill_mode: u8,
+    pub area_outline_mode: u8,
+    pub area_outline_width: f64,
+    pub area_outline_color: Color,
     pub mesh_rows: u32,
     pub mesh_cols: u32,
     /// Shape tool elastic mode: dragging one node pulls its neighbours.
@@ -1561,6 +1570,7 @@ impl App {
             mask_tolerance: 20,
             font_filter: String::new(),
             effect_node_drag: None,
+            effect_node_stepped: false,
             open_dockers: DockerTab::default_strip(),
             free_transform_last: Point::ZERO,
             free_transform_mode: FreeTransformMode::Rotation,
@@ -1569,6 +1579,10 @@ impl App {
             roughen_amount: 2.0,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
+            area_fill_mode: 0,
+            area_outline_mode: 0,
+            area_outline_width: 0.2,
+            area_outline_color: Color::BLACK,
             mesh_rows: 2,
             mesh_cols: 2,
             elastic_mode: false,
@@ -1970,6 +1984,13 @@ impl App {
             envelope_mode: self.envelope_mode.id().into(),
             envelope_mapping: self.envelope_mapping.id().into(),
             envelope_keep_lines: self.envelope_keep_lines,
+            mesh_rows: self.mesh_rows,
+            mesh_cols: self.mesh_cols,
+            smart_fill_mode: self.area_fill_mode,
+            smart_fill_color: self.area_fill_color,
+            smart_outline_mode: self.area_outline_mode,
+            smart_outline_width: self.area_outline_width,
+            smart_outline_color: self.area_outline_color,
         }
     }
 
@@ -2013,6 +2034,13 @@ impl App {
         self.envelope_mode = tracedraw_core::envelope::Mode::from_id(&t.envelope_mode);
         self.envelope_mapping = tracedraw_core::envelope::Mapping::from_id(&t.envelope_mapping);
         self.envelope_keep_lines = t.envelope_keep_lines;
+        self.mesh_rows = t.mesh_rows.clamp(1, 50);
+        self.mesh_cols = t.mesh_cols.clamp(1, 50);
+        self.area_fill_mode = t.smart_fill_mode.min(2);
+        self.area_fill_color = t.smart_fill_color;
+        self.area_outline_mode = t.smart_outline_mode.min(2);
+        self.area_outline_width = finite(t.smart_outline_width, 0.0, 1000.0, 0.2);
+        self.area_outline_color = t.smart_outline_color;
     }
 
     /// What the drawing window shows now (see
@@ -3100,6 +3128,13 @@ impl App {
     }
 
     pub fn apply_fill(&mut self, fill: Fill) {
+        // With the Mesh Fill or Shape tool, a colour goes to the selected
+        // mesh node.
+        if let Fill::Solid(c) = &fill {
+            if matches!(self.tool, Tool::MeshFill | Tool::Shape) && self.color_mesh_node(*c) {
+                return;
+            }
+        }
         // Monochrome bitmaps take the colour as their background.
         if let Fill::Solid(c) = &fill {
             if self.recolor_mono_bitmaps(false, *c) {
@@ -4804,6 +4839,9 @@ mod tests {
         app.envelope_mode = tracedraw_core::envelope::Mode::DoubleArc;
         app.envelope_mapping = tracedraw_core::envelope::Mapping::Vertical;
         app.envelope_keep_lines = true;
+        app.mesh_rows = 4;
+        app.area_outline_mode = 1;
+        app.area_outline_width = 1.5;
         // The palette starts at the bottom; moved to the right, it stays.
         use crate::ui::bars::{move_bar, Bar, Dock};
         assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
@@ -4835,6 +4873,8 @@ mod tests {
             tracedraw_core::envelope::Mapping::Vertical
         );
         assert!(next.envelope_keep_lines);
+        assert_eq!(next.mesh_rows, 4);
+        assert_eq!((next.area_outline_mode, next.area_outline_width), (1, 1.5));
         // Values out of range in a file edited by hand are brought in.
         let mut odd = next.settings.clone();
         odd.tools.polygon_points = 0;

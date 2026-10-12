@@ -349,6 +349,94 @@ impl Mesh {
             .map(|(i, _)| i)
     }
 
+    /// The node grid's (row, column) of node `i`.
+    pub fn row_col(&self, i: usize) -> (usize, usize) {
+        let cols = self.cols as usize + 1;
+        (i / cols, i % cols)
+    }
+
+    /// The mesh as the grid sees it at row `v` and column `u` (fractions
+    /// of the rows and columns, 0 to 1): position, colour and opacity
+    /// mixed from the four nodes around it.
+    pub fn sample(&self, u: f64, v: f64) -> Option<MeshNode> {
+        let (rows, cols) = (self.rows.max(1) as f64, self.cols.max(1) as f64);
+        let (x, y) = (u.clamp(0.0, 1.0) * cols, v.clamp(0.0, 1.0) * rows);
+        let c = (x.floor() as u32).min(self.cols.saturating_sub(1));
+        let r = (y.floor() as u32).min(self.rows.saturating_sub(1));
+        let (fu, fv) = (x - c as f64, y - r as f64);
+        let (a, b, d, e) = (
+            *self.node(r, c)?,
+            *self.node(r, c + 1)?,
+            *self.node(r + 1, c)?,
+            *self.node(r + 1, c + 1)?,
+        );
+        let mix = |p: MeshNode, q: MeshNode, t: f64| MeshNode {
+            pos: p.pos.lerp(q.pos, t),
+            color: lerp_color(p.color, q.color, t as f32),
+            alpha: p.alpha + (q.alpha - p.alpha) * t as f32,
+        };
+        Some(mix(mix(a, b, fu), mix(d, e, fu), fv))
+    }
+
+    /// The same mesh on a grid of `rows` by `cols` cells spread evenly over
+    /// its nodes' bounds, each new node taking the colour and opacity the
+    /// old grid has there.
+    pub fn regrid(&self, rows: u32, cols: u32) -> Mesh {
+        let (rows, cols) = (rows.clamp(1, 50), cols.clamp(1, 50));
+        let bounds = self
+            .nodes
+            .iter()
+            .map(|n| crate::geometry::Rect::from_points(n.pos, n.pos))
+            .reduce(|a, b| a.union(b))
+            .unwrap_or_default();
+        let base = self.nodes.first().map(|n| n.color).unwrap_or(Color::WHITE);
+        let mut out = Mesh::new(bounds, rows, cols, base);
+        out.smooth = self.smooth;
+        for r in 0..=rows {
+            for c in 0..=cols {
+                let i = (r * (cols + 1) + c) as usize;
+                if let (Some(old), Some(n)) = (
+                    self.sample(c as f64 / cols as f64, r as f64 / rows as f64),
+                    out.nodes.get_mut(i),
+                ) {
+                    n.color = old.color;
+                    n.alpha = old.alpha;
+                }
+            }
+        }
+        out
+    }
+
+    /// Remove the grid lines through node `i` that are not on the edge:
+    /// its column, its row, or both. False when both are on the edge.
+    pub fn remove_lines_through(&mut self, i: usize) -> bool {
+        if i >= self.nodes.len() {
+            return false;
+        }
+        let (r, c) = self.row_col(i);
+        let cols = self.cols as usize + 1;
+        let drop_col = c > 0 && c < self.cols as usize;
+        let drop_row = r > 0 && r < self.rows as usize;
+        if !drop_col && !drop_row {
+            return false;
+        }
+        let nodes: Vec<MeshNode> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| !(drop_col && k % cols == c) && !(drop_row && k / cols == r))
+            .map(|(_, n)| *n)
+            .collect();
+        self.nodes = nodes;
+        if drop_col {
+            self.cols -= 1;
+        }
+        if drop_row {
+            self.rows -= 1;
+        }
+        true
+    }
+
     /// Add a grid line through the node nearest to `p` (double-click).
     pub fn add_line(&mut self, p: Point) {
         let Some(i) = self.nearest(p) else { return };
@@ -606,6 +694,42 @@ impl Default for Stroke {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meshes_regrid_and_lose_lines_keeping_their_colours() {
+        let b = crate::geometry::Rect::new(0.0, 0.0, 20.0, 20.0);
+        let mut m = Mesh::new(b, 1, 1, Color::WHITE);
+        // Left column red, right column blue.
+        for (i, n) in m.nodes.iter_mut().enumerate() {
+            n.color = if i % 2 == 0 {
+                Color::rgb8(255, 0, 0)
+            } else {
+                Color::rgb8(0, 0, 255)
+            };
+        }
+        let g = m.regrid(2, 4);
+        assert_eq!((g.rows, g.cols, g.nodes.len()), (2, 4, 15));
+        // The middle column is the mix of red and blue; the ends keep theirs.
+        let mid = g.node(1, 2).expect("node").color.to_rgb8();
+        assert!(
+            (mid[0] as i32 - 128).abs() <= 2 && (mid[2] as i32 - 128).abs() <= 2,
+            "{mid:?}"
+        );
+        assert_eq!(g.node(0, 0).expect("node").color.to_rgb8(), [255, 0, 0]);
+        assert_eq!(g.node(2, 4).expect("node").color.to_rgb8(), [0, 0, 255]);
+        assert_eq!(g.node(2, 4).expect("node").pos, Point::new(20.0, 20.0));
+        // The middle node's lines go; an edge node's cannot.
+        let mut h = g.clone();
+        let centre = 7; // row 1, column 2
+        assert_eq!(h.row_col(centre), (1, 2));
+        assert!(h.remove_lines_through(centre));
+        assert_eq!((h.rows, h.cols, h.nodes.len()), (1, 3, 8));
+        assert!(!h.remove_lines_through(0));
+        assert!(!h.remove_lines_through(99));
+        // Sampling between nodes mixes them.
+        let s = m.sample(0.5, 0.5).expect("sample");
+        assert_eq!(s.pos, Point::new(10.0, 10.0));
+    }
 
     #[test]
     fn fountain_interpolates_stops() {

@@ -862,7 +862,10 @@ impl Renderer<'_> {
     }
 
     /// Mesh fill (nodes in page space): each cell is split into small
-    /// flat-coloured triangles (Gouraud approximation), clipped by the path.
+    /// flat-coloured quads, clipped by the path. Colours mix from the
+    /// cell's four nodes (bilinear), or with Smooth colour from the sixteen
+    /// around it (Catmull-Rom across the grid), so they flow through the
+    /// nodes without creases.
     fn fill_mesh(
         &mut self,
         m: &tracedraw_core::Mesh,
@@ -884,6 +887,42 @@ impl Renderer<'_> {
                 color: tracedraw_core::style::lerp_color(a.color, b.color, t as f32),
                 alpha: a.alpha + (b.alpha - a.alpha) * t as f32,
             }
+        };
+        // Smooth colour: each channel through the 4 x 4 nodes around the
+        // cell with Catmull-Rom weights (rows and columns past the edge
+        // repeat the edge).
+        let rgb: Vec<[f32; 3]> = m.nodes.iter().map(|n| n.color.to_rgb_f32()).collect();
+        let weights = |t: f64| {
+            let (t2, t3) = (t * t, t * t * t);
+            [
+                (-t3 + 2.0 * t2 - t) / 2.0,
+                (3.0 * t3 - 5.0 * t2 + 2.0) / 2.0,
+                (-3.0 * t3 + 4.0 * t2 + t) / 2.0,
+                (t3 - t2) / 2.0,
+            ]
+        };
+        let smooth_at = |r: usize, c: usize, u: f64, v: f64| -> Option<([u8; 3], f32)> {
+            let (wu, wv) = (weights(u), weights(v));
+            let mut acc = [0.0f64; 3];
+            let mut alpha = 0.0f64;
+            for (j, wj) in wv.iter().enumerate() {
+                let rr = (r + j).saturating_sub(1).min(m.rows as usize);
+                for (i, wi) in wu.iter().enumerate() {
+                    let cc = (c + i).saturating_sub(1).min(m.cols as usize);
+                    let k = rr * cols + cc;
+                    let (n, c3) = (m.nodes.get(k)?, rgb.get(k)?);
+                    let w = wi * wj;
+                    for ch in 0..3 {
+                        acc[ch] += w * c3[ch] as f64;
+                    }
+                    alpha += w * n.alpha as f64;
+                }
+            }
+            let byte = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+            Some((
+                [byte(acc[0]), byte(acc[1]), byte(acc[2])],
+                alpha.clamp(0.0, 1.0) as f32,
+            ))
         };
         let mut paint = Paint::default();
         paint.anti_alias = false;
@@ -920,13 +959,12 @@ impl Renderer<'_> {
                         }
                         pb.close();
                         let Some(path) = pb.finish() else { continue };
-                        let [cr, cg, cb] = mid.color.to_rgb8();
-                        paint.set_color_rgba8(
-                            cr,
-                            cg,
-                            cb,
-                            (mid.alpha.clamp(0.0, 1.0) * 255.0) as u8,
-                        );
+                        let smooth = m
+                            .smooth
+                            .then(|| smooth_at(r, c, (u0 + u1) / 2.0, (v0 + v1) / 2.0))
+                            .flatten();
+                        let ([cr, cg, cb], a) = smooth.unwrap_or((mid.color.to_rgb8(), mid.alpha));
+                        paint.set_color_rgba8(cr, cg, cb, (a.clamp(0.0, 1.0) * 255.0) as u8);
                         // Slightly overdraw to hide seams between quads.
                         layer.fill_path(
                             &path,
@@ -1818,6 +1856,28 @@ mod tests {
         let (r, _, b) = px(&pm, 32, 50);
         assert!(b > r, "outer contour step should be bluish");
         assert_eq!(px(&pm, 5, 5), (255, 255, 255));
+    }
+
+    /// Smooth colour carries a bright middle node's colour further into
+    /// its cells than the bilinear mix does.
+    #[test]
+    fn smooth_mesh_colour_flows_through_the_nodes() {
+        let render = |smooth: bool| {
+            let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::WHITE);
+            let mut m =
+                tracedraw_core::Mesh::new(Rect::new(0.0, 0.0, 100.0, 100.0), 2, 2, Color::BLACK);
+            m.nodes[4].color = Color::WHITE; // the middle node
+            m.smooth = smooth;
+            s.fill = Fill::Mesh(m);
+            let (doc, page) = doc_with(vec![s]);
+            render_page_image(&doc, page, 25.4).unwrap()
+        };
+        let (flat, smooth) = (render(false), render(true));
+        let (f, _, _) = px(&flat, 30, 50);
+        let (g, _, _) = px(&smooth, 30, 50);
+        assert!(g > f + 8, "smooth {g} should be brighter than bilinear {f}");
+        // Next to the middle node it is nearly white either way.
+        assert!(px(&smooth, 50, 50).0 > 200 && px(&flat, 50, 50).0 > 200);
     }
 
     #[test]

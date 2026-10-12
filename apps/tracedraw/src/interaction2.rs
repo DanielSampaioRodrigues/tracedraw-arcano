@@ -262,14 +262,7 @@ impl App {
                     self.area_fill_at(p);
                 }
             }
-            Tool::MeshFill => {
-                if response.clicked_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
-                        self.select(vec![id]);
-                        self.apply_mesh_fill(id);
-                    }
-                }
-            }
+            Tool::MeshFill => self.mesh_tool_input(response, p),
             Tool::OutlinePen => {
                 self.set_tool(Tool::Pick);
                 self.show_dockers = true;
@@ -789,6 +782,17 @@ impl App {
         };
         fn collect(s: &Shape, parent: Affine, out: &mut Vec<BezPath>) {
             let t = parent * s.transform;
+            if !s.effects.is_empty() {
+                // What the object draws: its warped outline and the
+                // objects its effects add.
+                let mut on_page = s.clone();
+                on_page.transform = t;
+                let ev = tracedraw_core::live::evaluate(&on_page);
+                for part in std::iter::once(ev.main).chain(ev.below).chain(ev.above) {
+                    out.push(part.page_path());
+                }
+                return;
+            }
             match &s.kind {
                 ShapeKind::Group { children } => children.iter().for_each(|c| collect(c, t, out)),
                 _ => out.push(t * s.local_path()),
@@ -896,33 +900,32 @@ impl App {
         };
         let id = self.engine.new_shape_id();
         let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
-        s.fill = match self.default_fill() {
-            Fill::None => Fill::Solid(self.area_fill_color),
-            other => other,
+        // The bar's choices: the default fill (a colour when the default
+        // is none, so the area shows), its own colour, or none; the
+        // default outline, its own, or none.
+        s.fill = match self.area_fill_mode {
+            1 => Fill::Solid(self.area_fill_color),
+            2 => Fill::None,
+            _ => match self.default_fill() {
+                Fill::None => Fill::Solid(self.area_fill_color),
+                other => other,
+            },
         };
-        s.stroke = self.default_stroke();
+        s.stroke = match self.area_outline_mode {
+            1 => Some(Stroke::new(
+                self.area_outline_color,
+                self.area_outline_width.max(0.0),
+            )),
+            2 => None,
+            _ => self.default_stroke(),
+        };
         s.name = Some("Area Fill".into());
         self.run(Command::AddShape { layer, shape: s });
         self.select(vec![id]);
     }
 
-    pub fn apply_mesh_fill(&mut self, id: ShapeId) {
-        let Some(s) = self.doc().find_shape(id).cloned() else {
-            return;
-        };
-        let b = s.local_path().bounding_box();
-        let base = s.fill.preview_color().unwrap_or(Color::WHITE);
-        let mesh =
-            tracedraw_core::style::Mesh::new(b, self.mesh_rows.max(1), self.mesh_cols.max(1), base);
-        self.run(Command::SetFill {
-            shapes: vec![id],
-            fill: Fill::Mesh(mesh),
-        });
-        self.set_tool(Tool::Shape);
-    }
-
-    /// Effect nodes (envelope, perspective, mesh) under the pointer, for the
-    /// Shape tool: (shape, node index).
+    /// Effect nodes (perspective, mesh) under the pointer, for the Shape
+    /// and Mesh Fill tools: (shape, node index).
     pub fn effect_node_at(&self, p: Point) -> Option<(ShapeId, usize)> {
         let tol = 5.0 / self.view.zoom as f64;
         for s in self.selected_shapes() {
@@ -962,6 +965,7 @@ impl App {
             if let Some(hit) = self.effect_node_at(p) {
                 self.effect_node_drag = Some(hit);
                 self.selected_effect_node = Some(hit);
+                self.effect_node_stepped = false;
                 self.drag = Drag::Node { last: p };
                 return true;
             }
@@ -978,9 +982,11 @@ impl App {
                     let mut effects = s.effects.clone();
                     let mut fill = s.fill.clone();
                     move_effect_node(&mut effects, &mut fill, index, ld);
-                    if self.engine.undo_label() == Some("Edit Effect") {
+                    // One undo step for the whole drag.
+                    if self.effect_node_stepped && self.engine.undo_label() == Some("Edit Effect") {
                         let _ = self.engine.undo();
                     }
+                    self.effect_node_stepped = true;
                     let _ = self
                         .engine
                         .run_with_label(&Command::SetEffects { shape: id, effects }, "Edit Effect");

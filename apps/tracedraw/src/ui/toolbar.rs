@@ -1480,13 +1480,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::InteractiveFill => interactive_fill_bar(app, ui, &shapes),
-            Tool::AreaFill | Tool::MeshFill => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.fill_hint"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
+            Tool::AreaFill => crate::ui::fill_tool_bars::smart_fill_bar(app, ui),
+            Tool::MeshFill => crate::ui::fill_tool_bars::mesh_bar(app, ui),
             t => {
                 ui.label(
                     egui::RichText::new(trf("toolbar.tool_n", &[("t", &t.name())]))

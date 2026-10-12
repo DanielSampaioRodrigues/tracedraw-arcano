@@ -55,6 +55,7 @@ mod mcp;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp_link;
 mod media;
+mod mesh_tool;
 mod new_document;
 mod node_edit;
 mod ops;

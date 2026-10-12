@@ -646,6 +646,16 @@ pub struct ToolPrefs {
     pub envelope_mode: String,
     pub envelope_mapping: String,
     pub envelope_keep_lines: bool,
+    /// The grid new mesh fills take.
+    pub mesh_rows: u32,
+    pub mesh_cols: u32,
+    /// Smart Fill's fill and outline of the objects it makes (0 the
+    /// default, 1 these, 2 none).
+    pub smart_fill_mode: u8,
+    pub smart_fill_color: tracedraw_core::Color,
+    pub smart_outline_mode: u8,
+    pub smart_outline_width: f64,
+    pub smart_outline_color: tracedraw_core::Color,
 }
 
 impl Default for ToolPrefs {
@@ -676,6 +686,13 @@ impl Default for ToolPrefs {
             envelope_mode: tracedraw_core::envelope::Mode::default().id().into(),
             envelope_mapping: tracedraw_core::envelope::Mapping::default().id().into(),
             envelope_keep_lines: false,
+            mesh_rows: 2,
+            mesh_cols: 2,
+            smart_fill_mode: 0,
+            smart_fill_color: tracedraw_core::Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
+            smart_outline_mode: 0,
+            smart_outline_width: 0.2,
+            smart_outline_color: tracedraw_core::Color::BLACK,
         }
     }
 }

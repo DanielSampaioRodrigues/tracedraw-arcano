@@ -810,18 +810,8 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
                 if ui.add(egui::DragValue::new(&mut r).range(1..=50)).changed()
                     || ui.add(egui::DragValue::new(&mut c).range(1..=50)).changed()
                 {
-                    let b = m
-                        .nodes
-                        .iter()
-                        .fold(None::<tracedraw_core::geometry::Rect>, |acc, n| {
-                            Some(match acc {
-                                None => tracedraw_core::geometry::Rect::from_points(n.pos, n.pos),
-                                Some(r) => r.union_pt(n.pos),
-                            })
-                        })
-                        .unwrap_or_default();
-                    let base = m.nodes.first().map(|n| n.color).unwrap_or(Color::WHITE);
-                    *m = tracedraw_core::Mesh::new(b, r, c, base);
+                    // The colours stay where the old grid had them.
+                    *m = m.regrid(r, c);
                     changed = true;
                 }
             });

@@ -1972,7 +1972,16 @@ impl App {
             self.zoom_step(false);
         }
         if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
-            if self.tool == Tool::Shape && !self.node_selection.is_empty() {
+            if matches!(self.tool, Tool::MeshFill | Tool::Shape)
+                && self.selected_mesh_node().is_some()
+            {
+                self.delete_mesh_lines();
+            } else if matches!(self.tool, Tool::Envelope | Tool::Shape)
+                && self.selected_envelope_node().is_some()
+            {
+                // The node goes; a corner stays (the status bar says so).
+                self.delete_selected_envelope_node();
+            } else if self.tool == Tool::Shape && !self.node_selection.is_empty() {
                 self.delete_selected_nodes();
             } else if self.tool == Tool::AnchorEditing && self.delete_selected_anchor() {
                 // The anchor went, the object stays.

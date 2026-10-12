@@ -756,8 +756,9 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         draw_nodes(app, painter);
         return;
     }
-    // The Envelope tool shows the frames instead (`ui::envelope_ui`).
-    if app.tool == Tool::Envelope {
+    // The Envelope tool shows the frames instead (`ui::envelope_ui`), the
+    // Mesh Fill tool the grids.
+    if matches!(app.tool, Tool::Envelope | Tool::MeshFill) {
         return;
     }
     // Options > Display > Hide bounding box for curve tools.
@@ -1721,10 +1722,14 @@ fn draw_snap_glyph_halo(painter: &Painter, c: Pos2, mode: crate::snap_points::Sn
     draw_snap_glyph_width(painter, c, mode, Tokens::HANDLE, 1.3);
 }
 
-/// Effect nodes (perspective, mesh) of the selection when the Shape tool
-/// is active: small blue squares joined by a frame.
+/// Effect nodes (perspective, mesh) of the selection with the Shape tool
+/// (and the mesh with the Mesh Fill tool): small blue squares joined by
+/// a frame.
 pub fn draw_effect_nodes(app: &App, painter: &Painter) {
-    if app.tool != crate::tools::Tool::Shape {
+    if !matches!(
+        app.tool,
+        crate::tools::Tool::Shape | crate::tools::Tool::MeshFill
+    ) {
         return;
     }
     for s in app.selected_shapes() {
