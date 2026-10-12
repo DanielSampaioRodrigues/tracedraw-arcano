@@ -72,7 +72,7 @@ Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes | works |
 | Lock, hide, order (front/back of page and layer, one step, in front of, behind, reverse) | works |
 | Align and Distribute (all modes, align to page/edge/centre/grid/active object) | works |
-| Transformations panel: position, rotate, scale, size, skew; apply to duplicate | works |
+| Transformations panel: Position, Rotate, Scale and Mirror, Size and Skew pages (Alt+F7 to Alt+F10, Object > Transformations) with a 3 x 3 reference point, relative or absolute position and centre, mirror buttons, proportional scale and size, skew about the anchor point, and copies in one undo step (see `behavior/transformations.md`) | works |
 | Step and Repeat | works |
 | Align with pixel grid | works |
 

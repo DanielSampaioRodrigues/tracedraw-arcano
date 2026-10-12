@@ -757,7 +757,8 @@ pub struct App {
     /// The carried CMYK profile the colour engine was installed with
     /// (its data's address), see `App::sync_document_colors`.
     pub color_profile_key: Option<usize>,
-    pub transform_tab: TransformTab,
+    /// The Transformations docker's page and fields.
+    pub transform: crate::ui::transform_docker::TransformForm,
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
     /// The Shape tool's spot on a segment (a click there): the curve, the
@@ -799,7 +800,6 @@ pub struct App {
     pub guide_presets: crate::ui::layout_options::PresetForm,
     /// Document Options > Grid shows lines per unit instead of spacing.
     pub grid_frequency: bool,
-    pub transform_values: [f64; 4],
     // ----- added with the full menu structure -----
     pub settings: crate::settings::Settings,
     pub welcome_tab: WelcomeTab,
@@ -1376,7 +1376,7 @@ impl App {
             font_previews: Default::default(),
             font_generation: tracedraw_text::fonts().generation(),
             color_profile_key: None,
-            transform_tab: TransformTab::Position,
+            transform: Default::default(),
             node_selection: Vec::new(),
             segment_spot: None,
             snap: crate::snap::SnapSettings::default(),
@@ -1398,7 +1398,6 @@ impl App {
             guide_form: Default::default(),
             guide_presets: Default::default(),
             grid_frequency: false,
-            transform_values: [0.0, 0.0, 100.0, 100.0],
             settings: crate::settings::Settings::default(),
             welcome_tab: WelcomeTab::GetStarted,
             fullscreen_preview: false,

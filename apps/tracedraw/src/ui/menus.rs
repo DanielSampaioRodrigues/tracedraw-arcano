@@ -1574,6 +1574,20 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     });
     todo_sub(ui, "menu.object.rollover");
     sep(ui);
+    sub(ui, "menu.object.transformations", |ui| {
+        use crate::app::TransformTab;
+        for (key, shortcut, tab) in [
+            ("menu.object.tf_position", "Alt+F7", TransformTab::Position),
+            ("menu.object.tf_rotate", "Alt+F8", TransformTab::Rotate),
+            ("menu.object.tf_scale", "Alt+F9", TransformTab::Scale),
+            ("menu.object.tf_size", "Alt+F10", TransformTab::Size),
+            ("menu.object.tf_skew", "", TransformTab::Skew),
+        ] {
+            if item(ui, key, shortcut, true) {
+                crate::ui::transform_docker::open(app, tab, false);
+            }
+        }
+    });
     if item(ui, "menu.object.clear_transformations", "", has) {
         app.clear_transformations();
     }

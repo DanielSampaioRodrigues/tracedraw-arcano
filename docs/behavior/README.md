@@ -26,5 +26,5 @@ Pages: `ai-drawing.md`, `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.m
 `shelf.md`, `shortcuts.md`, `area-fill.md`, `snapping.md`, `status-bar.md`,
 `straighten-image.md`,
 `symmetry.md`, `table.md`, `text-import.md`, `text.md`, `toolbars.md`,
-`toolbox.md`, `transparency.md`, `vector-pattern-fill.md`, `web.md`,
+`toolbox.md`, `transformations.md`, `transparency.md`, `vector-pattern-fill.md`, `web.md`,
 `writing-tools.md`, `zoom-and-pan.md`.

@@ -6,6 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Transformations docker has picture buttons for its pages
+  (Position, Rotate, Scale and Mirror, Size, Skew), a 3 x 3 reference
+  point, Copies and one Apply: copies are made in one undo step, each the
+  one before transformed again. Position and the rotation centre can be
+  relative or absolute (from the ruler origin), the mirror buttons are
+  applied with the scale, scale and size can stay proportional, skew can
+  use the anchor point, and the size and absolute fields follow the
+  selection. Alt+F8, Alt+F9 and Alt+F10 open Rotate, Scale and Mirror
+  and Size as Alt+F7 opens Position, and Object > Transformations lists
+  the five. Relative Position can be turned off again (it came back on).
 - The Objects docker shows the page and the Master Page as a tree: the
   master layers, the guides (show, lock all) and the document grid (show)
   under the Master Page; each layer has a printer to turn printing and

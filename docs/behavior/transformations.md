@@ -1,0 +1,44 @@
+# Transformations panel
+
+Five pages, chosen with the picture buttons at the top of the panel:
+Position, Rotate, Scale and Mirror, Size and Skew. Alt+F7, Alt+F8,
+Alt+F9 and Alt+F10 open the panel on Position, Rotate, Scale and Mirror
+and Size (pressed again on the page shown, they close the docker
+column); Object > Transformations opens any of the five.
+
+Each page shows its fields at the left and the 3 x 3 reference point at
+the right, then Copies and Apply. Distances are in the ruler unit
+(through the drawing scale), angles in degrees (counter-clockwise
+positive), scales in percent.
+
+| Page | Fields (defaults) | What Apply does, `b` the selection's bounds, `a` its reference point |
+|---|---|---|
+| Position | X, Y (0, 0); Relative position (on) | relative: moves by (X, Y); otherwise moves `a` to (X, Y) counted from the ruler origin |
+| Rotate | Angle (0); Center X, Y (0, 0); Relative center (on) | turns by Angle about `a + (X, Y)`, or about (X, Y) from the ruler origin when Relative center is off |
+| Scale and Mirror | X, Y (100 %); Mirror horizontally, Mirror vertically (off); Proportional (on) | scales by X/100 and Y/100 about `a`, each negated when its mirror button is down; Proportional copies a typed X into Y and Y into X |
+| Size | W, H (the selection's size); Proportional (on) | scales about `a` by W / width(b) and H / height(b) (a side of zero size stays); Proportional keeps H / W at the selection's ratio |
+| Skew | X, Y (0); Use anchor point (off) | `x' = x + tan(X) (y - p.y)`, `y' = y + tan(Y) (x - p.x)` about `p`: `a` with Use anchor point, else the centre of `b`; the reference point is pale without it |
+
+- The reference point defaults to the centre. Corners and edge middles
+  pick the point of `b`; the top row is the top of the selection.
+- The absolute fields follow the selection: Position with Relative
+  position off shows where `a` is, Rotate with Relative center off shows
+  `a`, and Size shows the selection's width and height, each time the
+  selection or its bounds change (also after Apply). Turning a Relative
+  box on sets its fields to 0.
+- Copies (0 to 500, default 0): with 0, Apply transforms the selection
+  (paragraph text frames take a scale as a new frame, as everywhere).
+  With n copies the selection stays as it is and n copies are added to
+  the active layer, copy k transformed k times; the last copies become
+  the selection, so another Apply goes on from there. The copies are one
+  undo step named after the page.
+- Apply is pale with nothing selected.
+
+## Checks
+
+- `ui::transform_docker::tests::position_moves_by_an_offset_or_to_a_point`
+- `ui::transform_docker::tests::rotate_scale_size_and_skew_keep_the_reference_point_still`
+- `ui::transform_docker::tests::copies_repeat_the_transformation_in_one_step`
+- `ui::transform_docker::tests::absolute_fields_follow_the_selection`
+- `ui::transform_docker::tests::the_shortcuts_open_a_page_and_close_it_again`
+- `ui::transform_docker::tests::the_docker_draws_every_page`

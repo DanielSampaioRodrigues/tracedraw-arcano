@@ -147,19 +147,6 @@ impl App {
         let _ = self.engine.run_batch("Distribute", &cmds);
     }
 
-    /// Apply a transform about the selection centre; optionally to a duplicate.
-    pub fn transform_about_center(&mut self, t: Affine, duplicate: bool) {
-        let Some(b) = self.selection_bounds() else {
-            return;
-        };
-        let c = b.center();
-        let full = Affine::translate(c.to_vec2()) * t * Affine::translate(-c.to_vec2());
-        if duplicate {
-            self.duplicate_in_place();
-        }
-        self.transform_selection(full);
-    }
-
     /// Copies of the selection right on top of it, which become the
     /// selection (a transform that leaves the originals).
     pub(crate) fn duplicate_in_place(&mut self) {

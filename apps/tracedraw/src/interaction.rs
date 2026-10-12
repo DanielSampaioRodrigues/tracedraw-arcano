@@ -1748,7 +1748,8 @@ impl App {
         // Properties, ...): toggle.
         for tab in crate::app::DockerTab::ALL {
             let label = tab.shortcut();
-            if label.is_empty() {
+            // Transformations opens on a page, below.
+            if label.is_empty() || tab == crate::app::DockerTab::Transformations {
                 continue;
             }
             let Some((k, shift)) = Tool::parse_shortcut(label) else {
@@ -1766,6 +1767,18 @@ impl App {
             }
             if pressed(k, m) {
                 self.toggle_docker(tab);
+            }
+        }
+        // Alt+F7 to Alt+F10: the Transformations docker on Position,
+        // Rotate, Scale and Mirror or Size.
+        for (k, tab) in [
+            (Key::F7, crate::app::TransformTab::Position),
+            (Key::F8, crate::app::TransformTab::Rotate),
+            (Key::F9, crate::app::TransformTab::Scale),
+            (Key::F10, crate::app::TransformTab::Size),
+        ] {
+            if pressed(k, Modifiers::ALT) {
+                crate::ui::transform_docker::open(self, tab, true);
             }
         }
         if pressed(Key::O, cmd) {

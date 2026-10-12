@@ -40,7 +40,8 @@ Customization > Commands lists them and takes shortcuts of your own
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |
 | Ctrl+PgUp, Ctrl+PgDn | Forward one, back one |
-| Alt+Enter, Ctrl+Shift+A, Alt+F7 | Properties, Align and Distribute, Transformations panels |
+| Alt+Enter, Ctrl+Shift+A | Properties, Align and Distribute panels |
+| Alt+F7, Alt+F8, Alt+F9, Alt+F10 | Transformations panel on Position, Rotate, Scale and Mirror, Size |
 | Ctrl+M | Merge table cells |
 
 ## Text and effects

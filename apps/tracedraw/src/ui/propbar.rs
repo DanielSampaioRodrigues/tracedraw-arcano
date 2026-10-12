@@ -113,6 +113,11 @@ pub enum Pic {
     TextProperties,
     EditText,
     WrapText,
+    // The Transformations docker's pages (Rotate has its own above).
+    Position,
+    ScaleMirror,
+    SizeBox,
+    SkewBox,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -286,6 +291,36 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 ]
             };
             painter.add(epaint::PathShape::line(arm, Stroke::new(1.4 * k, color)));
+        }
+        Pic::Position => {
+            // An object moved: its old place, the arrow, its new place.
+            outline(&[(1.5, 8.5), (7.5, 8.5), (7.5, 14.5), (1.5, 14.5)], thin);
+            painter.rect_filled(
+                Rect::from_min_max(q(r, 8.5, 1.5), q(r, 14.5, 7.5)),
+                0.0,
+                color,
+            );
+            line((5.0, 11.0), (9.5, 6.5), s);
+            poly(&[(10.5, 5.5), (6.6, 6.4), (9.6, 9.4)], color, Stroke::NONE);
+        }
+        Pic::ScaleMirror => {
+            // A small object in the corner of the large one it becomes.
+            outline(&[(1.5, 1.5), (14.5, 1.5), (14.5, 14.5), (1.5, 14.5)], thin);
+            painter.rect_filled(
+                Rect::from_min_max(q(r, 1.5, 9.5), q(r, 6.5, 14.5)),
+                0.0,
+                color,
+            );
+            line((6.5, 9.5), (11.0, 5.0), s);
+            poly(&[(12.5, 3.5), (8.4, 4.4), (11.6, 7.6)], color, Stroke::NONE);
+        }
+        Pic::SizeBox => {
+            outline(&[(5.0, 5.0), (14.5, 5.0), (14.5, 14.5), (5.0, 14.5)], s);
+            arrow_h(2.0, 5.0, 14.5);
+            arrow_v(2.0, 5.0, 14.5);
+        }
+        Pic::SkewBox => {
+            outline(&[(5.5, 2.5), (15.0, 2.5), (10.5, 13.5), (1.0, 13.5)], s);
         }
         Pic::MirrorH => {
             line((8.0, 1.0), (8.0, 15.0), Stroke::new(0.8 * k, color));
