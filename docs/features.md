@@ -184,11 +184,11 @@ Counts: works 174, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 
 | Capability | Status |
 |---|---|
-| Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
+| Open `.cdr`: RIFF (versions 3 to 13), ZIP of versions 14 and 15, ZIP with redirected chunks (version 16 on) | works (layouts confirmed against the public format description; real-file corpus still being collected) |
 | `.cdr` content: shapes, curves, paths, polygons and stars (scaled base shapes), groups, bitmaps (cropped ones as clip frames), rectangles with their corners, text (artistic, paragraph, fitted to a path with its offset, distance and mirroring; line breaks, alignment, weights, italic, underline from style strings), line spacing and indents, fills, outlines, uniform transparency, preset and custom arrowheads, opacity, embedded fonts (EOT, not compressed, every face), the drawing's CMYK profile, page sizes per page, layer names | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
 | MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`) |
-| Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |
+| Save As `.cdr` in a chosen version, 7 to 22 (asked when saving; a drawing opened from a `.cdr` keeps its version; Options > Global > File Formats sets the one of new drawings): pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency | works (round trip in every version; see `cdr-format.md`, Writing, and `behavior/files.md`) |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, PostScript and PRN (every page), DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |

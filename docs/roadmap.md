@@ -34,7 +34,7 @@ Status tracked in `docs/features.md`.
 - Print to PDF, print preview, print merge
 - PDF/X-1a, X-3 and X-4 output (done)
 - Publish to PDF with document information, bookmarks and password protection (AES-256); protected PDFs of every revision open (done; see `behavior/publish-to-pdf.md`)
-- `.cdr` write (RIFF version 12 layout; reads back here and in another public reader) (done)
+- `.cdr` write in versions 7 to 22, chosen when saving (RIFF, ZIP and redirected ZIP layouts; read back here and opened by another public reader) (done)
 
 ## M4 Platform (done)
 - CLI batch convert (done); installers for Windows, macOS, Linux (done)

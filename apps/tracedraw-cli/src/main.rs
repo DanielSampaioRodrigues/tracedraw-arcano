@@ -558,8 +558,16 @@ fn main() -> ExitCode {
                 std::fs::write(output, tracedraw_io::eps::document_to_ps(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".cdr") {
-                std::fs::write(output, tracedraw_cdr::write::document_to_cdr(&doc))
-                    .map_err(tracedraw_io::Error::from)
+                // TRACEDRAW_CDR_VERSION picks the version written (7 to 22).
+                let version = std::env::var("TRACEDRAW_CDR_VERSION")
+                    .ok()
+                    .and_then(|v| v.trim().parse().ok())
+                    .unwrap_or(tracedraw_cdr::write::DEFAULT_VERSION);
+                std::fs::write(
+                    output,
+                    tracedraw_cdr::write::document_to_cdr_version(&doc, version),
+                )
+                .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".emf") {
                 tracedraw_io::save_emf(&doc, page_index(), output)
             } else if output.to_ascii_lowercase().ends_with(".wmf") {

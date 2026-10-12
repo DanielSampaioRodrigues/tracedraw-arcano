@@ -60,7 +60,7 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 | Item | Status | Note |
 |---|---|---|
 | `LIST page` > `LIST layr` > `LIST obj ` > `loda` + `trfd`; groups (`LIST grp `) nest `obj ` lists and other `grp ` lists | assumed (layer > obj confirmed, file: banner, version 21) | Spec types the chunks but not the nesting. `grp ` lists become groups; other lists under a layer are descended, so an object list one level down is still found. |
-| `flgs`: 4 bytes; byte 3 is the record type (0x08 object, 0x10 group, 0x90 page, 0x98 layer); for pages byte 2 != 0 marks the master page; for layers byte 0 is the layer type (0 normal, 0x08 desktop, 0x0a guides, 0x1a grid) | confirmed (public spec) | Guides and grid layers are imported hidden and unprintable. |
+| `flgs`: 4 bytes; byte 3 is the record type (0x08 object, 0x10 group, 0x90 page, 0x98 layer); for pages byte 2 != 0 marks the master page; for layers byte 0 is the layer type (0 normal, 0x08 desktop, 0x0a guides, 0x1a grid) and byte 2 is set on a layer of the master page (pages list the master's guides and desktop layers again) | confirmed (public spec; byte 2 and the repeated entries in public sample files of versions 11 to 22) | Guides and grid layers (type & 0x0f = 0x0a) are imported hidden and unprintable. Guides, grid, desktop and master layer entries holding no objects are left out, so a page shows the drawing's own layers only. |
 | Layer name: `loda` argument 1000 in the layer's own `loda`: NUL-terminated single-byte text before 12 (system code page), UTF-16LE from 12 | confirmed (public spec) | Single-byte text is decoded as Windows-1252 (the spec's own default; the real code page is the saving system's). |
 | `lobj` has the same layout as `loda` | confirmed (public spec) | |
 | `bbox`: four coords (two corners); `obbx`: eight coords (four corners) | confirmed (public spec) | Not used; we compute bounds. |
@@ -133,7 +133,7 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 | Item | Status | Note |
 |---|---|---|
 | id u32; version 13+: records (id u32, length u32, body) until id 1, whose body is the outline | confirmed (public spec) | We skipped 4 fixed bytes. |
-| line type u16, caps u16, join u16, 2 unknown (6 to 12), width coord, stretch u16 (percent), 2 unknown (6+), nib angle, unknown 0 / 52 (6 to 12) / 46 (version 13+), colour, unknown 10 (before 6) / 16, dash count u16, then a fixed area of 20 (before 6) / 22 bytes whose start holds the dash values (u16 each), start marker u32, end marker u32 | confirmed (public spec) | Dashes are stored in multiples of the width. We used to read the markers right after the dashes. |
+| line type u16, caps u16, join u16, 2 unknown (6 to 12), width coord, stretch u16 (percent), 2 unknown (6 to 12), nib angle, unknown 0 / 52 (6 to 12) / 48 (version 13+: the outline's matrix, six f64), colour, unknown 10 (before 6) / 16, dash count u16, then a fixed area of 20 (before 6) / 22 bytes whose start holds the dash values (u16 each), start marker u32, end marker u32 | confirmed (public spec; version 13+ by public sample files of versions 14 to 22, whose matrix holds 1.0 on its diagonal) | Dashes are stored in multiples of the width. We used to read the markers right after the dashes, and to skip 2 bytes before the angle and 46 after it in version 13+ files, which read the angle and the dashes 2 bytes off. |
 | `arrw`: arrowhead id u32, point count u32, point list as in geometry | assumed | Not in the public spec. The outline is classified into our presets: three corners = arrow (open arrow when not closed), four = square, bar (aspect under 0.35) or diamond (not axis-aligned), closed all-Bezier = circle; anything else is kept as a custom arrowhead from the outline itself (assumed: tip towards +x); an undefined marker id = none, with a warning. |
 | line type bit 0 = no outline, bit 4 = behind fill, bit 5 = scale with object; caps 0 butt, 1 round, 2 square; join 0 miter, 1 round, 2 bevel | assumed | Not in the spec. |
 
@@ -202,29 +202,48 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 
 ## Writing
 
-`crates/cdr/src/write.rs` writes the version 12 layout (`CDRC`, 32-bit
-fields): `vrsn` 1200; `doc ` with `mcfg` (4 unknown bytes, width,
-height, padded to 48 bytes), `fntt`/`font`, `filt`/`fild` (types 0, 1 and
-the version 6 to 12 gradient body), `otlt`/`outl` (version 9 to 12 layout)
-and `bmpt`/`bmp ` (24-bit, model 1); then one `page` per page with `flgs`
-0x90, a `gobj` list and one `layr` per layer (`flgs` 0x98, the layer's
-`loda` with its name, then the objects front to back). Each object is an
-`obj ` list with its `loda` (type, coordinates, fill id, outline id,
-name, transparency), a `trfd` with one type 8 matrix (translation in
-coordinate units, page centre as origin) and, for text, a `txsm` in the
-7 to version 15 layout with one style per run. Rectangles, ellipses and text
-keep their own types (a rectangle only when one round radius describes
-it: corner styles, sizes per corner and fixed corners on a stretched
-rectangle are written as the curve they draw, since the corner order
-and type byte are not confirmed); every other object is a curve; groups are `grp `
-lists; a clip frame holding one bitmap is written as that bitmap with the
-frame as its crop path (the way files store cropped bitmaps), other
-clip frames become a group of the frame outline and the
-contents; effects are evaluated first. A `stlt` with one complete style
-(id 0) accompanies the font table and text objects reference it. The file reads back in this crate (round
-trip tests in `write.rs`) and another public reader of the layout
-rendered the vector content, fills, outlines and plain bitmaps of the
-test files; text and transformed bitmaps are known not to show there.
+`crates/cdr/src/write.rs` writes versions 7 to 22
+(`document_to_cdr_version`; `document_to_cdr` writes version 12). The
+app asks for the version when saving a `.cdr` file
+(`docs/behavior/files.md`); `tracedraw-cli` reads it from
+`TRACEDRAW_CDR_VERSION`. Every record has the layout and the size of the
+same record in public sample files of that version (versions 11, 14,
+15, 17, 19, 20, 21 and 22, compared with `tracedraw-cli inspect` and hex
+dumps), or of the nearest version seen; the fields named in the reading
+tables above carry TraceDraw's values with the same meaning, the others
+the values those files have.
+
+| Item | Written | Source |
+|---|---|---|
+| Container | Versions 7 to 13: a RIFF file. 14 and 15: a ZIP archive holding that RIFF file as `content/riffData.cdr` (stored). 16 on: a ZIP archive with the chunk tree in `content/root.dat`, the data file list in `content/dataFileList.dat` and the payloads in `content/data/` (`Bitmaps.dat`, `data1.dat` for the document tables, `masterPage.dat`, `page<n>.dat`; deflated); in `root.dat` each chunk body is a 16-byte record: up to 8 bytes inline after the stream number 0xFFFFFFFF, else data file number, length, offset and 0 | public format notes; sample files of versions 14 to 22 |
+| Form type and version | `CDR` and a letter: digits up to 9, `A` (10) to `H` (17), `J` (18) on; `vrsn` holds the version times 100; from 16 a `fver` chunk comes first ([version times 100, 1, 0, version], u32 each) | public format notes; sample files |
+| Document | `LIST doc ` with `pfrd` (before 16: 1 byte before 13, 2 bytes in 13 to 15), `mcfg`, `ptrt` (the content box), `LIST fntt`, `LIST filt` of `LIST filc` (one `fild` each), `LIST otlt`, `stlt` (a list with an unparsed body up to 15, a plain chunk from 16); bitmaps in `LIST bmpt` before it | sample files |
+| `mcfg` | From 13 a tag (1300, 2100 in 22), the size less 8 and 4 zero bytes; 9 to 12: 4 zero bytes; 7 and 8: nothing; then page width, height, 0x0f and 1, zero-padded to 4088 bytes (up to 12), 8197 (13 and 14), 8323 (15 to 21) or 7944 (22) | sample files (sizes); what the padding holds in those files is not understood |
+| Master page and pages | A master page first: `flgs` [0x40 from 14 else 0, 0, 1, 0x90], `bbox` (zeros before 14, else (-2, 2, 2, -2)), `obbx` from 14, then its guides (`flgs` [0x0a, 0, 1, 0x98], kind 12), desktop ([0x08, 0, 1, 0x98], kind 17) and grid ([0x1a, 1, 1, 0x98], kind 11) layers. Each page: `flgs` [0x40 from 14 else 0, 0, 0, 0x90], `bbox`, `obbx`, entries for the master's guides and desktop layers, from 14 a guides layer of its own ([0x0a, 0, 0, 0x98]), then the drawing's layers ([0, 0, 0, 0x98], kind 0). From 16 an empty `lgob` list closes the master page and each page | sample files of versions 11 to 22 |
+| Layer `loda` | Name (1000), colour (2000: a 12-byte colour record before 13, a colour property list from 13) and from 14 a GUID (40050), drawn from a fixed seed so a drawing always writes the same bytes | sample files |
+| Objects | `LIST obj ` with `spnd` (text only: its style id), `flgs` [0, 2, 0, 8] ([0, 2, 0, 9] for text), `bbox` (top left and bottom right), `obbx` (the box, then the box grown by half the outline width), `usdn` (a counter), `LIST lgob` with the `loda`, an identity `ftil` and `LIST trfl` with one `trfd`, then `txsm` for text. Groups: `LIST grp ` with `flgs` [0, 0, 0, 0x10], the boxes, `usdn`, a `loda` of kind 0 and the children | public format notes; sample files |
+| `loda` | Header (length, argument count, 20, offset of the types table, object kind), argument offsets (count + 1, the last at the end), the types in reverse order, then the bodies without padding, sorted by type from the highest. Arguments: coordinates (30), fill id (20), outline id (10), object id (100), style (200 up to 15; from 16, 201: u32 1 and a style string), 12000 (zero, from 14), name (1000), transparency (8000), 16015 (1 on text, from 16) | public format notes; sample files |
+| Colour | Model u16 (2 CMYK in percent, 5 RGB stored as BGR, 9 grey), palette 5, 4 zero bytes, 4 values; from 13 inside a property list: [1][12][the record], from 15 also [7][16][16 zero bytes], then [0][0] | public format notes (models); sample files |
+| `fild` | Before 13: id, type u16 (0 none, 1 solid, 2 fountain), 2 zero bytes; solid: the colour, 8 zero bytes and the screen (45 degrees, 60 lines per inch); fountain: kind u8, 11 zero bytes and the screen, edge pad, angle (millionths of a degree), centre offsets, mode `03 00 01 00`, midpoint 50, stop count u32 and the stops (colour, position u32). From 13: id, 1300, body length and a tagged body of the same fields (stop count u16; each stop a colour property list and a position u16: 24 bytes in 13 and 14, 45 from 15; four f64 (0, 0, 1, 1) from 16); records end with 8 zero bytes from 16. Solid fills: 36 bytes in 11, 76 in 14, 97 from 15; no fill: 8 bytes before 13, 22 from 13 | public format notes (fields); sample files (tags and sizes) |
+| `outl` | Line type (1 none; 2, plus 0x10 behind the fill and 0x20 scale with the object), caps, join, width, stretch, nib angle, an identity matrix, colour, 8 zero bytes and the screen, dash count and up to 10 dashes in 22 bytes, no arrowheads (0, 0). Before 13: id, the record (with the zero gaps of the reading table) and 4 zero bytes, 140 bytes. From 13: id, [15 only: tag 5 of 48 zero bytes], tag 3 (4 bytes: 5000000), tag 2 (the colour property list), tag 1 (the record padded to 130 bytes) and 8 zero bytes: 192 bytes in 14, 269 in 15, 213 from 17 | public format notes (fields); sample files (tags and sizes) |
+| `trfd` | Header [end, 1, 16, 0xffff, 24, end], then (from 13: 1300, 0) type 8 u16, 6 zero bytes and the matrix rows (a, c, e; b, d, f) as f64, the translation in coordinate units from the page centre (from 13: 8 more zero bytes): 80 bytes, 96 from 13 | public format notes; sample files |
+| `font` | Id u16, encoding 0, flags 0x40, 10 zero bytes, the name: before 12 one byte per character in 74 bytes (92 in all), from 12 UTF-16 (31 characters at most) with u32 2 at offset 160 (296 in all) | public format notes; sample files |
+| `stlt` | Four styles (ids 1 to 4 for left, centred, right and justified text: alignment codes 1, 3, 2 and 4) with their font entries (12 unknown bytes before 10, 20 from 10, and 8 more from 10), alignments and line spacing (100 %), empty tables for the rest; a text object refers to the style of its alignment | public format notes |
+| Shapes | Rectangles keep their type before version 15 (width and negative height from the top-left corner; corner radii, times 4 from 9); from 15 they are written as the curve they draw. Ellipses: width, height and start and end angles (270 to 270 degrees for a full one), arcs and pies with their own. Curves: point count, the points and a node byte each (0x00 move, 0x40 line, 0xc0 control point, 0x80 curve end, 0x48 closing) | public format notes; sample files |
+| `bmp ` | Id, 1, 0x4955, length less 8, 0, 32, 8 zero bytes, 2, 255, 0x4952, length less 40, 0, the pixel offset, then colour model 1, 1, width, height, 1, 24 bits, row size, size, resolution and the BGR rows from the bottom | public format notes; sample files |
+| Text before 16 | `txsm` of the version 7 to 15 layout above: a paragraph per line, one style per run (font, encoding, flags, size and from 13 the fill id), character records of 8 bytes from 12 (4 before), UTF-16 text with its byte count from 12, else one byte per character in Windows-1252 | public format notes; not yet checked against a file of those versions holding text |
+| Text from 16 | `txsm` with the frame matrix and, per paragraph, the style of its alignment, a style string of its first run with the alignment (`justify`: 1 left, 2 centre, 3 right, 4 justify), one record per run with its style string, 2-byte character records and the text (UTF-16 in 16; from 17 one byte per character, UTF-8 when needed). The object's style string adds the `frame` columns and the alignment | sample files of versions 17 to 22 |
+| Not written | Text fitted to a path (its letters are written as curves), effects (evaluated first and written as what they draw), embedded fonts, the document palette, and the `mimetype` and `META-INF/` members of version 16+ archives (this reader does not need them; whether other programs do is not known) | |
+
+Every version written opens again in this crate (`write/tests.rs`:
+shapes, groups, bitmaps, clipped bitmaps, pages, text runs, alignment,
+corner shapes and stars in each version, and the record sizes above).
+Another open-source reader opened files of every version and drew their
+shapes, fills, outlines, bitmaps and text; there, version 14 gradients
+do not open (its version 14 stop size differs from the files, as the
+public notes also say), version 12 text shows in part, and version 21
+text placement varies as it does for files of that version made
+elsewhere.
 
 ## How to confirm an item on a file
 

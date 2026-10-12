@@ -454,7 +454,7 @@ mod redirect_tests {
     }
 
     #[test]
-    fn x6_redirects_resolve_into_external_streams() {
+    fn version_16_redirects_resolve_into_external_streams() {
         // External stream 0: a `page` list body (form type + one chunk) and a `vrsn` payload.
         let mut ext = Vec::new();
         ext.extend_from_slice(b"page");

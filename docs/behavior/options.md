@@ -95,6 +95,11 @@ Imported objects go (File > Import, Ctrl+I): where the file has them
 (the default), or centred in the middle of the view; the move is part of
 the import's undo step.
 
+Saving .cdr files: the Version new drawings are saved in (`cdr_version`,
+12 by default, 7 to 22; a value out of range from a file is brought
+into it). Saving a `.cdr` file sets it to the version chosen there; a
+drawing opened from a `.cdr` file keeps its own (`files.md`).
+
 ### Bitmap Tracing
 
 Quick Trace uses (`tracing`): one of the eight presets (Clipart by

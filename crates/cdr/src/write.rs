@@ -1,358 +1,1061 @@
-//! `.cdr` writer: the version 12 RIFF layout (form type `CDRC`, 32-bit
-//! fields, coordinates in 1/254000 inch with the origin at the page
-//! centre). The layout is the one `parse.rs` reads and `docs/cdr-format.md`
-//! records; files written here open in this crate and in other readers of
-//! the public layout.
+//! `.cdr` writer for every version from 7 to 22.
 //!
-//! What is written: pages, layers with names, rectangles, ellipses (with
-//! arcs), curves for every other outline (polygons, paths, tables,
-//! symbols, expanded effects), groups, artistic text with one font, size
-//! and style per run, bitmaps (24-bit), solid and fountain fills,
-//! outlines with width, caps, joins, dashes, nib and the "scale with
-//! object" and "behind fill" flags, and uniform transparency. clip frames
-//! are written as their contents followed by the frame outline.
+//! The chunk tree follows the layout of real files of each version, record
+//! by record (`docs/cdr-format.md`, Writing, lists each record and its
+//! sources): versions 7 to 13 are a RIFF file; versions 14 and 15
+//! keep that RIFF stream in a ZIP archive as `content/riffData.cdr`; from
+//! version 16 the RIFF stream (`content/root.dat`) holds the chunk tree and
+//! each payload lives in a data file of the archive (`content/data/*.dat`),
+//! reached through a 16-byte redirect record. Coordinates are 1/254000 inch
+//! with the origin at the page centre.
+//!
+//! What is written: pages (after a master page with the guide, desktop and
+//! grid layers files carry), layers with names, rectangles, ellipses (with
+//! arcs), curves for every other outline (polygons, paths, tables, symbols,
+//! expanded effects), groups, artistic text with one font, size and style
+//! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
+//! caps, joins, dashes, nib, "scale with object", "behind fill") and
+//! uniform transparency. A clip frame holding one bitmap becomes that
+//! bitmap with the frame as its crop path; other clip frames a group of
+//! the frame outline and the contents. Rectangles of versions 15 and later
+//! are written as the curve they draw (their corner records are not
+//! understood well enough to write).
 
 use crate::parse::{
-    ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE, OBJ_ARTISTIC_TEXT,
-    OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
+    ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE, ARG_STYLE_STRING,
+    OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
 };
 use std::collections::HashMap;
+use std::io::Write as _;
 use tracedraw_core::{
-    document::{Shape, ShapeKind, TextSpan},
-    geometry::{Affine, BezPath, PathEl, Point},
+    document::{Shape, ShapeKind, Symbol, TextSpan},
+    geometry::{Affine, BezPath, PathEl, Point, Rect, Shape as _},
     style::{FountainKind, LineCap, LineJoin},
-    Color, Document, Fill, Stroke,
+    Color, Document, Fill, Stroke, TextAlign,
 };
+
+/// The oldest version the writer produces.
+pub const OLDEST_VERSION: u16 = 7;
+/// The newest version the writer produces.
+pub const NEWEST_VERSION: u16 = 22;
+/// The version [`document_to_cdr`] writes.
+pub const DEFAULT_VERSION: u16 = 12;
+
+/// The versions [`document_to_cdr_version`] can write, oldest first.
+pub fn versions() -> std::ops::RangeInclusive<u16> {
+    OLDEST_VERSION..=NEWEST_VERSION
+}
+
+/// Write the whole document as a version 12 `.cdr` file.
+pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
+    document_to_cdr_version(doc, DEFAULT_VERSION)
+}
+
+/// Write the whole document as a `.cdr` file of `version` (7 to 22; other
+/// values are brought into that range).
+pub fn document_to_cdr_version(doc: &Document, version: u16) -> Vec<u8> {
+    let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
+    let mut w = Writer::new(v, &doc.symbols, &doc.title);
+    let tree = w.document(doc);
+    if v.redirects() {
+        let (root, files) = pack_redirected(v, &tree);
+        zip_v16(&root, &files)
+    } else {
+        let riff = riff_file(v.form(), &tree);
+        if v.zip() {
+            zip_v14(&riff)
+        } else {
+            riff
+        }
+    }
+}
 
 /// Coordinate units per millimetre.
 const UNITS_PER_MM: f64 = 254000.0 / 25.4;
-const VERSION: u16 = 12;
+/// The "since version" tag records of version 13 and later start with.
+const SINCE_13: u32 = 1300;
+/// Halftone screen of fills and outlines: 45 degrees, 60 lines per inch.
+const SCREEN: [u8; 8] = [0x40, 0xa5, 0xae, 0x02, 0x3c, 0x00, 0x00, 0x00];
+/// A full ellipse is stored from 270 to 270 degrees (millionths).
+const FULL_ELLIPSE_ANGLE: i32 = 270_000_000;
+/// Argument types this writer adds to those `parse.rs` names.
+const ARG_ID: u32 = 100;
+const ARG_LAYER_COLOR: u32 = 2000;
+const ARG_PROPS: u32 = 12000;
+const ARG_GUID: u32 = 40050;
+/// On text objects of version 16 and later: 1.
+const ARG_TEXT_LINK: u32 = 16015;
+/// Layer kinds stored as the `loda` object type of a layer.
+const LAYER_PLAIN: u32 = 0;
+const LAYER_GRID: u32 = 0x0b;
+const LAYER_GUIDES: u32 = 0x0c;
+const LAYER_DESKTOP: u32 = 0x11;
+/// The style every object refers to; text paragraphs refer to the one of
+/// their alignment (`style_for`).
+const STYLE_ID: u32 = 1;
 
-fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
-    let mut v = id.to_vec();
-    v.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    v.extend_from_slice(payload);
-    if payload.len() % 2 == 1 {
-        v.push(0);
+/// Alignments of the style table, in style id order from `STYLE_ID`:
+/// left, centre, right, justify, as alignment codes (0 none, 1 left,
+/// 2 right, 3 centre, 4 full justify, 5 forced).
+const STYLE_ALIGNS: [(TextAlign, u32); 4] = [
+    (TextAlign::Left, 1),
+    (TextAlign::Center, 3),
+    (TextAlign::Right, 2),
+    (TextAlign::Justify, 4),
+];
+
+/// The style of text with this alignment.
+fn style_for(align: TextAlign) -> u32 {
+    STYLE_ALIGNS
+        .iter()
+        .position(|(a, _)| *a == align)
+        .map_or(STYLE_ID, |i| STYLE_ID + i as u32)
+}
+
+/// The version being written and what it implies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Ver(u16);
+
+impl Ver {
+    /// `CDR` and the version letter: digits up to 9, then `A` (10) to `H`
+    /// (17) and `J` (18) on; `I` is not used.
+    fn form(self) -> [u8; 4] {
+        let c = match self.0 {
+            v @ 0..=9 => b'0' + v as u8,
+            v @ 10..=17 => b'A' + (v - 10) as u8,
+            v => b'J' + (v.min(34) - 18) as u8,
+        };
+        [b'C', b'D', b'R', c]
     }
-    v
+    /// Tagged fill, outline, transform and configuration records.
+    fn tagged(self) -> bool {
+        self.0 >= 13
+    }
+    /// A ZIP archive around the RIFF stream.
+    fn zip(self) -> bool {
+        self.0 >= 14
+    }
+    /// Payloads in data files, reached through redirect records.
+    fn redirects(self) -> bool {
+        self.0 >= 16
+    }
+    /// Names and text in UTF-16 (8-bit before version 12).
+    fn unicode(self) -> bool {
+        self.0 >= 12
+    }
+    /// Objects carry their style as a string (argument 201).
+    fn style_strings(self) -> bool {
+        self.0 >= 16
+    }
+    /// Style strings and text one byte per character (UTF-16 before).
+    fn byte_strings(self) -> bool {
+        self.0 >= 17
+    }
+    /// Rectangles keep their own record (from 15 on their layout changes).
+    fn native_rects(self) -> bool {
+        self.0 < 15
+    }
 }
 
-fn list(lt: &[u8; 4], body: &[u8]) -> Vec<u8> {
-    let mut payload = lt.to_vec();
-    payload.extend_from_slice(body);
-    chunk(b"LIST", &payload)
-}
+// ---- bytes -------------------------------------------------------------
 
-fn u16s(v: &[u16]) -> Vec<u8> {
-    v.iter().flat_map(|x| x.to_le_bytes()).collect()
-}
-fn u32s(v: &[u32]) -> Vec<u8> {
-    v.iter().flat_map(|x| x.to_le_bytes()).collect()
-}
-fn i32s(v: &[i32]) -> Vec<u8> {
-    v.iter().flat_map(|x| x.to_le_bytes()).collect()
-}
-fn f64s(v: &[f64]) -> Vec<u8> {
-    v.iter().flat_map(|x| x.to_le_bytes()).collect()
+#[derive(Default)]
+struct Buf(Vec<u8>);
+
+impl Buf {
+    fn u8(&mut self, x: u8) -> &mut Self {
+        self.0.push(x);
+        self
+    }
+    fn u16(&mut self, x: u16) -> &mut Self {
+        self.0.extend_from_slice(&x.to_le_bytes());
+        self
+    }
+    fn u32(&mut self, x: u32) -> &mut Self {
+        self.0.extend_from_slice(&x.to_le_bytes());
+        self
+    }
+    fn i32(&mut self, x: i32) -> &mut Self {
+        self.0.extend_from_slice(&x.to_le_bytes());
+        self
+    }
+    fn f64(&mut self, x: f64) -> &mut Self {
+        self.0.extend_from_slice(&x.to_le_bytes());
+        self
+    }
+    fn bytes(&mut self, b: &[u8]) -> &mut Self {
+        self.0.extend_from_slice(b);
+        self
+    }
+    fn zeros(&mut self, n: usize) -> &mut Self {
+        self.0.resize(self.0.len() + n, 0);
+        self
+    }
+    /// Zeros up to `len` bytes in all (nothing when already longer).
+    fn pad_to(&mut self, len: usize) -> &mut Self {
+        if self.0.len() < len {
+            self.0.resize(len, 0);
+        }
+        self
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn done(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.0)
+    }
 }
 
 fn units(mm: f64) -> i32 {
+    if !mm.is_finite() {
+        return 0;
+    }
     (mm * UNITS_PER_MM)
         .round()
         .clamp(i32::MIN as f64, i32::MAX as f64) as i32
 }
 
+fn utf16(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+}
+
 fn utf16z(s: &str) -> Vec<u8> {
-    let mut v: Vec<u8> = s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let mut v = utf16(s);
     v.extend_from_slice(&[0, 0]);
     v
 }
 
-/// 12-byte colour record: model, palette, 4 unknown bytes, 4 value bytes.
-/// CMYK keeps its percentages (model 2); everything else is written as
-/// sRGB bytes (model 5, stored B G R).
-fn color_record(c: Color) -> Vec<u8> {
-    let mut v = Vec::with_capacity(12);
-    match c {
-        Color::Cmyk { c, m, y, k } => {
-            v.extend_from_slice(&u16s(&[2, 0]));
-            v.extend_from_slice(&[0; 4]);
-            let pct = |x: f32| (x.clamp(0.0, 1.0) * 100.0).round() as u8;
-            v.extend_from_slice(&[pct(c), pct(m), pct(y), pct(k)]);
-        }
-        other => {
-            let [r, g, b] = other.to_rgb8();
-            v.extend_from_slice(&u16s(&[5, 0]));
-            v.extend_from_slice(&[0; 4]);
-            v.extend_from_slice(&[b, g, r, 0]);
-        }
-    }
-    v
+/// Windows-1252 bytes of `s`, or `None` when a character has none.
+fn cp1252(s: &str) -> Option<Vec<u8>> {
+    const HIGH: [u16; 32] = [
+        0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039,
+        0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc,
+        0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178,
+    ];
+    s.chars()
+        .map(|c| {
+            let u = c as u32;
+            if u < 0x80 || (0xa0..0x100).contains(&u) {
+                Some(u as u8)
+            } else {
+                HIGH.iter()
+                    .position(|h| *h != 0 && u32::from(*h) == u)
+                    .map(|i| 0x80 + i as u8)
+            }
+        })
+        .collect()
 }
 
-/// `loda`: header, argument bodies (4-byte aligned), offsets table with
-/// the end marker, types table in reverse order.
-fn loda(kind: u32, args: &[(u32, Vec<u8>)]) -> Vec<u8> {
-    let header = 20usize;
-    let mut bodies = Vec::new();
-    let mut offsets = Vec::new();
-    for (_, b) in args {
-        offsets.push((header + bodies.len()) as u32);
-        bodies.extend_from_slice(b);
-        while bodies.len() % 4 != 0 {
-            bodies.push(0);
-        }
+/// A layer or object name: UTF-16 from version 12, 8-bit before.
+fn name_bytes(v: Ver, s: &str) -> Vec<u8> {
+    if v.unicode() {
+        utf16z(s)
+    } else {
+        let mut b = cp1252(s).unwrap_or_else(|| s.bytes().filter(|c| c.is_ascii()).collect());
+        b.push(0);
+        b
     }
-    let start_args = header + bodies.len();
-    offsets.push(start_args as u32);
-    let start_types = start_args + offsets.len() * 4;
-    let len = start_types + args.len() * 4;
-    let mut out = u32s(&[
-        len as u32,
-        args.len() as u32,
-        start_args as u32,
-        start_types as u32,
-        kind,
-    ]);
-    out.extend_from_slice(&bodies);
-    out.extend_from_slice(&u32s(&offsets));
-    let types: Vec<u32> = args.iter().rev().map(|(t, _)| *t).collect();
-    out.extend_from_slice(&u32s(&types));
+}
+
+/// A style string argument or record: its length and text (UTF-16 before
+/// version 17, counted in units; bytes after).
+fn style_string(v: Ver, s: &str) -> Vec<u8> {
+    let mut b = Buf::default();
+    if v.byte_strings() {
+        b.u32(s.len() as u32).bytes(s.as_bytes());
+    } else {
+        let units: Vec<u8> = utf16(s);
+        b.u32((units.len() / 2) as u32).bytes(&units);
+    }
+    b.done()
+}
+
+/// Sixteen pseudo-random bytes, the same for the same seed and counter.
+fn guid(seed: u64, n: u64) -> [u8; 16] {
+    let mut x = seed ^ n.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    let mut out = [0u8; 16];
+    for chunk in out.chunks_mut(8) {
+        x ^= x >> 33;
+        x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
+        x ^= x >> 33;
+        x = x.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+        x ^= x >> 33;
+        chunk.copy_from_slice(&x.to_le_bytes());
+    }
     out
 }
 
-/// `trfd` with one affine record (type 8): a c e b d f, translation in
-/// coordinate units.
-fn trfd(m: Affine) -> Vec<u8> {
+// ---- chunk tree --------------------------------------------------------
+
+#[derive(Debug, Clone)]
+enum Node {
+    Chunk([u8; 4], Vec<u8>),
+    List([u8; 4], Vec<Node>),
+    /// A list whose body after its type is a record, not chunks (the
+    /// style table before version 16).
+    RawList([u8; 4], Vec<u8>),
+}
+
+fn chunk(id: &[u8; 4], data: Vec<u8>) -> Node {
+    Node::Chunk(*id, data)
+}
+
+fn list(kind: &[u8; 4], children: Vec<Node>) -> Node {
+    Node::List(*kind, children)
+}
+
+fn put_chunk(out: &mut Vec<u8>, id: &[u8], payload: &[u8]) {
+    out.extend_from_slice(id);
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(payload);
+    if payload.len() % 2 == 1 {
+        out.push(0);
+    }
+}
+
+fn serialize(nodes: &[Node], out: &mut Vec<u8>) {
+    for n in nodes {
+        match n {
+            Node::Chunk(id, data) => put_chunk(out, id, data),
+            Node::List(kind, children) => {
+                let mut body = kind.to_vec();
+                serialize(children, &mut body);
+                put_chunk(out, b"LIST", &body);
+            }
+            Node::RawList(kind, data) => {
+                let mut body = kind.to_vec();
+                body.extend_from_slice(data);
+                put_chunk(out, b"LIST", &body);
+            }
+        }
+    }
+}
+
+/// A RIFF file of the form type and chunks.
+fn riff_file(form: [u8; 4], nodes: &[Node]) -> Vec<u8> {
+    let mut body = form.to_vec();
+    serialize(nodes, &mut body);
+    let mut out = Vec::with_capacity(body.len() + 8);
+    put_chunk(&mut out, b"RIFF", &body);
+    out
+}
+
+/// The data files of a version 16+ archive, in the order they are listed.
+#[derive(Default)]
+struct DataFiles {
+    names: Vec<String>,
+    data: Vec<Vec<u8>>,
+}
+
+impl DataFiles {
+    fn index(&mut self, name: &str) -> usize {
+        match self.names.iter().position(|n| n == name) {
+            Some(i) => i,
+            None => {
+                self.names.push(name.to_string());
+                self.data.push(Vec::new());
+                self.names.len() - 1
+            }
+        }
+    }
+}
+
+/// Version 16+: the RIFF stream with every chunk a 16-byte record. Up to
+/// 8 bytes stay in the record (stream 0xFFFFFFFF); larger payloads go to
+/// the data file of their top-level list (the bitmaps, the document
+/// tables, the master page, each page).
+fn pack_redirected(v: Ver, tree: &[Node]) -> (Vec<u8>, DataFiles) {
+    let mut files = DataFiles::default();
+    let mut body = v.form().to_vec();
+    let mut page = 0usize;
+    for node in tree {
+        let file = match node {
+            Node::List(kind, _) => match kind {
+                b"bmpt" => Some("Bitmaps.dat".to_string()),
+                b"doc " => Some("data1.dat".to_string()),
+                b"page" => {
+                    page += 1;
+                    Some(if page == 1 {
+                        "masterPage.dat".to_string()
+                    } else {
+                        format!("page{}.dat", page - 1)
+                    })
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let index = file.map(|f| files.index(&f));
+        redirect(std::slice::from_ref(node), index, &mut files, &mut body);
+    }
+    let mut out = Vec::with_capacity(body.len() + 8);
+    put_chunk(&mut out, b"RIFF", &body);
+    (out, files)
+}
+
+fn redirect(nodes: &[Node], file: Option<usize>, files: &mut DataFiles, out: &mut Vec<u8>) {
+    for n in nodes {
+        match n {
+            Node::List(kind, children) => {
+                let mut body = kind.to_vec();
+                redirect(children, file, files, &mut body);
+                put_chunk(out, b"LIST", &body);
+            }
+            Node::RawList(kind, data) => {
+                let mut body = kind.to_vec();
+                body.extend_from_slice(data);
+                put_chunk(out, b"LIST", &body);
+            }
+            Node::Chunk(id, data) => {
+                let mut rec = Buf::default();
+                match file.and_then(|f| files.data.get_mut(f).map(|d| (f, d))) {
+                    Some((f, d)) if data.len() > 8 => {
+                        let ofs = d.len();
+                        d.extend_from_slice(data);
+                        rec.u32(f as u32)
+                            .u32(data.len() as u32)
+                            .u32(ofs as u32)
+                            .u32(0);
+                    }
+                    _ => {
+                        let mut inline = data.clone();
+                        inline.resize(8, 0);
+                        rec.u32(u32::MAX)
+                            .u32(data.len().min(8) as u32)
+                            .bytes(&inline[..8]);
+                    }
+                }
+                put_chunk(out, id, &rec.done());
+            }
+        }
+    }
+}
+
+fn zip_v14(riff: &[u8]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let ok = zip.start_file("content/riffData.cdr", stored).is_ok() && zip.write_all(riff).is_ok();
+    match zip.finish() {
+        Ok(c) if ok => c.into_inner(),
+        _ => Vec::new(),
+    }
+}
+
+fn zip_v16(root: &[u8], files: &DataFiles) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut ok = true;
+    for (name, data) in files.names.iter().zip(&files.data) {
+        ok &= zip
+            .start_file(format!("content/data/{name}"), deflated)
+            .is_ok()
+            && zip.write_all(data).is_ok();
+    }
+    ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()
+        && zip.write_all(files.names.join("\n").as_bytes()).is_ok();
+    ok &= zip.start_file("content/root.dat", deflated).is_ok() && zip.write_all(root).is_ok();
+    match zip.finish() {
+        Ok(c) if ok => c.into_inner(),
+        _ => Vec::new(),
+    }
+}
+
+// ---- records -----------------------------------------------------------
+
+/// 12-byte colour record: model, palette, 4 unknown bytes, 4 values. CMYK
+/// keeps its percentages (model 2), grey its level (model 9); everything
+/// else is written as sRGB (model 5, stored B G R).
+fn colour(c: Color) -> [u8; 12] {
+    let (model, values) = match c {
+        Color::Cmyk { c, m, y, k } => {
+            let pct = |x: f32| (x.clamp(0.0, 1.0) * 100.0).round() as u8;
+            (2u16, [pct(c), pct(m), pct(y), pct(k)])
+        }
+        Color::Gray { v } => (9, [(v.clamp(0.0, 1.0) * 255.0).round() as u8, 0, 0, 0]),
+        Color::Registration => (2, [100, 100, 100, 100]),
+        other => {
+            let [r, g, b] = other.to_rgb8();
+            (5, [b, g, r, 0])
+        }
+    };
+    let mut out = [0u8; 12];
+    out[0..2].copy_from_slice(&model.to_le_bytes());
+    out[2..4].copy_from_slice(&5u16.to_le_bytes());
+    out[8..12].copy_from_slice(&values);
+    out
+}
+
+/// Version 13+: a colour as a property list (type 1, then from version 15
+/// an empty palette entry id, type 7), closed by an empty record.
+fn colour_props(v: Ver, c: Color) -> Vec<u8> {
+    let mut b = Buf::default();
+    b.u8(1).u32(12).bytes(&colour(c));
+    if v.0 >= 15 {
+        b.u8(7).u32(16).zeros(16);
+    }
+    b.u8(0).u32(0);
+    b.done()
+}
+
+/// A colour as style strings write it.
+fn colour_spec(c: Color) -> String {
+    const NO_ID: &str = "00000000-0000-0000-0000-000000000000";
+    match c {
+        Color::Cmyk { c, m, y, k } => {
+            let pct = |x: f32| (x.clamp(0.0, 1.0) * 100.0).round() as u8;
+            format!(
+                "CMYK,USER,{},{},{},{},100,{NO_ID}",
+                pct(c),
+                pct(m),
+                pct(y),
+                pct(k)
+            )
+        }
+        other => {
+            let [r, g, b] = other.to_rgb8();
+            format!("RGB255,USER,{r},{g},{b},100,{NO_ID}")
+        }
+    }
+}
+
+/// The colour a fill shows as one colour (gradients: their first stop).
+fn fill_colour(fill: &Fill) -> Option<Color> {
+    match fill {
+        Fill::None => None,
+        Fill::Solid(c) => Some(*c),
+        Fill::Fountain(f) => f.stops.first().map(|s| s.color),
+        other => other.preview_color(),
+    }
+}
+
+fn fountain_type(kind: FountainKind) -> u8 {
+    match kind {
+        FountainKind::Linear => 1,
+        FountainKind::Radial => 2,
+        FountainKind::Conical => 3,
+        FountainKind::Square => 4,
+    }
+}
+
+/// `fild`: a fill record. See `docs/cdr-format.md` for both layouts.
+fn fild(v: Ver, id: u32, fill: &Fill) -> Vec<u8> {
+    let fill = match fill {
+        Fill::None | Fill::Solid(_) | Fill::Fountain(_) => fill.clone(),
+        other => other.preview_color().map(Fill::Solid).unwrap_or(Fill::None),
+    };
+    let mut b = Buf::default();
+    if !v.tagged() {
+        b.u32(id);
+        match &fill {
+            Fill::Solid(c) => {
+                b.u16(1).zeros(2).bytes(&colour(*c)).zeros(8).bytes(&SCREEN);
+            }
+            Fill::Fountain(f) => {
+                b.u16(2).zeros(2).u8(fountain_type(f.kind));
+                b.zeros(11).bytes(&SCREEN);
+                b.i32((f.edge_pad * 100.0).round() as i32)
+                    .i32((f.angle * 1_000_000.0).round() as i32)
+                    .i32((f.offset.x * 100.0).round() as i32)
+                    .i32((f.offset.y * 100.0).round() as i32)
+                    .zeros(2)
+                    .bytes(&[3, 0, 1, 0])
+                    .u8(50)
+                    .u8(0);
+                let stops: Vec<_> = f.stops.iter().take(64).collect();
+                b.u32(stops.len() as u32);
+                for s in stops {
+                    b.bytes(&colour(s.color))
+                        .u32((s.pos.clamp(0.0, 1.0) * 100.0).round() as u32);
+                }
+            }
+            _ => {
+                b.u16(0).zeros(2);
+            }
+        }
+        return b.done();
+    }
+    // Version 13+: id, tag, length, then the body.
+    let mut body = Buf::default();
+    let late = v.0 >= 16;
+    match &fill {
+        Fill::Solid(c) => {
+            let mut inner = Buf::default();
+            inner.bytes(&colour_props(v, *c)).zeros(8).bytes(&SCREEN);
+            if !late {
+                inner.zeros(8);
+            }
+            let inner = inner.done();
+            body.u16(1)
+                .u32(SINCE_13)
+                .u32(inner.len() as u32)
+                .bytes(&inner)
+                .zeros(8);
+        }
+        Fill::Fountain(f) => {
+            let mut inner = Buf::default();
+            inner
+                .u8(fountain_type(f.kind))
+                .bytes(&[0, 0, 0, 1, 0x51, 0, 0, 0, 0])
+                .bytes(&SCREEN)
+                .u16((f.edge_pad * 100.0).round().clamp(0.0, 49.0) as u16)
+                .i32((f.angle * 1_000_000.0).round() as i32)
+                .i32((f.offset.x * 100.0).round() as i32)
+                .i32((f.offset.y * 100.0).round() as i32)
+                .zeros(2)
+                .bytes(&[3, 0, 1, 0])
+                .u8(50)
+                .u8(0);
+            let stops: Vec<_> = f.stops.iter().take(64).collect();
+            inner.u16(stops.len() as u16);
+            for s in stops {
+                inner.u8(1).u32(12).bytes(&colour(s.color));
+                if v.0 >= 15 {
+                    inner.u8(7).u32(16).zeros(16);
+                }
+                inner
+                    .zeros(5)
+                    .u16((s.pos.clamp(0.0, 1.0) * 100.0).round() as u16);
+            }
+            inner.zeros(8);
+            if late {
+                // The fill's place and size relative to the object.
+                inner.f64(0.0).f64(0.0).f64(1.0).f64(1.0);
+            }
+            let inner = inner.done();
+            body.u16(2)
+                .u32(SINCE_13)
+                .u32(inner.len() as u32)
+                .bytes(&inner)
+                .zeros(8);
+        }
+        _ => {
+            body.u16(0);
+            if !late {
+                body.zeros(8);
+            }
+        }
+    }
+    let body = body.done();
+    b.u32(id).u32(SINCE_13).u32(body.len() as u32).bytes(&body);
+    if late {
+        b.zeros(8);
+    }
+    b.done()
+}
+
+/// Bytes of the identity matrix as six doubles.
+fn identity_matrix() -> Vec<u8> {
+    let mut b = Buf::default();
+    for x in [1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        b.f64(x);
+    }
+    b.done()
+}
+
+/// `outl`: an outline record. Before version 13 the outline proper; from
+/// 13 tagged records (3: a value of 5000000, 2: the colour, 1: the
+/// outline proper) and 8 closing bytes.
+fn outl(v: Ver, id: u32, s: Option<&Stroke>) -> Vec<u8> {
+    let mut o = Buf::default();
+    let (line_type, caps, join, width, stretch, angle, color, dash) = match s {
+        None => (
+            1u16,
+            0u16,
+            0u16,
+            0i32,
+            100u16,
+            0i32,
+            Color::BLACK,
+            Vec::new(),
+        ),
+        Some(s) => {
+            let mut t = 0x02u16;
+            if s.scale_with_object {
+                t |= 0x20;
+            }
+            if s.behind_fill {
+                t |= 0x10;
+            }
+            let caps = match s.cap {
+                LineCap::Butt => 0,
+                LineCap::Round => 1,
+                LineCap::Square => 2,
+            };
+            let join = match s.join {
+                LineJoin::Miter => 0,
+                LineJoin::Round => 1,
+                LineJoin::Bevel => 2,
+            };
+            let width = if s.width <= Stroke::HAIRLINE + 1e-9 {
+                0
+            } else {
+                units(s.width)
+            };
+            let dash: Vec<u16> = s
+                .dash
+                .iter()
+                .take(10)
+                .map(|d| d.round().clamp(0.0, 65535.0) as u16)
+                .collect();
+            (
+                t,
+                caps,
+                join,
+                width,
+                (s.stretch.clamp(0.01, 1.0) * 100.0).round() as u16,
+                (s.nib_angle * 1_000_000.0).round() as i32,
+                s.color,
+                dash,
+            )
+        }
+    };
+    o.u16(line_type).u16(caps).u16(join);
+    if !v.tagged() {
+        o.zeros(2);
+    }
+    o.i32(width).u16(stretch);
+    if !v.tagged() {
+        o.zeros(2);
+    }
+    o.i32(angle);
+    if !v.tagged() {
+        o.zeros(4);
+    }
+    o.bytes(&identity_matrix())
+        .bytes(&colour(color))
+        .zeros(8)
+        .bytes(&SCREEN)
+        .u16(dash.len() as u16);
+    let dashes_at = o.len();
+    for d in &dash {
+        o.u16(*d);
+    }
+    o.pad_to(dashes_at + 22);
+    // No arrowheads.
+    o.u32(0).u32(0);
+    let proper = o.done();
+    let mut b = Buf::default();
+    b.u32(id);
+    if !v.tagged() {
+        b.bytes(&proper).zeros(4);
+        return b.done();
+    }
+    let mut proper = proper;
+    proper.resize(130, 0);
+    let col = colour_props(v, color);
+    if v.0 == 15 {
+        b.u32(5).u32(48).zeros(48);
+    }
+    b.u32(3)
+        .u32(4)
+        .u32(5_000_000)
+        .u32(2)
+        .u32(col.len() as u32)
+        .bytes(&col)
+        .u32(1)
+        .u32(proper.len() as u32)
+        .bytes(&proper)
+        .zeros(8);
+    b.done()
+}
+
+/// `trfd`: one transform record (type 8): the matrix rows (a c e; b d f),
+/// translation in coordinate units.
+fn trfd(v: Ver, m: Affine) -> Vec<u8> {
     let c = m.as_coeffs();
-    let mut rec = Vec::new();
-    rec.extend_from_slice(&8u16.to_le_bytes());
-    rec.extend_from_slice(&[0; 6]);
-    rec.extend_from_slice(&f64s(&[
+    let mut rec = Buf::default();
+    if v.tagged() {
+        rec.u32(SINCE_13).u32(0);
+    }
+    rec.u16(8).zeros(6);
+    for x in [
         c[0],
         c[2],
         c[4] * UNITS_PER_MM,
         c[1],
         c[3],
         c[5] * UNITS_PER_MM,
-    ]));
-    let mut out = u32s(&[0, 1, 12, 16]);
-    out.extend_from_slice(&rec);
-    out
-}
-
-/// `mcfg` for versions 9 to 12: 4 unknown bytes, width, height, then
-/// padding for the fields readers may expect after them.
-fn mcfg(w_mm: f64, h_mm: f64) -> Vec<u8> {
-    let mut out = vec![0u8; 4];
-    out.extend_from_slice(&i32s(&[units(w_mm), units(h_mm)]));
-    out.resize(0x30, 0);
-    out
-}
-
-/// Before version 13: `fild`: id, type, then the body.
-fn fild_solid(id: u32, c: Color) -> Vec<u8> {
-    let mut f = u32s(&[id]);
-    f.extend_from_slice(&u16s(&[1, 0]));
-    f.extend_from_slice(&color_record(c));
-    f
-}
-
-fn fild_none(id: u32) -> Vec<u8> {
-    let mut f = u32s(&[id]);
-    f.extend_from_slice(&u16s(&[0]));
-    f
-}
-
-/// Before version 13: fountain body (version 6 to 12 layout).
-fn fild_fountain(id: u32, f: &tracedraw_core::Fountain) -> Vec<u8> {
-    let mut b = u32s(&[id]);
-    b.extend_from_slice(&u16s(&[2]));
-    b.extend_from_slice(&[0; 2]);
-    b.push(match f.kind {
-        FountainKind::Linear => 1,
-        FountainKind::Radial => 2,
-        FountainKind::Conical => 3,
-        FountainKind::Square => 4,
-    });
-    b.extend_from_slice(&[0; 19]);
-    b.extend_from_slice(&i32s(&[(f.edge_pad * 100.0).round() as i32])); // edge
-    b.extend_from_slice(&i32s(&[(f.angle * 1_000_000.0).round() as i32]));
-    b.extend_from_slice(&i32s(&[
-        (f.offset.x * 100.0).round() as i32,
-        (f.offset.y * 100.0).round() as i32,
-    ]));
-    b.extend_from_slice(&[0; 2]);
-    b.extend_from_slice(&u32s(&[0])); // mode
-    b.push(50); // mid point
-    b.push(0);
-    let stops: Vec<_> = f.stops.iter().take(64).collect();
-    b.extend_from_slice(&u32s(&[stops.len() as u32]));
-    for s in stops {
-        b.extend_from_slice(&color_record(s.color));
-        b.extend_from_slice(&u32s(&[(s.pos.clamp(0.0, 1.0) * 100.0).round() as u32]));
+    ] {
+        rec.f64(if x.is_finite() { x } else { 0.0 });
     }
-    b
+    if v.tagged() {
+        rec.zeros(8);
+    }
+    let rec = rec.done();
+    let start = 24u32;
+    let end = start + rec.len() as u32;
+    let mut b = Buf::default();
+    b.u32(end)
+        .u32(1)
+        .u32(16)
+        .u32(0xffff)
+        .u32(start)
+        .u32(end)
+        .bytes(&rec);
+    b.done()
 }
 
-/// Version 9 to 12 `outl` layout.
-fn outl(id: u32, s: Option<&Stroke>) -> Vec<u8> {
-    let mut o = u32s(&[id]);
-    let Some(s) = s else {
-        // Line type bit 0: no outline; the rest is a plain hairline record.
-        o.extend_from_slice(&u16s(&[1, 0, 0]));
-        o.extend_from_slice(&[0; 2]);
-        o.extend_from_slice(&i32s(&[0]));
-        o.extend_from_slice(&u16s(&[100]));
-        o.extend_from_slice(&[0; 2]);
-        o.extend_from_slice(&i32s(&[0]));
-        o.extend_from_slice(&[0; 52]);
-        o.extend_from_slice(&color_record(Color::BLACK));
-        o.extend_from_slice(&[0; 16]);
-        o.extend_from_slice(&u16s(&[0]));
-        o.extend_from_slice(&[0; 22]);
-        o.extend_from_slice(&u32s(&[0, 0]));
-        return o;
-    };
-    let mut line_type = 0u16;
-    if s.scale_with_object {
-        line_type |= 0x20;
-    }
-    if s.behind_fill {
-        line_type |= 0x10;
-    }
-    let caps = match s.cap {
-        LineCap::Butt => 0,
-        LineCap::Round => 1,
-        LineCap::Square => 2,
-    };
-    let join = match s.join {
-        LineJoin::Miter => 0,
-        LineJoin::Round => 1,
-        LineJoin::Bevel => 2,
-    };
-    o.extend_from_slice(&u16s(&[line_type, caps, join]));
-    o.extend_from_slice(&[0; 2]);
-    let width = if s.width <= Stroke::HAIRLINE + 1e-9 {
-        0
+/// `ftil`: the fill's transform, the identity.
+fn ftil() -> Vec<u8> {
+    identity_matrix()
+}
+
+/// `mcfg`: the document configuration. Only the page size is known; the
+/// rest keeps the length files of the version have.
+fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    let mut b = Buf::default();
+    let size: usize = if v.0 >= 22 {
+        7944
+    } else if v.0 >= 15 {
+        8323
+    } else if v.tagged() {
+        8197
     } else {
-        units(s.width)
+        4088
     };
-    o.extend_from_slice(&i32s(&[width]));
-    o.extend_from_slice(&u16s(
-        &[(s.stretch.clamp(0.01, 1.0) * 100.0).round() as u16],
-    ));
-    o.extend_from_slice(&[0; 2]);
-    o.extend_from_slice(&i32s(&[(s.nib_angle * 1_000_000.0).round() as i32]));
-    o.extend_from_slice(&[0; 52]);
-    o.extend_from_slice(&color_record(s.color));
-    o.extend_from_slice(&[0; 16]);
-    let dashes: Vec<u16> = s
-        .dash
-        .iter()
-        .take(10)
-        .map(|d| d.round().clamp(0.0, 65535.0) as u16)
-        .collect();
-    o.extend_from_slice(&u16s(&[dashes.len() as u16]));
-    let dashes_at = o.len();
-    o.extend_from_slice(&u16s(&dashes));
-    o.resize(dashes_at + 22, 0);
-    // Marker ids: preset arrowheads are not written.
-    o.extend_from_slice(&u32s(&[0, 0]));
-    o
+    if v.tagged() {
+        let tag = if v.0 >= 22 { 2100 } else { SINCE_13 };
+        b.u32(tag).u32(size as u32 - 8).zeros(4);
+    } else if v.0 >= 9 {
+        b.zeros(4);
+    }
+    b.i32(units(w_mm))
+        .i32(units(h_mm))
+        .u32(0x0f)
+        .u32(1)
+        .pad_to(size);
+    b.done()
 }
 
-/// A minimal `stlt` (version 7 to 12 layout): one font entry, one
-/// alignment, one interval and one full style record (id 0) that text
-/// objects reference by default. Readers that resolve text through the
-/// style table find a complete style here.
-fn stlt(font_id: u16) -> Vec<u8> {
-    let mut t = u32s(&[1]); // records
-    t.extend_from_slice(&u32s(&[0])); // fills
-    t.extend_from_slice(&u32s(&[0])); // outlines
-                                      // Fonts: id, 20 unknown, font id, encoding, 8, size, 8, flags, 8.
-    t.extend_from_slice(&u32s(&[1, 1]));
-    t.extend_from_slice(&[0; 20]);
-    t.extend_from_slice(&u16s(&[font_id, 0]));
-    t.extend_from_slice(&[0; 8]);
-    t.extend_from_slice(&i32s(&[(12.0 * 254000.0 / 72.0) as i32]));
-    t.extend_from_slice(&[0; 8]);
-    t.extend_from_slice(&u32s(&[0]));
-    t.extend_from_slice(&[0; 8]);
-    // Alignments: id, 4 unknown, value (1 = left).
-    t.extend_from_slice(&u32s(&[1, 1, 0, 1]));
+/// `font`: id, character set, style flags, 10 bytes of classification,
+/// the family name: 8-bit in a 74-byte field before version 12, UTF-16 in
+/// a 296-byte record after (with the technology value 2 at 160).
+fn font_record(v: Ver, id: u16, family: &str) -> Vec<u8> {
+    let mut b = Buf::default();
+    b.u16(id).u16(0).u32(0x40).zeros(10);
+    if v.unicode() {
+        let name: Vec<u16> = family.encode_utf16().take(31).collect();
+        for u in &name {
+            b.u16(*u);
+        }
+        b.pad_to(160).u32(2).pad_to(296);
+    } else {
+        let mut name =
+            cp1252(family).unwrap_or_else(|| family.bytes().filter(|c| c.is_ascii()).collect());
+        name.truncate(73);
+        b.bytes(&name).pad_to(92);
+    }
+    b.done()
+}
+
+/// `stlt`: the style table with a style per alignment (ids from
+/// `STYLE_ID`), set in font `font_id` at 12 pt, at 100 % line spacing;
+/// the version's table layout (see `text::read_stlt`).
+fn stlt(v: Ver, font_id: u16) -> Vec<u8> {
+    let n = v.0;
+    let mut t = Buf::default();
+    t.u32(STYLE_ALIGNS.len() as u32); // records
+    t.u32(0); // fills
+    t.u32(0); // outlines
+              // Fonts: id, unknown (12 before 10, 20 after), font id, encoding, 8,
+              // size, 8, style flags, 8 (from 10).
+    t.u32(1).u32(1).zeros(if n < 10 { 12 } else { 20 });
+    t.u16(font_id)
+        .u16(0)
+        .zeros(8)
+        .i32((12.0 * 254000.0 / 72.0) as i32)
+        .zeros(8)
+        .u32(0x40);
+    if n >= 10 {
+        t.zeros(8);
+    }
+    // Alignments: id, 4 unknown, value.
+    t.u32(STYLE_ALIGNS.len() as u32);
+    for (i, (_, code)) in STYLE_ALIGNS.iter().enumerate() {
+        t.u32(i as u32 + 1).u32(0).u32(*code);
+    }
     // Intervals: id, 8, character spacing, 8, line spacing, 24.
-    t.extend_from_slice(&u32s(&[1, 1]));
-    t.extend_from_slice(&[0; 8]);
-    t.extend_from_slice(&u32s(&[0]));
-    t.extend_from_slice(&[0; 8]);
-    t.extend_from_slice(&u32s(&[1_000_000]));
-    t.extend_from_slice(&[0; 24]);
-    // set5, tabs, bullets, indents, hyphens, drop caps, set11: empty.
-    for _ in 0..7 {
-        t.extend_from_slice(&u32s(&[0]));
+    t.u32(1)
+        .u32(1)
+        .zeros(8)
+        .u32(0)
+        .zeros(8)
+        .u32(1_000_000)
+        .zeros(24);
+    // set5, tabs, bullets, indents, hyphens, drop caps (and set11 from 9):
+    // empty.
+    for _ in 0..if n >= 9 { 7 } else { 6 } {
+        t.u32(0);
     }
-    // The record: 3 sections, style id 0, no parent, 8 unknown, name.
-    let name: Vec<u16> = "Default Artistic Text".encode_utf16().collect();
-    t.extend_from_slice(&u32s(&[3, 0, 0]));
-    t.extend_from_slice(&[0; 8]);
-    t.extend_from_slice(&u32s(&[name.len() as u32]));
-    for u in &name {
-        t.extend_from_slice(&u.to_le_bytes());
+    // The records: 3 sections, id, no parent, 8 unknown, the name, then
+    // the table entries they use.
+    for (i, name) in ["Default", "Centred", "Right", "Justified"]
+        .iter()
+        .enumerate()
+    {
+        t.u32(3).u32(STYLE_ID + i as u32).u32(0).zeros(8);
+        if v.unicode() {
+            t.u32(name.len() as u32).bytes(&utf16(name));
+        } else {
+            t.u32(name.len() as u32).bytes(name.as_bytes());
+        }
+        t.u32(0).u32(0); // fill and outline refs
+        t.u32(1).u32(i as u32 + 1).u32(1).u32(0); // font, alignment, interval, set5
+        if n >= 9 {
+            t.u32(0); // set11
+        }
+        t.u32(0).u32(0).u32(0).u32(0).u32(0); // tab, bullet, indent, hyphen, drop cap
     }
-    t.extend_from_slice(&u32s(&[0, 0])); // fill, outline refs
-    t.extend_from_slice(&u32s(&[1, 1, 1, 0])); // font, align, interval, set5
-    t.extend_from_slice(&u32s(&[0])); // set11
-    t.extend_from_slice(&u32s(&[0, 0, 0, 0, 0])); // tab, bullet, indent, hyphen, drop cap
-    t
+    t.done()
 }
 
-fn font_chunk(id: u16, name: &str) -> Vec<u8> {
-    let mut f = u16s(&[id, 0]);
-    f.extend_from_slice(&u32s(&[0]));
-    f.extend_from_slice(&[0; 10]);
-    f.extend_from_slice(&utf16z(name));
-    f
+/// `bmp `: a 24-bit image: id, a file-like header ("UI" block size, the
+/// "RI" block with its size and pixel offset), colour model 1, size,
+/// bits, row stride, pixel bytes, resolution, then rows bottom-up in
+/// B G R order padded to 4 bytes. Transparent pixels are put over white.
+fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
+    let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
+    let (w, h) = (pm.width(), pm.height());
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let stride = (w as usize * 24).div_ceil(32) * 4;
+    let mut pixels = vec![0u8; stride * h as usize];
+    let src = pm.pixels();
+    for row in 0..h as usize {
+        let Some(dst) = pixels.get_mut((h as usize - 1 - row) * stride..) else {
+            continue;
+        };
+        for x in 0..w as usize {
+            let Some(p) = src.get(row * w as usize + x).map(|p| p.demultiply()) else {
+                continue;
+            };
+            let a = p.alpha() as u32;
+            let blend = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
+            if let Some(px) = dst.get_mut(x * 3..x * 3 + 3) {
+                px.copy_from_slice(&[blend(p.blue()), blend(p.green()), blend(p.red())]);
+            }
+        }
+    }
+    let per_km = |px: u32, mm: f64| {
+        if mm > 1e-6 {
+            (px as f64 / mm * 1_000_000.0)
+                .round()
+                .clamp(1.0, u32::MAX as f64) as u32
+        } else {
+            2_834_646
+        }
+    };
+    let len = 4 + 50 + 32 + 32 + pixels.len();
+    let mut b = Buf::default();
+    b.u32(id)
+        .u32(1)
+        .u32(0x4955)
+        .u32((len - 8) as u32)
+        .u32(0)
+        .u32(32)
+        .zeros(8)
+        .u32(2)
+        .u32(255)
+        .u16(0x4952)
+        .u32((len - 40) as u32)
+        .u32(0)
+        .u32((len - pixels.len() - 40) as u32);
+    b.u32(1)
+        .u32(1)
+        .u32(w)
+        .u32(h)
+        .u32(1)
+        .u32(24)
+        .u32(stride as u32)
+        .u32(pixels.len() as u32);
+    b.u32(0)
+        .u32(per_km(w, size_mm.0))
+        .u32(per_km(h, size_mm.1))
+        .u32(0)
+        .u32(64)
+        .zeros(12);
+    b.bytes(&pixels);
+    Some(b.done())
 }
 
-/// Transparency argument: 10 unknown bytes, then thousandths.
-fn opacity_arg(opacity: f64) -> Vec<u8> {
-    let mut v = vec![0u8; 10];
-    let t = ((1.0 - opacity.clamp(0.0, 1.0)) * 1000.0).round() as u16;
-    v.extend_from_slice(&u16s(&[t]));
-    v
+/// `loda`: header (length, argument count, offsets table, types table,
+/// object type), the offsets table with the end marker, the types table
+/// in reverse order, then the argument bodies back to back. Arguments go
+/// highest type first, as files order them.
+fn loda(kind: u32, mut args: Vec<(u32, Vec<u8>)>) -> Vec<u8> {
+    args.sort_by_key(|a| std::cmp::Reverse(a.0));
+    let n = args.len();
+    let start_args = 20usize;
+    let start_types = start_args + (n + 1) * 4;
+    let mut pos = start_types + n * 4;
+    let mut offsets = Vec::with_capacity(n + 1);
+    for (_, b) in &args {
+        offsets.push(pos as u32);
+        pos += b.len();
+    }
+    offsets.push(pos as u32);
+    let mut out = Buf::default();
+    out.u32(pos as u32)
+        .u32(n as u32)
+        .u32(start_args as u32)
+        .u32(start_types as u32)
+        .u32(kind);
+    for o in &offsets {
+        out.u32(*o);
+    }
+    for (t, _) in args.iter().rev() {
+        out.u32(*t);
+    }
+    for (_, b) in &args {
+        out.bytes(b);
+    }
+    out.done()
 }
 
-/// Points and type bytes of a path in local units.
+/// Opacity argument: 10 unknown bytes (14 from version 13), then the
+/// transparency in thousandths.
+fn opacity_arg(v: Ver, opacity: f64) -> Vec<u8> {
+    let mut b = Buf::default();
+    b.zeros(if v.tagged() { 14 } else { 10 })
+        .u16(((1.0 - opacity.clamp(0.0, 1.0)) * 1000.0).round() as u16);
+    b.done()
+}
+
+/// Points and node bytes of a path in local units: bits 7-6 the node kind
+/// (00 move, 01 line, 10 curve end, 11 control point), bit 3 closes the
+/// subpath.
 fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
     let mut pts: Vec<(i32, i32)> = Vec::new();
     let mut types: Vec<u8> = Vec::new();
     let mut last_start = 0usize;
+    let mut last = Point::ZERO;
     for el in path.elements() {
         match el {
             PathEl::MoveTo(p) => {
                 pts.push((units(p.x), units(p.y)));
                 types.push(0x00);
                 last_start = pts.len() - 1;
+                last = *p;
             }
             PathEl::LineTo(p) => {
                 pts.push((units(p.x), units(p.y)));
                 types.push(0x40);
+                last = *p;
             }
             PathEl::QuadTo(c, p) => {
-                // Elevate to a cubic.
-                let s = pts.last().copied().unwrap_or((0, 0));
-                let sx = s.0 as f64 / UNITS_PER_MM;
-                let sy = s.1 as f64 / UNITS_PER_MM;
-                let c1 = Point::new(sx + (c.x - sx) * 2.0 / 3.0, sy + (c.y - sy) * 2.0 / 3.0);
-                let c2 = Point::new(p.x + (c.x - p.x) * 2.0 / 3.0, p.y + (c.y - p.y) * 2.0 / 3.0);
+                // Raised to a cubic.
+                let c1 = last + (*c - last) * (2.0 / 3.0);
+                let c2 = *p + (*c - *p) * (2.0 / 3.0);
                 pts.push((units(c1.x), units(c1.y)));
                 types.push(0xc0);
                 pts.push((units(c2.x), units(c2.y)));
                 types.push(0xc0);
                 pts.push((units(p.x), units(p.y)));
                 types.push(0x80);
+                last = *p;
             }
             PathEl::CurveTo(a, b, p) => {
                 pts.push((units(a.x), units(a.y)));
@@ -361,6 +1064,7 @@ fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
                 types.push(0xc0);
                 pts.push((units(p.x), units(p.y)));
                 types.push(0x80);
+                last = *p;
             }
             PathEl::ClosePath => {
                 // A closing line back to the subpath start, flagged.
@@ -373,30 +1077,181 @@ fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
     if pts.is_empty() {
         return None;
     }
-    let mut out = u32s(&[pts.len() as u32]);
+    let mut out = Buf::default();
+    out.u32(pts.len() as u32);
     for (x, y) in &pts {
-        out.extend_from_slice(&i32s(&[*x, *y]));
+        out.i32(*x).i32(*y);
     }
-    out.extend_from_slice(&types);
-    Some(out)
+    out.bytes(&types);
+    Some(out.done())
 }
 
+/// A box as `bbox` stores it: top left, then bottom right (file units,
+/// y up).
+fn box_bytes(r: Rect) -> Vec<u8> {
+    let mut b = Buf::default();
+    b.i32(units(r.x0))
+        .i32(units(r.y1))
+        .i32(units(r.x1))
+        .i32(units(r.y0));
+    b.done()
+}
+
+/// `obbx`: the box, then the box with the outline.
+fn obbx_bytes(r: Rect, outline: f64) -> Vec<u8> {
+    let mut b = box_bytes(r);
+    b.extend(box_bytes(r.inflate(outline, outline)));
+    b
+}
+
+/// The style string of an object (versions 16+): its fill, outline and
+/// transparency.
+fn object_style_json(fill: &Fill, stroke: Option<&Stroke>, opacity: f64) -> String {
+    let fill_part = match fill_colour(fill) {
+        Some(c) if !matches!(fill, Fill::None) => {
+            format!(r#"{{"type":"1","primaryColor":"{}"}}"#, colour_spec(c))
+        }
+        _ => r#"{"type":"0"}"#.to_string(),
+    };
+    let outline_part = match stroke {
+        Some(s) => format!(
+            r#"{{"width":"{}","color":"{}"}}"#,
+            if s.width <= Stroke::HAIRLINE + 1e-9 {
+                0
+            } else {
+                units(s.width)
+            },
+            colour_spec(s.color)
+        ),
+        None => r#"{"type":"1","width":"0"}"#.to_string(),
+    };
+    let transparency = if opacity < 0.999 {
+        format!(
+            r#"{{"type":"1","uniformTransparency":"{}"}}"#,
+            ((1.0 - opacity.clamp(0.0, 1.0)) * 1000.0).round() / 1000.0
+        )
+    } else {
+        "{}".to_string()
+    };
+    format!(r#"{{"fill":{fill_part},"outline":{outline_part},"transparency":{transparency}}}"#)
+}
+
+/// The style codes of the font tables: one bit per weight and slant
+/// (0x40 regular, 0x80 italic, 0x1000 bold, 0x2000 bold italic), single
+/// underline in bits 18 to 20, single strike-through in bits 24 to 26.
+fn style_flags(sp: &TextSpan) -> u32 {
+    let mut f = match (sp.bold, sp.italic) {
+        (false, false) => 0x40,
+        (false, true) => 0x80,
+        (true, false) => 0x1000,
+        (true, true) => 0x2000,
+    };
+    if sp.underline {
+        f |= 1 << 18;
+    }
+    if sp.strikethrough {
+        f |= 1 << 24;
+    }
+    f
+}
+
+/// The style string of a run (versions 16+): its font, size, weight,
+/// slant, lines and colour.
+fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
+    format!("{{{}}}", character_json(sp, fill))
+}
+
+/// The `character` member of a style string.
+fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
+    let weight = if sp.bold { 4096 } else { 64 };
+    let size = (sp.size_pt * 254000.0 / 72.0).round() as i64;
+    let family = sp.font_family.replace('\\', "\\\\").replace('"', "\\\"");
+    let font = format!(
+        r#"{{"font":"{family}","size":"{size}","weight":"{weight}","italic":"{}","underline":"{}","strikeout":"{}"}}"#,
+        u8::from(sp.italic),
+        u8::from(sp.underline),
+        u8::from(sp.strikethrough)
+    );
+    let fill = match fill.and_then(fill_colour) {
+        Some(c) => format!(
+            r#""fill":{{"type":"1","primaryColor":"{}"}},"#,
+            colour_spec(c)
+        ),
+        None => String::new(),
+    };
+    format!(r#""character":{{{fill}"latin":{font},"RTL":{font},"farEast":{font}}}"#)
+}
+
+/// The `justify` value of a style string: 1 left, 2 centre, 3 right, 4
+/// full justify (5 forced).
+fn justify_code(align: TextAlign) -> u32 {
+    match align {
+        TextAlign::Left => 1,
+        TextAlign::Center => 2,
+        TextAlign::Right => 3,
+        TextAlign::Justify => 4,
+    }
+}
+
+// ---- the writer ----------------------------------------------------------
+
 struct Writer<'a> {
+    v: Ver,
+    symbols: &'a [Symbol],
     fills: Vec<Vec<u8>>,
     fill_ids: HashMap<String, u32>,
     outlines: Vec<Vec<u8>>,
     outline_ids: HashMap<String, u32>,
-    fonts: Vec<Vec<u8>>,
-    font_ids: HashMap<String, u16>,
+    fonts: Vec<(u16, String)>,
     bitmaps: Vec<Vec<u8>>,
-    symbols: &'a [tracedraw_core::document::Symbol],
+    /// Static ids (`usdn`), object ids (argument 100), next fill, outline
+    /// and bitmap ids.
+    next_usdn: u32,
+    next_object: u32,
     next_fill: u32,
     next_outline: u32,
-    next_font: u16,
     next_bitmap: u32,
+    guid_seed: u64,
+    guids: u64,
+    has_text: bool,
 }
 
-impl Writer<'_> {
+/// Where a written object sits: its box and the box with its outline.
+struct Placed {
+    nodes: Vec<Node>,
+    bounds: Option<Rect>,
+}
+
+impl<'a> Writer<'a> {
+    fn new(v: Ver, symbols: &'a [Symbol], title: &str) -> Self {
+        let seed = title.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+        });
+        Writer {
+            v,
+            symbols,
+            fills: Vec::new(),
+            fill_ids: HashMap::new(),
+            outlines: Vec::new(),
+            outline_ids: HashMap::new(),
+            fonts: Vec::new(),
+            bitmaps: Vec::new(),
+            next_usdn: 1,
+            next_object: 1,
+            next_fill: 1,
+            next_outline: 1,
+            next_bitmap: 1,
+            guid_seed: seed,
+            guids: 0,
+            has_text: false,
+        }
+    }
+
+    fn guid(&mut self) -> Vec<u8> {
+        self.guids += 1;
+        guid(self.guid_seed, self.guids).to_vec()
+    }
+
     fn fill_id(&mut self, fill: &Fill) -> u32 {
         let key = format!("{fill:?}");
         if let Some(id) = self.fill_ids.get(&key) {
@@ -404,13 +1259,7 @@ impl Writer<'_> {
         }
         let id = self.next_fill;
         self.next_fill += 1;
-        let bytes = match fill {
-            Fill::None => fild_none(id),
-            Fill::Solid(c) => fild_solid(id, *c),
-            Fill::Fountain(f) => fild_fountain(id, f),
-            other => fild_solid(id, other.preview_color().unwrap_or(Color::Gray { v: 0.5 })),
-        };
-        self.fills.push(bytes);
+        self.fills.push(fild(self.v, id, fill));
         self.fill_ids.insert(key, id);
         id
     }
@@ -422,127 +1271,396 @@ impl Writer<'_> {
         }
         let id = self.next_outline;
         self.next_outline += 1;
-        self.outlines.push(outl(id, stroke));
+        self.outlines.push(outl(self.v, id, stroke));
         self.outline_ids.insert(key, id);
         id
     }
 
     fn font_id(&mut self, family: &str) -> u16 {
-        if let Some(id) = self.font_ids.get(family) {
+        if let Some((id, _)) = self.fonts.iter().find(|(_, f)| f == family) {
             return *id;
         }
-        let id = self.next_font;
-        self.next_font += 1;
-        self.fonts.push(font_chunk(id, family));
-        self.font_ids.insert(family.to_string(), id);
+        let id = self.fonts.len() as u16 + 1;
+        self.fonts.push((id, family.to_string()));
         id
     }
 
-    /// A `bmp ` chunk (24-bit BGR, bottom-up rows) for PNG bytes; the image id.
-    fn bitmap_id(&mut self, png: &[u8]) -> Option<u32> {
-        let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
-        let (w, h) = (pm.width(), pm.height());
-        if w == 0 || h == 0 {
-            return None;
-        }
+    fn bitmap_id(&mut self, png: &[u8], size_mm: (f64, f64)) -> Option<u32> {
         let id = self.next_bitmap;
+        let rec = bmp_record(id, png, size_mm)?;
         self.next_bitmap += 1;
-        let stride = (w as usize * 24).div_ceil(32) * 4;
-        let mut pixels = vec![0u8; stride * h as usize];
-        for row in 0..h as usize {
-            let dst = &mut pixels[(h as usize - 1 - row) * stride..][..stride];
-            for x in 0..w as usize {
-                let p = pm.pixels()[row * w as usize + x].demultiply();
-                // Transparent pixels over white.
-                let a = p.alpha() as u32;
-                let blend = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
-                dst[x * 3] = blend(p.blue());
-                dst[x * 3 + 1] = blend(p.green());
-                dst[x * 3 + 2] = blend(p.red());
-            }
-        }
-        let mut b = u32s(&[id]);
-        b.extend_from_slice(&[0; 50]);
-        // Colour model 1 is 24-bit BGR (confirmed on a version 21 file; model 5
-        // is greyscale in other readers).
-        b.extend_from_slice(&u32s(&[1]));
-        b.extend_from_slice(&[0; 4]);
-        b.extend_from_slice(&u32s(&[w, h]));
-        b.extend_from_slice(&[0; 4]);
-        b.extend_from_slice(&u32s(&[24]));
-        b.extend_from_slice(&[0; 4]);
-        b.extend_from_slice(&u32s(&[pixels.len() as u32]));
-        b.extend_from_slice(&[0; 32]);
-        b.extend_from_slice(&pixels);
-        self.bitmaps.push(b);
+        self.bitmaps.push(rec);
         Some(id)
     }
 
-    /// Objects of a layer, front to back as the file stores them.
-    fn objects(&mut self, shapes: &[Shape], center: Point, depth: usize) -> Vec<u8> {
+    /// The whole file: version chunks, bitmaps, the document tables, the
+    /// master page and every page.
+    fn document(&mut self, doc: &Document) -> Vec<Node> {
+        let first = doc
+            .pages
+            .first()
+            .map(|p| p.size)
+            .unwrap_or(tracedraw_core::geometry::Size::new(210.0, 297.0));
+        // Pages first: they fill the tables.
+        let mut pages = Vec::new();
+        let mut content: Option<Rect> = None;
+        for page in &doc.pages {
+            let (node, b) = self.page(page);
+            if content.is_none() {
+                content = b;
+            }
+            pages.push(node);
+        }
+        let v = self.v;
         let mut out = Vec::new();
+        if v.redirects() {
+            let mut fver = Buf::default();
+            fver.u16(v.0 * 100).u16(1).u16(0).u16(v.0);
+            out.push(chunk(b"fver", fver.done()));
+        }
+        out.push(chunk(b"vrsn", (v.0 * 100).to_le_bytes().to_vec()));
+        if !self.bitmaps.is_empty() {
+            let bmps = std::mem::take(&mut self.bitmaps)
+                .into_iter()
+                .map(|b| chunk(b"bmp ", b))
+                .collect();
+            out.push(list(b"bmpt", bmps));
+        }
+        let mut docl = Vec::new();
+        if !v.redirects() {
+            docl.push(chunk(b"pfrd", vec![0; if v.tagged() { 2 } else { 1 }]));
+        }
+        docl.push(chunk(b"mcfg", mcfg(v, first.width, first.height)));
+        let content = content.unwrap_or(Rect::ZERO);
+        let centre = Point::new(first.width / 2.0, first.height / 2.0);
+        docl.push(chunk(b"ptrt", box_bytes(content - centre.to_vec2())));
+        if self.has_text && self.fonts.is_empty() {
+            self.font_id("Arial");
+        }
+        if !self.fonts.is_empty() {
+            let fonts = self
+                .fonts
+                .iter()
+                .map(|(id, f)| chunk(b"font", font_record(v, *id, f)))
+                .collect();
+            docl.push(list(b"fntt", fonts));
+        }
+        // Every object refers to a fill and an outline; keep the tables
+        // non-empty.
+        self.fill_id(&Fill::None);
+        self.outline_id(None);
+        let fills = std::mem::take(&mut self.fills)
+            .into_iter()
+            .map(|f| list(b"filc", vec![chunk(b"fild", f)]))
+            .collect();
+        docl.push(list(b"filt", fills));
+        let outlines = std::mem::take(&mut self.outlines)
+            .into_iter()
+            .map(|o| chunk(b"outl", o))
+            .collect();
+        docl.push(list(b"otlt", outlines));
+        let font = self.fonts.first().map(|(id, _)| *id).unwrap_or(0);
+        let styles = stlt(v, font);
+        if v.redirects() {
+            docl.push(chunk(b"stlt", styles));
+        } else {
+            // Before version 16 the style table is the body of a list.
+            docl.push(Node::RawList(*b"stlt", styles));
+        }
+        out.push(list(b"doc ", docl));
+        out.push(self.master_page());
+        out.extend(pages);
+        out
+    }
+
+    /// A layer list: its flags, its properties (kind, a GUID, the colour
+    /// and the name) and its objects.
+    fn layer(&mut self, flags: [u8; 4], kind: u32, name: &str, objects: Vec<Node>) -> Node {
+        let v = self.v;
+        let colour_bytes = match kind {
+            LAYER_GUIDES => Color::rgb8(0, 0, 255),
+            LAYER_GRID => Color::rgb8(194, 194, 193),
+            _ => Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+        };
+        let mut args = vec![(ARG_NAME, name_bytes(v, name))];
+        if v.tagged() {
+            args.push((ARG_LAYER_COLOR, colour_props(v, colour_bytes)));
+        } else {
+            args.push((ARG_LAYER_COLOR, colour(colour_bytes).to_vec()));
+        }
+        if v.zip() {
+            args.push((ARG_GUID, self.guid()));
+        }
+        let mut children = vec![
+            chunk(b"flgs", flags.to_vec()),
+            list(b"lgob", vec![chunk(b"loda", loda(kind, args))]),
+        ];
+        children.extend(objects);
+        list(b"layr", children)
+    }
+
+    /// The master page: guides, desktop and grid layers, no objects.
+    fn master_page(&mut self) -> Node {
+        let v = self.v;
+        let mut children = vec![chunk(
+            b"flgs",
+            vec![if v.zip() { 0x40 } else { 0 }, 0, 1, 0x90],
+        )];
+        let unit = 1.0 / UNITS_PER_MM;
+        let tiny = Rect::new(-2.0 * unit, -2.0 * unit, 2.0 * unit, 2.0 * unit);
+        if v.zip() {
+            children.push(chunk(b"bbox", box_bytes(tiny)));
+            children.push(chunk(b"obbx", obbx_bytes(tiny, 0.0)));
+        } else {
+            children.push(chunk(b"bbox", vec![0; 16]));
+        }
+        let layers = vec![
+            self.layer([0x0a, 0, 1, 0x98], LAYER_GUIDES, "Guides", Vec::new()),
+            self.layer([0x08, 0, 1, 0x98], LAYER_DESKTOP, "Desktop", Vec::new()),
+            self.layer([0x1a, 1, 1, 0x98], LAYER_GRID, "Document Grid", Vec::new()),
+        ];
+        children.push(list(b"gobj", layers));
+        if v.redirects() {
+            children.push(list(b"lgob", vec![chunk(b"loda", loda(0, Vec::new()))]));
+        }
+        list(b"page", children)
+    }
+
+    /// A page: its flags, the box of its objects, the master's guides and
+    /// desktop layers, its own guides layer and its layers.
+    fn page(&mut self, page: &tracedraw_core::document::Page) -> (Node, Option<Rect>) {
+        let v = self.v;
+        let centre = Point::new(page.size.width / 2.0, page.size.height / 2.0);
+        let mut layers = vec![
+            self.layer([0x0a, 0, 1, 0x98], LAYER_GUIDES, "Guides", Vec::new()),
+            self.layer([0x08, 0, 1, 0x98], LAYER_DESKTOP, "Desktop", Vec::new()),
+        ];
+        if v.zip() {
+            layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", Vec::new()));
+        }
+        let mut content: Option<Rect> = None;
+        for layer in &page.layers {
+            let objects = if layer.visible {
+                let placed = self.objects(&layer.shapes, centre, 0);
+                if let Some(b) = placed.bounds {
+                    content = Some(content.map_or(b, |c| c.union(b)));
+                }
+                placed.nodes
+            } else {
+                Vec::new()
+            };
+            layers.push(self.layer([0, 0, 0, 0x98], LAYER_PLAIN, &layer.name, objects));
+        }
+        let page_box = content.map(|c| c - centre.to_vec2()).unwrap_or(Rect::ZERO);
+        let mut children = vec![chunk(
+            b"flgs",
+            vec![if v.zip() { 0x40 } else { 0 }, 0, 0, 0x90],
+        )];
+        children.push(chunk(b"bbox", box_bytes(page_box)));
+        children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
+        children.push(list(b"gobj", layers));
+        if v.redirects() {
+            children.push(list(b"lgob", vec![chunk(b"loda", loda(0, Vec::new()))]));
+        }
+        (list(b"page", children), content)
+    }
+
+    /// Objects of a layer or group, front to back as files store them.
+    fn objects(&mut self, shapes: &[Shape], centre: Point, depth: usize) -> Placed {
+        let mut nodes = Vec::new();
+        let mut bounds: Option<Rect> = None;
         if depth > 60 {
-            return out;
+            return Placed { nodes, bounds };
         }
         for s in shapes.iter().rev() {
-            out.extend(self.object(s, center, depth));
+            let p = self.object(s, centre, depth);
+            if let Some(b) = p.bounds {
+                bounds = Some(bounds.map_or(b, |c| c.union(b)));
+            }
+            nodes.extend(p.nodes);
         }
-        out
+        Placed { nodes, bounds }
+    }
+
+    /// The common head of an object or group list: flags, boxes and the
+    /// static id.
+    fn head(&mut self, flags: [u8; 4], page_box: Rect, outline: f64, centre: Point) -> Vec<Node> {
+        let b = page_box - centre.to_vec2();
+        let usdn = self.next_usdn;
+        self.next_usdn += 1;
+        vec![
+            chunk(b"flgs", flags.to_vec()),
+            chunk(b"bbox", box_bytes(b)),
+            chunk(b"obbx", obbx_bytes(b, outline)),
+            chunk(b"usdn", usdn.to_le_bytes().to_vec()),
+        ]
+    }
+
+    fn group(&mut self, children: &[Shape], centre: Point, depth: usize) -> Placed {
+        let inner = self.objects(children, centre, depth + 1);
+        let Some(b) = inner.bounds else {
+            return Placed {
+                nodes: Vec::new(),
+                bounds: None,
+            };
+        };
+        let id = self.next_object;
+        self.next_object += 1;
+        let mut body = self.head([0, 0, 0, 0x10], b, 0.0, centre);
+        body.push(list(
+            b"lgob",
+            vec![
+                chunk(b"loda", loda(0, vec![(ARG_ID, id.to_le_bytes().to_vec())])),
+                list(
+                    b"trfl",
+                    vec![chunk(b"trfd", trfd(self.v, Affine::IDENTITY))],
+                ),
+            ],
+        ));
+        body.extend(inner.nodes);
+        Placed {
+            nodes: vec![list(b"grp ", body)],
+            bounds: Some(b),
+        }
     }
 
     /// A bitmap object: image rectangle, image id and crop path (the whole
     /// rectangle, or `crop` in the bitmap's local space).
-    fn bitmap_object(&mut self, s: &Shape, center: Point, crop: Option<&BezPath>) -> Vec<u8> {
+    fn bitmap_object(&mut self, s: &Shape, centre: Point, crop: Option<&BezPath>) -> Placed {
         let ShapeKind::Bitmap { rect, png, .. } = &s.kind else {
-            return Vec::new();
+            return Placed {
+                nodes: Vec::new(),
+                bounds: None,
+            };
         };
-        let Some(image) = self.bitmap_id(png) else {
-            return Vec::new();
+        let (sx, sy) = {
+            let c = s.transform.as_coeffs();
+            (c[0].hypot(c[1]), c[2].hypot(c[3]))
         };
-        let transform = Affine::translate(-center.to_vec2()) * s.transform;
-        let mut c = i32s(&[
-            units(rect.x0),
-            units(rect.y0),
-            units(rect.x1),
-            units(rect.y1),
-        ]);
-        c.extend_from_slice(&[0; 32]);
-        c.extend_from_slice(&u32s(&[image]));
-        c.extend_from_slice(&[0; 20]);
+        let Some(image) = self.bitmap_id(png, (rect.width() * sx, rect.height() * sy)) else {
+            return Placed {
+                nodes: Vec::new(),
+                bounds: None,
+            };
+        };
+        let v = self.v;
+        let mut c = Buf::default();
+        c.i32(units(rect.x0))
+            .i32(units(rect.y0))
+            .i32(units(rect.x1))
+            .i32(units(rect.y1))
+            .zeros(32)
+            .u32(image)
+            .zeros(if v.0 == 8 { 12 } else { 20 });
         let path_bytes = match crop {
             Some(p) => curve_coords(p),
-            None => {
-                let mut full = BezPath::new();
-                full.move_to((rect.x0, rect.y0));
-                full.line_to((rect.x1, rect.y0));
-                full.line_to((rect.x1, rect.y1));
-                full.line_to((rect.x0, rect.y1));
-                full.close_path();
-                curve_coords(&full)
-            }
+            None => curve_coords(&rect.to_path(0.01)),
         };
-        c.extend_from_slice(&path_bytes.unwrap_or_else(|| u32s(&[0])));
-        let fill = self.fill_id(&Fill::None);
-        let outline = self.outline_id(s.stroke.as_ref());
-        let mut args: Vec<(u32, Vec<u8>)> = vec![(ARG_COORDS, c)];
-        args.push((ARG_FILL, u32s(&[fill])));
-        args.push((ARG_OUTLINE, u32s(&[outline])));
-        if let Some(n) = &s.name {
-            args.push((ARG_NAME, utf16z(n)));
-        }
-        if s.opacity < 0.999 {
-            args.push((ARG_OPACITY, opacity_arg(s.opacity)));
-        }
-        let mut lgob = chunk(b"loda", &loda(OBJ_BITMAP, &args));
-        lgob.extend(list(b"trfl", &chunk(b"trfd", &trfd(transform))));
-        let mut body = chunk(b"flgs", &[0, 0, 0, 0]);
-        body.extend(list(b"lgob", &lgob));
-        list(b"obj ", &body)
+        c.bytes(&path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec()));
+        let page_box = match crop {
+            Some(p) => (s.transform * p.clone()).bounding_box(),
+            None => (s.transform * rect.to_path(0.01)).bounding_box(),
+        };
+        self.place(
+            s,
+            OBJ_BITMAP,
+            c.done(),
+            &Fill::None,
+            s.transform,
+            page_box,
+            None,
+            centre,
+        )
     }
 
-    fn object(&mut self, s: &Shape, center: Point, depth: usize) -> Vec<u8> {
+    /// An object list: head, attributes with the transform and, for text,
+    /// the text record (and, from version 16, the character settings for
+    /// the object's style string).
+    #[allow(clippy::too_many_arguments)]
+    fn place(
+        &mut self,
+        s: &Shape,
+        kind: u32,
+        coords: Vec<u8>,
+        fill: &Fill,
+        transform: Affine,
+        page_box: Rect,
+        text: Option<(Vec<u8>, String, u32)>,
+        centre: Point,
+    ) -> Placed {
+        let v = self.v;
+        let fill_id = self.fill_id(fill);
+        let outline_id = self.outline_id(s.stroke.as_ref());
+        let id = self.next_object;
+        self.next_object += 1;
+        let mut args: Vec<(u32, Vec<u8>)> = vec![
+            (ARG_COORDS, coords),
+            (ARG_FILL, fill_id.to_le_bytes().to_vec()),
+            (ARG_OUTLINE, outline_id.to_le_bytes().to_vec()),
+            (ARG_ID, id.to_le_bytes().to_vec()),
+        ];
+        if v.style_strings() {
+            let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity);
+            if let Some((_, character, _)) = &text {
+                // Text objects keep their character settings there too.
+                json.pop();
+                json.push(',');
+                json.push_str(character);
+                json.push('}');
+                args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
+            }
+            let mut a = Buf::default();
+            a.u32(1).bytes(&style_string(v, &json));
+            args.push((ARG_STYLE_STRING, a.done()));
+        } else {
+            // Text refers to the style of its alignment, as its paragraphs.
+            let style = text.as_ref().map_or(STYLE_ID, |(_, _, style)| *style);
+            args.push((ARG_STYLE, style.to_le_bytes().to_vec()));
+        }
+        if v.zip() {
+            args.push((ARG_PROPS, vec![0; 4]));
+        }
+        if let Some(n) = &s.name {
+            args.push((ARG_NAME, name_bytes(v, n)));
+        }
+        if s.opacity < 0.999 {
+            args.push((ARG_OPACITY, opacity_arg(v, s.opacity)));
+        }
+        let outline = s.stroke.as_ref().map(|st| st.width / 2.0).unwrap_or(0.0);
+        // Text objects start with their style id (`spnd`) and are flagged
+        // 9 instead of 8.
+        let mut body = Vec::new();
+        let mut flags = [0, 2, 0, 8];
+        if let Some((_, _, style)) = &text {
+            body.push(chunk(b"spnd", style.to_le_bytes().to_vec()));
+            flags[3] = 9;
+        }
+        body.extend(self.head(flags, page_box, outline, centre));
+        let recenter = Affine::translate(-centre.to_vec2());
+        body.push(list(
+            b"lgob",
+            vec![
+                chunk(b"loda", loda(kind, args)),
+                chunk(b"ftil", ftil()),
+                list(b"trfl", vec![chunk(b"trfd", trfd(v, recenter * transform))]),
+            ],
+        ));
+        if let Some((t, _, _)) = text {
+            body.push(chunk(b"txsm", t));
+        }
+        Placed {
+            nodes: vec![list(b"obj ", body)],
+            bounds: Some(page_box),
+        }
+    }
+
+    fn object(&mut self, s: &Shape, centre: Point, depth: usize) -> Placed {
+        let none = || Placed {
+            nodes: Vec::new(),
+            bounds: None,
+        };
         if !s.visible {
-            return Vec::new();
+            return none();
         }
         if !s.effects.is_empty() {
             let ev = tracedraw_core::live::evaluate(s);
@@ -552,20 +1670,20 @@ impl Writer<'_> {
             for x in all.iter_mut() {
                 x.effects.clear();
             }
-            return self.objects(&all, center, depth + 1);
+            return self.objects(&all, centre, depth + 1);
         }
-        // The page origin is the page centre in the file.
-        let recenter = Affine::translate(-center.to_vec2());
-        let transform = recenter * s.transform;
+        let v = self.v;
         match &s.kind {
             ShapeKind::Group { children } => {
-                let mut body = Vec::new();
-                for c in children.iter().rev() {
-                    let mut c = c.clone();
-                    c.absorb(s.transform);
-                    body.extend(self.object(&c, center, depth + 1));
-                }
-                return list(b"grp ", &body);
+                let kids: Vec<Shape> = children
+                    .iter()
+                    .map(|c| {
+                        let mut c = c.clone();
+                        c.absorb(s.transform);
+                        c
+                    })
+                    .collect();
+                return self.group(&kids, centre, depth);
             }
             ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. } => {
                 let kids: Vec<Shape> = s
@@ -576,705 +1694,325 @@ impl Writer<'_> {
                         c
                     })
                     .collect();
-                return self.objects(&kids, center, depth + 1);
+                return self.group(&kids, centre, depth);
             }
             ShapeKind::ClipFrame { frame, contents }
                 if contents.len() == 1
                     && matches!(contents[0].kind, ShapeKind::Bitmap { .. })
                     && contents[0].effects.is_empty() =>
             {
-                // A clipped bitmap is stored as a bitmap object with a crop
-                // path.
+                // A clipped bitmap is a bitmap object with a crop path.
                 let bm = &contents[0];
-                let clip = (bm.transform.inverse()) * frame.page_path();
+                let clip = bm.transform.inverse() * frame.page_path();
                 let mut b = bm.clone();
                 b.transform = s.transform * bm.transform;
-                return self.bitmap_object(&b, center, Some(&clip));
+                return self.bitmap_object(&b, centre, Some(&clip));
             }
             ShapeKind::ClipFrame { frame, contents } => {
-                let mut body = Vec::new();
+                let mut kids = Vec::new();
+                for c in contents {
+                    let mut c = c.clone();
+                    c.absorb(s.transform);
+                    kids.push(c);
+                }
                 let mut f = (**frame).clone();
                 f.absorb(s.transform);
                 f.fill = Fill::None;
-                body.extend(self.object(&f, center, depth + 1));
-                for c in contents.iter().rev() {
-                    let mut c = c.clone();
-                    c.absorb(s.transform);
-                    body.extend(self.object(&c, center, depth + 1));
-                }
-                return list(b"grp ", &body);
+                kids.push(f);
+                return self.group(&kids, centre, depth);
             }
+            ShapeKind::Bitmap { .. } => return self.bitmap_object(s, centre, None),
             _ => {}
         }
-        let fill = self.fill_id(&s.fill);
-        let outline = self.outline_id(s.stroke.as_ref());
-        let mut args: Vec<(u32, Vec<u8>)> = Vec::new();
-        let mut txsm: Option<Vec<u8>> = None;
-        let transform_out: Affine;
-        // Rectangles one round radius describes stay rectangles; other
-        // corners (styles, sizes per corner, fixed sizes on a stretched
-        // rectangle) go out as the curve they draw.
-        let plain = s.plain_rect();
-        let kind = match &s.kind {
+        let page_box = s.bounds();
+        // Rectangles one round radius describes stay rectangles (before
+        // version 15); other corners go out as the curve they draw.
+        let plain = s.plain_rect().filter(|_| v.native_rects());
+        match &s.kind {
             ShapeKind::Rect { .. } if plain.is_some() => {
+                // Files draw rectangles from their top left corner down
+                // (a negative height), which sets the way corners turn.
                 let (rect, radius) = plain.unwrap_or_default();
-                // Width and height from the rect's own corner: fold the
-                // corner into the transform.
-                let t = transform * Affine::translate((rect.x0, rect.y0));
+                let t = s.transform * Affine::translate((rect.x0, rect.y1));
                 let r = units(radius);
-                args.push((
-                    ARG_COORDS,
-                    i32s(&[units(rect.width()), units(rect.height()), r, r, r, r]),
-                ));
-                transform_out = t;
-                OBJ_RECT
+                let mut c = Buf::default();
+                c.i32(units(rect.width())).i32(-units(rect.height())).i32(r);
+                if v.0 >= 9 {
+                    c.i32(r).i32(r).i32(r);
+                }
+                self.place(s, OBJ_RECT, c.done(), &s.fill, t, page_box, None, centre)
             }
             ShapeKind::Ellipse { rect, arc } => {
-                let t = transform * Affine::translate((rect.x0, rect.y0));
+                let t = s.transform * Affine::translate((rect.x0, rect.y0));
                 let (a1, a2, pie) = match arc {
-                    Some(a) => (a.start_deg, a.end_deg, a.pie as u32),
-                    None => (0.0, 0.0, 0),
+                    Some(a) => (
+                        (a.start_deg * 1_000_000.0).round() as i32,
+                        (a.end_deg * 1_000_000.0).round() as i32,
+                        u32::from(a.pie),
+                    ),
+                    None => (FULL_ELLIPSE_ANGLE, FULL_ELLIPSE_ANGLE, 0),
                 };
-                let mut c = i32s(&[units(rect.width()), units(rect.height())]);
-                c.extend_from_slice(&i32s(&[
-                    (a1 * 1_000_000.0).round() as i32,
-                    (a2 * 1_000_000.0).round() as i32,
-                ]));
-                c.extend_from_slice(&u32s(&[pie]));
-                args.push((ARG_COORDS, c));
-                transform_out = t;
-                OBJ_ELLIPSE
+                let mut c = Buf::default();
+                c.i32(units(rect.width()))
+                    .i32(units(rect.height()))
+                    .i32(a1)
+                    .i32(a2)
+                    .u32(pie);
+                self.place(s, OBJ_ELLIPSE, c.done(), &s.fill, t, page_box, None, centre)
             }
+            // Text fitted to a path goes out as the outline of its letters
+            // (below); other text as text.
             ShapeKind::Text {
                 spans,
                 origin,
                 align,
+                on_path: None,
                 ..
             } => {
-                let t = transform * Affine::translate(origin.to_vec2());
-                args.push((ARG_COORDS, i32s(&[0, 0])));
-                args.push((ARG_STYLE, u32s(&[0])));
-                transform_out = t;
-                txsm = Some(chunk(b"txsm", &self.txsm(spans, *align, &s.fill)));
-                OBJ_ARTISTIC_TEXT
+                let t = s.transform * Affine::translate(origin.to_vec2());
+                self.has_text = true;
+                let record = if v.0 >= 16 {
+                    self.txsm16(
+                        spans,
+                        *align,
+                        &s.fill,
+                        Affine::translate(-centre.to_vec2()) * t,
+                    )
+                } else {
+                    self.txsm7(spans, *align, &s.fill)
+                };
+                // The character settings of the first run, the width of
+                // the lines as the frame's one column (files give artistic
+                // text its line width there) and the alignment.
+                let width = s.local_path().bounding_box().width();
+                let character = format!(
+                    r#"{},"frame":{{"equalWidthColumns":"1","rtlColumns":"0","columns":"{},0"}},"paragraph":{{"justify":"{}"}}"#,
+                    spans
+                        .first()
+                        .map(|sp| character_json(sp, Some(&s.fill)))
+                        .unwrap_or_else(|| r#""character":{}"#.to_string()),
+                    units(if width.is_finite() { width } else { 0.0 }).max(0),
+                    justify_code(*align)
+                );
+                let mut c = Buf::default();
+                c.i32(0).i32(0);
+                self.place(
+                    s,
+                    OBJ_ARTISTIC_TEXT,
+                    c.done(),
+                    &s.fill,
+                    t,
+                    page_box,
+                    Some((record, character, style_for(*align))),
+                    centre,
+                )
             }
-            ShapeKind::Bitmap { .. } => return self.bitmap_object(s, center, None),
             _ => {
                 let Some(coords) = curve_coords(&s.local_path()) else {
-                    return Vec::new();
+                    return none();
                 };
-                args.push((ARG_COORDS, coords));
-                transform_out = transform;
-                OBJ_CURVE
+                self.place(
+                    s,
+                    OBJ_CURVE,
+                    coords,
+                    &s.fill,
+                    s.transform,
+                    page_box,
+                    None,
+                    centre,
+                )
             }
-        };
-        args.push((ARG_FILL, u32s(&[fill])));
-        args.push((ARG_OUTLINE, u32s(&[outline])));
-        if let Some(n) = &s.name {
-            args.push((ARG_NAME, utf16z(n)));
         }
-        if s.opacity < 0.999 {
-            args.push((ARG_OPACITY, opacity_arg(s.opacity)));
-        }
-        // The object layout of real files: flags, then a `lgob` list with
-        // the attributes and a `trfl` list holding the transform, then the
-        // text chunk.
-        let mut lgob = chunk(b"loda", &loda(kind, &args));
-        lgob.extend(list(b"trfl", &chunk(b"trfd", &trfd(transform_out))));
-        let mut body = chunk(b"flgs", &[0, 0, 0, 0]);
-        body.extend(list(b"lgob", &lgob));
-        if let Some(t) = txsm {
-            body.extend(t);
-        }
-        list(b"obj ", &body)
     }
 
-    /// `txsm` in the version 7 to version 15 layout: one frame, one paragraph,
-    /// one style per span, the text as UTF-16.
-    fn txsm(
-        &mut self,
-        spans: &[TextSpan],
-        align: tracedraw_core::TextAlign,
-        fill: &Fill,
-    ) -> Vec<u8> {
-        let mut t = u32s(&[0]); // artistic (no frame)
-        t.extend_from_slice(&[0; 32]);
-        t.extend_from_slice(&u32s(&[1, 1])); // frames, frame id
-        t.extend_from_slice(&[0; 48]);
-        t.extend_from_slice(&u32s(&[0])); // not on a path
-        t.extend_from_slice(&[0; 34]);
-        t.extend_from_slice(&u32s(&[1, 0])); // paragraphs, style id
-                                             // Alignment lives in the style tables, which are not written.
-        let _ = align;
-        t.push(0);
-        let runs: Vec<&TextSpan> = spans.iter().filter(|s| !s.text.is_empty()).collect();
-        t.extend_from_slice(&u32s(&[runs.len() as u32]));
-        for sp in &runs {
-            let font = self.font_id(&sp.font_family);
-            let chars = sp.text.chars().count().min(65535) as u16;
-            t.extend_from_slice(&u16s(&[chars]));
-            let mut flags = 0x01 | 0x02 | 0x04;
-            let span_fill = sp.fill.as_ref().filter(|f| f != &fill);
-            if span_fill.is_some() {
-                flags |= 0x40;
-            }
-            t.push(flags);
-            t.push(0);
-            t.extend_from_slice(&u16s(&[font, 0]));
-            let mut style_flags = 0u32;
-            if sp.bold {
-                style_flags |= 0x1000;
-            }
-            if sp.italic {
-                style_flags |= 0x2000;
-            }
-            if sp.underline {
-                style_flags |= 0x0004;
-            }
-            t.extend_from_slice(&u32s(&[style_flags]));
-            // Size in coordinate units of one point.
-            t.extend_from_slice(&i32s(&[(sp.size_pt * 254000.0 / 72.0).round() as i32]));
-            if let Some(f) = span_fill {
-                let id = self.fill_id(f);
-                t.extend_from_slice(&u32s(&[id]));
+    /// Paragraphs of the text: the runs between line breaks, each run with
+    /// its own style.
+    fn paragraphs(spans: &[TextSpan]) -> Vec<Vec<TextSpan>> {
+        let mut out: Vec<Vec<TextSpan>> = vec![Vec::new()];
+        for sp in spans {
+            let mut parts = sp.text.split('\n').peekable();
+            while let Some(part) = parts.next() {
+                if !part.is_empty() {
+                    let mut run = sp.clone();
+                    run.text = part.replace('\r', "");
+                    if let Some(last) = out.last_mut() {
+                        last.push(run);
+                    }
+                }
+                if parts.peek().is_some() {
+                    out.push(Vec::new());
+                }
             }
         }
-        let text: String = runs.iter().map(|s| s.text.as_str()).collect();
-        let n = text.chars().count() as u32;
-        t.extend_from_slice(&u32s(&[n]));
-        t.extend_from_slice(&vec![0u8; n as usize * 8]);
-        let bytes: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-        t.extend_from_slice(&u32s(&[bytes.len() as u32]));
-        t.extend_from_slice(&bytes);
-        t.push(0);
-        t
+        out
     }
-}
 
-/// Write the whole document as a version 12 `.cdr` stream.
-pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
-    let mut w = Writer {
-        fills: Vec::new(),
-        fill_ids: HashMap::new(),
-        outlines: Vec::new(),
-        outline_ids: HashMap::new(),
-        fonts: Vec::new(),
-        font_ids: HashMap::new(),
-        bitmaps: Vec::new(),
-        symbols: &doc.symbols,
-        next_fill: 1,
-        next_outline: 1,
-        next_font: 1,
-        next_bitmap: 1,
-    };
-    let first = doc
-        .pages
-        .first()
-        .map(|p| p.size)
-        .unwrap_or(tracedraw_core::geometry::Size::new(210.0, 297.0));
-    let mut pages = Vec::new();
-    for page in &doc.pages {
-        let center = Point::new(page.size.width / 2.0, page.size.height / 2.0);
-        let mut layers = Vec::new();
-        for layer in &page.layers {
-            let mut body = Vec::new();
-            // Layer flags: visible, drawable.
-            body.extend(chunk(b"flgs", &[0x00, 0x00, 0x00, 0x98]));
-            body.extend(chunk(b"loda", &loda(0, &[(ARG_NAME, utf16z(&layer.name))])));
-            if layer.visible {
-                body.extend(w.objects(&layer.shapes, center, 0));
+    /// `txsm` of versions 7 to 15: one frame, a paragraph per line, one
+    /// style per run (font, encoding, style flags, size and, when it
+    /// differs from the object's, the fill), the text in UTF-16 from
+    /// version 12 and in Windows-1252 before.
+    fn txsm7(&mut self, spans: &[TextSpan], align: TextAlign, fill: &Fill) -> Vec<u8> {
+        let v = self.v;
+        let n = v.0;
+        let mut t = Buf::default();
+        t.u32(0).zeros(32); // artistic text (no frame flag)
+        if n >= 15 {
+            t.zeros(1);
+        }
+        if n < 8 {
+            t.u32(0); // not on a path
+        }
+        t.u32(1).u32(1).zeros(48); // one frame, its id and matrix
+        if n >= 8 {
+            t.u32(0); // not on a path
+            if n >= 15 {
+                t.zeros(8);
             }
-            layers.extend(list(b"layr", &body));
         }
-        let mut pbody = chunk(b"flgs", &[0x00, 0x00, 0x00, 0x90]);
-        pbody.extend(list(b"gobj", &layers));
-        pages.extend(list(b"page", &pbody));
-    }
-    let mut body = chunk(b"vrsn", &u16s(&[VERSION * 100]));
-    let mut docl = chunk(b"mcfg", &mcfg(first.width, first.height));
-    if !w.fonts.is_empty() {
-        let mut fnt = Vec::new();
-        for f in &w.fonts {
-            fnt.extend(chunk(b"font", f));
+        t.zeros(if n >= 15 {
+            40
+        } else if n >= 14 {
+            36
+        } else if n > 8 {
+            34
+        } else if n == 8 {
+            32
+        } else {
+            36
+        });
+        let paragraphs = Self::paragraphs(spans);
+        t.u32(paragraphs.len() as u32);
+        for runs in &paragraphs {
+            t.u32(style_for(align)).zeros(1);
+            t.u32(runs.len() as u32);
+            let mut text = String::new();
+            for sp in runs {
+                let font = self.font_id(&sp.font_family);
+                let chars = sp.text.chars().count().min(65535) as u16;
+                let span_fill = sp.fill.as_ref().filter(|f| *f != fill);
+                let mut flags = 0x01u8 | 0x02 | 0x04;
+                if span_fill.is_some() {
+                    flags |= 0x40;
+                }
+                t.u16(chars).u8(flags);
+                if n >= 8 {
+                    t.u8(0);
+                }
+                t.u16(font).u16(0).u32(style_flags(sp));
+                t.i32((sp.size_pt * 254000.0 / 72.0).round() as i32);
+                if let Some(f) = span_fill {
+                    let id = self.fill_id(f);
+                    t.u32(id);
+                    if v.tagged() {
+                        t.zeros(48);
+                    }
+                }
+                text.push_str(&sp.text);
+            }
+            let chars = text.chars().count();
+            t.u32(chars as u32)
+                .zeros(chars * if v.unicode() { 8 } else { 4 });
+            if v.unicode() {
+                let bytes = utf16(&text);
+                t.u32(bytes.len() as u32).bytes(&bytes);
+            } else {
+                let bytes = cp1252(&text).unwrap_or_else(|| {
+                    text.chars()
+                        .map(|c| if c.is_ascii() { c as u8 } else { b'?' })
+                        .collect()
+                });
+                t.bytes(&bytes);
+            }
+            t.u8(0); // no per-letter path data
         }
-        docl.extend(list(b"fntt", &fnt));
+        t.done()
     }
-    docl.extend(list(b"stlt", &stlt(if w.fonts.is_empty() { 0 } else { 1 })));
-    let mut fills = Vec::new();
-    for f in &w.fills {
-        fills.extend(chunk(b"fild", f));
-    }
-    docl.extend(list(b"filt", &fills));
-    let mut outlines = Vec::new();
-    for o in &w.outlines {
-        outlines.extend(chunk(b"outl", o));
-    }
-    docl.extend(list(b"otlt", &outlines));
-    if !w.bitmaps.is_empty() {
-        let mut bmps = Vec::new();
-        for b in &w.bitmaps {
-            bmps.extend(chunk(b"bmp ", b));
+
+    /// `txsm` of version 16 and later, as files of versions 17 to 21 store
+    /// artistic text: the frame flag set, layout 1700 (1600 in version
+    /// 16), one frame with the text's matrix, then a paragraph per line
+    /// with the default style string (the first run's style and the
+    /// alignment) and one record per run whose style string the letters
+    /// select; text in UTF-16 (16) or one byte per letter (17 on:
+    /// Windows-1252, or UTF-8 for letters it lacks).
+    fn txsm16(&mut self, spans: &[TextSpan], align: TextAlign, fill: &Fill, m: Affine) -> Vec<u8> {
+        let v = self.v;
+        let mut t = Buf::default();
+        t.u32(u32::MAX)
+            .u32(u32::MAX)
+            .u32(0)
+            .u32(u32::MAX)
+            .u32(8)
+            .u32(13)
+            .u32(0)
+            .u32(3)
+            .u32(0)
+            .u16(if v.0 >= 17 { 1700 } else { 1600 })
+            .zeros(3);
+        // One frame: its id, the text's matrix, not on a path, 8 unknown.
+        t.u32(1).u32(1);
+        let c = m.as_coeffs();
+        for x in [
+            c[0],
+            c[2],
+            c[4] * UNITS_PER_MM,
+            c[1],
+            c[3],
+            c[5] * UNITS_PER_MM,
+        ] {
+            t.f64(if x.is_finite() { x } else { 0.0 });
         }
-        docl.extend(list(b"bmpt", &bmps));
+        t.u32(0).zeros(8);
+        let paragraphs = Self::paragraphs(spans);
+        t.u32(paragraphs.len() as u32);
+        for runs in &paragraphs {
+            for sp in runs {
+                self.font_id(&sp.font_family);
+            }
+            let first = runs.first().or(spans.first());
+            let default = match first {
+                Some(sp) => {
+                    let json = run_style_json(sp, Some(fill));
+                    // The alignment goes with the paragraph.
+                    let mut j = json;
+                    j.pop();
+                    format!(
+                        r#"{j},"paragraph":{{"justify":"{}"}}}}"#,
+                        justify_code(align)
+                    )
+                }
+                None => "{}".to_string(),
+            };
+            t.u32(style_for(align))
+                .zeros(1)
+                .u8(0)
+                .bytes(&style_string(v, &default));
+            // One record per run; a letter's override index selects it.
+            t.u32(runs.len() as u32);
+            for sp in runs {
+                let json = run_style_json(sp, sp.fill.as_ref().or(Some(fill)));
+                t.u16(0).u16(1).u16(0).bytes(&style_string(v, &json));
+            }
+            let mut text = String::new();
+            let mut index = Vec::new();
+            for (k, sp) in runs.iter().enumerate() {
+                text.push_str(&sp.text);
+                index.extend(std::iter::repeat_n(k as u8, sp.text.chars().count()));
+            }
+            t.u32(index.len() as u32);
+            for k in &index {
+                t.u16(0).u8(k.saturating_mul(2)).zeros(5);
+            }
+            let bytes = if v.byte_strings() {
+                cp1252(&text).unwrap_or_else(|| text.as_bytes().to_vec())
+            } else {
+                utf16(&text)
+            };
+            t.u32(bytes.len() as u32).bytes(&bytes).u8(0);
+        }
+        t.done()
     }
-    docl.extend(pages);
-    body.extend(list(b"doc ", &docl));
-    let mut payload = b"CDRC".to_vec();
-    payload.extend_from_slice(&body);
-    chunk(b"RIFF", &payload)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tracedraw_core::{
-        document::{Layer, Page, ParagraphStyle},
-        geometry::{Rect, Shape as _, Size},
-        TextAlign,
-    };
-
-    fn doc_with(shapes: Vec<Shape>) -> Document {
-        let mut doc = Document::new("w", Size::new(200.0, 100.0));
-        doc.pages[0].layers[0].name = "Ink".into();
-        doc.pages[0].layers[0].shapes = shapes;
-        doc
-    }
-
-    #[test]
-    fn rectangle_ellipse_curve_and_text_round_trip() {
-        let mut doc = Document::new("w", Size::new(200.0, 100.0));
-        let mut ids = doc.ids().clone();
-        let mut r = Shape::new(
-            ids.shape(),
-            ShapeKind::Rect {
-                rect: Rect::new(10.0, 20.0, 60.0, 50.0),
-                radius: 2.0,
-                corners: None,
-            },
-        );
-        r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
-        let mut st = Stroke::new(Color::rgb8(0, 0, 255), 1.5);
-        st.cap = LineCap::Round;
-        st.join = LineJoin::Bevel;
-        st.dash = vec![3.0, 1.0];
-        st.scale_with_object = true;
-        r.stroke = Some(st.clone());
-        r.name = Some("box".into());
-        r.opacity = 0.5;
-        let mut e = Shape::new(
-            ids.shape(),
-            ShapeKind::Ellipse {
-                rect: Rect::new(100.0, 10.0, 140.0, 40.0),
-                arc: None,
-            },
-        );
-        e.fill = Fill::Fountain(tracedraw_core::Fountain::two(
-            FountainKind::Radial,
-            Color::BLACK,
-            Color::WHITE,
-            0.0,
-        ));
-        e.stroke = None;
-        let mut p = BezPath::new();
-        p.move_to((10.0, 60.0));
-        p.curve_to((20.0, 90.0), (40.0, 90.0), (50.0, 60.0));
-        p.line_to((30.0, 55.0));
-        p.close_path();
-        let mut c = Shape::new(
-            ids.shape(),
-            ShapeKind::Path {
-                path: p,
-                closed: true,
-            },
-        );
-        c.fill = Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0));
-        c.stroke = Some(Stroke::hairline(Color::BLACK));
-        c.transform = Affine::translate((100.0, 0.0));
-        let mut t = Shape::new(
-            ids.shape(),
-            ShapeKind::Text {
-                spans: vec![{
-                    let mut s = TextSpan::new("Hello", "Verdana", 24.0);
-                    s.bold = true;
-                    s
-                }],
-                origin: Point::new(20.0, 80.0),
-                frame: None,
-                align: TextAlign::Left,
-                para: ParagraphStyle::default(),
-                on_path: None,
-            },
-        );
-        t.fill = Fill::Solid(Color::rgb8(0, 128, 0));
-        t.stroke = None;
-        doc.pages[0].layers[0].name = "Ink".into();
-        doc.pages[0].layers[0].shapes = vec![r, e, c, t];
-        doc.set_ids(ids);
-        let bytes = document_to_cdr(&doc);
-        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
-        assert_eq!(rep.version.map(|v| v.0), Some(12));
-        assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
-        assert_eq!(back.pages.len(), 1);
-        let page = &back.pages[0];
-        assert!((page.size.width - 200.0).abs() < 0.01 && (page.size.height - 100.0).abs() < 0.01);
-        assert_eq!(page.layers.len(), 1);
-        assert_eq!(page.layers[0].name, "Ink");
-        let shapes = &page.layers[0].shapes;
-        assert_eq!(shapes.len(), 4, "{:?}", rep.warnings);
-        // Order and geometry.
-        let rb = shapes[0].bounds();
-        assert!(
-            (rb.x0 - 10.0).abs() < 0.01 && (rb.y1 - 50.0).abs() < 0.01,
-            "{rb:?}"
-        );
-        assert!(matches!(shapes[0].kind, ShapeKind::Rect { .. }));
-        if let ShapeKind::Rect { radius, .. } = shapes[0].kind {
-            assert!((radius - 2.0).abs() < 0.01);
-        }
-        assert_eq!(shapes[0].fill, Fill::Solid(Color::rgb8(255, 0, 0)));
-        let s0 = shapes[0].stroke.as_ref().expect("stroke");
-        assert_eq!(s0.color, Color::rgb8(0, 0, 255));
-        assert!((s0.width - 1.5).abs() < 0.01);
-        assert_eq!(s0.cap, LineCap::Round);
-        assert_eq!(s0.join, LineJoin::Bevel);
-        assert_eq!(s0.dash, vec![3.0, 1.0]);
-        assert!(s0.scale_with_object);
-        assert_eq!(shapes[0].name.as_deref(), Some("box"));
-        assert!((shapes[0].opacity - 0.5).abs() < 0.01);
-        let eb = shapes[1].bounds();
-        assert!(
-            (eb.x0 - 100.0).abs() < 0.01 && (eb.y0 - 10.0).abs() < 0.01,
-            "{eb:?}"
-        );
-        assert!(matches!(shapes[1].fill, Fill::Fountain(_)));
-        if let Fill::Fountain(f) = &shapes[1].fill {
-            assert_eq!(f.kind, FountainKind::Radial);
-            assert_eq!(f.stops.len(), 2);
-        }
-        assert!(shapes[1].stroke.is_none());
-        let cb = shapes[2].bounds();
-        assert!(
-            (cb.x0 - 110.0).abs() < 0.05 && (cb.x1 - 150.0).abs() < 0.05,
-            "{cb:?}"
-        );
-        assert!(matches!(
-            shapes[2].kind,
-            ShapeKind::Path { closed: true, .. }
-        ));
-        assert_eq!(
-            shapes[2].fill,
-            Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0))
-        );
-        assert!(
-            (shapes[2].stroke.as_ref().expect("hairline").width - Stroke::HAIRLINE).abs() < 1e-9
-        );
-        match &shapes[3].kind {
-            ShapeKind::Text { spans, .. } => {
-                assert_eq!(spans.len(), 1);
-                assert_eq!(spans[0].text, "Hello");
-                assert_eq!(spans[0].font_family, "Verdana");
-                assert!((spans[0].size_pt - 24.0).abs() < 0.01);
-                assert!(spans[0].bold);
-            }
-            k => panic!("{k:?}"),
-        }
-        let o = shapes[3].transform * Point::ZERO;
-        let origin = match &shapes[3].kind {
-            ShapeKind::Text { origin, .. } => *origin,
-            _ => unreachable!(),
-        };
-        let at = shapes[3].transform * origin;
-        assert!(
-            (at.x - 20.0).abs() < 0.05 && (at.y - 80.0).abs() < 0.05,
-            "{o:?} {at:?}"
-        );
-        assert_eq!(shapes[3].fill, Fill::Solid(Color::rgb8(0, 128, 0)));
-    }
-
-    #[test]
-    fn groups_bitmaps_and_several_pages_round_trip() {
-        let mut doc = doc_with(Vec::new());
-        let mut ids = doc.ids().clone();
-        let mut a = Shape::new(
-            ids.shape(),
-            ShapeKind::Rect {
-                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-                radius: 0.0,
-                corners: None,
-            },
-        );
-        a.fill = Fill::Solid(Color::BLACK);
-        let mut b = a.clone();
-        b.id = ids.shape();
-        b.transform = Affine::translate((20.0, 0.0));
-        let mut g = Shape::new(
-            ids.shape(),
-            ShapeKind::Group {
-                children: vec![a, b],
-            },
-        );
-        g.transform = Affine::translate((5.0, 5.0));
-        let png = {
-            let mut pm = tiny_skia::Pixmap::new(2, 2).expect("pixmap");
-            let px = pm.pixels_mut();
-            px[0] = tiny_skia::ColorU8::from_rgba(255, 0, 0, 255).premultiply();
-            px[1] = tiny_skia::ColorU8::from_rgba(0, 255, 0, 255).premultiply();
-            px[2] = tiny_skia::ColorU8::from_rgba(0, 0, 255, 255).premultiply();
-            px[3] = tiny_skia::ColorU8::from_rgba(255, 255, 255, 255).premultiply();
-            pm.encode_png().expect("png")
-        };
-        let mut bm = Shape::new(
-            ids.shape(),
-            ShapeKind::Bitmap {
-                rect: Rect::new(100.0, 50.0, 140.0, 90.0),
-                width_px: 2,
-                height_px: 2,
-                png,
-                fx: None,
-            },
-        );
-        bm.fill = Fill::None;
-        bm.stroke = None;
-        doc.pages[0].layers[0].shapes = vec![g, bm];
-        let pid = ids.page();
-        let lid = ids.layer();
-        let mut second = Page {
-            id: pid,
-            name: "Back".into(),
-            size: Size::new(200.0, 100.0),
-            layers: vec![Layer::new(lid, "Second")],
-            guides: Vec::new(),
-            background: None,
-        };
-        let mut c = Shape::new(
-            ids.shape(),
-            ShapeKind::Ellipse {
-                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
-                arc: None,
-            },
-        );
-        c.fill = Fill::Solid(Color::rgb8(1, 2, 3));
-        second.layers[0].shapes.push(c);
-        doc.pages.push(second);
-        doc.set_ids(ids);
-        let bytes = document_to_cdr(&doc);
-        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
-        assert_eq!(back.pages.len(), 2, "{:?}", rep.warnings);
-        assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
-        let l = &back.pages[0].layers[0];
-        assert_eq!(l.shapes.len(), 2);
-        match &l.shapes[0].kind {
-            ShapeKind::Group { children } => {
-                assert_eq!(children.len(), 2);
-                let gb = l.shapes[0].bounds();
-                assert!(
-                    (gb.x0 - 5.0).abs() < 0.01 && (gb.x1 - 35.0).abs() < 0.01,
-                    "{gb:?}"
-                );
-            }
-            k => panic!("{k:?}"),
-        }
-        match &l.shapes[1].kind {
-            ShapeKind::Bitmap {
-                width_px,
-                height_px,
-                png,
-                ..
-            } => {
-                assert_eq!((*width_px, *height_px), (2, 2));
-                let pm = tiny_skia::Pixmap::decode_png(png).expect("png");
-                let p = pm.pixels();
-                assert_eq!((p[0].red(), p[0].green(), p[0].blue()), (255, 0, 0));
-                assert_eq!((p[3].red(), p[3].green(), p[3].blue()), (255, 255, 255));
-            }
-            k => panic!("{k:?}"),
-        }
-        let bb = l.shapes[1].bounds();
-        assert!(
-            (bb.x0 - 100.0).abs() < 0.01 && (bb.y1 - 90.0).abs() < 0.01,
-            "{bb:?}"
-        );
-        assert_eq!(back.pages[1].layers[0].name, "Second");
-        assert_eq!(back.pages[1].layers[0].shapes.len(), 1);
-    }
-
-    #[test]
-    fn a_clipped_bitmap_round_trips_as_a_crop_path() {
-        let mut doc = doc_with(Vec::new());
-        let mut ids = doc.ids().clone();
-        let png = {
-            let mut pm = tiny_skia::Pixmap::new(4, 4).expect("pixmap");
-            pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
-            pm.encode_png().expect("png")
-        };
-        let mut bm = Shape::new(
-            ids.shape(),
-            ShapeKind::Bitmap {
-                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
-                width_px: 4,
-                height_px: 4,
-                png,
-                fx: None,
-            },
-        );
-        bm.fill = Fill::None;
-        bm.stroke = None;
-        bm.transform = Affine::translate((20.0, 20.0));
-        let mut frame = Shape::new(
-            ids.shape(),
-            ShapeKind::Rect {
-                rect: Rect::new(40.0, 30.0, 80.0, 60.0),
-                radius: 0.0,
-                corners: None,
-            },
-        );
-        frame.fill = Fill::None;
-        frame.stroke = None;
-        let mut pc = Shape::new(
-            ids.shape(),
-            ShapeKind::ClipFrame {
-                frame: Box::new(frame),
-                contents: vec![bm],
-            },
-        );
-        pc.fill = Fill::None;
-        pc.stroke = None;
-        doc.pages[0].layers[0].shapes = vec![pc];
-        doc.set_ids(ids);
-        let bytes = document_to_cdr(&doc);
-        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
-        let l = &back.pages[0].layers[0];
-        assert_eq!(l.shapes.len(), 1, "{:?}", rep.warnings);
-        match &l.shapes[0].kind {
-            ShapeKind::ClipFrame { frame, contents } => {
-                // Frame and contents live in the clip frame's own space.
-                let outer = l.shapes[0].transform;
-                let fb = (outer * frame.page_path()).bounding_box();
-                assert!(
-                    (fb.x0 - 40.0).abs() < 0.05 && (fb.x1 - 80.0).abs() < 0.05,
-                    "{fb:?}"
-                );
-                assert!(
-                    (fb.y0 - 30.0).abs() < 0.05 && (fb.y1 - 60.0).abs() < 0.05,
-                    "{fb:?}"
-                );
-                assert_eq!(contents.len(), 1);
-                let cb = (outer * contents[0].page_path()).bounding_box();
-                assert!(
-                    (cb.x0 - 20.0).abs() < 0.05 && (cb.x1 - 120.0).abs() < 0.05,
-                    "{cb:?}"
-                );
-            }
-            k => panic!("{k:?}"),
-        }
-    }
-
-    #[test]
-    fn written_files_survive_mutation() {
-        let mut doc = doc_with(Vec::new());
-        let mut ids = doc.ids().clone();
-        let mut r = Shape::new(
-            ids.shape(),
-            ShapeKind::Rect {
-                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-                radius: 0.0,
-                corners: None,
-            },
-        );
-        r.fill = Fill::Solid(Color::BLACK);
-        doc.pages[0].layers[0].shapes = vec![r];
-        doc.set_ids(ids);
-        let bytes = document_to_cdr(&doc);
-        for cut in (0..bytes.len()).step_by(13) {
-            let _ = crate::open_bytes(&bytes[..cut], "cut");
-        }
-        for i in (0..bytes.len()).step_by(7) {
-            let mut m = bytes.clone();
-            m[i] ^= 0x5a;
-            let _ = crate::open_bytes(&m, "flip");
-        }
-    }
-
-    #[test]
-    fn corners_one_radius_cannot_hold_are_written_as_curves() {
-        use tracedraw_core::{CornerKind, Corners};
-        let mut doc = doc_with(Vec::new());
-        let mut ids = doc.ids().clone();
-        let rect = Rect::new(0.0, 0.0, 40.0, 20.0);
-        let mut per_corner = Corners::uniform(2.0, CornerKind::Round);
-        per_corner.radii[Corners::TOP_LEFT] = 8.0;
-        let mut fixed = Corners::uniform(3.0, CornerKind::Round);
-        fixed.fixed = true;
-        let mut shapes = Vec::new();
-        for (corners, scale) in [
-            (Corners::uniform(4.0, CornerKind::Scallop), (1.0, 1.0)),
-            (per_corner, (1.0, 1.0)),
-            (fixed, (2.0, 1.0)),
-            (fixed, (2.0, 2.0)),
-        ] {
-            let mut s = Shape::new(ids.shape(), ShapeKind::rect_with_corners(rect, corners));
-            s.transform =
-                Affine::translate((20.0, 20.0)) * Affine::scale_non_uniform(scale.0, scale.1);
-            s.fill = Fill::Solid(Color::BLACK);
-            shapes.push(s);
-        }
-        doc.pages[0].layers[0].shapes = shapes.clone();
-        doc.set_ids(ids);
-        let (back, rep) = crate::open_bytes(&document_to_cdr(&doc), "back").expect("reads back");
-        let read = &back.pages[0].layers[0].shapes;
-        assert_eq!(read.len(), 4, "{:?}", rep.warnings);
-        for (i, (a, b)) in shapes.iter().zip(read).enumerate() {
-            let (aa, ab) = (a.page_path().area().abs(), b.page_path().area().abs());
-            assert!((aa - ab).abs() < 0.5, "{i}: {aa} vs {ab}");
-            let (ba, bb) = (a.bounds(), b.bounds());
-            assert!(
-                (ba.x0 - bb.x0).abs() < 0.01 && (ba.y1 - bb.y1).abs() < 0.01,
-                "{i}"
-            );
-        }
-        assert!(matches!(read[0].kind, ShapeKind::Path { closed: true, .. }));
-        assert!(matches!(read[1].kind, ShapeKind::Path { closed: true, .. }));
-        assert!(matches!(read[2].kind, ShapeKind::Path { closed: true, .. }));
-        // A fixed radius on an evenly scaled rectangle is still a rectangle.
-        assert!(
-            matches!(read[3].kind, ShapeKind::Rect { radius, .. } if (radius - 1.5).abs() < 0.01)
-        );
-    }
-
-    #[test]
-    fn complex_stars_are_written_as_curves() {
-        let mut doc = doc_with(Vec::new());
-        let mut ids = doc.ids().clone();
-        let mut star = Shape::new(
-            ids.shape(),
-            ShapeKind::Polygon {
-                rect: Rect::new(10.0, 10.0, 50.0, 50.0),
-                points: 6,
-                sharpness: 0.0,
-                complex: Some(1),
-                twist: 0.0,
-            },
-        );
-        star.fill = Fill::Solid(Color::BLACK);
-        doc.pages[0].layers[0].shapes = vec![star.clone()];
-        doc.set_ids(ids);
-        let (back, rep) = crate::open_bytes(&document_to_cdr(&doc), "back").expect("reads back");
-        let read = &back.pages[0].layers[0].shapes;
-        assert_eq!(read.len(), 1, "{:?}", rep.warnings);
-        let ShapeKind::Path { path, .. } = &read[0].kind else {
-            panic!("{:?}", read[0].kind);
-        };
-        // Two triangles, as drawn.
-        let moves = path
-            .elements()
-            .iter()
-            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
-            .count();
-        assert_eq!(moves, 2);
-        let (a, b) = (
-            star.page_path().area().abs(),
-            read[0].page_path().area().abs(),
-        );
-        assert!((a - b).abs() < 0.5, "{a} vs {b}");
-    }
-}
+mod tests;

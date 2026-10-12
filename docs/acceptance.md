@@ -85,6 +85,8 @@ than 20%.
 - `.cdr` writing: a document with a rectangle (radius, dashed outline,
   name, transparency), a radial gradient ellipse, a transformed curve with
   a CMYK fill, bold text, a group, a 2 x 2 bitmap and a second page is
-  written and read back with every value within 0.05 mm (tests in
-  `crates/cdr/src/write.rs`); truncated and bit-flipped copies of a written
-  file never panic the reader.
+  written in every version from 7 to 22 and read back with every value
+  within 0.05 mm (from version 15 the rectangle comes back as the curve
+  it draws; tests in `crates/cdr/src/write/tests.rs`); truncated and
+  bit-flipped copies of written files of versions 7, 12, 13, 15 and 21
+  never panic the reader.

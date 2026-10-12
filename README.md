@@ -62,7 +62,7 @@
     </td>
     <td width="25%" valign="top">
       <h3>Opens your files</h3>
-      A clean-room <code>.cdr</code> reader for format versions 7 to 21 and a writer, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
+      A clean-room <code>.cdr</code> reader for format versions 7 to 21 and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
     </td>
     <td width="25%" valign="top">
       <h3>Ready for scripts and agents</h3>
@@ -184,7 +184,7 @@ Every screenshot is TraceDraw itself, captured headless by
       <h4>Formats</h4>
       Open: <code>.tdraw</code>, <code>.cdr</code> (versions 7 to 21), SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
       <br><br>
-      Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code>, SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
+      Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code> (versions 7 to 22), SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
     </td>
     <td width="33%" valign="top">
       <h4>The everyday essentials</h4>
@@ -211,8 +211,10 @@ is confirmed and what is still assumed.
   groups, bitmaps, uniform and gradient fills, outlines and more; what
   the reader cannot map yet is counted and reported, never silently
   dropped.
-- **Writing back:** drawings save as `.cdr` (a version 12 layout) as well as
-  in TraceDraw's own JSON format.
+- **Writing back, in the version you need:** drawings save as `.cdr` in
+  any version from 7 to 22 (old programs open old versions), as well as
+  in TraceDraw's own JSON format. A drawing opened from a `.cdr` saves in
+  its own version unless you pick another.
 - **Never crashes on a file:** `tracedraw-cli stress` runs mutation tests
   against the reader, and opening any file always yields a document.
 
@@ -227,6 +229,7 @@ MCP server all go through it, so anything a click can do, a script can do.
 tracedraw-cli convert poster.cdr poster.pdf
 TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
 TRACEDRAW_PAGE=2 tracedraw-cli convert brochure.cdr page2.png
+TRACEDRAW_CDR_VERSION=15 tracedraw-cli convert logo.svg logo.cdr   # .cdr version 15
 
 # A PDF with a bookmark per page that cannot be printed or copied
 # without its permissions password

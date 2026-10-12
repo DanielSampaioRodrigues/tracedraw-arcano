@@ -106,8 +106,8 @@ pub fn tool_list() -> Vec<Value> {
         ),
         tool(
             "save",
-            "Save the document to a path: .tdraw (native) or .cdr.",
-            json!({"path": {"type": "string"}}),
+            "Save the document to a path: .tdraw (native) or .cdr. For .cdr, version picks the file version (7 to 22; default: the version of the .cdr file the document came from, else the one set in the options).",
+            json!({"path": {"type": "string"}, "version": {"type": "integer"}}),
             &["path"],
         ),
         tool(
@@ -175,14 +175,25 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
         }
         "save" => {
             let path = std::path::PathBuf::from(str_arg(args, "path")?);
-            let is_cdr = path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("cdr"))
-                .unwrap_or(false);
+            let is_cdr = crate::app::is_cdr_path(&path);
+            let version = match args.get("version") {
+                None | Some(Value::Null) => app.cdr_save_version(),
+                Some(v) => v
+                    .as_u64()
+                    .and_then(|v| u16::try_from(v).ok())
+                    .filter(|v| tracedraw_cdr::write::versions().contains(v))
+                    .ok_or_else(|| {
+                        format!(
+                            "version must be {} to {}",
+                            tracedraw_cdr::write::OLDEST_VERSION,
+                            tracedraw_cdr::write::NEWEST_VERSION
+                        )
+                    })?,
+            };
             let r = if is_cdr {
                 std::fs::write(
                     &path,
-                    tracedraw_cdr::write::document_to_cdr(app.engine.document()),
+                    tracedraw_cdr::write::document_to_cdr_version(app.engine.document(), version),
                 )
                 .map_err(|e| e.to_string())
             } else {
@@ -195,6 +206,10 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
             r?;
             app.engine.mark_saved();
             app.file = Some(path.clone());
+            if is_cdr {
+                app.cdr_version = Some(version);
+                return Ok(format!("saved {} (version {version})", path.display()));
+            }
             Ok(format!("saved {}", path.display()))
         }
         "export" => {
@@ -478,6 +493,29 @@ mod tests {
         let d: Value =
             serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(d["pages"][0]["layers"][0]["objects"][0]["type"], "ellipse");
+        // A version of choice, and one that cannot be written.
+        let v21 = dir.join("v21.cdr");
+        let r = call(
+            &mut app,
+            4,
+            "tools/call",
+            json!({"name": "save", "arguments": {"path": v21.display().to_string(), "version": 21}}),
+        );
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        let bytes = std::fs::read(&v21).unwrap_or_default();
+        let (_, report) = tracedraw_cdr::open_bytes(&bytes, "v21").expect("opens");
+        assert_eq!(report.version.map(|v| v.0), Some(21));
+        assert_eq!(app.cdr_save_version(), 21);
+        for bad in [json!(3), json!(23), json!("x"), json!(-1)] {
+            let r = call(
+                &mut app,
+                5,
+                "tools/call",
+                json!({"name": "save", "arguments": {"path": dir.join("bad.cdr").display().to_string(), "version": bad}}),
+            );
+            assert_eq!(r["result"]["isError"], true, "{bad}: {r}");
+        }
+        assert!(!dir.join("bad.cdr").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

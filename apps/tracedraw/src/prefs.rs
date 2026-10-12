@@ -111,8 +111,8 @@ pub enum ImportPlace {
     ViewCenter,
 }
 
-/// Options > Global > File Formats: what File > Export starts with, and
-/// where imported objects go.
+/// Options > Global > File Formats: what File > Export starts with,
+/// where imported objects go and the `.cdr` version of new drawings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FormatPrefs {
@@ -133,6 +133,8 @@ pub struct FormatPrefs {
     /// Exporting keeps the dialog's choices here for the next time.
     pub remember_last: bool,
     pub import_place: ImportPlace,
+    /// The `.cdr` version new drawings are saved in (Save As changes it).
+    pub cdr_version: u16,
 }
 
 impl Default for FormatPrefs {
@@ -148,6 +150,7 @@ impl Default for FormatPrefs {
             pdf_bleed_mm: st.bleed_mm,
             remember_last: false,
             import_place: ImportPlace::AsInFile,
+            cdr_version: tracedraw_cdr::write::DEFAULT_VERSION,
         }
     }
 }

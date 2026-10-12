@@ -645,6 +645,10 @@ pub struct App {
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
     pub file: Option<PathBuf>,
+    /// The `.cdr` version the active drawing is saved in: the version of
+    /// the `.cdr` file it came from, or the one last chosen when saving
+    /// it. `None`: the version of Options > Global > File Formats.
+    pub cdr_version: Option<u16>,
     pub status: String,
     pub fit_pending: bool,
     pub units: Units,
@@ -1275,6 +1279,7 @@ impl App {
             curve: None,
             text_edit: None,
             file: None,
+            cdr_version: None,
             status: String::new(),
             fit_pending: true,
             units: Units::Millimeters,
@@ -2933,6 +2938,8 @@ impl App {
         let ext = Self::file_kind(&path);
         // Objects of a `.cdr` file left out because they could not be read.
         let mut unread = 0usize;
+        // The version of an opened `.cdr` file: saving keeps it.
+        let mut cdr_version = None;
         let result = if ext == "svg" || ext == "svgz" {
             Self::read_svg_text(&path)
                 .and_then(|text| {
@@ -3219,6 +3226,7 @@ impl App {
                         log::warn!("cdr: {w}");
                     }
                     unread = report.skipped_objects;
+                    cdr_version = report.version.map(|v| writable_cdr_version(v.0));
                     (
                         doc,
                         crate::i18n::trf(
@@ -3244,6 +3252,7 @@ impl App {
         match result {
             Ok((doc, msg)) => {
                 self.open_document(doc, None);
+                self.cdr_version = cdr_version;
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"
@@ -3302,11 +3311,50 @@ impl App {
             }
         }
         let name = self.default_save_name();
+        // A browser has no save dialog to choose the type in: ours asks
+        // for the format of the download.
+        if crate::files::WEB {
+            self.dialog =
+                crate::ui::dialogs::Dialog::SaveCdr(crate::ui::save_cdr::SaveCdrState::download(
+                    PathBuf::from(name),
+                    self.cdr_version.is_some(),
+                    self.cdr_save_version(),
+                ));
+            return;
+        }
         crate::files::Dialog::new()
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .set_file_name(name)
-            .save_file(self, |app, path| app.save_to(path));
+            .save_file(self, |app, path| app.save_as_to(path));
+    }
+
+    /// The `.cdr` version the active drawing is saved in.
+    pub fn cdr_save_version(&self) -> u16 {
+        writable_cdr_version(
+            self.cdr_version
+                .unwrap_or(self.settings.formats.cdr_version),
+        )
+    }
+
+    /// Save As chose `path`: a `.cdr` file first asks for the version.
+    pub(crate) fn save_as_to(&mut self, path: PathBuf) {
+        if is_cdr_path(&path) {
+            self.dialog = crate::ui::dialogs::Dialog::SaveCdr(
+                crate::ui::save_cdr::SaveCdrState::new(path, self.cdr_save_version()),
+            );
+        } else {
+            self.save_to(path);
+        }
+    }
+
+    /// Save to the `.cdr` file `path` in `version`, which the drawing then
+    /// keeps (Save writes it again) and new drawings start with.
+    pub(crate) fn save_cdr_to(&mut self, path: PathBuf, version: u16) {
+        let version = writable_cdr_version(version);
+        self.cdr_version = Some(version);
+        self.settings.formats.cdr_version = version;
+        self.save_to(path);
     }
 
     /// File name offered by Save: the open file's, else the document
@@ -3326,13 +3374,10 @@ impl App {
     pub(crate) fn save_to(&mut self, path: PathBuf) {
         // Time counted for the active task goes into the file too.
         self.flush_tracked_time();
-        let is_cdr = path
-            .extension()
-            .map(|e| e.eq_ignore_ascii_case("cdr"))
-            .unwrap_or(false);
-        let bytes = if is_cdr {
-            Ok(tracedraw_cdr::write::document_to_cdr(
+        let bytes = if is_cdr_path(&path) {
+            Ok(tracedraw_cdr::write::document_to_cdr_version(
                 self.engine.document(),
+                self.cdr_save_version(),
             ))
         } else {
             // Fonts that came with other drawings go along (text imported
@@ -4243,6 +4288,21 @@ pub fn color_description(c: Color) -> String {
         ),
         Color::Registration => "Registration".into(),
     }
+}
+
+/// True for a path ending in `.cdr` (any case).
+pub(crate) fn is_cdr_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("cdr"))
+}
+
+/// The `.cdr` version saving writes for `version`: versions older than
+/// the oldest one written become the oldest, newer ones the newest.
+pub(crate) fn writable_cdr_version(version: u16) -> u16 {
+    version.clamp(
+        tracedraw_cdr::write::OLDEST_VERSION,
+        tracedraw_cdr::write::NEWEST_VERSION,
+    )
 }
 
 /// The status after opening a file of `format` with `n` objects.

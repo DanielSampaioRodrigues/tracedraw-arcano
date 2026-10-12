@@ -13,7 +13,8 @@ browsers refuse to load modules from `file://`).
 | Feature | Desktop | Browser |
 |---|---|---|
 | Open, Import, scripts, palettes, CSV, ICC profiles, thesaurus | system file dialog | the browser's file picker; the file is read into memory under `/upload/<name>` and opened from there |
-| Save, Save As, Export, Publish to PDF, Save as Template, palette and script saves | system save dialog | a download named after the document (Save offers `<title>.tdraw`, or the name of the opened file) |
+| Save, Save As | system save dialog (then the `.cdr` version, `files.md`) | a dialog with Format (TraceDraw or `.cdr`) and Version, then a download named after the document (`<title>`, or the name of the opened file, with the format's extension) |
+| Export, Publish to PDF, Save as Template, palette and script saves | system save dialog | a download named after the document |
 | Print | PDF opened in the system viewer | PDF downloaded; print it from the browser's viewer |
 | Send To | PDF written to Desktop, Documents or a mail folder | PDF downloaded |
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |

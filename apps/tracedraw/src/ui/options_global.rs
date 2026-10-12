@@ -63,8 +63,9 @@ pub fn printing_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(&mut p.preflight, tr("options.print_preflight"));
 }
 
-/// Options > Global > File Formats: what File > Export starts with, and
-/// where imported objects go.
+/// Options > Global > File Formats: what File > Export starts with,
+/// where imported objects go and the `.cdr` version new drawings are
+/// saved in.
 pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
     let f = &mut app.settings.formats;
     chrome::section(ui, &tr("options.export_starts_with"));
@@ -137,6 +138,21 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
         ImportPlace::ViewCenter,
         tr("options.import_view_center"),
     );
+    chrome::section(ui, &tr("options.cdr_save_section"));
+    f.cdr_version = crate::app::writable_cdr_version(f.cdr_version);
+    grid("formats_cdr").show(ui, |ui| {
+        row_label(ui, &tr("dialog.cdr_version"));
+        combo(
+            ui,
+            "opt_cdr_version",
+            &mut f.cdr_version,
+            &crate::ui::save_cdr::version_choices(),
+            crate::ui::save_cdr::version_label,
+            130.0,
+        );
+        ui.end_row();
+    });
+    hint(ui, "options.cdr_version_hint");
 }
 
 /// Options > Global > Bitmap Tracing: Quick Trace's preset and what every

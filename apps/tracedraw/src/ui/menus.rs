@@ -790,6 +790,21 @@ mod tests {
         assert!(!invoke::active());
     }
 
+    /// File > Close All closes every drawing, asking about unsaved ones.
+    #[test]
+    fn file_close_all_closes_every_drawing() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.new_document();
+        app.new_document();
+        assert_eq!(app.docs.len(), 3);
+        let mut ran = false;
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.file.close_all")
+        });
+        assert!(ran && !app.has_document());
+    }
+
     /// A shortcut of the user's runs its menu command, takes over a
     /// built-in shortcut and shows in the menu row.
     #[test]
@@ -1020,7 +1035,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.close_document();
     }
     if item(ui, "menu.file.close_all", "", doc) {
-        app.close_document();
+        app.close_all_documents();
     }
     sep(ui);
     if item(ui, "menu.file.save", "Ctrl+S", doc) {

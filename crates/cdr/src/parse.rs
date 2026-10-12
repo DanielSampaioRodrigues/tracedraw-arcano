@@ -57,7 +57,7 @@ pub(crate) const ARG_COORDS: u32 = 0x1e;
 pub(crate) const ARG_STYLE: u32 = 200;
 /// The object's style as a string (version 16 and later): fill, outline,
 /// character, frame and paragraph settings (seen in a version 21 file).
-const ARG_STYLE_STRING: u32 = 201;
+pub(crate) const ARG_STYLE_STRING: u32 = 201;
 pub(crate) const ARG_NAME: u32 = 1000;
 pub(crate) const ARG_OPACITY: u32 = 8000;
 const ARG_POLYGON: u32 = 11000;
@@ -394,13 +394,13 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
                 layer_chunks.push(c);
             }
         });
-        for (k, lc) in layer_chunks.iter().enumerate() {
-            let default_name = format!("Layer {}", k + 1);
+        for lc in &layer_chunks {
+            let default_name = format!("Layer {}", page.layers.len() + 1);
             let name = ctx.layer_name(lc).unwrap_or(default_name);
             let mut layer = Layer::new(doc.ids_mut().layer(), name);
             // Guides and grid layers hold no drawable content.
             match ctx.layer_type(lc) {
-                Some(0x0a) | Some(0x1a) => {
+                Some(t) if t & 0x0f == 0x0a => {
                     layer.visible = false;
                     layer.printable = false;
                 }
@@ -409,6 +409,12 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
             let mut ids = std::mem::take(doc.ids_mut());
             layer.shapes = ctx.read_objects(lc, &mut ids, size, 0);
             doc.set_ids(ids);
+            // Guides, grid and desktop layers, and the master page's layers
+            // each page lists again, are no drawing of their own when
+            // empty.
+            if layer.shapes.is_empty() && ctx.is_structural_layer(lc) {
+                continue;
+            }
             page.layers.push(layer);
         }
         if page.layers.is_empty() {
@@ -486,6 +492,12 @@ impl<'a> Ctx<'a> {
 
     fn layer_type(&self, lc: &Chunk) -> Option<u8> {
         self.flags(lc).filter(|f| f[3] == 0x98).map(|f| f[0])
+    }
+
+    /// A guides, grid or desktop layer (type byte not 0), or a page's
+    /// entry for a layer of the master page (byte 2 set).
+    fn is_structural_layer(&self, lc: &Chunk) -> bool {
+        matches!(self.flags(lc), Some(f) if f[3] == 0x98 && (f[0] != 0 || f[2] != 0))
     }
 
     /// The `loda`/`lobj` chunk of a list: a direct child, or (version 16+,
@@ -1375,12 +1387,16 @@ impl<'a> Ctx<'a> {
         }
         let width = r.coord().unwrap_or(0.0);
         let stretch = r.u16().unwrap_or(100);
-        if v >= 6 {
+        // Versions 6 to 12 put two unknown bytes before the nib angle and
+        // four before the outline's matrix (six doubles); from version 13
+        // the angle follows the stretch and the matrix the angle (files of
+        // versions 14 to 22 have the matrix's 1.0 entries there).
+        if (6..13).contains(&v) {
             r.skip(2);
         }
         let nib_angle = r.angle().unwrap_or(0.0);
         r.skip(if v >= 13 {
-            46
+            48
         } else if v >= 6 {
             52
         } else {
@@ -2867,7 +2883,7 @@ mod tests {
     }
 
     #[test]
-    fn solid_fill_before_x3_has_two_unknown_bytes_before_the_colour() {
+    fn solid_fill_before_version_13_has_two_unknown_bytes_before_the_colour() {
         let mut fild = u32s(&[7]);
         fild.extend_from_slice(&u16s(&[1, 0x1234]));
         fild.extend_from_slice(&color_cmyk_pct(0, 100, 100, 0));
@@ -2909,7 +2925,7 @@ mod tests {
     }
 
     #[test]
-    fn solid_fill_x3_uses_a_property_list() {
+    fn solid_fill_version_13_uses_a_property_list() {
         // id, since (1300), body length, type 1, since, properties length,
         // property 7 (palette guid, 16 bytes), property 1 (colour), end.
         let mut props = vec![0x07u8];
@@ -2983,7 +2999,7 @@ mod tests {
     }
 
     #[test]
-    fn fountain_fill_x5_stop_size_is_45_bytes() {
+    fn fountain_fill_version_15_stop_size_is_45_bytes() {
         let v = 15u16;
         let mut g = vec![0u8; 8];
         g.push(1);
@@ -3027,7 +3043,7 @@ mod tests {
     }
 
     #[test]
-    fn outline_x3_skips_tagged_records_and_reads_dashes() {
+    fn outline_version_13_skips_tagged_records_and_reads_dashes() {
         let v = 13u16;
         let mut o = u32s(&[4]); // id
         o.extend_from_slice(&u32s(&[0x0a, 4, 0xdead_beef])); // record 10, skipped
@@ -3035,9 +3051,8 @@ mod tests {
         o.extend_from_slice(&u16s(&[0x20, 1, 2])); // line type (scale), round cap, bevel join
         o.extend_from_slice(&i32s(&[2540])); // width 0.254 mm
         o.extend_from_slice(&u16s(&[50])); // stretch 50 %
-        o.extend_from_slice(&[0; 2]);
         o.extend_from_slice(&i32s(&[30_000_000])); // nib angle 30 deg
-        o.extend_from_slice(&[0; 46]);
+        o.extend_from_slice(&[0; 48]); // the matrix
         o.extend_from_slice(&color_bgr(0, 0, 255));
         o.extend_from_slice(&[0; 16]);
         o.extend_from_slice(&u16s(&[4, 3, 1, 1, 1])); // 4 dash entries
@@ -3171,7 +3186,7 @@ mod tests {
     }
 
     #[test]
-    fn rectangle_x5_doubles_and_scale() {
+    fn rectangle_version_15_doubles_and_scale() {
         // 1 x 0.5 inch with corners of 0.1 inch (radii are in inches, as a
         // version 17 file shows); the scale is the transform's, so the
         // rectangle keeps its own size.
@@ -3548,7 +3563,7 @@ mod tests {
     }
 
     #[test]
-    fn pattern_fill_x3_reads_both_colours() {
+    fn pattern_fill_version_13_reads_both_colours() {
         let mut p = vec![0u8; 8];
         p.extend_from_slice(&u32s(&[77])); // pattern id
         p.extend_from_slice(&i32s(&[254000, 254000]));
@@ -3660,7 +3675,7 @@ mod tests {
     }
 
     /// version 13+ solid fill with a property list holding one colour.
-    fn solid_fild_x3(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
+    fn solid_fild_v13(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
         let mut props = vec![0x01u8];
         props.extend_from_slice(&12u32.to_le_bytes());
         props.extend_from_slice(&color_bgr(rgb.0, rgb.1, rgb.2));
@@ -4259,7 +4274,7 @@ mod tests {
     }
 
     #[test]
-    fn paragraph_text_x6_layout_with_style_strings() {
+    fn paragraph_text_version_16_layout_with_style_strings() {
         let v = 16u16;
         let mut t = u32s(&[1]); // frame
         t.extend_from_slice(&[0; 32]);
@@ -4292,7 +4307,7 @@ mod tests {
         t.push(0);
         let tables = [
             chunk(b"font", &font_chunk(5, "Georgia")),
-            chunk(b"fild", &solid_fild_x3(9, (0, 128, 0))),
+            chunk(b"fild", &solid_fild_v13(9, (0, 128, 0))),
         ]
         .concat();
         let mut coords = vec![0u8; 4];
@@ -4597,7 +4612,7 @@ mod tests {
 
     /// version 13+ image fill body (types 9 and 11): one 0x514 record, then the
     /// pattern data.
-    fn image_fill_x3(ftype: u16, id: u32, pattern: u32, w: u32) -> Vec<u8> {
+    fn image_fill_v13(ftype: u16, id: u32, pattern: u32, w: u32) -> Vec<u8> {
         let mut p = u32s(&[0x514]);
         p.extend_from_slice(&u32s(&[pattern, w, w]));
         p.extend_from_slice(&[0; 4]);
@@ -4617,7 +4632,7 @@ mod tests {
             b"CDRD",
             &[
                 chunk(b"bmp ", &bmp_2x2(42)),
-                chunk(b"fild", &image_fill_x3(9, 4, 42, 254_000)),
+                chunk(b"fild", &image_fill_v13(9, 4, 42, 254_000)),
             ]
             .concat(),
         );
@@ -4643,7 +4658,10 @@ mod tests {
 
     #[test]
     fn texture_fill_falls_back_to_a_built_in_texture() {
-        let main = riff(b"CDRD", &chunk(b"fild", &image_fill_x3(11, 6, 99, 508_000)));
+        let main = riff(
+            b"CDRD",
+            &chunk(b"fild", &image_fill_v13(11, 6, 99, 508_000)),
+        );
         let tree = crate::riff::parse(&main).unwrap();
         let mut ctx = Ctx::new(&main, &tree, 13);
         ctx.read_fill(tree.root.find(b"fild").unwrap());
@@ -4718,7 +4736,7 @@ mod tests {
     }
 
     #[test]
-    fn fountain_x6_transformation_sets_offset_and_edge_pad() {
+    fn fountain_version_16_transformation_sets_offset_and_edge_pad() {
         let v = 16u16;
         let mut g = vec![0u8; 8];
         g.push(1);
@@ -4792,15 +4810,14 @@ mod tests {
     }
 
     /// version 13 outline with the given marker ids.
-    fn outl_x3(id: u32, start: u32, end: u32) -> Vec<u8> {
+    fn outl_v13(id: u32, start: u32, end: u32) -> Vec<u8> {
         let mut o = u32s(&[id]);
         o.extend_from_slice(&u32s(&[1, 0]));
         o.extend_from_slice(&u16s(&[0, 0, 0]));
         o.extend_from_slice(&i32s(&[2540]));
         o.extend_from_slice(&u16s(&[100]));
-        o.extend_from_slice(&[0; 2]);
         o.extend_from_slice(&i32s(&[0]));
-        o.extend_from_slice(&[0; 46]);
+        o.extend_from_slice(&[0; 48]);
         o.extend_from_slice(&color_bgr(0, 0, 0));
         o.extend_from_slice(&[0; 16]);
         o.extend_from_slice(&u16s(&[0]));
@@ -4870,11 +4887,11 @@ mod tests {
                 chunk(b"arrw", &circle),
                 chunk(b"arrw", &open),
                 chunk(b"arrw", &pentagon),
-                chunk(b"outl", &outl_x3(1, 5, 6)),
-                chunk(b"outl", &outl_x3(2, 7, 8)),
-                chunk(b"outl", &outl_x3(3, 9, 10)),
-                chunk(b"outl", &outl_x3(4, 99, 0)),
-                chunk(b"outl", &outl_x3(5, 11, 0)),
+                chunk(b"outl", &outl_v13(1, 5, 6)),
+                chunk(b"outl", &outl_v13(2, 7, 8)),
+                chunk(b"outl", &outl_v13(3, 9, 10)),
+                chunk(b"outl", &outl_v13(4, 99, 0)),
+                chunk(b"outl", &outl_v13(5, 11, 0)),
             ]
             .concat(),
         );
