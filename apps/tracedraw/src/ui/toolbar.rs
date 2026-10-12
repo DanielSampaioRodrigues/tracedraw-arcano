@@ -1481,6 +1481,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::InteractiveFill => interactive_fill_bar(app, ui, &shapes),
+            Tool::ShapeRecognition | Tool::Sketch => crate::ui::drawing_bars::drawing_bar(app, ui),
             Tool::AreaFill => crate::ui::fill_tool_bars::smart_fill_bar(app, ui),
             Tool::MeshFill => crate::ui::fill_tool_bars::mesh_bar(app, ui),
             t => {

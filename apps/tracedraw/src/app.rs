@@ -997,6 +997,9 @@ pub struct App {
     /// The revision and selection of the last connector radius change,
     /// so a drag of the field is one undo step.
     pub connector_radius_step: Option<(u64, Vec<ShapeId>)>,
+    /// Shape Recognition's levels and Sketch's settings (their bars).
+    pub recognize: crate::recognize::RecognizeSettings,
+    pub sketch: crate::recognize::SketchSettings,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -1607,6 +1610,8 @@ impl App {
             connector_radius: 3.0,
             connectors_checked: u64::MAX,
             connector_radius_step: None,
+            recognize: Default::default(),
+            sketch: Default::default(),
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,
@@ -2025,6 +2030,9 @@ impl App {
             roughen_amount: self.roughen_amount,
             brush: self.brush,
             dimension_style: self.dimension_style.clone(),
+            connector_radius: self.connector_radius,
+            recognize: self.recognize,
+            sketch: self.sketch,
         }
     }
 
@@ -2082,6 +2090,16 @@ impl App {
             precision: t.dimension_style.precision.min(6),
             text_size: finite(t.dimension_style.text_size, 1.0, 500.0, 10.0),
             ..t.dimension_style.clone()
+        };
+        self.connector_radius = finite(t.connector_radius, 0.0, 1000.0, 3.0);
+        self.recognize = crate::recognize::RecognizeSettings {
+            recognition: t.recognize.recognition.min(5),
+            smoothing: t.recognize.smoothing.min(5),
+        };
+        self.sketch = crate::recognize::SketchSettings {
+            join_distance: finite(t.sketch.join_distance, 0.0, 1000.0, 5.0),
+            smoothing: t.sketch.smoothing.min(5),
+            ..t.sketch
         };
     }
 

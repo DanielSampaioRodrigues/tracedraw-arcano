@@ -71,6 +71,7 @@ mod placeholder;
 mod preflight;
 mod prefs;
 mod raster;
+mod recognize;
 mod scripting;
 mod select_region;
 mod settings;

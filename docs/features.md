@@ -39,7 +39,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Ellipse, 3-point ellipse, pie and arc | works |
 | Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes (71 in five sets: basic shapes, arrows, flowchart, banners, callouts; picked from a grid of outlines), Action Lines | works (see `behavior/shape-tools.md`) |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve; lines from an end node of the selected curve continue it (join, close, merge subpaths); Freehand smoothing; outline, arrowheads and Close Curve on the property bar | works (see `behavior/curve-tools.md`) |
-| Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
+| Shape Recognition (lines, rectangles and ellipses at any tilt, triangles, four-sided shapes; recognition and smoothing levels) and Sketch (stroke joining with distance and smoothing) (see `behavior/curve-tools.md`) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
 | Dimensions: parallel, horizontal/vertical, angular, segment (a click on a segment), 3-point callout; live preview; the bar's precision, units, prefix, suffix, text position and size; dynamic (drawn again when moved or scaled) (see `behavior/dimensions.md`) | works |
 | Connectors: straight, right-angle, rounded right-angle, attached (they follow the objects they join), with a bar (kind, corner radius, outline); Anchor Editing tool (add, move, delete anchors; connectors snap to them) (see `behavior/connectors-and-anchors.md`) | works |

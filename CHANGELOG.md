@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape Recognition keeps shapes as drawn: a tilted rectangle or ellipse
+  stays tilted (they came out level in the stroke's box), triangles and
+  other four-sided shapes keep their corners (they became regular
+  triangles and rectangles), and circles are told from squares by their
+  area. Its property bar sets the recognition and smoothing levels;
+  Sketch's sets joining to the selected curve, the distance and the
+  smoothing.
 - Connectors stay attached: move, scale or reshape an object and the
   connectors joined to it follow, in the same undo step; moved on its
   own, a connector is let go. They used to be plain lines. The connector

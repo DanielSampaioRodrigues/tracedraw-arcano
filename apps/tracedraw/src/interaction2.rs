@@ -8,7 +8,7 @@ use crate::tools::Tool;
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::{Shape, ShapeKind},
-    geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
+    geometry::{Affine, BezPath, Point, Rect, Vec2},
     live::Effect,
     Color, Command, Fill, ShapeId, Stroke,
 };
@@ -381,65 +381,11 @@ impl App {
     }
 
     /// Shape Recognition: recognise the sketched stroke as a basic shape.
-    pub fn finish_shape_recognition(&mut self, points: Vec<Point>) {
-        if points.len() < 3 {
-            return;
-        }
-        let pts = tracedraw_core::geometry::simplify(&points, 1.0);
-        let b = tracedraw_core::geometry::polyline_path(&pts, false).bounding_box();
-        let closed =
-            (points[0] - points[points.len() - 1]).hypot() < b.width().max(b.height()) * 0.25;
-        let kind = if !closed && pts.len() <= 3 {
-            // Straight line.
-            let mut path = BezPath::new();
-            path.move_to(points[0]);
-            path.line_to(points[points.len() - 1]);
-            ShapeKind::Path {
-                path,
-                closed: false,
-            }
-        } else if closed && (3..=5).contains(&pts.len()) && pts.len() != 4 {
-            ShapeKind::Polygon {
-                rect: tracedraw_core::geometry::polygon_rect_for_bounds(b, 3, 0.0),
-                points: 3,
-                sharpness: 0.0,
-                complex: None,
-                twist: 0.0,
-            }
-        } else if closed && pts.len() == 4 || closed && pts.len() == 5 {
-            ShapeKind::Rect {
-                rect: b,
-                radius: 0.0,
-                corners: None,
-            }
-        } else if closed {
-            // Circularity: compare the area with the bounding ellipse.
-            let poly = tracedraw_core::geometry::polyline_path(&points, true);
-            let area = poly.area().abs();
-            let ell = std::f64::consts::PI * b.width() * b.height() / 4.0;
-            if (area / ell.max(1e-9) - 1.0).abs() < 0.2 {
-                ShapeKind::Ellipse { rect: b, arc: None }
-            } else {
-                ShapeKind::Path {
-                    path: tracedraw_core::geometry::smooth_path(&pts, true),
-                    closed: true,
-                }
-            }
-        } else {
-            ShapeKind::Path {
-                path: tracedraw_core::geometry::smooth_path(&pts, false),
-                closed: false,
-            }
-        };
-        if let Some(id) = self.new_shape(kind) {
-            self.select(vec![id]);
-        }
-    }
-
     /// Sketch: smooth the stroke and merge it with a selected curve
     /// whose end is near the stroke's start.
     pub fn finish_sketch(&mut self, points: Vec<Point>) {
-        let pts = tracedraw_core::geometry::simplify(&points, 0.8);
+        let sketch = self.sketch;
+        let pts = tracedraw_core::geometry::simplify(&points, sketch.tolerance());
         if pts.len() < 2 {
             return;
         }
@@ -447,6 +393,7 @@ impl App {
         if let Some(sel) = self
             .selected_shapes()
             .into_iter()
+            .filter(|_| sketch.join)
             .find(|s| matches!(s.kind, ShapeKind::Path { closed: false, .. }))
         {
             let existing = sel.page_path();
@@ -456,7 +403,7 @@ impl App {
                 _ => None,
             });
             if let Some(e) = end {
-                if (e - pts[0]).hypot() < 5.0 {
+                if (e - pts[0]).hypot() < sketch.join_distance {
                     let mut joined = existing.clone();
                     for el in path.elements().iter().skip(1) {
                         joined.push(*el);

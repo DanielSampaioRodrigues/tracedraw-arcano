@@ -663,6 +663,11 @@ pub struct ToolPrefs {
     pub brush: crate::ui::brush_bars::BrushSettings,
     /// The style new dimensions take.
     pub dimension_style: crate::dimensions::DimensionStyle,
+    /// Rounded connectors' corner radius, mm.
+    pub connector_radius: f64,
+    /// Shape Recognition's levels and Sketch's settings.
+    pub recognize: crate::recognize::RecognizeSettings,
+    pub sketch: crate::recognize::SketchSettings,
 }
 
 impl Default for ToolPrefs {
@@ -704,6 +709,9 @@ impl Default for ToolPrefs {
             roughen_amount: 2.0,
             brush: Default::default(),
             dimension_style: Default::default(),
+            connector_radius: 3.0,
+            recognize: Default::default(),
+            sketch: Default::default(),
         }
     }
 }
