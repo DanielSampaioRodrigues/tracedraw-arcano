@@ -63,7 +63,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes, twisted stars) | works (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
-| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu, panel and the property bar with several objects selected) | works |
+| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu, panel and the property bar with several objects selected); Trim keeps the sources, Intersect keeps both; the panel's leave-original choices per operation (see `behavior/shaping.md`) | works |
 | Combine, Break apart, Group, Ungroup, Ungroup all | works |
 | Join Curves panel: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
 | Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |

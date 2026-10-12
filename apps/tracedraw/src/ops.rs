@@ -495,10 +495,77 @@ pub enum Shaping {
     Boundary,
 }
 
+impl Shaping {
+    pub const ALL: [Shaping; 7] = [
+        Shaping::Weld,
+        Shaping::Trim,
+        Shaping::Intersect,
+        Shaping::Simplify,
+        Shaping::FrontMinusBack,
+        Shaping::BackMinusFront,
+        Shaping::Boundary,
+    ];
+
+    /// Whether the operation can leave its source objects or its target
+    /// as they were (Weld, Trim and Intersect).
+    pub fn can_leave_originals(self) -> bool {
+        matches!(self, Shaping::Weld | Shaping::Trim | Shaping::Intersect)
+    }
+
+    /// What the menus and the property bar leave: Trim keeps the objects
+    /// that cut, Intersect keeps both, the others replace them (Boundary
+    /// draws around them and keeps them all).
+    pub fn default_leave(self) -> (bool, bool) {
+        match self {
+            Shaping::Trim => (true, false),
+            Shaping::Intersect | Shaping::Boundary => (true, true),
+            _ => (false, false),
+        }
+    }
+
+    /// The name kept in the preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            Shaping::Weld => "weld",
+            Shaping::Trim => "trim",
+            Shaping::Intersect => "intersect",
+            Shaping::Simplify => "simplify",
+            Shaping::FrontMinusBack => "front_minus_back",
+            Shaping::BackMinusFront => "back_minus_front",
+            Shaping::Boundary => "boundary",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Shaping {
+        Shaping::ALL
+            .into_iter()
+            .find(|s| s.id() == id)
+            .unwrap_or(Shaping::Weld)
+    }
+
+    /// How many objects it needs selected.
+    pub fn needs(self) -> usize {
+        match self {
+            Shaping::Simplify | Shaping::Boundary => 1,
+            _ => 2,
+        }
+    }
+}
+
 impl App {
-    /// Convention: the last selected object is the target and
-    /// keeps its attributes; the other selected objects act on it.
+    /// The operation as the menus and the property bar do it (see
+    /// `Shaping::default_leave`).
     pub fn shaping(&mut self, op: Shaping) {
+        let (source, target) = op.default_leave();
+        self.shaping_with(op, source, target);
+    }
+
+    /// Convention: the last selected object is the target and
+    /// keeps its attributes; the other selected objects act on it. With
+    /// `leave_source` the other objects stay, with `leave_target` the
+    /// target stays (Weld, Trim and Intersect; Boundary keeps them all,
+    /// the others replace them).
+    pub fn shaping_with(&mut self, op: Shaping, leave_source: bool, leave_target: bool) {
         use tracedraw_core::shaping::{overlay, simplify, Op};
         let shapes = self.selected_shapes();
         if shapes.is_empty()
@@ -567,7 +634,11 @@ impl App {
             self.status = crate::i18n::tr("status.shaping_empty");
             return;
         }
-        let keep_sources = op == Shaping::Boundary;
+        let (leave_source, leave_target) = match op {
+            Shaping::Boundary => (true, true),
+            _ if op.can_leave_originals() => (leave_source, leave_target),
+            _ => (false, false),
+        };
         let attrs = match op {
             Shaping::FrontMinusBack => ordered.last().cloned().unwrap_or(target.clone()),
             Shaping::BackMinusFront => ordered[0].clone(),
@@ -588,10 +659,19 @@ impl App {
         shape.stroke = attrs.stroke.clone();
         shape.opacity = attrs.opacity;
         let mut cmds = vec![Command::AddShape { layer, shape }];
-        if !keep_sources {
-            cmds.push(Command::DeleteShapes {
-                shapes: shapes.iter().map(|s| s.id).collect(),
-            });
+        let gone: Vec<_> = shapes
+            .iter()
+            .map(|s| s.id)
+            .filter(|id| {
+                if *id == target.id {
+                    !leave_target
+                } else {
+                    !leave_source
+                }
+            })
+            .collect();
+        if !gone.is_empty() {
+            cmds.push(Command::DeleteShapes { shapes: gone });
         }
         let label = match op {
             Shaping::Weld => "Weld",

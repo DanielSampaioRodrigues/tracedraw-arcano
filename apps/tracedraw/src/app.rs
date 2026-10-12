@@ -932,8 +932,10 @@ pub struct App {
     pub doc_palette_rect: Option<egui::Rect>,
     /// The pointer on screen, wherever it is (drops outside the drawing).
     pub pointer_screen: Option<egui::Pos2>,
-    pub shaping_keep_source: bool,
-    pub shaping_keep_target: bool,
+    /// The Shaping docker's operation, and what Weld, Trim and Intersect
+    /// leave there: [source objects, target] each.
+    pub shaping_op: crate::ops::Shaping,
+    pub shaping_leave: [[bool; 2]; 3],
     pub color_model: usize,
     pub mixer_color: Color,
     /// The Color docker's views, hue and palette.
@@ -1528,8 +1530,8 @@ impl App {
             glyph_filter: String::new(),
             table_edit: None,
             missing_fonts: Vec::new(),
-            shaping_keep_source: false,
-            shaping_keep_target: false,
+            shaping_op: crate::ops::Shaping::Weld,
+            shaping_leave: crate::settings::PanelPrefs::default().shaping_leave,
             color_model: 1,
             mixer_color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
             color_docker: Default::default(),
@@ -2044,6 +2046,8 @@ impl App {
             align_to: self.align_to.id().into(),
             align_use_outline: self.align_use_outline,
             distribute_to: self.distribute_to.id().into(),
+            shaping_op: self.shaping_op.id().into(),
+            shaping_leave: self.shaping_leave,
         }
     }
 
@@ -2061,6 +2065,8 @@ impl App {
         self.align_to = crate::ops2::AlignTo::from_id(&p.align_to);
         self.align_use_outline = p.align_use_outline;
         self.distribute_to = crate::ops::DistributeTo::from_id(&p.distribute_to);
+        self.shaping_op = crate::ops::Shaping::from_id(&p.shaping_op);
+        self.shaping_leave = p.shaping_leave;
     }
 
     /// Save the preferences when they changed: looked at every frame, so a

@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shaping: Trim keeps the objects that cut and Intersect keeps the
+  originals, as their pictures always showed; Weld and the others
+  replace them. The Shaping panel's "Leave original" boxes now do what
+  they say (they were not used), each operation keeping its own choice,
+  and the panel shows the operations as pictures with a large picture
+  and a description of the one chosen.
 - The Text docker has Character, Paragraph and Frame sections with
   header bars and buttons to open and close them (kept), the size list
   and bold, italic and underline as on the property bar, alignment

@@ -29,7 +29,7 @@ fn dim(ui: &mut Ui, text: String) {
 pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
     match tab {
         DockerTab::AlignDistribute => crate::ui::align_docker::align_distribute(app, ui),
-        DockerTab::Shaping => shaping(app, ui),
+        DockerTab::Shaping => crate::ui::shaping_docker::shaping(app, ui),
         DockerTab::StepAndRepeat => step_and_repeat(app, ui),
         DockerTab::Text => crate::ui::text_docker::text_docker(app, ui),
         DockerTab::Glyphs => glyphs(app, ui),
@@ -62,65 +62,6 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::AiDrawing => crate::ui::ai_docker::ai_drawing(app, ui),
         _ => {}
     }
-}
-
-fn shaping(app: &mut App, ui: &mut Ui) {
-    use crate::ops::Shaping;
-    let has = !app.selection.is_empty();
-    let two = app.selection.len() >= 2;
-    for (key, op, need_two, hint) in [
-        ("menu.object.weld", Shaping::Weld, true, "docker.weld_hint"),
-        ("menu.object.trim", Shaping::Trim, true, "docker.trim_hint"),
-        (
-            "menu.object.intersect",
-            Shaping::Intersect,
-            true,
-            "docker.intersect_hint",
-        ),
-        (
-            "menu.object.simplify",
-            Shaping::Simplify,
-            false,
-            "docker.simplify_hint",
-        ),
-        (
-            "menu.object.front_minus_back",
-            Shaping::FrontMinusBack,
-            true,
-            "docker.front_minus_back_hint",
-        ),
-        (
-            "menu.object.back_minus_front",
-            Shaping::BackMinusFront,
-            true,
-            "docker.back_minus_front_hint",
-        ),
-        (
-            "menu.object.boundary",
-            Shaping::Boundary,
-            false,
-            "docker.boundary_hint",
-        ),
-    ] {
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(if need_two { two } else { has }, egui::Button::new(tr(key)))
-                .clicked()
-            {
-                app.shaping(op);
-            }
-            dim(ui, tr(hint));
-        });
-    }
-    ui.separator();
-    ui.checkbox(
-        &mut app.shaping_keep_source,
-        tr("docker.leave_original_source"),
-    );
-    ui.checkbox(
-        &mut app.shaping_keep_target,
-        tr("docker.leave_original_target"),
-    );
 }
 
 fn step_and_repeat(app: &mut App, ui: &mut Ui) {
