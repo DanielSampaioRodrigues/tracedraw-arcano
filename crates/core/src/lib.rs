@@ -11,6 +11,7 @@
 pub mod color;
 pub mod command;
 pub mod corner_cut;
+pub mod distort;
 pub mod document;
 pub mod effects;
 pub mod engine;

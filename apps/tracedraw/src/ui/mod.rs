@@ -23,6 +23,7 @@ pub mod curve_edit;
 pub mod defaults_dialog;
 pub mod dialogs;
 pub mod dimension_bar;
+pub mod distort_bar;
 pub mod dockers;
 pub mod dockers2;
 pub mod drawing_bars;
@@ -581,6 +582,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     envelope_ui::draw_envelopes(app, &painter);
     dimension_bar::draw_preview(app, &painter);
     callout_bar::draw_preview(app, &painter);
+    distort_bar::draw_centers(app, &painter);
     canvas::draw_docker_preview(app, &painter);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

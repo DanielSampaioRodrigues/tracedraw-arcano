@@ -620,8 +620,10 @@ fn effects(dir: &Path) {
         0.0,
         &[(0.0, "#FFE45C"), (0.7, "#FF7A3D")],
     );
-    st.effects
-        .push(Effect::Distort(Distort::Twister { angle_deg: 140.0 }));
+    st.effects.push(Effect::Distort(Distort::Twister {
+        angle_deg: 140.0,
+        center: None,
+    }));
     b.add(st, "Distort");
     b.save(dir, "effects.tdraw");
 }

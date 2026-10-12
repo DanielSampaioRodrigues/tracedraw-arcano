@@ -650,13 +650,6 @@ fn polylines(path: &BezPath) -> Vec<(Vec<[f64; 2]>, bool)> {
 // Freehand Pick lasso.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DistortMode {
-    PushPull,
-    Zipper,
-    Twister,
-}
-
 impl App {
     pub fn effects_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         match self.tool {
@@ -688,14 +681,6 @@ impl App {
                         self.extrude_depth = p - start;
                     }
                 }
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => self.select(vec![id]),
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
-            Tool::Distort | Tool::Envelope => {
                 if response.clicked_by(PointerButton::Primary) {
                     match self.hit_test(p) {
                         Some(id) => self.select(vec![id]),
@@ -777,41 +762,6 @@ impl App {
         }
         if !cmds.is_empty() {
             let _ = self.engine.run_batch("Extrude", &cmds);
-        }
-    }
-
-    pub fn apply_distort(&mut self) {
-        use tracedraw_core::effects::{distort, Distort};
-        let how = match self.distort_mode {
-            DistortMode::PushPull => Distort::PushPull {
-                amount: self.distort_amount,
-            },
-            DistortMode::Zipper => Distort::Zipper {
-                amplitude: self.distort_amount.abs() / 10.0,
-                frequency: self.distort_frequency,
-            },
-            DistortMode::Twister => Distort::Twister {
-                angle_deg: self.distort_amount * 3.6,
-            },
-        };
-        let shapes = self.selected_shapes();
-        let cmds: Vec<Command> = shapes
-            .iter()
-            .filter(|s| !matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }))
-            .map(|s| {
-                let pp = s.page_path();
-                let d = distort(&pp, how);
-                Command::SetShapeKind {
-                    shape: s.id,
-                    kind: ShapeKind::Path {
-                        path: s.transform.inverse() * d,
-                        closed: true,
-                    },
-                }
-            })
-            .collect();
-        if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Distort", &cmds);
         }
     }
 }

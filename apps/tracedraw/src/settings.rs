@@ -665,6 +665,8 @@ pub struct ToolPrefs {
     pub dimension_style: crate::dimensions::DimensionStyle,
     /// The style new 3-point callouts take.
     pub callout_style: crate::callouts::CalloutStyle,
+    /// The Distort tool's values.
+    pub distort: crate::distort_tool::DistortSettings,
     /// Rounded connectors' corner radius, mm.
     pub connector_radius: f64,
     /// Shape Recognition's levels and Sketch's settings.
@@ -714,6 +716,7 @@ impl Default for ToolPrefs {
             brush: Default::default(),
             dimension_style: Default::default(),
             callout_style: Default::default(),
+            distort: Default::default(),
             connector_radius: 3.0,
             recognize: Default::default(),
             sketch: Default::default(),

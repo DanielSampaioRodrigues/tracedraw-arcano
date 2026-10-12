@@ -6,6 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Distort: Push and Pull moves the nodes and bows the segments the other
+  way (spikes or petals); it only scaled the object before. Zipper puts
+  teeth on every segment, with Random, Smooth and Local; Twister takes
+  whole turns, degrees and the direction. A drag is centred where it
+  starts (the centre can be dragged afterwards), a Twister drag follows
+  the turn of the pointer, and every distortion keeps the object's
+  subpaths and open curves (they were merged into one closed outline).
+  The bar shows and edits the selected distortion, with Center
+  Distortion, Clear Distortion and Convert to Curves; its Apply button
+  used to rewrite the object's outline instead of adding the effect.
 - 3-point callout: a drag from the tip to the elbow works besides two
   clicks (the hint said so; only clicks were taken), the text goes on
   the side of the elbow it was placed on and opens with its sample text

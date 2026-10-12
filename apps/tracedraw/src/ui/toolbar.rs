@@ -763,45 +763,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::Envelope => crate::ui::envelope_ui::envelope_bar(app, ui),
-            Tool::Distort => {
-                use crate::tools2::DistortMode;
-                for (m, n) in [
-                    (DistortMode::PushPull, tr("toolbar.push_pull")),
-                    (DistortMode::Zipper, tr("toolbar.zipper")),
-                    (DistortMode::Twister, tr("toolbar.twister")),
-                ] {
-                    if ui.selectable_label(app.distort_mode == m, n).clicked() {
-                        app.distort_mode = m;
-                    }
-                }
-                ui.label(
-                    egui::RichText::new(tr("toolbar.amplitude"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut app.distort_amount)
-                        .speed(1.0)
-                        .range(-200.0..=200.0),
-                );
-                if app.distort_mode == DistortMode::Zipper {
-                    ui.label(
-                        egui::RichText::new(tr("toolbar.frequency"))
-                            .color(Tokens::TEXT_DIM)
-                            .size(11.0),
-                    );
-                    ui.add(
-                        crate::ui::field::NumField::new(&mut app.distort_frequency).range(1..=100),
-                    );
-                }
-                vsep(ui);
-                if ui
-                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
-                    .clicked()
-                {
-                    app.apply_distort();
-                }
-            }
+            Tool::Distort => crate::ui::distort_bar::distort_bar(app, ui),
             Tool::Eraser => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.eraser_thickness"))

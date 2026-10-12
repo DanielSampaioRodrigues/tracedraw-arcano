@@ -32,6 +32,7 @@ mod curve_join;
 mod defaults;
 mod describe;
 mod dimensions;
+mod distort_tool;
 mod documents;
 mod drawing_scale;
 mod drop_menu;

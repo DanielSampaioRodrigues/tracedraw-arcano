@@ -185,42 +185,7 @@ impl App {
                     }
                 }
             }
-            Tool::Distort => {
-                if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
-                        self.select(vec![id]);
-                        self.drag = Drag::ContourDrag { start: p };
-                    }
-                }
-                if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::ContourDrag { start } = self.drag {
-                        let d = p - start;
-                        let how = match self.distort_mode {
-                            crate::tools2::DistortMode::PushPull => {
-                                tracedraw_core::effects::Distort::PushPull { amount: d.x * 2.0 }
-                            }
-                            crate::tools2::DistortMode::Zipper => {
-                                tracedraw_core::effects::Distort::Zipper {
-                                    amplitude: d.hypot() / 4.0,
-                                    frequency: self.distort_frequency,
-                                }
-                            }
-                            crate::tools2::DistortMode::Twister => {
-                                tracedraw_core::effects::Distort::Twister {
-                                    angle_deg: d.x * 3.0,
-                                }
-                            }
-                        };
-                        self.push_effect(Effect::Distort(how), true);
-                    }
-                }
-                if response.clicked_by(PointerButton::Primary) {
-                    match self.hit_test(p) {
-                        Some(id) => self.select(vec![id]),
-                        None => self.select(Vec::new()),
-                    }
-                }
-            }
+            Tool::Distort => self.distort_input(response, p),
             Tool::AreaFill => {
                 if response.clicked_by(PointerButton::Primary) {
                     self.area_fill_at(p);

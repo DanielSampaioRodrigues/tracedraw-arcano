@@ -124,7 +124,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Drop shadow (offset, opacity, feather, colour), live | works |
 | Contour (steps, offset, direction, colour blend), live | works |
 | Blend (steps, rotation, accelerations, path), live | works |
-| Distort (push/pull, zipper, twister), live | works |
+| Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the centre marker dragged, the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |
 | Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |
 | Perspective (Add Perspective, node drag) | works |
 | Extrude (depth, vanishing point, bevel, lighting), live | works |

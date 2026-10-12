@@ -134,52 +134,7 @@ pub fn extrude(path: &BezPath, depth: Vec2) -> (Vec<BezPath>, BezPath) {
     (sides, back)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "mode", rename_all = "lowercase")]
-pub enum Distort {
-    /// Push (negative) or pull (positive) points toward/away from the centre.
-    PushPull { amount: f64 },
-    /// Zigzag the outline with the given amplitude and frequency.
-    Zipper { amplitude: f64, frequency: u32 },
-    /// Rotate points around the centre proportionally to their distance.
-    Twister { angle_deg: f64 },
-}
-
-pub fn distort(path: &BezPath, how: Distort) -> BezPath {
-    use crate::geometry::Shape as _;
-    let b = path.bounding_box();
-    let c = b.center();
-    let r_max = (b.width().max(b.height()) / 2.0).max(1e-9);
-    let samples = 160;
-    let pts = resample(path, samples);
-    let out: Vec<Point> = pts
-        .iter()
-        .enumerate()
-        .map(|(i, p)| match how {
-            Distort::PushPull { amount } => {
-                let v = *p - c;
-                *p + v * (amount / 100.0)
-            }
-            Distort::Zipper {
-                amplitude,
-                frequency,
-            } => {
-                let prev = pts[(i + pts.len() - 1) % pts.len()];
-                let next = pts[(i + 1) % pts.len()];
-                let tangent = (next - prev).normalize();
-                let n = Vec2::new(-tangent.y, tangent.x);
-                let phase = (i as f64 / samples as f64) * frequency as f64 * std::f64::consts::TAU;
-                *p + n * (amplitude * phase.sin())
-            }
-            Distort::Twister { angle_deg } => {
-                let v = *p - c;
-                let a = angle_deg.to_radians() * (v.hypot() / r_max);
-                c + Vec2::new(v.x * a.cos() - v.y * a.sin(), v.x * a.sin() + v.y * a.cos())
-            }
-        })
-        .collect();
-    crate::geometry::smooth_path(&out[..out.len().saturating_sub(1)], true)
-}
+pub use crate::distort::{distort, Distort};
 
 /// The subpaths of `path`, each with whether it is closed.
 pub fn subpaths(path: &BezPath) -> Vec<(BezPath, bool)> {
@@ -484,7 +439,13 @@ mod tests {
     #[test]
     fn twister_keeps_bounds_roughly() {
         let a = Rect::new(0.0, 0.0, 10.0, 10.0).to_path(0.01);
-        let t = distort(&a, Distort::Twister { angle_deg: 45.0 });
+        let t = distort(
+            &a,
+            Distort::Twister {
+                angle_deg: 45.0,
+                center: None,
+            },
+        );
         let b = t.bounding_box();
         assert!(b.width() > 8.0 && b.width() < 16.0);
     }

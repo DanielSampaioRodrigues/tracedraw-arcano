@@ -705,9 +705,9 @@ pub struct App {
     pub dimension_points: Vec<Point>,
     pub blend_steps: u32,
     pub extrude_depth: Vec2,
-    pub distort_mode: crate::tools2::DistortMode,
-    pub distort_amount: f64,
-    pub distort_frequency: u32,
+    /// The Distort tool's values (its bar) and its drag under way.
+    pub distort: crate::distort_tool::DistortSettings,
+    pub distort_drag: Option<crate::distort_tool::DistortDrag>,
     pub brush_radius: f64,
     /// Eraser nib: thickness in mm and shape.
     pub eraser_width: f64,
@@ -1448,9 +1448,8 @@ impl App {
             dimension_points: Vec::new(),
             blend_steps: 5,
             extrude_depth: Vec2::new(8.0, -8.0),
-            distort_mode: crate::tools2::DistortMode::PushPull,
-            distort_amount: 20.0,
-            distort_frequency: 12,
+            distort: Default::default(),
+            distort_drag: None,
             brush_radius: 10.0,
             eraser_width: 6.35,
             eraser_square: false,
@@ -2053,6 +2052,7 @@ impl App {
             brush: self.brush,
             dimension_style: self.dimension_style.clone(),
             callout_style: self.callout_style.clone(),
+            distort: self.distort,
             connector_radius: self.connector_radius,
             recognize: self.recognize,
             sketch: self.sketch,
@@ -2117,6 +2117,7 @@ impl App {
         };
         self.connector_radius = finite(t.connector_radius, 0.0, 1000.0, 3.0);
         self.callout_style = t.callout_style.clamped();
+        self.distort = t.distort.clamped();
         self.recognize = crate::recognize::RecognizeSettings {
             recognition: t.recognize.recognition.min(5),
             smoothing: t.recognize.smoothing.min(5),
@@ -4933,6 +4934,8 @@ mod tests {
         app.area_outline_width = 1.5;
         app.callout_style.shape = crate::callouts::CalloutShape::Ellipse;
         app.callout_style.gap = 2.5;
+        app.distort.mode = crate::distort_tool::DistortMode::Zipper;
+        app.distort.frequency = 9;
         // The palette starts at the bottom; moved to the right, it stays.
         use crate::ui::bars::{move_bar, Bar, Dock};
         assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Bottom);
@@ -4969,6 +4972,10 @@ mod tests {
         assert_eq!(
             (next.callout_style.shape, next.callout_style.gap),
             (crate::callouts::CalloutShape::Ellipse, 2.5)
+        );
+        assert_eq!(
+            (next.distort.mode, next.distort.frequency),
+            (crate::distort_tool::DistortMode::Zipper, 9)
         );
         // Values out of range in a file edited by hand are brought in.
         let mut odd = next.settings.clone();

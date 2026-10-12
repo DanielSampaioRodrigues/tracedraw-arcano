@@ -246,10 +246,21 @@ impl App {
         let mut cmds = Vec::new();
         for s in shapes {
             let mut effects = s.effects.clone();
-            if replace_same_kind {
-                effects.retain(|e| std::mem::discriminant(e) != std::mem::discriminant(&effect));
+            let same = |e: &Effect| std::mem::discriminant(e) == std::mem::discriminant(&effect);
+            match effects.iter().position(same).filter(|_| replace_same_kind) {
+                // Replaced where it was, so the effects keep their order.
+                Some(i) => {
+                    effects[i] = effect.clone();
+                    let mut first = true;
+                    effects.retain(|e| {
+                        if !same(e) {
+                            return true;
+                        }
+                        std::mem::replace(&mut first, false)
+                    });
+                }
+                None => effects.push(effect.clone()),
             }
-            effects.push(effect.clone());
             cmds.push(Command::SetEffects {
                 shape: s.id,
                 effects,
