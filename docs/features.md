@@ -50,7 +50,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Import of TXT, RTF and DOCX as paragraph text with run formatting | works |
 | Export to PSD with one raster layer per document layer | works |
 | Text editing in place: caret, selection by keyboard and mouse, word selection, character-level bold/italic/underline, clipboard | works |
-| Crop (an area to move and resize before it is applied; open curves cut, groups member by member, bitmaps, tables and symbols in a clip frame), Knife (two-point or freehand cuts, a gap, pieces apart or as one object, open curves split), Segment delete, Eraser (band subtraction with thickness and nib shape) | works (see `behavior/crop-knife-eraser.md`); the crop area does not turn |
+| Crop (an area to move and resize before it is applied; open curves cut, groups member by member, bitmaps, tables and symbols in a clip frame), Knife (two-point or freehand cuts, a gap, pieces apart or as one object, open curves split), Segment delete (the stretch between crossings, by a click or every one inside a drag), Eraser (band subtraction with thickness and nib shape) | works (see `behavior/crop-knife-eraser.md`); the crop area does not turn |
 | QR code, barcode (Code 128, EAN-13, EAN-8) and page number insertion | works |
 
 ## 3. Shape and node editing

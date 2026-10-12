@@ -2431,6 +2431,7 @@ recognize.recognition_tip = "Avec quelle facilité les tracés deviennent des fo
 recognize.smoothing = "Lissage"
 recognize.smoothing_tip = "Combien les courbes libres sont lissées"
 rulers.origin_tip = "Faites glisser pour déplacer l'origine des règles ; double-cliquez pour les paramètres"
+segment_delete.hint = "Cliquez sur un tronçon de contour entre ses croisements pour le supprimer ; faites glisser autour de tronçons pour supprimer tous ceux qui sont entièrement à l'intérieur"
 shape.alternate_process = "Processus alternatif"
 shape.arrow = "Flèche droite"
 shape.banner = "Ruban"

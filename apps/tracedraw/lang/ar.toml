@@ -2431,6 +2431,7 @@ recognize.recognition_tip = "مدى سهولة تحول الخطوط إلى أش
 recognize.smoothing = "التنعيم"
 recognize.smoothing_tip = "مدى تنعيم المنحنيات الحرة"
 rulers.origin_tip = "اسحب لتحريك أصل المساطر؛ انقر مرتين لإعدادات المسطرة"
+segment_delete.hint = "انقر على جزء من المحيط بين نقاط التقاطع لحذفه؛ اسحب حول الأجزاء لحذف كل ما يقع داخلها بالكامل"
 shape.alternate_process = "عملية بديلة"
 shape.arrow = "سهم لليمين"
 shape.banner = "شريط"

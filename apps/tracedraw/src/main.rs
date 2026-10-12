@@ -78,6 +78,7 @@ mod prefs;
 mod raster;
 mod recognize;
 mod scripting;
+mod segment_delete;
 mod select_region;
 mod settings;
 mod shape_tool;

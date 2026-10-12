@@ -351,6 +351,10 @@ impl App {
                 }
                 true
             }
+            Tool::SegmentDelete => {
+                self.delete_virtual_segments_in(rect);
+                true
+            }
             _ => false,
         }
     }

@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Segment Delete removes the stretch of an outline between the places
+  where it crosses other outlines or itself, so overlapping lines can be
+  trimmed back to their crossings; a drag removes every such stretch
+  inside it. It used to remove one segment between two nodes, and a
+  closed shape could lose its closing side by mistake.
 - Crop: the area stays on the page with handles to move and resize it
   (and fields for its position and size) until a double-click inside,
   Enter or Crop applies it; Escape or Clear Crop Area drops it. It used

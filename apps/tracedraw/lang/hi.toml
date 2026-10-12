@@ -2431,6 +2431,7 @@ recognize.recognition_tip = "स्ट्रोक कितनी आसान�
 recognize.smoothing = "चिकनाई"
 recognize.smoothing_tip = "मुक्त वक्र कितने चिकने होते हैं"
 rulers.origin_tip = "रूलर मूल बिंदु खिसकाने के लिए खींचें; सेटिंग्स के लिए डबल-क्लिक करें"
+segment_delete.hint = "किसी रूपरेखा के कटान बिंदुओं के बीच के हिस्से पर क्लिक करके उसे हटाएँ; पूरी तरह अंदर आने वाले सभी हिस्से हटाने के लिए उनके चारों ओर खींचें"
 shape.alternate_process = "वैकल्पिक प्रक्रिया"
 shape.arrow = "दायाँ तीर"
 shape.banner = "रिबन"

@@ -840,6 +840,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             }
             Tool::Crop => crate::ui::crop_bar::crop_bar(app, ui),
             Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),
+            Tool::SegmentDelete => {
+                ui.label(
+                    egui::RichText::new(tr("segment_delete.hint"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+            }
             Tool::Spiral => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.revolutions"))

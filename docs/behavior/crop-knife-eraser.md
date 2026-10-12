@@ -51,9 +51,20 @@
 
 ## Segment delete
 
-- Click a segment between two nodes (hit distance 5 screen pixels): the
-  segment is removed, splitting the subpath in two open subpaths; a
-  closed path becomes open. The object is deleted when nothing is left.
+- A virtual segment is the stretch of an outline between two places
+  where it crosses another outline or itself (or an open end); a
+  closed subpath that nothing crosses is one virtual segment.
+- Crossings count against every visible object of the page's unlocked
+  layers (flattened to 0.02 mm), the object's other subpaths and its
+  own segments that are not next to each other (`segment_delete.rs`).
+- Click (within 5 screen pixels; the nearest outline, the topmost of
+  equals): its virtual segment under the pointer is removed. Drag: every
+  virtual segment lying wholly inside the rectangle (nine points along
+  it) is removed, on all objects at once.
+- Curves, rectangles, ellipses and polygons can lose segments; they
+  become curves. A closed subpath that loses a stretch opens (what is
+  left of it runs on over its start as one piece); an object with
+  nothing left is deleted. One undo step.
 
 ## Eraser (X)
 
@@ -72,6 +83,10 @@
 
 ## Checks
 
+- `segment_delete::tests::a_click_removes_the_stretch_between_crossings`
+- `segment_delete::tests::closed_outlines_open_where_they_lose_a_stretch`
+- `segment_delete::tests::a_drag_removes_the_stretches_inside`
+- `segment_delete::tests::pieces_and_stretches`
 - `crop_tool::tests::the_area_waits_and_moves_until_it_is_applied`
 - `crop_tool::tests::open_curves_groups_bitmaps_and_text`
 - `crop_tool::tests::handles_and_resizing_stay_sane`

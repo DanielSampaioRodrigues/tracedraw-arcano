@@ -94,7 +94,19 @@ impl App {
             }
             Tool::SegmentDelete => {
                 if response.clicked_by(PointerButton::Primary) {
-                    self.delete_segment_at(p);
+                    self.delete_virtual_segment_at(p);
+                }
+                if response.drag_started_by(PointerButton::Primary) {
+                    self.drag = Drag::Box {
+                        start: p,
+                        current: p,
+                        from_center: false,
+                    };
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Box { current, .. } = &mut self.drag {
+                        *current = p;
+                    }
                 }
             }
             Tool::ShapeRecognition | Tool::Sketch => {
@@ -231,78 +243,6 @@ impl App {
     }
 
     /// Segment Delete: remove the segment of a curve under the click.
-    pub fn delete_segment_at(&mut self, p: Point) {
-        let tol = 3.0 / self.view.zoom as f64;
-        let shapes: Vec<Shape> = self
-            .doc()
-            .page(self.page)
-            .map(|pg| {
-                pg.layers
-                    .iter()
-                    .filter(|l| l.visible && !l.locked)
-                    .flat_map(|l| l.shapes.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        for s in shapes.iter().rev() {
-            let path = s.page_path();
-            let Some((seg_idx, _, d)) = tracedraw_core::nodes::nearest_segment(&path, p) else {
-                continue;
-            };
-            if d > tol {
-                continue;
-            }
-            // Split the path: remove element seg_idx, start a new subpath after it.
-            let els: Vec<tracedraw_core::geometry::PathEl> = path.elements().to_vec();
-            let mut out = BezPath::new();
-            let mut last: Option<Point> = None;
-            for (i, el) in els.iter().enumerate() {
-                use tracedraw_core::geometry::PathEl;
-                if i == seg_idx {
-                    // Skip this segment; the next element starts a new subpath.
-                    let end = match el {
-                        PathEl::LineTo(q) | PathEl::QuadTo(_, q) | PathEl::CurveTo(_, _, q) => {
-                            Some(*q)
-                        }
-                        _ => None,
-                    };
-                    if let Some(e) = end {
-                        out.move_to(e);
-                        last = Some(e);
-                    }
-                    continue;
-                }
-                match el {
-                    PathEl::ClosePath => {
-                        // Closing becomes a line back to the start when the removed
-                        // segment was elsewhere; simplest: open the path.
-                    }
-                    other => {
-                        out.push(*other);
-                        if let PathEl::MoveTo(q)
-                        | PathEl::LineTo(q)
-                        | PathEl::QuadTo(_, q)
-                        | PathEl::CurveTo(_, _, q) = other
-                        {
-                            last = Some(*q);
-                        }
-                    }
-                }
-            }
-            let _ = last;
-            let local = s.transform.inverse() * out;
-            let cmds = vec![Command::SetShapeKind {
-                shape: s.id,
-                kind: ShapeKind::Path {
-                    path: local,
-                    closed: false,
-                },
-            }];
-            let _ = self.engine.run_batch("Segment Delete", &cmds);
-            return;
-        }
-    }
-
     /// Shape Recognition: recognise the sketched stroke as a basic shape.
     /// Sketch: smooth the stroke and merge it with a selected curve
     /// whose end is near the stroke's start.
