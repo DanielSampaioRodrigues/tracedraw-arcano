@@ -381,6 +381,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         app.wireframe,
         app.simulate_overprints,
         app.rasterize_complex_effects,
+        app.proof_colors,
     ) {
         painter.image(
             tex,

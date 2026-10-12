@@ -145,7 +145,7 @@ Counts: works 182, partial 1 (`.cdr` content coverage), missing 2 (CMX import; N
 | Colour styles and harmonies | works |
 | Object styles (fill, outline and transparency parts; objects stay linked and follow the style; break link) and default properties of new graphics, artistic text and paragraph text, saved with the drawing | works (see `behavior/object-styles.md`) |
 | Overprint fill, outline and bitmap; Simulate Overprints preview | works |
-| Proof colours (soft proofing with the built-in CMYK model) | works |
+| Proof colours (soft proofing: the page drawn through CMYK and back, with the CMYK profile in use or the built-in model; see `behavior/colour-management.md`) | works |
 | CMYK shown through a built-in press model of coated stock when no profile is loaded (default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
 | A drawing's own CMYK profile (the one a `.cdr` file carries, saved in `.tdraw`): its CMYK colours shown through it while it is the active drawing | works (see `cdr-format.md`) |

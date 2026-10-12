@@ -95,6 +95,18 @@ installs the right one. `tracedraw-cli` renders and exports through the
 drawing's profile too (relative colorimetric, no black point
 compensation).
 
+## Proof colours
+
+View > Proof Colors, the status bar's proof button and Options > Display
+show the drawing as it would print: every colour of the rendered page
+goes to CMYK and back (`color::proof_rgb`), through the drawing's or the
+settings' CMYK profile when there is one, else the press model, so
+screen colours CMYK cannot print look duller. The page is proofed on a
+17 x 17 x 17 grid of screen colours, made once per colour setting, with
+colours between interpolated (trilinear); transparent and half-covered
+pixels keep their coverage. Paper white stays white. The desktop, the
+selection and the guides are not proofed.
+
 ## Thin outlines on screen
 
 An outline thinner than one pixel at the current zoom (or the
@@ -103,6 +115,9 @@ instead of a faded fraction of a pixel; vector exports keep the true
 width.
 
 ## Checks
+
+- `color::tests::proofed_colours_are_what_cmyk_can_print` (core),
+  `raster::tests::proofed_pixels_follow_the_grid_of_proofed_colours`.
 
 - `app::tests::a_drawing_shows_through_the_cmyk_profile_it_carries`,
   `container::tests::the_cmyk_profile_comes_with_the_document` (cdr crate),

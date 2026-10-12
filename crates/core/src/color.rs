@@ -473,6 +473,14 @@ fn luminance(r: f32, g: f32, b: f32) -> f32 {
     }
 }
 
+/// The screen colour `rgb` (0 to 1) as it would print: taken to CMYK and
+/// back, through the ICC engine when one is installed with a CMYK
+/// profile, else the press model (View > Proof Colors).
+pub fn proof_rgb(rgb: [f32; 3]) -> [f32; 3] {
+    let [r, g, b] = rgb.map(|v| v.clamp(0.0, 1.0));
+    Color::Rgb { r, g, b }.convert_to("CMYK").to_rgb_f32()
+}
+
 pub fn hsb_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
     let h = h.rem_euclid(360.0) / 60.0;
     let i = h.floor() as i32;
@@ -581,6 +589,21 @@ mod tests {
         let cyan = Color::cmyk_pct(100.0, 0.0, 0.0, 0.0).to_rgb8();
         assert!(cyan[0] == 0 && (171..=176).contains(&cyan[1]), "{cyan:?}");
         assert_eq!(Color::rgb8(255, 128, 0).to_hex(), "#ff8000");
+    }
+
+    #[test]
+    fn proofed_colours_are_what_cmyk_can_print() {
+        // Paper white stays white; screen blue, far outside CMYK, dulls.
+        let white = proof_rgb([1.0, 1.0, 1.0]);
+        assert!(white.iter().all(|v| (*v - 1.0).abs() < 0.02), "{white:?}");
+        let blue = proof_rgb([0.0, 0.0, 1.0]);
+        assert!(blue[2] < 0.9 || blue[0] > 0.1, "{blue:?}");
+        // A colour CMYK prints already comes back nearly the same.
+        let printable = Color::cmyk_pct(20.0, 40.0, 60.0, 10.0).to_rgb_f32();
+        let back = proof_rgb(printable);
+        for (a, b) in back.iter().zip(printable) {
+            assert!((a - b).abs() < 0.03, "{back:?} {printable:?}");
+        }
     }
 
     #[test]

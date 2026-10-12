@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- View > Proof Colors changes the drawing on screen: its colours go to
+  CMYK and back, through the CMYK profile in use or the built-in model,
+  so colours CMYK cannot print show duller. Before, the button only
+  lit up.
 - The object context menu's Frame Type works: Create Empty Clip Frame
   makes clip frames that stay in place when the object was turned (they
   were turned twice), No Frame turns empty clip frames back into their
