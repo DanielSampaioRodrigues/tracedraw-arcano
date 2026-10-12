@@ -63,6 +63,7 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
         AiStatus::Done(n) => {
             ui.label(trf("ai.done", &[("n", &n.to_string())]));
         }
+        AiStatus::Listed(n) => dim(ui, trf("ai.models_found", &[("n", &n.to_string())])),
         AiStatus::Failed(e) => {
             ui.label(RichText::new(e.as_str()).color(ERROR));
         }
@@ -145,6 +146,7 @@ fn connection(app: &mut App, ui: &mut Ui) {
         }
         ui.end_row();
     });
+    ui.checkbox(&mut prefs.show_bar, tr("ai.show_bar"));
     if ui
         .checkbox(&mut prefs.remember_key, tr("ai.remember_key"))
         .changed()

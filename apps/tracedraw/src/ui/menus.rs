@@ -2442,6 +2442,11 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "bars.palette", "", palette) {
             app.settings.palette.show_palette = !palette;
         }
+        // Shown while an AI service is set up (AI Drawing).
+        let ai_bar = app.settings.ai.show_bar;
+        if check(ui, "bars.ai_prompt", "", ai_bar) {
+            app.settings.ai.show_bar = !ai_bar;
+        }
         if check(
             ui,
             "menu.window.toolbar_status_bar",

@@ -60,11 +60,24 @@ impl Provider {
     pub fn needs_key(self) -> bool {
         matches!(self, Provider::Anthropic)
     }
+
+    /// Models offered before the service's own list is fetched.
+    pub fn preset_models(self) -> &'static [&'static str] {
+        match self {
+            Provider::Anthropic => &[
+                "claude-sonnet-5-5",
+                "claude-opus-5-5",
+                "claude-haiku-5-5",
+                "claude-fable-5-1",
+            ],
+            Provider::OpenAiCompatible => &[],
+        }
+    }
 }
 
 /// The connection, kept with the preferences. The key is kept here only
 /// while `remember_key` is on; otherwise it lives in the session.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiPrefs {
     pub provider: Provider,
@@ -74,6 +87,21 @@ pub struct AiPrefs {
     pub model: String,
     pub key: String,
     pub remember_key: bool,
+    /// The prompt bar above the palette shows while a service is set up.
+    pub show_bar: bool,
+}
+
+impl Default for AiPrefs {
+    fn default() -> Self {
+        AiPrefs {
+            provider: Provider::default(),
+            endpoint: String::new(),
+            model: String::new(),
+            key: String::new(),
+            remember_key: false,
+            show_bar: true,
+        }
+    }
 }
 
 impl AiPrefs {
@@ -96,6 +124,18 @@ impl AiPrefs {
             m.to_string()
         }
     }
+
+    /// The address of the service's list of models: `models` next to
+    /// `messages` or `chat/completions`.
+    pub fn models_endpoint(&self) -> String {
+        let e = self.endpoint();
+        let e = e.trim_end_matches('/');
+        let base = e
+            .strip_suffix("/chat/completions")
+            .or_else(|| e.strip_suffix("/messages"))
+            .unwrap_or(e);
+        format!("{base}/models")
+    }
 }
 
 /// The key a session starts with: the remembered one, if any.
@@ -107,9 +147,11 @@ pub fn remembered_key(prefs: &AiPrefs) -> String {
     }
 }
 
-/// One HTTP POST, as both kinds of service take it.
+/// One HTTP request, as both kinds of service take it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HttpRequest {
+    /// `POST` (a request to draw) or `GET` (the list of models).
+    pub method: &'static str,
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
@@ -171,6 +213,8 @@ pub enum AiStatus {
     Retrying,
     /// Drawn, with this many changes.
     Done(usize),
+    /// The service listed this many models.
+    Listed(usize),
     /// Nothing drawn, and why.
     Failed(String),
 }
@@ -178,12 +222,21 @@ pub enum AiStatus {
 /// A request on its way.
 struct Pending {
     rx: std::sync::mpsc::Receiver<HttpResult>,
-    /// The messages sent, to continue the conversation on a retry.
-    messages: Vec<(Role, String)>,
-    /// The user's words, for the history.
-    request: String,
-    /// This is already the corrected attempt.
-    retried: bool,
+    job: Job,
+}
+
+/// What a request on its way is for.
+enum Job {
+    Draw {
+        /// The messages sent, to continue the conversation on a retry.
+        messages: Vec<(Role, String)>,
+        /// The user's words, for the history.
+        request: String,
+        /// This is already the corrected attempt.
+        retried: bool,
+    },
+    /// The service's list of models.
+    Models,
 }
 
 /// AI Drawing's state for the session (the docker's fields and the
@@ -200,6 +253,8 @@ pub struct AiSession {
     /// What the last script printed.
     pub output: Vec<String>,
     pub history: Vec<Turn>,
+    /// The models the service listed (empty until asked).
+    pub models: Vec<String>,
     pending: Option<Pending>,
     /// Tests: answers requests at once instead of the network.
     pub fake: Option<fn(&HttpRequest) -> HttpResult>,
@@ -264,21 +319,15 @@ fn retry_message(error: &str) -> String {
     )
 }
 
-/// The HTTP request for `messages` (oldest first, starting and ending
-/// with the user's) to the service `prefs` describe.
-pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) -> HttpRequest {
+/// The headers that carry the key (and, for the Messages API, its
+/// version), with the JSON content type.
+fn headers(prefs: &AiPrefs, key: &str) -> Vec<(String, String)> {
     let key = key.trim();
-    let msgs: Vec<Value> = messages
-        .iter()
-        .map(|(role, text)| json!({"role": role.name(), "content": text}))
-        .collect();
+    let mut headers = vec![("content-type".to_string(), "application/json".to_string())];
     match prefs.provider {
         Provider::Anthropic => {
-            let mut headers = vec![
-                ("content-type".to_string(), "application/json".to_string()),
-                ("x-api-key".to_string(), key.to_string()),
-                ("anthropic-version".to_string(), "2023-06-01".to_string()),
-            ];
+            headers.push(("x-api-key".to_string(), key.to_string()));
+            headers.push(("anthropic-version".to_string(), "2023-06-01".to_string()));
             // The service answers a browser only when it is told the key
             // is the user's own, used from their browser.
             if crate::files::WEB {
@@ -287,50 +336,99 @@ pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) ->
                     "true".to_string(),
                 ));
             }
-            HttpRequest {
-                url: prefs.endpoint(),
-                headers,
-                body: json!({
-                    "model": prefs.model(),
-                    "max_tokens": MAX_TOKENS,
-                    "system": SYSTEM_PROMPT,
-                    "messages": msgs,
-                })
-                .to_string(),
-            }
         }
         Provider::OpenAiCompatible => {
-            let mut headers = vec![("content-type".to_string(), "application/json".to_string())];
             if !key.is_empty() {
                 headers.push(("authorization".to_string(), format!("Bearer {key}")));
             }
-            let mut all = vec![json!({"role": "system", "content": SYSTEM_PROMPT})];
-            all.extend(msgs);
-            HttpRequest {
-                url: prefs.endpoint(),
-                headers,
-                body: json!({"model": prefs.model(), "messages": all}).to_string(),
-            }
         }
     }
+    headers
+}
+
+/// The HTTP request for `messages` (oldest first, starting and ending
+/// with the user's) to the service `prefs` describe.
+pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) -> HttpRequest {
+    let msgs: Vec<Value> = messages
+        .iter()
+        .map(|(role, text)| json!({"role": role.name(), "content": text}))
+        .collect();
+    let body = match prefs.provider {
+        Provider::Anthropic => json!({
+            "model": prefs.model(),
+            "max_tokens": MAX_TOKENS,
+            "system": SYSTEM_PROMPT,
+            "messages": msgs,
+        }),
+        Provider::OpenAiCompatible => {
+            let mut all = vec![json!({"role": "system", "content": SYSTEM_PROMPT})];
+            all.extend(msgs);
+            json!({"model": prefs.model(), "messages": all})
+        }
+    };
+    HttpRequest {
+        method: "POST",
+        url: prefs.endpoint(),
+        headers: headers(prefs, key),
+        body: body.to_string(),
+    }
+}
+
+/// The request for the service's list of models.
+pub fn build_models_request(prefs: &AiPrefs, key: &str) -> HttpRequest {
+    HttpRequest {
+        method: "GET",
+        url: prefs.models_endpoint(),
+        headers: headers(prefs, key),
+        body: String::new(),
+    }
+}
+
+/// The message for a response that is an error: the service's own words
+/// with the status.
+fn http_error(r: &HttpResponse, v: Option<&Value>) -> String {
+    let message = v
+        .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()))
+        .map(str::to_string)
+        .unwrap_or_else(|| r.body.chars().take(200).collect());
+    trf(
+        "ai.http_error",
+        &[
+            ("status", &r.status.to_string()),
+            ("message", message.trim()),
+        ],
+    )
+}
+
+/// The models a service listed (`data[].id` in both kinds of service),
+/// or why there are none.
+pub fn parse_models(r: &HttpResponse) -> Result<Vec<String>, String> {
+    let v: Option<Value> = serde_json::from_str(&r.body).ok();
+    if !(200..300).contains(&r.status) {
+        return Err(http_error(r, v.as_ref()));
+    }
+    let ids: Vec<String> = v
+        .as_ref()
+        .and_then(|v| v.get("data"))
+        .and_then(|d| d.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|m| m.get("id").and_then(|i| i.as_str()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return Err(tr("ai.no_models"));
+    }
+    Ok(ids)
 }
 
 /// The text of a reply, or why there is none (as shown to the user).
 pub fn parse_reply(provider: Provider, r: &HttpResponse) -> Result<String, String> {
     let v: Option<Value> = serde_json::from_str(&r.body).ok();
     if !(200..300).contains(&r.status) {
-        let message = v
-            .as_ref()
-            .and_then(|v| v.pointer("/error/message").and_then(|m| m.as_str()))
-            .map(str::to_string)
-            .unwrap_or_else(|| r.body.chars().take(200).collect());
-        return Err(trf(
-            "ai.http_error",
-            &[
-                ("status", &r.status.to_string()),
-                ("message", message.trim()),
-            ],
-        ));
+        return Err(http_error(r, v.as_ref()));
     }
     let Some(v) = v else {
         return Err(tr("ai.unreadable_reply"));
@@ -416,23 +514,23 @@ pub fn extract_script(reply: &str) -> Option<String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
     std::thread::spawn(move || {
-        let _ = tx.send(post(&req));
+        let _ = tx.send(send(&req));
     });
 }
 
 #[cfg(target_arch = "wasm32")]
 fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
     wasm_bindgen_futures::spawn_local(async move {
-        let _ = tx.send(post(req).await);
+        let _ = tx.send(send(req).await);
         crate::web::request_repaint();
     });
 }
 
-/// One POST over HTTPS (or HTTP for local servers), waiting up to five
-/// minutes. Certificates are checked against the system's trusted ones;
-/// proxies come from the usual environment variables.
+/// One request over HTTPS (or HTTP for local servers), waiting up to
+/// five minutes. Certificates are checked against the system's trusted
+/// ones; proxies come from the usual environment variables.
 #[cfg(not(target_arch = "wasm32"))]
-fn post(req: &HttpRequest) -> HttpResult {
+fn send(req: &HttpRequest) -> HttpResult {
     use ureq::tls::{RootCerts, TlsConfig};
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(300)))
@@ -444,11 +542,20 @@ fn post(req: &HttpRequest) -> HttpResult {
         )
         .build()
         .into();
-    let mut r = agent.post(&req.url);
-    for (name, value) in &req.headers {
-        r = r.header(name, value);
+    let mut resp = if req.method == "GET" {
+        let mut r = agent.get(&req.url);
+        for (name, value) in &req.headers {
+            r = r.header(name, value);
+        }
+        r.call()
+    } else {
+        let mut r = agent.post(&req.url);
+        for (name, value) in &req.headers {
+            r = r.header(name, value);
+        }
+        r.send(req.body.as_str())
     }
-    let mut resp = r.send(req.body.as_str()).map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     let body = resp
         .body_mut()
@@ -460,7 +567,7 @@ fn post(req: &HttpRequest) -> HttpResult {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn post(req: HttpRequest) -> HttpResult {
+async fn send(req: HttpRequest) -> HttpResult {
     use wasm_bindgen::JsCast;
     let js = |e: wasm_bindgen::JsValue| {
         e.as_string()
@@ -471,9 +578,11 @@ async fn post(req: HttpRequest) -> HttpResult {
             .unwrap_or_else(|| "the request failed".to_string())
     };
     let init = web_sys::RequestInit::new();
-    init.set_method("POST");
+    init.set_method(req.method);
     init.set_mode(web_sys::RequestMode::Cors);
-    init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
+    if req.method != "GET" {
+        init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
+    }
     let headers = web_sys::Headers::new().map_err(js)?;
     for (name, value) in &req.headers {
         headers.set(name, value).map_err(js)?;
@@ -537,6 +646,32 @@ impl App {
         } else {
             AiStatus::Waiting
         };
+        self.ai_start(
+            http,
+            Job::Draw {
+                messages,
+                request,
+                retried,
+            },
+        );
+    }
+
+    /// Fetch the service's list of models for the model lists.
+    pub fn ai_fetch_models(&mut self) {
+        if self.ai.busy() {
+            return;
+        }
+        if self.settings.ai.provider.needs_key() && self.ai.key.trim().is_empty() {
+            self.ai.status = AiStatus::Failed(tr("ai.need_key"));
+            return;
+        }
+        let http = build_models_request(&self.settings.ai, &self.ai.key);
+        self.ai.status = AiStatus::Waiting;
+        self.ai_start(http, Job::Models);
+    }
+
+    /// Send `http` for `job`.
+    fn ai_start(&mut self, http: HttpRequest, job: Job) {
         let (tx, rx) = std::sync::mpsc::channel();
         match self.ai.fake {
             Some(fake) => {
@@ -548,15 +683,46 @@ impl App {
         if self.ai.sent.len() > 8 {
             self.ai.sent.remove(0);
         }
-        self.ai.pending = Some(Pending {
-            rx,
-            messages,
-            request,
-            retried,
-        });
+        self.ai.pending = Some(Pending { rx, job });
         if self.ai.fake.is_some() {
             self.poll_ai();
         }
+    }
+
+    /// A service is set up: a model, and a key where the service needs
+    /// one (a service at an address of the user's, such as a local model
+    /// server, may take none).
+    pub fn ai_ready(&self) -> bool {
+        let p = &self.settings.ai;
+        if p.model().is_empty() {
+            return false;
+        }
+        let has_key = !self.ai.key.trim().is_empty();
+        match p.provider {
+            Provider::Anthropic => has_key,
+            Provider::OpenAiCompatible => has_key || !p.endpoint.trim().is_empty(),
+        }
+    }
+
+    /// The models to choose from: the service's list once fetched, else
+    /// the usual ones, with the model in use first when it is in neither.
+    pub fn ai_model_choices(&self) -> Vec<String> {
+        let mut list: Vec<String> = if self.ai.models.is_empty() {
+            self.settings
+                .ai
+                .provider
+                .preset_models()
+                .iter()
+                .map(|m| m.to_string())
+                .collect()
+        } else {
+            self.ai.models.clone()
+        };
+        let current = self.settings.ai.model();
+        if !current.is_empty() && !list.contains(&current) {
+            list.insert(0, current);
+        }
+        list
     }
 
     /// Stop waiting for the reply (it is dropped when it comes).
@@ -595,6 +761,23 @@ impl App {
     }
 
     fn ai_receive(&mut self, result: HttpResult, p: Pending) {
+        let (messages, request, retried) = match p.job {
+            Job::Models => {
+                match result.and_then(|r| parse_models(&r)) {
+                    Ok(models) => {
+                        self.ai.status = AiStatus::Listed(models.len());
+                        self.ai.models = models;
+                    }
+                    Err(e) => self.ai.status = AiStatus::Failed(e),
+                }
+                return;
+            }
+            Job::Draw {
+                messages,
+                request,
+                retried,
+            } => (messages, request, retried),
+        };
         let provider = self.settings.ai.provider;
         let reply = match result.and_then(|r| parse_reply(provider, &r)) {
             Ok(text) => text,
@@ -616,20 +799,21 @@ impl App {
             Ok((output, changes)) => {
                 self.ai.output = output;
                 self.ai.status = AiStatus::Done(changes);
-                self.ai.history.push(Turn {
-                    request: p.request,
-                    reply,
-                });
+                // The request is done: the field is free for the next.
+                if self.ai.request.trim() == request {
+                    self.ai.request.clear();
+                }
+                self.ai.history.push(Turn { request, reply });
                 while self.ai.history.len() > MAX_HISTORY {
                     self.ai.history.remove(0);
                 }
                 self.status = trf("status.ai_drawn", &[("n", &changes.to_string())]);
             }
-            Err(e) if !p.retried => {
-                let mut messages = p.messages;
+            Err(e) if !retried => {
+                let mut messages = messages;
                 messages.push((Role::Assistant, reply));
                 messages.push((Role::User, retry_message(&e)));
-                self.ai_send(messages, p.request, true);
+                self.ai_send(messages, request, true);
             }
             Err(e) => {
                 self.ai.output.clear();
@@ -985,6 +1169,7 @@ mod tests {
             seen
         });
         let req = HttpRequest {
+            method: "POST",
             url: format!("http://{addr}/v1/chat/completions"),
             headers: vec![
                 ("content-type".into(), "application/json".into()),
@@ -992,9 +1177,9 @@ mod tests {
             ],
             body: r#"{"a":1}"#.into(),
         };
-        let r = post(&req).expect("answered");
+        let r = send(&req).expect("answered");
         assert_eq!((r.status, r.body.as_str()), (200, r#"{"ok":true}"#));
-        let r = post(&req).expect("answered");
+        let r = send(&req).expect("answered");
         assert_eq!(r.status, 401);
         assert!(parse_reply(Provider::OpenAiCompatible, &r)
             .expect_err("an error")
@@ -1017,7 +1202,7 @@ mod tests {
             url: format!("http://{gone}/"),
             ..req
         };
-        assert!(post(&dead).is_err());
+        assert!(send(&dead).is_err());
     }
 
     /// A real service refuses a made-up key with its own message (needs
@@ -1032,7 +1217,7 @@ mod tests {
             "not-a-key",
             &[(Role::User, user_message("a dot", None))],
         );
-        let r = post(&req).expect("the service answers");
+        let r = send(&req).expect("the service answers");
         assert_eq!(r.status, 401, "{}", r.body);
         let e = parse_reply(prefs.provider, &r).expect_err("refused");
         assert!(e.contains("401"), "{e}");

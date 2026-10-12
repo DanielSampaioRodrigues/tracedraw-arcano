@@ -8,6 +8,26 @@ for the scripting object model (the one of the Scripts panel), and
 TraceDraw runs it as one undo step. TraceDraw has no AI of its own and no
 account; nothing is sent until the user presses Draw.
 
+## Prompt bar
+
+While a service is set up (a model, and a key where the service needs
+one; a chat completions service at an address of the user's needs no
+key), a bar shows above the colour palette, as wide as the drawing
+window: "AI", the model list, the request (Enter draws, like Draw), Draw
+(a spinner and Cancel while waiting), what the last request did, `...`
+(opens the AI Drawing panel) and `x` (hides the bar). Window > Toolbars >
+AI Prompt Bar and "Show the prompt bar above the palette" in the panel
+turn it on and off (on by default); it does not show on the Welcome
+Screen. The request is shared with the panel's, and a request that drew
+clears it.
+
+The model list offers the service's own models once fetched ("Fetch the
+service's models": a GET of `models` next to the address, `/v1/models`
+for the Messages API, `data[].id` of the reply), before that the usual
+ones (`claude-sonnet-5-5`, `claude-opus-5-5`, `claude-haiku-5-5`,
+`claude-fable-5-1` for the Messages API, none for chat completions); the
+model in use is always listed.
+
 ## Connection
 
 The Connection section is open until a key is entered for a service that
@@ -106,3 +126,12 @@ allow the page's origin (for example `OLLAMA_ORIGINS`).
   the panel draws in every state (`ui::ai_docker::tests::the_docker_draws_in_every_state`).
 - The active page's description lists up to the limit and counts the
   rest (`describe::tests::the_active_page_is_described_up_to_a_number_of_objects`).
+- The prompt bar shows only with a service set up and the bar on, and
+  the window draws with it in every state
+  (`ui::ai_bar::tests::the_bar_shows_while_a_service_is_set_up`); the
+  model list takes the service's models and keeps the one in use; the
+  models address of both kinds of service
+  (`ui::ai_bar::tests::the_model_list_offers_the_services_models`).
+- Checked on screen: a request typed in the bar and Enter drew a sun, a
+  hill with a gradient and a title from a test service on the same
+  computer, and cleared the field.

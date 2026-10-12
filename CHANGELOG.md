@@ -93,7 +93,9 @@ full, row-by-row status.
   script for the object model; it runs as one undo step, without file
   access and all or nothing, and a failing script is sent back once with
   its error. The key stays in memory unless you ask to remember it.
-  Works on the desktop and in the browser.
+  Works on the desktop and in the browser. While a service is set up, a
+  prompt bar above the colour palette takes requests (Enter draws) with
+  a model list fetched from the service; Window > Toolbars hides it.
 - Scripts: `CreatePath(d)` draws curves from SVG path data.
 
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop

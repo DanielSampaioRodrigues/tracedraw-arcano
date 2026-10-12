@@ -4,6 +4,7 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
+pub mod ai_bar;
 pub mod ai_docker;
 pub mod bars;
 pub mod bitmap_dialogs;
@@ -421,6 +422,17 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 .frame(palette_frame)
                 .show(ui, |ui| palette::palette_row(app, ui));
         }
+    }
+    // The AI prompt bar, over the palette rows, while a service is set up.
+    if ai_bar::visible(app) {
+        side(Panel::bottom("ai_prompt_bar"), ai_bar::BAR_H)
+            .frame(
+                Frame::new()
+                    .fill(Tokens::PANEL)
+                    .inner_margin(egui::Margin::symmetric(0, 2)),
+            )
+            .show_separator_line(true)
+            .show(ui, |ui| ai_bar::ai_bar(app, ui));
     }
     palette::popups(app, &ctx);
 
