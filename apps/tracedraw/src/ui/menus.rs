@@ -2555,14 +2555,14 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         app.show_welcome = true;
         app.welcome_tab = crate::app::WelcomeTab::Learn;
     }
-    if check(
-        ui,
-        "menu.help.hints",
-        "",
-        app.show_dockers && app.docker_tab == DockerTab::Hints,
-    ) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Hints;
+    let hints_open = app.show_dockers && app.docker_tab == DockerTab::Hints;
+    if check(ui, "menu.help.hints", "", hints_open) {
+        if hints_open {
+            app.close_docker(DockerTab::Hints);
+        } else {
+            app.show_dockers = true;
+            app.docker_tab = DockerTab::Hints;
+        }
     }
     if item(ui, "menu.help.quick_start_guide", "", true) {
         app.show_welcome = true;

@@ -27,10 +27,25 @@ browser's local storage) and comes back when TraceDraw starts again:
 where each bar sits (`bars`), which bars show (`shown_bars`: standard
 toolbar, property bar, toolbox, status bar, panels, rulers, Text, Zoom
 and Transform toolbars), the tool each toolbox group shows, hidden
-flyouts, shortcuts, palette options, interface size and desktop colour.
-Preferences written before the bars shown were kept have no
-`shown_bars`: the built-in workspace's bars show, as before. Picking a
-built-in workspace sets its own bars, as it always did.
+flyouts, shortcuts, palette options, interface size and desktop colour,
+and the dockers (`dockers`: the dockers in the tab column, in order, and
+the one in front). Preferences written before the bars shown were kept
+have no `shown_bars`: the built-in workspace's bars show, as before;
+without `dockers` the column holds Hints, Properties and Objects.
+Picking a built-in workspace sets its own bars, as it always did.
+
+## Dockers
+
+The tab column holds the open dockers, as tabs; a click on a tab brings
+its docker to the front, a click on the tab in front collapses the
+docker area to the column. The docker's close button (x) and its tab's
+"Close Docker" take the docker out of the column and bring the next one
+forward; with none left the docker area closes. Collapse (the two
+triangles) only folds the area. A docker opened from a menu or its
+shortcut joins the column; Help > Hints opens Hints and, ticked, closes
+it. The column is kept when TraceDraw closes, so a docker closed stays
+closed the next time.
+Checks: `app::tests::a_closed_docker_stays_closed_the_next_time`.
 
 ## Export and import
 

@@ -153,6 +153,11 @@ pub struct Settings {
     /// before they were kept (the workspace's own bars then show).
     #[serde(default)]
     pub shown_bars: Option<ShownBars>,
+    /// The dockers in the tab column, in order, and the one in front, as
+    /// they were left; none in preferences written before they were kept
+    /// (the default dockers then show).
+    #[serde(default)]
+    pub dockers: Option<DockerSetup>,
     /// Options > Workspaces: the parts a workspace file exports and
     /// imports.
     #[serde(default)]
@@ -183,6 +188,14 @@ pub struct Settings {
     /// lines (else only the selected ones).
     #[serde(default = "default_true")]
     pub show_text_frames: bool,
+}
+
+/// The docker tab column as it was left: the dockers in it, in order, and
+/// the one in front (by their name keys, "docker.hints" ...).
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct DockerSetup {
+    pub open: Vec<String>,
+    pub front: String,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -646,6 +659,7 @@ impl Default for Settings {
             publish_pdf: crate::ui::publish_pdf::PublishPrefs::default(),
             defaults: crate::defaults::DefaultsPrefs::default(),
             shown_bars: None,
+            dockers: None,
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),
             formats: Default::default(),

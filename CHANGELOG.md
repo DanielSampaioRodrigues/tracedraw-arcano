@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dockers: the close button and a tab's Close Docker take the docker out
+  of the tab column (Hints, Properties and Objects could not be closed),
+  and the column with the docker in front is kept when TraceDraw closes,
+  so a docker closed stays closed the next time. Help > Hints closes
+  Hints when it is ticked.
 - `.cdr` writing, made to match the sample files table by table: each
   page now lists the master page's guides, desktop and grid layers by the
   master layers' own GUIDs (they had GUIDs of their own, and the grid

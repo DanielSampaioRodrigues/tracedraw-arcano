@@ -1479,7 +1479,7 @@ impl App {
             mask_tolerance: 20,
             font_filter: String::new(),
             effect_node_drag: None,
-            open_dockers: Vec::new(),
+            open_dockers: DockerTab::default_strip(),
             free_transform_last: Point::ZERO,
             free_transform_mode: FreeTransformMode::Rotation,
             free_transform_duplicate: false,
@@ -1695,6 +1695,10 @@ impl App {
         if let Some(shown) = s.shown_bars {
             self.set_shown_bars(shown);
         }
+        // The dockers as they were left: a docker closed stays closed.
+        if let Some(setup) = &s.dockers {
+            self.set_docker_setup(setup);
+        }
         self.snap.grid = s.snap.grid;
         self.snap.guides = s.snap.guides;
         self.snap.objects = s.snap.objects;
@@ -1835,6 +1839,62 @@ impl App {
         self.settings.units = self.units.id().into();
         self.settings.language = crate::i18n::language();
         self.settings.shown_bars = Some(self.shown_bars());
+        self.settings.dockers = Some(self.docker_setup());
+    }
+
+    /// The docker tab column now (see [`crate::settings::DockerSetup`]).
+    pub fn docker_setup(&self) -> crate::settings::DockerSetup {
+        crate::settings::DockerSetup {
+            open: self
+                .open_dockers
+                .iter()
+                .map(|t| t.key().to_string())
+                .collect(),
+            front: self.docker_tab.key().to_string(),
+        }
+    }
+
+    /// Put the docker tab column back as `setup` says; names of no docker
+    /// are skipped.
+    pub fn set_docker_setup(&mut self, setup: &crate::settings::DockerSetup) {
+        let by_key = |k: &str| DockerTab::ALL.iter().copied().find(|t| t.key() == k);
+        let mut open: Vec<DockerTab> = Vec::new();
+        for t in setup.open.iter().filter_map(|k| by_key(k)) {
+            if !open.contains(&t) {
+                open.push(t);
+            }
+        }
+        self.open_dockers = open;
+        if let Some(t) = by_key(&setup.front) {
+            self.docker_tab = t;
+        }
+        if self.open_dockers.is_empty() {
+            self.show_dockers = false;
+        } else if !self.open_dockers.contains(&self.docker_tab) {
+            self.docker_tab = self.open_dockers[0];
+        }
+    }
+
+    /// Close a docker: its tab leaves the column and the next one comes to
+    /// the front; with none left the docker area closes.
+    pub fn close_docker(&mut self, tab: DockerTab) {
+        let at = self.open_dockers.iter().position(|t| *t == tab);
+        self.open_dockers.retain(|t| *t != tab);
+        if self.docker_tab == tab {
+            let next = at
+                .and_then(|i| {
+                    self.open_dockers
+                        .get(i.min(self.open_dockers.len().saturating_sub(1)))
+                })
+                .copied();
+            match next {
+                Some(t) => self.docker_tab = t,
+                None => self.show_dockers = false,
+            }
+        }
+        if self.open_dockers.is_empty() {
+            self.show_dockers = false;
+        }
     }
 
     /// The tool each toolbox group shows, from tool ids (one per group, in
@@ -4304,6 +4364,79 @@ mod tests {
         assert!(carried_cmyk_profile(&doc).is_none());
         doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new("Junk", vec![1, 2, 3]));
         assert!(carried_cmyk_profile(&doc).is_none());
+    }
+
+    #[test]
+    fn a_closed_docker_stays_closed_the_next_time() {
+        let mut app = App::headless();
+        app.set_docker_setup(&crate::settings::DockerSetup {
+            open: DockerTab::default_strip()
+                .iter()
+                .map(|t| t.key().to_string())
+                .collect(),
+            front: DockerTab::Hints.key().into(),
+        });
+        app.show_dockers = true;
+        assert_eq!(app.open_dockers, DockerTab::default_strip());
+        // Closing Hints takes its tab away and brings the next one forward.
+        app.close_docker(DockerTab::Hints);
+        assert_eq!(
+            app.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        assert_eq!(app.docker_tab, DockerTab::Properties);
+        assert!(app.show_dockers);
+        // The next start puts the column back as it was left.
+        app.sync_settings();
+        let saved = app.settings.clone();
+        assert_eq!(
+            saved.dockers.as_ref().map(|d| d.front.as_str()),
+            Some("docker.properties")
+        );
+        let mut next = App::headless();
+        next.apply_settings(saved);
+        assert_eq!(
+            next.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        assert_eq!(next.docker_tab, DockerTab::Properties);
+        assert!(next.show_dockers);
+        // Closing every docker closes the area, and it stays closed.
+        next.close_docker(DockerTab::Objects);
+        next.close_docker(DockerTab::Properties);
+        assert!(next.open_dockers.is_empty() && !next.show_dockers);
+        next.sync_settings();
+        let mut third = App::headless();
+        third.apply_settings(next.settings.clone());
+        assert!(third.open_dockers.is_empty() && !third.show_dockers);
+        // A docker opened from a menu joins the column again.
+        third.toggle_docker(DockerTab::Hints);
+        assert!(third.show_dockers && third.docker_tab == DockerTab::Hints);
+        let ctx = crate::theme::ui_context();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut third, ui));
+        out.textures_delta.clear();
+        assert_eq!(third.open_dockers, [DockerTab::Hints]);
+        // Names of no docker are skipped; preferences from before keep
+        // the default column.
+        let mut fourth = App::headless();
+        fourth.set_docker_setup(&crate::settings::DockerSetup {
+            open: vec!["no.such.key".into(), "docker.objects".into()],
+            front: "no.such.key".into(),
+        });
+        assert_eq!(fourth.open_dockers, [DockerTab::Objects]);
+        assert_eq!(fourth.docker_tab, DockerTab::Objects);
+        let mut old = App::headless().settings.clone();
+        old.dockers = None;
+        let mut fifth = App::headless();
+        fifth.apply_settings(old);
+        assert_eq!(fifth.open_dockers, DockerTab::default_strip());
     }
 
     #[test]

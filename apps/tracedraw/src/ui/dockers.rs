@@ -35,16 +35,12 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     );
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.add_space(TITLE_H);
-    let mut tabs = DockerTab::default_strip();
-    for t in &app.open_dockers {
-        if !tabs.contains(t) {
-            tabs.push(*t);
-        }
+    // A docker brought to the front (from a menu, a shortcut) joins the
+    // column.
+    if app.show_dockers && !app.open_dockers.contains(&app.docker_tab) {
+        app.open_dockers.push(app.docker_tab);
     }
-    if !tabs.contains(&app.docker_tab) {
-        tabs.push(app.docker_tab);
-    }
-    for tab in tabs {
+    for tab in app.open_dockers.clone() {
         let name = tr(tab.key());
         let active = app.show_dockers && app.docker_tab == tab;
         let galley = ui.painter().layout_no_wrap(
@@ -95,10 +91,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             .show(|ui| {
                 crate::ui::menus::body(ui, |ui| {
                     if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
-                        app.open_dockers.retain(|t| *t != tab);
-                        if app.docker_tab == tab {
-                            app.show_dockers = false;
-                        }
+                        app.close_docker(tab);
                     }
                 })
             });
@@ -236,7 +229,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
     ui.painter()
         .line_segment([c + egui::vec2(4.5, -4.5), c + egui::vec2(-4.5, 4.5)], s);
     if resp.clicked() {
-        app.show_dockers = false;
+        app.close_docker(app.docker_tab);
     }
     // Collapse: two small triangles.
     let fold = egui::Rect::from_center_size(
