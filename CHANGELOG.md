@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Properties docker: its sections come open, in the order Outline,
+  Fill, Transparency (new there: the Transparency tool's settings), the
+  kind's own (corners, effects, character) and Summary, each with a header
+  bar, and a row of buttons opens and closes them; the sections closed
+  are kept. The fill kinds are pictures.
 - The text property bar: the font size has a list of the usual sizes, the
   alignment is one button with its picture and a list, and Bullets, Drop
   Cap, Text Properties and Edit Text have buttons. The shape tools' bars

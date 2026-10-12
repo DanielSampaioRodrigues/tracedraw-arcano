@@ -47,6 +47,25 @@ it. The column is kept when TraceDraw closes, so a docker closed stays
 closed the next time.
 Checks: `app::tests::a_closed_docker_stays_closed_the_next_time`.
 
+## Properties docker
+
+With objects selected: the first one's kind and box, a row of buttons,
+then its sections, in this order: Outline, Fill, Transparency, then
+what the kind has (Rectangle: its corners; a bitmap: its effects; text:
+its character settings), then Summary. Each section has a header bar
+with a triangle; the buttons (the outline pen, the fill bucket, the
+transparency checker, a rectangle, "fx", "A", "i") show which sections
+are open and open or close them, as a click on a header does. Sections
+come open; the ones closed are kept in the preferences
+(`properties_closed`). F11 and the status bar's fill and outline open
+their section again. The fill kinds are pictures (none, uniform,
+gradient, pattern, texture, mesh) with their names as tooltips; the
+Transparency section holds the Transparency tool's settings (kind,
+amount or gradient, merge mode, what it applies to).
+Checks: `ui::dockers::tests::properties_sections_open_close_and_jump`;
+every kind's sections draw in
+`ui::mod::tests::window_draws_with_every_docker_tool_and_selection`.
+
 ## Export and import
 
 Options > Workspaces > Workspace > Export and import, or Window >

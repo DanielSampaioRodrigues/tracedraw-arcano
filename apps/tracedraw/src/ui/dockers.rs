@@ -345,70 +345,236 @@ fn properties(app: &mut App, ui: &mut Ui) {
     );
 
     ui.separator();
-    let open = app.properties_open.take();
-    egui::CollapsingHeader::new(tr("docker.fill"))
-        .open(open.map(|o| o == 0).filter(|o| *o))
-        .show(ui, |ui| {
-            let mut fill = first.fill.clone();
-            if fill_editor(ui, &mut fill) {
-                app.apply_fill(fill);
-            }
-        });
-    egui::CollapsingHeader::new(tr("docker.outline"))
-        .open(open.map(|o| o == 1).filter(|o| *o))
-        .show(ui, |ui| {
-            let mut stroke = first.stroke.clone();
-            let custom = app.settings.custom_arrowheads.clone();
-            if outline_editor(ui, &mut stroke, &custom) {
-                let shapes = app.selection.clone();
-                app.run(Command::SetStroke { shapes, stroke });
-            }
-        });
-    if let Some(c) = first.page_corners() {
-        ui.collapsing(tr("kind.rectangle"), |ui| rectangle_section(app, ui, c));
+    // A jump from elsewhere (F11 to the fill, the outline from the status
+    // bar) opens that section.
+    if let Some(i) = app.properties_open.take() {
+        let id = if i == 0 { "fill" } else { "outline" };
+        app.settings.properties_closed.retain(|c| c != id);
+    }
+    // The sections this object has, in the docker's order, with the
+    // buttons that open and close them.
+    let mut sections: Vec<(&'static str, &'static str, SectionIcon)> = vec![
+        (
+            "outline",
+            "docker.outline",
+            SectionIcon::Tool(crate::tools::Tool::OutlinePen),
+        ),
+        (
+            "fill",
+            "docker.fill",
+            SectionIcon::Tool(crate::tools::Tool::InteractiveFill),
+        ),
+        (
+            "transparency",
+            "docker.transparency",
+            SectionIcon::Tool(crate::tools::Tool::Transparency),
+        ),
+    ];
+    let corners = first.page_corners();
+    if corners.is_some() {
+        sections.push((
+            "corners",
+            "kind.rectangle",
+            SectionIcon::Tool(crate::tools::Tool::Rectangle),
+        ));
     }
     if matches!(first.kind, ShapeKind::Bitmap { .. }) {
-        let id = first.id;
-        egui::CollapsingHeader::new(tr("docker.fx"))
-            .default_open(true)
-            .show(ui, |ui| crate::ui::effect_dialog::fx_section(app, ui, id));
+        sections.push(("effects", "docker.fx", SectionIcon::Effects));
     }
-    if let ShapeKind::Text { spans, .. } = &first.kind {
-        ui.collapsing(tr("docker.character"), |ui| {
-            if let Some(sp) = spans.first() {
-                ui.label(format!(
-                    "{} {} pt{}{}",
-                    sp.font_family,
-                    sp.size_pt,
-                    if sp.bold {
-                        format!(" {}", tr("docker.bold"))
-                    } else {
-                        String::new()
-                    },
-                    if sp.italic {
-                        format!(" {}", tr("docker.italic"))
-                    } else {
-                        String::new()
-                    }
-                ));
+    if matches!(first.kind, ShapeKind::Text { .. }) {
+        sections.push((
+            "character",
+            "docker.character",
+            SectionIcon::Tool(crate::tools::Tool::Text),
+        ));
+    }
+    sections.push(("summary", "docker.summary", SectionIcon::Summary));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for (id, key, icon) in &sections {
+            let open = !app.settings.properties_closed.iter().any(|c| c == id);
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
+            let fill = if open {
+                Some(Tokens::TOOL_ACTIVE)
+            } else if resp.hovered() {
+                Some(Tokens::TOOL_HOVER)
+            } else {
+                None
+            };
+            if let Some(c) = fill {
+                ui.painter().rect_filled(rect, 2.0, c);
             }
-            ui.label(
-                egui::RichText::new(tr("docker.edit_with_text_tool"))
-                    .color(Tokens::TEXT_DIM)
-                    .size(11.0),
+            icon.paint(
+                ui.painter(),
+                egui::Rect::from_center_size(rect.center(), egui::vec2(18.0, 18.0)),
             );
-        });
-    }
-    ui.collapsing(tr("docker.summary"), |ui| {
-        for s in &shapes {
-            ui.label(format!(
-                "{}  id {}  {}",
-                kind_name(&s.kind),
-                s.id.raw(),
-                s.name.clone().unwrap_or_default()
-            ));
+            if resp.on_hover_text(tr(key)).clicked() {
+                toggle_section(app, id);
+            }
         }
     });
+    ui.add_space(2.0);
+    for (id, key, _) in sections {
+        if !section_header(app, ui, id, &tr(key)) {
+            continue;
+        }
+        ui.add_space(2.0);
+        match id {
+            "outline" => {
+                let mut stroke = first.stroke.clone();
+                let custom = app.settings.custom_arrowheads.clone();
+                if outline_editor(ui, &mut stroke, &custom) {
+                    let shapes = app.selection.clone();
+                    app.run(Command::SetStroke { shapes, stroke });
+                }
+            }
+            "fill" => {
+                let mut fill = first.fill.clone();
+                if fill_editor(ui, &mut fill) {
+                    app.apply_fill(fill);
+                }
+            }
+            "transparency" => {
+                ui.horizontal_wrapped(|ui| crate::ui::toolbar::transparency_part(app, ui));
+            }
+            "corners" => {
+                if let Some(c) = corners {
+                    rectangle_section(app, ui, c);
+                }
+            }
+            "effects" => {
+                let id = first.id;
+                crate::ui::effect_dialog::fx_section(app, ui, id);
+            }
+            "character" => {
+                if let ShapeKind::Text { spans, .. } = &first.kind {
+                    if let Some(sp) = spans.first() {
+                        ui.label(format!(
+                            "{} {} pt{}{}",
+                            sp.font_family,
+                            sp.size_pt,
+                            if sp.bold {
+                                format!(" {}", tr("docker.bold"))
+                            } else {
+                                String::new()
+                            },
+                            if sp.italic {
+                                format!(" {}", tr("docker.italic"))
+                            } else {
+                                String::new()
+                            }
+                        ));
+                    }
+                    ui.label(
+                        egui::RichText::new(tr("docker.edit_with_text_tool"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                }
+            }
+            _ => {
+                for s in &shapes {
+                    ui.label(format!(
+                        "{}  id {}  {}",
+                        kind_name(&s.kind),
+                        s.id.raw(),
+                        s.name.clone().unwrap_or_default()
+                    ));
+                }
+            }
+        }
+        ui.add_space(6.0);
+    }
+}
+
+/// The picture on a Properties section's button.
+#[derive(Debug, Clone, Copy)]
+enum SectionIcon {
+    Tool(crate::tools::Tool),
+    Effects,
+    Summary,
+}
+
+impl SectionIcon {
+    fn paint(self, painter: &egui::Painter, r: egui::Rect) {
+        match self {
+            SectionIcon::Tool(t) => crate::ui::icons::draw(painter, r, t, Tokens::ICON),
+            SectionIcon::Effects => {
+                painter.text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "fx",
+                    egui::FontId::proportional(13.0),
+                    Tokens::ICON,
+                );
+            }
+            SectionIcon::Summary => {
+                painter.circle_stroke(r.center(), 7.0, egui::Stroke::new(1.3, Tokens::ICON));
+                painter.text(
+                    r.center() + egui::vec2(0.0, 0.5),
+                    egui::Align2::CENTER_CENTER,
+                    "i",
+                    egui::FontId::proportional(11.0),
+                    Tokens::ICON,
+                );
+            }
+        }
+    }
+}
+
+/// Open or close a Properties section (kept in the preferences).
+fn toggle_section(app: &mut App, id: &str) {
+    let closed = &mut app.settings.properties_closed;
+    if closed.iter().any(|c| c == id) {
+        closed.retain(|c| c != id);
+    } else {
+        closed.push(id.to_string());
+    }
+}
+
+/// A Properties section's header: a bar with the open or closed triangle
+/// and the title; a click opens or closes the section. True when open.
+fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
+    let open = !app.settings.properties_closed.iter().any(|c| c == id);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
+    let fill = if resp.hovered() {
+        Tokens::TOOL_HOVER
+    } else {
+        egui::Color32::from_gray(0xEC)
+    };
+    ui.painter().rect_filled(rect, 2.0, fill);
+    let c = egui::pos2(rect.left() + 10.0, rect.center().y);
+    let points = if open {
+        vec![
+            c + egui::vec2(-4.0, -2.0),
+            c + egui::vec2(4.0, -2.0),
+            c + egui::vec2(0.0, 3.0),
+        ]
+    } else {
+        vec![
+            c + egui::vec2(-2.0, -4.0),
+            c + egui::vec2(3.0, 0.0),
+            c + egui::vec2(-2.0, 4.0),
+        ]
+    };
+    ui.painter().add(egui::epaint::PathShape::convex_polygon(
+        points,
+        Tokens::ICON,
+        egui::Stroke::NONE,
+    ));
+    ui.painter().text(
+        egui::pos2(rect.left() + 20.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        title,
+        crate::theme::bold(12.5),
+        Tokens::TEXT,
+    );
+    if resp.clicked() {
+        toggle_section(app, id);
+        return !open;
+    }
+    open
 }
 
 /// The Properties docker's rectangle part: corner style, the four corner
@@ -418,7 +584,7 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
     use crate::ui::propbar::{edit_corners, CornerEdit};
     use tracedraw_core::{CornerKind, Corners};
     let mut edit = None;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (kind, key) in [
             (CornerKind::Round, "toolbar.corner_round"),
             (CornerKind::Scallop, "toolbar.corner_scallop"),
@@ -475,6 +641,83 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
     }
 }
 
+/// The picture of a fill kind (0 none, 1 uniform, 2 gradient, 3 pattern,
+/// 4 texture, 5 mesh) in a 16 x 16 square.
+fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
+    let edge = egui::Stroke::new(1.0, Tokens::ICON);
+    let sq = r.shrink(1.0);
+    match kind {
+        0 => {
+            painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
+            painter.line_segment(
+                [sq.left_bottom(), sq.right_top()],
+                egui::Stroke::new(1.3, egui::Color32::from_rgb(0xD0, 0x30, 0x30)),
+            );
+        }
+        1 => {
+            painter.rect_filled(sq, 0.0, Tokens::ICON);
+        }
+        2 => {
+            let mut mesh = egui::Mesh::default();
+            let dark = Tokens::ICON;
+            let light = egui::Color32::WHITE;
+            mesh.colored_vertex(sq.left_top(), dark);
+            mesh.colored_vertex(sq.right_top(), light);
+            mesh.colored_vertex(sq.right_bottom(), light);
+            mesh.colored_vertex(sq.left_bottom(), dark);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            painter.add(mesh);
+            painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
+        }
+        3 => {
+            let n = 4;
+            let w = sq.width() / n as f32;
+            for y in 0..n {
+                for x in 0..n {
+                    if (x + y) % 2 == 0 {
+                        let cell = egui::Rect::from_min_size(
+                            sq.min + egui::vec2(x as f32 * w, y as f32 * w),
+                            egui::vec2(w, w),
+                        );
+                        painter.rect_filled(cell, 0.0, Tokens::ICON);
+                    }
+                }
+            }
+            painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
+        }
+        4 => {
+            // Speckles of a texture.
+            for (x, y, rad) in [
+                (3.0, 4.0, 1.6),
+                (9.0, 3.0, 1.2),
+                (12.0, 9.0, 1.8),
+                (5.0, 11.0, 1.4),
+                (8.5, 7.5, 1.0),
+                (12.5, 13.0, 1.0),
+            ] {
+                painter.circle_filled(sq.min + egui::vec2(x, y), rad, Tokens::ICON);
+            }
+            painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
+        }
+        _ => {
+            painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
+            for t in [1.0 / 3.0, 2.0 / 3.0] {
+                let x = sq.left() + sq.width() * t;
+                let y = sq.top() + sq.height() * t;
+                painter.line_segment(
+                    [egui::pos2(x, sq.top()), egui::pos2(x + 1.5, sq.bottom())],
+                    egui::Stroke::new(0.9, Tokens::ICON),
+                );
+                painter.line_segment(
+                    [egui::pos2(sq.left(), y), egui::pos2(sq.right(), y - 1.5)],
+                    egui::Stroke::new(0.9, Tokens::ICON),
+                );
+            }
+        }
+    }
+}
+
 fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
     let mut changed = false;
     let mut kind = match fill {
@@ -485,7 +728,10 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         Fill::Texture(_) => 4,
         Fill::Mesh(_) => 5,
     };
+    // The kinds as pictures: none, uniform, gradient, pattern, texture,
+    // mesh.
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
         for (i, n) in [
             "docker.fill_none",
             "docker.fill_uniform",
@@ -497,7 +743,18 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         .iter()
         .enumerate()
         {
-            if ui.selectable_label(kind == i, tr(n)).clicked() && kind != i {
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
+            if kind == i {
+                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+            }
+            fill_kind_picture(
+                ui.painter(),
+                egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                i,
+            );
+            if resp.on_hover_text(tr(n)).clicked() && kind != i {
                 kind = i;
                 changed = true;
             }
@@ -1227,4 +1484,54 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
             app.redo();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn draw(ctx: &egui::Context, app: &mut App) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    /// The Properties sections come open; a button or a header closes and
+    /// opens one (kept in the preferences), and a jump to the fill or the
+    /// outline opens it again.
+    #[test]
+    fn properties_sections_open_close_and_jump() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        assert!(app.settings.properties_closed.is_empty());
+        draw(&ctx, &mut app);
+        toggle_section(&mut app, "fill");
+        toggle_section(&mut app, "transparency");
+        assert_eq!(app.settings.properties_closed, ["fill", "transparency"]);
+        draw(&ctx, &mut app);
+        toggle_section(&mut app, "transparency");
+        assert_eq!(app.settings.properties_closed, ["fill"]);
+        // F11 (the fill) opens the fill section again.
+        app.properties_open = Some(0);
+        draw(&ctx, &mut app);
+        assert!(app.settings.properties_closed.is_empty());
+        assert!(app.properties_open.is_none());
+    }
 }

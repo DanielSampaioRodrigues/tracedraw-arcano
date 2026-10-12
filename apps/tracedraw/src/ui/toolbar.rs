@@ -1256,147 +1256,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::Transparency => {
-                let kinds = [
-                    tr("transparency.none"),
-                    tr("transparency.uniform"),
-                    tr("transparency.fountain"),
-                    tr("transparency.pattern"),
-                    tr("transparency.texture"),
-                ];
-                // Reflect the first selected object in the bar.
-                let has_mask = shapes
-                    .first()
-                    .map(|s| {
-                        s.effects
-                            .iter()
-                            .any(|e| matches!(e, tracedraw_core::live::Effect::Transparency { .. }))
-                    })
-                    .unwrap_or(false);
-                let first_opacity = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
-                let current = if has_mask {
-                    app.transparency_default.kind.max(1) as usize + 1
-                } else if first_opacity < 1.0 {
-                    1
-                } else {
-                    0
-                };
-                let mut changed = false;
-                egui::ComboBox::from_id_salt("transparency_kind")
-                    .selected_text(kinds[current].clone())
-                    .width(110.0)
-                    .show_ui(ui, |ui| {
-                        for (i, k) in kinds.iter().enumerate() {
-                            if ui.selectable_label(current == i, k).clicked() {
-                                if i == 0 {
-                                    app.clear_transparency();
-                                } else {
-                                    app.transparency_default.set_kind((i - 1) as u8);
-                                    changed = true;
-                                }
-                            }
-                        }
-                    });
-                if app.transparency_default.kind == 0 {
-                    let mut amount = if first_opacity < 1.0 {
-                        ((1.0 - first_opacity) * 100.0).round()
-                    } else {
-                        app.transparency_default.amount
-                    };
-                    if ui
-                        .add_enabled(
-                            !shapes.is_empty(),
-                            crate::ui::Rail(
-                                egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %"),
-                            ),
-                        )
-                        .changed()
-                    {
-                        app.transparency_default.amount = amount;
-                        changed = true;
-                    }
-                } else if app.transparency_default.kind == 1 {
-                    if let Fill::Fountain(f) = &mut app.transparency_default.mask {
-                        let mut angle = f.angle;
-                        if ui
-                            .add(
-                                crate::ui::field::NumField::new(&mut angle)
-                                    .suffix("°")
-                                    .speed(1.0),
-                            )
-                            .changed()
-                        {
-                            f.angle = angle;
-                            changed = true;
-                        }
-                        let kinds = [
-                            (tracedraw_core::style::FountainKind::Linear, "fill.linear"),
-                            (tracedraw_core::style::FountainKind::Radial, "fill.radial"),
-                            (tracedraw_core::style::FountainKind::Conical, "fill.conical"),
-                            (tracedraw_core::style::FountainKind::Square, "fill.square"),
-                        ];
-                        let name = kinds
-                            .iter()
-                            .find(|(k, _)| *k == f.kind)
-                            .map(|(_, n)| tr(n))
-                            .unwrap_or_default();
-                        egui::ComboBox::from_id_salt("transparency_fountain_kind")
-                            .selected_text(name)
-                            .width(90.0)
-                            .show_ui(ui, |ui| {
-                                for (k, n) in kinds {
-                                    if ui.selectable_label(f.kind == k, tr(n)).clicked() {
-                                        f.kind = k;
-                                        changed = true;
-                                    }
-                                }
-                            });
-                    }
-                }
-                vsep(ui);
-                ui.label(
-                    egui::RichText::new(tr("transparency.merge_mode"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-                egui::ComboBox::from_id_salt("transparency_merge")
-                    .selected_text(app.transparency_default.merge.name())
-                    .width(100.0)
-                    .show_ui(ui, |ui| {
-                        for m in tracedraw_core::live::MergeMode::ALL {
-                            if ui
-                                .selectable_label(app.transparency_default.merge == m, m.name())
-                                .clicked()
-                            {
-                                app.transparency_default.merge = m;
-                                changed = true;
-                            }
-                        }
-                    });
-                let targets = [
-                    tr("transparency.target_fill"),
-                    tr("transparency.target_outline"),
-                    tr("transparency.target_all"),
-                ];
-                egui::ComboBox::from_id_salt("transparency_target")
-                    .selected_text(
-                        targets[(app.transparency_default.target as usize).min(2)].clone(),
-                    )
-                    .width(80.0)
-                    .show_ui(ui, |ui| {
-                        for (i, t) in targets.iter().enumerate() {
-                            if ui
-                                .selectable_label(app.transparency_default.target as usize == i, t)
-                                .clicked()
-                            {
-                                app.transparency_default.target = i as u8;
-                                changed = true;
-                            }
-                        }
-                    });
-                if changed && !shapes.is_empty() {
-                    let s = app.transparency_default.clone();
-                    app.apply_transparency(&s);
-                }
+                transparency_part(app, ui);
                 if shapes.is_empty() {
                     ui.label(
                         egui::RichText::new(tr("transparency.hint"))
@@ -1871,6 +1731,154 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     }
     if changed {
         app.apply_text_style();
+    }
+}
+
+/// The transparency settings of the Transparency tool's bar and the
+/// Properties docker: the kind (none, uniform, fountain, pattern, texture),
+/// the amount or the fountain's angle and kind, the merge mode and what
+/// it applies to; a change applies to the selection.
+pub fn transparency_part(app: &mut App, ui: &mut Ui) {
+    let shapes = app.selected_shapes();
+    let kinds = [
+        tr("transparency.none"),
+        tr("transparency.uniform"),
+        tr("transparency.fountain"),
+        tr("transparency.pattern"),
+        tr("transparency.texture"),
+    ];
+    // Reflect the first selected object in the bar.
+    let has_mask = shapes
+        .first()
+        .map(|s| {
+            s.effects
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::live::Effect::Transparency { .. }))
+        })
+        .unwrap_or(false);
+    let first_opacity = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
+    let current = if has_mask {
+        app.transparency_default.kind.max(1) as usize + 1
+    } else if first_opacity < 1.0 {
+        1
+    } else {
+        0
+    };
+    let mut changed = false;
+    egui::ComboBox::from_id_salt("transparency_kind")
+        .selected_text(kinds[current].clone())
+        .width(110.0)
+        .show_ui(ui, |ui| {
+            for (i, k) in kinds.iter().enumerate() {
+                if ui.selectable_label(current == i, k).clicked() {
+                    if i == 0 {
+                        app.clear_transparency();
+                    } else {
+                        app.transparency_default.set_kind((i - 1) as u8);
+                        changed = true;
+                    }
+                }
+            }
+        });
+    if app.transparency_default.kind == 0 {
+        let mut amount = if first_opacity < 1.0 {
+            ((1.0 - first_opacity) * 100.0).round()
+        } else {
+            app.transparency_default.amount
+        };
+        if ui
+            .add_enabled(
+                !shapes.is_empty(),
+                crate::ui::Rail(egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %")),
+            )
+            .changed()
+        {
+            app.transparency_default.amount = amount;
+            changed = true;
+        }
+    } else if app.transparency_default.kind == 1 {
+        if let Fill::Fountain(f) = &mut app.transparency_default.mask {
+            let mut angle = f.angle;
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut angle)
+                        .suffix("°")
+                        .speed(1.0),
+                )
+                .changed()
+            {
+                f.angle = angle;
+                changed = true;
+            }
+            let kinds = [
+                (tracedraw_core::style::FountainKind::Linear, "fill.linear"),
+                (tracedraw_core::style::FountainKind::Radial, "fill.radial"),
+                (tracedraw_core::style::FountainKind::Conical, "fill.conical"),
+                (tracedraw_core::style::FountainKind::Square, "fill.square"),
+            ];
+            let name = kinds
+                .iter()
+                .find(|(k, _)| *k == f.kind)
+                .map(|(_, n)| tr(n))
+                .unwrap_or_default();
+            egui::ComboBox::from_id_salt("transparency_fountain_kind")
+                .selected_text(name)
+                .width(90.0)
+                .show_ui(ui, |ui| {
+                    for (k, n) in kinds {
+                        if ui.selectable_label(f.kind == k, tr(n)).clicked() {
+                            f.kind = k;
+                            changed = true;
+                        }
+                    }
+                });
+        }
+    }
+    vsep(ui);
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(tr("transparency.merge_mode"))
+                .color(Tokens::TEXT_DIM)
+                .size(11.0),
+        )
+        .extend(),
+    );
+    egui::ComboBox::from_id_salt("transparency_merge")
+        .selected_text(app.transparency_default.merge.name())
+        .width(100.0)
+        .show_ui(ui, |ui| {
+            for m in tracedraw_core::live::MergeMode::ALL {
+                if ui
+                    .selectable_label(app.transparency_default.merge == m, m.name())
+                    .clicked()
+                {
+                    app.transparency_default.merge = m;
+                    changed = true;
+                }
+            }
+        });
+    let targets = [
+        tr("transparency.target_fill"),
+        tr("transparency.target_outline"),
+        tr("transparency.target_all"),
+    ];
+    egui::ComboBox::from_id_salt("transparency_target")
+        .selected_text(targets[(app.transparency_default.target as usize).min(2)].clone())
+        .width(80.0)
+        .show_ui(ui, |ui| {
+            for (i, t) in targets.iter().enumerate() {
+                if ui
+                    .selectable_label(app.transparency_default.target as usize == i, t)
+                    .clicked()
+                {
+                    app.transparency_default.target = i as u8;
+                    changed = true;
+                }
+            }
+        });
+    if changed && !shapes.is_empty() {
+        let s = app.transparency_default.clone();
+        app.apply_transparency(&s);
     }
 }
 
