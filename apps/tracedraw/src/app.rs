@@ -920,6 +920,8 @@ pub struct App {
     pub shaping_keep_target: bool,
     pub color_model: usize,
     pub mixer_color: Color,
+    /// The Color docker's views, hue and palette.
+    pub color_docker: crate::ui::color_docker::ColorDockerState,
     pub lens_synced_to: Option<ShapeId>,
     pub extrude_synced_to: Option<ShapeId>,
     pub pending_blend_path: bool,
@@ -1485,6 +1487,7 @@ impl App {
             shaping_keep_target: false,
             color_model: 1,
             mixer_color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+            color_docker: Default::default(),
             lens_synced_to: None,
             extrude_synced_to: None,
             pending_blend_path: false,

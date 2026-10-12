@@ -1,12 +1,15 @@
 # Colour palettes
 
-Two rows under the drawing window: the
-default palette, then the document palette above the status bar
-(Window > Color Palettes > Document Palette shows or hides it). The
-dotted grip at the start of a row moves both: to another edge (on a side
-they are two columns, the document palette outside) or into a floating
-window with one row (see "Moving the bars" in `toolbars.md`). Window >
-Toolbars > Color Palette hides or shows them.
+The default palette stands as a column at the
+right edge of the window, outside the dockers; the document palette is a
+row under the drawing window, above the status bar (Window > Color
+Palettes > Document Palette shows or hides it). The dotted grip at the
+start of the default palette moves it to another edge or into a floating
+window with one row (see "Moving the bars" in `toolbars.md`); the
+document palette stays a row under the drawing window (over it when the
+default palette is at the bottom). Window > Toolbars > Color Palette
+hides or shows them. The rows described below are the same along a
+column, turned downwards.
 
 ## Look
 

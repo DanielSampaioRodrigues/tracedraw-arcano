@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Color docker has a color viewer (a saturation and brightness
+  square beside a hue strip), the sliders and a palette's swatches, each
+  shown or hidden by a button at the top; the selected object's colour
+  sits beside the new one, and the new colour follows the selection. The
+  HSB and HSL hue sliders count 0 to 360 degrees (they took the hue for
+  a fraction of a turn before).
 - The Align and Distribute docker has picture buttons. Align To (the
   active object, the page's edges, the page's centre, the grid) now does
   what it says, where before every choice aligned to the active object;

@@ -140,7 +140,7 @@ Counts: works 180, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 
 | Capability | Status |
 |---|---|
-| Colour models with conversions, colour panel, mixer, gamut warning | works |
+| Colour models with conversions; Colour panel with a saturation and brightness viewer and hue strip, sliders per model, palette swatches, old and new colour, gamut warning, following the selected fill (see `behavior/color-docker.md`) | works |
 | Palettes: the default CMYK palette (99 named colours), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
 | Colour styles and harmonies | works |
 | Object styles (fill, outline and transparency parts; objects stay linked and follow the style; break link) and default properties of new graphics, artistic text and paragraph text, saved with the drawing | works (see `behavior/object-styles.md`) |
