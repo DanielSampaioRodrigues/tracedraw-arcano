@@ -166,6 +166,10 @@ pub struct Settings {
     /// AI Drawing: the service, address, model and (when asked) the key.
     #[serde(default)]
     pub ai: crate::ai::AiPrefs,
+    /// Options > Global > General: AI agents on this computer may edit the
+    /// open drawing (MCP, `tracedraw --mcp-window`).
+    #[serde(default)]
+    pub mcp_window: bool,
     /// Options > Global > Bitmap Tracing.
     #[serde(default)]
     pub tracing: crate::prefs::TracePrefs,
@@ -646,6 +650,7 @@ impl Default for Settings {
             printing: Default::default(),
             formats: Default::default(),
             ai: Default::default(),
+            mcp_window: false,
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),

@@ -12,6 +12,36 @@ Client configuration, for example:
 { "mcpServers": { "tracedraw": { "command": "tracedraw", "args": ["--mcp"] } } }
 ```
 
+## The open window (`tracedraw --mcp-window`)
+
+The same tools can work on the drawings of a TraceDraw window the user
+has open. Options > Global > General > "Let AI agents on this computer
+edit the open drawing (MCP)" (off by default, desktop only) makes the
+window listen on a free port of `127.0.0.1` and write the port, a random
+128-bit token and its process id to `mcp-window.json` in the preferences
+folder (removed when the option is turned off or TraceDraw closes). The
+client is configured with the bridge as its command:
+
+```json
+{ "mcpServers": { "tracedraw-window": { "command": "tracedraw", "args": ["--mcp-window"] } } }
+```
+
+The bridge reads the file and forwards each line of standard input as an
+HTTP `POST /mcp` with `Authorization: Bearer <token>` (never through a
+proxy) and writes the answer to standard output. The window answers on
+its own thread between frames, as if the user had run the command: the
+tools act on the active drawing (`open` and `new_document` open tabs),
+each change is one undo step, and the window shows it at once. The
+status bar says when agents are let in and on which port, and the option
+page shows the port.
+
+Refused: requests without the token or with another one (403), requests
+carrying an `Origin` header, which web pages send (403), other methods
+(405) and paths (404), bodies over 16 MB (413). Notifications are
+answered `202 Accepted` with no body. A request waits up to 120 s for the
+window. Without a window that lets agents in, the bridge answers every
+request with a JSON-RPC error (-32000) saying how to turn the option on.
+
 ## Methods
 
 | Method | Reply |
@@ -51,3 +81,17 @@ the window.
   write a non-empty file; the saved `.cdr` opens again with its ellipse.
 - `save` with `version` 21 writes a file that reads back as version 21;
   versions 3, 23, -1 and a string are refused and write nothing.
+- The open window: with the option on, `initialize`, a notification and
+  a script drawing an ellipse sent through the bridge get the server's
+  name, no answer and `ok`, the window's drawing has one more object and
+  Undo takes it back; the link file goes when the link does
+  (`mcp_link::tests::agents_edit_the_drawing_in_the_window`).
+- Requests without the token, with a wrong one or with an `Origin`
+  header get 403, a GET 405, another path 404, the right token 200
+  (`mcp_link::tests::strangers_and_web_pages_are_refused`).
+- Without a window, or with one that went away, the bridge answers with
+  an error naming the option (`mcp_link::tests::without_a_window_the_bridge_says_so`);
+  the option starts and stops listening
+  (`mcp_link::tests::the_option_starts_and_stops_listening`).
+- Checked on screen: `tracedraw --mcp-window` drew a star and a line of
+  text in the open window.

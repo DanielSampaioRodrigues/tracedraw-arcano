@@ -50,6 +50,8 @@ mod kind_nodes;
 mod lens;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp;
+#[cfg(not(target_arch = "wasm32"))]
+mod mcp_link;
 mod media;
 mod new_document;
 mod node_edit;
@@ -104,6 +106,12 @@ fn main() -> eframe::Result<()> {
     // stdin/stdout (see mcp.rs and docs/behavior/mcp.md).
     if args.iter().any(|a| a == "--mcp") {
         mcp::serve();
+        return Ok(());
+    }
+    // `tracedraw --mcp-window`: the same tools on the drawings of the open
+    // window, which must let AI agents in (see mcp_link.rs).
+    if args.iter().any(|a| a == "--mcp-window") {
+        mcp_link::bridge();
         return Ok(());
     }
     // `--no-splash` or TRACEDRAW_NO_SPLASH (automation, the visual
@@ -228,6 +236,11 @@ impl eframe::App for Shell {
         app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
+        // Requests of AI agents for the open drawing (MCP).
+        #[cfg(not(target_arch = "wasm32"))]
+        if app.sync_mcp_link(ui.ctx()) {
+            ui.ctx().request_repaint();
+        }
         // A reply of the AI service (AI Drawing).
         if app.poll_ai() {
             ui.ctx()

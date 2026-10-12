@@ -97,6 +97,11 @@ full, row-by-row status.
   prompt bar above the colour palette takes requests (Enter draws) with
   a model list fetched from the service; Window > Toolbars hides it.
 - Scripts: `CreatePath(d)` draws curves from SVG path data.
+- AI agents can edit the drawings of the open window: with Options >
+  Global > General > "Let AI agents on this computer edit the open
+  drawing" on, an MCP client that starts `tracedraw --mcp-window` gets
+  the tools of `tracedraw --mcp` on the window's drawings, with undo and
+  shown at once. The window listens on this computer only, with a token.
 
 - Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste objects in the desktop
   app (the windowing layer delivers them as clipboard events, not as

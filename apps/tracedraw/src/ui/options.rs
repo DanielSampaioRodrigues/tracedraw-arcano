@@ -1640,6 +1640,22 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
             });
         ui.end_row();
     });
+    // AI agents on this computer and the open drawing (desktop only).
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        chrome::section(ui, &tr("options.agents"));
+        ui.checkbox(&mut app.settings.mcp_window, tr("options.mcp_window"));
+        ui.label(egui::RichText::new(tr("options.mcp_window_hint")).color(Tokens::TEXT_DIM));
+        if let Some(link) = &app.mcp_link {
+            ui.label(
+                egui::RichText::new(crate::i18n::trf(
+                    "options.mcp_window_port",
+                    &[("port", &link.info.port.to_string())],
+                ))
+                .color(Tokens::TEXT_DIM),
+            );
+        }
+    }
     ui.add_space(10.0);
     ui.label(egui::RichText::new(tr("options.reset_all_hint")).color(Tokens::TEXT_DIM));
     if ui.button(tr("options.reset_all")).clicked() {

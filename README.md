@@ -243,6 +243,9 @@ TRACEDRAW_OBJECTS=1 tracedraw-cli info drawing.cdr   # every object
 
 # Serve the editor to an AI agent over the Model Context Protocol
 tracedraw --mcp
+# ... or let the agent edit the drawing open in the window (Options >
+# Global > General > Let AI agents on this computer edit the open drawing)
+tracedraw --mcp-window
 ```
 
 The Scripts panel runs JavaScript against an object model of documents,

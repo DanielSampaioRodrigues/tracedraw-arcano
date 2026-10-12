@@ -876,6 +876,9 @@ pub struct App {
     pub script_source: String,
     /// AI Drawing: the request, the key in use, the conversation.
     pub ai: crate::ai::AiSession,
+    /// AI agents editing the open drawing (MCP), while allowed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub mcp_link: Option<crate::mcp_link::Link>,
     pub find_state: crate::ui::dialogs::FindReplaceState,
     pub step_repeat: crate::ops2::StepRepeat,
     pub align_to: crate::ops2::AlignTo,
@@ -1445,6 +1448,8 @@ impl App {
             scripts_output: Vec::new(),
             script_source: String::new(),
             ai: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            mcp_link: None,
             find_state: Default::default(),
             step_repeat: Default::default(),
             align_to: Default::default(),

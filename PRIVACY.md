@@ -36,6 +36,11 @@ Only when you ask it to:
   send it.
 - `tracedraw --mcp` talks over standard input and output with the
   program that started it, on your computer; it opens no network port.
+- Options > Global > General > "Let AI agents on this computer edit the
+  open drawing" (off unless you turn it on) opens a port on your
+  computer only (`127.0.0.1`), guarded by a key kept in the preferences
+  folder, for `tracedraw --mcp-window`; nothing outside your computer can
+  connect.
 - AI Drawing (Tools > AI Drawing), only when you press Draw: it sends
   your request, the earlier requests of the same conversation and a
   description of the active page (its size, layers and objects: types,
