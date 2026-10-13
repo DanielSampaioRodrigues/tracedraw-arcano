@@ -239,6 +239,22 @@ impl App {
         snap_points::best(&found, true, false).map(|t| t.point)
     }
 
+    /// The selection's own snap point under `p`, or its edge when no
+    /// point is near: what the Pick tool marks, with its name, while the
+    /// pointer rests over the selection.
+    pub fn selection_hover_target(&self, p: Point) -> Option<Target> {
+        if !self.snap_enabled() || !self.snap.objects {
+            return None;
+        }
+        let tol = self.snap_tolerance();
+        let mut g = Vec::new();
+        for s in self.selected_shapes() {
+            snap_points::geometry(&s, Affine::IDENTITY, &text_baselines, &mut g);
+        }
+        let found = snap_points::targets(&g, p, tol, None, &self.settings.snap.modes);
+        snap_points::best(&found, true, true)
+    }
+
     /// Snap a pointer position (drawing tools, text placement).
     pub fn snap_point(&self, p: Point) -> Point {
         self.snap_point_excluding(p, &[])
@@ -434,6 +450,35 @@ mod tests {
             corners: None,
         })
         .expect("a rectangle")
+    }
+
+    #[test]
+    fn the_pick_tool_names_the_selections_point_under_the_pointer() {
+        let mut app = app();
+        // Snapping radius 3 mm at 1 px per mm.
+        app.settings.snap.threshold_px = 3.0;
+        let id = rect(&mut app, 100.0, 100.0, 160.0, 140.0);
+        // Nothing selected: nothing to name.
+        assert!(app
+            .selection_hover_target(Point::new(160.0, 120.0))
+            .is_none());
+        app.select(vec![id]);
+        let mode = |app: &App, x: f64, y: f64| {
+            app.selection_hover_target(Point::new(x, y)).map(|t| t.mode)
+        };
+        assert_eq!(mode(&app, 130.0, 120.5), Some(SnapMode::Center));
+        assert_eq!(mode(&app, 101.0, 139.0), Some(SnapMode::Node));
+        assert_eq!(mode(&app, 100.5, 120.0), Some(SnapMode::Midpoint));
+        // On a side, away from its points: the edge, at the pointer.
+        let t = app
+            .selection_hover_target(Point::new(160.5, 108.0))
+            .expect("an edge");
+        assert_eq!(t.mode, SnapMode::Edge);
+        assert!((t.point.x - 160.0).abs() < 1e-9 && (t.point.y - 108.0).abs() < 1e-9);
+        // Far from everything, or with snapping to objects off: nothing.
+        assert!(mode(&app, 130.0, 110.0).is_none());
+        app.snap.objects = false;
+        assert!(mode(&app, 130.0, 120.5).is_none());
     }
 
     #[test]

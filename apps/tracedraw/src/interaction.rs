@@ -9,7 +9,9 @@ use tracedraw_core::{
     Color, Command, Fill, ShapeId,
 };
 
-const HANDLE_PX: f32 = 7.0;
+/// A press this close to a handle's centre takes it: within the handle,
+/// short of the selection box (the handles stand outside it).
+const HANDLE_PX: f32 = 6.0;
 /// The selection handles' size, interface points.
 pub(crate) const HANDLE_SIZE: f32 = 10.0;
 /// How far out of the selection box the handles' centres stand,
@@ -787,6 +789,18 @@ impl App {
     }
 
     fn pick_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
+        // Resting over the selection (not over a handle or the centre of
+        // rotation), the pointer shows the snap point or edge a drag
+        // would carry, with its name.
+        if matches!(self.drag, Drag::None)
+            && response.hovered()
+            && self.handle_at(screen).is_none()
+            && !self.pivot_at(screen)
+        {
+            if let Some(t) = self.selection_hover_target(p) {
+                self.snap_mark.set(Some(t));
+            }
+        }
         if response.drag_started_by(PointerButton::Primary) {
             self.drag_copy = false;
             // Rotate mode: the centre of rotation moves.

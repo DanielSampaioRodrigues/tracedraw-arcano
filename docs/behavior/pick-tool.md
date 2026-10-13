@@ -52,6 +52,15 @@ around each corner, bulging outwards, and a straight double arrow along
 each side. The centre of rotation is a ring 8 points in radius with a
 dot in the middle.
 
+## Snap marks over the selection
+
+With snapping to objects on, the pointer resting over the selection (not
+over a handle or the centre of rotation) shows the selection's point or
+edge within the snapping radius, the one a drag would carry: its mark
+and, with screen tips on, its name (Node, Midpoint, Center, Edge and the
+other snapping modes in use). Points win over edges. Handles take a
+press within 6 points of their centre, short of the selection box.
+
 ## The pointer
 
 The pointer says what a press would do (code: `ui/cursors.rs`):

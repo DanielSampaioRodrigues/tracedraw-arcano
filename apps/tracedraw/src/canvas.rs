@@ -1664,15 +1664,23 @@ fn draw_snap_glyph_width(
             painter.line_segment([c + v(0.0, h), c + v(0.0, -h)], s);
         }
         SnapMode::Edge => {
-            painter.add(epaint::PathShape::closed_line(
-                vec![c + v(-h, -h), c + v(h, -h), c + v(-h, h), c + v(h, h)],
+            // A square with a short tick out of the middle of each side.
+            let e = h - 0.5;
+            painter.rect_stroke(
+                ERect::from_center_size(c, v(2.0 * e, 2.0 * e)),
+                0.0,
                 s,
-            ));
+                epaint::StrokeKind::Middle,
+            );
+            for d in [v(1.0, 0.0), v(-1.0, 0.0), v(0.0, 1.0), v(0.0, -1.0)] {
+                painter.line_segment([c + d * e, c + d * (e + 2.0)], s);
+            }
         }
         SnapMode::Center => {
-            painter.circle_stroke(c, h - 0.5, s);
-            painter.line_segment([c + v(-h - 1.5, 0.0), c + v(h + 1.5, 0.0)], s);
-            painter.line_segment([c + v(0.0, -h - 1.5), c + v(0.0, h + 1.5)], s);
+            // A circle with a cross inside it.
+            painter.circle_stroke(c, h + 0.5, s);
+            painter.line_segment([c + v(-h, 0.0), c + v(h, 0.0)], s);
+            painter.line_segment([c + v(0.0, -h), c + v(0.0, h)], s);
         }
         SnapMode::TextBaseline => {
             // A "T" standing on its baseline.

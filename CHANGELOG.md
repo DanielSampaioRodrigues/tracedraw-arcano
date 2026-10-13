@@ -10,6 +10,8 @@ full, row-by-row status.
   which has no frame any more, so the objects' outlines stay in view; a
   handle scales from where it was grabbed. In rotate mode the arrows have
   solid heads and stand outside the box too.
+- The Pick tool marks the selection's node, midpoint, centre or edge under
+  the resting pointer, with its name, as during a drag.
 - The Pick tool treats all objects as filled by default: a click inside
   an unfilled object selects it. Options > Tools > Pick and the property
   bar turn it off.
