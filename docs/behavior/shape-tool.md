@@ -9,6 +9,16 @@ first segment's leaving one), moves with the end lying on it, deletes by
 joining the last and first segments, and Break opens the curve there.
 Node counts in the status bar and the Objects panel count it once.
 
+## Snapping
+
+A dragged node snaps like a point placed by a drawing tool: to the
+document grid, guidelines, the page and other objects (View > Snap To,
+Options > Snapping), never to the curves being edited. When several
+nodes move, the one under the pointer snaps and the move follows it;
+Ctrl keeps the move horizontal or vertical before and after
+snapping. A dragged control point, and a node of a rectangle, ellipse or
+polygon, snaps the same way.
+
 ## The pointer
 
 A solid black arrow (drawn by TraceDraw on a white halo, its tip on the

@@ -275,15 +275,14 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     let monitor = ctx.input(|i| i.viewport().monitor_size);
     let size = main_window_size(settings.window_size, monitor);
     ctx.send_viewport_cmd(V::Decorations(true));
-    ctx.send_viewport_cmd(V::Resizable(true));
-    // The splash window was created without a maximize button (it is not
-    // resizable); window managers keep the buttons it was made with.
-    ctx.send_viewport_cmd(V::EnableButtons {
-        close: true,
-        minimized: true,
-        maximize: true,
-    });
+    // The splash window is made not resizable, which on X11 records its
+    // own size as the window's minimum and maximum; making it resizable
+    // again restores those. Clear the maximum and set the minimum first,
+    // or the main window keeps the splash's maximum and cannot be
+    // maximized or resized.
+    ctx.send_viewport_cmd(V::MaxInnerSize(egui::Vec2::INFINITY));
     ctx.send_viewport_cmd(V::MinInnerSize(MIN_SIZE));
+    ctx.send_viewport_cmd(V::Resizable(true));
     ctx.send_viewport_cmd(V::InnerSize(size));
     if let Some(p) = centred_position(size, monitor) {
         ctx.send_viewport_cmd(V::OuterPosition(p));
@@ -317,6 +316,30 @@ pub fn remember_window(ctx: &egui::Context, settings: &mut Settings) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_main_window_drops_the_splash_maximum_before_it_turns_resizable() {
+        use egui::ViewportCommand as V;
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            open_main_window(ui.ctx(), &Settings::default());
+        });
+        // No painter takes the textures here.
+        out.textures_delta.clear();
+        let cmds = &out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .expect("the root viewport")
+            .commands;
+        let at = |want: &dyn Fn(&V) -> bool| cmds.iter().position(|c| want(c));
+        let max = at(&|c| matches!(c, V::MaxInnerSize(s) if s == &egui::Vec2::INFINITY))
+            .expect("the maximum is cleared");
+        let min =
+            at(&|c| matches!(c, V::MinInnerSize(s) if s == &MIN_SIZE)).expect("the minimum is set");
+        let resizable =
+            at(&|c| matches!(c, V::Resizable(true))).expect("the window turns resizable");
+        assert!(max < resizable && min < resizable, "{cmds:?}");
+    }
 
     #[test]
     fn progress_waits_for_the_fonts_and_the_minimum_time() {

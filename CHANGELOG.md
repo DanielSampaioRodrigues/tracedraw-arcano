@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: a dragged node, control handle or shape node snaps to the
+  grid, guidelines, the page and other objects like the drawing tools
+  do; it ignored snapping (#3).
+- Linux: after the splash screen the main window can be maximized and
+  resized; it kept the splash screen's size as its maximum (#1).
 - Opening .cdr files: letters beyond Latin-1 (Czech, Polish, Turkish and
   other accented letters) in text of version 17 and later files read
   right; they showed as boxes and could break lines in the middle of a
