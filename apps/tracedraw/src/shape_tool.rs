@@ -29,6 +29,24 @@ pub struct NodeHit {
 }
 
 impl App {
+    /// The move of a grabbed node by `d` (page space): the node snaps to
+    /// the grid, the page, guidelines and other objects, and the move
+    /// follows it. `horizontal` keeps the move on one axis, before and
+    /// after snapping.
+    pub(crate) fn snapped_node_move(
+        &self,
+        grab: Point,
+        mut d: Vec2,
+        horizontal: Option<bool>,
+        exclude: &[ShapeId],
+    ) -> Vec2 {
+        constrain_axis(&mut d, horizontal);
+        let target = self.snap_point_excluding(grab + d, exclude);
+        let mut snapped = target - grab;
+        constrain_axis(&mut snapped, horizontal);
+        snapped
+    }
+
     fn path_of(&self, id: ShapeId) -> Option<(BezPath, bool, tracedraw_core::geometry::Affine)> {
         let (_, s) = self.doc().shape(id).ok()?;
         match &s.kind {
@@ -314,13 +332,8 @@ impl App {
                     let mut d = p - from;
                     // Ctrl keeps the move horizontal or vertical.
                     let horizontal = (mods.ctrl || mods.command).then_some(d.x.abs() >= d.y.abs());
-                    constrain_axis(&mut d, horizontal);
-                    // The grabbed node snaps to the grid, the page,
-                    // guidelines and other objects; the move follows it.
                     let exclude: Vec<ShapeId> = start.iter().map(|c| c.shape).collect();
-                    let target = self.snap_point_excluding(grab + d, &exclude);
-                    d = target - grab;
-                    constrain_axis(&mut d, horizontal);
+                    d = self.snapped_node_move(grab, d, horizontal, &exclude);
                     self.move_start_nodes(&start, d, grab, begun);
                     self.drag = Drag::NodeMove {
                         start,
@@ -965,7 +978,38 @@ impl App {
 #[cfg(test)]
 mod constrain_tests {
     use super::constrain_axis;
-    use tracedraw_core::geometry::Vec2;
+    use crate::app::App;
+    use tracedraw_core::{document::Guide, geometry::Point, geometry::Vec2, Command};
+
+    /// A headless app at 1 px per mm with a guideline at x = 50 and the
+    /// snapping radius at 10 px (10 mm).
+    fn app_with_guide() -> App {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        let page = app.page;
+        app.run(Command::AddGuide {
+            page,
+            guide: Guide::vertical(50.0),
+        });
+        app
+    }
+
+    #[test]
+    fn a_grabbed_node_snaps_to_a_guideline_and_the_move_follows_it() {
+        let app = app_with_guide();
+        // The node at x = 45 moved by 4.5 mm lands at 49.5, which snaps to 50.
+        let d = app.snapped_node_move(Point::new(45.0, 20.0), Vec2::new(4.5, 0.0), None, &[]);
+        assert!((d.x - 5.0).abs() < 1e-9, "{d:?}");
+        assert!(d.y.abs() < 1e-9, "{d:?}");
+    }
+
+    #[test]
+    fn a_constrained_node_move_stays_on_its_axis_after_snapping() {
+        let app = app_with_guide();
+        // Horizontal: the guideline pulls x, y stays put.
+        let d = app.snapped_node_move(Point::new(45.0, 20.0), Vec2::new(4.5, 3.0), Some(true), &[]);
+        assert!((d.x - 5.0).abs() < 1e-9 && d.y == 0.0, "{d:?}");
+    }
 
     #[test]
     fn a_constrained_move_keeps_one_axis() {
