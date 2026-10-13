@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: a curve being edited shows its outline in the node colour
+  and its first node as a triangle; the direction arrow is off by default.
+- Preferences saved by older versions turn on treating all objects as
+  filled once, so a click inside an unfilled object selects it there too.
 - Dragging the selection (move, scale, turn, slant) leaves the objects in
   place and shows their outline where they would go, on a white halo that
   stays visible over dark fills. A move grabbed on an edge mark carries

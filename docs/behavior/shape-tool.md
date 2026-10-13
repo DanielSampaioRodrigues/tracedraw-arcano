@@ -9,6 +9,14 @@ first segment's leaving one), moves with the end lying on it, deletes by
 joining the last and first segments, and Break opens the curve there.
 Node counts in the status bar and the Objects panel count it once.
 
+## How a curve shows
+
+A curve selected with the Shape tool shows its outline in the node
+colour (Options > Nodes and Handles, blue by default), its nodes as small
+markers by type (squares for cusps by default) and the first node of each
+subpath as a slightly larger triangle. The arrow showing the curve's
+direction is off by default (Options > Nodes and Handles).
+
 ## Snapping
 
 A dragged node snaps like a point placed by a drawing tool: to the

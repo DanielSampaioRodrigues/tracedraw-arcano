@@ -123,6 +123,10 @@ pub struct Settings {
     /// by default).
     #[serde(default = "default_true")]
     pub treat_all_filled: bool,
+    /// The one-time changes already made to preferences saved by older
+    /// versions (see `Settings::upgrade`); 0 in files that predate them.
+    #[serde(default)]
+    pub upgrades: u32,
     /// Options > Tools > Pick: the Pick tool's pointer is a cross hair.
     #[serde(default)]
     pub crosshair_cursor: bool,
@@ -257,6 +261,9 @@ impl Default for ShownBars {
 fn default_desktop() -> [u8; 3] {
     [255, 255, 255]
 }
+
+/// How many one-time upgrades `Settings::upgrade` knows.
+const UPGRADES: u32 = 1;
 
 fn default_true() -> bool {
     true
@@ -412,7 +419,7 @@ impl Default for NodePrefs {
             main_rgb: [0x00, 0x8C, 0xFF],
             secondary_rgb: [0xFF, 0x00, 0x00],
             unselected_filled: true,
-            show_direction: true,
+            show_direction: false,
         }
     }
 }
@@ -866,6 +873,7 @@ impl Default for Settings {
             backup: BackupPrefs::default(),
             text_increment_pt: default_text_increment(),
             treat_all_filled: true,
+            upgrades: UPGRADES,
             crosshair_cursor: false,
             screen_ppi: default_screen_ppi(),
             zoom_right_click_out: true,
@@ -952,6 +960,17 @@ impl Settings {
         config_dir().map(|d| d.join("settings.json"))
     }
 
+    /// Bring preferences saved by an older version up to date, once:
+    /// 1. objects are treated as filled (a click inside an unfilled one
+    ///    selects it), which older versions saved switched off.
+    pub fn upgrade(mut self) -> Settings {
+        if self.upgrades < 1 {
+            self.treat_all_filled = true;
+        }
+        self.upgrades = self.upgrades.max(UPGRADES);
+        self
+    }
+
     pub fn load() -> Settings {
         // Unit tests start from the defaults, whatever an earlier run of
         // the program left in the folder they share (see `save`).
@@ -962,7 +981,8 @@ impl Settings {
         {
             // The browser build keeps settings in local storage.
             return crate::web::storage_get(WEB_KEY)
-                .and_then(|s| serde_json::from_str(&s).ok())
+                .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
+                .map(Settings::upgrade)
                 .unwrap_or_default();
         }
         #[allow(unreachable_code)]
@@ -979,7 +999,7 @@ impl Settings {
                 if !s.contains("\"startup\"") && !settings.show_welcome_on_start {
                     settings.startup = Startup::NewDocument;
                 }
-                settings
+                settings.upgrade()
             }
             Err(_) => Settings::default(),
         }
@@ -1031,6 +1051,25 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn older_preferences_get_objects_treated_as_filled_once() {
+        // Saved by an older version: switched off, no upgrades recorded.
+        let old: Settings =
+            serde_json::from_str(r#"{"treat_all_filled": false}"#).expect("old preferences");
+        assert_eq!(old.upgrades, 0);
+        let s = old.upgrade();
+        assert!(s.treat_all_filled);
+        assert_eq!(s.upgrades, UPGRADES);
+        // Switched off again after the upgrade, it stays off.
+        let mut s = s;
+        s.treat_all_filled = false;
+        let saved = serde_json::to_string(&s).expect("saved");
+        let again: Settings = serde_json::from_str(&saved).expect("read back");
+        assert!(!again.upgrade().treat_all_filled);
+        // New preferences start up to date.
+        assert_eq!(Settings::default().upgrades, UPGRADES);
+    }
+
     use super::*;
 
     #[test]

@@ -1142,6 +1142,28 @@ fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
 }
 
 /// One node marker: `shape` of side `size` around `p`.
+/// The first node of a subpath: a triangle standing on its base, `size`
+/// across.
+fn start_node_marker(
+    painter: &Painter,
+    p: Pos2,
+    size: f32,
+    fill: Option<Color32>,
+    outline: Color32,
+) {
+    let h = size / 2.0;
+    let pts = vec![
+        p + egui::vec2(0.0, -h),
+        p + egui::vec2(h, h * 0.8),
+        p + egui::vec2(-h, h * 0.8),
+    ];
+    painter.add(epaint::PathShape::convex_polygon(
+        pts,
+        fill.unwrap_or(Color32::TRANSPARENT),
+        EStroke::new(1.0, outline),
+    ));
+}
+
 fn node_marker(
     painter: &Painter,
     p: Pos2,
@@ -1283,6 +1305,15 @@ fn draw_nodes(app: &App, painter: &Painter) {
             }
             continue;
         };
+        // The curve being edited shows its outline in the node colour.
+        for (mut pts, closed) in flatten(&s.page_path(), view) {
+            if closed {
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+            }
+            painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+        }
         let all = nodes::nodes(path);
         if prefs.show_direction {
             // A small arrow head just after the first node, along the
@@ -1325,7 +1356,6 @@ fn draw_nodes(app: &App, painter: &Painter) {
                 nodes::NodeType::Smooth => prefs.smooth,
                 nodes::NodeType::Symmetrical => prefs.symmetrical,
             };
-            let side = if n.is_start { size + 2.0 } else { size };
             let fill = if selected {
                 Some(main)
             } else if prefs.unselected_filled {
@@ -1333,7 +1363,13 @@ fn draw_nodes(app: &App, painter: &Painter) {
             } else {
                 None
             };
-            node_marker(painter, p, side, shape, fill, main);
+            if n.is_start {
+                // The first node of a subpath: a triangle a little larger
+                // than the other nodes.
+                start_node_marker(painter, p, size + 3.0, fill, main);
+            } else {
+                node_marker(painter, p, size, shape, fill, main);
+            }
         }
     }
     // Node transform handles around the selected nodes.
