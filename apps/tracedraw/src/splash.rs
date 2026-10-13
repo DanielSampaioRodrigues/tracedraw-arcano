@@ -276,6 +276,13 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     let size = main_window_size(settings.window_size, monitor);
     ctx.send_viewport_cmd(V::Decorations(true));
     ctx.send_viewport_cmd(V::Resizable(true));
+    // The splash window was created without a maximize button (it is not
+    // resizable); window managers keep the buttons it was made with.
+    ctx.send_viewport_cmd(V::EnableButtons {
+        close: true,
+        minimized: true,
+        maximize: true,
+    });
     ctx.send_viewport_cmd(V::MinInnerSize(MIN_SIZE));
     ctx.send_viewport_cmd(V::InnerSize(size));
     if let Some(p) = centred_position(size, monitor) {

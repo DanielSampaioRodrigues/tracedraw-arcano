@@ -6,12 +6,22 @@ use crate::app::{App, Drag};
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::ShapeKind,
-    geometry::{BezPath, Point, Rect},
+    geometry::{BezPath, Point, Rect, Vec2},
     nodes::{self, NodeType, Which},
     Command, ShapeId,
 };
 
 const NODE_PX: f64 = 5.0;
+
+/// Keep a move horizontal (`Some(true)`) or vertical (`Some(false)`);
+/// `None` leaves it free.
+fn constrain_axis(d: &mut Vec2, horizontal: Option<bool>) {
+    match horizontal {
+        Some(true) => d.y = 0.0,
+        Some(false) => d.x = 0.0,
+        None => {}
+    }
+}
 
 pub struct NodeHit {
     pub shape: ShapeId,
@@ -303,13 +313,14 @@ impl App {
                 } => {
                     let mut d = p - from;
                     // Ctrl keeps the move horizontal or vertical.
-                    if mods.ctrl || mods.command {
-                        if d.x.abs() >= d.y.abs() {
-                            d.y = 0.0;
-                        } else {
-                            d.x = 0.0;
-                        }
-                    }
+                    let horizontal = (mods.ctrl || mods.command).then_some(d.x.abs() >= d.y.abs());
+                    constrain_axis(&mut d, horizontal);
+                    // The grabbed node snaps to the grid, the page,
+                    // guidelines and other objects; the move follows it.
+                    let exclude: Vec<ShapeId> = start.iter().map(|c| c.shape).collect();
+                    let target = self.snap_point_excluding(grab + d, &exclude);
+                    d = target - grab;
+                    constrain_axis(&mut d, horizontal);
                     self.move_start_nodes(&start, d, grab, begun);
                     self.drag = Drag::NodeMove {
                         start,
@@ -357,7 +368,9 @@ impl App {
                     which,
                 } => {
                     if let Some((path, closed, t)) = self.path_of(shape) {
-                        let lp = t.inverse() * p;
+                        // The handle snaps like a node does.
+                        let q = self.snap_point_excluding(p, &[shape]);
+                        let lp = t.inverse() * q;
                         let ty = if mods.ctrl {
                             NodeType::Cusp
                         } else {
@@ -416,7 +429,8 @@ impl App {
                     begun,
                     mut turn,
                 } => {
-                    if let Some(kind) = crate::kind_nodes::drag(&start, node, p, single, &mut turn)
+                    let q = self.snap_point_excluding(p, &[shape]);
+                    if let Some(kind) = crate::kind_nodes::drag(&start, node, q, single, &mut turn)
                     {
                         let cmd = Command::SetShapeKind { shape, kind };
                         // One undo step for the whole drag.
@@ -945,6 +959,27 @@ impl App {
         if !cmds.is_empty() {
             let _ = self.engine.run_batch("Eraser", &cmds);
         }
+    }
+}
+
+#[cfg(test)]
+mod constrain_tests {
+    use super::constrain_axis;
+    use tracedraw_core::geometry::Vec2;
+
+    #[test]
+    fn a_constrained_move_keeps_one_axis() {
+        let mut d = Vec2::new(3.0, 4.0);
+        constrain_axis(&mut d, Some(true));
+        assert_eq!((d.x, d.y), (3.0, 0.0));
+
+        let mut d = Vec2::new(3.0, 4.0);
+        constrain_axis(&mut d, Some(false));
+        assert_eq!((d.x, d.y), (0.0, 4.0));
+
+        let mut d = Vec2::new(3.0, 4.0);
+        constrain_axis(&mut d, None);
+        assert_eq!((d.x, d.y), (3.0, 4.0));
     }
 }
 

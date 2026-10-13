@@ -163,6 +163,8 @@ fn main() -> eframe::Result<()> {
         egui::ViewportBuilder::default()
             .with_inner_size(splash::main_window_size(settings.window_size, None))
             .with_min_inner_size(splash::MIN_SIZE)
+            .with_maximize_button(true)
+            .with_minimize_button(true)
             .with_maximized(settings.window_maximized && !plain)
             .with_title("TraceDraw")
     };
