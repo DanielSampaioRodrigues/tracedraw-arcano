@@ -463,8 +463,11 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     bars::drag_overlay(app, &ctx, 24.0);
 
     // Document tabs above the rulers.
+    // The tabs' blue line is the strip's lower edge: no separator and no
+    // gap between it and the rulers.
     Panel::top("document_tabs")
         .frame(Frame::new().fill(tabs::STRIP))
+        .show_separator_line(false)
         .show(ui, |ui| tabs::document_tabs(app, ui));
 
     if app.show_welcome {

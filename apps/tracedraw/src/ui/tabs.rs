@@ -32,6 +32,8 @@ enum Action {
 pub fn document_tabs(app: &mut App, ui: &mut Ui) {
     let mut action = None;
     let strip = ui.max_rect();
+    // Nothing below the line: the strip ends where it does.
+    ui.spacing_mut().item_spacing.y = 0.0;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
         if welcome_tab(ui, app.show_welcome || !app.has_document()) {
