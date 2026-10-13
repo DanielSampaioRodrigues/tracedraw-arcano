@@ -52,7 +52,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.cmx|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.cmx|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
     ExitCode::from(2)
 }
 
@@ -129,7 +129,7 @@ fn read_document(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
     let lower = path.to_ascii_lowercase();
-    if lower.ends_with(".cdr") {
+    if lower.ends_with(".cdr") || lower.ends_with(".cmx") {
         tracedraw_cdr::open(path)
             .map(|(d, r)| (d, Some(r)))
             .map_err(|e| e.to_string())
@@ -369,7 +369,13 @@ fn main() -> ExitCode {
                     if let Some(r) = report {
                         println!(
                             "version: {}",
-                            r.version.map(|v| v.name()).unwrap_or_default()
+                            r.version.map(|v| v.name()).unwrap_or_else(|| {
+                                if path.to_ascii_lowercase().ends_with(".cmx") {
+                                    "CMX".into()
+                                } else {
+                                    String::new()
+                                }
+                            })
                         );
                         println!("skipped objects: {}", r.skipped_objects);
                         for w in &r.warnings {
@@ -459,7 +465,7 @@ fn main() -> ExitCode {
                 let lower = lower.clone();
                 let ok = std::panic::catch_unwind(move || {
                     let mut ids = tracedraw_core::id::IdSource::default();
-                    if lower.ends_with(".cdr") {
+                    if lower.ends_with(".cdr") || lower.ends_with(".cmx") {
                         let _ = tracedraw_cdr::open_bytes(&m, "stress");
                     } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
                         let _ = tracedraw_io::pdf_import::parse(&m, &mut ids);

@@ -45,6 +45,6 @@ Status tracked in `docs/features.md`.
 - WebAssembly build: the same editor in the browser (WebGL 2), published to GitHub Pages and attached to releases (done; see `behavior/web.md`)
 
 ## M5 Interchange
-- Import PDF, AI, EPS, DXF, PSD, EMF and WMF (done); export HTML, DXF, EMF and WMF (done); CMX
+- Import PDF, AI, EPS, DXF, PSD, EMF and WMF (done); export HTML, DXF, EMF and WMF (done); CMX (import partial: no text, lenses or bitmap fills yet)
 - External ICC profiles (done: pure-Rust ICC engine, v2/v4), PDF/X intents (done)
 - The remaining items in `docs/blueprint-gaps.md`

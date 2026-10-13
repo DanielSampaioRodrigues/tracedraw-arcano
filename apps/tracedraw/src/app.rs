@@ -3433,8 +3433,8 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
                 &[
-                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd",
-                    "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
+                    "cdr", "cmx", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf",
+                    "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
                 ],
             )
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
@@ -3446,6 +3446,7 @@ impl App {
             .add_filter("Windows Metafile (*.emf, *.wmf)", &["emf", "wmf"])
             .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file(self, |app, p| app.open_path(p));
     }
@@ -3758,6 +3759,26 @@ impl App {
                     ),
                 )
             })
+        } else if ext == "cmx" {
+            Self::open_cdr(&path)
+                .map(|(doc, report)| {
+                    for w in &report.warnings {
+                        log::warn!("cmx: {w}");
+                    }
+                    unread = report.skipped_objects;
+                    (
+                        doc,
+                        crate::i18n::trf(
+                            "status.opened_pages",
+                            &[
+                                ("format", "CMX"),
+                                ("pages", &report.pages.to_string()),
+                                ("objects", &report.shapes.to_string()),
+                            ],
+                        ),
+                    )
+                })
+                .map_err(|e| e.to_string())
         } else if ext == "cdr" {
             Self::open_cdr(&path)
                 .map(|(doc, report)| {
@@ -3796,6 +3817,7 @@ impl App {
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"
+                        | "cmx"
                         | "svg"
                         | "svgz"
                         | "pdf"
@@ -4076,14 +4098,15 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd", "psb",
-                    "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg",
-                    "bmp", "gif", "webp", "tif", "tiff",
+                    "cdr", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd",
+                    "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg",
+                    "jpeg", "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
             .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter("PostScript (*.ps, *.eps, *.prn)", &["ps", "eps", "prn"])
@@ -4163,7 +4186,7 @@ impl App {
             self.import_psd(&path);
             return;
         }
-        if ext != "cdr" {
+        if ext != "cdr" && ext != "cmx" {
             self.import_bitmap(&path);
             return;
         }

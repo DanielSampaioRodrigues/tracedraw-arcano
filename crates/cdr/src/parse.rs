@@ -2806,7 +2806,7 @@ fn bounds_of(pts: &[Point]) -> Option<Rect> {
 /// closed curve made only of Bezier segments is a circle; three corners
 /// make an arrow (filled) or an open arrow (not closed); four corners make
 /// a square (axis-aligned, near 1:1), a bar (thin) or a diamond (rotated).
-fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) -> Arrowhead {
+pub(crate) fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) -> Arrowhead {
     use tracedraw_core::geometry::Shape as _;
     if path.elements().is_empty() {
         return Arrowhead::None;
@@ -2940,7 +2940,7 @@ pub(crate) fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
 /// rows go straight into a fast zlib stream: the PNG only carries the
 /// pixels inside the document, and the default level made opening files
 /// with large pictures several times slower.
-fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+pub(crate) fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     use std::io::Write;
     fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], body: &[u8]) {
         out.extend_from_slice(&(body.len() as u32).to_be_bytes());

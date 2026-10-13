@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 182, partial 2 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels), missing 2 (CMX import; New Window and system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 182, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (New Window and system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -204,7 +204,7 @@ Counts: works 182, partial 2 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Import EPS, PostScript and PRN print files (interpreter: paths, images, text, clips, shadings, patterns, prologs; one page per `showpage` at its `/PageSize`), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
 | Import EMF and WMF (GDI paths, pens, brushes, text, DIB bitmaps, clips); export EMF and WMF | works (see `behavior/emf-wmf.md`) |
-| Import CMX | missing |
+| Import CMX: pages, layers, groups, curves, rectangles, ellipses, uniform and fountain fills, outlines with dashes and arrowheads, embedded 24-bit images, clips; not yet text, lenses and other fill types | partial (see `behavior/cmx-import.md`) |
 | Acquire image (scanner) | not applicable: no scanner stack in pure Rust; import the scanned file instead |
 
 ## 11. Productivity and customisation

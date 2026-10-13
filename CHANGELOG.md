@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Import CMX exchange files: pages, layers, groups, curves, rectangles,
+  ellipses, uniform and fountain fills, outlines with dashes and
+  arrowheads, embedded images and clips. Text, lenses and bitmap fills
+  are not read yet; the import report names what was skipped.
 - Snapping: the names beside snap marks are in lower case (node, edge,
   midpoint), and the edge a drag snaps to lights up in blue.
 - Shape tool: a curve being edited shows its outline in the node colour

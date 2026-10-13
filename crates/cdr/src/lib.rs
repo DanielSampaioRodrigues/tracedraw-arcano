@@ -18,6 +18,7 @@
 //! Anything we do not understand is skipped with a logged warning, never a
 //! failure: opening a file must always yield a document.
 
+pub mod cmx;
 pub mod container;
 pub mod eot;
 pub mod parse;
@@ -34,6 +35,8 @@ pub use parse::{parse_document, parse_document_with, ParseReport};
 pub enum Error {
     #[error("not a CDR file")]
     NotCdr,
+    #[error("not a CMX file")]
+    NotCmx,
     #[error("unsupported container: {0}")]
     UnsupportedContainer(String),
     #[error("truncated data at offset {0}")]
@@ -58,8 +61,12 @@ pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseRe
     open_bytes(&bytes, &title)
 }
 
-/// Same as [`open`], from memory.
+/// Same as [`open`], from memory. CMX exchange files (RIFF form `CMX1`)
+/// are read as well, by [`cmx::open_bytes`].
 pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document, ParseReport)> {
+    if cmx::is_cmx(bytes) {
+        return cmx::open_bytes(bytes, title);
+    }
     let container = container::detect(bytes)?;
     let riff = container::riff_stream(bytes, &container)?;
     let externals = container::external_streams(bytes, &container);
