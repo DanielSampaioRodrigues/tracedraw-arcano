@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Snapping: the names beside snap marks are in lower case (node, edge,
+  midpoint), and the edge a drag snaps to lights up in blue.
 - Shape tool: a curve being edited shows its outline in the node colour
   and its first node as a triangle; the direction arrow is off by default.
   Control handles are dashed lines ending in solid arrow heads, also

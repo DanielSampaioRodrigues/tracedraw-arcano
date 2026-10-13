@@ -54,6 +54,22 @@ impl SnapMode {
         }
     }
 
+    /// The mode's name as the screen tip beside a snap mark shows it
+    /// (lower case where the language writes it so).
+    pub fn tip_key(self) -> &'static str {
+        match self {
+            SnapMode::Node => "snap_tip.node",
+            SnapMode::Intersection => "snap_tip.intersection",
+            SnapMode::Midpoint => "snap_tip.midpoint",
+            SnapMode::Quadrant => "snap_tip.quadrant",
+            SnapMode::Tangent => "snap_tip.tangent",
+            SnapMode::Perpendicular => "snap_tip.perpendicular",
+            SnapMode::Edge => "snap_tip.edge",
+            SnapMode::Center => "snap_tip.center",
+            SnapMode::TextBaseline => "snap_tip.text_baseline",
+        }
+    }
+
     /// A single point; edges and baselines are lines the pointer slides
     /// along and give way to points.
     pub fn is_point(self) -> bool {
@@ -136,6 +152,9 @@ impl SnapModes {
 pub struct Target {
     pub point: Point,
     pub mode: SnapMode,
+    /// For an edge, the segment of the outline the point lies on (page
+    /// space), which a drag highlights.
+    pub edge: Option<PathSeg>,
 }
 
 /// The snapping geometry of one object, on the page.
@@ -358,9 +377,21 @@ fn roots(f: impl Fn(f64) -> f64) -> Vec<f64> {
 }
 
 fn add(out: &mut Vec<(Target, f64)>, p: Point, point: Point, mode: SnapMode, tol: f64) {
+    add_on(out, p, point, mode, None, tol);
+}
+
+/// `add`, for a point of the outline segment `edge`.
+fn add_on(
+    out: &mut Vec<(Target, f64)>,
+    p: Point,
+    point: Point,
+    mode: SnapMode,
+    edge: Option<PathSeg>,
+    tol: f64,
+) {
     let d = (point - p).hypot();
     if d <= tol && point.x.is_finite() && point.y.is_finite() {
-        out.push((Target { point, mode }, d));
+        out.push((Target { point, mode, edge }, d));
     }
 }
 
@@ -399,7 +430,8 @@ pub fn targets(
                         add(&mut out, p, midpoint(&seg), SnapMode::Midpoint, tol);
                     }
                     if modes.edge {
-                        add(&mut out, p, seg.eval(nearest.t), SnapMode::Edge, tol);
+                        let at = seg.eval(nearest.t);
+                        add_on(&mut out, p, at, SnapMode::Edge, Some(seg), tol);
                     }
                     if let Some(f) = from {
                         if modes.perpendicular {
@@ -560,6 +592,22 @@ pub fn best(found: &[(Target, f64)], points: bool, lines: bool) -> Option<Target
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screen_tips_name_the_modes_in_lower_case_in_english() {
+        let en = include_str!("../lang/en.toml");
+        let value = |key: &str| {
+            en.lines()
+                .find_map(|l| l.strip_prefix(&format!("{key} = \"")))
+                .and_then(|v| v.strip_suffix('"'))
+                .map(str::to_string)
+        };
+        for m in SnapMode::ALL {
+            let label = value(m.key()).expect("label");
+            let tip = value(m.tip_key()).expect("tip");
+            assert_eq!(tip, label.to_lowercase(), "{m:?}");
+        }
+    }
     use tracedraw_core::{EllipseArc, ShapeId};
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {

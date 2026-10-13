@@ -577,6 +577,13 @@ mod tests {
             assert!((40.0 + d.x - 100.0).abs() < 1e-9, "{d:?}");
             assert!((d.y - dy).abs() < 1e-9, "{d:?}");
             assert_eq!(app.snap_mark.get().map(|m| m.mode), Some(SnapMode::Edge));
+            // The mark knows the edge it lies on, to light it up.
+            match app.snap_mark.get().and_then(|m| m.edge) {
+                Some(tracedraw_core::geometry::PathSeg::Line(l)) => {
+                    assert!((l.p0.x - 100.0).abs() < 1e-9 && (l.p1.x - 100.0).abs() < 1e-9);
+                }
+                other => panic!("not the left edge: {other:?}"),
+            }
         }
         // Far from it, it lets go.
         let d = app.snap_move_from(src, b, Vec2::new(50.0, 60.0));

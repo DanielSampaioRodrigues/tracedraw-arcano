@@ -1781,12 +1781,28 @@ pub fn draw_snap_mark(app: &App, painter: &Painter) {
         return;
     }
     let c = app.view.to_screen(t.point);
+    // While dragging, the edge snapped to lights up in blue.
+    if let (Some(seg), false) = (t.edge, matches!(app.drag, crate::app::Drag::None)) {
+        let pts: Vec<Pos2> = (0..=24)
+            .map(|i| {
+                app.view
+                    .to_screen(tracedraw_core::geometry::ParamCurve::eval(
+                        &seg,
+                        i as f64 / 24.0,
+                    ))
+            })
+            .collect();
+        painter.add(egui::Shape::line(
+            pts,
+            EStroke::new(1.5, Tokens::DRAG_OUTLINE),
+        ));
+    }
     // The mark in black on a white halo, so it reads on any colour.
     draw_snap_glyph_halo(painter, c, t.mode);
     if app.settings.snap.screen_tips {
         // The mode's name in blue beside it, haloed in white.
         let font = egui::FontId::proportional(11.0);
-        let text = crate::i18n::tr(t.mode.key());
+        let text = crate::i18n::tr(t.mode.tip_key());
         let at = c + egui::vec2(12.0, -7.0);
         let halo = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
         for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {

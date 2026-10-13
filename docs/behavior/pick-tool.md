@@ -62,7 +62,8 @@ handles return on release.
 A move grabbed on a mark (see below) carries that point: a node,
 midpoint, centre or the point of an edge lands on other objects' points
 and edges and slides along an edge while the pointer stays within the
-snapping radius. A scale or skew handle snaps the point of the box it
+snapping radius. The edge snapped to lights up in blue while the
+drag lasts. A scale or skew handle snaps the point of the box it
 stands for, and turning snaps the pointer, to other objects' points and
 edges, guidelines, the grid and the page (Ctrl turns in steps instead).
 
@@ -71,8 +72,8 @@ edges, guidelines, the grid and the page (Ctrl turns in steps instead).
 With snapping to objects on, the pointer resting over the selection (not
 over a handle or the centre of rotation) shows the selection's point or
 edge within the snapping radius, the one a drag would carry: its mark
-and, with screen tips on, its name (Node, Midpoint, Center, Edge and the
-other snapping modes in use). Points win over edges. Handles take a
+and, with screen tips on, its name in lower case (node, midpoint,
+center, edge and the other snapping modes in use). Points win over edges. Handles take a
 press within 6 points of their centre, short of the selection box.
 
 ## The pointer
