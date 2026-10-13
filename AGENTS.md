@@ -67,6 +67,9 @@ the size the scripts' coordinates are taken at. Look at the PNGs
 before claiming a UI change works. `scripts/visual/smoke_edit.py` and
 `scripts/visual/monkey.py` (random actions, `MONKEY_SEED`) must leave the
 application running with no panic in the log after any interaction change.
+`scripts/visual/window_check.sh <binary>` (Xvfb, openbox, xprop) checks
+that the main window can be maximized and resized after the splash
+screen; CI runs it on the Linux build.
 
 ## Browser build
 

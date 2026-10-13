@@ -92,6 +92,15 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} -p tracedraw -p tracedraw-cli
 
+      # The main window, after the splash screen and without it, can be
+      # maximized and resized under a window manager (see
+      # scripts/visual/window_check.sh).
+      - name: Window check
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xvfb openbox x11-utils libgl1-mesa-dri
+          scripts/visual/window_check.sh target/${{ matrix.target }}/release/tracedraw
+
       # Windows code signing, see docs/code-signing.md. Release builds (v*
       # tags) are signed once a provider is set up in the repository's
       # secrets and variables; builds of main too when the SIGN_NIGHTLY
