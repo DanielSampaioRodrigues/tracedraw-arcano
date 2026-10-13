@@ -52,7 +52,25 @@ check() {
     echo "$out" | grep -q '_NET_WM_ACTION_MAXIMIZE_HORZ' || { echo "FAIL $name: cannot be maximized"; ok=0; }
     echo "$out" | grep -q '_NET_WM_ACTION_RESIZE' || { echo "FAIL $name: cannot be resized"; ok=0; }
     echo "$out" | grep -q 'program specified maximum size' && { echo "FAIL $name: has a maximum size"; ok=0; }
-    if [ $ok = 1 ]; then echo "ok $name"; else FAIL=1; sed -n '1,40p' "$WORK/$name.log"; fi
+    if [ $ok = 1 ]; then
+        echo "ok $name"
+    else
+        FAIL=1
+        sed -n '1,40p' "$WORK/$name.log"
+        annotate "$name" "$out" "$WORK/$name.log"
+    fi
+}
+
+# On GitHub Actions, the failure also as an annotation (the properties seen
+# and the start of the program's log), readable without the job's log.
+annotate() {
+    [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+    local text
+    text=$(printf 'window %s\n%s\n-- log --\n%s' "$1" "${2:-no window found}" "$(sed -n '1,25p' "$3")")
+    text=${text//'%'/'%25'}
+    text=${text//$'\r'/'%0D'}
+    text=${text//$'\n'/'%0A'}
+    echo "::error title=Window check ($1)::$text"
 }
 
 check splash 0
