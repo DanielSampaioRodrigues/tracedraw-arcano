@@ -221,17 +221,23 @@ impl App {
             .collect()
     }
 
-    /// The innermost object at `p` (Ctrl+click): in the topmost object
-    /// there, while it is a group, its topmost child there. A group with
-    /// no object of its own at `p` is itself the answer.
-    pub fn hit_test_deep(&self, p: Point) -> Option<ShapeId> {
+    /// Ctrl+click: one group level further in at `p` than what is selected
+    /// there (the first level inside the topmost group when nothing of it
+    /// is), down to the innermost object.
+    pub fn hit_test_step(&self, p: Point) -> Option<ShapeId> {
         let top = self.hit_test(p)?;
         let tol = 3.0 / self.view.zoom as f64;
+        let mut chain = vec![top];
         let mut current = self.doc().shape(top).ok()?.1.clone();
         while let Some(c) = self.children_hit(&current, p, tol).into_iter().next() {
+            chain.push(c.id);
             current = c;
         }
-        Some(current.id)
+        let next = match chain.iter().rposition(|id| self.selection.contains(id)) {
+            Some(k) => k + 1,
+            None => 1,
+        };
+        chain.get(next.min(chain.len() - 1)).copied()
     }
 
     /// Every object at `p`, top first: the objects on the layers, or with
@@ -472,12 +478,21 @@ impl App {
     }
 
     /// Space during a move leaves a copy where the selection is now.
+    /// Space while the selection is moved, scaled, turned or slanted drops
+    /// a copy where the outline is, and the drag goes on.
     fn stamp_on_space(&mut self, response: &Response) {
-        if let Drag::Move { total, .. } = &self.drag {
-            if response.ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-                let t = Affine::translate(*total);
-                self.stamp_copies(t);
+        if !response.ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            return;
+        }
+        let t = match &self.drag {
+            Drag::Move { total, .. } => Some(Affine::translate(*total)),
+            d @ (Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. }) => {
+                self.preview_transform_of(d)
             }
+            _ => None,
+        };
+        if let Some(t) = t {
+            self.stamp_copies(t);
         }
     }
 
@@ -869,7 +884,7 @@ impl App {
             // Ctrl takes the object inside a group, unless the press is on
             // what is selected already (Ctrl then keeps the move straight).
             let hit = match self.hit_test(p) {
-                Some(top) if mods.ctrl && !self.selection.contains(&top) => self.hit_test_deep(p),
+                Some(top) if mods.ctrl && !self.selection.contains(&top) => self.hit_test_step(p),
                 other => other,
             };
             match hit {
@@ -944,9 +959,9 @@ impl App {
                     return;
                 }
             }
-            // Ctrl: the object inside a group.
+            // Ctrl: one group level further in.
             let hit = if mods.ctrl {
-                self.hit_test_deep(p)
+                self.hit_test_step(p)
             } else {
                 self.hit_test(p)
             };
@@ -1059,9 +1074,18 @@ impl App {
                 }
             }
             Drag::Marquee {
-                current, touching, ..
+                start,
+                current,
+                touching,
             } => {
-                *current = p;
+                // Ctrl keeps the marquee square.
+                let mut q = p;
+                if mods.ctrl || mods.command {
+                    let d = p - *start;
+                    let side = d.x.abs().max(d.y.abs());
+                    q = *start + Vec2::new(side * d.x.signum(), side * d.y.signum());
+                }
+                *current = q;
                 *touching = mods.alt;
             }
             Drag::Lasso { points, touching } => {
@@ -1960,6 +1984,10 @@ impl App {
         if pressed(Key::D, cmd) && !(segments && self.duplicate_segments()) {
             self.duplicate();
         }
+        // Ctrl+Space: the Pick tool, whatever tool is active.
+        if pressed(Key::Space, cmd) && self.tool != Tool::Pick {
+            self.set_tool(Tool::Pick);
+        }
         // Order: Ctrl+Home/End to the front/back of the page, Shift+PgUp/PgDn
         // within the layer, Ctrl+PgUp/PgDn one step.
         if pressed(Key::Home, cmd) || pressed(Key::PageUp, Modifiers::SHIFT) {
@@ -2141,20 +2169,38 @@ impl App {
                 self.goto_page(i - 1);
             }
         }
-        // The Shape tool with nodes chosen: C, S and Y make them cusp,
-        // smooth or symmetrical (before the alignment and tool letters).
+        // The Shape tool with nodes chosen: C turns cusp nodes smooth and
+        // the others cusp, S symmetrical nodes smooth and the others
+        // symmetrical, Y makes them symmetrical (before the alignment and
+        // tool letters).
         let nodes_chosen = self.tool == Tool::Shape && !self.node_selection.is_empty();
         if nodes_chosen {
             use tracedraw_core::nodes::NodeType;
+            let now = self.current_node_type();
+            let toggled = |key: Key, pair: NodeType| {
+                let ty = if now == Some(pair) {
+                    NodeType::Smooth
+                } else {
+                    pair
+                };
+                (key, ty)
+            };
             for (k, ty) in [
-                (Key::C, NodeType::Cusp),
-                (Key::S, NodeType::Smooth),
+                toggled(Key::C, NodeType::Cusp),
+                toggled(Key::S, NodeType::Symmetrical),
                 (Key::Y, NodeType::Symmetrical),
             ] {
                 if pressed(k, Modifiers::NONE) {
                     self.set_selected_node_type(ty);
                     return;
                 }
+            }
+            // Home and End: the curve's first and last node.
+            if pressed(Key::Home, Modifiers::NONE) && self.select_end_node(true) {
+                return;
+            }
+            if pressed(Key::End, Modifiers::NONE) && self.select_end_node(false) {
+                return;
             }
         }
         // Align shortcuts: plain letters with a selection (not while nodes
@@ -2221,7 +2267,12 @@ impl App {
             }
         }
         if d.hypot() > 0.0 {
-            self.nudge(d);
+            // With the Shape tool and nodes chosen, the nodes move.
+            if self.tool == Tool::Shape && !self.node_selection.is_empty() {
+                self.nudge_nodes(d);
+            } else {
+                self.nudge(d);
+            }
         }
     }
 }

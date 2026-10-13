@@ -448,6 +448,36 @@ impl App {
         true
     }
 
+    /// Choose the first (`first`) or last node of the curve whose node was
+    /// chosen last; false when there is none.
+    pub fn select_end_node(&mut self, first: bool) -> bool {
+        let Some(&(id, _)) = self.node_selection.last() else {
+            return false;
+        };
+        let Some((path, _, _)) = self.curve_of(id) else {
+            return false;
+        };
+        let list = nodes::nodes(&path);
+        let end = if first { list.first() } else { list.last() };
+        match end {
+            Some(n) => {
+                self.node_selection = vec![(id, n.index)];
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Move the chosen nodes by `d` (page millimetres), one undo step: the
+    /// arrow keys with the Shape tool.
+    pub fn nudge_nodes(&mut self, d: Vec2) {
+        let start = self.start_curves();
+        let Some(grab) = self.selected_node_points().first().map(|(_, _, p)| *p) else {
+            return;
+        };
+        self.move_start_nodes(&start, d, grab, false);
+    }
+
     /// Select the nodes of the selected curves inside a freehand marquee.
     pub fn finish_node_lasso(&mut self, poly: &[Point]) {
         let mut sel = Vec::new();

@@ -1238,7 +1238,7 @@ fn dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes() {
 }
 
 #[test]
-fn c_s_and_y_set_the_type_of_the_chosen_nodes() {
+fn node_keys_in_the_shape_tool() {
     let (ctx, mut app, id) = setup();
     // A curve with a smooth-able middle node.
     let mut path = tracedraw_core::BezPath::new();
@@ -1264,10 +1264,15 @@ fn c_s_and_y_set_the_type_of_the_chosen_nodes() {
     };
     use tracedraw_core::nodes::NodeType;
     assert_eq!(ty(&app), NodeType::Cusp);
+    // C turns a cusp node smooth, S a smooth node symmetrical, Y makes it
+    // symmetrical. (A node's type follows its handles: aligned handles
+    // read as smooth, aligned ones of equal length as symmetrical, so the
+    // way back, cusp from smooth or smooth from symmetrical, shows only
+    // once a handle moves.)
     for (k, want) in [
-        (egui::Key::S, NodeType::Smooth),
+        (egui::Key::C, NodeType::Smooth),
+        (egui::Key::S, NodeType::Symmetrical),
         (egui::Key::Y, NodeType::Symmetrical),
-        (egui::Key::C, NodeType::Cusp),
     ] {
         frame(
             &ctx,
@@ -1275,12 +1280,52 @@ fn c_s_and_y_set_the_type_of_the_chosen_nodes() {
             vec![key(k, Modifiers::NONE)],
             Modifiers::NONE,
         );
-        if want != NodeType::Cusp {
-            assert_eq!(ty(&app), want, "{k:?}");
-        }
+        assert_eq!(ty(&app), want, "{k:?}");
         // Still the Shape tool, nothing aligned.
         assert_eq!(app.tool, Tool::Shape);
     }
+    // Home and End choose the curve's first and last node.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Home, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.node_selection, vec![(c, 0)]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::End, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let last = app.node_selection.clone();
+    assert_eq!(last.len(), 1);
+    assert!(last[0].1 > hit.index, "{last:?}");
+    // The arrow keys move the chosen node, not the curve.
+    let before = app.doc().find_shape(c).map(|s| s.bounds()).expect("curve");
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::ArrowRight, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let after = app.doc().find_shape(c).map(|s| s.bounds()).expect("curve");
+    assert!(
+        (after.x0 - before.x0).abs() < 1e-9,
+        "the start stays: {before:?} {after:?}"
+    );
+    assert!(
+        after.x1 > before.x1 + 1e-6,
+        "the end node moved right: {before:?} {after:?}"
+    );
+    // Ctrl+Space: the Pick tool.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Space, Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(app.tool, Tool::Pick);
 }
 
 #[test]
@@ -1530,4 +1575,84 @@ fn drawing_a_new_shape_lets_the_selection_go_at_once() {
     // Then the new rectangle alone is.
     assert_eq!(app.selection.len(), 1);
     assert_ne!(app.selection[0], id);
+}
+
+#[test]
+fn ctrl_click_goes_one_group_level_in_at_a_time() {
+    let (ctx, mut app, [a, _b, c], inner) = grouped();
+    // The group of two squares and the third square in an outer group.
+    app.select(vec![inner, c]);
+    app.group_selection();
+    let outer = app.selection[0];
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let on_a = app.view.to_screen(Point::new(115.0, 110.0));
+    click_at(&ctx, &mut app, on_a, Modifiers::NONE);
+    assert_eq!(app.selection, vec![outer]);
+    // Each Ctrl+click goes one level further in, then stays on the square.
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![inner]);
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![a]);
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![a]);
+}
+
+#[test]
+fn ctrl_keeps_the_marquee_square_and_space_copies_while_turning() {
+    let (ctx, mut app, id) = setup();
+    // Space while turning leaves a copy at the angle reached.
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let ne = handle(&app, Handle::NE);
+    let count = shape_count(&app);
+    drag(
+        &ctx,
+        &mut app,
+        ne,
+        ne + egui::vec2(-40.0, -60.0),
+        Modifiers::NONE,
+        vec![key(egui::Key::Space, Modifiers::NONE)],
+    );
+    assert_eq!(shape_count(&app), count + 1);
+    assert!(app.doc().find_shape(id).is_some());
+    // A marquee dragged with Ctrl is square.
+    app.rotate_mode = false;
+    app.select(Vec::new());
+    let from = app.view.to_screen(Point::new(150.0, 250.0));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::CTRL,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::CTRL)],
+        Modifiers::CTRL,
+    );
+    for i in 1..=3 {
+        let p = from + egui::vec2(60.0, 20.0) * (i as f32 / 3.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::CTRL,
+        );
+    }
+    match app.drag {
+        Drag::Marquee { start, current, .. } => {
+            let d = current - start;
+            assert!((d.x.abs() - d.y.abs()).abs() < 1e-9, "{d:?}");
+        }
+        ref other => panic!("{other:?}"),
+    }
+    let end = from + egui::vec2(60.0, 20.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, Modifiers::CTRL)],
+        Modifiers::CTRL,
+    );
 }
