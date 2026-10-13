@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Selection handles: solid black squares just outside the selection box,
+  which has no frame any more, so the objects' outlines stay in view; a
+  handle scales from where it was grabbed. In rotate mode the arrows have
+  solid heads and stand outside the box too.
+- The Pick tool treats all objects as filled by default: a click inside
+  an unfilled object selects it. Options > Tools > Pick and the property
+  bar turn it off.
 - Shape tool: a dragged node, control handle or shape node snaps to the
   grid, guidelines, the page and other objects like the drawing tools
   do; it ignored snapping (#3).

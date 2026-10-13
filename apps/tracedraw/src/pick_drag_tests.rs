@@ -320,6 +320,7 @@ fn handle_modifiers_shape_the_scale() {
             anchor,
             start_bounds: b,
             current,
+            grab: tracedraw_core::geometry::Vec2::ZERO,
             mods,
         })
         .expect("transform")
@@ -577,6 +578,7 @@ fn the_status_bar_tells_how_far_how_much_and_what_angle() {
         anchor: Point::new(10.0, 25.0),
         start_bounds: Rect::new(10.0, 10.0, 60.0, 40.0),
         current: Point::new(85.0, 25.0),
+        grab: tracedraw_core::geometry::Vec2::ZERO,
         mods: HandleMods::default(),
     };
     let text = info(&app);
@@ -985,8 +987,10 @@ fn clicking_the_selection_or_its_centre_mark_turns_the_handles() {
     let middle = app.selection_bounds().expect("bounds").center();
     app.reset_pivot();
     assert_eq!(app.rotation_center(), Some(middle));
-    // The centre mark of an outline-only ring: it lies on nothing, yet a
-    // click there turns the handles and a drag moves the ring.
+    // The centre mark of an outline-only ring: it lies on nothing (with
+    // objects not treated as filled), yet a click there turns the handles
+    // and a drag moves the ring.
+    app.settings.treat_all_filled = false;
     app.select(Vec::new());
     let ring = app
         .new_shape(ShapeKind::Ellipse {
@@ -1426,4 +1430,35 @@ fn copy_cut_and_paste_events_work_on_objects() {
     let view = app.view.visible_page_rect(app.canvas_rect).center();
     let b = app.selection_bounds().expect("bounds");
     assert!((b.center() - view).hypot() < 1e-6);
+}
+
+#[test]
+fn handles_stand_outside_the_box_and_grabbing_one_does_not_jump() {
+    let (ctx, mut app, id) = setup();
+    let before = bounds(&app, id);
+    let r = app.view.rect_to_screen(before);
+    let off = crate::interaction::HANDLE_OFFSET;
+    // Each handle stands off the box, so the outline stays in view.
+    let e = handle(&app, Handle::E);
+    let nw = handle(&app, Handle::NW);
+    assert!((e.x - (r.right() + off)).abs() < 1e-3, "{e:?} {r:?}");
+    assert!((nw.x - (r.left() - off)).abs() < 1e-3, "{nw:?} {r:?}");
+    assert!((nw.y - (r.top() - off)).abs() < 1e-3, "{nw:?} {r:?}");
+    // Dragging the right handle 20 points widens the object by 20 points,
+    // not by the handle's distance from the box as well.
+    drag(
+        &ctx,
+        &mut app,
+        e,
+        e + egui::vec2(20.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let after = bounds(&app, id);
+    let grown = 20.0 / app.view.zoom as f64;
+    assert!(
+        close(after.width(), before.width() + grown),
+        "{before:?} {after:?}"
+    );
+    assert!(close(after.x0, before.x0), "{before:?} {after:?}");
 }

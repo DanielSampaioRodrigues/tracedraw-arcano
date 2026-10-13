@@ -793,34 +793,28 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             .rotation_center()
             .map(|c| app.view.to_screen(c))
             .unwrap_or(r.center());
-        // The centre of rotation: a ring with a dot, on a white halo.
-        painter.circle_stroke(c, 5.5, EStroke::new(3.0, Color32::WHITE));
-        painter.circle_stroke(c, 5.5, EStroke::new(1.3, Tokens::HANDLE));
-        painter.circle_filled(c, 1.6, Tokens::HANDLE);
+        // The centre of rotation: a ring with a dot.
+        painter.circle_stroke(c, 8.0, EStroke::new(2.0, Color32::BLACK));
+        painter.circle_filled(c, 2.0, Color32::BLACK);
         for (h, p) in app.handle_positions(bounds) {
             draw_rotate_handle(painter, p, h);
         }
     } else {
+        // Eight square handles just outside the selection box, which has
+        // no frame of its own, so the objects' outlines stay in view.
         // Objects chosen inside a group show round handles.
         let nested = app.selection_nested();
+        let size = crate::interaction::HANDLE_SIZE;
         for (_, p) in app.handle_positions(bounds) {
             if nested {
-                painter.circle_filled(p, 3.8, Tokens::HANDLE);
+                painter.circle_filled(p, size / 2.0 + 0.5, Color32::BLACK);
             } else {
                 painter.rect_filled(
-                    ERect::from_center_size(p, egui::vec2(7.0, 7.0)),
+                    ERect::from_center_size(p, egui::vec2(size, size)),
                     0.0,
-                    Tokens::HANDLE,
+                    Color32::BLACK,
                 );
             }
-        }
-        if shapes.len() > 1 {
-            painter.rect_stroke(
-                r,
-                0.0,
-                EStroke::new(1.0, Tokens::SELECTION),
-                epaint::StrokeKind::Outside,
-            );
         }
     }
     // Hint "x" in the centre: the move marker (rotate mode shows the
@@ -839,60 +833,61 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
     );
 }
 
-/// A rotate mode handle at `p`: a curved arrow turning around each
+/// A rotate mode handle at `p`: a curved double arrow around each
 /// corner, a straight double arrow along each side (sideways at the top
-/// and bottom, up and down at the left and right). Black on a white halo.
+/// and bottom, up and down at the left and right). Black, 2 points thick,
+/// with solid heads.
 fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
-    let ink = EStroke::new(1.4, Tokens::HANDLE);
-    let halo = EStroke::new(3.6, Color32::WHITE);
-    let lines: Vec<Vec<Pos2>> = if h.is_corner() {
-        // Outward along the corner's diagonal (screen y grows downwards).
-        let (sx, sy) = match h {
+    let ink = Color32::BLACK;
+    let stroke = EStroke::new(2.0, ink);
+    // A solid head with its tip at `tip`, pointing along `dir`.
+    let head = |tip: Pos2, dir: egui::Vec2| {
+        let d = dir.normalized();
+        let n = egui::vec2(-d.y, d.x);
+        epaint::PathShape::convex_polygon(
+            vec![tip, tip - d * 4.5 + n * 3.0, tip - d * 4.5 - n * 3.0],
+            ink,
+            EStroke::NONE,
+        )
+    };
+    if h.is_corner() {
+        // Which way the corner points (screen y grows downwards).
+        let (sx, sy): (f32, f32) = match h {
             Handle::NE => (1.0, -1.0),
             Handle::NW => (-1.0, -1.0),
             Handle::SE => (1.0, 1.0),
             _ => (-1.0, 1.0),
         };
-        let out = egui::vec2(sx, sy).normalized();
-        let base = out.y.atan2(out.x);
-        let centre = p - out * 2.0;
-        let radius = 8.0;
+        // A quarter circle bulging out of the corner, its centre half a
+        // radius in from `p` on each axis.
+        let radius = 13.0;
+        let centre = p - egui::vec2(sx, sy) * (radius / 2.0);
+        let base = sy.atan2(sx);
+        let (a0, a1) = (
+            base - std::f32::consts::FRAC_PI_4,
+            base + std::f32::consts::FRAC_PI_4,
+        );
+        let at = |a: f32| centre + egui::vec2(a.cos(), a.sin()) * radius;
+        // The arc stops short of its ends, where the heads take over.
+        let trim = 3.5 / radius;
         let arc: Vec<Pos2> = (0..=12)
-            .map(|i| {
-                let a = base - 0.85 + 1.7 * i as f32 / 12.0;
-                centre + egui::vec2(a.cos(), a.sin()) * radius
-            })
+            .map(|i| at(a0 + trim + (a1 - a0 - 2.0 * trim) * i as f32 / 12.0))
             .collect();
-        // The head at the arc's end, pointing along the turn.
-        let a = base + 0.85;
-        let tip = centre + egui::vec2(a.cos(), a.sin()) * radius;
-        let along = egui::vec2(-a.sin(), a.cos());
-        let across = egui::vec2(a.cos(), a.sin());
-        let head = vec![
-            tip - along * 4.0 + across * 3.0,
-            tip,
-            tip - along * 4.0 - across * 3.0,
-        ];
-        vec![arc, head]
+        painter.add(epaint::PathShape::line(arc, stroke));
+        // Each head points on along the turn.
+        let tangent = |a: f32| egui::vec2(-a.sin(), a.cos());
+        painter.add(head(at(a1), tangent(a1)));
+        painter.add(head(at(a0), -tangent(a0)));
     } else {
         let d = if matches!(h, Handle::N | Handle::S) {
-            egui::vec2(7.0, 0.0)
+            egui::vec2(8.0, 0.0)
         } else {
-            egui::vec2(0.0, 7.0)
+            egui::vec2(0.0, 8.0)
         };
-        let n = egui::vec2(d.y, d.x).normalized() * 3.0;
-        let u = d.normalized() * 3.5;
-        vec![
-            vec![p - d, p + d],
-            vec![p + d - u + n, p + d, p + d - u - n],
-            vec![p - d + u + n, p - d, p - d + u - n],
-        ]
-    };
-    for l in &lines {
-        painter.add(epaint::PathShape::line(l.clone(), halo));
-    }
-    for l in lines {
-        painter.add(epaint::PathShape::line(l, ink));
+        let u = d.normalized() * 4.0;
+        painter.line_segment([p - d + u, p + d - u], stroke);
+        painter.add(head(p + d, d));
+        painter.add(head(p - d, -d));
     }
 }
 

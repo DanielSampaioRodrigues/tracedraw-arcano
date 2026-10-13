@@ -119,8 +119,9 @@ pub struct Settings {
     /// many points.
     #[serde(default = "default_text_increment")]
     pub text_increment_pt: f64,
-    /// Options > Tools > Pick: unfilled objects can be picked inside.
-    #[serde(default)]
+    /// Options > Tools > Pick: unfilled objects can be picked inside (on
+    /// by default).
+    #[serde(default = "default_true")]
     pub treat_all_filled: bool,
     /// Options > Tools > Pick: the Pick tool's pointer is a cross hair.
     #[serde(default)]
@@ -864,7 +865,7 @@ impl Default for Settings {
             clip_frame: ClipFramePrefs::default(),
             backup: BackupPrefs::default(),
             text_increment_pt: default_text_increment(),
-            treat_all_filled: false,
+            treat_all_filled: true,
             crosshair_cursor: false,
             screen_ppi: default_screen_ppi(),
             zoom_right_click_out: true,

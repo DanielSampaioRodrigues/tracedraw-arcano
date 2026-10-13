@@ -386,7 +386,13 @@ pub enum Drag {
         handle: Handle,
         anchor: Point,
         start_bounds: Rect,
+        /// Where the point of the selection box the handle stands for has
+        /// been dragged to (the pointer less `grab`).
         current: Point,
+        /// The pointer's offset from that point when the handle was
+        /// grabbed: handles stand outside the box, so the box follows the
+        /// pointer without a jump.
+        grab: tracedraw_core::geometry::Vec2,
         mods: HandleMods,
     },
     /// Skewing the selection with a side handle in rotate mode: the
@@ -5119,6 +5125,10 @@ mod tests {
         app.view.zoom = 1.0;
         let id = rect_shape(&mut app, Rect::new(10.0, 10.0, 60.0, 60.0), false);
         let inside = Point::new(35.0, 35.0);
+        // Treated as filled by default: a click inside takes it.
+        assert!(app.settings.treat_all_filled);
+        assert_eq!(app.hit_test(inside), Some(id));
+        app.settings.treat_all_filled = false;
         assert_eq!(app.hit_test(inside), None);
         assert_eq!(app.hit_test(Point::new(10.5, 35.0)), Some(id));
         app.settings.treat_all_filled = true;

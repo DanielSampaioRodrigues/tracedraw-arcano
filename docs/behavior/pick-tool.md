@@ -37,6 +37,21 @@ click (the windowing layer ends a drag when any button goes up); the
 modifier keys are read at every step, so pressing or letting go of Shift,
 Ctrl or Alt during the drag changes the result at once.
 
+## The handles
+
+The selection box has no frame of its own, so the objects' outlines
+stay in view. Eight solid black square handles, 10 interface points
+across, stand just outside it: their centres 6.5 points out from the box
+(a gap of 1.5 points). A corner or side handle scales from where it was
+grabbed, so the box follows the pointer without a jump. Objects chosen
+inside a group show round handles. The centre mark is a small cross.
+
+In rotate mode the handles are black arrows 2 points thick with solid
+heads, their centres 9 points out from the box: a curved double arrow
+around each corner, bulging outwards, and a straight double arrow along
+each side. The centre of rotation is a ring 8 points in radius with a
+dot in the middle.
+
 ## The pointer
 
 The pointer says what a press would do (code: `ui/cursors.rs`):

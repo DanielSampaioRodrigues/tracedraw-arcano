@@ -10,6 +10,31 @@ use tracedraw_core::{
 };
 
 const HANDLE_PX: f32 = 7.0;
+/// The selection handles' size, interface points.
+pub(crate) const HANDLE_SIZE: f32 = 10.0;
+/// How far out of the selection box the handles' centres stand,
+/// interface points: a gap of 1.5 points between handle and box.
+pub(crate) const HANDLE_OFFSET: f32 = HANDLE_SIZE / 2.0 + 1.5;
+/// How far out of the selection box the rotate and skew arrows' centres
+/// stand (rotate mode), interface points.
+pub(crate) const ROTATE_HANDLE_OFFSET: f32 = 9.0;
+/// The rotate and skew arrows take a press this close to their centre.
+const ROTATE_HANDLE_PX: f32 = 9.0;
+
+/// The point of the selection box `b` a handle stands for (page space).
+pub(crate) fn handle_point(b: Rect, h: Handle) -> Point {
+    let c = b.center();
+    match h {
+        Handle::N => Point::new(c.x, b.y1),
+        Handle::S => Point::new(c.x, b.y0),
+        Handle::E => Point::new(b.x1, c.y),
+        Handle::W => Point::new(b.x0, c.y),
+        Handle::NE => Point::new(b.x1, b.y1),
+        Handle::NW => Point::new(b.x0, b.y1),
+        Handle::SE => Point::new(b.x1, b.y0),
+        Handle::SW => Point::new(b.x0, b.y0),
+    }
+}
 /// How near the centre of rotation the pointer grabs it, screen pixels.
 const PIVOT_PX: f32 = 8.0;
 
@@ -292,7 +317,12 @@ impl App {
 
     /// Screen-space handle positions for the selection box.
     pub fn handle_positions(&self, b: Rect) -> [(Handle, egui::Pos2); 8] {
-        let r = self.view.rect_to_screen(b);
+        let off = if self.rotate_mode {
+            ROTATE_HANDLE_OFFSET
+        } else {
+            HANDLE_OFFSET
+        };
+        let r = self.view.rect_to_screen(b).expand(off);
         [
             (Handle::NW, r.left_top()),
             (Handle::N, r.center_top()),
@@ -472,9 +502,14 @@ impl App {
 
     pub(crate) fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
         let b = self.selection_bounds()?;
+        let reach = if self.rotate_mode {
+            ROTATE_HANDLE_PX
+        } else {
+            HANDLE_PX
+        };
         self.handle_positions(b)
             .iter()
-            .find(|(_, p)| p.distance(screen) <= HANDLE_PX)
+            .find(|(_, p)| p.distance(screen) <= reach)
             .map(|(h, _)| *h)
     }
 
@@ -780,6 +815,9 @@ impl App {
                         };
                     }
                 } else {
+                    // The point of the box the handle stands for, and how
+                    // far the pointer is from it.
+                    let grab = p - handle_point(b, h);
                     let anchor = match h {
                         Handle::N => Point::new(b.center().x, b.y0),
                         Handle::S => Point::new(b.center().x, b.y1),
@@ -794,7 +832,8 @@ impl App {
                         handle: h,
                         anchor,
                         start_bounds: b,
-                        current: p,
+                        current: p - grab,
+                        grab,
                         mods: crate::app::HandleMods::of(mods),
                     };
                 }
@@ -980,10 +1019,9 @@ impl App {
             }
             _ => None,
         };
-        let snapped_handle = if matches!(self.drag, Drag::Scale { .. }) {
-            self.snap_point_excluding(p, &self.selection)
-        } else {
-            p
+        let snapped_handle = match &self.drag {
+            Drag::Scale { grab, .. } => self.snap_point_excluding(p - *grab, &self.selection),
+            _ => p,
         };
         match &mut self.drag {
             Drag::Move { last, total, .. } => {
@@ -1551,6 +1589,7 @@ impl App {
                 start_bounds,
                 current,
                 mods,
+                ..
             } => {
                 let b = *start_bounds;
                 // From the centre (Shift) the handle's side is half as far
