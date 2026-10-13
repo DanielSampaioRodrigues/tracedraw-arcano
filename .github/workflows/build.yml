@@ -98,7 +98,7 @@ jobs:
       - name: Window check
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y xvfb openbox x11-utils libgl1-mesa-dri
+          sudo apt-get install -y xvfb openbox x11-utils libgl1-mesa-dri libxkbcommon-x11-0
           scripts/visual/window_check.sh target/${{ matrix.target }}/release/tracedraw
 
       # Windows code signing, see docs/code-signing.md. Release builds (v*
