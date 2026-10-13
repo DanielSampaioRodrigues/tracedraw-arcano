@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dragging the selection (move, scale, turn, slant) leaves the objects in
+  place and shows their outline where they would go, on a white halo that
+  stays visible over dark fills. A move grabbed on an edge mark carries
+  that point along other objects' edges; turning and slanting snap to
+  other objects' points like scaling does.
+- Starting to draw a new shape lets go of the selection at once.
 - Selection handles: solid black squares just outside the selection box,
   which has no frame any more, so the objects' outlines stay in view; a
   handle scales from where it was grabbed. In rotate mode the arrows have

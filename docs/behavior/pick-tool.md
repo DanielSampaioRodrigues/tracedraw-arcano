@@ -52,6 +52,20 @@ around each corner, bulging outwards, and a straight double arrow along
 each side. The centre of rotation is a ring 8 points in radius with a
 dot in the middle.
 
+## Dragging the selection
+
+While the selection is moved, scaled, turned or slanted, the objects stay
+where they are and their outline shows where they would go: a blue line
+on a white halo, which reads as two light lines on a dark fill. The
+handles return on release.
+
+A move grabbed on a mark (see below) carries that point: a node,
+midpoint, centre or the point of an edge lands on other objects' points
+and edges and slides along an edge while the pointer stays within the
+snapping radius. A scale or skew handle snaps the point of the box it
+stands for, and turning snaps the pointer, to other objects' points and
+edges, guidelines, the grid and the page (Ctrl turns in steps instead).
+
 ## Snap marks over the selection
 
 With snapping to objects on, the pointer resting over the selection (not

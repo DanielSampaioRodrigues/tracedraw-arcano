@@ -1033,8 +1033,22 @@ impl App {
             }
             _ => None,
         };
+        // Handles snap to other objects, guidelines, the grid and the
+        // page, never to the selection's own points: the point of the box
+        // a scale or skew handle stands for, and the pointer turning the
+        // selection (unless Ctrl turns it in steps).
         let snapped_handle = match &self.drag {
             Drag::Scale { grab, .. } => self.snap_point_excluding(p - *grab, &self.selection),
+            Drag::Skew {
+                handle,
+                start_bounds,
+                start,
+                ..
+            } => {
+                let grab = *start - handle_point(*start_bounds, *handle);
+                self.snap_point_excluding(p - grab, &self.selection) + grab
+            }
+            Drag::Rotate { .. } if !mods.ctrl => self.snap_point_excluding(p, &self.selection),
             _ => p,
         };
         match &mut self.drag {
@@ -1065,7 +1079,7 @@ impl App {
             Drag::Skew {
                 current, mods: m, ..
             } => {
-                *current = p;
+                *current = snapped_handle;
                 *m = crate::app::HandleMods::of(mods);
             }
             Drag::Pivot => {
@@ -1078,7 +1092,7 @@ impl App {
                 start_angle,
                 current_angle,
             } => {
-                let mut a = (p - *center).atan2();
+                let mut a = (snapped_handle - *center).atan2();
                 // Ctrl turns in steps of the constrain angle.
                 if mods.ctrl {
                     let step = self.settings.constrain_angle.max(0.1).to_radians();
@@ -1187,6 +1201,8 @@ impl App {
     fn box_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
         if response.drag_started_by(PointerButton::Primary) {
+            // A new shape begins: what was selected lets go at once.
+            self.select(Vec::new());
             self.drag = Drag::Box {
                 start: p,
                 current: p,
@@ -1229,6 +1245,7 @@ impl App {
             return;
         }
         if response.drag_started_by(PointerButton::Primary) {
+            self.select(Vec::new());
             self.drag = Drag::ThreePointBase {
                 start: p,
                 current: p,

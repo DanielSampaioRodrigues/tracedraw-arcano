@@ -27,6 +27,8 @@ impl Tokens {
     pub const RULER_BG: Color32 = Color32::from_rgb(0xF4, 0xF4, 0xF4);
     pub const HANDLE: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
     pub const SELECTION: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
+    /// The outline that shows where a dragged selection would go.
+    pub const DRAG_OUTLINE: Color32 = Color32::from_rgb(0x1E, 0x64, 0xFF);
     pub const TOOL_ACTIVE: Color32 = Color32::from_rgb(0xCC, 0xE4, 0xF7);
     pub const TOOL_HOVER: Color32 = Color32::from_rgb(0xE5, 0xF1, 0xFB);
     pub const ICON: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x2A);

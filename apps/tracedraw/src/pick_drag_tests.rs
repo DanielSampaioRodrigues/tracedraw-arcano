@@ -1462,3 +1462,72 @@ fn handles_stand_outside_the_box_and_grabbing_one_does_not_jump() {
     );
     assert!(close(after.x0, before.x0), "{before:?} {after:?}");
 }
+
+#[test]
+fn turning_snaps_the_pointer_to_another_objects_node() {
+    let (ctx, mut app, id) = setup();
+    // Another rectangle up and to the right; its bottom left corner is a
+    // node at (100, 80).
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 80.0, 130.0, 110.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![id]);
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let c = app.rotation_center().expect("centre");
+    let ne = handle(&app, Handle::NE);
+    let start = app.view.to_page(ne);
+    // Released a few points off the node: the turn ends on the node.
+    let node = Point::new(100.0, 80.0);
+    let near = app.view.to_screen(node) + egui::vec2(3.0, 2.0);
+    drag(&ctx, &mut app, ne, near, Modifiers::NONE, Vec::new());
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    let turned = k[1].atan2(k[0]);
+    let want = (node - c).atan2() - (start - c).atan2();
+    assert!((turned - want).abs() < 1e-6, "{turned} {want}");
+    assert!(app.doc().find_shape(other).is_some());
+}
+
+#[test]
+fn drawing_a_new_shape_lets_the_selection_go_at_once() {
+    let (ctx, mut app, id) = setup();
+    assert_eq!(app.selection, vec![id]);
+    app.set_tool(Tool::Rectangle);
+    // Somewhere empty on the page, away from the rectangle.
+    let from = app.view.to_screen(Point::new(100.0, 150.0));
+    let to = app.view.to_screen(Point::new(140.0, 120.0));
+    let none = Modifiers::NONE;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    for i in 1..=3 {
+        let p = from + (to - from) * (i as f32 / 3.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], none);
+    }
+    // While the new rectangle is being drawn, nothing is selected.
+    assert!(matches!(app.drag, Drag::Box { .. }));
+    assert!(app.selection.is_empty(), "{:?}", app.selection);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    // Then the new rectangle alone is.
+    assert_eq!(app.selection.len(), 1);
+    assert_ne!(app.selection[0], id);
+}

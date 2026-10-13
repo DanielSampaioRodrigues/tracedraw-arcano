@@ -100,12 +100,18 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         }
         _ => None,
     };
-    draw_page(app, painter, rect, preview);
+    // While the selection is moved, scaled, turned or slanted, the
+    // objects stay where they are and their outline shows where they
+    // would go; the handles wait for the release.
+    draw_page(app, painter, rect, None);
     let doc: &Document = app.doc();
     draw_text_frames(app, painter, preview);
 
     // Selection.
-    draw_selection(app, painter, preview);
+    match preview {
+        Some(t) => draw_transform_outline(app, painter, t),
+        None => draw_selection(app, painter, None),
+    }
     draw_table_cells(app, painter);
     draw_frame_links(app, painter);
     draw_symmetry_lines(app, painter, rect);
@@ -728,6 +734,25 @@ fn draw_table_cells(app: &App, painter: &Painter) {
             [view.to_screen(top), view.to_screen(bottom)],
             EStroke::new(1.5, Tokens::TEXT),
         );
+    }
+}
+
+/// The selection's outline moved by `t`: a blue line on a white halo, so it
+/// reads on any background (two light lines on a dark one).
+pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
+    let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
+    let line = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
+    for s in app.selected_shapes() {
+        let path = t * s.page_path();
+        for (mut pts, closed) in flatten(&path, &app.view) {
+            if closed {
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+            }
+            painter.add(egui::Shape::line(pts.clone(), halo));
+            painter.add(egui::Shape::line(pts, line));
+        }
     }
 }
 

@@ -7,7 +7,8 @@ a 0.2 mm black outline) unless the Properties panel set other defaults.
 
 ## Live preview
 
-While the button is held the object itself follows the pointer, built
+Pressing to draw lets go of whatever was selected at once. While the
+button is held the object itself follows the pointer, built
 with the current property bar settings (corner radius, arc angles,
 points and sharpness, revolutions, rows and columns, the chosen common
 shape, action lines): the same geometry the release creates. It is drawn

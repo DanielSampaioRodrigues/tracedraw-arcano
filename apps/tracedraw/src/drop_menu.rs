@@ -149,18 +149,7 @@ impl App {
         };
         let constrain = painter.ctx().input(|i| i.modifiers.command);
         let t = Affine::translate(drag.offset(constrain));
-        let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x1E, 0x64, 0xFF));
-        for s in self.selected_shapes() {
-            let path = t * s.page_path();
-            for (mut pts, closed) in crate::canvas::flatten(&path, &self.view) {
-                if closed {
-                    if let Some(first) = pts.first().copied() {
-                        pts.push(first);
-                    }
-                }
-                painter.add(egui::Shape::line(pts, stroke));
-            }
-        }
+        crate::canvas::draw_transform_outline(self, painter, t);
     }
 
     /// Carry out a drop menu choice.

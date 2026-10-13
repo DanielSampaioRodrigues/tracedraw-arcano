@@ -224,19 +224,12 @@ impl App {
         snap_points::best(&found, points, lines)
     }
 
-    /// The selection's own snap point under `p` (nodes, midpoints,
-    /// quadrants, centres), which a move carries onto other objects.
+    /// The selection's own snap point under `p` (a node, midpoint,
+    /// quadrant or centre, else the point of an edge under it): the one
+    /// the pointer marks, which a move carries onto other objects' points
+    /// and edges.
     pub fn selection_snap_source(&self, p: Point) -> Option<Point> {
-        if !self.snap_enabled() || !self.snap.objects {
-            return None;
-        }
-        let tol = self.snap_tolerance();
-        let mut g = Vec::new();
-        for s in self.selected_shapes() {
-            snap_points::geometry(&s, Affine::IDENTITY, &text_baselines, &mut g);
-        }
-        let found = snap_points::targets(&g, p, tol, None, &self.settings.snap.modes);
-        snap_points::best(&found, true, false).map(|t| t.point)
+        self.selection_hover_target(p).map(|t| t.point)
     }
 
     /// The selection's own snap point under `p`, or its edge when no
@@ -562,6 +555,32 @@ mod tests {
         let d = app.snap_move_from(src, b, Vec2::new(107.0, 88.0));
         assert_eq!(Point::new(30.0, 30.0) + d, Point::new(140.0, 120.0));
         assert_eq!(app.snap_mark.get().map(|m| m.mode), Some(SnapMode::Node));
+    }
+
+    #[test]
+    fn a_move_grabbed_on_an_edge_follows_another_objects_edge() {
+        let mut app = app();
+        app.settings.snap.threshold_px = 3.0;
+        // A tall rectangle whose left edge is the line x = 100.
+        rect(&mut app, 100.0, 50.0, 140.0, 150.0);
+        let moving = rect(&mut app, 20.0, 20.0, 40.0, 60.0);
+        app.select(vec![moving]);
+        // Grabbed on its right edge, away from the nodes and the midpoint.
+        let src = app.selection_snap_source(Point::new(40.5, 30.0));
+        assert_eq!(src, Some(Point::new(40.0, 30.0)));
+        let b = app.selection_bounds().unwrap();
+        // Dragged near the other rectangle's left edge at two heights:
+        // the grabbed point lands on that edge each time and slides along
+        // it with the pointer.
+        for dy in [60.0, 85.0] {
+            let d = app.snap_move_from(src, b, Vec2::new(61.5, dy));
+            assert!((40.0 + d.x - 100.0).abs() < 1e-9, "{d:?}");
+            assert!((d.y - dy).abs() < 1e-9, "{d:?}");
+            assert_eq!(app.snap_mark.get().map(|m| m.mode), Some(SnapMode::Edge));
+        }
+        // Far from it, it lets go.
+        let d = app.snap_move_from(src, b, Vec2::new(50.0, 60.0));
+        assert!((d.x - 50.0).abs() < 1e-9, "{d:?}");
     }
 
     #[test]
