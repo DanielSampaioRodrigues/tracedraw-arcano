@@ -151,7 +151,7 @@ pub fn bundled_font_definitions() -> egui::FontDefinitions {
 /// script (the bundled one covers Latin, Greek and Cyrillic).
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub fn needs_system_font(code: &str) -> bool {
-    matches!(code, "zh-CN" | "ja" | "ar" | "hi" | "bn")
+    matches!(code, "zh-CN" | "zh-TW" | "ja" | "ar" | "hi" | "bn")
 }
 
 /// A context with the interface fonts installed (headless tests draw
@@ -202,6 +202,14 @@ fn fallback_fonts(defs: &mut egui::FontDefinitions) -> Vec<String> {
             "Source Han Sans SC",
             "WenQuanYi Micro Hei",
             "Noto Sans CJK JP",
+        ],
+        // Traditional Chinese.
+        &[
+            "Noto Sans CJK TC",
+            "Noto Sans TC",
+            "Microsoft JhengHei",
+            "PingFang TC",
+            "Source Han Sans TC",
         ],
         &[
             "Noto Sans CJK JP",

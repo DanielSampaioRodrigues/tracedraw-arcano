@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The interface in six more languages: Chinese (Traditional), Italian,
+  Dutch, Polish, Turkish and Czech, eighteen in all. Taiwan, Hong Kong and
+  Macau locales choose Traditional Chinese.
 - Import CMX exchange files: pages, layers, groups, curves, rectangles,
   ellipses, uniform and fountain fills, outlines with dashes and
   arrowheads, embedded images and clips. Text, lenses and bitmap fills

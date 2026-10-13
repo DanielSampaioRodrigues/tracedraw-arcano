@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
 /// Languages shipped with the app, in display order.
-pub const LANGUAGES: [(&str, &str); 12] = [
+pub const LANGUAGES: [(&str, &str); 18] = [
     ("en", "English"),
     ("zh-CN", "中文（简体）"),
     ("hi", "हिन्दी"),
@@ -21,9 +21,15 @@ pub const LANGUAGES: [(&str, &str); 12] = [
     ("id", "Bahasa Indonesia"),
     ("de", "Deutsch"),
     ("ja", "日本語"),
+    ("zh-TW", "中文（繁體）"),
+    ("it", "Italiano"),
+    ("nl", "Nederlands"),
+    ("pl", "Polski"),
+    ("tr", "Türkçe"),
+    ("cs", "Čeština"),
 ];
 
-const FILES: [(&str, &str); 12] = [
+const FILES: [(&str, &str); 18] = [
     ("en", include_str!("../lang/en.toml")),
     ("zh-CN", include_str!("../lang/zh-CN.toml")),
     ("hi", include_str!("../lang/hi.toml")),
@@ -36,6 +42,12 @@ const FILES: [(&str, &str); 12] = [
     ("id", include_str!("../lang/id.toml")),
     ("de", include_str!("../lang/de.toml")),
     ("ja", include_str!("../lang/ja.toml")),
+    ("zh-TW", include_str!("../lang/zh-TW.toml")),
+    ("it", include_str!("../lang/it.toml")),
+    ("nl", include_str!("../lang/nl.toml")),
+    ("pl", include_str!("../lang/pl.toml")),
+    ("tr", include_str!("../lang/tr.toml")),
+    ("cs", include_str!("../lang/cs.toml")),
 ];
 
 struct State {
@@ -154,9 +166,21 @@ pub fn trf(key: &str, args: &[(&str, &str)]) -> String {
 pub fn system_language() -> &'static str {
     let env = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_default()
-        .to_lowercase();
-    let env = env.replace('_', "-");
+        .unwrap_or_default();
+    language_for_locale(&env)
+}
+
+/// The interface language for a locale such as `pt_BR.UTF-8`, `zh_TW` or
+/// `de`; English when none matches.
+pub fn language_for_locale(locale: &str) -> &'static str {
+    let env = locale.to_lowercase().replace('_', "-");
+    // Chinese written in Traditional characters: Taiwan, Hong Kong, Macau.
+    if ["zh-tw", "zh-hk", "zh-mo", "zh-hant"]
+        .iter()
+        .any(|t| env.starts_with(t))
+    {
+        return "zh-TW";
+    }
     for (code, _) in LANGUAGES.iter() {
         if env.starts_with(&code.to_lowercase()) {
             return code;
@@ -174,6 +198,22 @@ pub fn system_language() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn locales_choose_the_interface_language() {
+        assert_eq!(language_for_locale("zh_TW.UTF-8"), "zh-TW");
+        assert_eq!(language_for_locale("zh_HK.UTF-8"), "zh-TW");
+        assert_eq!(language_for_locale("zh_CN.UTF-8"), "zh-CN");
+        assert_eq!(language_for_locale("zh_SG"), "zh-CN");
+        assert_eq!(language_for_locale("cs_CZ.UTF-8"), "cs");
+        assert_eq!(language_for_locale("nl_BE"), "nl");
+        assert_eq!(language_for_locale("it_IT"), "it");
+        assert_eq!(language_for_locale("pl_PL"), "pl");
+        assert_eq!(language_for_locale("tr_TR.UTF-8"), "tr");
+        assert_eq!(language_for_locale("pt_BR.UTF-8"), "pt-BR");
+        assert_eq!(language_for_locale("sv_SE"), "en");
+        assert_eq!(language_for_locale(""), "en");
+    }
 
     #[test]
     fn parses_escapes_and_comments() {

@@ -400,13 +400,23 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             app.snap.off = !app.snap.off;
         }
         // "Snap To" and its arrow open the snapping list.
-        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(86.0, STD), egui::Sense::click());
+        // As wide as its label needs (at least the English size), with
+        // room for the arrow.
+        let label = tr("menu.view.snap_to");
+        let font = egui::FontId::proportional(13.0);
+        let text_w = ui
+            .painter()
+            .layout_no_wrap(label.clone(), font.clone(), Tokens::TEXT)
+            .size()
+            .x;
+        let width = (text_w + 6.0 + 22.0).max(86.0);
+        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, STD), egui::Sense::click());
         std_frame(ui, rect, snap_resp.hovered(), false);
         ui.painter().text(
             egui::pos2(rect.left() + 6.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
-            tr("menu.view.snap_to"),
-            egui::FontId::proportional(13.0),
+            label,
+            font,
             Tokens::TEXT,
         );
         let c = egui::pos2(rect.right() - 9.0, rect.center().y);

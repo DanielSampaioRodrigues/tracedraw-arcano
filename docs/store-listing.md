@@ -68,7 +68,7 @@ of location or personal data, no purchases. The usual result is 3+ / E.
 >
 > Make it yours: dock the toolbox, palette and bars on any side, set your
 > own keyboard shortcuts, keep objects on the Shelf for any drawing, and
-> export your workspace to another computer. The interface speaks 12
+> export your workspace to another computer. The interface speaks 18
 > languages.
 >
 > TraceDraw collects nothing and needs no account. It is free software
@@ -92,7 +92,7 @@ of [`CHANGELOG.md`](../CHANGELOG.md) for the version submitted.
 7. Export PDF/X, SVG, EPS, DXF, EMF, PNG, JPEG, WebP and more
 8. Opens and saves .cdr files; imports PDF, AI, SVG, EPS, DXF and PSD
 9. Your own shortcuts, movable bars and exportable workspaces
-10. Interface in 12 languages; free, open source, no account
+10. Interface in 18 languages; free, open source, no account
 
 **Keywords** [up to 7]: vector editor, illustration, page layout,
 drawing, graphic design, print, cdr

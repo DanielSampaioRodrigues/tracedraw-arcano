@@ -52,7 +52,7 @@ impl QuoteStyle {
     pub fn for_language(lang: &str) -> Self {
         let base = lang.split('-').next().unwrap_or(lang).to_lowercase();
         match base.as_str() {
-            "de" => QuoteStyle::German,
+            "de" | "cs" => QuoteStyle::German,
             "fr" | "ru" => QuoteStyle::Guillemets,
             _ => QuoteStyle::Curly,
         }
