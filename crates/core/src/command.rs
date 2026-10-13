@@ -58,6 +58,12 @@ pub enum Command {
     SetMetadata {
         metadata: Metadata,
     },
+    /// Store `shapes` as selection group `number` (0 to 9); no shapes
+    /// removes the group.
+    SetSelectionGroup {
+        number: u8,
+        shapes: Vec<ShapeId>,
+    },
     /// Replace the Time Tracker records. This never becomes an undo step
     /// and does not mark the drawing changed (see [`Command::outside_history`]).
     SetTimeTracker {
@@ -278,6 +284,7 @@ impl Command {
             Command::SetPageBackground { .. } => "Page Background",
             Command::SetMetadata { .. } => "Document Properties",
             Command::SetTimeTracker { .. } => "Time Tracker",
+            Command::SetSelectionGroup { .. } => "Selection Group",
             Command::SetObjectStyles { .. } => "Object Styles",
             Command::LinkObjectStyle { style: Some(_), .. } => "Apply Style",
             Command::LinkObjectStyle { style: None, .. } => "Break Link to Style",
@@ -385,6 +392,16 @@ impl Command {
             }
             Command::SetMetadata { metadata } => {
                 doc.metadata = metadata.clone();
+            }
+            Command::SetSelectionGroup { number, shapes } => {
+                if *number > 9 {
+                    return Err(Error::SelectionGroup(*number));
+                }
+                if shapes.is_empty() {
+                    doc.selection_groups.remove(number);
+                } else {
+                    doc.selection_groups.insert(*number, shapes.clone());
+                }
             }
             Command::SetTimeTracker { tracker } => {
                 doc.time_tracker = tracker.clone();
@@ -953,6 +970,39 @@ fn restyle(doc: &mut Document) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn selection_groups_are_kept_saved_and_undone() {
+        let mut eng = crate::Engine::new(Document::default());
+        let a = crate::id::ShapeId(7);
+        eng.run(&Command::SetSelectionGroup {
+            number: 3,
+            shapes: vec![a],
+        })
+        .expect("group 3");
+        assert_eq!(eng.document().selection_groups.get(&3), Some(&vec![a]));
+        // Saved with the drawing and read back.
+        let json = serde_json::to_string(eng.document()).expect("saved");
+        let back: Document = serde_json::from_str(&json).expect("read");
+        assert_eq!(back.selection_groups.get(&3), Some(&vec![a]));
+        // Undone like any change; no shapes removes a group; 10 is refused.
+        eng.undo().expect("undo");
+        assert!(eng.document().selection_groups.is_empty());
+        eng.redo().expect("redo");
+        eng.run(&Command::SetSelectionGroup {
+            number: 3,
+            shapes: Vec::new(),
+        })
+        .expect("cleared");
+        assert!(eng.document().selection_groups.is_empty());
+        assert!(eng
+            .run(&Command::SetSelectionGroup {
+                number: 10,
+                shapes: vec![a],
+            })
+            .is_err());
+    }
+
     use super::*;
     use crate::geometry::Rect;
 

@@ -12,6 +12,8 @@
   held at the end, every object the lasso touches (the same rules as the
   Pick tool's Alt marquee). The lasso is closed from its last point to
   its first and tested even-odd; fewer than three points select nothing.
+- With Ctrl held, the lasso is a rectangle from where the drag began to
+  the pointer.
 - Check: `pick_drag_tests::the_freehand_pick_lassoes_and_has_the_pick_tools_handles`.
 
 ## Free Transform

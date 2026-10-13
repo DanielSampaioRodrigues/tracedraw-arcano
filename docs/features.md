@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 182, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (New Window and system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 183, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (New Window and system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -18,7 +18,8 @@ Counts: works 182, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |
 | Pointer shapes by what is under it: resize arrows on handles, move arrows on the selection, turning and slant arrows in rotate mode; the Shape tool's arrow marks nodes, control points and segments; drawing tools show their icon by the cross hair, the Eraser and brushes their nib (see `behavior/toolbox.md`) | works |
 | Right-button drag of objects: blue outline preview, then Move Here, Copy Here, Copy Fill Here, Copy Outline Here, Copy All Properties, Place Inside, Cancel (see `behavior/pick-tool.md`) | works |
-| Freehand Pick (lasso, Alt for touching, the Pick tool's handles) | works |
+| Freehand Pick (lasso, Alt for touching, Ctrl for a rectangle, the Pick tool's handles) | works |
+| Selection groups 0 to 9: Ctrl+number stores the selection, the number selects it again (twice: and zooms to it), Alt+number adds to it; saved with the drawing (see `behavior/pick-tool.md`) | works |
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |

@@ -67,6 +67,8 @@ pub enum Error {
     NothingToRedo,
     #[error("object style not found: {0}")]
     StyleNotFound(u32),
+    #[error("selection group {0} is not 0 to 9")]
+    SelectionGroup(u8),
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

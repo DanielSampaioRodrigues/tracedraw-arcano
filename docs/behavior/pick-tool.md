@@ -52,6 +52,15 @@ around each corner, bulging outwards, and a straight double arrow along
 each side. The centre of rotation is a ring 8 points in radius with a
 dot in the middle.
 
+## Selection groups
+
+Ctrl and a number from 0 to 9 store the selection under that number;
+the number alone selects those objects again (the ones the current page
+shows), and pressed again while they are selected zooms to them. Alt and
+the number add the selection to the group. Groups are saved with the
+drawing; objects deleted since drop out. With text selected, Ctrl+8 and
+Ctrl+2 keep changing the text size.
+
 ## Dragging the selection
 
 While the selection is moved, scaled, turned or slanted, the objects stay

@@ -9,6 +9,9 @@ full, row-by-row status.
 - Pick tool: Ctrl+click goes one group level further in at each click;
   Ctrl keeps the marquee square; Space drops a copy while scaling, turning
   or slanting too. Ctrl+Space switches to the Pick tool from any tool.
+  Selection groups: Ctrl+number stores the selection, the number selects
+  it again (twice: and zooms), Alt+number adds; saved with the drawing.
+  Ctrl keeps the Freehand Pick selection a rectangle.
 - Shape tool: the arrow keys move the chosen nodes; Home and End choose
   the curve's first and last node; C and S switch a node's type back and
   forth (cusp and smooth, symmetrical and smooth).

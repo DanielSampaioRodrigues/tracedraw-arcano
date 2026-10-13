@@ -1656,3 +1656,83 @@ fn ctrl_keeps_the_marquee_square_and_space_copies_while_turning() {
         Modifiers::CTRL,
     );
 }
+
+#[test]
+fn selection_groups_store_recall_add_and_zoom() {
+    let (ctx, mut app, id) = setup();
+    let none = Modifiers::NONE;
+    let press = |app: &mut App, k: egui::Key, m: Modifiers| frame(&ctx, app, vec![key(k, m)], m);
+    // Ctrl+3 stores the selection; 3 selects it again.
+    press(&mut app, egui::Key::Num3, Modifiers::COMMAND);
+    assert_eq!(app.doc().selection_groups.get(&3), Some(&vec![id]));
+    app.select(Vec::new());
+    press(&mut app, egui::Key::Num3, none);
+    assert_eq!(app.selection, vec![id]);
+    // 3 again zooms to it.
+    let zoom = app.view.zoom;
+    press(&mut app, egui::Key::Num3, none);
+    assert!(
+        (app.view.zoom - zoom).abs() > 1e-6,
+        "{zoom} {}",
+        app.view.zoom
+    );
+    // Alt+3 adds another object to the group.
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 100.0, 120.0, 120.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![other]);
+    press(&mut app, egui::Key::Num3, Modifiers::ALT);
+    app.select(Vec::new());
+    press(&mut app, egui::Key::Num3, none);
+    assert_eq!(app.selection.len(), 2);
+    // A deleted object drops out; an unused number does nothing.
+    app.select(vec![other]);
+    app.delete_selection();
+    press(&mut app, egui::Key::Num3, none);
+    assert_eq!(app.selection, vec![id]);
+    press(&mut app, egui::Key::Num7, none);
+    assert_eq!(app.selection, vec![id]);
+}
+
+#[test]
+fn ctrl_keeps_the_freehand_selection_a_rectangle() {
+    let (ctx, mut app, _id) = setup();
+    app.set_tool(Tool::FreeformPick);
+    app.select(Vec::new());
+    let ctrl = Modifiers::CTRL;
+    let from = app.view.to_screen(Point::new(150.0, 250.0));
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], ctrl);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, ctrl)],
+        ctrl,
+    );
+    for i in 1..=4 {
+        let p = from
+            + egui::vec2(50.0, 30.0) * (i as f32 / 4.0)
+            + egui::vec2(0.0, (i % 2) as f32 * 7.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], ctrl);
+    }
+    match &app.drag {
+        Drag::Lasso { points, .. } => {
+            assert_eq!(points.len(), 4, "{points:?}");
+            assert!(
+                (points[0].y - points[1].y).abs() < 1e-9
+                    && (points[1].x - points[2].x).abs() < 1e-9
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    let end = from + egui::vec2(50.0, 30.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, ctrl)],
+        ctrl,
+    );
+}

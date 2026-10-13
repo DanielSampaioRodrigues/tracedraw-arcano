@@ -2122,6 +2122,10 @@ pub struct Document {
     /// when the drawing's changes are undone.
     #[serde(default, skip_serializing_if = "TimeTracker::is_empty")]
     pub time_tracker: TimeTracker,
+    /// Selection groups 0 to 9: objects stored under a number to be
+    /// selected again with it, saved with the drawing.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub selection_groups: std::collections::BTreeMap<u8, Vec<ShapeId>>,
     /// Font files the drawing carries (fonts embedded in the file it was
     /// opened from), saved with it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2300,6 +2304,7 @@ impl Document {
             },
             palette: Vec::new(),
             time_tracker: TimeTracker::default(),
+            selection_groups: std::collections::BTreeMap::new(),
             fonts: Vec::new(),
             cmyk_profile: None,
         }

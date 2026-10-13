@@ -221,6 +221,58 @@ impl App {
             .collect()
     }
 
+    /// The objects of selection group `n` that are still in the drawing.
+    pub fn selection_group(&self, n: u8) -> Vec<ShapeId> {
+        self.doc()
+            .selection_groups
+            .get(&n)
+            .map(|ids| {
+                ids.iter()
+                    .copied()
+                    .filter(|id| self.doc().find_shape(*id).is_some())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Store `ids` as selection group `n`.
+    pub fn set_selection_group(&mut self, n: u8, ids: Vec<ShapeId>) {
+        self.run(Command::SetSelectionGroup {
+            number: n,
+            shapes: ids,
+        });
+    }
+
+    /// Select selection group `n` (its objects on the current page); when
+    /// it is selected already, zoom to it.
+    pub fn recall_selection_group(&mut self, n: u8) {
+        // Objects on the layers the current page shows (one inside a group
+        // counts by the group it is in).
+        let shown: Vec<ShapeId> = self
+            .page_layers()
+            .into_iter()
+            .flat_map(|l| l.shapes.iter().map(|s| s.id))
+            .collect();
+        let ids: Vec<ShapeId> = self
+            .selection_group(n)
+            .into_iter()
+            .filter(|id| {
+                let top = self.doc().top_level_of(*id).unwrap_or(*id);
+                shown.contains(&top)
+            })
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let same =
+            ids.len() == self.selection.len() && ids.iter().all(|id| self.selection.contains(id));
+        if same {
+            self.zoom_to_selection();
+        } else {
+            self.select(ids);
+        }
+    }
+
     /// Ctrl+click: one group level further in at `p` than what is selected
     /// there (the first level inside the topmost group when nothing of it
     /// is), down to the innermost object.
@@ -1089,7 +1141,13 @@ impl App {
                 *touching = mods.alt;
             }
             Drag::Lasso { points, touching } => {
-                points.push(p);
+                // Ctrl keeps the freehand selection a rectangle.
+                if (mods.ctrl || mods.command) && !points.is_empty() {
+                    let s = points[0];
+                    *points = vec![s, Point::new(p.x, s.y), p, Point::new(s.x, p.y)];
+                } else {
+                    points.push(p);
+                }
                 *touching = mods.alt;
             }
             Drag::Scale {
@@ -1959,6 +2017,49 @@ impl App {
         }
         if pressed(Key::K, cmd) {
             self.break_apart();
+        }
+        // Selection groups 0 to 9: Ctrl+number stores the selection under
+        // the number, Alt+number adds the selection to it, the number
+        // selects the group again (a second time also zooms to it). With
+        // text selected Ctrl+8 and Ctrl+2 keep changing the text size.
+        let text_selected = self
+            .selected_shapes()
+            .iter()
+            .any(|s| matches!(s.kind, ShapeKind::Text { .. }));
+        for (n, k) in [
+            Key::Num0,
+            Key::Num1,
+            Key::Num2,
+            Key::Num3,
+            Key::Num4,
+            Key::Num5,
+            Key::Num6,
+            Key::Num7,
+            Key::Num8,
+            Key::Num9,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let n = n as u8;
+            if pressed(k, cmd)
+                && !self.selection.is_empty()
+                && !(text_selected && (n == 2 || n == 8))
+            {
+                self.set_selection_group(n, self.selection.clone());
+            }
+            if pressed(k, Modifiers::ALT) && !self.selection.is_empty() {
+                let mut ids = self.selection_group(n);
+                for id in self.selection.clone() {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+                self.set_selection_group(n, ids);
+            }
+            if pressed(k, Modifiers::NONE) {
+                self.recall_selection_group(n);
+            }
         }
         // With the Shape tool and nodes selected, the segments between
         // them are copied, cut or duplicated.
