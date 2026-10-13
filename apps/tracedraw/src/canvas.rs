@@ -257,11 +257,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             if let Some(o) = out {
                 let so = view.to_screen(*o);
                 let mirrored = sp - (so - sp);
-                painter.line_segment([mirrored, so], EStroke::new(1.0, Tokens::SELECTION));
-                painter.circle_filled(so, 3.0, Color32::WHITE);
-                painter.circle_stroke(so, 3.0, EStroke::new(1.0, Tokens::SELECTION));
-                painter.circle_filled(mirrored, 3.0, Color32::WHITE);
-                painter.circle_stroke(mirrored, 3.0, EStroke::new(1.0, Tokens::SELECTION));
+                draw_control_handle(painter, sp, so, Tokens::SELECTION);
+                draw_control_handle(painter, sp, mirrored, Tokens::SELECTION);
             }
             painter.rect_stroke(
                 ERect::from_center_size(sp, egui::vec2(6.0, 6.0)),
@@ -1142,6 +1139,29 @@ fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
 }
 
 /// One node marker: `shape` of side `size` around `p`.
+/// A node's control handle: a dashed line from the node `node` to the
+/// control point `ctrl`, which is a solid arrow head pointing away from
+/// the node.
+fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32) {
+    let d = ctrl - node;
+    let len = d.length();
+    if len < 0.5 {
+        return;
+    }
+    let u = d / len;
+    let n = egui::vec2(-u.y, u.x);
+    let head = 7.0_f32.min(len);
+    let base = ctrl - u * head;
+    if len > head {
+        dashed_polyline(painter, &[node, base], EStroke::new(1.0, color), 4.0, 3.0);
+    }
+    painter.add(epaint::PathShape::convex_polygon(
+        vec![ctrl, base + n * 3.5, base - n * 3.5],
+        color,
+        EStroke::NONE,
+    ));
+}
+
 /// The first node of a subpath: a triangle standing on its base, `size`
 /// across.
 fn start_node_marker(
@@ -1346,9 +1366,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
             if selected {
                 for c in [n.ctrl_in, n.ctrl_out].into_iter().flatten() {
                     let cp = view.to_screen(s.transform * c);
-                    painter.line_segment([p, cp], EStroke::new(1.0, main));
-                    painter.circle_filled(cp, 3.0, Color32::WHITE);
-                    painter.circle_stroke(cp, 3.0, EStroke::new(1.0, main));
+                    draw_control_handle(painter, p, cp, main);
                 }
             }
             let shape = match nodes::node_type(path, n.index) {

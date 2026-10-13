@@ -14,7 +14,10 @@ Node counts in the status bar and the Objects panel count it once.
 A curve selected with the Shape tool shows its outline in the node
 colour (Options > Nodes and Handles, blue by default), its nodes as small
 markers by type (squares for cusps by default) and the first node of each
-subpath as a slightly larger triangle. The arrow showing the curve's
+subpath as a slightly larger triangle. A selected node's control
+handles are dashed lines from the node, each ending in a solid arrow head
+at its control point (the curve tools show the handles of the curve
+being drawn the same way). The arrow showing the curve's
 direction is off by default (Options > Nodes and Handles).
 
 ## Snapping

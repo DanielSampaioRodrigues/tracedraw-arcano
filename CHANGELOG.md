@@ -8,6 +8,8 @@ full, row-by-row status.
 
 - Shape tool: a curve being edited shows its outline in the node colour
   and its first node as a triangle; the direction arrow is off by default.
+  Control handles are dashed lines ending in solid arrow heads, also
+  while a curve is drawn.
 - Preferences saved by older versions turn on treating all objects as
   filled once, so a click inside an unfilled object selects it there too.
 - Dragging the selection (move, scale, turn, slant) leaves the objects in
