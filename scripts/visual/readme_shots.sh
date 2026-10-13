@@ -10,8 +10,8 @@ OUT=docs/images
 SHOTS="$(mktemp -d)"
 CONFIG="$SHOTS/config"
 mkdir -p "$DRAWINGS" "$OUT" "$CONFIG"
-# One interface point per pixel, as at 100 % on a monitor scaled to 125 %.
-echo '{"ui_size": 1.25}' > "$CONFIG/settings.json"
+# One interface point per pixel: 100 % on Linux.
+echo '{"ui_size": 1.0}' > "$CONFIG/settings.json"
 cargo build -q -p tracedraw
 cargo run -q -p tracedraw-cli --example showcase -- "$DRAWINGS"
 export DISPLAY=:99

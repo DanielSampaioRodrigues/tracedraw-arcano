@@ -11,6 +11,10 @@ full, row-by-row status.
   do; it ignored snapping (#3).
 - Linux: after the splash screen the main window can be maximized and
   resized; it kept the splash screen's size as its maximum (#1).
+- Linux: the interface is drawn a quarter larger at the default interface
+  size (100 % is one interface point per pixel at the system's scaling);
+  text was too small (#1). Tools > Options > Customization > Appearance >
+  Interface size still sets it from 80 % to 200 %.
 - Opening .cdr files: letters beyond Latin-1 (Czech, Polish, Turkish and
   other accented letters) in text of version 17 and later files read
   right; they showed as boxes and could break lines in the middle of a

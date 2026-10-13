@@ -100,7 +100,13 @@ pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
 /// 125 %, where other programs at 100 % draw their text and icons that
 /// large: one interface point per pixel there is 1 / 1.25 of the
 /// system's scaling.
+#[cfg(not(target_os = "linux"))]
 pub(crate) const BASE_ZOOM: f32 = 0.8;
+
+/// On Linux 100 % is one interface point per pixel at the system's
+/// scaling: at 0.8 the text was reported too small there (#1).
+#[cfg(target_os = "linux")]
+pub(crate) const BASE_ZOOM: f32 = 1.0;
 
 /// The interface size `size` relative to the system's scaling (1 is
 /// 100 %): `size` itself from 50 % to 400 %, else 1.
@@ -747,11 +753,14 @@ mod tests {
             .all(|s| (interface_size(*s) - s).abs() < 1e-6));
         // 100 % draws the interface's measures at 0.8 of the system's
         // scaling: one point per pixel on a monitor scaled to 125 %, as
-        // large as other programs at 100 % there.
-        assert!((ui_zoom(0.0) - 0.8).abs() < 1e-6);
-        assert!((ui_zoom(1.0) * 1.25 - 1.0).abs() < 1e-6);
+        // large as other programs at 100 % there. On Linux 100 % is one
+        // point per pixel at the system's scaling.
+        let base = if cfg!(target_os = "linux") { 1.0 } else { 0.8 };
+        assert_eq!(BASE_ZOOM, base);
+        assert!((ui_zoom(0.0) - base).abs() < 1e-6);
+        assert!((ui_zoom(1.0) - base).abs() < 1e-6);
         // 125 % is a quarter larger than 100 %.
-        assert!((ui_zoom(1.25) - 1.0).abs() < 1e-6);
+        assert!((ui_zoom(1.25) - 1.25 * base).abs() < 1e-6);
         assert!((ui_zoom(2.0) - 2.0 * ui_zoom(1.0)).abs() < 1e-6);
         // Nonsense falls back to the system's size.
         for bad in [9.0, 0.1, -1.0, f32::NAN, f32::INFINITY] {

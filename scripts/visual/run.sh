@@ -10,9 +10,8 @@ export DISPLAY=:99
 export TRACEDRAW_SHOTS="${TRACEDRAW_SHOTS:-/tmp/tracedraw-visual}"
 mkdir -p "$TRACEDRAW_SHOTS/config"
 LOG="$TRACEDRAW_SHOTS/app.log"
-# Interface size 125 %: one interface point per pixel on this unscaled
-# screen, as at 100 % on a monitor the system scales by 125 % (the size
-# the scripts' coordinates are taken at). TraceDraw saves its preferences
+# Interface size 100 %: on Linux one interface point per pixel on this
+# unscaled screen (the size the scripts' coordinates are taken at). TraceDraw saves its preferences
 # as they change, so each run starts from the defaults (the layout the
 # coordinates are taken at) unless TRACEDRAW_KEEP_SETTINGS=1 keeps what
 # the last run left.
@@ -24,7 +23,7 @@ if sys.argv[2] == "1":
         s = json.load(open(sys.argv[1]))
     except (OSError, ValueError):
         s = {}
-s["ui_size"] = 1.25
+s["ui_size"] = 1.0
 json.dump(s, open(sys.argv[1], "w"), indent=2)
 PY
 Xvfb :99 -screen 0 1600x1000x24 >/dev/null 2>&1 & XPID=$!

@@ -146,6 +146,9 @@ gives the monitor the window is on: 80 %, 90 %, 100 % (the default),
   0.8 over the system's scaling: one interface point per pixel on a
   monitor at 125 %, 0.8 pixel at 100 %, 1.6 pixels at 200 %; 125 % is
   one point per pixel at the system's scaling.
+- On Linux 100 % is a zoom of 1 over the system's scaling: one interface
+  point per pixel at the system's scaling, a quarter larger than on the
+  other systems (#1). The sizes offered and their order are the same.
 - The size is a zoom factor over the monitor's own scaling, so text stays
   sharp. Values out of 50 % to 400 % count as 100 %.
 - The interface size never changes how large drawings are: zoom 100 %
@@ -164,7 +167,7 @@ change the value until the marks match. Zoom 100% then shows a drawing
 at its real size (the zoom box percentages follow; the Pixels view shows
 one pixel at the system's scaling per document pixel). Interface points
 per inch are that resolution over the interface's zoom (120 at 100 %,
-96 at 125 %), so the interface size never changes real sizes. Reset puts
+96 at 125 %; on Linux 96 at 100 %), so the interface size never changes real sizes. Reset puts
 96 back.
 
 ## Document Options
