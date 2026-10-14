@@ -1224,10 +1224,11 @@ pub enum DockerTab {
     PictureMosaic,
     Shelf,
     AiDrawing,
+    Effects,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 37] = [
+    pub const ALL: [DockerTab; 38] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1265,6 +1266,7 @@ impl DockerTab {
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
         DockerTab::AiDrawing,
+        DockerTab::Effects,
     ];
 
     /// i18n key of the docker's title.
@@ -1307,6 +1309,7 @@ impl DockerTab {
             DockerTab::PictureMosaic => "docker.picture_mosaic",
             DockerTab::Shelf => "docker.shelf",
             DockerTab::AiDrawing => "docker.ai_drawing",
+            DockerTab::Effects => "docker.effects",
         }
     }
 

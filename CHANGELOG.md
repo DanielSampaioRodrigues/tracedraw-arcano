@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Effects docker: the selected object's effect stack, each effect
+  switched off and on, moved up or down, or removed.
 - Opacity masks: Object > Clip to Frame > Opacity Mask makes a clip frame's
   brightness set how much of its contents shows (Invert Mask the other
   way round), on screen and in SVG and PDF output.

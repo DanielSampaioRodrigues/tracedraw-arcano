@@ -189,6 +189,13 @@ pub enum Command {
         shape: ShapeId,
         effects: Vec<crate::live::Effect>,
     },
+    /// The whole effect stack of `shape`: the effects drawn and the ones
+    /// switched off (see `Shape::effect_stack`).
+    SetEffectStack {
+        shape: ShapeId,
+        effects: Vec<crate::live::Effect>,
+        parked: Vec<crate::document::ParkedEffect>,
+    },
     SetOverprint {
         shapes: Vec<ShapeId>,
         fill: Option<bool>,
@@ -339,6 +346,7 @@ impl Command {
             Command::SetVisible { .. } => "Show Object",
             Command::SetEffects { effects, .. } if effects.is_empty() => "Clear Effects",
             Command::SetEffects { .. } => "Effect",
+            Command::SetEffectStack { .. } => "Effects",
             Command::SetOverprint { .. } => "Overprint",
             Command::SetLink { .. } => "Hyperlink",
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
@@ -640,6 +648,15 @@ impl Command {
             }
             Command::SetEffects { shape, effects } => {
                 any_mut(doc, *shape)?.effects = effects.clone();
+            }
+            Command::SetEffectStack {
+                shape,
+                effects,
+                parked,
+            } => {
+                let s = any_mut(doc, *shape)?;
+                s.effects = effects.clone();
+                s.parked_effects = parked.clone();
             }
             Command::SetOverprint {
                 shapes,
@@ -1126,6 +1143,56 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn effects_switched_off_keep_their_place_in_the_stack() {
+        use crate::live::Effect;
+        let a = Effect::Perspective {
+            corners: [crate::geometry::Point::ZERO; 4],
+        };
+        let b = Effect::BlockShadow {
+            offset: crate::geometry::Vec2::new(1.0, 1.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        };
+        let c = Effect::BlockShadow {
+            offset: crate::geometry::Vec2::new(2.0, 2.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        };
+        let stack = vec![(a.clone(), true), (b.clone(), false), (c.clone(), true)];
+        let (effects, parked) = Shape::split_stack(stack.clone());
+        assert_eq!(effects, vec![a.clone(), c.clone()]);
+        assert_eq!(parked.len(), 1);
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut s = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let id = s.id;
+        s.effects = vec![a.clone()];
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        Command::SetEffectStack {
+            shape: id,
+            effects,
+            parked,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let s = doc.find_shape(id).unwrap();
+        assert_eq!(s.effect_stack(), stack);
+        assert_eq!(s.effects.len(), 2, "only the effects that are on are drawn");
+        // A parked index past the end still comes back, at the end.
+        let mut odd = s.clone();
+        odd.parked_effects[0].index = 99;
+        assert_eq!(odd.effect_stack().len(), 3);
+        assert_eq!(odd.effect_stack()[2], (b, false));
+    }
 
     #[test]
     fn only_clip_frames_take_an_opacity_mask() {

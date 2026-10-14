@@ -31,6 +31,7 @@ pub mod dockers2;
 pub mod drawing_bars;
 pub mod effect_bars;
 pub mod effect_dialog;
+pub mod effects_docker;
 pub mod envelope_ui;
 pub mod extrude_bar;
 pub mod field;

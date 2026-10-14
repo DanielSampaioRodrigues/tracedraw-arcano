@@ -1141,6 +1141,18 @@ pub struct Shape {
     /// frame itself is not drawn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_mask: Option<OpacityMask>,
+    /// Effects switched off in the effect stack, each with the place it
+    /// holds in the stack; they are kept but not drawn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parked_effects: Vec<ParkedEffect>,
+}
+
+/// An effect switched off, and its place in the stack (see
+/// [`Shape::effect_stack`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParkedEffect {
+    pub index: usize,
+    pub effect: crate::live::Effect,
 }
 
 /// How a clip frame masks its contents (see `Shape::opacity_mask`).
@@ -1225,7 +1237,53 @@ impl Shape {
             node_types: std::collections::BTreeMap::new(),
             uid: None,
             opacity_mask: None,
+            parked_effects: Vec::new(),
         }
+    }
+
+    /// The effect stack in order, each effect with whether it is on: the
+    /// effects that are drawn, with the switched-off ones at their places.
+    pub fn effect_stack(&self) -> Vec<(crate::live::Effect, bool)> {
+        let total = self.effects.len() + self.parked_effects.len();
+        let mut parked: Vec<&ParkedEffect> = self.parked_effects.iter().collect();
+        parked.sort_by_key(|p| p.index);
+        let mut parked = parked.into_iter().peekable();
+        let mut on = self.effects.iter();
+        let mut out = Vec::with_capacity(total);
+        for i in 0..total {
+            match parked.peek() {
+                Some(p) if p.index <= i => {
+                    out.push((p.effect.clone(), false));
+                    parked.next();
+                }
+                _ => match on.next() {
+                    Some(e) => out.push((e.clone(), true)),
+                    None => {
+                        if let Some(p) = parked.next() {
+                            out.push((p.effect.clone(), false));
+                        }
+                    }
+                },
+            }
+        }
+        out
+    }
+
+    /// Split a stack (effects with whether each is on) into the effects
+    /// drawn and the switched-off ones with their places.
+    pub fn split_stack(
+        stack: Vec<(crate::live::Effect, bool)>,
+    ) -> (Vec<crate::live::Effect>, Vec<ParkedEffect>) {
+        let mut effects = Vec::new();
+        let mut parked = Vec::new();
+        for (index, (effect, on)) in stack.into_iter().enumerate() {
+            if on {
+                effects.push(effect);
+            } else {
+                parked.push(ParkedEffect { index, effect });
+            }
+        }
+        (effects, parked)
     }
 
     /// A rectangle's corners as they measure on the page: fixed corners as
