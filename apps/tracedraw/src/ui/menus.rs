@@ -333,14 +333,8 @@ fn mark_item_if(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark, enabled: boo
     }
 }
 
-fn todo(ui: &mut Ui, key: &str, shortcut: &str) {
-    // Not a command yet: left out of the commands that take shortcuts.
-    if invoke::active() {
-        return;
-    }
-    let _ = item(ui, key, shortcut, false);
-}
-
+/// A submenu that is not made yet: shown greyed, left out of the
+/// commands that take shortcuts.
 fn todo_sub(ui: &mut Ui, key: &str) {
     if invoke::active() {
         return;
@@ -747,7 +741,7 @@ mod tests {
         let all = find("menu.edit.select_all_objects").expect("submenu items listed");
         assert_eq!(all.path, ["menu.edit", "menu.edit.select_all"]);
         assert_eq!(all.shortcut, "Ctrl+A");
-        assert!(find("menu.window.new_window").is_none(), "not made yet");
+        assert!(find("menu.window.new_window").is_some());
         assert!(find("menu.window.cascade").is_some());
         assert!(
             find("menu.edit.select_all").is_none(),
@@ -804,6 +798,23 @@ mod tests {
             ran = run_command(&mut app, ui.ctx(), "menu.file.close_all")
         });
         assert!(ran && !app.has_document());
+    }
+
+    /// Window > New Window opens a second window of the active drawing.
+    #[test]
+    fn window_new_window_opens_a_second_window() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let mut ran = false;
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.window.new_window")
+        });
+        assert!(ran);
+        assert_eq!(app.docs.len(), 2);
+        assert_eq!(app.active_doc, 1);
+        assert!(app.document_tab_title(0).ends_with(":1"));
+        assert!(app.document_tab_title(1).ends_with(":2"));
     }
 
     /// A shortcut of the user's runs its menu command, takes over a
@@ -2375,7 +2386,10 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
 }
 
 fn window_menu(app: &mut App, ui: &mut Ui) {
-    todo(ui, "menu.window.new_window", "");
+    let doc = app.has_document() && !app.show_welcome;
+    if item(ui, "menu.window.new_window", "", doc) {
+        app.new_window();
+    }
     if item(ui, "menu.window.refresh_window", "Ctrl+W", true) {
         app.raster.borrow_mut().invalidate();
     }

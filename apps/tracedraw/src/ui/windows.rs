@@ -216,7 +216,7 @@ fn frame(
 /// Draw drawing `i`, which is not the active one, into `rect`: its page
 /// as its own view shows it, fitted when its window is new.
 fn paint_parked(app: &mut App, ui: &Ui, i: usize, rect: Rect) {
-    app.swap_with_slot(i);
+    let holder = app.peek(i);
     // What the active window is doing is not drawn here.
     let drag = std::mem::replace(&mut app.drag, Drag::None);
     let guides = std::mem::take(&mut app.selected_guides);
@@ -232,7 +232,7 @@ fn paint_parked(app: &mut App, ui: &Ui, i: usize, rect: Rect) {
     app.selected_guides = guides;
     app.guide_rotate = rotate;
     app.docker_preview = preview;
-    app.swap_with_slot(i);
+    app.end_peek(i, holder);
 }
 
 /// The drawing area with every drawing in a window (see the module notes).

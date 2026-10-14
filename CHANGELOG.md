@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Window > New Window: another window of the same drawing, "name:1" and
+  "name:2", each with its own view and selection; edits, undo and saving
+  are shared, and closing one window keeps the drawing open in the other.
 - Shape tool: a node's type is kept with the curve once chosen, so C and S
   switch it both ways and a cusp node with aligned handles moves its
   handles apart.

@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 183, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (New Window and system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 184, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -263,4 +263,5 @@ Counts: works 183, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |
 | Several open drawings in tabs (unsaved marker, close button, New after the last tab), Window list, Close, Close All, exit asks about each unsaved drawing | works (see `behavior/documents.md`) |
 | Window > Cascade, Tile Horizontally, Tile Vertically, Combine Windows, Dock Window: every drawing in a window with a title bar, the active one with its rulers and tools, the others showing their page as left (see `behavior/drawing-window.md`, Windows) | works |
-| Window > New Window (a second window of the same drawing), a drawing in a system window of its own | missing |
+| Window > New Window: another window (tab) of the same drawing, titled "name:1", "name:2"; each window has its own view, page and selection, the drawing, its undo history and its file are shared; closing one window keeps the others (see `behavior/drawing-window.md`, New Window) | works |
+| A drawing in a system window of its own | missing |

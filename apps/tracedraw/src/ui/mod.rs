@@ -176,7 +176,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     }
 
     let doc_name = if app.has_document() && !app.show_welcome {
-        app.document_title()
+        app.document_tab_title(app.active_doc)
     } else {
         tr("welcome.title")
     };

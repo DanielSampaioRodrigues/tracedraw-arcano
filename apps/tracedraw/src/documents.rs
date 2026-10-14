@@ -9,15 +9,37 @@
 //!
 //! With no drawing open (only the Welcome Screen) `docs` is empty and the
 //! fields hold an empty placeholder document that is never shown.
+//!
+//! Window > New Window gives a drawing another window (another tab): one
+//! slot per window, and the slots of one drawing share its `drawing` id.
+//! A slot's fields come in two parts. The window part (page, view,
+//! selection ...) belongs to each window. The drawing part (the engine
+//! with the document and its undo history, the file ...) exists once: in
+//! the `App` fields while one of the drawing's windows is active, else
+//! in exactly one of its slots, the one marked `holds`. The other
+//! windows' slots keep an empty placeholder there, so a drawing is never
+//! copied and an edit made in one window is what every other window of
+//! the drawing shows.
 
 use crate::app::{App, Drag, PageNumberSettings};
 use crate::view::View;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracedraw_core::{Document, Engine, PageId, ShapeId};
 
-/// Everything that belongs to one open drawing.
-#[derive(Default)]
+/// Source of the ids that tell open drawings apart.
+static NEXT_DRAWING: AtomicU64 = AtomicU64::new(1);
+
+/// Everything that belongs to one window of an open drawing.
 pub struct DocSlot {
+    /// Which drawing this window shows (shared by all its windows).
+    pub drawing: u64,
+    /// The window's number among its drawing's windows (from 1), shown
+    /// as "name:n" while the drawing has more than one.
+    pub window: u32,
+    /// This slot keeps the drawing part for all of the drawing's windows
+    /// (none of them is the active one).
+    pub holds: bool,
     pub engine: Engine,
     pub page: Option<PageId>,
     pub view: View,
@@ -41,42 +63,154 @@ pub struct DocSlot {
     pub view_anchor: Option<egui::Pos2>,
 }
 
+impl Default for DocSlot {
+    /// A window of a drawing of its own.
+    fn default() -> Self {
+        DocSlot {
+            drawing: NEXT_DRAWING.fetch_add(1, Ordering::Relaxed),
+            window: 1,
+            holds: false,
+            engine: Engine::default(),
+            page: None,
+            view: View::default(),
+            selection: Vec::new(),
+            file: None,
+            cdr_version: None,
+            fit_pending: false,
+            page_numbers: PageNumberSettings::default(),
+            missing_fonts: Vec::new(),
+            units: Default::default(),
+            pivots: Default::default(),
+            picked_layer: None,
+            raster: Default::default(),
+            view_anchor: None,
+        }
+    }
+}
+
 impl App {
     /// True when at least one drawing is open (not only the Welcome Screen).
     pub fn has_document(&self) -> bool {
         !self.docs.is_empty()
     }
 
-    /// Swap the active-drawing fields with slot `i` (twice puts everything
-    /// back, which is how a window that is not the active one is drawn).
-    pub(crate) fn swap_with_slot(&mut self, i: usize) {
+    /// Swap the window part of the active fields with slot `i`.
+    fn swap_window(&mut self, i: usize) {
         let Some(slot) = self.docs.get_mut(i) else {
             return;
         };
-        std::mem::swap(&mut self.engine, &mut slot.engine);
         let page = slot.page.unwrap_or(self.page);
         slot.page = Some(self.page);
         self.page = page;
         std::mem::swap(&mut self.view, &mut slot.view);
         std::mem::swap(&mut self.selection, &mut slot.selection);
+        std::mem::swap(&mut self.fit_pending, &mut slot.fit_pending);
+        std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
+        std::mem::swap(self.raster.get_mut(), &mut slot.raster);
+        std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
+        // Measured in another window.
+        *self.visual_cache.get_mut() = (u64::MAX, Default::default());
+    }
+
+    /// Swap the drawing part of the active fields with slot `i`.
+    fn swap_drawing(&mut self, i: usize) {
+        let Some(slot) = self.docs.get_mut(i) else {
+            return;
+        };
+        std::mem::swap(&mut self.engine, &mut slot.engine);
         std::mem::swap(&mut self.file, &mut slot.file);
         std::mem::swap(&mut self.cdr_version, &mut slot.cdr_version);
-        std::mem::swap(&mut self.fit_pending, &mut slot.fit_pending);
         std::mem::swap(&mut self.page_numbers, &mut slot.page_numbers);
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
         std::mem::swap(&mut self.units, &mut slot.units);
         std::mem::swap(&mut self.pivots, &mut slot.pivots);
-        std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
-        std::mem::swap(self.raster.get_mut(), &mut slot.raster);
-        // Measured in the other drawing.
         *self.visual_cache.get_mut() = (u64::MAX, Default::default());
-        std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
+    }
+
+    /// The slot keeping the drawing part of window `i`'s drawing, or
+    /// `None` when the active fields have it.
+    fn holder(&self, i: usize) -> Option<usize> {
+        let drawing = self.docs.get(i)?.drawing;
+        self.docs
+            .iter()
+            .position(|d| d.holds && d.drawing == drawing)
+    }
+
+    /// Another window of window `i`'s drawing.
+    fn twin(&self, i: usize) -> Option<usize> {
+        let drawing = self.docs.get(i)?.drawing;
+        (0..self.docs.len()).find(|&j| j != i && self.docs[j].drawing == drawing)
+    }
+
+    /// Window `i`'s drawing has another window open.
+    pub fn has_twin(&self, i: usize) -> bool {
+        self.twin(i).is_some()
+    }
+
+    /// The window just brought into the fields may refer to a page or to
+    /// objects that another window of its drawing removed.
+    fn settle_window(&mut self) {
         // A page id from another drawing means nothing here.
         if self.engine.document().page(self.page).is_err() {
             if let Some(p) = self.engine.document().pages.first() {
                 self.page = p.id;
             }
         }
+        let doc = self.engine.document();
+        if self
+            .selection
+            .iter()
+            .any(|id| doc.find_shape(*id).is_none())
+        {
+            let kept: Vec<ShapeId> = self
+                .selection
+                .iter()
+                .copied()
+                .filter(|id| doc.find_shape(*id).is_some())
+                .collect();
+            self.selection = kept;
+        }
+    }
+
+    /// Put the active window, and its drawing, in its slot.
+    fn park_active(&mut self) {
+        let a = self.active_doc;
+        self.swap_window(a);
+        self.swap_drawing(a);
+        if let Some(slot) = self.docs.get_mut(a) {
+            slot.holds = true;
+        }
+    }
+
+    /// Bring parked window `i` into the fields and its drawing with it,
+    /// from whichever slot keeps it.
+    fn unpark(&mut self, i: usize) {
+        self.swap_window(i);
+        if let Some(h) = self.holder(i) {
+            self.swap_drawing(h);
+            self.docs[h].holds = false;
+        }
+        self.settle_window();
+    }
+
+    /// Show parked window `i` in the fields for a moment (to draw it);
+    /// [`App::end_peek`] with the returned value puts everything back.
+    pub(crate) fn peek(&mut self, i: usize) -> Option<usize> {
+        self.swap_window(i);
+        let holder = self.holder(i);
+        if let Some(h) = holder {
+            self.swap_drawing(h);
+        }
+        self.settle_window();
+        holder
+    }
+
+    /// Undo [`App::peek`].
+    pub(crate) fn end_peek(&mut self, i: usize, holder: Option<usize>) {
+        if let Some(h) = holder {
+            self.swap_drawing(h);
+        }
+        self.swap_window(i);
     }
 
     /// Drop the in-progress interactions of the drawing being left: they
@@ -125,7 +259,7 @@ impl App {
         let units = self.units;
         if self.has_document() {
             // Park the active drawing in its slot.
-            self.swap_with_slot(self.active_doc);
+            self.park_active();
         }
         self.page = doc.pages.first().map(|p| p.id).unwrap_or(self.page);
         self.add_carried_fonts(&doc.fonts);
@@ -192,57 +326,128 @@ impl App {
             return;
         }
         self.end_transient_editing();
-        self.swap_with_slot(self.active_doc);
-        self.swap_with_slot(i);
+        self.park_active();
+        self.unpark(i);
         self.active_doc = i;
     }
 
-    /// Close the active drawing without asking (the caller saved or the
-    /// user chose not to). The tab to its right becomes active, else the
-    /// one to its left; with none left the Welcome Screen shows.
+    /// Window > New Window: another window (tab) of the active drawing,
+    /// after its last window, showing what the active window shows; it
+    /// becomes the active window.
+    pub fn new_window(&mut self) {
+        if !self.has_document() {
+            return;
+        }
+        self.end_transient_editing();
+        let a = self.active_doc.min(self.docs.len() - 1);
+        self.active_doc = a;
+        let drawing = self.docs[a].drawing;
+        let mine = |d: &&DocSlot| d.drawing == drawing;
+        let window = self
+            .docs
+            .iter()
+            .filter(mine)
+            .map(|d| d.window)
+            .max()
+            .unwrap_or(1)
+            + 1;
+        let at = self
+            .docs
+            .iter()
+            .rposition(|d| d.drawing == drawing)
+            .unwrap_or(a)
+            + 1;
+        let slot = DocSlot {
+            drawing,
+            window,
+            page: Some(self.page),
+            view: self.view,
+            selection: self.selection.clone(),
+            fit_pending: self.fit_pending,
+            picked_layer: self.picked_layer,
+            view_anchor: self.view_anchor,
+            ..DocSlot::default()
+        };
+        self.park_active();
+        self.docs.insert(at, slot);
+        self.unpark(at);
+        self.active_doc = at;
+        self.show_welcome = false;
+    }
+
+    /// Close the active window without asking (the caller saved or the
+    /// user chose not to). While the drawing has another window open
+    /// only this window goes; else the drawing closes. The tab to its
+    /// right becomes active, else the one to its left; with none left the
+    /// Welcome Screen shows.
     pub fn close_active_document(&mut self) {
         if !self.has_document() {
             return;
         }
         self.end_transient_editing();
         let i = self.active_doc.min(self.docs.len() - 1);
-        self.docs.remove(i);
+        if let Some(j) = self.twin(i) {
+            // The drawing stays, with its other window.
+            self.swap_drawing(j);
+            self.docs[j].holds = true;
+        }
+        let drawing = self.docs.remove(i).drawing;
+        // The drawing's other windows are numbered again from 1, in tab
+        // order.
+        let mut n = 0;
+        for slot in self.docs.iter_mut().filter(|d| d.drawing == drawing) {
+            n += 1;
+            slot.window = n;
+        }
+        // The fields hold the closed window (and drawing): drop them.
+        self.engine = Engine::default();
+        self.page = self.engine.document().pages[0].id;
+        self.selection.clear();
+        self.file = None;
+        self.cdr_version = None;
+        self.view = View::default();
+        self.fit_pending = true;
+        self.page_numbers = PageNumberSettings::default();
+        self.missing_fonts.clear();
+        self.pivots = Default::default();
+        self.picked_layer = None;
+        *self.raster.get_mut() = Default::default();
+        self.view_anchor = None;
         if self.docs.is_empty() {
-            self.engine = Engine::default();
-            self.page = self.engine.document().pages[0].id;
-            self.selection.clear();
-            self.file = None;
-            self.cdr_version = None;
-            self.view = View::default();
-            self.fit_pending = true;
-            self.page_numbers = PageNumberSettings::default();
-            self.missing_fonts.clear();
-            self.pivots = Default::default();
-            self.picked_layer = None;
-            *self.raster.get_mut() = Default::default();
-            self.view_anchor = None;
             self.active_doc = 0;
             self.show_welcome = true;
             return;
         }
         let next = i.min(self.docs.len() - 1);
-        // The fields still hold the closed drawing: swapping puts it in the
-        // slot, where it is dropped.
-        self.swap_with_slot(next);
-        if let Some(slot) = self.docs.get_mut(next) {
-            *slot = DocSlot::default();
-        }
+        self.unpark(next);
         self.active_doc = next;
     }
 
-    /// Tab label of drawing `i`: the file or document name, with an
-    /// asterisk while it has unsaved changes.
+    /// Tab label of window `i`: its drawing's name, then ":n" (the
+    /// window's number) while the drawing has more than one window, and
+    /// an asterisk while it has unsaved changes.
     pub fn document_tab_title(&self, i: usize) -> String {
-        if i == self.active_doc {
-            return self.document_title();
+        let title = self.drawing_title(i);
+        let (Some(slot), true) = (self.docs.get(i), self.has_twin(i)) else {
+            return title;
+        };
+        match title.strip_suffix('*') {
+            Some(name) => format!("{name}:{}*", slot.window),
+            None => format!("{title}:{}", slot.window),
         }
-        let Some(slot) = self.docs.get(i) else {
+    }
+
+    /// The name of window `i`'s drawing (the file or document name), with
+    /// an asterisk while it has unsaved changes.
+    pub fn drawing_title(&self, i: usize) -> String {
+        let Some(drawing) = self.docs.get(i).map(|d| d.drawing) else {
             return String::new();
+        };
+        let active = self.docs.get(self.active_doc).map(|d| d.drawing);
+        let slot = match self.holder(i) {
+            Some(h) => &self.docs[h],
+            None if active == Some(drawing) => return self.document_title(),
+            None => &self.docs[i],
         };
         let name = slot
             .file
@@ -274,7 +479,8 @@ impl App {
     pub fn close_all_documents(&mut self) {
         self.closing_all = true;
         while self.has_document() {
-            if self.engine.is_dirty() {
+            // One of several windows of a drawing closes without asking.
+            if self.engine.is_dirty() && !self.has_twin(self.active_doc) {
                 self.show_welcome = false;
                 self.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
                 return;
@@ -417,6 +623,233 @@ mod tests {
         app.after_close_question(true);
         assert!(app.quit_now);
         assert!(!app.has_document());
+    }
+
+    fn shapes(app: &App) -> usize {
+        app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum::<usize>()
+    }
+
+    #[test]
+    fn a_new_window_shares_the_drawing_and_its_undo_history() {
+        let mut app = App::headless();
+        let a = add_rect(&mut app);
+        app.open_document(Document::new("Other", Size::new(50.0, 50.0)), None);
+        app.switch_document(0);
+        app.new_window();
+        assert_eq!(app.docs.len(), 3);
+        // Placed after the drawing's window, before the other drawing.
+        assert_eq!(app.active_doc, 1);
+        assert_eq!(shapes(&app), 1);
+        // An edit in the second window shows in the first.
+        let b = add_rect(&mut app);
+        app.switch_document(0);
+        assert_eq!(shapes(&app), 2);
+        assert!(app.doc().find_shape(b).is_some());
+        // The undo history is the drawing's: undone in the first window,
+        // gone in the second, redone there.
+        app.undo();
+        assert_eq!(shapes(&app), 1);
+        app.switch_document(1);
+        assert_eq!(shapes(&app), 1);
+        assert!(app.doc().find_shape(a).is_some());
+        app.redo();
+        assert_eq!(shapes(&app), 2);
+        // The other drawing is untouched.
+        app.switch_document(2);
+        assert_eq!(app.doc().title, "Other");
+        assert_eq!(shapes(&app), 0);
+        app.switch_document(0);
+        assert_eq!(shapes(&app), 2);
+        // Exactly one place keeps each parked drawing.
+        assert_eq!(app.docs.iter().filter(|d| d.holds).count(), 1);
+    }
+
+    #[test]
+    fn each_window_keeps_its_own_view_page_and_selection() {
+        let mut app = App::headless();
+        let a = add_rect(&mut app);
+        let b = add_rect(&mut app);
+        app.select(vec![a]);
+        app.view.zoom = 5.0;
+        app.new_window();
+        // The new window starts as the first one shows the drawing.
+        assert_eq!(app.view.zoom, 5.0);
+        assert_eq!(app.selection, vec![a]);
+        app.view.zoom = 9.0;
+        app.select(vec![b]);
+        let first_page = app.page;
+        app.open_document(Document::new("Away", Size::new(50.0, 50.0)), None);
+        app.switch_document(0);
+        assert_eq!(app.view.zoom, 5.0);
+        assert_eq!(app.selection, vec![a]);
+        assert_eq!(app.page, first_page);
+        app.switch_document(1);
+        assert_eq!(app.view.zoom, 9.0);
+        assert_eq!(app.selection, vec![b]);
+        // An object deleted in one window leaves the other's selection.
+        app.switch_document(0);
+        app.select(vec![a]);
+        app.delete_selection();
+        app.switch_document(1);
+        app.select(vec![a, b]);
+        app.switch_document(0);
+        app.switch_document(1);
+        assert_eq!(app.selection, vec![b]);
+    }
+
+    #[test]
+    fn window_titles_number_the_windows_of_a_drawing() {
+        let mut app = App::headless();
+        let name = app.document_tab_title(0);
+        assert!(!name.contains(':'));
+        app.new_window();
+        assert_eq!(app.document_tab_title(0), format!("{name}:1"));
+        assert_eq!(app.document_tab_title(1), format!("{name}:2"));
+        add_rect(&mut app);
+        assert_eq!(app.document_tab_title(0), format!("{name}:1*"));
+        assert_eq!(app.document_tab_title(1), format!("{name}:2*"));
+        app.new_window();
+        assert_eq!(app.document_tab_title(2), format!("{name}:3*"));
+        // Another drawing keeps a plain name; parked windows of the first
+        // still read their drawing.
+        app.open_document(Document::new("Plain", Size::new(50.0, 50.0)), None);
+        assert_eq!(app.document_tab_title(3), "Plain");
+        assert_eq!(app.document_tab_title(1), format!("{name}:2*"));
+        assert_eq!(app.drawing_title(1), format!("{name}*"));
+    }
+
+    #[test]
+    fn closing_one_window_keeps_the_drawing_in_the_other() {
+        let mut app = App::headless();
+        add_rect(&mut app);
+        app.new_window();
+        add_rect(&mut app);
+        assert!(app.engine.is_dirty());
+        // Closing a window of a changed drawing does not ask while another
+        // window shows it.
+        app.close_document();
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+        assert_eq!(app.docs.len(), 1);
+        assert_eq!(shapes(&app), 2);
+        assert!(app.engine.is_dirty());
+        assert!(!app.document_tab_title(0).contains(':'));
+        // A window opened again is numbered from 1.
+        app.new_window();
+        assert!(app.document_tab_title(0).ends_with(":1*"));
+        assert!(app.document_tab_title(1).ends_with(":2*"));
+        app.close_active_document();
+        // The undo history came along.
+        app.undo();
+        assert_eq!(shapes(&app), 1);
+        // The last window asks, as a drawing does.
+        app.close_document();
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        app.close_active_document();
+        assert!(!app.has_document());
+    }
+
+    #[test]
+    fn closing_a_parked_drawing_window_and_close_all() {
+        let mut app = App::headless();
+        add_rect(&mut app);
+        app.new_window();
+        app.open_document(Document::new("Two", Size::new(50.0, 50.0)), None);
+        // Close the first window while the drawing is parked: the second
+        // one, next to it, gets the drawing.
+        app.switch_document(0);
+        app.switch_document(2);
+        app.switch_document(0);
+        app.close_active_document();
+        assert_eq!(app.docs.len(), 2);
+        assert_eq!(shapes(&app), 1);
+        app.switch_document(1);
+        assert_eq!(app.doc().title, "Two");
+        app.switch_document(0);
+        assert_eq!(shapes(&app), 1);
+        // Close All asks once per changed drawing, not per window.
+        app.new_window();
+        app.close_all_documents();
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
+        // The extra window and the unchanged drawing are gone; the last
+        // window of the changed drawing waits for the answer.
+        assert_eq!(app.docs.len(), 1);
+        assert_eq!(shapes(&app), 1);
+        assert_eq!(app.dirty_documents().len(), 1);
+    }
+
+    #[test]
+    fn saving_from_either_window_saves_the_one_drawing() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-new-window-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("shared.tdraw");
+        let mut app = App::headless();
+        add_rect(&mut app);
+        app.new_window();
+        add_rect(&mut app);
+        app.save_to(path.clone());
+        assert!(!app.engine.is_dirty());
+        app.switch_document(0);
+        assert!(!app.engine.is_dirty());
+        assert_eq!(app.file.as_deref(), Some(path.as_path()));
+        assert_eq!(app.document_tab_title(1), "shared:2");
+        add_rect(&mut app);
+        app.save(false);
+        app.switch_document(1);
+        assert!(!app.engine.is_dirty());
+        let saved = std::fs::read_to_string(&path).unwrap_or_default();
+        let doc = Document::from_json(&saved).expect("saved drawing");
+        assert_eq!(
+            doc.pages[0]
+                .layers
+                .iter()
+                .map(|l| l.shapes.len())
+                .sum::<usize>(),
+            3
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tiled_windows_draw_both_windows_of_a_drawing() {
+        use crate::ui::windows::{set_layout, WindowLayout};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        add_rect(&mut app);
+        app.new_window();
+        app.view.zoom = 7.0;
+        let draw = |app: &mut App| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+        };
+        for layout in [WindowLayout::TileVertical, WindowLayout::Cascade] {
+            set_layout(&mut app, layout);
+            draw(&mut app);
+            draw(&mut app);
+            assert_eq!(app.active_doc, 1);
+            assert_eq!(shapes(&app), 1);
+            assert!(!app.docs[0].holds && !app.docs[1].holds);
+            assert!(!app.docs[0].fit_pending);
+        }
+        app.switch_document(0);
+        assert_eq!(shapes(&app), 1);
     }
 
     /// A drawing whose only text, inside a group, is set in `family`.

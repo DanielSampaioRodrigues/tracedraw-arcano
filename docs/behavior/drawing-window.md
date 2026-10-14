@@ -70,12 +70,45 @@ back. The tabs stay above the area and still choose the active drawing.
   its window when the window moves or the canvas begins elsewhere (the
   rulers shown or hidden, a bar docked on another side): its view moves
   with the canvas.
-- Window > New Window (a second window of the same drawing) is not made.
+
+## New Window
+
+Window > New Window (greyed with only the Welcome Screen) opens another
+window of the active drawing: a tab right after the drawing's last
+window, made active, showing the page, view and selection the active
+window shows.
+
+- All windows of a drawing show one document with one undo history: an
+  edit, undo or redo in one is what every other shows. Each window keeps
+  its own page, view (zoom and scroll) and selection; objects removed in
+  another window drop out of a window's selection when it becomes active
+  again.
+- While a drawing has more than one window, its tabs, window title bars,
+  Window menu entries and the main title read "name:1", "name:2" ... in
+  the order the windows were opened (the asterisk for unsaved changes
+  follows the number). Closing a window numbers the rest again from 1; a
+  drawing left with one window shows its plain name.
+- Save and Save As from any window save the drawing; every window then
+  shows it saved, under the new name.
+- Closing a window while the drawing has another open closes only that
+  window, without asking. Closing the last window closes the drawing as
+  before, asking to save when it has changes. Close All and quitting ask
+  once per changed drawing; auto-backup writes one file per drawing.
+- Tiled and cascaded windows (above) draw each window of a drawing with
+  its own view.
 
 ## Checks
 
 - `ui::windows::tests::windows_tile_and_cascade_inside_the_area`
 - `ui::windows::tests::tiled_windows_draw_every_drawing_and_switch`
 - `ui::windows::tests::the_view_stays_put_in_a_window_that_moves`
+- `documents::tests::a_new_window_shares_the_drawing_and_its_undo_history`
+- `documents::tests::each_window_keeps_its_own_view_page_and_selection`
+- `documents::tests::window_titles_number_the_windows_of_a_drawing`
+- `documents::tests::closing_one_window_keeps_the_drawing_in_the_other`
+- `documents::tests::closing_a_parked_drawing_window_and_close_all`
+- `documents::tests::saving_from_either_window_saves_the_one_drawing`
+- `documents::tests::tiled_windows_draw_both_windows_of_a_drawing`
+- `ui::menus::tests::window_new_window_opens_a_second_window`
 - `ui::window_bars::tests::insert_page_before_and_after_the_current_one`
 - `ui::window_bars::tests::the_page_border_and_shadow_are_hit_but_not_the_page_inside`

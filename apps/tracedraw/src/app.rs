@@ -2455,7 +2455,8 @@ impl App {
         if !self.has_document() {
             return;
         }
-        if self.engine.is_dirty() {
+        // The drawing stays open in its other windows: nothing to ask.
+        if self.engine.is_dirty() && !self.has_twin(self.active_doc) {
             self.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
             return;
         }
@@ -3993,8 +3994,8 @@ impl App {
     /// or another open one.
     fn backup_name(&self, slot: Option<usize>) -> String {
         let title = match slot {
-            None => self.document_tab_title(self.active_doc),
-            Some(i) => self.document_tab_title(i),
+            None => self.drawing_title(self.active_doc),
+            Some(i) => self.drawing_title(i),
         };
         let stem: String = title
             .trim_end_matches('*')
