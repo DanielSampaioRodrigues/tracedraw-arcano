@@ -86,7 +86,7 @@ rest starts as always: one copy, all pages, 100 %, as in the document.
 ### File Formats
 
 What File > Export (Ctrl+E) starts with (`formats`): the format (SVG),
-the resolution of bitmap formats (300 dpi, 36 to 2400), the JPEG and
+the resolution of bitmap formats (300 dpi, 1 to 2400), the JPEG and
 WebP quality (90, 1 to 100), Transparent background (on), the PDF
 standard (PDF 1.4), the PDF/X output condition (FOGRA39, at most 64
 characters) and the PDF bleed (0 mm, 0 to 50). Remember the settings of

@@ -11,6 +11,8 @@ full, row-by-row status.
   whose frame keeps editing as a curve). A double click no longer turns
   a picture, text, group or clip frame into a curve, which made a
   picture disappear.
+- Export: the pixel size of bitmap formats can be typed (the resolution
+  follows), and resolutions go down to 1 dpi, for small icons (#4).
 - Pictures on the rows of every menu: File, Edit, Layout, Object, Effects,
   Table, Tools and Help join Text, Bitmaps and Window (submenu rows
   too). Each bitmap effect's row shows the effect applied to a small

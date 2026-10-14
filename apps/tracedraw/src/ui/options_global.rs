@@ -90,7 +90,7 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
         row_label(ui, &tr("dialog.resolution"));
         ui.add(
             egui::DragValue::new(&mut f.export_dpi)
-                .range(36.0..=2400.0)
+                .range(crate::ui::dialogs::MIN_EXPORT_DPI..=2400.0)
                 .suffix(" dpi"),
         );
         ui.end_row();

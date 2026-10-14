@@ -16,15 +16,18 @@ Office presets start with their own (see `options.md`).
 
 | Format | Settings |
 |---|---|
-| PNG, WebP, GIF | resolution (36 to 2400 dpi, presets 72, 96, 150, 300), transparent background; WebP also quality |
+| PNG, WebP, GIF | resolution (1 to 2400 dpi, presets 72, 96, 150, 300), transparent background; WebP also quality |
 | JPEG | resolution, quality (1 to 100) |
 | BMP, TIFF, PSD | resolution |
 | PDF | standard (PDF 1.4, PDF/X-1a, PDF/X-3, PDF/X-4), bleed, output condition for PDF/X; the author, subject and keywords come from the drawing's properties (File > Publish to PDF has bookmarks and protection, see `publish-to-pdf.md`) |
 | SVG, EPS, AI, DXF, HTML, EMF, WMF, PLT | none |
 | PostScript (`.ps`), PRN (`.prn`) | none; every exported page in one file (All pages, else the current page), each page setting its size with `setpagedevice` and ending with `showpage` (Document Structuring Conventions 3.0); a `.prn` print file is the same PostScript, to send to a PostScript printer |
 
-- Bitmap formats show the size in pixels: the page (or selection) size
-  over 25.4 times the resolution.
+- Bitmap formats show the size in pixels, the page (or selection) size
+  over 25.4 times the resolution rounded up, as two fields: typing a
+  width or a height sets the resolution that gives it, the other side
+  following the page's proportions, so a 32 x 32 pixel icon is typed
+  rather than worked out.
 - File size: vector formats (SVG, EPS, PostScript, PDF, AI) are written in memory and
   measured; bitmap formats are estimated by encoding the preview the same
   way and scaling by the pixel count of the export (times the pages with
@@ -38,3 +41,4 @@ Office presets start with their own (see `options.md`).
 
 - `export::tests::the_export_preview_shows_the_page_and_estimates_the_size`
 - `export::tests::sizes_read_in_kilobytes_and_megabytes`
+- `ui::dialogs::tests::a_pixel_size_sets_the_resolution_that_gives_it`

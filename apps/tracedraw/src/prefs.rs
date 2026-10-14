@@ -167,7 +167,8 @@ impl FormatPrefs {
                 d.format
             },
             dpi: if self.export_dpi.is_finite() {
-                self.export_dpi.clamp(36.0, 2400.0)
+                self.export_dpi
+                    .clamp(crate::ui::dialogs::MIN_EXPORT_DPI, 2400.0)
             } else {
                 d.dpi
             },

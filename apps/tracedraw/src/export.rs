@@ -93,8 +93,12 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             crate::files::write(path, plt).map_err(|e| e.to_string())?;
         }
         "psd" => {
-            let psd =
-                tracedraw_io::psd::page_to_psd(&doc, 0, st.dpi.max(36.0)).ok_or("render failed")?;
+            let psd = tracedraw_io::psd::page_to_psd(
+                &doc,
+                0,
+                st.dpi.max(crate::ui::dialogs::MIN_EXPORT_DPI),
+            )
+            .ok_or("render failed")?;
             crate::files::write(path, psd).map_err(|e| e.to_string())?;
         }
         "html" => {

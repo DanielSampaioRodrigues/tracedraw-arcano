@@ -16,6 +16,27 @@ use tracedraw_core::{
 
 pub use crate::ui::options::OptionsPage;
 
+/// The lowest export resolution: an A4 page comes out 9 x 12 pixels.
+pub const MIN_EXPORT_DPI: f64 = 1.0;
+
+/// The pixel size a raster export of `w_mm` by `h_mm` has at `dpi` (the
+/// renderer rounds up).
+pub fn export_pixels(w_mm: f64, h_mm: f64, dpi: f64) -> (u32, u32) {
+    let px = |mm: f64| (mm / 25.4 * dpi).ceil().clamp(1.0, f64::from(u32::MAX)) as u32;
+    (px(w_mm), px(h_mm))
+}
+
+/// The resolution that makes `mm` come out `px` pixels wide, within the
+/// export range; `None` for an empty side.
+pub fn dpi_for_pixels(mm: f64, px: u32) -> Option<f64> {
+    if !(mm > 0.0 && mm.is_finite()) {
+        return None;
+    }
+    // A hair under, so rounding up gives exactly `px`.
+    let dpi = f64::from(px) * 25.4 / mm * (1.0 - 1e-9);
+    Some(dpi.clamp(MIN_EXPORT_DPI, 2400.0))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportState {
     /// File > Export opened it and Options > Global > File Formats keeps
@@ -2335,7 +2356,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         ui.label(tr("dialog.resolution"));
                         ui.add(
                             egui::DragValue::new(&mut st.dpi)
-                                .range(36.0..=2400.0)
+                                .range(MIN_EXPORT_DPI..=2400.0)
                                 .suffix(" dpi"),
                         );
                         for d in [72.0, 96.0, 150.0, 300.0] {
@@ -2357,16 +2378,32 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     } else {
                         app.page_rect()
                     };
-                    ui.label(
-                        egui::RichText::new(trf(
-                            "dialog.export_pixels",
-                            &[
-                                ("w", &format!("{}", (b.width() / 25.4 * st.dpi).round())),
-                                ("h", &format!("{}", (b.height() / 25.4 * st.dpi).round())),
-                            ],
-                        ))
-                        .color(Tokens::text_dim()),
-                    );
+                    // The size in pixels: typing either side sets the
+                    // resolution that gives it, the other side following.
+                    let (mut w, mut h) = export_pixels(b.width(), b.height(), st.dpi);
+                    ui.horizontal(|ui| {
+                        ui.label(tr("dialog.pixels"));
+                        let wc = ui
+                            .add(
+                                egui::DragValue::new(&mut w)
+                                    .range(1..=200_000)
+                                    .suffix(" px"),
+                            )
+                            .changed();
+                        ui.label("x");
+                        let hc = ui
+                            .add(
+                                egui::DragValue::new(&mut h)
+                                    .range(1..=200_000)
+                                    .suffix(" px"),
+                            )
+                            .changed();
+                        if wc {
+                            st.dpi = dpi_for_pixels(b.width(), w).unwrap_or(st.dpi);
+                        } else if hc {
+                            st.dpi = dpi_for_pixels(b.height(), h).unwrap_or(st.dpi);
+                        }
+                    });
                 }
                 if !scripted && st.format == 1 {
                     ui.horizontal(|ui| {
@@ -3801,6 +3838,23 @@ fn palette_editor_dialog(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_pixel_size_sets_the_resolution_that_gives_it() {
+        // A 10 mm square at 300 dpi.
+        assert_eq!(export_pixels(10.0, 10.0, 300.0), (119, 119));
+        for px in [1u32, 16, 32, 48, 256, 900] {
+            let dpi = dpi_for_pixels(10.0, px).expect("dpi");
+            assert_eq!(export_pixels(10.0, 5.0, dpi).0, px, "{px}");
+        }
+        // An A4 page down to a few pixels: the lowest resolution.
+        let dpi = dpi_for_pixels(210.0, 2).expect("dpi");
+        assert_eq!(dpi, MIN_EXPORT_DPI);
+        assert_eq!(export_pixels(210.0, 297.0, dpi), (9, 12));
+        assert_eq!(dpi_for_pixels(0.0, 32), None);
+        assert_eq!(dpi_for_pixels(f64::NAN, 32), None);
+        assert_eq!(dpi_for_pixels(1.0, 1_000_000), Some(2400.0));
+    }
     use super::*;
 
     /// Every dialog, as the menus open it.
