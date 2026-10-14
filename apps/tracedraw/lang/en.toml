@@ -3349,3 +3349,6 @@ github.forbidden = "The token has no access to this repository (it needs Content
 github.not_found = "No such file, branch or repository (or the token cannot see it)."
 github.conflict = "The file changed on GitHub since it was opened here. Save it under another path or branch, or open the newer version first."
 github.exists = "A file already exists at that path. Open it first, or choose another path."
+menu.object.symmetry_break = "Break Symmetry Link"
+symmetry.finish = "Finish"
+status.editing_symmetry = "Editing the symmetry: change the original (outlined in red); the copies follow. Finish ends it."

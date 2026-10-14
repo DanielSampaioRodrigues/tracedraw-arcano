@@ -9,6 +9,11 @@ full, row-by-row status.
 - Bitmap effects (Effects > Blur, Texture, Creative and the others) work
   on vector objects: the object stays editable and is drawn with its
   effects; Flatten Effects makes it a bitmap.
+- Symmetry: Create New Symmetry goes straight into an editing mode (the
+  original outlined in red, a bar with Finish, mirror lines, centre and
+  angle at the top left of the window) instead of a dialog; Edit
+  Symmetry (Alt+E), Finish Editing Symmetry (Alt+Shift+E), Remove
+  Symmetry (Alt+Shift+S) and Break Symmetry Link (Alt+X) in the menu.
 - File > GitHub: open a drawing from a GitHub repository, save it back
   as a commit with a message, and see and open its earlier versions.
 - `.cdr` version 22: connector lines (object type 0x26) are read; they

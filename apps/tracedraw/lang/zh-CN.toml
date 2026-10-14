@@ -3349,3 +3349,6 @@ github.forbidden = "令牌无权访问此仓库（需要 Contents 读写权限�
 github.not_found = "找不到文件、分支或仓库（或令牌无法看到它）。"
 github.conflict = "此文件在这里打开后已在 GitHub 上更改。请保存到其他路径或分支，或先打开较新的版本。"
 github.exists = "该路径已有文件。请先打开它，或选择其他路径。"
+menu.object.symmetry_break = "断开对称链接"
+symmetry.finish = "完成"
+status.editing_symmetry = "正在编辑对称：修改原始对象（红色轮廓），副本随之变化。点“完成”结束。"

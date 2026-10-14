@@ -3349,3 +3349,6 @@ github.forbidden = "Token nie ma dostępu do tego repozytorium (potrzebny odczyt
 github.not_found = "Nie znaleziono pliku, gałęzi ani repozytorium (albo token ich nie widzi)."
 github.conflict = "Plik zmienił się w GitHub, odkąd go tu otwarto. Zapisz go w innej ścieżce lub gałęzi albo najpierw otwórz nowszą wersję."
 github.exists = "Pod tą ścieżką jest już plik. Najpierw go otwórz lub wybierz inną ścieżkę."
+menu.object.symmetry_break = "Przerwij połączenie symetrii"
+symmetry.finish = "Zakończ"
+status.editing_symmetry = "Edycja symetrii: zmieniaj oryginał (czerwony kontur); kopie podążają. Zakończ kończy."

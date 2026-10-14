@@ -3349,3 +3349,6 @@ github.forbidden = "Token tidak punya akses ke repositori ini (perlu baca dan tu
 github.not_found = "Berkas, cabang, atau repositori tidak ditemukan (atau token tidak dapat melihatnya)."
 github.conflict = "Berkas berubah di GitHub sejak dibuka di sini. Simpan di jalur atau cabang lain, atau buka versi yang lebih baru dulu."
 github.exists = "Sudah ada berkas di jalur itu. Buka dulu atau pilih jalur lain."
+menu.object.symmetry_break = "Putuskan tautan simetri"
+symmetry.finish = "Selesai"
+status.editing_symmetry = "Mengedit simetri: ubah aslinya (garis merah); salinan mengikuti. Selesai mengakhirinya."

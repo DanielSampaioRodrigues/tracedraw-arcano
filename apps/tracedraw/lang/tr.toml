@@ -3349,3 +3349,6 @@ github.forbidden = "Belirtecin bu depoya erişimi yok (Contents için okuma ve y
 github.not_found = "Dosya, dal ya da depo bulunamadı (ya da belirteç göremiyor)."
 github.conflict = "Dosya burada açıldıktan sonra GitHub'da değişti. Başka bir yola ya da dala kaydedin veya önce yeni sürümü açın."
 github.exists = "Bu yolda zaten bir dosya var. Önce onu açın ya da başka bir yol seçin."
+menu.object.symmetry_break = "Simetri bağını kopar"
+symmetry.finish = "Bitir"
+status.editing_symmetry = "Simetri düzenleniyor: aslını (kırmızı çerçeveli) değiştirin; kopyalar izler. Bitir sonlandırır."

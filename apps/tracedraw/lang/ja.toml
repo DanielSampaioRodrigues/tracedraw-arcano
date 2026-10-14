@@ -3349,3 +3349,6 @@ github.forbidden = "トークンにこのリポジトリへのアクセス権が
 github.not_found = "ファイル、ブランチ、またはリポジトリが見つかりません (またはトークンから見えません)。"
 github.conflict = "ここで開いた後に GitHub 上でファイルが変更されました。別のパスかブランチに保存するか、先に新しい版を開いてください。"
 github.exists = "そのパスにはすでにファイルがあります。先に開くか、別のパスを選んでください。"
+menu.object.symmetry_break = "対称のリンクを解除"
+symmetry.finish = "終了"
+status.editing_symmetry = "対称を編集中: 元のオブジェクト (赤い輪郭) を変更すると複製が追従します。終了で終わります。"

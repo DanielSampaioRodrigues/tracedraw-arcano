@@ -59,6 +59,7 @@ pub mod shaping_docker;
 pub mod shelf_docker;
 pub mod status;
 pub mod straighten_dialog;
+pub mod symmetry_bar;
 pub mod tabs;
 pub mod text_docker;
 pub mod time_tracker;
@@ -506,6 +507,9 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             }
         });
 
+    if app.has_document() && !app.show_welcome {
+        symmetry_bar::show(app, &ctx);
+    }
     dialogs::show(app, &ctx);
 }
 

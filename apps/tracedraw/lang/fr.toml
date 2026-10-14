@@ -3349,3 +3349,6 @@ github.forbidden = "Le jeton n'a pas accès à ce dépôt (il faut la lecture et
 github.not_found = "Fichier, branche ou dépôt introuvable (ou le jeton ne le voit pas)."
 github.conflict = "Le fichier a changé sur GitHub depuis son ouverture ici. Enregistrez-le sous un autre chemin ou une autre branche, ou ouvrez d'abord la version plus récente."
 github.exists = "Un fichier existe déjà à ce chemin. Ouvrez-le d'abord ou choisissez un autre chemin."
+menu.object.symmetry_break = "Rompre le lien de symétrie"
+symmetry.finish = "Terminer"
+status.editing_symmetry = "Modification de la symétrie : changez l'original (contour rouge) ; les copies suivent. Terminer y met fin."

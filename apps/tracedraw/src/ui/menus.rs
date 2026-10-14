@@ -1662,14 +1662,31 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     });
     sub(ui, "menu.object.symmetry", |ui| {
         let has_sym = app.selected_symmetry().is_some();
-        if item(ui, "menu.object.symmetry_create", "Alt+S", has && !has_sym) {
+        let editing = app.symmetry_edit.is_some();
+        if item(
+            ui,
+            "menu.object.symmetry_create",
+            "Alt+S",
+            has && !has_sym && !editing,
+        ) {
             app.create_symmetry();
         }
-        if item(ui, "menu.object.symmetry_edit", "", has_sym) {
-            app.dialog = Dialog::Symmetry;
+        if item(
+            ui,
+            "menu.object.symmetry_edit",
+            "Alt+E",
+            has_sym && !editing,
+        ) {
+            app.edit_symmetry();
         }
-        if item(ui, "menu.object.symmetry_remove", "", has_sym) {
+        if item(ui, "menu.object.symmetry_finish", "Alt+Shift+E", editing) {
+            app.finish_symmetry_edit();
+        }
+        if item(ui, "menu.object.symmetry_remove", "Alt+Shift+S", has_sym) {
             app.remove_symmetry();
+        }
+        if item(ui, "menu.object.symmetry_break", "Alt+X", has_sym) {
+            app.break_symmetry_link();
         }
     });
     sub(ui, "menu.object.symbol", |ui| {

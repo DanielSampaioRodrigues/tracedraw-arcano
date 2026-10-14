@@ -24,12 +24,16 @@ recomputed from it.
 - Create (Object > Symmetry > Create New Symmetry, Alt+S, or the object
   context menu): one vertical line (90 degrees) through the right edge of
   the selection's bounds, at its vertical centre, so the copy appears next
-  to the original instead of over it.
-- Edit (Object > Symmetry > Edit Symmetry): mirror lines 1..12, angle
-  0..180, centre x/y in page millimetres. Changes collapse into one undo
-  step labelled "Symmetry".
-- Remove Symmetry drops the effect; the copies disappear.
-- Break apart (in the dialog) bakes the copies into real objects.
+  to the original instead of over it; then straight into editing it.
+- Edit (Object > Symmetry > Edit Symmetry, Alt+E): the symmetry editing
+  mode. The original is outlined in red and a bar floats at the top left
+  of the drawing window: Finish, the number of mirror lines (1 to 12),
+  the centre (X, Y in the drawing's units) and the angle (0 to 360
+  degrees). Changes collapse into one undo step labelled "Symmetry".
+- Finish Editing Symmetry (Alt+Shift+E) and the bar's Finish end the
+  mode; it also ends when the object is deleted or loses its symmetry.
+- Remove Symmetry (Alt+Shift+S) drops the effect; the copies disappear.
+- Break Symmetry Link (Alt+X) bakes the copies into objects of their own.
 
 ## Display
 

@@ -452,7 +452,6 @@ pub enum Dialog {
     },
     Options,
     PageNumberSettings,
-    Symmetry,
     RenameLayer {
         layer: tracedraw_core::LayerId,
         name: String,
@@ -1593,70 +1592,6 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
         Dialog::NewDocument(st) => {
             crate::new_document::new_document_dialog(app, ctx, st, &mut close)
-        }
-        Dialog::Symmetry => {
-            window(ctx, tr("dialog.symmetry")).show(ctx, |ui| match app.selected_symmetry() {
-                Some((_, center, angle, lines)) => {
-                    let (mut c, mut a, mut n) = (center, angle, lines);
-                    let u = app.units;
-                    let mut changed = false;
-                    egui::Grid::new("symmetry").num_columns(2).show(ui, |ui| {
-                        ui.label(tr("dialog.mirror_lines"));
-                        changed |= ui.add(egui::DragValue::new(&mut n).range(1..=12)).changed();
-                        ui.end_row();
-                        ui.label(tr("dialog.mirror_angle"));
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut a).speed(1.0).suffix("°"))
-                            .changed();
-                        ui.end_row();
-                        ui.label(tr("dialog.mirror_center"));
-                        ui.horizontal(|ui| {
-                            let (mut x, mut y) = (u.world_from_mm(c.x), u.world_from_mm(c.y));
-                            let cx = ui
-                                .add(egui::DragValue::new(&mut x).speed(0.5).prefix("x "))
-                                .changed();
-                            let cy = ui
-                                .add(egui::DragValue::new(&mut y).speed(0.5).prefix("y "))
-                                .changed();
-                            if cx || cy {
-                                c = tracedraw_core::geometry::Point::new(
-                                    u.world_to_mm(x),
-                                    u.world_to_mm(y),
-                                );
-                                changed = true;
-                            }
-                        });
-                        ui.end_row();
-                    });
-                    if changed {
-                        app.set_symmetry(c, a, n);
-                    }
-                    ui.label(
-                        egui::RichText::new(tr("dialog.symmetry_hint"))
-                            .color(Tokens::TEXT_DIM)
-                            .size(11.0),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button(tr("dialog.symmetry_bake")).clicked() {
-                            app.flatten_effects();
-                            close = true;
-                        }
-                        if ui.button(tr("menu.object.symmetry_remove")).clicked() {
-                            app.remove_symmetry();
-                            close = true;
-                        }
-                        if ui.button(tr("dialog.close")).clicked() {
-                            close = true;
-                        }
-                    });
-                }
-                None => {
-                    ui.label(tr("docker.no_objects_selected"));
-                    if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
-                        close = true;
-                    }
-                }
-            });
         }
         Dialog::PageNumberSettings => {
             window(ctx, tr("dialog.page_number_settings")).show(ctx, |ui| {
@@ -3866,7 +3801,6 @@ mod tests {
             },
             Dialog::Options,
             Dialog::PageNumberSettings,
-            Dialog::Symmetry,
             Dialog::RenameLayer {
                 layer,
                 name: "Layer".into(),

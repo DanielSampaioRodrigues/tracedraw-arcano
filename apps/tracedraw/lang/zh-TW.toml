@@ -3349,3 +3349,6 @@ github.forbidden = "權杖無權存取此儲存庫（需要 Contents 讀寫權�
 github.not_found = "找不到檔案、分支或儲存庫（或權杖看不到它）。"
 github.conflict = "此檔案在這裡開啟後已在 GitHub 上變更。請儲存到其他路徑或分支，或先開啟較新的版本。"
 github.exists = "該路徑已有檔案。請先開啟它，或選擇其他路徑。"
+menu.object.symmetry_break = "中斷對稱連結"
+symmetry.finish = "完成"
+status.editing_symmetry = "正在編輯對稱：修改原始物件（紅色輪廓），副本隨之變化。按「完成」結束。"

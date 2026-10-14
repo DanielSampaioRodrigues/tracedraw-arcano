@@ -3349,3 +3349,6 @@ github.forbidden = "Het token heeft geen toegang tot deze repository (lees- en s
 github.not_found = "Bestand, branch of repository niet gevonden (of het token ziet het niet)."
 github.conflict = "Het bestand is op GitHub gewijzigd sinds het hier werd geopend. Sla het op onder een ander pad of een andere branch, of open eerst de nieuwere versie."
 github.exists = "Op dat pad staat al een bestand. Open het eerst of kies een ander pad."
+menu.object.symmetry_break = "Symmetriekoppeling verbreken"
+symmetry.finish = "Voltooien"
+status.editing_symmetry = "Symmetrie bewerken: wijzig het origineel (rood omlijnd); de kopieën volgen. Voltooien stopt."

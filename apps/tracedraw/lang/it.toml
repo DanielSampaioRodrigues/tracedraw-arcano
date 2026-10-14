@@ -3349,3 +3349,6 @@ github.forbidden = "Il token non ha accesso a questo repository (serve lettura e
 github.not_found = "File, branch o repository non trovato (o il token non lo vede)."
 github.conflict = "Il file è cambiato su GitHub da quando è stato aperto qui. Salvalo in un altro percorso o branch, o apri prima la versione più recente."
 github.exists = "Esiste già un file in quel percorso. Aprilo prima o scegli un altro percorso."
+menu.object.symmetry_break = "Interrompi collegamento simmetria"
+symmetry.finish = "Fine"
+status.editing_symmetry = "Modifica della simmetria: cambia l'originale (contorno rosso); le copie seguono. Fine la chiude."

@@ -461,7 +461,52 @@ impl App {
                 effects,
             });
         }
-        self.dialog = crate::ui::dialogs::Dialog::Symmetry;
+        // Straight into editing it, as Edit Symmetry does.
+        self.edit_symmetry();
+    }
+
+    /// Object > Symmetry > Edit Symmetry (Alt+E): the symmetry editing
+    /// mode for the first selected object with a symmetry. The original is
+    /// outlined in red, its mirror lines show across the window and the
+    /// symmetry bar (Finish, mirror lines, centre, angle) floats at the
+    /// top left of the drawing window.
+    pub fn edit_symmetry(&mut self) {
+        if let Some((id, ..)) = self.selected_symmetry() {
+            self.symmetry_edit = Some(id);
+            self.select(vec![id]);
+            self.status = tr("status.editing_symmetry");
+        }
+    }
+
+    /// Object > Symmetry > Finish Editing Symmetry (Alt+Shift+E), and the
+    /// symmetry bar's Finish.
+    pub fn finish_symmetry_edit(&mut self) {
+        if self.symmetry_edit.take().is_some() {
+            self.status.clear();
+        }
+    }
+
+    /// The object whose symmetry is being edited, while it still has one;
+    /// the mode ends when it is gone or lost its symmetry.
+    pub fn symmetry_editing(&mut self) -> Option<ShapeId> {
+        let id = self.symmetry_edit?;
+        let alive = self.doc().find_shape(id).is_some_and(|s| {
+            s.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Symmetry { .. }))
+        });
+        if !alive {
+            self.symmetry_edit = None;
+            return None;
+        }
+        Some(id)
+    }
+
+    /// Object > Symmetry > Break Symmetry Link (Alt+X): the copies become
+    /// objects of their own, no longer following the original.
+    pub fn break_symmetry_link(&mut self) {
+        self.finish_symmetry_edit();
+        self.flatten_effects();
     }
 
     /// The symmetry effect of the first selected object.

@@ -559,6 +559,23 @@ fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
             let c = view.to_screen(*center);
             painter.circle_stroke(c, 5.0, EStroke::new(1.5, Color32::from_rgb(40, 110, 220)));
         }
+        // Symmetry editing: the original outlined in red (the copies are
+        // drawn as they are).
+        if app.symmetry_edit == Some(s.id) {
+            let red = EStroke::new(1.0, Color32::from_rgb(0xE0, 0x10, 0x10));
+            for (pts, closed) in flatten(&s.page_path(), view) {
+                if pts.len() < 2 {
+                    continue;
+                }
+                let mut pts = pts;
+                if closed {
+                    if let Some(first) = pts.first().copied() {
+                        pts.push(first);
+                    }
+                }
+                painter.add(egui::Shape::line(pts, red));
+            }
+        }
     }
 }
 

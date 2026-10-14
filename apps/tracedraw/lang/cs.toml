@@ -3349,3 +3349,6 @@ github.forbidden = "Token nemá přístup k tomuto repozitáři (potřebuje čte
 github.not_found = "Soubor, větev ani repozitář nenalezen (nebo je token nevidí)."
 github.conflict = "Soubor se na GitHubu změnil od chvíle, kdy byl zde otevřen. Uložte jej pod jinou cestu nebo větev, nebo nejdřív otevřete novější verzi."
 github.exists = "Na této cestě už soubor je. Nejprve jej otevřete, nebo zvolte jinou cestu."
+menu.object.symmetry_break = "Zrušit propojení symetrie"
+symmetry.finish = "Dokončit"
+status.editing_symmetry = "Úprava symetrie: měňte originál (červený obrys); kopie jej následují. Dokončit ji ukončí."

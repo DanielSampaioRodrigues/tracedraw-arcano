@@ -1921,6 +1921,18 @@ impl App {
         if pressed(Key::S, Modifiers::ALT) && !self.selection.is_empty() {
             self.create_symmetry();
         }
+        if pressed(Key::E, Modifiers::ALT) {
+            self.edit_symmetry();
+        }
+        if pressed(Key::E, Modifiers::ALT | Modifiers::SHIFT) {
+            self.finish_symmetry_edit();
+        }
+        if pressed(Key::S, Modifiers::ALT | Modifiers::SHIFT) {
+            self.remove_symmetry();
+        }
+        if pressed(Key::X, Modifiers::ALT) && self.selected_symmetry().is_some() {
+            self.break_symmetry_link();
+        }
         // Docker shortcuts (Ctrl+F9 Contour, Alt+F3 Lens, Alt+Enter
         // Properties, ...): toggle.
         for tab in crate::app::DockerTab::ALL {

@@ -812,6 +812,9 @@ pub struct App {
     pub pending_clip_frame: bool,
     /// Clip frame being edited in place: (frame id, content ids).
     pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
+    /// Object > Symmetry > Edit Symmetry: the object whose symmetry is
+    /// being edited.
+    pub symmetry_edit: Option<ShapeId>,
     pub show_guides: bool,
     /// Selected guidelines of the active page (indices).
     pub selected_guides: Vec<usize>,
@@ -1541,6 +1544,7 @@ impl App {
             show_welcome: false,
             pending_clip_frame: false,
             clip_frame_edit: None,
+            symmetry_edit: None,
             show_guides: true,
             selected_guides: Vec::new(),
             guide_rotate: None,
