@@ -4173,6 +4173,20 @@ impl App {
         crate::recovery::dismiss(found, false);
     }
 
+    /// Customization > Command Bars > Reset: the bars of a new
+    /// installation, where they first were.
+    pub fn reset_command_bars(&mut self) {
+        self.settings.bars = crate::ui::bars::BarLayout::default();
+        self.settings.palette.show_palette = true;
+        self.show_standard_toolbar = true;
+        self.show_property_bar = true;
+        self.show_toolbox = true;
+        self.show_status_bar = true;
+        self.show_text_toolbar = false;
+        self.show_zoom_toolbar = false;
+        self.show_transform_toolbar = false;
+    }
+
     /// Help > Updates: check now and show the answer.
     pub fn check_for_updates(&mut self, ctx: Option<egui::Context>) {
         self.update_quiet = false;

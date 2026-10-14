@@ -76,6 +76,11 @@ pub struct Settings {
     /// Options > General: show the splash screen while TraceDraw starts.
     #[serde(default = "default_true")]
     pub show_splash: bool,
+    /// Customization > Appearance: dialogs open in the middle of the
+    /// window and stay there; off, they move by their title bar and open
+    /// where they were left.
+    #[serde(default = "default_true")]
+    pub center_dialogs: bool,
     /// Where the toolbox, palette, toolbars and status bar sit.
     #[serde(default)]
     pub bars: crate::ui::bars::BarLayout,
@@ -918,6 +923,7 @@ impl Default for Settings {
             toolbox_hidden: Vec::new(),
             ui_size: 0.0,
             show_splash: true,
+            center_dialogs: true,
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,
             window_size: [0.0, 0.0],

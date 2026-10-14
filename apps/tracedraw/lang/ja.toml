@@ -3354,3 +3354,10 @@ github.exists = "そのパスにはすでにファイルがあります。先に
 menu.object.symmetry_break = "対称のリンクを解除"
 symmetry.finish = "終了"
 status.editing_symmetry = "対称を編集中: 元のオブジェクト (赤い輪郭) を変更すると複製が追従します。終了で終わります。"
+
+options.center_dialogs = "ダイアログ ボックスを中央に表示"
+options.ui_size = "サイズ"
+options.reset_to_default = "既定値に戻す"
+options.color_section = "色"
+options.other = "その他"
+options.palette_hold_hint = "コンテキスト メニューを開くには、マウスの右ボタンを 1 秒間押し続けます。"

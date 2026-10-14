@@ -85,7 +85,7 @@ impl OptionsSet {
                 Save,
                 Text,
             ],
-            OptionsSet::Customization => &[Appearance, Commands, CommandBars, ColorPalette],
+            OptionsSet::Customization => &[Appearance, CommandBars, Commands, ColorPalette],
             OptionsSet::Tools => &[
                 Pick, ZoomPan, Curves, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table,
                 Eraser,
@@ -566,7 +566,15 @@ pub(crate) fn combo<T: Copy + PartialEq>(
 }
 
 fn rgb_button(ui: &mut Ui, rgb: &mut [u8; 3]) -> bool {
-    ui.color_edit_button_srgb(rgb).changed()
+    let resp = ui.color_edit_button_srgb(rgb);
+    // A frame, so a white colour shows on the white page.
+    ui.painter().rect_stroke(
+        resp.rect,
+        0.0,
+        egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        egui::StrokeKind::Inside,
+    );
+    resp.changed()
 }
 
 // ----- TraceDraw options -------------------------------------------------
@@ -1021,24 +1029,67 @@ fn text_page(app: &mut App, ui: &mut Ui) {
 
 // ----- Customization -----------------------------------------------------
 
+/// The interface sizes the Appearance slider offers, in percent.
+const UI_SIZE_RANGE: std::ops::RangeInclusive<f32> = 75.0..=250.0;
+
+/// Customization > Appearance: where dialogs open, the interface size
+/// and the desktop colour.
 fn appearance_page(app: &mut App, ui: &mut Ui) {
-    grid("appearance").show(ui, |ui| {
-        row_label(ui, &tr("options.ui_scale"));
-        let label = |s: f32| format!("{:.0} %", crate::ui::interface_size(s) * 100.0);
-        // No choice made yet reads as 100 %.
-        let mut size = crate::ui::interface_size(app.settings.ui_size);
-        egui::ComboBox::from_id_salt("ui_scale")
-            .selected_text(label(size))
-            .width(170.0)
-            .show_ui(ui, |ui| {
-                for s in crate::ui::UI_SIZES {
-                    ui.selectable_value(&mut size, s, label(s));
-                }
-            });
-        if (size - crate::ui::interface_size(app.settings.ui_size)).abs() > 1e-6 {
-            app.settings.ui_size = size;
+    ui.checkbox(
+        &mut app.settings.center_dialogs,
+        tr("options.center_dialogs"),
+    );
+    crate::ui::chrome::section(ui, &tr("options.ui_size"));
+    // The size takes effect when the slider is let go or the field is
+    // left, so the page does not grow under the pointer.
+    let pending = ui.id().with("ui_size_pending");
+    let current = crate::ui::interface_size(app.settings.ui_size) * 100.0;
+    let mut pct: f32 = ui.data(|d| d.get_temp(pending)).unwrap_or(current);
+    let mut reset = false;
+    let busy = ui
+        .horizontal(|ui| {
+            let slider = ui
+                .scope(|ui| {
+                    // The form style draws inputs white; the rail needs
+                    // to show on the page.
+                    ui.spacing_mut().slider_width = 220.0;
+                    let w = &mut ui.visuals_mut().widgets;
+                    w.inactive.bg_fill = egui::Color32::from_gray(205);
+                    w.inactive.fg_stroke = egui::Stroke::new(1.0, Tokens::CONTROL_BORDER);
+                    ui.visuals_mut().selection.bg_fill = Tokens::ACCENT;
+                    ui.add(
+                        egui::Slider::new(&mut pct, UI_SIZE_RANGE)
+                            .step_by(5.0)
+                            .show_value(false)
+                            .trailing_fill(true),
+                    )
+                })
+                .inner;
+            let field = ui.add(
+                egui::DragValue::new(&mut pct)
+                    .range(UI_SIZE_RANGE)
+                    .speed(1.0)
+                    .max_decimals(0)
+                    .suffix(" %"),
+            );
+            reset = ui.button(tr("options.reset_to_default")).clicked();
+            slider.dragged() || field.dragged() || field.has_focus()
+        })
+        .inner;
+    if reset {
+        app.settings.ui_size = 0.0;
+        ui.data_mut(|d| d.remove::<f32>(pending));
+    } else if busy {
+        ui.data_mut(|d| d.insert_temp(pending, pct));
+    } else {
+        ui.data_mut(|d| d.remove::<f32>(pending));
+        if (pct - current).abs() > 0.5 {
+            app.settings.ui_size = pct.round() / 100.0;
         }
-        ui.end_row();
+    }
+    ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::TEXT_DIM));
+    crate::ui::chrome::section(ui, &tr("options.color_section"));
+    grid("appearance_color").show(ui, |ui| {
         row_label(ui, &tr("options.desktop_color"));
         ui.horizontal(|ui| {
             rgb_button(ui, &mut app.settings.desktop_rgb);
@@ -1048,18 +1099,17 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         });
         ui.end_row();
     });
-    ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::TEXT_DIM));
-    ui.checkbox(&mut app.show_page_border, tr("menu.view.page_border"));
-    ui.checkbox(
-        &mut app.settings.show_outline_flyout,
-        tr("options.show_outline_flyout"),
-    );
 }
 
-/// Customization > Color Palette: the docked palettes' swatches, the
-/// right mouse button and the document palette.
+/// Customization > Color Palette: the document palette, the swatches and
+/// what the right mouse button does on them.
 fn color_palette_page(app: &mut App, ui: &mut Ui) {
     let p = &mut app.settings.palette;
+    ui.checkbox(
+        &mut p.auto_update_document,
+        tr("options.palette_auto_update"),
+    );
+    ui.checkbox(&mut p.show_document, tr("options.palette_show_document"));
     crate::ui::chrome::section(ui, &tr("options.palette_swatches"));
     ui.checkbox(&mut p.show_no_color, tr("options.palette_no_color"));
     crate::ui::chrome::section(ui, &tr("options.palette_right_button"));
@@ -1073,12 +1123,12 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
         true,
         tr("options.palette_set_outline"),
     );
-    crate::ui::chrome::section(ui, &tr("palette.show_document"));
-    ui.checkbox(&mut p.show_document, tr("options.palette_show_document"));
-    ui.checkbox(
-        &mut p.auto_update_document,
-        tr("options.palette_auto_update"),
-    );
+    if p.right_click_outline {
+        ui.horizontal(|ui| {
+            ui.add_space(22.0);
+            ui.label(egui::RichText::new(tr("options.palette_hold_hint")).color(Tokens::TEXT_DIM));
+        });
+    }
 }
 
 /// Options > Customization > Commands: the menu commands found, the
@@ -1325,28 +1375,62 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Customization > Command Bars: the bars shown, in a list, with Reset;
+/// beside it the options that hold for every bar.
 fn command_bars_page(app: &mut App, ui: &mut Ui) {
-    ui.label(tr("options.command_bars_hint"));
-    for (flag, key) in [
-        (
-            &mut app.show_standard_toolbar,
-            "menu.window.toolbar_standard",
-        ),
-        (
-            &mut app.show_property_bar,
-            "menu.window.toolbar_property_bar",
-        ),
-        (&mut app.show_toolbox, "menu.window.toolbar_toolbox"),
-        (&mut app.show_status_bar, "menu.window.toolbar_status_bar"),
-        (&mut app.show_text_toolbar, "menu.window.toolbar_text"),
-        (&mut app.show_zoom_toolbar, "menu.window.toolbar_zoom"),
-        (
-            &mut app.show_transform_toolbar,
-            "menu.window.toolbar_transform",
-        ),
-    ] {
-        ui.checkbox(flag, tr(key));
-    }
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(230.0);
+            ui.label(tr("options.command_bars_hint"));
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, Tokens::BORDER))
+                .fill(egui::Color32::WHITE)
+                .inner_margin(6)
+                .show(ui, |ui| {
+                    ui.set_width(216.0);
+                    ui.set_min_height(230.0);
+                    // The menu bar is always there.
+                    ui.add_enabled(
+                        false,
+                        egui::Checkbox::new(&mut true, tr("menu.window.toolbar_menu_bar")),
+                    );
+                    let palette = &mut app.settings.palette.show_palette;
+                    for (flag, key) in [
+                        (
+                            &mut app.show_standard_toolbar,
+                            "menu.window.toolbar_standard",
+                        ),
+                        (
+                            &mut app.show_property_bar,
+                            "menu.window.toolbar_property_bar",
+                        ),
+                        (&mut app.show_toolbox, "menu.window.toolbar_toolbox"),
+                        (&mut app.show_status_bar, "menu.window.toolbar_status_bar"),
+                        (palette, "bars.palette"),
+                        (&mut app.show_text_toolbar, "menu.window.toolbar_text"),
+                        (&mut app.show_zoom_toolbar, "menu.window.toolbar_zoom"),
+                        (
+                            &mut app.show_transform_toolbar,
+                            "menu.window.toolbar_transform",
+                        ),
+                    ] {
+                        ui.checkbox(flag, tr(key));
+                    }
+                });
+            if ui.button(tr("options.reset")).clicked() {
+                app.reset_command_bars();
+            }
+        });
+        ui.add_space(16.0);
+        ui.vertical(|ui| {
+            crate::ui::chrome::section(ui, &tr("options.other"));
+            ui.checkbox(&mut app.settings.bars.locked, tr("bars.lock"));
+            ui.checkbox(
+                &mut app.settings.show_outline_flyout,
+                tr("options.show_outline_flyout"),
+            );
+        });
+    });
 }
 
 // ----- Tools -------------------------------------------------------------
@@ -1931,6 +2015,30 @@ fn bleed_page(app: &mut App, ui: &mut Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn customization_pages_center_dialogs_and_reset_bars() {
+        use OptionsPage::*;
+        assert_eq!(
+            OptionsSet::Customization.pages(),
+            &[Appearance, CommandBars, Commands, ColorPalette]
+        );
+        let mut app = App::headless();
+        assert!(app.settings.center_dialogs);
+        // Dialogs follow the setting given for the frame.
+        let ctx = egui::Context::default();
+        assert!(crate::ui::chrome::center_dialogs(&ctx));
+        crate::ui::chrome::set_center_dialogs(&ctx, false);
+        assert!(!crate::ui::chrome::center_dialogs(&ctx));
+        // Reset brings back the bars of a new installation.
+        app.show_toolbox = false;
+        app.show_zoom_toolbar = true;
+        app.settings.palette.show_palette = false;
+        app.settings.bars.locked = true;
+        app.reset_command_bars();
+        assert!(app.show_toolbox && !app.show_zoom_toolbar);
+        assert!(app.settings.palette.show_palette && !app.settings.bars.locked);
+    }
 
     #[test]
     fn every_page_belongs_to_one_dialog() {

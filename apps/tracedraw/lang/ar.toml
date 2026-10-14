@@ -3354,3 +3354,10 @@ github.exists = "يوجد ملف بالفعل في هذا المسار. افتح
 menu.object.symmetry_break = "فصل رابط التناظر"
 symmetry.finish = "إنهاء"
 status.editing_symmetry = "تحرير التناظر: غيّر الأصل (المحدد بالأحمر)؛ تتبعه النسخ. «إنهاء» يُنهيه."
+
+options.center_dialogs = "توسيط مربعات الحوار"
+options.ui_size = "الحجم"
+options.reset_to_default = "إعادة التعيين إلى الافتراضي"
+options.color_section = "اللون"
+options.other = "أخرى"
+options.palette_hold_hint = "لفتح قائمة السياق، اضغط باستمرار على زر الماوس الأيمن لمدة ثانية."

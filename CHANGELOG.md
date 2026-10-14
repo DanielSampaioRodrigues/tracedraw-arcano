@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Customization: pages in the order Appearance, Command Bars,
+  Commands, Color Palette. Appearance has Center Dialog Boxes (off,
+  dialogs move by their title bar and open where they were left), a
+  size slider with a percent field and Reset to Default, and a Color
+  group. Command Bars lists the bars in a box with Reset, and Lock
+  Toolbars beside it. On the palette, with a right click setting the
+  outline colour, holding the right button for a second opens the
+  palette menu.
 - Effects menu: the groups in alphabetical order, Picture Mosaic before
   Vector Mosaic, and Effects > Blur > Smart Blur (smooths flat areas,
   keeps edges).

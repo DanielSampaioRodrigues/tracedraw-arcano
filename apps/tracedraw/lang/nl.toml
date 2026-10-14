@@ -3354,3 +3354,10 @@ github.exists = "Op dat pad staat al een bestand. Open het eerst of kies een and
 menu.object.symmetry_break = "Symmetriekoppeling verbreken"
 symmetry.finish = "Voltooien"
 status.editing_symmetry = "Symmetrie bewerken: wijzig het origineel (rood omlijnd); de kopieën volgen. Voltooien stopt."
+
+options.center_dialogs = "Dialoogvensters centreren"
+options.ui_size = "Grootte"
+options.reset_to_default = "Standaard herstellen"
+options.color_section = "Kleur"
+options.other = "Overige"
+options.palette_hold_hint = "Houd de rechtermuisknop een seconde ingedrukt om het snelmenu te openen."

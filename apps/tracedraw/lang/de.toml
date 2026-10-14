@@ -3354,3 +3354,10 @@ github.exists = "Unter diesem Pfad gibt es schon eine Datei. Öffnen Sie sie zue
 menu.object.symmetry_break = "Symmetrieverknüpfung aufheben"
 symmetry.finish = "Fertig"
 status.editing_symmetry = "Symmetrie wird bearbeitet: das Original (rot umrandet) ändern; die Kopien folgen. Fertig beendet sie."
+
+options.center_dialogs = "Dialogfelder zentrieren"
+options.ui_size = "Größe"
+options.reset_to_default = "Auf Standard zurücksetzen"
+options.color_section = "Farbe"
+options.other = "Sonstiges"
+options.palette_hold_hint = "Halten Sie die rechte Maustaste eine Sekunde gedrückt, um das Kontextmenü zu öffnen."

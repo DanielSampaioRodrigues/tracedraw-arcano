@@ -3354,3 +3354,10 @@ github.exists = "Bu yolda zaten bir dosya var. Önce onu açın ya da başka bir
 menu.object.symmetry_break = "Simetri bağını kopar"
 symmetry.finish = "Bitir"
 status.editing_symmetry = "Simetri düzenleniyor: aslını (kırmızı çerçeveli) değiştirin; kopyalar izler. Bitir sonlandırır."
+
+options.center_dialogs = "İletişim kutularını ortala"
+options.ui_size = "Boyut"
+options.reset_to_default = "Varsayılana sıfırla"
+options.color_section = "Renk"
+options.other = "Diğer"
+options.palette_hold_hint = "Bağlam menüsünü açmak için farenin sağ düğmesini bir saniye basılı tutun."

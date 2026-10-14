@@ -3354,3 +3354,10 @@ github.exists = "A file already exists at that path. Open it first, or choose an
 menu.object.symmetry_break = "Break Symmetry Link"
 symmetry.finish = "Finish"
 status.editing_symmetry = "Editing the symmetry: change the original (outlined in red); the copies follow. Finish ends it."
+
+options.center_dialogs = "Center dialog boxes"
+options.ui_size = "Size"
+options.reset_to_default = "Reset to default"
+options.color_section = "Color"
+options.other = "Other"
+options.palette_hold_hint = "To open the context menu, hold the right mouse button down for a second."

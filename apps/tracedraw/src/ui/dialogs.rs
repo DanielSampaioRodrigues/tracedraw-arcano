@@ -785,6 +785,7 @@ fn unit_value(ui: &mut Ui, label: &str, mm: &mut f64, units: Units) -> bool {
 }
 
 pub fn show(app: &mut App, ctx: &Context) {
+    crate::ui::chrome::set_center_dialogs(ctx, app.settings.center_dialogs);
     // An options dialog replaced by another dialog keeps its changes.
     if !matches!(app.dialog, Dialog::Options) {
         app.options_snapshot = None;

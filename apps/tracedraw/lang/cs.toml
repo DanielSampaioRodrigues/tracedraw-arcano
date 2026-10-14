@@ -3354,3 +3354,10 @@ github.exists = "Na této cestě už soubor je. Nejprve jej otevřete, nebo zvol
 menu.object.symmetry_break = "Zrušit propojení symetrie"
 symmetry.finish = "Dokončit"
 status.editing_symmetry = "Úprava symetrie: měňte originál (červený obrys); kopie jej následují. Dokončit ji ukončí."
+
+options.center_dialogs = "Vycentrovat dialogová okna"
+options.ui_size = "Velikost"
+options.reset_to_default = "Obnovit výchozí"
+options.color_section = "Barva"
+options.other = "Ostatní"
+options.palette_hold_hint = "Místní nabídku otevřete podržením pravého tlačítka myši po dobu jedné sekundy."

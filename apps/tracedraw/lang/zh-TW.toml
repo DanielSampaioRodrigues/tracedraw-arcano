@@ -3354,3 +3354,10 @@ github.exists = "該路徑已有檔案。請先開啟它，或選擇其他路徑
 menu.object.symmetry_break = "中斷對稱連結"
 symmetry.finish = "完成"
 status.editing_symmetry = "正在編輯對稱：修改原始物件（紅色輪廓），副本隨之變化。按「完成」結束。"
+
+options.center_dialogs = "對話方塊置中"
+options.ui_size = "大小"
+options.reset_to_default = "重設為預設值"
+options.color_section = "色彩"
+options.other = "其他"
+options.palette_hold_hint = "若要開啟快顯功能表，請按住滑鼠右鍵一秒鐘。"

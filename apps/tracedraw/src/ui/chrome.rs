@@ -119,44 +119,53 @@ impl Window {
     pub fn show<R>(self, ctx: &Context, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
         let mut out = None;
         let mut closed = false;
-        egui::Window::new(&self.title)
+        let window = egui::Window::new(&self.title)
             .id(self.id)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .frame(window_frame())
-            .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let min_w = title_width(ui, &self.title).max(280.0);
-                ui.set_min_width(min_w);
-                let top = ui.cursor().min;
-                ui.add_space(TITLE_BAR);
-                let inner = Frame::new()
-                    .fill(Tokens::PANEL)
-                    .inner_margin(Margin {
-                        left: 14,
-                        right: 14,
-                        top: 12,
-                        bottom: 12,
-                    })
-                    .outer_margin(Margin {
-                        left: EDGE as i8,
-                        right: EDGE as i8,
-                        top: 0,
-                        bottom: EDGE as i8,
-                    })
-                    .show(ui, |ui| {
-                        form_style(ui);
-                        add(ui)
-                    });
-                out = Some(inner.inner);
-                let width = ui.min_rect().width().max(min_w);
-                let bar = Rect::from_min_size(top, Vec2::new(width, TITLE_BAR));
-                if title_bar(ui, bar, &self.title, &format!("{:?}", self.id)) {
-                    closed = true;
-                }
-            });
+            .frame(window_frame());
+        let window = if center_dialogs(ctx) {
+            window.anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        } else {
+            // Dragged by the title bar; opens where it was left.
+            window
+                .movable(true)
+                .pivot(Align2::CENTER_CENTER)
+                .default_pos(ctx.content_rect().center())
+                .constrain(true)
+        };
+        window.show(ctx, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            let min_w = title_width(ui, &self.title).max(280.0);
+            ui.set_min_width(min_w);
+            let top = ui.cursor().min;
+            ui.add_space(TITLE_BAR);
+            let inner = Frame::new()
+                .fill(Tokens::PANEL)
+                .inner_margin(Margin {
+                    left: 14,
+                    right: 14,
+                    top: 12,
+                    bottom: 12,
+                })
+                .outer_margin(Margin {
+                    left: EDGE as i8,
+                    right: EDGE as i8,
+                    top: 0,
+                    bottom: EDGE as i8,
+                })
+                .show(ui, |ui| {
+                    form_style(ui);
+                    add(ui)
+                });
+            out = Some(inner.inner);
+            let width = ui.min_rect().width().max(min_w);
+            let bar = Rect::from_min_size(top, Vec2::new(width, TITLE_BAR));
+            if title_bar(ui, bar, &self.title, &format!("{:?}", self.id)) {
+                closed = true;
+            }
+        });
         if closed {
             request_close(ctx);
         }
@@ -176,6 +185,21 @@ fn window_frame() -> Frame {
             color: Color32::from_black_alpha(60),
         })
         .inner_margin(Margin::ZERO)
+}
+
+fn center_id() -> egui::Id {
+    egui::Id::new("chrome_center_dialogs")
+}
+
+/// Customization > Appearance > Center Dialog Boxes, for the dialogs
+/// drawn this frame.
+pub fn set_center_dialogs(ctx: &Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(center_id(), on));
+}
+
+/// Dialogs open in the middle and stay there (the default).
+pub fn center_dialogs(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp(center_id())).unwrap_or(true)
 }
 
 fn close_request_id() -> egui::Id {

@@ -3354,3 +3354,10 @@ github.exists = "ওই পাথে আগে থেকেই একটি ফ�
 menu.object.symmetry_break = "সিমেট্রি লিংক ভাঙুন"
 symmetry.finish = "শেষ"
 status.editing_symmetry = "সিমেট্রি সম্পাদনা: মূলটি (লাল রেখায়) বদলান; কপিগুলো অনুসরণ করে। শেষ চাপলে বন্ধ হয়।"
+
+options.center_dialogs = "ডায়ালগ বক্স মাঝখানে রাখুন"
+options.ui_size = "আকার"
+options.reset_to_default = "ডিফল্টে রিসেট করুন"
+options.color_section = "রং"
+options.other = "অন্যান্য"
+options.palette_hold_hint = "কনটেক্সট মেনু খুলতে মাউসের ডান বোতাম এক সেকেন্ড চেপে ধরে রাখুন।"

@@ -34,6 +34,9 @@ const ARROW_OFF: Color32 = Color32::from_gray(214);
 const NO_COLOR_LINE: Color32 = Color32::from_rgb(255, 64, 64);
 /// Seconds a swatch is held before its shades pop up.
 const HOLD: f64 = 0.5;
+/// Seconds the right button is held on a swatch to open its menu when a
+/// right click sets the outline.
+const RIGHT_HOLD: f64 = 1.0;
 
 /// Which palette a row shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -479,7 +482,10 @@ fn swatch(
 
     // Click and hold: the colour's shades.
     if let Some((_, c)) = entry {
-        if resp.is_pointer_button_down_on() && app.palette_shades.is_none() {
+        if resp.is_pointer_button_down_on()
+            && ui.input(|i| i.pointer.primary_down())
+            && app.palette_shades.is_none()
+        {
             let held = ui.input(|i| {
                 i.pointer
                     .press_start_time()
@@ -520,13 +526,40 @@ fn swatch(
             }
         }
     }
+    let menu_id = egui::Id::new(("palette_swatch_menu", which as u8, index));
     if app.settings.palette.right_click_outline {
-        if resp.secondary_clicked() {
+        // A right click sets the outline; held for a second it opens the
+        // palette menu instead (the release then does nothing).
+        if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.secondary_down()) {
+            let held = ui.input(|i| {
+                i.pointer
+                    .press_start_time()
+                    .map(|t| i.time - t)
+                    .unwrap_or(0.0)
+            });
+            let open = egui::Popup::is_id_open(ui.ctx(), menu_id);
+            if held >= RIGHT_HOLD && !open {
+                ui.ctx().data_mut(|d| d.insert_temp(menu_id, true));
+            } else if !open {
+                ui.ctx().request_repaint();
+            }
+        }
+        let hold_open = ui
+            .ctx()
+            .data_mut(|d| d.remove_temp::<bool>(menu_id))
+            .unwrap_or(false);
+        if resp.secondary_clicked() && !hold_open {
             app.apply_outline_color(entry.map(|(_, c)| *c));
         }
+        egui::Popup::menu(&resp)
+            .id(menu_id)
+            .open_memory(hold_open.then_some(egui::SetOpenCommand::Bool(true)))
+            .at_pointer_fixed()
+            .style(crate::ui::menus::menu_popup_style)
+            .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     } else {
         egui::Popup::context_menu(&resp)
-            .id(egui::Id::new(("palette_swatch_menu", which as u8, index)))
+            .id(menu_id)
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     }

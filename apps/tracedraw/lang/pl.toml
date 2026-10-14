@@ -3354,3 +3354,10 @@ github.exists = "Pod tą ścieżką jest już plik. Najpierw go otwórz lub wybi
 menu.object.symmetry_break = "Przerwij połączenie symetrii"
 symmetry.finish = "Zakończ"
 status.editing_symmetry = "Edycja symetrii: zmieniaj oryginał (czerwony kontur); kopie podążają. Zakończ kończy."
+
+options.center_dialogs = "Wyśrodkuj okna dialogowe"
+options.ui_size = "Rozmiar"
+options.reset_to_default = "Przywróć domyślne"
+options.color_section = "Kolor"
+options.other = "Inne"
+options.palette_hold_hint = "Aby otworzyć menu kontekstowe, przytrzymaj prawy przycisk myszy przez sekundę."

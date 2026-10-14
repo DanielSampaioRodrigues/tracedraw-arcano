@@ -3354,3 +3354,10 @@ github.exists = "该路径已有文件。请先打开它，或选择其他路径
 menu.object.symmetry_break = "断开对称链接"
 symmetry.finish = "完成"
 status.editing_symmetry = "正在编辑对称：修改原始对象（红色轮廓），副本随之变化。点“完成”结束。"
+
+options.center_dialogs = "对话框居中"
+options.ui_size = "大小"
+options.reset_to_default = "重置为默认值"
+options.color_section = "颜色"
+options.other = "其他"
+options.palette_hold_hint = "要打开上下文菜单，请按住鼠标右键一秒钟。"

@@ -3354,3 +3354,10 @@ github.exists = "Já existe um arquivo nesse caminho. Abra-o antes ou escolha ou
 menu.object.symmetry_break = "Desfazer vínculo de simetria"
 symmetry.finish = "Concluir"
 status.editing_symmetry = "Editando a simetria: altere o original (contornado em vermelho); as cópias acompanham. Concluir termina."
+
+options.center_dialogs = "Centralizar caixas de diálogo"
+options.ui_size = "Tamanho"
+options.reset_to_default = "Restaurar padrão"
+options.color_section = "Cor"
+options.other = "Outros"
+options.palette_hold_hint = "Para abrir o menu de contexto, mantenha o botão direito do mouse pressionado por um segundo."

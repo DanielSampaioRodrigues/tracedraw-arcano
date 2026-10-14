@@ -3354,3 +3354,10 @@ github.exists = "По этому пути уже есть файл. Сначал
 menu.object.symmetry_break = "Разорвать связь симметрии"
 symmetry.finish = "Готово"
 status.editing_symmetry = "Правка симметрии: меняйте оригинал (красный контур); копии следуют за ним. «Готово» завершает."
+
+options.center_dialogs = "Центрировать диалоговые окна"
+options.ui_size = "Размер"
+options.reset_to_default = "Сбросить по умолчанию"
+options.color_section = "Цвет"
+options.other = "Другое"
+options.palette_hold_hint = "Чтобы открыть контекстное меню, удерживайте правую кнопку мыши одну секунду."

@@ -96,7 +96,8 @@ pub(crate) fn apply_ui_scale(ctx: &egui::Context, size: f32) {
     }
 }
 
-/// The interface sizes offered, relative to the system's scaling.
+/// Interface sizes relative to the system's scaling, as the tests try.
+#[cfg(test)]
 pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
 /// The zoom of the interface at 100 %. Its measures (13 px text, 20 px
