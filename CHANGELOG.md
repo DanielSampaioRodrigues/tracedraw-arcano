@@ -4,7 +4,15 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.5.0 (2026-10-14)
+
+More for print work, and better `.cdr` files:
+spot colours through to separations, opacity masks, several fills and
+outlines on one object, an effect stack, 3D extrude with lights and
+bevels, CMX import, session recovery after a crash, and scripts that
+add file formats and can be debugged. Pictures stored in CMYK inside
+`.cdr` files now open with their real colours (in 0.4.0 they looked
+like negatives).
 
 - Script debugger: breakpoints in the Scripts panel's margin, Debug,
   Continue, Step, Stop, and expressions evaluated where the script
@@ -40,9 +48,6 @@ full, row-by-row status.
 - Spot colours: named inks in the Colour panel, applied at a tint,
   written to PDF as Separation colour spaces and printed on a plate of
   their own in separations.
-- `.tdraw` files record their format version; older files are brought up
-  to date on opening and newer ones open as far as this version knows
-  them (see `docs/tdraw-format.md`).
 - `.tdraw` files record their format version; older files are brought up
   to date on opening and newer ones open as far as this version knows
   them (see `docs/tdraw-format.md`).
@@ -500,6 +505,16 @@ full, row-by-row status.
   app (the windowing layer delivers them as clipboard events, not as
   key presses, so they did nothing); Ctrl+Shift+V pastes in the middle
   of the view.
+
+**Known limits**
+- Downloads are not code-signed yet: Windows SmartScreen asks for "More
+  info > Run anyway", and macOS needs right-click > Open the first time.
+- The `.cdr` reader is written from public notes and sample files; some
+  files open with objects missing or looking different. Reports with a
+  file are very welcome (there is an issue template for them).
+- Installing an update in place works for the Linux AppImage only;
+  elsewhere Help > Updates offers the download.
+- Gaps are listed in [`docs/blueprint-gaps.md`](docs/blueprint-gaps.md).
 
 ## 0.4.0 (2026-10-11)
 
