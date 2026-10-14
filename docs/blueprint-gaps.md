@@ -78,5 +78,6 @@ EPS, DXF, EMF, WMF, PLT, PSD, HTML, PDF/X-1a, X-3, X-4, `.cdr` (version
 The JavaScript object model covers documents, pages, layers, shapes,
 fills, outlines, colours, `Curve` > `SubPaths` > `Nodes` (position,
 type, move, delete, add) and `Effects` (list, add any effect by its
-`.tdraw` form, `AddExtrude`, `AddBlockShadow`, remove, clear). Open:
-import/export filters, and a script editor with breakpoints.
+`.tdraw` form, `AddExtrude`, `AddBlockShadow`, remove, clear), and
+import/export filters (`behavior/script-filters.md`). Open: a script
+editor with breakpoints.

@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Script filters: a script that defines `TraceDrawFilter` becomes a file
+  format of File > Import and File > Export (Scripts panel, Install as
+  Filter); `Shape.PathData` gives an outline as SVG path data.
 - Help > Highlight What's New marks the menu rows new in this version.
 - `.cdr`: arrowheads of newer files (`arrx` records) are read, and the
   arrowhead ids of outlines are read from their right place, so dimension

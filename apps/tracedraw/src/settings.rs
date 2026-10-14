@@ -220,6 +220,10 @@ pub struct Settings {
     /// A release the user chose to skip: not offered again at start.
     #[serde(default)]
     pub skipped_update: String,
+    /// Scripts panel > Install as Filter: file formats that scripts read
+    /// or write (see `behavior/script-filters.md`).
+    #[serde(default)]
+    pub script_filters: Vec<crate::scripting::ScriptFilter>,
     /// Options > Global > Bitmap Tracing.
     #[serde(default)]
     pub tracing: crate::prefs::TracePrefs,
@@ -931,6 +935,7 @@ impl Default for Settings {
             check_updates: true,
             last_update_check: 0,
             skipped_update: String::new(),
+            script_filters: Vec::new(),
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),

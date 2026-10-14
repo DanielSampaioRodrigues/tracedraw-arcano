@@ -5,8 +5,10 @@
 //! `Curve` with `SubPaths` and `Nodes` (position, type, move, delete,
 //! add), `Effects` (count, type, add, remove, clear),
 //! plus `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`,
-//! `CreateCurve`, `CreatePath` (SVG path data), `CreatePolygon`. Recorded
-//! macros are plain scripts.
+//! `CreateCurve`, `CreatePath` (SVG path data), `CreatePolygon`, and
+//! `Shape.PathData` back. Recorded macros are plain scripts; a script that
+//! defines `TraceDrawFilter` can be installed as a file format
+//! ([`ScriptFilter`], `script_filters.rs`).
 //!
 //! Implementation: one native dispatcher `__td(method, argsJson)` works on
 //! a snapshot of the document and records commands; the JS prelude builds
@@ -123,6 +125,7 @@ class Shape {
   AddDropShadow(dx, dy, opacity) { __call('drop_shadow', {id:this.id, dx:dx, dy:dy, opacity:opacity===undefined?50:opacity}); }
   get Curve() { return new Curve(this.id); }
   get Effects() { return new Effects(this.id); }
+  get PathData() { return __call('path_data', {id:this.id}).d; }
 }
 class Effects {
   constructor(id) { this.id = id; }
@@ -298,13 +301,8 @@ pub fn run_untrusted(
     run_with(app, src, Trust::Untrusted, label)
 }
 
-fn run_with(
-    app: &mut App,
-    src: &str,
-    trust: Trust,
-    label: &'static str,
-) -> Result<(Vec<String>, usize), String> {
-    let host = Host(RefCell::new(HostInner {
+fn host_for(app: &App, trust: Trust) -> HostInner {
+    HostInner {
         doc: app.engine.document().clone(),
         page: app.page,
         layer: app.active_layer(),
@@ -313,33 +311,94 @@ fn run_with(
         output: Vec::new(),
         next_id: app.engine.document().ids().peek_next(),
         trust,
-    }));
+    }
+}
+
+/// What a script evaluation gave: the completion value (or the error)
+/// and the host with the recorded commands and printed lines.
+struct Evaluated {
+    inner: HostInner,
+    result: Result<JsValue, String>,
+    /// The completion value as text, when it is a string.
+    text: Option<String>,
+    shown: String,
+}
+
+/// Evaluate the prelude, `src`, then `call` (when given) with the global
+/// `__input` set to `input`.
+fn evaluate(
+    inner: HostInner,
+    src: &str,
+    call: Option<&str>,
+    input: Option<&str>,
+) -> Result<Evaluated, String> {
+    let trust = inner.trust;
     let mut ctx = Context::default();
     if trust == Trust::Untrusted {
         let limits = ctx.runtime_limits_mut();
         limits.set_loop_iteration_limit(UNTRUSTED_LOOP_LIMIT);
         limits.set_recursion_limit(UNTRUSTED_RECURSION_LIMIT);
     }
-    ctx.insert_data(host);
+    ctx.insert_data(Host(RefCell::new(inner)));
     let dispatcher = NativeFunction::from_fn_ptr(dispatch);
     let global = ObjectInitializer::new(&mut ctx).build();
     let _ = global;
     ctx.register_global_callable(js_string!("__td"), 2, dispatcher)
         .map_err(|e| e.to_string())?;
+    if let Some(input) = input {
+        ctx.register_global_property(
+            js_string!("__input"),
+            JsValue::from(boa_engine::JsString::from(input)),
+            boa_engine::property::Attribute::all(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     ctx.eval(Source::from_bytes(PRELUDE))
         .map_err(|e| format!("prelude: {e}"))?;
-    let result = ctx.eval(Source::from_bytes(src));
+    let mut result = ctx.eval(Source::from_bytes(src)).map_err(|e| e.to_string());
+    if let (Ok(_), Some(call)) = (&result, call) {
+        result = ctx
+            .eval(Source::from_bytes(call))
+            .map_err(|e| e.to_string());
+    }
+    let text = match &result {
+        Ok(v) => v.as_string().map(|s| s.to_std_string_escaped()),
+        Err(_) => None,
+    };
+    let shown = match &result {
+        Ok(v) if !v.is_undefined() => v.display().to_string(),
+        _ => String::new(),
+    };
     let host = ctx
         .remove_data::<Host>()
         .ok_or_else(|| "script host lost".to_string())?;
-    let inner = host.0.into_inner();
+    Ok(Evaluated {
+        inner: host.0.into_inner(),
+        result,
+        text,
+        shown,
+    })
+}
+
+fn run_with(
+    app: &mut App,
+    src: &str,
+    trust: Trust,
+    label: &'static str,
+) -> Result<(Vec<String>, usize), String> {
+    let Evaluated {
+        inner,
+        result,
+        shown,
+        ..
+    } = evaluate(host_for(app, trust), src, None, None)?;
     let mut output = inner.output;
     match result {
-        Ok(v) => {
+        Ok(_) => {
             // Echo the completion value only when nothing was printed,
             // so one-liners such as `ActiveDocument.Pages.Count` show a result.
-            if output.is_empty() && !v.is_undefined() {
-                output.push(v.display().to_string());
+            if output.is_empty() && !shown.is_empty() {
+                output.push(shown);
             }
         }
         Err(e) => {
@@ -347,12 +406,159 @@ fn run_with(
             if trust == Trust::User {
                 apply(app, inner.commands, inner.selection, inner.page, label);
             }
-            return Err(e.to_string());
+            return Err(e);
         }
     }
     let changes = inner.commands.len();
     apply(app, inner.commands, inner.selection, inner.page, label);
     Ok((output, changes))
+}
+
+/// A script that reads or writes a file format: it defines the global
+/// `TraceDrawFilter` with a `name`, its `extensions` and an `Import(text)`
+/// and/or `Export()` function.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScriptFilter {
+    pub name: String,
+    /// Lower case, without the dot.
+    pub extensions: Vec<String>,
+    pub import: bool,
+    pub export: bool,
+    pub source: String,
+}
+
+impl ScriptFilter {
+    /// For file dialogs: "Name (*.a, *.b)".
+    pub fn label(&self) -> String {
+        let exts: Vec<String> = self.extensions.iter().map(|e| format!("*.{e}")).collect();
+        format!("{} ({})", self.name, exts.join(", "))
+    }
+
+    pub fn handles(&self, ext: &str) -> bool {
+        self.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext))
+    }
+}
+
+fn blank_host(doc: Document, trust: Trust) -> HostInner {
+    let page = doc.pages.first().map(|p| p.id).unwrap_or(PageId(0));
+    let layer = doc
+        .pages
+        .first()
+        .and_then(|p| p.layers.first())
+        .map(|l| l.id);
+    let next_id = doc.ids().peek_next();
+    HostInner {
+        doc,
+        page,
+        layer,
+        selection: Vec::new(),
+        commands: Vec::new(),
+        output: Vec::new(),
+        next_id,
+        trust,
+    }
+}
+
+/// Read a filter script: what `TraceDrawFilter` says about itself. The
+/// script runs with the limits of untrusted scripts against an empty
+/// drawing, and nothing it does is kept.
+pub fn filter_info(src: &str) -> Result<ScriptFilter, String> {
+    let doc = Document::new("Filter", tracedraw_core::Size::new(210.0, 297.0));
+    let ev = evaluate(
+        blank_host(doc, Trust::Untrusted),
+        src,
+        Some(
+            "typeof TraceDrawFilter === 'undefined' ? '' : JSON.stringify({\
+             name: String(TraceDrawFilter.name || ''),\
+             extensions: [].concat(TraceDrawFilter.extensions || []).map(String),\
+             import: typeof TraceDrawFilter.Import === 'function',\
+             export: typeof TraceDrawFilter.Export === 'function'})",
+        ),
+        None,
+    )?;
+    ev.result?;
+    let text = ev.text.unwrap_or_default();
+    if text.is_empty() {
+        return Err("the script defines no TraceDrawFilter".into());
+    }
+    let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let name = v["name"].as_str().unwrap_or("").trim().to_string();
+    let extensions: Vec<String> = v["extensions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| e.as_str())
+                .map(|e| {
+                    e.trim()
+                        .trim_start_matches("*.")
+                        .trim_start_matches('.')
+                        .to_ascii_lowercase()
+                })
+                .filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let import = v["import"].as_bool().unwrap_or(false);
+    let export = v["export"].as_bool().unwrap_or(false);
+    if name.is_empty() {
+        return Err("TraceDrawFilter has no name".into());
+    }
+    if extensions.is_empty() {
+        return Err("TraceDrawFilter has no extensions".into());
+    }
+    if !import && !export {
+        return Err("TraceDrawFilter has neither Import nor Export".into());
+    }
+    Ok(ScriptFilter {
+        name,
+        extensions,
+        import,
+        export,
+        source: src.to_string(),
+    })
+}
+
+/// Import `text` through a filter into the active layer: its objects are
+/// added as one undo step and selected. Nothing is kept when the filter
+/// fails. Returns the printed lines.
+pub fn run_filter_import(
+    app: &mut App,
+    filter: &ScriptFilter,
+    text: &str,
+) -> Result<Vec<String>, String> {
+    let ev = evaluate(
+        host_for(app, Trust::User),
+        &filter.source,
+        Some("TraceDrawFilter.Import(__input)"),
+        Some(text),
+    )?;
+    ev.result?;
+    let inner = ev.inner;
+    let added: Vec<ShapeId> = inner
+        .commands
+        .iter()
+        .filter_map(|c| match c {
+            Command::AddShape { shape, .. } => Some(shape.id),
+            _ => None,
+        })
+        .collect();
+    apply(app, inner.commands, added, inner.page, "Import");
+    Ok(inner.output)
+}
+
+/// Export `doc` through a filter: the text its `Export()` returns. The
+/// filter sees `doc` as the active document, its first page active; what
+/// it changes is dropped.
+pub fn run_filter_export(doc: Document, filter: &ScriptFilter) -> Result<String, String> {
+    let ev = evaluate(
+        blank_host(doc, Trust::User),
+        &filter.source,
+        Some("TraceDrawFilter.Export()"),
+        None,
+    )?;
+    ev.result?;
+    ev.text
+        .ok_or_else(|| format!("{}: Export() returned no text", filter.name))
 }
 
 fn apply(
@@ -642,6 +848,11 @@ impl HostInner {
                     "text": text,
                     "transparency": ((1.0 - s.opacity) * 100.0).round(),
                 })
+            }
+            "path_data" => {
+                let s = self.shape(id_arg(a, "id")?)?;
+                let path = s.transform * s.local_path_with(&self.doc.symbols);
+                json!({"d": path.to_svg()})
             }
             "node_count" => {
                 let s = self.shape(id_arg(a, "id")?)?;

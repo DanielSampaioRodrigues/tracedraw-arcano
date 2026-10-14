@@ -4271,15 +4271,31 @@ impl App {
     }
 
     pub fn import(&mut self) {
-        crate::files::Dialog::new()
-            .add_filter(
-                crate::i18n::tr("file.all_importable"),
-                &[
-                    "cdr", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd",
-                    "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg",
-                    "jpeg", "bmp", "gif", "webp", "tif", "tiff",
-                ],
-            )
+        let mut all: Vec<String> = [
+            "cdr", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd", "psb",
+            "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg", "bmp",
+            "gif", "webp", "tif", "tiff",
+        ]
+        .map(String::from)
+        .to_vec();
+        let scripted: Vec<_> = self
+            .settings
+            .script_filters
+            .iter()
+            .filter(|f| f.import)
+            .cloned()
+            .collect();
+        for f in &scripted {
+            all.extend(f.extensions.iter().cloned());
+        }
+        let all: Vec<&str> = all.iter().map(String::as_str).collect();
+        let mut dialog =
+            crate::files::Dialog::new().add_filter(crate::i18n::tr("file.all_importable"), &all);
+        for f in &scripted {
+            let exts: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(f.label(), &exts);
+        }
+        dialog
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
             .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
@@ -4330,6 +4346,16 @@ impl App {
 
     fn import_path_as_in_file(&mut self, path: &std::path::Path) {
         let path = path.to_path_buf();
+        // An installed script filter goes before the built-in readers.
+        let raw_ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if let Some(filter) = self.import_filter_for(&raw_ext) {
+            self.import_with_script(&path, &filter);
+            return;
+        }
         let ext = Self::file_kind(&path);
         if ext == "svg" || ext == "svgz" {
             self.import_svg(&path);
@@ -5484,7 +5510,7 @@ mod tests {
 
     #[test]
     fn postscript_ai_files_open_as_eps() {
-        let dir = std::env::temp_dir().join(format!("tracedraw-ai-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("tracedraw-ai-kind-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let old = dir.join("old.ai");

@@ -525,7 +525,7 @@ fn find_replace(app: &mut App, ui: &mut Ui) {
 }
 
 fn scripts(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button(tr("docker.run")).clicked() {
             let src = app.script_source.clone();
             app.run_script(&src);
@@ -557,7 +557,37 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         if ui.button(tr("docker.clear")).clicked() {
             app.scripts_output.clear();
         }
+        if ui
+            .button(tr("docker.install_filter"))
+            .on_hover_text(tr("docker.install_filter_hint"))
+            .clicked()
+        {
+            let src = app.script_source.clone();
+            app.install_script_filter(&src);
+        }
     });
+    if !app.settings.script_filters.is_empty() {
+        ui.strong(tr("docker.script_filters"));
+        let mut remove = None;
+        let mut edit = None;
+        for f in &app.settings.script_filters {
+            ui.horizontal(|ui| {
+                ui.label(f.label());
+                if ui.small_button(tr("docker.edit")).clicked() {
+                    edit = Some(f.source.clone());
+                }
+                if ui.small_button(tr("docker.remove")).clicked() {
+                    remove = Some(f.name.clone());
+                }
+            });
+        }
+        if let Some(src) = edit {
+            app.script_source = src;
+        }
+        if let Some(name) = remove {
+            app.remove_script_filter(&name);
+        }
+    }
     if app.script_source.is_empty() {
         app.script_source = "// Example\nconst r = ActiveLayer.CreateRectangle(20, 20, 60, 40);\nr.Fill.ApplyUniformFill(Color.CMYK(0, 100, 100, 0));\nprint('Objects: ' + ActivePage.Shapes.Count);\n".into();
     }

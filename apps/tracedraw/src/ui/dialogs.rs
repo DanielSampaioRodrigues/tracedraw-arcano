@@ -32,6 +32,8 @@ pub struct ExportState {
     pub pdf_standard: usize,
     pub bleed_mm: f64,
     pub output_condition: String,
+    /// An installed script filter chosen instead of `format`, by name.
+    pub script: Option<String>,
 }
 
 impl Default for ExportState {
@@ -48,6 +50,7 @@ impl Default for ExportState {
             pdf_standard: 0,
             bleed_mm: 0.0,
             output_condition: "FOGRA39".into(),
+            script: None,
         }
     }
 }
@@ -2226,17 +2229,49 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 ui.set_width(300.0);
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.format"));
+                    let scripted: Vec<crate::scripting::ScriptFilter> = app
+                        .settings
+                        .script_filters
+                        .iter()
+                        .filter(|f| f.export)
+                        .cloned()
+                        .collect();
+                    if st
+                        .script
+                        .as_ref()
+                        .is_some_and(|n| !scripted.iter().any(|f| &f.name == n))
+                    {
+                        st.script = None;
+                    }
+                    let shown = match &st.script {
+                        Some(n) => n.clone(),
+                        None => EXPORT_FORMATS[st.format].0.to_string(),
+                    };
                     egui::ComboBox::from_id_salt("exp_fmt")
-                        .selected_text(EXPORT_FORMATS[st.format].0)
+                        .selected_text(shown)
                         .show_ui(ui, |ui| {
                             for (i, (n, _)) in EXPORT_FORMATS.iter().enumerate() {
-                                if ui.selectable_label(st.format == i, *n).clicked() {
+                                if ui
+                                    .selectable_label(st.script.is_none() && st.format == i, *n)
+                                    .clicked()
+                                {
                                     st.format = i;
+                                    st.script = None;
+                                }
+                            }
+                            if !scripted.is_empty() {
+                                ui.separator();
+                            }
+                            for f in &scripted {
+                                let on = st.script.as_ref() == Some(&f.name);
+                                if ui.selectable_label(on, f.label()).clicked() {
+                                    st.script = Some(f.name.clone());
                                 }
                             }
                         });
                 });
-                let raster = (2..=7).contains(&st.format) || st.format == 15;
+                let scripted = st.script.is_some();
+                let raster = !scripted && ((2..=7).contains(&st.format) || st.format == 15);
                 if raster {
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.resolution"));
@@ -2275,7 +2310,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         .color(Tokens::TEXT_DIM),
                     );
                 }
-                if st.format == 1 {
+                if !scripted && st.format == 1 {
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.pdf_standard"));
                         egui::ComboBox::from_id_salt("pdf_standard")
@@ -2311,7 +2346,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 if !st.selection_only && st.format != 1 && st.format != 11 {
                     ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
                 }
-                if let Some(bytes) = estimate {
+                if let Some(bytes) = estimate.filter(|_| !scripted) {
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new(trf(
@@ -2324,6 +2359,33 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
             });
         });
         if ok_cancel(ui, close) {
+            let filter = st.script.as_ref().and_then(|n| {
+                app.settings
+                    .script_filters
+                    .iter()
+                    .find(|f| &f.name == n && f.export)
+                    .cloned()
+            });
+            if let Some(filter) = filter {
+                let stem = app
+                    .file
+                    .as_ref()
+                    .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+                    .unwrap_or_else(|| "Graphic1".into());
+                let ext = filter.extensions.first().cloned().unwrap_or_default();
+                let exts: Vec<&str> = filter.extensions.iter().map(String::as_str).collect();
+                let st2 = st.clone();
+                crate::files::Dialog::new()
+                    .add_filter(filter.label(), &exts)
+                    .set_file_name(format!("{stem}.{ext}"))
+                    .save_file(app, move |app, path| {
+                        match app.export_with_script(&path, &filter, &st2) {
+                            Ok(msg) => app.status = msg,
+                            Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+                        }
+                    });
+                return;
+            }
             let (name, ext) = EXPORT_FORMATS[st.format];
             let _ = name;
             let stem = app
