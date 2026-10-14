@@ -1134,3 +1134,48 @@ fn the_version_21_configuration_record_has_its_fields() {
     let (back, _) = crate::open_bytes(&bytes, "t").expect("opens");
     assert!((back.pages[0].size.width - 297.0).abs() < 0.01);
 }
+
+#[test]
+fn chosen_node_types_round_trip_in_the_continuity_bits() {
+    use tracedraw_core::nodes::{self, NodeType};
+    // Node 1 has aligned handles of equal length (reads as symmetrical) but is
+    // chosen as a cusp; node 2 reads as symmetrical and is chosen smooth.
+    let mut p = BezPath::new();
+    p.move_to((0.0, 0.0));
+    p.curve_to((10.0, 10.0), (20.0, 10.0), (30.0, 0.0));
+    p.curve_to((40.0, -10.0), (50.0, -10.0), (60.0, 0.0));
+    p.curve_to((70.0, 10.0), (80.0, 10.0), (90.0, 0.0));
+    let mut doc = Document::new("w", Size::new(200.0, 100.0));
+    let mut ids = doc.ids().clone();
+    let mut c = Shape::new(
+        ids.shape(),
+        ShapeKind::Path {
+            path: p.clone(),
+            closed: false,
+        },
+    );
+    assert_eq!(nodes::node_type(&p, 1), NodeType::Symmetrical);
+    c.node_types = [(1, NodeType::Cusp), (2, NodeType::Smooth)].into();
+    doc.pages[0].layers[0].shapes = vec![c];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let s = &back.pages[0].layers[0].shapes[0];
+        assert!(
+            matches!(s.kind, ShapeKind::Path { .. }),
+            "{v}: {:?}",
+            rep.warnings
+        );
+        assert_eq!(
+            s.node_types,
+            [(1, NodeType::Cusp), (2, NodeType::Smooth)].into(),
+            "{v}"
+        );
+    }
+    // Without chosen types nothing is stored on reading.
+    let mut plain = doc.clone();
+    plain.pages[0].layers[0].shapes[0].node_types.clear();
+    let (back, _) = crate::open_bytes(&document_to_cdr(&plain), "back").expect("reads back");
+    assert!(back.pages[0].layers[0].shapes[0].node_types.is_empty());
+}

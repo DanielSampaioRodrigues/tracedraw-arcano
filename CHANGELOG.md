@@ -12,6 +12,8 @@ full, row-by-row status.
 - CMX import: arrowheads come in at the size and place the file gives
   them, open heads as lines and start heads the right way up, as the
   files' previews show.
+- `.cdr` files: node types (cusp, smooth, symmetrical) are read and
+  written, so a cusp node with aligned handles stays a cusp.
 - Shape tool: a node's type is kept with the curve once chosen, so C and S
   switch it both ways and a cusp node with aligned handles moves its
   handles apart.

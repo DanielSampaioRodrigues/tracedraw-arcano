@@ -1230,24 +1230,45 @@ fn opacity_arg(v: Ver, opacity: f64) -> Vec<u8> {
 }
 
 /// Points and node bytes of a path in local units: bits 7-6 the node kind
-/// (00 move, 01 line, 10 curve end, 11 control point), bit 3 closes the
-/// subpath.
+/// (00 move, 01 line, 10 curve end, 11 control point), bits 5-4 the
+/// node's type (0 cusp, 1 smooth, 2 symmetrical), bit 3 closes the subpath.
 fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
+    curve_coords_typed(path, &Default::default())
+}
+
+/// [`curve_coords`] for a curve with node types chosen for it.
+fn curve_coords_typed(
+    path: &BezPath,
+    chosen: &std::collections::BTreeMap<usize, tracedraw_core::nodes::NodeType>,
+) -> Option<Vec<u8>> {
+    use tracedraw_core::nodes::{self, NodeType};
+    let continuity: std::collections::BTreeMap<usize, u8> = nodes::nodes(path)
+        .into_iter()
+        .map(|n| {
+            let bits = match nodes::node_type_with(path, n.index, chosen) {
+                NodeType::Cusp => 0x00,
+                NodeType::Smooth => 0x10,
+                NodeType::Symmetrical => 0x20,
+            };
+            (n.index, bits)
+        })
+        .collect();
+    let node_bits = |i: usize| continuity.get(&i).copied().unwrap_or(0);
     let mut pts: Vec<(i32, i32)> = Vec::new();
     let mut types: Vec<u8> = Vec::new();
     let mut last_start = 0usize;
     let mut last = Point::ZERO;
-    for el in path.elements() {
+    for (i, el) in path.elements().iter().enumerate() {
         match el {
             PathEl::MoveTo(p) => {
                 pts.push((units(p.x), units(p.y)));
-                types.push(0x00);
+                types.push(node_bits(i));
                 last_start = pts.len() - 1;
                 last = *p;
             }
             PathEl::LineTo(p) => {
                 pts.push((units(p.x), units(p.y)));
-                types.push(0x40);
+                types.push(0x40 | node_bits(i));
                 last = *p;
             }
             PathEl::QuadTo(c, p) => {
@@ -1259,7 +1280,7 @@ fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
                 pts.push((units(c2.x), units(c2.y)));
                 types.push(0xc0);
                 pts.push((units(p.x), units(p.y)));
-                types.push(0x80);
+                types.push(0x80 | node_bits(i));
                 last = *p;
             }
             PathEl::CurveTo(a, b, p) => {
@@ -1268,7 +1289,7 @@ fn curve_coords(path: &BezPath) -> Option<Vec<u8>> {
                 pts.push((units(b.x), units(b.y)));
                 types.push(0xc0);
                 pts.push((units(p.x), units(p.y)));
-                types.push(0x80);
+                types.push(0x80 | node_bits(i));
                 last = *p;
             }
             PathEl::ClosePath => {
@@ -2096,7 +2117,11 @@ impl<'a> Writer<'a> {
                 )
             }
             _ => {
-                let Some(coords) = curve_coords(&s.local_path()) else {
+                let coords = match &s.kind {
+                    ShapeKind::Path { path, .. } => curve_coords_typed(path, &s.node_types),
+                    _ => curve_coords(&s.local_path()),
+                };
+                let Some(coords) = coords else {
                     return none();
                 };
                 self.place(

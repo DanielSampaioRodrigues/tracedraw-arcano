@@ -248,6 +248,9 @@ struct Ctx<'a> {
     /// The transform of the paragraph text being read when its frame took
     /// the object's scale (see [`unscaled_frame`]).
     pending_text_transform: Option<Affine>,
+    /// The node types a curve's node bytes give where its handles read
+    /// otherwise, for the shape being read.
+    pending_node_types: std::collections::BTreeMap<usize, tracedraw_core::nodes::NodeType>,
     /// The CMYK profile the file carries, for CMYK bitmaps.
     cmyk_profile: Option<tracedraw_core::icc::Profile>,
     /// CMYK to RGB through that profile, built for the first CMYK bitmap.
@@ -292,6 +295,7 @@ impl<'a> Ctx<'a> {
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
+            pending_node_types: Default::default(),
             cmyk_profile: None,
             cmyk_lut: None,
             report: ParseReport::default(),
@@ -1886,6 +1890,9 @@ impl<'a> Ctx<'a> {
         let recenter = Affine::translate((page_size.width / 2.0, page_size.height / 2.0));
         let transform = self.pending_text_transform.take().unwrap_or(transform);
         let mut shape = Shape::new(id, kind);
+        if matches!(shape.kind, ShapeKind::Path { .. }) {
+            shape.node_types = std::mem::take(&mut self.pending_node_types);
+        }
         shape.transform = recenter * transform;
         shape.fill = fill;
         shape.stroke = stroke;
@@ -2110,6 +2117,7 @@ impl<'a> Ctx<'a> {
         polygon: Option<PolygonInfo>,
     ) -> Option<ShapeKind> {
         let v = self.v;
+        self.pending_node_types.clear();
         let data = d.get(..arg.end)?;
         let mut r = self.reader_at(data, arg.off);
         match kind_code {
@@ -2199,6 +2207,7 @@ impl<'a> Ctx<'a> {
                 if path.elements().is_empty() {
                     return None;
                 }
+                self.pending_node_types = file_node_types(&path, &pts, &types);
                 Some(ShapeKind::Path { path, closed })
             }
             // Path (version 16+): 4 unknown, two u16 counts, 16 unknown, points.
@@ -2212,6 +2221,7 @@ impl<'a> Ctx<'a> {
                 if path.elements().is_empty() {
                     return None;
                 }
+                self.pending_node_types = file_node_types(&path, &pts, &types);
                 Some(ShapeKind::Path { path, closed })
             }
             // Polygon: the coordinates hold the base curve; the polygon
@@ -2897,6 +2907,40 @@ pub(crate) fn color_from_model(model: u16, b: [u8; 4]) -> Option<Color> {
 /// A path from points and their node bytes: bits 7-6 are the node kind
 /// (00 move, 01 line, 10 curve end, 11 control point) and bit 3 closes the
 /// subpath after the node.
+/// The node types a curve's node bytes give (bits 5..4 of a node's byte:
+/// 0 cusp, 1 smooth, 2 symmetrical), for the nodes of `path` (built from
+/// `pts` and `types`) whose handles read otherwise.
+pub(crate) fn file_node_types(
+    path: &BezPath,
+    pts: &[Point],
+    types: &[u8],
+) -> std::collections::BTreeMap<usize, tracedraw_core::nodes::NodeType> {
+    use tracedraw_core::nodes::{self, NodeType};
+    let mut ends: Vec<(Point, u8)> = pts
+        .iter()
+        .zip(types)
+        .filter(|(_, t)| *t >> 6 != 0b11)
+        .map(|(p, t)| (*p, (t >> 4) & 3))
+        .collect();
+    let mut out = std::collections::BTreeMap::new();
+    for n in nodes::nodes(path) {
+        let Some(k) = ends.iter().position(|(p, _)| (*p - n.pos).hypot() < 1e-9) else {
+            continue;
+        };
+        let (_, bits) = ends.remove(k);
+        let ty = match bits {
+            0 => NodeType::Cusp,
+            1 => NodeType::Smooth,
+            2 => NodeType::Symmetrical,
+            _ => continue,
+        };
+        if nodes::node_type(path, n.index) != ty {
+            out.insert(n.index, ty);
+        }
+    }
+    out
+}
+
 pub(crate) fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
     let mut path = BezPath::new();
     let mut closed = false;
@@ -3017,6 +3061,31 @@ fn file_corners(radii: &[f64], w: f64, h: f64) -> Corners {
 mod tests {
     use super::*;
     use tracedraw_core::geometry::Shape as _;
+
+    #[test]
+    fn continuity_bits_give_the_node_types_the_handles_do_not() {
+        use tracedraw_core::nodes::NodeType;
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(20.0, 10.0),
+            Point::new(30.0, 0.0),
+            Point::new(40.0, -10.0),
+            Point::new(50.0, -10.0),
+            Point::new(60.0, 0.0),
+            Point::new(70.0, 0.0),
+        ];
+        // move, control, control, curve end (cusp bits on aligned handles),
+        // control, control, curve end (cusp bits before a line, matching the
+        // handles), line (bits 3: unknown, ignored).
+        let types = [0x00, 0xC0, 0xC0, 0x80, 0xC0, 0xC0, 0x80, 0x70];
+        let (path, _) = build_path(&pts, &types);
+        let got = file_node_types(&path, &pts, &types);
+        assert_eq!(got, [(1, NodeType::Cusp)].into());
+        // Truncated or mismatched lists never panic.
+        let _ = file_node_types(&path, &pts[..3], &types[..2]);
+        let _ = file_node_types(&BezPath::new(), &pts, &types);
+    }
 
     // Byte-building helpers: RIFF chunks and typical payloads.
 
