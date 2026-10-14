@@ -81,6 +81,8 @@ pub struct PdfOptions {
 
 struct Pdf {
     objects: Vec<Vec<u8>>,
+    /// Separation colour space objects, by spot ink number.
+    spot_spaces: std::collections::HashMap<u32, usize>,
     cmyk_only: bool,
     allow_alpha: bool,
     /// The /Encrypt dictionary's object, once the file is protected.
@@ -331,9 +333,65 @@ struct PageWriter<'a> {
     gstates: Vec<(String, usize)>,
     images: Vec<(String, usize)>,
     symbols: &'a [tracedraw_core::Symbol],
+    /// The drawing's spot inks, and the colour spaces this page uses.
+    inks: &'a [tracedraw_core::document::Ink],
+    spaces: Vec<(String, usize)>,
+}
+
+/// A PDF name: `#xx` for bytes outside `!` to `~` and for delimiters.
+fn pdf_name(s: &str) -> String {
+    let mut out = String::from("/");
+    for b in s.bytes() {
+        if (b'!'..=b'~').contains(&b) && !b"#()<>[]{}/%".contains(&b) {
+            out.push(b as char);
+        } else {
+            let _ = write!(out, "#{b:02X}");
+        }
+    }
+    if out.len() == 1 {
+        out.push_str("Spot");
+    }
+    out
 }
 
 impl PageWriter<'_> {
+    /// The operator setting colour `c`: a spot ink of the drawing on a
+    /// Separation colour space of its own (its name, its process stand-in
+    /// as the alternate), the others as before.
+    fn color_op(&mut self, c: Color, fill: bool) -> String {
+        if let Color::Spot { ink, tint, .. } = c {
+            if let Some(i) = self.inks.iter().find(|i| i.id == ink) {
+                let id = match self.pdf.spot_spaces.get(&ink) {
+                    Some(id) => *id,
+                    None => {
+                        let [cc, m, y, k] = i.cmyk.map(|v| f(v.clamp(0.0, 1.0) as f64));
+                        let id = self.pdf.add_str(format!(
+                            "[/Separation {} /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [{cc} {m} {y} {k}] /N 1 >>]",
+                            pdf_name(&i.name)
+                        ));
+                        self.pdf.spot_spaces.insert(ink, id);
+                        id
+                    }
+                };
+                let name = format!("CS{ink}");
+                if !self.spaces.iter().any(|(n, _)| *n == name) {
+                    self.spaces.push((name.clone(), id));
+                }
+                let t = if tint.is_finite() {
+                    tint.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                return if fill {
+                    format!("/{name} cs {} scn", f(t as f64))
+                } else {
+                    format!("/{name} CS {} SCN", f(t as f64))
+                };
+            }
+        }
+        color_op_in(c.process(), fill, self.pdf.cmyk_only)
+    }
+
     fn path_ops(&mut self, path: &tracedraw_core::BezPath) {
         for el in path.elements() {
             match el {
@@ -540,11 +598,8 @@ impl PageWriter<'_> {
         match &shape.fill {
             Fill::None => {}
             Fill::Solid(c) => {
-                let _ = writeln!(
-                    self.content,
-                    "{}",
-                    color_op_in(*c, true, self.pdf.cmyk_only)
-                );
+                let op = self.color_op(*c, true);
+                let _ = writeln!(self.content, "{op}");
                 self.path_ops(&path);
                 self.content
                     .push_str(if matches!(shape.kind, ShapeKind::Text { .. }) {
@@ -617,15 +672,9 @@ impl PageWriter<'_> {
                         );
                     }
                 } else {
-                    let _ = writeln!(
-                        self.content,
-                        "{}",
-                        color_op_in(
-                            shape.fill.preview_color().unwrap_or(Color::BLACK),
-                            true,
-                            self.pdf.cmyk_only
-                        )
-                    );
+                    let op =
+                        self.color_op(shape.fill.preview_color().unwrap_or(Color::BLACK), true);
+                    let _ = writeln!(self.content, "{op}");
                     self.path_ops(&path);
                     self.content.push_str("f*\n");
                 }
@@ -639,10 +688,11 @@ impl PageWriter<'_> {
             } else {
                 s.width * MM_PT
             };
+            let op = self.color_op(s.color, false);
             let _ = writeln!(
                 self.content,
                 "{} {} w {} J {} j",
-                color_op_in(s.color, false, self.pdf.cmyk_only),
+                op,
                 f(width),
                 match s.cap {
                     LineCap::Butt => 0,
@@ -668,11 +718,8 @@ impl PageWriter<'_> {
                     s.stretch,
                     s.nib_angle,
                 );
-                let _ = writeln!(
-                    self.content,
-                    "{}",
-                    color_op_in(s.color, true, self.pdf.cmyk_only)
-                );
+                let op = self.color_op(s.color, true);
+                let _ = writeln!(self.content, "{op}");
                 self.path_ops(&(parent * band));
                 self.content.push_str("f\n");
             } else {
@@ -683,11 +730,8 @@ impl PageWriter<'_> {
             // colour. They are built on the page-space path, which already
             // carries the shape's own transform, so only the parent applies.
             for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
-                let _ = writeln!(
-                    self.content,
-                    "{}",
-                    color_op_in(s.color, true, self.pdf.cmyk_only)
-                );
+                let op = self.color_op(s.color, true);
+                let _ = writeln!(self.content, "{op}");
                 self.path_ops(&(parent * head));
                 self.content.push_str("f\n");
             }
@@ -945,6 +989,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
     let std_ = opts.standard;
     let mut pdf = Pdf {
         objects: Vec::new(),
+        spot_spaces: std::collections::HashMap::new(),
         cmyk_only: std_.cmyk_only(),
         allow_alpha: !std_.flatten(),
         encrypt_id: None,
@@ -988,6 +1033,8 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             gstates: Vec::new(),
             images: Vec::new(),
             symbols: &doc.symbols,
+            inks: &doc.inks,
+            spaces: Vec::new(),
         };
         if let Some(bg) = &page.background {
             let mut bg_shape = Shape::new(
@@ -1023,6 +1070,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             shadings,
             gstates,
             images,
+            spaces,
             ..
         } = w;
         let data = flate(content.as_bytes());
@@ -1031,6 +1079,13 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         if !shadings.is_empty() {
             res.push_str("/Shading << ");
             for (n, id) in &shadings {
+                let _ = write!(res, "/{n} {id} 0 R ");
+            }
+            res.push_str(">> ");
+        }
+        if !spaces.is_empty() {
+            res.push_str("/ColorSpace << ");
+            for (n, id) in &spaces {
                 let _ = write!(res, "/{n} {id} 0 R ");
             }
             res.push_str(">> ");
@@ -1504,6 +1559,45 @@ mod tests {
         let tip = format!("{} {} l", f(60.0 * MM_PT), f(150.0 * MM_PT));
         assert!(content.contains(&tip), "head tip: {content}");
         assert!(!content.contains(&format!("{} {} l", f(60.0 * MM_PT), f(250.0 * MM_PT))));
+    }
+
+    #[test]
+    fn spot_colors_print_on_separation_color_spaces() {
+        let mut doc = Document::default();
+        doc.inks.push(tracedraw_core::document::Ink {
+            id: 1,
+            name: "Gold 871".into(),
+            cmyk: [0.0, 0.2, 0.8, 0.1],
+        });
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(doc.inks[0].color(0.5));
+        s.stroke = Some(tracedraw_core::Stroke::new(doc.inks[0].color(1.0), 1.0));
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let bytes = document_to_pdf(&doc);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[/Separation /Gold#20871 /DeviceCMYK"),
+            "{text}"
+        );
+        assert!(text.contains("/C1 [0 0.2 0.8 0.1]"));
+        assert!(text.contains("/ColorSpace << /CS1 "));
+        // One colour space for both uses.
+        assert_eq!(text.matches("/Separation").count(), 1);
+        // A spot colour whose ink is gone prints as its process stand-in.
+        doc.inks.clear();
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        assert!(!text.contains("/Separation"));
+        assert_eq!(pdf_name("A/B c"), "/A#2FB#20c");
+        assert_eq!(pdf_name(""), "/Spot");
     }
 
     #[test]

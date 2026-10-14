@@ -2194,6 +2194,34 @@ pub struct Document {
     /// of CMYK values come from it while the drawing is open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cmyk_profile: Option<DocumentProfile>,
+    /// Spot (named) inks the drawing's colours use (`Color::Spot`), each
+    /// printed on a plate of its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inks: Vec<Ink>,
+}
+
+/// A spot ink: its number (what `Color::Spot` refers to), its name and
+/// its process stand-in at full strength (C, M, Y, K, 0 to 1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ink {
+    pub id: u32,
+    pub name: String,
+    pub cmyk: [f32; 4],
+}
+
+impl Ink {
+    /// The ink at `tint` (0 to 1) as a colour.
+    pub fn color(&self, tint: f32) -> crate::Color {
+        let [c, m, y, k] = self.cmyk;
+        crate::Color::Spot {
+            ink: self.id,
+            tint: tint.clamp(0.0, 1.0),
+            c,
+            m,
+            y,
+            k,
+        }
+    }
 }
 
 /// An ICC profile a drawing carries.
@@ -2366,6 +2394,7 @@ impl Document {
             selection_groups: std::collections::BTreeMap::new(),
             fonts: Vec::new(),
             cmyk_profile: None,
+            inks: Vec::new(),
         }
     }
 
@@ -2634,6 +2663,20 @@ impl Document {
             .flat_map(|l| &l.shapes)
             .map(Shape::bounds)
             .reduce(|a, b| a.union(b)))
+    }
+
+    /// The spot ink numbered `id`.
+    pub fn ink(&self, id: u32) -> Option<&Ink> {
+        self.inks.iter().find(|i| i.id == id)
+    }
+
+    /// A number no ink of the drawing has.
+    pub fn next_ink_id(&self) -> u32 {
+        self.inks
+            .iter()
+            .map(|i| i.id)
+            .max()
+            .map_or(1, |m| m.saturating_add(1))
     }
 
     /// Give every object an identity of its own: objects without one, and

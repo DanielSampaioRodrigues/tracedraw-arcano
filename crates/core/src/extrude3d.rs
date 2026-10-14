@@ -678,7 +678,7 @@ pub(crate) fn faces(body: &Body, shape: &Shape, subs: &[(Vec<Point>, bool, bool)
 mod tests {
     use super::*;
     use crate::extrude::Coloring;
-    use crate::geometry::{Rect, Shape as _};
+    use crate::geometry::Rect;
     use crate::ShapeId;
 
     fn square() -> Shape {

@@ -8,6 +8,12 @@ full, row-by-row status.
 
 - Help > Updates checks for a newer release and offers its download;
   the same check runs once a day at start (Options > Global > General).
+- Spot colours: named inks in the Colour panel, applied at a tint,
+  written to PDF as Separation colour spaces and printed on a plate of
+  their own in separations.
+- `.tdraw` files record their format version; older files are brought up
+  to date on opening and newer ones open as far as this version knows
+  them (see `docs/tdraw-format.md`).
 - `.tdraw` files record their format version; older files are brought up
   to date on opening and newer ones open as far as this version knows
   them (see `docs/tdraw-format.md`).

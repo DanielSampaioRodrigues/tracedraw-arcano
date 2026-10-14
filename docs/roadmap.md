@@ -54,7 +54,7 @@ Status tracked in `docs/features.md`.
 - Extrude: 3D rotation, several lights and bevels (done; see `behavior/extrude.md`)
 - Opacity masks as objects of their own, next to transparency
 - Artboards: free-standing drawing areas next to pages (decide whether they replace pages or sit beside them)
-- Spot colours with named inks through to separations; colour books the user loads (licensed books are not bundled)
+- Spot colours with named inks through to separations (done; see `behavior/spot-colors.md`); colour books the user loads (licensed books are not bundled)
 - Several fills and outlines on one object; live effects as an ordered stack, each one editable, hidden or removed
 - Bitmap tracing to curves (outline and centreline, with colour reduction and smoothing) (done; see `behavior/bitmap-tracing.md`)
 - Node types stored with the curve (done)

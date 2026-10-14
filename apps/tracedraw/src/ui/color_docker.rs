@@ -34,6 +34,10 @@ pub struct ColorDockerState {
     pub palette: usize,
     /// The selection the new color was last taken from.
     synced: Option<Vec<ShapeId>>,
+    /// Spot inks: the tint they are applied at (percent) and the name a
+    /// new ink gets.
+    pub tint: f32,
+    pub new_ink: String,
 }
 
 impl Default for ColorDockerState {
@@ -43,6 +47,8 @@ impl Default for ColorDockerState {
             hue: 0.0,
             palette: 0,
             synced: None,
+            tint: 100.0,
+            new_ink: String::new(),
         }
     }
 }
@@ -483,6 +489,100 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             app.run(Command::SetDocumentPalette { colors });
         }
     });
+    ui.add_space(6.0);
+    spot_inks(app, ui, c);
+}
+
+/// The drawing's spot inks: each applies as fill or outline at the tint;
+/// a new one takes the new color's process values and the name typed.
+fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
+    crate::ui::chrome::section(ui, &tr("docker.spot_inks"));
+    let has = !app.selection.is_empty();
+    let tint = app.color_docker.tint.clamp(0.0, 100.0) / 100.0;
+    let inks = app.doc().inks.clone();
+    let mut remove = None;
+    for ink in &inks {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
+            let [cr, cg, cb] = ink.color(tint).to_rgb8();
+            ui.painter()
+                .rect_filled(r, 0.0, Color32::from_rgb(cr, cg, cb));
+            ui.painter().rect_stroke(
+                r,
+                0.0,
+                Stroke::new(0.5, Tokens::ICON),
+                egui::StrokeKind::Inside,
+            );
+            ui.label(&ink.name);
+            if ui
+                .add_enabled(has, egui::Button::new(tr("docker.fill")).small())
+                .clicked()
+            {
+                app.apply_fill(Fill::Solid(ink.color(tint)));
+            }
+            if ui
+                .add_enabled(has, egui::Button::new(tr("docker.outline")).small())
+                .clicked()
+            {
+                app.apply_outline_color(Some(ink.color(tint)));
+            }
+            if ui
+                .small_button("\u{2715}")
+                .on_hover_text(tr("docker.remove_ink"))
+                .clicked()
+            {
+                remove = Some(ink.id);
+            }
+        });
+    }
+    if !inks.is_empty() {
+        ui.horizontal(|ui| {
+            ui.label(tr("docker.tint"));
+            ui.spacing_mut().slider_width = 140.0;
+            ui.add(
+                egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
+                    .suffix(" %")
+                    .max_decimals(0),
+            );
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::TextEdit::singleline(&mut app.color_docker.new_ink)
+                .hint_text(tr("docker.ink_name"))
+                .desired_width(120.0),
+        );
+        let name = app.color_docker.new_ink.trim().to_string();
+        let taken = inks.iter().any(|i| i.name == name);
+        if ui
+            .add_enabled(
+                !name.is_empty() && !taken,
+                egui::Button::new(tr("docker.new_ink")),
+            )
+            .on_hover_text(tr("docker.new_ink_tip"))
+            .clicked()
+        {
+            add_ink(app, name, current);
+            app.color_docker.new_ink.clear();
+        }
+    });
+    if let Some(id) = remove {
+        let inks: Vec<_> = inks.into_iter().filter(|i| i.id != id).collect();
+        app.run(Command::SetInks { inks });
+    }
+}
+
+/// Add a spot ink named `name` standing for `c` in process inks.
+pub fn add_ink(app: &mut App, name: String, c: Color) -> u32 {
+    let id = app.doc().next_ink_id();
+    let cmyk = match c.convert_to("CMYK") {
+        Color::Cmyk { c, m, y, k } => [c, m, y, k],
+        _ => [0.0, 0.0, 0.0, 1.0],
+    };
+    let mut inks = app.doc().inks.clone();
+    inks.push(tracedraw_core::document::Ink { id, name, cmyk });
+    app.run(Command::SetInks { inks });
+    id
 }
 
 /// The palette view: the palette chosen in the list, as swatches; a click
@@ -533,6 +633,41 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
 mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
+
+    #[test]
+    fn spot_inks_are_added_applied_and_removed() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        let ink = add_ink(
+            &mut app,
+            "Gold".into(),
+            Color::cmyk_pct(0.0, 20.0, 80.0, 10.0),
+        );
+        assert_eq!(app.doc().inks.len(), 1);
+        app.select(vec![id]);
+        let gold = app.doc().ink(ink).expect("ink").color(0.5);
+        app.apply_fill(Fill::Solid(gold));
+        let Fill::Solid(Color::Spot { ink: i, tint, .. }) =
+            app.doc().find_shape(id).expect("shape").fill
+        else {
+            panic!("not a spot fill");
+        };
+        assert_eq!((i, tint), (ink, 0.5));
+        // The docker draws with inks listed.
+        let ctx = crate::theme::ui_context();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            spot_inks(&mut app, ui, Color::BLACK)
+        });
+        out.textures_delta.clear();
+        app.run(Command::SetInks { inks: Vec::new() });
+        assert!(app.doc().inks.is_empty());
+    }
 
     #[test]
     fn the_new_color_follows_the_selection() {

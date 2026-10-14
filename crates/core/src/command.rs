@@ -97,6 +97,10 @@ pub enum Command {
     SetDocumentPalette {
         colors: Vec<Color>,
     },
+    /// The drawing's spot inks, replacing the ones it had.
+    SetInks {
+        inks: Vec<crate::document::Ink>,
+    },
     AddSymbol {
         symbol: Symbol,
     },
@@ -306,6 +310,7 @@ impl Command {
             Command::SetObjectDefaults { .. } => "Default Properties",
             Command::SetColorStyles { .. } => "Color Styles",
             Command::SetDocumentPalette { .. } => "Document Palette",
+            Command::SetInks { .. } => "Spot Inks",
             Command::AddSymbol { .. } => "New Symbol",
             Command::MovePage { .. } => "Move Page",
             Command::DeleteLayer { .. } => "Delete Layer",
@@ -461,6 +466,9 @@ impl Command {
             }
             Command::SetDocumentPalette { colors } => {
                 doc.palette = colors.clone();
+            }
+            Command::SetInks { inks } => {
+                doc.inks = inks.clone();
             }
             Command::AddSymbol { symbol } => {
                 doc.symbols.push(symbol.clone());

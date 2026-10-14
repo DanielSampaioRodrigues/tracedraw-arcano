@@ -285,7 +285,11 @@ impl Color {
             Color::Spot {
                 tint, c, m, y, k, ..
             } => {
-                let t = if tint.is_finite() { tint.clamp(0.0, 1.0) } else { 1.0 };
+                let t = if tint.is_finite() {
+                    tint.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
                 Color::Cmyk {
                     c: c * t,
                     m: m * t,
@@ -617,6 +621,44 @@ pub fn lab_to_rgb(l: f32, a: f32, b: f32) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spot_colors_show_and_convert_through_their_stand_in() {
+        let gold = Color::Spot {
+            ink: 3,
+            tint: 0.5,
+            c: 0.0,
+            m: 0.4,
+            y: 1.0,
+            k: 0.0,
+        };
+        assert_eq!(gold.model_name(), "Spot");
+        assert_eq!(
+            gold.process(),
+            Color::Cmyk {
+                c: 0.0,
+                m: 0.2,
+                y: 0.5,
+                k: 0.0
+            }
+        );
+        assert_eq!(gold.to_rgb8(), gold.process().to_rgb8());
+        assert_eq!(gold.convert_to("Spot"), gold);
+        assert!(matches!(gold.convert_to("RGB"), Color::Rgb { .. }));
+        let json = serde_json::to_string(&gold).unwrap();
+        assert!(json.contains("\"model\":\"spot\""), "{json}");
+        assert_eq!(serde_json::from_str::<Color>(&json).unwrap(), gold);
+        // A broken tint reads as full strength.
+        let odd = Color::Spot {
+            ink: 3,
+            tint: f32::NAN,
+            c: 0.0,
+            m: 0.4,
+            y: 1.0,
+            k: 0.0,
+        };
+        assert!(matches!(odd.process(), Color::Cmyk { m, .. } if (m - 0.4).abs() < 1e-6));
+    }
 
     #[test]
     fn cmyk_shows_through_the_press_model() {

@@ -424,20 +424,31 @@ fn invert_colors(s: &mut tracedraw_core::Shape) {
     });
 }
 
-/// Colour separations: one grayscale page per ink (C, M, Y, K) per page,
-/// where the ink coverage of every colour is drawn as a gray value.
+/// Colour separations: one grayscale page per ink (C, M, Y, K, then each
+/// spot ink of the drawing) per page, where the ink coverage of every
+/// colour is drawn as a gray value. A spot colour prints on its own plate
+/// only, at its tint.
 fn separations_pdf(doc: &Document) -> Vec<u8> {
     use tracedraw_core::{Color, Fill};
     let mut sep = Document::new(format!("{} (separations)", doc.title), doc.pages[0].size);
     sep.pages.clear();
     sep.symbols = doc.symbols.clone();
+    /// A plate: a process ink (0 to 3) or a spot ink by number.
+    #[derive(Clone, Copy)]
+    enum Plate {
+        Process(usize),
+        Spot(u32),
+    }
+    let mut plates: Vec<(Plate, String)> = vec![
+        (Plate::Process(0), "Cyan".into()),
+        (Plate::Process(1), "Magenta".into()),
+        (Plate::Process(2), "Yellow".into()),
+        (Plate::Process(3), "Black".into()),
+    ];
+    plates.extend(doc.inks.iter().map(|i| (Plate::Spot(i.id), i.name.clone())));
     for page in &doc.pages {
-        for (ink, name) in [
-            (0usize, "Cyan"),
-            (1, "Magenta"),
-            (2, "Yellow"),
-            (3, "Black"),
-        ] {
+        for (plate, name) in &plates {
+            let plate = *plate;
             let mut p = page.clone();
             p.name = format!("{} {}", page.name, name);
             let mut ids = sep.ids().clone();
@@ -448,11 +459,17 @@ fn separations_pdf(doc: &Document) -> Vec<u8> {
                 if matches!(c, Color::Registration) {
                     return Color::Gray { v: 0.0 };
                 }
-                let v = match c.convert_to("CMYK") {
-                    Color::Cmyk { c, m, y, k } => [c, m, y, k][ink],
-                    _ => 0.0,
+                let v = match (plate, c) {
+                    (Plate::Spot(id), Color::Spot { ink, tint, .. }) if ink == id => tint,
+                    (Plate::Spot(_), _) | (Plate::Process(_), Color::Spot { .. }) => 0.0,
+                    (Plate::Process(i), _) => match c.convert_to("CMYK") {
+                        Color::Cmyk { c, m, y, k } => [c, m, y, k][i],
+                        _ => 0.0,
+                    },
                 };
-                Color::Gray { v: 1.0 - v }
+                Color::Gray {
+                    v: 1.0 - v.clamp(0.0, 1.0),
+                }
             };
             for layer in p.layers.iter_mut() {
                 for s in layer.shapes.iter_mut() {
@@ -900,6 +917,38 @@ fn replace_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spot_inks_get_plates_of_their_own() {
+        use tracedraw_core::{document::Ink, Fill};
+        let mut doc = Document::new("s", tracedraw_core::Size::new(50.0, 50.0));
+        doc.inks.push(Ink {
+            id: 7,
+            name: "Gold".into(),
+            cmyk: [0.0, 0.2, 0.8, 0.1],
+        });
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = tracedraw_core::Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(doc.inks[0].color(0.6));
+        s.stroke = None;
+        doc.layer_mut(layer).expect("layer").shapes.push(s);
+        let pdf = separations_pdf(&doc);
+        let text = String::from_utf8_lossy(&pdf);
+        // C, M, Y, K and the spot plate.
+        assert!(
+            text.contains("/Count 5"),
+            "{}",
+            &text[..text.len().min(400)]
+        );
+    }
 
     #[test]
     fn the_export_preview_shows_the_page_and_estimates_the_size() {

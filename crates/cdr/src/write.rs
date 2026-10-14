@@ -475,9 +475,10 @@ fn zip_v16(root: &[u8], files: &DataFiles) -> Vec<u8> {
 
 /// 12-byte colour record: model, palette, 4 unknown bytes, 4 values. CMYK
 /// keeps its percentages (model 2), grey its level (model 9); everything
-/// else is written as sRGB (model 5, stored B G R).
+/// else is written as sRGB (model 5, stored B G R). A spot colour is
+/// written as its process stand-in.
 fn colour(c: Color) -> [u8; 12] {
-    let (model, values) = match c {
+    let (model, values) = match c.process() {
         Color::Cmyk { c, m, y, k } => {
             let pct = |x: f32| (x.clamp(0.0, 1.0) * 100.0).round() as u8;
             (2u16, [pct(c), pct(m), pct(y), pct(k)])
