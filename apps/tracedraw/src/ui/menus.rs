@@ -321,8 +321,53 @@ fn item_text(
         crate::ui::icons::draw_action(ui.painter(), ir, a, color);
     } else if let Some(p) = menu_pic(id) {
         crate::ui::propbar::draw_pic(ui.painter(), ir.expand(2.0), p, color);
+    } else if let Some(g) = crate::ui::menu_glyphs::for_key(id) {
+        crate::ui::menu_glyphs::draw(ui.painter(), ir, g, color);
     }
     if r.clicked() {
+        ui.close();
+        true
+    } else {
+        false
+    }
+}
+
+/// A menu item with a ready label and a picture (a texture) in the
+/// gutter, greyed with the row when it cannot run.
+fn item_picture(
+    ui: &mut Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    picture: Option<egui::TextureId>,
+) -> bool {
+    if invoke::active() {
+        return invoke::hit(label, shortcut, enabled);
+    }
+    let shortcut = invoke::shown_shortcut(label, shortcut);
+    let (r, _) = menu_row(ui, label, &shortcut, enabled, Mark::None);
+    #[cfg(test)]
+    if replay::hit(label, enabled) {
+        return true;
+    }
+    if let Some(tex) = picture {
+        let ir = egui::Rect::from_center_size(
+            egui::pos2(r.rect.left() + GUTTER / 2.0, r.rect.center().y),
+            egui::vec2(16.0, 16.0),
+        );
+        let tint = if enabled {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::from_white_alpha(70)
+        };
+        ui.painter().image(
+            tex,
+            ir,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            tint,
+        );
+    }
+    if enabled && r.clicked() {
         ui.close();
         true
     } else {
@@ -348,7 +393,6 @@ fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
         "menu.edit.redo" => Action::Redo,
         "menu.tools.options_app" => Action::Options,
         "menu.view.fullscreen_preview" => Action::Fullscreen,
-        "menu.help.welcome_screen" => Action::Welcome,
         _ => return None,
     })
 }
@@ -372,6 +416,9 @@ pub(crate) fn draw_menu_picture(
     } else if let Some(p) = menu_pic(key) {
         crate::ui::propbar::draw_pic(painter, r.expand(2.0), p, color);
         true
+    } else if let Some(g) = crate::ui::menu_glyphs::for_key(key) {
+        crate::ui::menu_glyphs::draw(painter, r, g, color);
+        true
     } else {
         false
     }
@@ -384,6 +431,37 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
         "menu.view.zoom_in" => Pic::ZoomIn,
         "menu.view.zoom_out" => Pic::ZoomOut,
         "menu.view.zoom_to_fit" => Pic::ZoomAll,
+        "menu.object.group_group" => Pic::Group,
+        "menu.object.group_ungroup" => Pic::Ungroup,
+        "menu.object.group_ungroup_all" => Pic::UngroupAll,
+        "menu.object.combine" => Pic::Combine,
+        "menu.object.break_apart" => Pic::BreakApart,
+        "menu.object.weld" => Pic::Weld,
+        "menu.object.trim" => Pic::Trim,
+        "menu.object.intersect" => Pic::Intersect,
+        "menu.object.simplify" => Pic::Simplify,
+        "menu.object.front_minus_back" => Pic::FrontMinusBack,
+        "menu.object.back_minus_front" => Pic::BackMinusFront,
+        "menu.object.boundary" => Pic::Boundary,
+        "menu.object.to_front_of_page" => Pic::ToFront,
+        "menu.object.to_front_of_layer" => Pic::ToFront,
+        "menu.object.to_back_of_page" => Pic::ToBack,
+        "menu.object.to_back_of_layer" => Pic::ToBack,
+        "menu.object.convert_to_curves" => Pic::ToCurves,
+        "menu.object.lock_object" | "menu.object.lock" => Pic::Lock(true),
+        "menu.object.group" => Pic::Group,
+        "menu.object.shaping" => Pic::Weld,
+        "menu.object.transformations" => Pic::Position,
+        "menu.object.tf_position" => Pic::Position,
+        "menu.object.tf_rotate" => Pic::Rotate,
+        "menu.object.tf_scale" => Pic::ScaleMirror,
+        "menu.object.tf_size" => Pic::SizeBox,
+        "menu.object.tf_skew" => Pic::SkewBox,
+        "menu.object.align_distribute_docker" => Pic::AlignDistribute,
+        "menu.object.convert_to_bitmap" => Pic::ConvertToBitmap,
+        "menu.object.copy_envelope_from" => Pic::EnvelopeCopy,
+        "menu.effects.envelope" => Pic::EnvelopeUnconstrained,
+        "menu.object.shaping_docker" => Pic::Weld,
         "menu.text.tabs" => Pic::Tabs,
         "menu.text.columns" => Pic::Columns,
         "menu.text.bullets" => Pic::Bullets,
@@ -463,7 +541,22 @@ fn todo_sub(ui: &mut Ui, key: &str) {
     if invoke::active() {
         return;
     }
-    menu_row(ui, &tr(key), "", false, Mark::Submenu);
+    let (r, _) = menu_row(ui, &tr(key), "", false, Mark::Submenu);
+    row_picture(ui, r.rect, key, false);
+}
+
+/// The picture of the row of `key` in its gutter, when it has one.
+fn row_picture(ui: &Ui, row: egui::Rect, key: &str, enabled: bool) {
+    let ir = egui::Rect::from_center_size(
+        egui::pos2(row.left() + GUTTER / 2.0, row.center().y),
+        egui::vec2(16.0, 16.0),
+    );
+    let color = if enabled {
+        Tokens::icon()
+    } else {
+        crate::theme::Tokens::menu_text_off()
+    };
+    draw_menu_picture(ui.painter(), ir, key, color);
 }
 
 /// A submenu that is greyed and does not open while `enabled` is false;
@@ -476,7 +569,8 @@ pub(crate) fn sub_if<R>(ui: &mut Ui, key: &str, enabled: bool, add: impl FnOnce(
     if enabled || invoke::active() || replaying {
         sub(ui, key, add);
     } else {
-        menu_row(ui, &tr(key), "", false, Mark::Submenu);
+        let (r, _) = menu_row(ui, &tr(key), "", false, Mark::Submenu);
+        row_picture(ui, r.rect, key, false);
     }
 }
 
@@ -497,6 +591,7 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
         return;
     }
     let (resp, slot) = menu_row(ui, &tr(key), "", true, Mark::Submenu);
+    row_picture(ui, resp.rect, key, true);
     if marked_new(key) {
         // Left of the submenu arrow.
         paint_new_mark(ui, resp.rect.translate(egui::vec2(-14.0, 0.0)));
@@ -2299,9 +2394,16 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
                     "..."
                 };
                 let label = format!("{}{dots}", tr(&format!("fx.{}", fx.id)));
+                // The row's picture is the effect itself, on a small
+                // landscape (made once, when the menu first shows it).
+                let picture = if invoke::active() {
+                    None
+                } else {
+                    crate::ui::fx_icons::texture(ui.ctx(), fx.id)
+                };
                 // Bitmaps and vector objects alike (a vector object is
                 // drawn as the picture its effects make of it).
-                if item_label(ui, &label, shortcut, has_bitmap || has) {
+                if item_picture(ui, &label, shortcut, has_bitmap || has, picture) {
                     crate::ui::effect_dialog::choose_effect(app, fx.id);
                 }
             }

@@ -61,7 +61,7 @@ pub fn draw(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
         painter.rect_filled(
             Rect::from_min_max(q(r, x0, y0), q(r, x1, y1)),
             0.0,
-            Color32::WHITE,
+            Tokens::field(),
         );
         rect(x0, y0, x1, y1, thin);
         painter.rect_filled(

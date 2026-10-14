@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pictures on the rows of every menu: File, Edit, Layout, Object, Effects,
+  Table, Tools and Help join Text, Bitmaps and Window (submenu rows
+  too). Each bitmap effect's row shows the effect applied to a small
+  landscape. Welcome Screen lost a picture that did not belong to it.
 - Themes: Light, Medium Light, Medium Dark and Dark in Options >
   Customization > Appearance > Color, and a light / dark button at the
   right end of the status bar. Turning proof colours on or off says so
