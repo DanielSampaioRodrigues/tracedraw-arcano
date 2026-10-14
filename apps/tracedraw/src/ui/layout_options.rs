@@ -522,7 +522,7 @@ fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
         });
     ui.label(
         egui::RichText::new(tr("options.scale_note"))
-            .color(crate::theme::Tokens::TEXT_DIM)
+            .color(crate::theme::Tokens::text_dim())
             .size(11.0),
     );
     if let Some(u) = new_units {
@@ -871,8 +871,8 @@ fn guide_text(app: &App, g: &Guide) -> String {
 fn guide_list(app: &mut App, ui: &mut Ui, kind: Option<GuideKind>, height: f32) {
     let guides = app.page_guides();
     let frame = egui::Frame::new()
-        .fill(egui::Color32::WHITE)
-        .stroke(egui::Stroke::new(1.0, Tokens::CONTROL_BORDER))
+        .fill(crate::theme::Tokens::field())
+        .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
         .inner_margin(egui::Margin::same(2));
     frame.show(ui, |ui| {
         egui::ScrollArea::vertical()

@@ -50,11 +50,11 @@ impl Pen<'_> {
     /// A filled box with its edge.
     fn block(&self, x0: f32, y0: f32, x1: f32, y1: f32) {
         let r = self.rect(x0, y0, x1, y1);
-        let enabled = self.color == Tokens::ICON;
+        let enabled = self.color == Tokens::icon();
         let (fill, edge) = if enabled {
             (BOX, BOX_EDGE)
         } else {
-            (Tokens::ICON_OFF, Tokens::ICON_OFF)
+            (Tokens::icon_off(), Tokens::icon_off())
         };
         self.p.rect_filled(r, 0.0, fill);
         self.p
@@ -261,9 +261,9 @@ fn button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, pressed: bool) -> R
         },
     );
     let fill = if pressed {
-        Some(Tokens::TOOL_ACTIVE)
+        Some(Tokens::tool_active())
     } else if enabled && resp.hovered() {
-        Some(Tokens::TOOL_HOVER)
+        Some(Tokens::tool_hover())
     } else {
         None
     };
@@ -275,9 +275,9 @@ fn button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, pressed: bool) -> R
         Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
         icon,
         if enabled {
-            Tokens::ICON
+            Tokens::icon()
         } else {
-            Tokens::ICON_OFF
+            Tokens::icon_off()
         },
     );
     resp.on_hover_text(tip)
@@ -289,7 +289,11 @@ fn gap(ui: &mut Ui) {
 }
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// The key naming what Align aligns to.

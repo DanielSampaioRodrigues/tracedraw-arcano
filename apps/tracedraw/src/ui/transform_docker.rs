@@ -302,7 +302,7 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8)) -> bool {
     p.rect_stroke(
         Rect::from_min_max(centre(0, 0), centre(2, 2)),
         0.0,
-        Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Middle,
     );
     let mut changed = false;
@@ -310,13 +310,13 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8)) -> bool {
         for i in 0..3u8 {
             let r = Rect::from_center_size(centre(i, j), Vec2::splat(cell));
             if *anchor == (i, j) {
-                p.rect_filled(r, 1.0, Tokens::ICON);
+                p.rect_filled(r, 1.0, Tokens::icon());
             } else {
                 p.rect_filled(r, 1.0, Color32::WHITE);
                 p.rect_stroke(
                     r,
                     1.0,
-                    Stroke::new(1.0, Tokens::ICON),
+                    Stroke::new(1.0, Tokens::icon()),
                     egui::StrokeKind::Inside,
                 );
             }

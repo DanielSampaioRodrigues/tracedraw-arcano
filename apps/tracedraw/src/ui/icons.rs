@@ -291,12 +291,12 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
     let thin = Stroke::new((0.9 * k).max(1.0), color);
     // Colour accents (connector ends, the dropper's tip, the bucket's paint)
     // only on the normal icon colour; dimmed icons stay monochrome.
-    let accent = if color == Tokens::ICON {
+    let accent = if color == Tokens::icon() {
         Color32::from_rgb(0xE8, 0x5A, 0x1C)
     } else {
         color
     };
-    let paint = if color == Tokens::ICON {
+    let paint = if color == Tokens::icon() {
         Color32::from_rgb(0xE0, 0x10, 0x1A)
     } else {
         color
@@ -762,7 +762,7 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
         // Effects group.
         Tool::DropShadow => {
             // A square casting a shadow down and to the right.
-            let shade = if color == Tokens::ICON {
+            let shade = if color == Tokens::icon() {
                 Color32::from_rgb(0x55, 0x55, 0x55)
             } else {
                 color
@@ -962,7 +962,7 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
     let k = r.width() / 16.0;
     let s = Stroke::new(1.25 * k, color);
     let thin = Stroke::new(0.9 * k, color);
-    let enabled = color == Tokens::ICON;
+    let enabled = color == Tokens::icon();
     // A page with a folded top-right corner.
     let page = |painter: &Painter, x0: f32, y0: f32, x1: f32, y1: f32| {
         painter.add(epaint::PathShape::closed_line(
@@ -1276,7 +1276,7 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
                 );
             }
             painter.circle_filled(c, 5.0 * k, color);
-            painter.circle_filled(c, 2.0 * k, Tokens::PANEL);
+            painter.circle_filled(c, 2.0 * k, Tokens::panel());
         }
         Action::Welcome => {
             for y in [4.0, 8.0, 12.0] {

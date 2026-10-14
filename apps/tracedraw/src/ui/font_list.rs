@@ -303,9 +303,9 @@ pub fn font_list(
         let (arrow_rect, arrow) =
             ui.allocate_exact_size(Vec2::new(18.0, field.rect.height()), Sense::click());
         let fill = if arrow.hovered() {
-            Tokens::TOOL_HOVER
+            Tokens::tool_hover()
         } else {
-            Color32::from_gray(0xF4)
+            crate::theme::Tokens::panel()
         };
         ui.painter().rect_filled(arrow_rect.shrink(1.0), 1.0, fill);
         let c = arrow_rect.center();
@@ -315,7 +315,7 @@ pub fn font_list(
                 c + Vec2::new(4.0, -2.0),
                 c + Vec2::new(0.0, 3.0),
             ],
-            Tokens::ICON,
+            Tokens::icon(),
             egui::Stroke::NONE,
         ));
         (field, arrow)
@@ -541,7 +541,7 @@ fn list_body(
                 "font_list.count",
                 &[("n", &families.len().to_string())],
             ))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.5),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -578,7 +578,7 @@ fn list_body(
     if !typing && st.show == Show::All && !recent.is_empty() {
         ui.label(
             egui::RichText::new(tr("font_list.recent"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         for f in &recent {
@@ -596,7 +596,7 @@ fn list_body(
 
     // Every family.
     if rows.is_empty() {
-        ui.label(egui::RichText::new(tr("font_list.no_match")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("font_list.no_match")).color(Tokens::text_dim()));
     }
     let mut scroll = egui::ScrollArea::vertical()
         .id_salt(ui.id().with("families"))
@@ -648,7 +648,11 @@ fn list_body(
     // The size of the samples.
     ui.separator();
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("A").size(10.0).color(Tokens::TEXT_DIM));
+        ui.label(
+            egui::RichText::new("A")
+                .size(10.0)
+                .color(Tokens::text_dim()),
+        );
         let mut s = app.settings.font_sample_px;
         // The slider fills the row between the small and the large A.
         ui.spacing_mut().slider_width = (ui.available_width() - 24.0).max(60.0);
@@ -659,7 +663,11 @@ fn list_body(
         )
         .on_hover_text(tr("font_list.sample_size"));
         app.settings.font_sample_px = s;
-        ui.label(egui::RichText::new("A").size(17.0).color(Tokens::TEXT_DIM));
+        ui.label(
+            egui::RichText::new("A")
+                .size(17.0)
+                .color(Tokens::text_dim()),
+        );
     });
 
     // The preview of the family under the pointer (else the one in use).
@@ -736,9 +744,9 @@ fn draw_row(
     }
     let painter = ui.painter_at(rect);
     let fill = if selected {
-        Some(Tokens::TOOL_ACTIVE)
+        Some(Tokens::tool_active())
     } else if highlighted || resp.hovered() {
-        Some(Tokens::TOOL_HOVER)
+        Some(Tokens::tool_hover())
     } else {
         None
     };
@@ -790,7 +798,7 @@ fn draw_row(
         let hot = ui.rect_contains_pointer(arrow);
         painter.add(egui::epaint::PathShape::convex_polygon(
             points,
-            if hot { Tokens::TEXT } else { Tokens::ICON },
+            if hot { Tokens::text() } else { Tokens::icon() },
             egui::Stroke::NONE,
         ));
         if hot {
@@ -844,7 +852,7 @@ fn draw_row(
                 egui::Align2::LEFT_CENTER,
                 label,
                 font,
-                Tokens::TEXT,
+                Tokens::text(),
             );
         }
     }
@@ -922,7 +930,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
     painter.rect_stroke(
         rect,
         2.0,
-        egui::Stroke::new(1.0, Tokens::BORDER),
+        egui::Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let area = Rect::from_min_max(
@@ -958,7 +966,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
                 egui::Align2::CENTER_CENTER,
                 tr("font_list.no_preview"),
                 egui::FontId::proportional(12.0),
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
             );
         }
     }
@@ -973,7 +981,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
         egui::Align2::LEFT_BOTTOM,
         format!("{family} ({style_name})"),
         egui::FontId::proportional(11.5),
-        Tokens::TEXT,
+        Tokens::text(),
     );
 }
 

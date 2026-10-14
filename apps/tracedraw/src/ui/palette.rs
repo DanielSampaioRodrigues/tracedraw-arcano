@@ -26,11 +26,6 @@ const LEAD: f32 = 77.0;
 /// Room for the scroll and expand buttons at the right.
 const TAIL: f32 = 51.0;
 const FRAME: Color32 = Color32::from_gray(90);
-const LINE: Color32 = Color32::from_gray(0xD8);
-const GRIP: Color32 = Color32::from_gray(178);
-const MENU_ARROW: Color32 = Color32::from_gray(120);
-const ARROW_ON: Color32 = Color32::from_gray(150);
-const ARROW_OFF: Color32 = Color32::from_gray(214);
 const NO_COLOR_LINE: Color32 = Color32::from_rgb(255, 64, 64);
 /// Seconds a swatch is held before its shades pop up.
 const HOLD: f64 = 0.5;
@@ -180,7 +175,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     }
     .round();
     let mut px = Pixels::default();
-    px.rect(ax.rect(0.0, 0.0, len, 1.0), LINE);
+    px.rect(ax.rect(0.0, 0.0, len, 1.0), crate::theme::Tokens::border());
     // Swatch frames start 2 px from the strip's edge.
     const EDGE: f32 = 2.0;
     // Grip: dots in a zigzag; dragging it moves the palette. Locked bars
@@ -191,11 +186,11 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         for i in 0..5 {
             let c = EDGE + 1.0 + 4.0 * i as f32;
             let a = ax.point(3.0, c);
-            px.dot(a.x, a.y, GRIP);
+            px.dot(a.x, a.y, crate::theme::Tokens::text_dim());
             let b = ax.point(7.0, c);
-            px.dot(b.x, b.y, GRIP);
+            px.dot(b.x, b.y, crate::theme::Tokens::text_dim());
             let m = ax.point(5.0, c + 2.0);
-            px.dot(m.x, m.y, GRIP);
+            px.dot(m.x, m.y, crate::theme::Tokens::text_dim());
         }
     }
     px.paint(&painter);
@@ -229,7 +224,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
             c + ax.vec(3.0, 0.5),
             c + ax.vec(-2.0, 5.5),
         ],
-        MENU_ARROW,
+        crate::theme::Tokens::text_dim(),
         Stroke::NONE,
     ));
     let menu_resp = menu_resp.on_hover_text(tr("palette.menu_tip"));
@@ -261,9 +256,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
             drop_rect.expand(1.0),
             0.0,
             if active {
-                Tokens::TOOL_ACTIVE
+                Tokens::tool_active()
             } else {
-                Tokens::TOOL_HOVER
+                Tokens::tool_hover()
             },
             Stroke::new(1.0, Color32::from_rgb(0x99, 0xD1, 0xFF)),
             egui::StrokeKind::Inside,
@@ -274,9 +269,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         drop_rect.shrink(1.0),
         crate::tools::Tool::ColorEyedropper,
         if can_sample {
-            Tokens::TEXT
+            Tokens::text()
         } else {
-            Color32::from_gray(186)
+            crate::theme::Tokens::icon_off()
         },
     );
     if can_sample {
@@ -309,7 +304,11 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     double_chevron(
         &painter,
         expand.center(),
-        if count > 0 { ARROW_ON } else { ARROW_OFF },
+        if count > 0 {
+            crate::theme::Tokens::text_dim()
+        } else {
+            crate::theme::Tokens::icon_off()
+        },
         vertical,
     );
     ui.ctx()
@@ -339,7 +338,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
                 Align2::LEFT_CENTER,
                 tr("palette.document_hint"),
                 FontId::proportional(11.0),
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
             );
         }
         return;
@@ -397,7 +396,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
             Align2::LEFT_CENTER,
             tr("palette.document_hint"),
             FontId::proportional(11.0),
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
     }
 }
@@ -628,7 +627,11 @@ fn chevron(
 ) -> bool {
     let id = ui.id().with(("palette_chevron", which as u8, dir));
     let resp = ui.interact(r, id, Sense::click());
-    let color = if enabled { ARROW_ON } else { ARROW_OFF };
+    let color = if enabled {
+        crate::theme::Tokens::text_dim()
+    } else {
+        crate::theme::Tokens::icon_off()
+    };
     let c = r.center();
     let d = dir as f32;
     let at = |along: f32, across: f32| {

@@ -19,8 +19,6 @@ pub const BAR_H: f32 = 37.0;
 const ROW: f32 = 19.0;
 /// Icon buttons are 28 px square with an 18 px icon.
 const BTN: f32 = 28.0;
-const HOVER_FILL: Color32 = Color32::from_rgb(0xE5, 0xF3, 0xFF);
-const HOVER_EDGE: Color32 = Color32::from_rgb(0xCC, 0xE8, 0xFF);
 
 /// The small pictures before fields and on the bar's buttons, drawn on a
 /// 16 x 16 grid.
@@ -275,7 +273,7 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
             outline(&[(1.5, 1.5), (9.5, 1.5), (9.5, 11.5), (1.5, 11.5)], s);
             poly(
                 &[(6.0, 4.5), (14.5, 4.5), (14.5, 14.5), (6.0, 14.5)],
-                Color32::WHITE,
+                crate::theme::Tokens::field(),
                 s,
             );
         }
@@ -681,7 +679,7 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
         if filled {
             painter.rect_filled(rr, 0.0, color);
         } else {
-            painter.rect_filled(rr, 0.0, Color32::WHITE);
+            painter.rect_filled(rr, 0.0, crate::theme::Tokens::field());
             painter.rect_stroke(rr, 0.0, thin, egui::StrokeKind::Inside);
         }
     };
@@ -803,7 +801,7 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
             let rr = Rect::from_min_max(q(r, 1.5, 4.5), q(r, 10.5, 14.5));
             painter.rect_stroke(rr, 0.0, thin, egui::StrokeKind::Middle);
             let inner = Rect::from_min_max(q(r, 6.5, 1.5), q(r, 14.5, 9.5));
-            painter.rect_filled(inner, 0.0, Color32::WHITE);
+            painter.rect_filled(inner, 0.0, crate::theme::Tokens::field());
             painter.rect_stroke(inner, 0.0, s, egui::StrokeKind::Middle);
             arrow((14.5, 1.5), (1.0, -1.0));
         }
@@ -1148,19 +1146,21 @@ fn draw_arrange_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
 
 pub(crate) fn frame(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
     if pressed {
-        ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+        ui.painter()
+            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Middle,
         );
     } else if hovered {
-        ui.painter().rect_filled(rect, 0.0, HOVER_FILL);
+        ui.painter()
+            .rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            Stroke::new(1.0, HOVER_EDGE),
+            Stroke::new(1.0, crate::theme::Tokens::selected_row()),
             egui::StrokeKind::Middle,
         );
     }
@@ -1182,9 +1182,9 @@ pub fn pic_button(ui: &mut Ui, pic: Pic, tip: &str, enabled: bool, pressed: bool
         Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
         pic,
         if enabled {
-            Tokens::ICON
+            Tokens::icon()
         } else {
-            Tokens::BORDER
+            Tokens::border()
         },
     );
     resp.on_hover_text(tip)
@@ -1197,7 +1197,7 @@ pub fn sep(ui: &mut Ui) {
     ui.painter().vline(
         x,
         (rect.top() + 2.0)..=(rect.bottom() - 2.0),
-        Stroke::new(1.0, Color32::from_gray(0xD9)),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
 }
 
@@ -1208,7 +1208,7 @@ pub(crate) fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
         pic,
-        Tokens::ICON,
+        Tokens::icon(),
     );
     resp.on_hover_text(tip);
 }
@@ -1300,7 +1300,7 @@ fn spin(ui: &mut Ui) -> Option<f64> {
         };
         ui.painter().add(epaint::PathShape::convex_polygon(
             pts,
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
             Stroke::NONE,
         ));
         if resp.clicked() {
@@ -1540,13 +1540,14 @@ fn origin_selector(ui: &mut Ui, app: &mut App) {
                 Vec2::splat(cell),
             );
             if app.object_origin == (i, j) {
-                ui.painter().rect_filled(r, 0.0, Tokens::ICON);
+                ui.painter().rect_filled(r, 0.0, Tokens::icon());
             } else {
-                ui.painter().rect_filled(r, 0.0, Color32::WHITE);
+                ui.painter()
+                    .rect_filled(r, 0.0, crate::theme::Tokens::field());
                 ui.painter().rect_stroke(
                     r,
                     0.0,
-                    Stroke::new(1.0, Tokens::ICON),
+                    Stroke::new(1.0, Tokens::icon()),
                     egui::StrokeKind::Inside,
                 );
             }

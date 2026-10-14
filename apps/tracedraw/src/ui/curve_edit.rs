@@ -87,7 +87,7 @@ fn paint_readout(painter: &egui::Painter, rect: Rect, hover: Option<Pos2>, curve
     painter.rect_stroke(
         rect,
         0.0,
-        Stroke::new(1.0, crate::theme::Tokens::BORDER),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
         egui::StrokeKind::Inside,
     );
     if let Some(p) = hover {
@@ -98,7 +98,7 @@ fn paint_readout(painter: &egui::Painter, rect: Rect, hover: Option<Pos2>, curve
             egui::Align2::LEFT_TOP,
             text,
             egui::FontId::proportional(11.0),
-            crate::theme::Tokens::TEXT_DIM,
+            crate::theme::Tokens::text_dim(),
         );
     }
 }

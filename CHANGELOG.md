@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Themes: Light, Medium Light, Medium Dark and Dark in Options >
+  Customization > Appearance > Color, and a light / dark button at the
+  right end of the status bar. Turning proof colours on or off says so
+  in the status bar.
 - Menus have access keys: one letter of each title and row is
   underlined; with a menu open, pressing it picks the row (or opens its
   submenu), and Alt with a title's letter opens that menu (except the

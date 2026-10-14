@@ -27,7 +27,7 @@ fn preview(ui: &mut Ui, app: &App) {
     painter.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let side = r.height() * 0.6;
@@ -71,7 +71,7 @@ fn preview(ui: &mut Ui, app: &App) {
                 egui::Align2::CENTER_CENTER,
                 tr("docker.vector_mosaic_no_custom"),
                 egui::FontId::proportional(11.0),
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
             );
         }
     }

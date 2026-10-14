@@ -341,13 +341,13 @@ fn rich_job(text: &str, width: f32, size: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
     let plain = TextFormat {
         font_id: FontId::proportional(size),
-        color: Tokens::TEXT,
+        color: Tokens::text(),
         line_height: Some(LINE_HEIGHT),
         ..Default::default()
     };
     let strong = TextFormat {
         font_id: theme::bold(size),
-        color: Tokens::TEXT,
+        color: Tokens::text(),
         line_height: Some(LINE_HEIGHT),
         ..Default::default()
     };
@@ -440,13 +440,13 @@ fn tool_row(ui: &mut Ui, tool: Tool) -> bool {
     let icon = Rect::from_min_size(rect.min + Vec2::new(0.0, 0.0), Vec2::splat(20.0));
     if resp.hovered() {
         ui.painter()
-            .rect_filled(rect.expand(2.0), 2.0, Tokens::TOOL_HOVER);
+            .rect_filled(rect.expand(2.0), 2.0, Tokens::tool_hover());
     }
-    crate::ui::icons::draw(ui.painter(), icon, tool, Tokens::ICON);
+    crate::ui::icons::draw(ui.painter(), icon, tool, Tokens::icon());
     ui.painter().galley(
         Pos2::new(rect.min.x + 28.0, rect.min.y + 1.0),
         galley,
-        Tokens::TEXT,
+        Tokens::text(),
     );
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -563,9 +563,9 @@ fn learn_more(app: &mut App, ui: &mut Ui, label: &str, page: &str) {
 
 fn info_icon(p: &egui::Painter, r: Rect) {
     let c = r.center();
-    let s = Stroke::new(2.0, Tokens::ICON);
+    let s = Stroke::new(2.0, Tokens::icon());
     p.circle_stroke(c, 11.0, s);
-    p.circle_filled(c + Vec2::new(0.0, -5.0), 1.6, Tokens::ICON);
+    p.circle_filled(c + Vec2::new(0.0, -5.0), 1.6, Tokens::icon());
     p.line_segment([c + Vec2::new(0.0, -1.5), c + Vec2::new(0.0, 6.0)], s);
 }
 
@@ -574,7 +574,7 @@ fn nav_bar(app: &mut App, ui: &mut Ui) {
     let width = ui.available_width();
     let (row, _) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::hover());
     let p = ui.painter();
-    p.hline(row.x_range(), row.min.y, Stroke::new(1.0, Tokens::BORDER));
+    p.hline(row.x_range(), row.min.y, Stroke::new(1.0, Tokens::border()));
     let home_r = Rect::from_center_size(
         Pos2::new(row.min.x + 14.0, row.center().y + 1.0),
         Vec2::splat(22.0),
@@ -596,17 +596,17 @@ fn nav_bar(app: &mut App, ui: &mut Ui) {
     let p = ui.painter();
     for (r, resp) in [(home_r, &home), (back_r, &back), (fwd_r, &fwd)] {
         if resp.hovered() {
-            p.rect_filled(r, 2.0, Tokens::TOOL_HOVER);
+            p.rect_filled(r, 2.0, Tokens::tool_hover());
         }
     }
-    house(p, home_r.center(), Tokens::ICON);
+    house(p, home_r.center(), Tokens::icon());
     let off = Color32::from_rgb(0xB0, 0xB0, 0xB0);
     arrow(
         p,
         back_r.center(),
         -1.0,
         if app.hints.can_back() {
-            Tokens::ICON
+            Tokens::icon()
         } else {
             off
         },
@@ -616,7 +616,7 @@ fn nav_bar(app: &mut App, ui: &mut Ui) {
         fwd_r.center(),
         1.0,
         if app.hints.can_forward() {
-            Tokens::ICON
+            Tokens::icon()
         } else {
             off
         },

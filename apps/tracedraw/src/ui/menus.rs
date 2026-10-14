@@ -19,22 +19,13 @@ const LABEL_X: f32 = 38.0;
 const SHORTCUT_PAD: f32 = 28.0;
 const FONT: f32 = 13.0;
 const SEPARATOR_HEIGHT: f32 = 7.0;
-const MENU_TEXT: egui::Color32 = egui::Color32::BLACK;
-const MENU_TEXT_OFF: egui::Color32 = egui::Color32::from_gray(0xC8);
-const MENU_GUTTER: egui::Color32 = egui::Color32::from_gray(0xF4);
-const MENU_BORDER: egui::Color32 = egui::Color32::from_gray(0xB2);
-const MENU_LINE: egui::Color32 = egui::Color32::from_gray(0xD8);
-/// Hovered rows and open menu titles: a light blue box with a blue frame.
-const MENU_HOVER: egui::Color32 = egui::Color32::from_rgb(0xE0, 0xF0, 0xFF);
-const MENU_HOVER_LINE: egui::Color32 = egui::Color32::from_rgb(0x00, 0xAD, 0xFE);
-const SUBMENU_ARROW: egui::Color32 = egui::Color32::from_gray(120);
 
 /// The style of menu pop-ups: white, a one-pixel grey frame, square
 /// corners, rows touching.
 pub(crate) fn menu_popup_style(style: &mut egui::Style) {
     egui::containers::menu::menu_style(style);
-    style.visuals.window_fill = egui::Color32::WHITE;
-    style.visuals.window_stroke = egui::Stroke::new(1.0, MENU_BORDER);
+    style.visuals.window_fill = crate::theme::Tokens::menu();
+    style.visuals.window_stroke = egui::Stroke::new(1.0, crate::theme::Tokens::window_border());
     style.visuals.menu_corner_radius = egui::CornerRadius::ZERO;
     style.visuals.popup_shadow = egui::epaint::Shadow {
         offset: [2, 2],
@@ -70,8 +61,10 @@ pub(crate) fn body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         egui::pos2(rows.left(), rows.top() - 2.0),
         egui::pos2(rows.left() + GUTTER, rows.bottom() + 2.0),
     );
-    ui.painter()
-        .set(slot, egui::Shape::rect_filled(gutter, 0.0, MENU_GUTTER));
+    ui.painter().set(
+        slot,
+        egui::Shape::rect_filled(gutter, 0.0, crate::theme::Tokens::menu_gutter()),
+    );
     r
 }
 
@@ -90,7 +83,7 @@ fn menu_row(
             .layout_no_wrap(
                 label.to_string(),
                 egui::FontId::proportional(FONT),
-                MENU_TEXT,
+                crate::theme::Tokens::text(),
             )
             .size()
             .x;
@@ -100,7 +93,7 @@ fn menu_row(
             f.layout_no_wrap(
                 shortcut.to_string(),
                 egui::FontId::proportional(FONT),
-                MENU_TEXT,
+                crate::theme::Tokens::text(),
             )
             .size()
             .x + 32.0
@@ -132,7 +125,11 @@ fn menu_row(
     if enabled && resp.hovered() {
         painter.set(slot, highlight(rect));
     }
-    let color = if enabled { MENU_TEXT } else { MENU_TEXT_OFF };
+    let color = if enabled {
+        crate::theme::Tokens::text()
+    } else {
+        crate::theme::Tokens::menu_text_off()
+    };
     if let Some((at, _)) = access {
         access::underline(
             painter,
@@ -187,9 +184,9 @@ fn menu_row(
                 c + egui::vec2(-2.0, 4.0),
             ],
             if enabled {
-                SUBMENU_ARROW
+                crate::theme::Tokens::text_dim()
             } else {
-                MENU_TEXT_OFF
+                crate::theme::Tokens::menu_text_off()
             },
             egui::Stroke::NONE,
         ));
@@ -202,8 +199,8 @@ fn highlight(rect: egui::Rect) -> egui::Shape {
     egui::Shape::Rect(egui::epaint::RectShape::new(
         rect.shrink2(egui::vec2(2.0, 0.0)),
         0.0,
-        MENU_HOVER,
-        egui::Stroke::new(1.0, MENU_HOVER_LINE),
+        crate::theme::Tokens::menu_hover(),
+        egui::Stroke::new(1.0, crate::theme::Tokens::menu_hover_line()),
         egui::StrokeKind::Inside,
     ))
 }
@@ -232,7 +229,7 @@ pub(crate) fn sep(ui: &mut Ui) {
             egui::pos2(rect.right(), y + 1.0),
         ),
         0.0,
-        MENU_LINE,
+        crate::theme::Tokens::border(),
     );
 }
 
@@ -315,7 +312,11 @@ fn item_text(
         egui::pos2(r.rect.left() + GUTTER / 2.0, r.rect.center().y),
         egui::vec2(16.0, 16.0),
     );
-    let color = if enabled { Tokens::ICON } else { MENU_TEXT_OFF };
+    let color = if enabled {
+        Tokens::icon()
+    } else {
+        crate::theme::Tokens::menu_text_off()
+    };
     if let Some(a) = icon {
         crate::ui::icons::draw_action(ui.painter(), ir, a, color);
     } else if let Some(p) = menu_pic(id) {
@@ -1244,14 +1245,14 @@ fn menu_bar_style(style: &mut egui::Style) {
         &mut style.visuals.widgets.active,
         &mut style.visuals.widgets.open,
     ] {
-        w.weak_bg_fill = MENU_HOVER;
-        w.bg_fill = MENU_HOVER;
-        w.bg_stroke = egui::Stroke::new(1.0, MENU_HOVER_LINE);
+        w.weak_bg_fill = crate::theme::Tokens::menu_hover();
+        w.bg_fill = crate::theme::Tokens::menu_hover();
+        w.bg_stroke = egui::Stroke::new(1.0, crate::theme::Tokens::menu_hover_line());
         w.corner_radius = egui::CornerRadius::ZERO;
         w.expansion = 0.0;
-        w.fg_stroke.color = MENU_TEXT;
+        w.fg_stroke.color = crate::theme::Tokens::text();
     }
-    style.visuals.widgets.inactive.fg_stroke.color = MENU_TEXT;
+    style.visuals.widgets.inactive.fg_stroke.color = crate::theme::Tokens::text();
     style.spacing.button_padding = egui::vec2(10.0, 3.0);
     style.spacing.item_spacing.x = 3.0;
 }
@@ -1270,7 +1271,12 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 keys.push(access.map(|a| a.1).unwrap_or(' '));
                 let r = ui
                     .menu_button(
-                        access::title(&label, access.map(|a| a.0), BAR_FONT, MENU_TEXT),
+                        access::title(
+                            &label,
+                            access.map(|a| a.0),
+                            BAR_FONT,
+                            crate::theme::Tokens::text(),
+                        ),
                         |ui| {
                             ui.set_min_width(MENU_WIDTH);
                             body(ui, |ui| f(ui))

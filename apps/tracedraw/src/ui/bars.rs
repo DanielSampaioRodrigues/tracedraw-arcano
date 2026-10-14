@@ -279,7 +279,7 @@ pub fn target_dock(bar: Bar, screen: Rect, menu_h: f32, p: Pos2) -> Dock {
 /// Paint a grip of dots in `r`, along its longer side.
 fn paint_grip(ui: &Ui, r: Rect) {
     let p = ui.painter();
-    let color = Color32::from_gray(178);
+    let color = crate::theme::Tokens::text_dim();
     let vertical = r.height() >= r.width();
     let n = ((if vertical { r.height() } else { r.width() } - 6.0) / 4.0)
         .floor()
@@ -500,8 +500,8 @@ pub fn floating_bars(app: &mut App, ctx: &egui::Context) {
             .order(egui::Order::Middle)
             .show(ctx, |ui| {
                 egui::Frame::new()
-                    .fill(Tokens::PANEL)
-                    .stroke(Stroke::new(1.0, Color32::from_gray(0xB2)))
+                    .fill(Tokens::panel())
+                    .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
                     .shadow(egui::epaint::Shadow {
                         offset: [0, 3],
                         blur: 10,
@@ -522,13 +522,13 @@ pub fn floating_bars(app: &mut App, ctx: &egui::Context) {
 fn title_strip(app: &mut App, ui: &mut Ui, bar: Bar, width: f32) {
     let (rect, resp) = ui.allocate_exact_size(vec2(width, TITLE_H), Sense::click_and_drag());
     let p = ui.painter();
-    p.rect_filled(rect, 0.0, Color32::from_gray(0xE4));
+    p.rect_filled(rect, 0.0, crate::theme::Tokens::tab_strip());
     p.text(
         pos2(rect.left() + 6.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         tr(bar.key()),
         egui::FontId::proportional(11.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     let close = Rect::from_center_size(
         pos2(rect.right() - TITLE_H / 2.0, rect.center().y),
@@ -545,7 +545,7 @@ fn title_strip(app: &mut App, ui: &mut Ui, bar: Bar, width: f32) {
         if close_resp.hovered() {
             Color32::from_rgb(0xE8, 0x11, 0x23)
         } else {
-            Tokens::TEXT_DIM
+            Tokens::text_dim()
         },
     );
     p.line_segment([c + vec2(-3.5, -3.5), c + vec2(3.5, 3.5)], s);

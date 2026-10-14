@@ -440,11 +440,11 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
 /// The page list: one row per page, the current one highlighted.
 fn page_list(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
     let painter = ui.painter();
-    painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
+    painter.rect_filled(rect, 0.0, crate::theme::Tokens::field());
     painter.rect_stroke(
         rect,
         0.0,
-        egui::Stroke::new(1.0, egui::Color32::from_gray(0xD9)),
+        egui::Stroke::new(1.0, crate::theme::Tokens::border()),
         egui::StrokeKind::Inside,
     );
     for (i, p) in set.pages().iter().enumerate() {
@@ -460,23 +460,23 @@ fn page_list(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
         let selected = app.options_page == *p;
         if selected {
             ui.painter()
-                .rect_filled(row, 0.0, egui::Color32::from_rgb(0xCC, 0xE8, 0xFF));
+                .rect_filled(row, 0.0, crate::theme::Tokens::selected_row());
             ui.painter().rect_stroke(
                 row,
                 0.0,
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x99, 0xD1, 0xFF)),
+                egui::Stroke::new(1.0, crate::theme::Tokens::selected_row_line()),
                 egui::StrokeKind::Inside,
             );
         } else if resp.hovered() {
             ui.painter()
-                .rect_filled(row, 0.0, egui::Color32::from_rgb(0xE5, 0xF3, 0xFF));
+                .rect_filled(row, 0.0, crate::theme::Tokens::hovered_row());
         }
         ui.painter().text(
             row.left_center() + egui::vec2(5.0, 0.0),
             egui::Align2::LEFT_CENTER,
             tr(p.key()),
             egui::FontId::proportional(13.0),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         if resp.clicked() {
             app.options_page = *p;
@@ -571,7 +571,7 @@ fn rgb_button(ui: &mut Ui, rgb: &mut [u8; 3]) -> bool {
     ui.painter().rect_stroke(
         resp.rect,
         0.0,
-        egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        egui::Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Inside,
     );
     resp.changed()
@@ -654,7 +654,7 @@ fn display_page(app: &mut App, ui: &mut Ui) {
     chrome::section(ui, &tr("options.ruler_calibration"));
     ui.label(
         egui::RichText::new(tr("options.calibrate_help"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(12.0),
     );
     ui.horizontal(|ui| {
@@ -693,8 +693,8 @@ fn calibration_rulers(ui: &mut Ui, ppi: f32) {
         p.rect(
             rect,
             0.0,
-            egui::Color32::WHITE,
-            egui::Stroke::new(1.0, chrome::FIELD_BORDER),
+            crate::theme::Tokens::field(),
+            egui::Stroke::new(1.0, crate::theme::Tokens::control_border()),
             egui::StrokeKind::Inside,
         );
         let x0 = rect.left() + pad;
@@ -719,7 +719,7 @@ fn calibration_rulers(ui: &mut Ui, ppi: f32) {
             };
             p.line_segment(
                 [egui::pos2(x, top), egui::pos2(x, top + h)],
-                egui::Stroke::new(1.0, Tokens::TEXT),
+                egui::Stroke::new(1.0, Tokens::text()),
             );
             if long {
                 let n = if metric { i } else { i / 8 };
@@ -728,7 +728,7 @@ fn calibration_rulers(ui: &mut Ui, ppi: f32) {
                     egui::Align2::CENTER_TOP,
                     n.to_string(),
                     font.clone(),
-                    Tokens::TEXT,
+                    Tokens::text(),
                 );
             }
         }
@@ -737,7 +737,7 @@ fn calibration_rulers(ui: &mut Ui, ppi: f32) {
             egui::Align2::RIGHT_BOTTOM,
             unit,
             font,
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
         ui.add_space(4.0);
     }
@@ -910,7 +910,7 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
                     modes.set(m, on);
                 }
                 let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                crate::canvas::draw_snap_glyph(ui.painter(), r.center(), m, Tokens::ICON);
+                crate::canvas::draw_snap_glyph(ui.painter(), r.center(), m, Tokens::icon());
                 ui.label(tr(m.key()));
             });
         }
@@ -1054,8 +1054,8 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
                     // to show on the page.
                     ui.spacing_mut().slider_width = 220.0;
                     let w = &mut ui.visuals_mut().widgets;
-                    w.inactive.bg_fill = egui::Color32::from_gray(205);
-                    w.inactive.fg_stroke = egui::Stroke::new(1.0, Tokens::CONTROL_BORDER);
+                    w.inactive.bg_fill = crate::theme::Tokens::slider_rail();
+                    w.inactive.fg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
                     ui.visuals_mut().selection.bg_fill = Tokens::ACCENT;
                     ui.add(
                         egui::Slider::new(&mut pct, UI_SIZE_RANGE)
@@ -1087,9 +1087,22 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
             app.settings.ui_size = pct.round() / 100.0;
         }
     }
-    ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::text_dim()));
     crate::ui::chrome::section(ui, &tr("options.color_section"));
     grid("appearance_color").show(ui, |ui| {
+        row_label(ui, &tr("options.theme"));
+        let current = crate::theme::Theme::from_id(&app.settings.theme);
+        egui::ComboBox::from_id_salt("ui_theme")
+            .selected_text(tr(current.key()))
+            .width(170.0)
+            .show_ui(ui, |ui| {
+                for t in crate::theme::Theme::ALL {
+                    if ui.selectable_label(t == current, tr(t.key())).clicked() {
+                        app.settings.theme = t.id().to_string();
+                    }
+                }
+            });
+        ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
         ui.horizontal(|ui| {
             rgb_button(ui, &mut app.settings.desktop_rgb);
@@ -1126,7 +1139,9 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
     if p.right_click_outline {
         ui.horizontal(|ui| {
             ui.add_space(22.0);
-            ui.label(egui::RichText::new(tr("options.palette_hold_hint")).color(Tokens::TEXT_DIM));
+            ui.label(
+                egui::RichText::new(tr("options.palette_hold_hint")).color(Tokens::text_dim()),
+            );
         });
     }
 }
@@ -1323,8 +1338,8 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
     }
     ui.horizontal_top(|ui| {
         egui::Frame::new()
-            .stroke(egui::Stroke::new(1.0, Tokens::CONTROL_BORDER))
-            .fill(egui::Color32::WHITE)
+            .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
+            .fill(crate::theme::Tokens::field())
             .show(ui, |ui| {
                 ui.set_width(LIST_W);
                 ui.vertical(|ui| {
@@ -1360,7 +1375,9 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
             ui.separator();
             match selected {
                 None => {
-                    ui.label(egui::RichText::new(tr("options.no_command")).color(Tokens::TEXT_DIM));
+                    ui.label(
+                        egui::RichText::new(tr("options.no_command")).color(Tokens::text_dim()),
+                    );
                 }
                 Some(c) if !app.shortcut_editor.keys_tab => command_general(app, ui, &c),
                 Some(c) => command_keys(app, ui, &c),
@@ -1378,30 +1395,30 @@ fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     let on = app.shortcut_editor.selected.as_deref() == Some(c.id.as_str());
     if on {
         ui.painter()
-            .rect_filled(row, 0.0, egui::Color32::from_rgb(0xCC, 0xE8, 0xFF));
+            .rect_filled(row, 0.0, crate::theme::Tokens::selected_row());
     } else if resp.hovered() {
         ui.painter()
-            .rect_filled(row, 0.0, egui::Color32::from_rgb(0xE5, 0xF3, 0xFF));
+            .rect_filled(row, 0.0, crate::theme::Tokens::hovered_row());
     }
     let icon = egui::Rect::from_center_size(
         egui::pos2(row.left() + 14.0, row.center().y),
         egui::vec2(16.0, 16.0),
     );
     match c.tool {
-        Some(t) => crate::ui::icons::draw(ui.painter(), icon, t, Tokens::ICON),
+        Some(t) => crate::ui::icons::draw(ui.painter(), icon, t, Tokens::icon()),
         None => {
-            crate::ui::menus::draw_menu_picture(ui.painter(), icon, &c.id, Tokens::ICON);
+            crate::ui::menus::draw_menu_picture(ui.painter(), icon, &c.id, Tokens::icon());
         }
     }
     let galley = ui.painter().layout_no_wrap(
         c.name.clone(),
         egui::FontId::proportional(13.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     ui.painter().with_clip_rect(row).galley(
         egui::pos2(row.left() + 30.0, row.center().y - galley.size().y / 2.0),
         galley,
-        Tokens::TEXT,
+        Tokens::text(),
     );
     let resp = resp.on_hover_text(&c.place);
     if resp.clicked() {
@@ -1462,14 +1479,14 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
         button.surrender_focus();
     }
     if c.tool.is_some() {
-        ui.label(egui::RichText::new(tr("options.shortcuts_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("options.shortcuts_hint")).color(Tokens::text_dim()));
     }
     ui.add_space(6.0);
     ui.label(tr("options.current_shortcuts"));
     let custom = user_shortcut(app, &c.id);
     egui::Frame::new()
-        .stroke(egui::Stroke::new(1.0, Tokens::CONTROL_BORDER))
-        .fill(egui::Color32::WHITE)
+        .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
+        .fill(crate::theme::Tokens::field())
         .inner_margin(4)
         .show(ui, |ui| {
             ui.set_width(260.0);
@@ -1551,8 +1568,8 @@ fn command_bars_page(app: &mut App, ui: &mut Ui) {
             ui.set_width(230.0);
             ui.label(tr("options.command_bars_hint"));
             egui::Frame::new()
-                .stroke(egui::Stroke::new(1.0, Tokens::BORDER))
-                .fill(egui::Color32::WHITE)
+                .stroke(egui::Stroke::new(1.0, Tokens::border()))
+                .fill(crate::theme::Tokens::field())
                 .inner_margin(6)
                 .show(ui, |ui| {
                     ui.set_width(216.0);
@@ -1847,7 +1864,7 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
         ui.end_row();
     });
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(tr("options.join_hint")).color(crate::theme::Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr("options.join_hint")).color(crate::theme::Tokens::text_dim()));
 }
 
 fn eraser_page(app: &mut App, ui: &mut Ui) {
@@ -1903,19 +1920,19 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
     {
         chrome::section(ui, &tr("options.agents"));
         ui.checkbox(&mut app.settings.mcp_window, tr("options.mcp_window"));
-        ui.label(egui::RichText::new(tr("options.mcp_window_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("options.mcp_window_hint")).color(Tokens::text_dim()));
         if let Some(link) = &app.mcp_link {
             ui.label(
                 egui::RichText::new(crate::i18n::trf(
                     "options.mcp_window_port",
                     &[("port", &link.info.port.to_string())],
                 ))
-                .color(Tokens::TEXT_DIM),
+                .color(Tokens::text_dim()),
             );
         }
     }
     ui.add_space(10.0);
-    ui.label(egui::RichText::new(tr("options.reset_all_hint")).color(Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr("options.reset_all_hint")).color(Tokens::text_dim()));
     if ui.button(tr("options.reset_all")).clicked() {
         // The question replaces the options; nothing changes unless it is
         // answered Reset.
@@ -1931,7 +1948,7 @@ fn file_locations_page(_app: &mut App, ui: &mut Ui) {
     if let Some(p) = crate::settings::Settings::path() {
         ui.label(
             egui::RichText::new(p.display().to_string())
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(12.0),
         );
     }
@@ -1940,7 +1957,7 @@ fn file_locations_page(_app: &mut App, ui: &mut Ui) {
         ui.label(tr("options.auto_backup"));
         ui.label(
             egui::RichText::new(p.display().to_string())
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(12.0),
         );
     }
@@ -1967,7 +1984,7 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(10.0);
     ui.strong(tr("options.workspace_transfer"));
-    ui.label(egui::RichText::new(tr("options.workspace_transfer_hint")).color(Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr("options.workspace_transfer_hint")).color(Tokens::text_dim()));
     let mut parts = app.settings.workspace_parts;
     for (on, key) in parts.flags_mut() {
         ui.checkbox(on, tr(key));

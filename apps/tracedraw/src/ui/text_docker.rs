@@ -52,7 +52,7 @@ fn section_picture(p: &egui::Painter, r: Rect, id: &str) {
                 egui::Align2::CENTER_CENTER,
                 "A",
                 crate::theme::bold(15.0),
-                Tokens::ICON,
+                Tokens::icon(),
             );
         }
         "paragraph" => {
@@ -61,7 +61,7 @@ fn section_picture(p: &egui::Painter, r: Rect, id: &str) {
                 egui::Align2::CENTER_CENTER,
                 "\u{00B6}",
                 egui::FontId::proportional(16.0),
-                Tokens::ICON,
+                Tokens::icon(),
             );
         }
         _ => {
@@ -69,7 +69,7 @@ fn section_picture(p: &egui::Painter, r: Rect, id: &str) {
             p.rect_stroke(
                 f,
                 0.0,
-                Stroke::new(1.2, Tokens::ICON),
+                Stroke::new(1.2, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
             for k in 0..3 {
@@ -79,7 +79,7 @@ fn section_picture(p: &egui::Painter, r: Rect, id: &str) {
                         egui::pos2(f.left() + 3.0, y),
                         egui::pos2(f.right() - 3.0, y),
                     ],
-                    Stroke::new(1.0, Tokens::ICON),
+                    Stroke::new(1.0, Tokens::icon()),
                 );
             }
         }
@@ -92,9 +92,9 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
     let fill = if resp.hovered() {
-        Tokens::TOOL_HOVER
+        Tokens::tool_hover()
     } else {
-        Color32::from_gray(0xEC)
+        crate::theme::Tokens::control_fill()
     };
     ui.painter().rect_filled(rect, 2.0, fill);
     let c = egui::pos2(rect.left() + 10.0, rect.center().y);
@@ -113,7 +113,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
     };
     ui.painter().add(egui::epaint::PathShape::convex_polygon(
         pts,
-        Tokens::ICON,
+        Tokens::icon(),
         Stroke::NONE,
     ));
     ui.painter().text(
@@ -121,7 +121,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
         egui::Align2::LEFT_CENTER,
         title,
         crate::theme::bold(12.5),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     if resp.clicked() {
         toggle(app, id);
@@ -207,9 +207,9 @@ pub fn text_docker(app: &mut App, ui: &mut Ui) {
             let open = is_open(app, id);
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 26.0), Sense::click());
             if open {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
             } else if resp.hovered() {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
             }
             section_picture(
                 ui.painter(),
@@ -240,7 +240,7 @@ pub fn text_docker(app: &mut App, ui: &mut Ui) {
     if first.is_none() {
         ui.label(
             egui::RichText::new(tr("docker.text_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
     }
@@ -419,7 +419,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
     let Some((id, mut p)) = para_text else {
         ui.label(
             egui::RichText::new(tr("docker.frame_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         return;
@@ -449,15 +449,15 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             let on = p.vertical_align == v;
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 26.0), Sense::click());
             if on {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
             } else if resp.hovered() {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
             }
             paint_vertical_align(
                 ui.painter(),
                 Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
                 v,
-                Tokens::ICON,
+                Tokens::icon(),
             );
             if resp.on_hover_text(tr(key)).clicked() && !on {
                 p.vertical_align = v;

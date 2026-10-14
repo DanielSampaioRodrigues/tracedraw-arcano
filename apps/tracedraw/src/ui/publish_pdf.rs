@@ -352,7 +352,7 @@ fn label_cell(ui: &mut Ui, label: &str, width: f32) {
 }
 
 fn note(ui: &mut Ui, key: &str) {
-    ui.label(RichText::new(tr(key)).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(RichText::new(tr(key)).color(Tokens::text_dim()).size(11.0));
 }
 
 /// General: the pages, the standard, the bleed and the PDF/X settings.

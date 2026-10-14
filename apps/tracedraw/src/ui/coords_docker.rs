@@ -61,20 +61,21 @@ fn draw_kind(painter: &egui::Painter, r: Rect, kind: CoordKind, color: Color32) 
 fn kind_button(ui: &mut Ui, kind: CoordKind, pressed: bool, flyout: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(BTN), Sense::click());
     if pressed {
-        ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+        ui.painter()
+            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Middle,
         );
     } else if resp.hovered() {
         ui.painter()
-            .rect_filled(rect, 0.0, Color32::from_rgb(0xE0, 0xF0, 0xFF));
+            .rect_filled(rect, 0.0, crate::theme::Tokens::menu_hover());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            Stroke::new(1.0, Color32::from_rgb(0x00, 0xAD, 0xFE)),
+            Stroke::new(1.0, crate::theme::Tokens::menu_hover_line()),
             egui::StrokeKind::Middle,
         );
     }
@@ -82,13 +83,13 @@ fn kind_button(ui: &mut Ui, kind: CoordKind, pressed: bool, flyout: bool) -> egu
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
         kind,
-        Tokens::ICON,
+        Tokens::icon(),
     );
     if flyout {
         let b = rect.right_bottom() + Vec2::new(-3.0, -3.0);
         ui.painter().add(epaint::PathShape::convex_polygon(
             vec![b, b + Vec2::new(-4.0, 0.0), b + Vec2::new(0.0, -4.0)],
-            Tokens::ICON,
+            Tokens::icon(),
             Stroke::NONE,
         ));
     }
@@ -143,30 +144,30 @@ fn pick_button(
             rect,
             0.0,
             if pressed {
-                Color32::WHITE
+                crate::theme::Tokens::field()
             } else {
-                Color32::from_rgb(0xE0, 0xF0, 0xFF)
+                crate::theme::Tokens::menu_hover()
             },
         );
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Middle,
         );
     }
     // A pointer with a small target: click or drag on the drawing.
     let c = rect.center();
-    let s = Stroke::new(1.1, Tokens::ICON);
+    let s = Stroke::new(1.1, Tokens::icon());
     ui.painter()
         .circle_stroke(c + Vec2::new(-3.0, -2.0), 3.5, s);
     ui.painter().line_segment(
         [c + Vec2::new(-3.0, -7.0), c + Vec2::new(-3.0, 3.0)],
-        Stroke::new(0.8, Tokens::ICON),
+        Stroke::new(0.8, Tokens::icon()),
     );
     ui.painter().line_segment(
         [c + Vec2::new(-8.0, -2.0), c + Vec2::new(2.0, -2.0)],
-        Stroke::new(0.8, Tokens::ICON),
+        Stroke::new(0.8, Tokens::icon()),
     );
     let tip = c + Vec2::new(1.5, 1.0);
     ui.painter().add(epaint::PathShape::convex_polygon(
@@ -176,7 +177,7 @@ fn pick_button(
             tip + Vec2::new(2.2, 6.0),
             tip + Vec2::new(5.5, 6.0),
         ],
-        Tokens::ICON,
+        Tokens::icon(),
         Stroke::NONE,
     ));
     let key = if pick.is_drag() {
@@ -261,7 +262,7 @@ fn origin_grid(ui: &mut Ui, origin: usize) -> Option<usize> {
     ui.painter().rect_stroke(
         frame,
         0.0,
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Middle,
     );
     let mut out = None;
@@ -272,11 +273,12 @@ fn origin_grid(ui: &mut Ui, origin: usize) -> Option<usize> {
         if i == origin {
             ui.painter().rect_filled(r, 0.0, Tokens::SELECTION);
         } else {
-            ui.painter().rect_filled(r, 0.0, Color32::WHITE);
+            ui.painter()
+                .rect_filled(r, 0.0, crate::theme::Tokens::field());
             ui.painter().rect_stroke(
                 r,
                 0.0,
-                Stroke::new(1.0, Tokens::ICON),
+                Stroke::new(1.0, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -309,7 +311,7 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
     });
     ui.label(
         egui::RichText::new(tr(app.coords.kind.key()))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
     let u = app.units;
@@ -402,7 +404,7 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                     None => {
                         ui.label(
                             egui::RichText::new(tr("coords.bounding_box_rotated"))
-                                .color(Tokens::TEXT_DIM)
+                                .color(Tokens::text_dim())
                                 .size(11.0),
                         );
                     }
@@ -634,7 +636,7 @@ fn multipoint(
         focus.request_focus();
     }
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, Color32::WHITE);
+    painter.rect_filled(area, 0.0, crate::theme::Tokens::field());
     painter.rect_stroke(
         area.shrink(0.5),
         0.0,
@@ -643,7 +645,7 @@ fn multipoint(
             if focus.has_focus() {
                 Tokens::SELECTION
             } else {
-                Tokens::BORDER
+                Tokens::border()
             },
         ),
         egui::StrokeKind::Middle,
@@ -656,7 +658,7 @@ fn multipoint(
             egui::Align2::LEFT_TOP,
             t,
             font.clone(),
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
     }
     let top = area.min.y + 22.0;
@@ -681,7 +683,7 @@ fn multipoint(
             Vec2::new(area.width() - 2.0, row_h),
         );
         if c.current == Some(i) {
-            painter.rect_filled(row, 0.0, Color32::from_rgb(0xCC, 0xE8, 0xFF));
+            painter.rect_filled(row, 0.0, crate::theme::Tokens::selected_row());
         }
         let r = Point::new(u.world_from_mm(p.x - o.x), u.world_from_mm(p.y - o.y));
         for (x, t) in [
@@ -700,7 +702,7 @@ fn multipoint(
                 egui::Align2::LEFT_TOP,
                 t,
                 font.clone(),
-                Tokens::TEXT,
+                Tokens::text(),
             );
         }
     }

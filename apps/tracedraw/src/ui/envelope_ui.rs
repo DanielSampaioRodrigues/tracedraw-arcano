@@ -57,7 +57,11 @@ pub fn mapping_key(m: Mapping) -> &'static str {
 }
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// The mapping list; true when the user chose one.
@@ -488,7 +492,7 @@ mod tests {
                         ui.painter(),
                         Rect::from_min_size(Pos2::ZERO, Vec2::splat(18.0)),
                         pic,
-                        Tokens::ICON,
+                        Tokens::icon(),
                     );
                 }
             });

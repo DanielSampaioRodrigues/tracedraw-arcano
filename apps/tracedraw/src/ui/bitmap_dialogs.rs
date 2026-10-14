@@ -222,7 +222,7 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
                 ui.label(
                     egui::RichText::new(tr("dialog.duotone_curve_hint"))
                         .size(11.0)
-                        .color(crate::theme::Tokens::TEXT_DIM),
+                        .color(crate::theme::Tokens::text_dim()),
                 );
             });
         });

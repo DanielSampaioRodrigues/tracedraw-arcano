@@ -21,7 +21,7 @@ fn library(app: &mut App, ui: &mut Ui) {
     if crate::files::WEB {
         ui.label(
             RichText::new(tr("docker.picture_mosaic_web"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .small(),
         );
         return;
@@ -75,7 +75,7 @@ fn library(app: &mut App, ui: &mut Ui) {
                     "docker.picture_mosaic_images",
                     &[("n", &n.to_string())],
                 ))
-                .color(Tokens::TEXT_DIM),
+                .color(Tokens::text_dim()),
             );
         }
     }
@@ -211,7 +211,7 @@ pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
                         ("h", &(th * rows).to_string()),
                     ],
                 ))
-                .color(Tokens::TEXT_DIM),
+                .color(Tokens::text_dim()),
             );
         }
     }

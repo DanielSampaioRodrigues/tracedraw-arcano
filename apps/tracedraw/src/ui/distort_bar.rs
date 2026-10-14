@@ -13,7 +13,11 @@ use crate::ui::propbar::sep;
 use egui::{Color32, Painter, Stroke, Ui};
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// The bar.

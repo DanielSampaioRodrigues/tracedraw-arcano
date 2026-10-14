@@ -76,7 +76,7 @@ pub fn fullscreen(app: &mut App, ui: &mut Ui) {
                     painter.rect_stroke(
                         page_rect,
                         0.0,
-                        egui::Stroke::new(1.0, Tokens::PAGE_BORDER),
+                        egui::Stroke::new(1.0, Tokens::page_border()),
                         egui::StrokeKind::Outside,
                     );
                 }
@@ -135,9 +135,9 @@ pub fn page_sorter(app: &mut App, ui: &mut Ui) {
                         rect.expand(3.0),
                         3.0,
                         if active {
-                            Tokens::TOOL_ACTIVE
+                            Tokens::tool_active()
                         } else {
-                            Tokens::PANEL_DARK
+                            Tokens::panel_dark()
                         },
                     );
                     let dpi = thumb_h as f64 / (size.height / 25.4);

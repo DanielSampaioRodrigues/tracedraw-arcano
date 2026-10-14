@@ -81,7 +81,7 @@ use tracedraw_core::geometry::Point;
 
 fn bar() -> Frame {
     Frame::new()
-        .fill(Tokens::PANEL)
+        .fill(Tokens::panel())
         .inner_margin(egui::Margin::symmetric(4, 2))
 }
 
@@ -93,6 +93,15 @@ pub(crate) fn apply_ui_scale(ctx: &egui::Context, size: f32) {
     let zoom = ui_zoom(size);
     if (ctx.zoom_factor() - zoom).abs() > 0.001 {
         ctx.set_zoom_factor(zoom);
+    }
+}
+
+/// Use the theme the preferences name, when it is not the one in use.
+pub(crate) fn apply_theme(ctx: &egui::Context, id: &str) {
+    let wanted = crate::theme::Theme::from_id(id);
+    if wanted != crate::theme::theme() {
+        crate::theme::set_theme(wanted);
+        ctx.set_visuals(crate::theme::visuals());
     }
 }
 
@@ -139,7 +148,7 @@ impl egui::Widget for Rail<'_> {
     fn ui(self, ui: &mut Ui) -> egui::Response {
         ui.scope(|ui| {
             ui.spacing_mut().slider_rail_height = 4.0;
-            ui.visuals_mut().widgets.inactive.bg_fill = Tokens::SLIDER_RAIL;
+            ui.visuals_mut().widgets.inactive.bg_fill = Tokens::slider_rail();
             ui.add(self.0)
         })
         .inner
@@ -171,6 +180,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
+    apply_theme(&ctx, &app.settings.theme);
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
@@ -240,7 +250,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     Panel::top("menu_bar")
         .frame(
             Frame::new()
-                .fill(Tokens::MENU_BAR)
+                .fill(Tokens::menu_bar())
                 .inner_margin(egui::Margin::symmetric(0, 1)),
         )
         .exact_size(24.0)
@@ -258,18 +268,22 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .resizable(false)
             .show_separator_line(false)
     };
-    let standard_frame = Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
-        left: 2,
-        right: 4,
-        top: 2,
-        bottom: 2,
-    });
-    let property_frame = Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
-        left: 2,
-        right: 4,
-        top: 8,
-        bottom: 8,
-    });
+    let standard_frame = Frame::new()
+        .fill(Tokens::panel())
+        .inner_margin(egui::Margin {
+            left: 2,
+            right: 4,
+            top: 2,
+            bottom: 2,
+        });
+    let property_frame = Frame::new()
+        .fill(Tokens::panel())
+        .inner_margin(egui::Margin {
+            left: 2,
+            right: 4,
+            top: 8,
+            bottom: 8,
+        });
     let standard = |app: &mut App, ui: &mut Ui| {
         bars::background(app, ui, Bar::Standard);
         ui.horizontal(|ui| {
@@ -287,7 +301,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     let status_dock = bars_layout.dock(Bar::Status);
     let status_panel = |app: &mut App, ui: &mut Ui, panel: Panel| {
         panel
-            .frame(Frame::new().fill(Tokens::PANEL))
+            .frame(Frame::new().fill(Tokens::panel()))
             .exact_size(status::BAR_H)
             .show_separator_line(false)
             .show(ui, |ui| {
@@ -350,7 +364,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     // the dockers); as a row (at the bottom by default) it comes after the
     // dockers (below). The document palette is a row under the drawing
     // window (over it when the palette is docked at the top).
-    let palette_frame = Frame::new().fill(Tokens::PANEL);
+    let palette_frame = Frame::new().fill(Tokens::panel());
     let palette_dock = bars_layout.dock(Bar::Palette);
     let show_palette = app.settings.palette.show_palette;
     let show_doc_palette = show_palette && app.settings.palette.show_document;
@@ -373,7 +387,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.show_toolbox {
         let dock = bars_layout.dock(Bar::Toolbox);
         let frame = Frame::new()
-            .fill(Tokens::PANEL)
+            .fill(Tokens::panel())
             .inner_margin(if dock.horizontal() {
                 egui::Margin::symmetric(0, 3)
             } else {
@@ -405,7 +419,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .exact_size(27.0)
         .resizable(false)
         .show_separator_line(false)
-        .frame(Frame::new().fill(dockers::TITLE_FILL))
+        .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
         .show(ui, |ui| dockers::tab_strip(app, ui));
     if app.show_dockers {
         let dockers_panel = if rtl {
@@ -416,7 +430,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         dockers_panel
             .default_size(340.0)
             .resizable(true)
-            .frame(Frame::new().fill(egui::Color32::WHITE))
+            .frame(Frame::new().fill(crate::theme::Tokens::field()))
             .show(ui, |ui| dockers::dockers(app, ui));
     }
 
@@ -432,7 +446,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(Tokens::PANEL)
+                    .fill(Tokens::panel())
                     .inner_margin(egui::Margin::symmetric(0, 3)),
             )
             .show(ui, |ui| toolbox::toolbox(app, ui, dock));
@@ -463,7 +477,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         side(Panel::bottom("ai_prompt_bar"), ai_bar::BAR_H)
             .frame(
                 Frame::new()
-                    .fill(Tokens::PANEL)
+                    .fill(Tokens::panel())
                     .inner_margin(egui::Margin::symmetric(0, 2)),
             )
             .show_separator_line(true)
@@ -479,20 +493,20 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     // The tabs' blue line is the strip's lower edge: no separator and no
     // gap between it and the rulers.
     Panel::top("document_tabs")
-        .frame(Frame::new().fill(tabs::STRIP))
+        .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
         .show_separator_line(false)
         .show(ui, |ui| tabs::document_tabs(app, ui));
 
     if app.show_welcome {
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(Tokens::PANEL))
+            .frame(Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| welcome::welcome_screen(app, ui));
         dialogs::show(app, &ctx);
         return;
     }
     if app.page_sorter {
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(Tokens::PANEL))
+            .frame(Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| preview::page_sorter(app, ui));
         dialogs::show(app, &ctx);
         return;
@@ -651,11 +665,11 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
     );
     let painter = ui.painter_at(corner);
     if resp.hovered() {
-        painter.rect_filled(corner, 0.0, Tokens::TOOL_HOVER);
+        painter.rect_filled(corner, 0.0, Tokens::tool_hover());
     }
     // A magnifier over a cross.
     let c = corner.center() + egui::vec2(-1.0, -1.0);
-    let s = egui::Stroke::new(1.2, Tokens::TEXT_DIM);
+    let s = egui::Stroke::new(1.2, Tokens::text_dim());
     painter.circle_stroke(c, 4.5, s);
     painter.line_segment([c + egui::vec2(3.3, 3.3), c + egui::vec2(6.5, 6.5)], s);
     painter.line_segment([c + egui::vec2(-2.5, 0.0), c + egui::vec2(2.5, 0.0)], s);

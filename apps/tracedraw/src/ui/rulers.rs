@@ -29,12 +29,6 @@ const LABEL_SIZE: f32 = 10.0;
 /// Offset of the number's text box from the ruler's outer edge.
 const LABEL_OFFSET: f32 = 0.0;
 
-pub const TICK_COLOR: Color32 = Color32::from_gray(140);
-pub const LABEL_COLOR: Color32 = Color32::from_gray(118);
-pub const BORDER_COLOR: Color32 = Color32::from_gray(216);
-/// The pointer position marker: a dashed dark line across each ruler.
-const MARKER_COLOR: Color32 = Color32::from_gray(11);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TickKind {
     /// Numbered mark.
@@ -291,11 +285,11 @@ fn dashed(painter: &Painter, a: Pos2, b: Pos2, color: Color32) {
 }
 
 fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
-    painter.rect_filled(top, 0.0, Tokens::RULER_BG);
+    painter.rect_filled(top, 0.0, Tokens::ruler_bg());
     painter.hline(
         top.x_range(),
         top.bottom() - 0.5,
-        Stroke::new(1.0, BORDER_COLOR),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
     let view = &app.view;
     let rulers = app.doc().metadata.rulers.clone();
@@ -307,7 +301,11 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
 
     // The unit name at the right end, over a patch of background so the
     // numbers do not run into it.
-    let unit = painter.layout_no_wrap(unit_text(app), font.clone(), LABEL_COLOR);
+    let unit = painter.layout_no_wrap(
+        unit_text(app),
+        font.clone(),
+        crate::theme::Tokens::ruler_label(),
+    );
     let unit_rect = Rect::from_min_size(
         Pos2::new(top.right() - unit.size().x - 4.0, top.top() + LABEL_OFFSET),
         unit.size(),
@@ -327,16 +325,20 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
         };
         pixels.rect(
             Rect::from_min_max(Pos2::new(px, base - h), Pos2::new(px + 1.0, base)),
-            TICK_COLOR,
+            crate::theme::Tokens::ruler_tick(),
         );
         if kind == TickKind::Major {
-            let g = painter.layout_no_wrap(label(v, major), font.clone(), LABEL_COLOR);
+            let g = painter.layout_no_wrap(
+                label(v, major),
+                font.clone(),
+                crate::theme::Tokens::ruler_label(),
+            );
             let rect = Rect::from_min_size(
                 Pos2::new((x - g.size().x / 2.0).round(), top.top() + LABEL_OFFSET),
                 g.size(),
             );
             if !rect.intersects(unit_rect.expand2(egui::vec2(3.0, 0.0))) {
-                painter.galley(rect.min, g, LABEL_COLOR);
+                painter.galley(rect.min, g, crate::theme::Tokens::ruler_label());
             }
         }
     }
@@ -344,26 +346,26 @@ fn draw_horizontal(app: &App, painter: &Painter, top: Rect) {
     painter.rect_filled(
         unit_rect.expand2(egui::vec2(2.0, 0.0)),
         0.0,
-        Tokens::RULER_BG,
+        Tokens::ruler_bg(),
     );
-    painter.galley(unit_rect.min, unit, LABEL_COLOR);
+    painter.galley(unit_rect.min, unit, crate::theme::Tokens::ruler_label());
 
     if let Some(x) = marker_x(app) {
         dashed(
             painter,
             Pos2::new(x, top.top() + 1.0),
             Pos2::new(x, top.bottom() - 1.0),
-            MARKER_COLOR,
+            crate::theme::Tokens::ruler_marker(),
         );
     }
 }
 
 fn draw_vertical(app: &App, painter: &Painter, left: Rect) {
-    painter.rect_filled(left, 0.0, Tokens::RULER_BG);
+    painter.rect_filled(left, 0.0, Tokens::ruler_bg());
     painter.vline(
         left.right() - 0.5,
         left.y_range(),
-        Stroke::new(1.0, BORDER_COLOR),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
     let view = &app.view;
     let rulers = app.doc().metadata.rulers.clone();
@@ -388,16 +390,20 @@ fn draw_vertical(app: &App, painter: &Painter, left: Rect) {
         };
         pixels.rect(
             Rect::from_min_max(Pos2::new(base - w, py), Pos2::new(base, py + 1.0)),
-            TICK_COLOR,
+            crate::theme::Tokens::ruler_tick(),
         );
         if kind == TickKind::Major {
             // Numbers read upwards, centred on their tick.
-            let g = painter.layout_no_wrap(label(v, major), font.clone(), LABEL_COLOR);
+            let g = painter.layout_no_wrap(
+                label(v, major),
+                font.clone(),
+                crate::theme::Tokens::ruler_label(),
+            );
             let len = g.size().x;
             let mut ts = epaint::TextShape::new(
                 Pos2::new(left.left() + LABEL_OFFSET, (y + len / 2.0).round()),
                 g,
-                LABEL_COLOR,
+                crate::theme::Tokens::ruler_label(),
             );
             ts.angle = -std::f32::consts::FRAC_PI_2;
             painter.add(ts);
@@ -409,7 +415,7 @@ fn draw_vertical(app: &App, painter: &Painter, left: Rect) {
             painter,
             Pos2::new(left.left() + 1.0, y),
             Pos2::new(left.right() - 1.0, y),
-            MARKER_COLOR,
+            crate::theme::Tokens::ruler_marker(),
         );
     }
 }
@@ -434,19 +440,19 @@ fn marker_point(app: &App) -> Option<Point> {
 
 /// The origin button: a dotted cross with a handle pulled out of it.
 fn draw_corner(painter: &Painter, corner: Rect, active: bool) {
-    painter.rect_filled(corner, 0.0, Tokens::RULER_BG);
+    painter.rect_filled(corner, 0.0, Tokens::ruler_bg());
     if active {
-        painter.rect_filled(corner.shrink(1.0), 0.0, Tokens::TOOL_HOVER);
+        painter.rect_filled(corner.shrink(1.0), 0.0, Tokens::tool_hover());
     }
     painter.hline(
         corner.x_range(),
         corner.bottom() - 0.5,
-        Stroke::new(1.0, BORDER_COLOR),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
     painter.vline(
         corner.right() - 0.5,
         corner.y_range(),
-        Stroke::new(1.0, BORDER_COLOR),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
     // Pixel pattern (17 px corner): a
     // dotted vertical line at x 6, a dotted horizontal one at y 6, and a
@@ -478,13 +484,13 @@ pub fn draw_origin_drag(app: &App, painter: &Painter, canvas: Rect) {
             painter,
             Pos2::new(canvas.left(), y),
             Pos2::new(canvas.right(), y),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         dashed(
             painter,
             Pos2::new(x, canvas.top()),
             Pos2::new(x, canvas.bottom()),
-            Tokens::TEXT,
+            Tokens::text(),
         );
     }
 }

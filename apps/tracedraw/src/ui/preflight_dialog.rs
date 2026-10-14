@@ -193,7 +193,8 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut PreflightState, close
             |ui| {
                 ui.set_min_height(34.0);
                 ui.add(
-                    egui::Label::new(RichText::new(hint).color(Tokens::TEXT_DIM).size(12.0)).wrap(),
+                    egui::Label::new(RichText::new(hint).color(Tokens::text_dim()).size(12.0))
+                        .wrap(),
                 );
             },
         );
@@ -253,7 +254,7 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
     let col_x = |col: usize| COLS[..col].iter().sum::<f32>();
     let (head, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
     ui.painter()
-        .rect_filled(head, 0.0, Color32::from_gray(0xEA));
+        .rect_filled(head, 0.0, crate::theme::Tokens::tab_strip());
     for (col, key) in [
         "",
         "preflight.issue",
@@ -271,7 +272,7 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
                 col_x(col),
                 COLS[col],
                 &tr(key),
-                Tokens::TEXT,
+                Tokens::text(),
                 false,
             );
         }
@@ -280,8 +281,8 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
     let list_h = ROW_H * 10.0;
     let mut clicked = None;
     egui::Frame::new()
-        .fill(Color32::WHITE)
-        .stroke(Stroke::new(1.0, crate::ui::chrome::FIELD_BORDER))
+        .fill(crate::theme::Tokens::field())
+        .stroke(Stroke::new(1.0, crate::theme::Tokens::control_border()))
         .show(ui, |ui| {
             ui.set_width(width - 2.0);
             egui::ScrollArea::vertical()
@@ -299,7 +300,7 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
                             egui::Align2::CENTER_CENTER,
                             tr("preflight.empty"),
                             font.clone(),
-                            Tokens::TEXT_DIM,
+                            Tokens::text_dim(),
                         );
                     }
                     for row in &rows {
@@ -307,9 +308,9 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
                             ui.allocate_exact_size(vec2(width - 2.0, ROW_H), Sense::click());
                         let p = ui.painter();
                         if st.selected == Some(*row) {
-                            p.rect_filled(r, 0.0, Tokens::TOOL_ACTIVE);
+                            p.rect_filled(r, 0.0, Tokens::tool_active());
                         } else if resp.hovered() {
-                            p.rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+                            p.rect_filled(r, 0.0, Tokens::tool_hover());
                         }
                         match *row {
                             Row::Group(c) => {
@@ -332,12 +333,12 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
                                 };
                                 p.add(egui::Shape::convex_polygon(
                                     pts,
-                                    Tokens::TEXT_DIM,
+                                    Tokens::text_dim(),
                                     Stroke::NONE,
                                 ));
                                 paint_icon(p, pos2(r.left() + 24.0, r.center().y), c.severity());
                                 let name = format!("{}  ({n})", tr(&c.key()));
-                                cell(p, r, 32.0, width - 36.0, &name, Tokens::TEXT, true);
+                                cell(p, r, 32.0, width - 36.0, &name, Tokens::text(), true);
                             }
                             Row::Issue(i) => {
                                 let Some(issue) = st.issues.get(i) else {
@@ -358,18 +359,18 @@ fn issue_table(app: &mut App, ui: &mut Ui, st: &mut PreflightState) {
                                     col_x(1) + 14.0,
                                     COLS[1] - 14.0,
                                     &tr(&issue.check.key()),
-                                    Tokens::TEXT_DIM,
+                                    Tokens::text_dim(),
                                     false,
                                 );
-                                cell(p, r, col_x(2), COLS[2], &page, Tokens::TEXT, false);
-                                cell(p, r, col_x(3), COLS[3], &object, Tokens::TEXT, false);
+                                cell(p, r, col_x(2), COLS[2], &page, Tokens::text(), false);
+                                cell(p, r, col_x(3), COLS[3], &object, Tokens::text(), false);
                                 cell(
                                     p,
                                     r,
                                     col_x(4),
                                     COLS[4],
                                     &issue.detail,
-                                    Tokens::TEXT_DIM,
+                                    Tokens::text_dim(),
                                     false,
                                 );
                             }

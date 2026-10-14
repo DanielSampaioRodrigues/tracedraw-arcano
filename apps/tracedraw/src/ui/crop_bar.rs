@@ -13,7 +13,11 @@ use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::geometry::{Point, Rect};
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// `r` sized `w` by `h` about its point at the object origin.

@@ -279,7 +279,7 @@ pub fn before_after_pick(
                 painter.rect_stroke(
                     rect,
                     0.0,
-                    egui::Stroke::new(1.0, crate::theme::Tokens::BORDER),
+                    egui::Stroke::new(1.0, crate::theme::Tokens::border()),
                     egui::StrokeKind::Inside,
                 );
                 if picking && resp.hovered() {

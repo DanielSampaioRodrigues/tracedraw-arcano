@@ -14,7 +14,7 @@ const ERROR: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
 const FIELD_W: f32 = 170.0;
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(RichText::new(text).color(Tokens::text_dim()).size(11.0));
 }
 
 pub fn ai_drawing(app: &mut App, ui: &mut Ui) {

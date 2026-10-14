@@ -87,21 +87,21 @@ pub fn shaping(app: &mut App, ui: &mut Ui) {
         ui.painter().rect_stroke(
             rect,
             3.0,
-            egui::Stroke::new(1.0, Tokens::BORDER),
+            egui::Stroke::new(1.0, Tokens::border()),
             egui::StrokeKind::Inside,
         );
         draw_pic(
             ui.painter(),
             Rect::from_center_size(rect.center(), Vec2::splat(56.0)),
             pic,
-            Tokens::ICON,
+            Tokens::icon(),
         );
         ui.add_space(6.0);
         ui.vertical(|ui| {
             ui.label(tr(hint));
             ui.label(
                 egui::RichText::new(tr("docker.shaping_target"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
         });
@@ -136,7 +136,7 @@ pub fn shaping(app: &mut App, ui: &mut Ui) {
             } else {
                 tr("docker.shaping_needs_one")
             })
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
         );
     }

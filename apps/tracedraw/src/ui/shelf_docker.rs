@@ -16,7 +16,6 @@ const TILE_W: f32 = 80.0;
 const TILE_H: f32 = THUMB + 26.0;
 /// New pictures drawn per frame (a large shelf fills in over a few).
 const THUMBS_PER_FRAME: usize = 6;
-const THUMB_BORDER: Color32 = Color32::from_gray(0xD0);
 
 pub fn shelf(app: &mut App, ui: &mut Ui) {
     app.shelf.ensure_loaded();
@@ -63,7 +62,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(4.0);
     if app.shelf.items.is_empty() {
-        ui.label(egui::RichText::new(tr("shelf.empty_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("shelf.empty_hint")).color(Tokens::text_dim()));
         return;
     }
     let items: Vec<(u64, String)> = app
@@ -157,9 +156,9 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
     let chosen = app.shelf.selected == Some(uid);
     let painter = ui.painter().clone();
     if chosen {
-        painter.rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+        painter.rect_filled(rect, 2.0, Tokens::tool_active());
     } else if resp.hovered() {
-        painter.rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+        painter.rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let frame = Rect::from_min_size(
         rect.min + egui::vec2((TILE_W - THUMB) / 2.0, 4.0),
@@ -169,7 +168,7 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
     painter.rect_stroke(
         frame,
         0.0,
-        Stroke::new(1.0, THUMB_BORDER),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let texture = picture(app, ui, uid, budget);
@@ -189,7 +188,7 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
         let mut job = egui::text::LayoutJob::simple_singleline(
             name.to_string(),
             egui::FontId::proportional(11.5),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         job.wrap = egui::text::TextWrapping::truncate_at_width(name_rect.width());
         let galley = ui.painter().layout_job(job);
@@ -197,7 +196,7 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
             name_rect.center().x - galley.size().x / 2.0,
             name_rect.top(),
         );
-        painter.galley(at, galley, Tokens::TEXT);
+        painter.galley(at, galley, Tokens::text());
     }
     let resp = resp.on_hover_text(trf("shelf.item_tip", &[("name", name)]));
     if resp.clicked() || resp.secondary_clicked() || resp.drag_started() {

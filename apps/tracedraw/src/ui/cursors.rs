@@ -423,7 +423,7 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
         CornerRadius::same(3),
         Color32::from_white_alpha(200),
     );
-    crate::ui::icons::draw(painter, r, tool, crate::theme::Tokens::ICON);
+    crate::ui::icons::draw(painter, r, tool, crate::theme::Tokens::icon());
 }
 
 /// Above and to the right of the cross hair: a node with the line going

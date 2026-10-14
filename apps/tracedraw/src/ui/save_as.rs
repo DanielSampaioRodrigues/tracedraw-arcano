@@ -268,7 +268,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut SaveAsState, close: &mut bo
             ui.label(RichText::new(note.as_str()).color(ERROR));
         }
         if files::WEB {
-            ui.label(RichText::new(tr("dialog.download_hint")).color(Tokens::TEXT_DIM));
+            ui.label(RichText::new(tr("dialog.download_hint")).color(Tokens::text_dim()));
         }
         ui.add_space(6.0);
         if let Some(path) = st.replace.clone() {
@@ -321,9 +321,9 @@ fn folder_bar(ui: &mut Ui, st: &mut SaveAsState) {
         // An arrow pointing up.
         let c = resp.rect.center();
         let colour = if up.is_some() {
-            Tokens::ICON
+            Tokens::icon()
         } else {
-            Tokens::TEXT_DIM
+            Tokens::text_dim()
         };
         let stroke = egui::Stroke::new(1.5, colour);
         ui.painter().line_segment(
@@ -413,7 +413,7 @@ fn listing(ui: &mut Ui, st: &mut SaveAsState) {
                             "dialog.col_type",
                             "dialog.col_size",
                         ] {
-                            ui.label(RichText::new(tr(head)).color(Tokens::TEXT_DIM));
+                            ui.label(RichText::new(tr(head)).color(Tokens::text_dim()));
                         }
                         ui.end_row();
                         for e in st.shown() {
@@ -467,7 +467,7 @@ fn listing(ui: &mut Ui, st: &mut SaveAsState) {
 fn entry_icon(ui: &mut Ui, folder: bool) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
     let p = ui.painter();
-    let stroke = egui::Stroke::new(1.0, Tokens::ICON);
+    let stroke = egui::Stroke::new(1.0, Tokens::icon());
     if folder {
         let fill = egui::Color32::from_rgb(0xF3, 0xC6, 0x5F);
         let body = egui::Rect::from_min_max(
@@ -551,7 +551,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
             if st.cdr {
                 ui.label(
                     RichText::new(tr("dialog.cdr_version_hint"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
             }

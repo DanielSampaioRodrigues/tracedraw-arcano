@@ -104,7 +104,11 @@ impl BrushSettings {
 }
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 fn percent(ui: &mut Ui, label: &str, tip: &str, v: &mut u32) {

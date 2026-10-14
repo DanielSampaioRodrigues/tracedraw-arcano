@@ -591,7 +591,7 @@ fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOp
                     ("h", &h.to_string()),
                 ],
             ))
-            .color(Tokens::TEXT_DIM),
+            .color(Tokens::text_dim()),
         );
     }
 }
@@ -1319,7 +1319,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 if !any {
                     ui.label(
-                        egui::RichText::new(tr("dialog.clipboard_empty")).color(Tokens::TEXT_DIM),
+                        egui::RichText::new(tr("dialog.clipboard_empty")).color(Tokens::text_dim()),
                     );
                 }
                 if ok_cancel(ui, &mut close) && any {
@@ -1674,7 +1674,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                     });
                 ui.label(
                     egui::RichText::new(format!("{}  {}", pn.label(0), pn.label(1)))
-                        .color(Tokens::TEXT_DIM),
+                        .color(Tokens::text_dim()),
                 );
                 if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
                     close = true;
@@ -1828,7 +1828,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
         ui.separator();
         ui.label(
             egui::RichText::new(tr("options.label_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         ui.add_space(4.0);
@@ -2221,7 +2221,7 @@ fn export_preview_box(app: &App, ui: &mut Ui, st: &ExportState, size: egui::Vec2
     };
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, egui::Color32::from_gray(0xE6));
+    painter.rect_filled(rect, 0.0, crate::theme::Tokens::panel_dark());
     if let Some(tex) = &preview.texture {
         let (w, h) = (preview.size.0.max(1) as f32, preview.size.1.max(1) as f32);
         let scale = ((rect.width() - 16.0) / w).min((rect.height() - 16.0) / h);
@@ -2365,7 +2365,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                 ("h", &format!("{}", (b.height() / 25.4 * st.dpi).round())),
                             ],
                         ))
-                        .color(Tokens::TEXT_DIM),
+                        .color(Tokens::text_dim()),
                     );
                 }
                 if !scripted && st.format == 1 {
@@ -2395,7 +2395,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         });
                         ui.label(
                             egui::RichText::new(tr("dialog.pdfx_profile_note"))
-                                .color(Tokens::TEXT_DIM)
+                                .color(Tokens::text_dim())
                                 .size(11.0),
                         );
                     }
@@ -2411,7 +2411,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                             "dialog.export_estimate",
                             &[("size", &crate::export::human_size(bytes))],
                         ))
-                        .color(Tokens::TEXT_DIM),
+                        .color(Tokens::text_dim()),
                     );
                 }
             });
@@ -2552,8 +2552,8 @@ fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 p.rect(
                     egui::Rect::from_min_size(o, egui::vec2(w, h)),
                     0.0,
-                    egui::Color32::WHITE,
-                    egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+                    crate::theme::Tokens::field(),
+                    egui::Stroke::new(1.0, Tokens::control_border()),
                     egui::StrokeKind::Inside,
                 );
                 for c in &sheet.cells {
@@ -2565,7 +2565,7 @@ fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     let fill = if c.page.is_some() {
                         egui::Color32::from_rgb(0xDD, 0xEB, 0xF7)
                     } else {
-                        egui::Color32::from_gray(0xF0)
+                        crate::theme::Tokens::control_fill()
                     };
                     p.rect(
                         cell,
@@ -2580,14 +2580,14 @@ fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                             egui::Align2::CENTER_CENTER,
                             (n + 1).to_string(),
                             egui::FontId::proportional(11.0),
-                            Tokens::TEXT,
+                            Tokens::text(),
                         );
                     }
                 }
             }
             ui.label(
                 egui::RichText::new(trf("print.sheets", &[("n", &plan.len().to_string())]))
-                    .color(Tokens::TEXT_DIM),
+                    .color(Tokens::text_dim()),
             );
         });
     });
@@ -2595,7 +2595,7 @@ fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
 
 fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut bool) {
     window(ctx, tr("dialog.print")).show(ctx, |ui| {
-        ui.label(egui::RichText::new(tr("dialog.print_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("dialog.print_hint")).color(Tokens::text_dim()));
         // Pages and prepress on the left, the layout on the right.
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -2722,7 +2722,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             ));
             ui.label(
                 egui::RichText::new(tr("dialog.print_merge_fields_hint"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
             ui.horizontal_wrapped(|ui| {
@@ -3015,7 +3015,7 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
     let mut apply = false;
     window(ctx, tr("dialog.encode")).show(ctx, |ui| {
         ui.set_min_width(420.0);
-        ui.label(egui::RichText::new(tr("dialog.encode_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("dialog.encode_hint")).color(Tokens::text_dim()));
         ui.add_space(4.0);
         let combo = |ui: &mut Ui, id: &str, label: &str, v: &mut Encoding| {
             ui.horizontal(|ui| {
@@ -3124,7 +3124,7 @@ fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close
                             ui.label(
                                 egui::RichText::new(format!("({})", m.pos))
                                     .italics()
-                                    .color(Tokens::TEXT_DIM),
+                                    .color(Tokens::text_dim()),
                             );
                             ui.horizontal_wrapped(|ui| {
                                 for syn in &m.synonyms {
@@ -3143,7 +3143,9 @@ fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close
             }
         }
         if st.target.is_none() {
-            ui.label(egui::RichText::new(tr("thesaurus.no_text_selected")).color(Tokens::TEXT_DIM));
+            ui.label(
+                egui::RichText::new(tr("thesaurus.no_text_selected")).color(Tokens::text_dim()),
+            );
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -3201,7 +3203,7 @@ fn grammar_dialog(app: &mut App, ctx: &Context, st: &mut GrammarState, close: &m
     let mut fix_all = false;
     window(ctx, tr("dialog.grammar")).show(ctx, |ui| {
         ui.set_min_width(420.0);
-        ui.label(egui::RichText::new(tr("grammar.scope_note")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("grammar.scope_note")).color(Tokens::text_dim()));
         if st.findings.is_empty() {
             ui.label(tr("grammar.no_issues"));
         } else {
@@ -3232,7 +3234,7 @@ fn grammar_dialog(app: &mut App, ctx: &Context, st: &mut GrammarState, close: &m
                                     if s.chars().count() < f.sentence.chars().count() {
                                         s.push_str("...");
                                     }
-                                    ui.label(egui::RichText::new(s).color(Tokens::TEXT_DIM));
+                                    ui.label(egui::RichText::new(s).color(Tokens::text_dim()));
                                 });
                                 if let Some(x) = &f.fix {
                                     if ui.button(tr("grammar.fix")).clicked() {
@@ -3311,7 +3313,7 @@ fn autocorrect_dialog(app: &mut App, ctx: &Context, st: &mut AutocorrectState, c
                 "autocorrect.quotes_example",
                 &[("q", &format!("{o}abc{c}  {so}abc{sc}"))],
             ))
-            .color(Tokens::TEXT_DIM),
+            .color(Tokens::text_dim()),
         );
         ui.separator();
         ui.label(egui::RichText::new(tr("autocorrect.replacements")).strong());
@@ -3521,7 +3523,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                     } else {
                         c.rgb_profile_path.clone()
                     })
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
                 );
             });
@@ -3554,7 +3556,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                     } else {
                         c.cmyk_profile_path.clone()
                     })
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
                 );
             });
@@ -3584,7 +3586,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
         });
         ui.label(
             egui::RichText::new(tr("dialog.color_management_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
@@ -3786,7 +3788,7 @@ fn palette_editor_dialog(
         } else {
             ui.label(
                 egui::RichText::new(tr("dialog.builtin_palette_hint"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
         }

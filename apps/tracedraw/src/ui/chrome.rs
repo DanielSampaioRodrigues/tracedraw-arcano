@@ -21,13 +21,7 @@ pub const FIELD_H: f32 = 28.0;
 pub const ROW_PITCH: f32 = 33.0;
 /// The close button's width.
 const CLOSE_W: f32 = 46.0;
-pub const WINDOW_BORDER: Color32 = Color32::from_gray(0xB2);
-/// Fields and lists.
-pub const FIELD_BORDER: Color32 = Color32::from_gray(0xB2);
 pub const FIELD_FOCUS: Color32 = Color32::from_rgb(0x00, 0xAD, 0xFE);
-/// Lists, buttons.
-pub const CONTROL_FILL: Color32 = Color32::from_gray(0xEA);
-pub const CONTROL_HOVER: Color32 = Color32::from_rgb(0xE5, 0xF1, 0xFB);
 /// The close button turns red under the pointer.
 const CLOSE_HOVER: Color32 = Color32::from_rgb(0xE8, 0x11, 0x23);
 const TITLE_FONT: f32 = 13.0;
@@ -47,8 +41,8 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .frame(
             Frame::new()
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0, WINDOW_BORDER))
+                .fill(crate::theme::Tokens::title_bar())
+                .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
                 .shadow(egui::epaint::Shadow {
                     offset: [0, 4],
                     blur: 16,
@@ -75,7 +69,7 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
                     body.max - Vec2::new(EDGE, EDGE),
                 ),
                 0.0,
-                Tokens::PANEL,
+                Tokens::panel(),
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
                 form_style(ui);
@@ -109,7 +103,7 @@ fn title_width(ui: &Ui, title: &str) -> f32 {
     let galley = ui.painter().layout_no_wrap(
         title.to_string(),
         FontId::proportional(TITLE_FONT),
-        Color32::BLACK,
+        crate::theme::Tokens::text(),
     );
     galley.size().x + 12.0 + 24.0 + CLOSE_W
 }
@@ -142,7 +136,7 @@ impl Window {
             let top = ui.cursor().min;
             ui.add_space(TITLE_BAR);
             let inner = Frame::new()
-                .fill(Tokens::PANEL)
+                .fill(Tokens::panel())
                 .inner_margin(Margin {
                     left: 14,
                     right: 14,
@@ -176,8 +170,8 @@ impl Window {
 /// The frame of every dialog window: white, a grey border and a shadow.
 fn window_frame() -> Frame {
     Frame::new()
-        .fill(Color32::WHITE)
-        .stroke(Stroke::new(1.0, WINDOW_BORDER))
+        .fill(crate::theme::Tokens::title_bar())
+        .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
         .shadow(egui::epaint::Shadow {
             offset: [0, 4],
             blur: 16,
@@ -282,8 +276,8 @@ fn access_label(text: &str) -> egui::WidgetText {
             0.0,
             egui::TextFormat {
                 font_id: font.clone(),
-                color: Tokens::TEXT,
-                underline: Stroke::new(1.0, Tokens::TEXT),
+                color: Tokens::text(),
+                underline: Stroke::new(1.0, Tokens::text()),
                 ..Default::default()
             },
         );
@@ -292,7 +286,7 @@ fn access_label(text: &str) -> egui::WidgetText {
             0.0,
             egui::TextFormat {
                 font_id: font,
-                color: Tokens::TEXT,
+                color: Tokens::text(),
                 ..Default::default()
             },
         );
@@ -325,7 +319,7 @@ pub fn button_row(ui: &mut Ui, labels: &[&str], access_keys: bool) -> Option<usi
                     if i == 0 {
                         let w = &mut ui.visuals_mut().widgets;
                         w.inactive.bg_stroke = Stroke::new(1.0, Tokens::ACCENT);
-                        w.inactive.weak_bg_fill = Color32::from_rgb(0xE5, 0xF1, 0xFB);
+                        w.inactive.weak_bg_fill = crate::theme::Tokens::tool_hover();
                     }
                     ui.add_sized([100.0, 27.0], egui::Button::new(text))
                 })
@@ -434,13 +428,13 @@ fn message_box_with(
 /// Returns true when the close button was clicked.
 fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {
     let painter = ui.painter();
-    painter.rect_filled(bar, 0.0, Color32::WHITE);
+    painter.rect_filled(bar, 0.0, crate::theme::Tokens::title_bar());
     painter.text(
         Pos2::new(bar.left() + 12.0, bar.center().y),
         Align2::LEFT_CENTER,
         title,
         FontId::proportional(TITLE_FONT),
-        Color32::BLACK,
+        crate::theme::Tokens::text(),
     );
     let close = Rect::from_min_max(
         Pos2::new(bar.right() - CLOSE_W, bar.top()),
@@ -451,7 +445,7 @@ fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {
         ui.painter().rect_filled(close, 0.0, CLOSE_HOVER);
         Color32::WHITE
     } else {
-        Color32::BLACK
+        crate::theme::Tokens::text()
     };
     let c = close.center();
     let s = Stroke::new(1.3, color);
@@ -476,16 +470,16 @@ pub fn form_style(ui: &mut Ui) {
         w.corner_radius = CornerRadius::ZERO;
         w.expansion = 0.0;
     }
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, FIELD_BORDER);
-    v.widgets.inactive.weak_bg_fill = CONTROL_FILL;
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, crate::theme::Tokens::control_border());
+    v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::control_fill();
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, FIELD_FOCUS);
-    v.widgets.hovered.weak_bg_fill = CONTROL_HOVER;
+    v.widgets.hovered.weak_bg_fill = crate::theme::Tokens::tool_hover();
     v.widgets.active.bg_stroke = Stroke::new(1.0, FIELD_FOCUS);
     v.widgets.open.bg_stroke = Stroke::new(1.0, FIELD_FOCUS);
-    v.widgets.open.weak_bg_fill = CONTROL_HOVER;
+    v.widgets.open.weak_bg_fill = crate::theme::Tokens::tool_hover();
     v.selection.stroke = Stroke::new(1.0, FIELD_FOCUS);
-    v.extreme_bg_color = Color32::WHITE;
-    v.text_edit_bg_color = Some(Color32::WHITE);
+    v.extreme_bg_color = crate::theme::Tokens::field();
+    v.text_edit_bg_color = Some(crate::theme::Tokens::field());
     // A chosen radio button shows a large black dot, as on the desktop.
     ui.spacing_mut().icon_width_inner = 12.0;
 }
@@ -493,8 +487,8 @@ pub fn form_style(ui: &mut Ui) {
 /// A white panel with a light border, for lists and page frames.
 pub fn panel() -> Frame {
     Frame::new()
-        .fill(Color32::WHITE)
-        .stroke(Stroke::new(1.0, Color32::from_gray(0xD9)))
+        .fill(crate::theme::Tokens::field())
+        .stroke(Stroke::new(1.0, crate::theme::Tokens::border()))
         .inner_margin(Margin::same(6))
 }
 
@@ -504,20 +498,20 @@ pub fn section(ui: &mut Ui, text: &str) {
     let font = FontId::proportional(13.0);
     let galley = ui
         .painter()
-        .layout_no_wrap(text.to_string(), font, Tokens::TEXT);
+        .layout_no_wrap(text.to_string(), font, Tokens::text());
     let h = galley.size().y.max(18.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
     let text_w = galley.size().x;
     ui.painter().galley(
         Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.0),
         galley,
-        Tokens::TEXT,
+        Tokens::text(),
     );
     let y = rect.center().y.round() + 0.5;
     ui.painter().hline(
         (rect.left() + text_w + 12.0)..=rect.right(),
         y,
-        Stroke::new(1.0, Color32::from_gray(0xDC)),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
     );
     ui.add_space(4.0);
 }
@@ -536,7 +530,7 @@ pub fn heading(ui: &mut Ui, at: Pos2, text: &str) {
         Align2::LEFT_CENTER,
         text,
         crate::theme::bold(13.0),
-        Color32::BLACK,
+        crate::theme::Tokens::text(),
     );
 }
 
@@ -547,7 +541,7 @@ pub fn label_right(ui: &mut Ui, right: f32, y: f32, text: &str) {
         Align2::RIGHT_CENTER,
         text,
         FontId::proportional(13.0),
-        Color32::BLACK,
+        crate::theme::Tokens::text(),
     );
 }
 
@@ -558,7 +552,7 @@ pub fn label_at(ui: &mut Ui, at: Pos2, text: &str) {
         Align2::LEFT_CENTER,
         text,
         FontId::proportional(13.0),
-        Color32::BLACK,
+        crate::theme::Tokens::text(),
     );
 }
 
@@ -626,8 +620,8 @@ pub fn spin_field(
     painter.rect(
         col,
         0.0,
-        Color32::WHITE,
-        Stroke::new(1.0, FIELD_BORDER),
+        crate::theme::Tokens::field(),
+        Stroke::new(1.0, crate::theme::Tokens::control_border()),
         egui::StrokeKind::Inside,
     );
     let half = col.height() / 2.0;
@@ -638,7 +632,8 @@ pub fn spin_field(
         );
         let a = ui.interact(r, egui::Id::new((id, "spin", i)), Sense::click());
         if a.hovered() {
-            ui.painter().rect_filled(r.shrink(1.0), 0.0, CONTROL_HOVER);
+            ui.painter()
+                .rect_filled(r.shrink(1.0), 0.0, crate::theme::Tokens::tool_hover());
         }
         let c = r.center();
         let pts = if up {
@@ -656,7 +651,7 @@ pub fn spin_field(
         };
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
             pts,
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
             Stroke::NONE,
         ));
         if a.clicked() {

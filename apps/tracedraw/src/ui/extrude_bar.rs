@@ -18,7 +18,11 @@ use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::extrude::ExtrudeKind;
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// A length in the document's units; true when it was applied.

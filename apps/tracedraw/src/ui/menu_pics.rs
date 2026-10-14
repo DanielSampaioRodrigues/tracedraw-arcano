@@ -20,7 +20,7 @@ pub fn draw(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
     let s = Stroke::new(1.1 * k, color);
     let thin = Stroke::new(0.85 * k, color);
     let bar = Stroke::new(1.3 * k, color);
-    let enabled = color == Tokens::ICON;
+    let enabled = color == Tokens::icon();
     let accent = |c: Color32| if enabled { c } else { color };
     let line = |a: (f32, f32), b: (f32, f32), st: Stroke| {
         painter.line_segment([q(r, a.0, a.1), q(r, b.0, b.1)], st);

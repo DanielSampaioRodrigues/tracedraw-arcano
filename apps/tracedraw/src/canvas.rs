@@ -202,7 +202,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             painter.rect_stroke(
                 r,
                 0.0,
-                EStroke::new(1.0, Tokens::TEXT),
+                EStroke::new(1.0, Tokens::text()),
                 epaint::StrokeKind::Outside,
             );
         }
@@ -211,7 +211,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             if pts.len() > 1 {
                 painter.add(epaint::PathShape::line(
                     pts,
-                    EStroke::new(1.0, Tokens::TEXT),
+                    EStroke::new(1.0, Tokens::text()),
                 ));
             }
         }
@@ -263,7 +263,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             painter.rect_stroke(
                 ERect::from_center_size(sp, egui::vec2(6.0, 6.0)),
                 0.0,
-                EStroke::new(1.0, Tokens::TEXT),
+                EStroke::new(1.0, Tokens::text()),
                 epaint::StrokeKind::Middle,
             );
         }
@@ -285,7 +285,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             }
             painter.line_segment(
                 [view.to_screen(top), view.to_screen(bottom)],
-                EStroke::new(1.5, Tokens::TEXT),
+                EStroke::new(1.5, Tokens::text()),
             );
         }
     }
@@ -305,7 +305,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         painter.rect_filled(
             paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
             0.0,
-            Tokens::PAGE_SHADOW,
+            Tokens::page_shadow(),
         );
     }
     painter.rect_filled(paper, 0.0, Tokens::PAGE);
@@ -313,7 +313,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         painter.rect_stroke(
             paper,
             0.0,
-            EStroke::new(1.0, Tokens::PAGE_BORDER),
+            EStroke::new(1.0, Tokens::page_border()),
             epaint::StrokeKind::Outside,
         );
     }
@@ -324,7 +324,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
             painter.rect_stroke(
                 r,
                 0.0,
-                EStroke::new(1.0, Tokens::PAGE_BORDER),
+                EStroke::new(1.0, Tokens::page_border()),
                 epaint::StrokeKind::Outside,
             );
         }
@@ -346,7 +346,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
                 let t1 = ((k as f32 * dash * 2.0) + dash) / len;
                 painter.line_segment(
                     [a + (b - a) * t0, a + (b - a) * t1],
-                    EStroke::new(1.0, Tokens::TEXT_DIM),
+                    EStroke::new(1.0, Tokens::text_dim()),
                 );
             }
         }
@@ -746,7 +746,7 @@ fn draw_table_cells(app: &App, painter: &Painter) {
         }
         painter.line_segment(
             [view.to_screen(top), view.to_screen(bottom)],
-            EStroke::new(1.5, Tokens::TEXT),
+            EStroke::new(1.5, Tokens::text()),
         );
     }
 }

@@ -15,24 +15,24 @@ fn vsep(ui: &mut Ui) {
 /// Standard toolbar buttons: 32 px square with a 20 px icon.
 const STD: f32 = 32.0;
 const STD_ICON: f32 = 20.0;
-const HOVER_FILL: egui::Color32 = egui::Color32::from_rgb(0xE5, 0xF3, 0xFF);
-const HOVER_EDGE: egui::Color32 = egui::Color32::from_rgb(0xCC, 0xE8, 0xFF);
 
 fn std_frame(ui: &Ui, rect: egui::Rect, hovered: bool, pressed: bool) {
     if pressed {
-        ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
+        ui.painter()
+            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            egui::Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Middle,
         );
     } else if hovered {
-        ui.painter().rect_filled(rect, 0.0, HOVER_FILL);
+        ui.painter()
+            .rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             0.0,
-            egui::Stroke::new(1.0, HOVER_EDGE),
+            egui::Stroke::new(1.0, crate::theme::Tokens::selected_row()),
             egui::StrokeKind::Middle,
         );
     }
@@ -60,9 +60,9 @@ fn std_button(
         egui::Rect::from_center_size(rect.center(), Vec2::splat(STD_ICON)),
         action,
         if enabled {
-            Tokens::ICON
+            Tokens::icon()
         } else {
-            Tokens::ICON_OFF
+            Tokens::icon_off()
         },
     );
     resp.on_hover_text(tip)
@@ -83,9 +83,9 @@ fn std_arrow(ui: &mut Ui, id: &str, enabled: bool) -> egui::Response {
     std_frame(ui, rect, enabled && resp.hovered(), false);
     let c = rect.center();
     let color = if enabled {
-        Tokens::TEXT_DIM
+        Tokens::text_dim()
     } else {
-        Tokens::ICON_OFF
+        Tokens::icon_off()
     };
     ui.painter().add(egui::epaint::PathShape::convex_polygon(
         vec![
@@ -106,7 +106,7 @@ fn std_sep(ui: &mut Ui) {
     ui.painter().vline(
         x,
         (rect.top() + 4.0)..=(rect.bottom() - 4.0),
-        egui::Stroke::new(1.0, egui::Color32::from_gray(0xD9)),
+        egui::Stroke::new(1.0, crate::theme::Tokens::border()),
     );
 }
 
@@ -151,8 +151,8 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
         .data(|d| d.get_temp::<String>(edit_id))
         .unwrap_or_else(|| format!("{:.0}%", app.zoom_percent()));
     let field = egui::Frame::new()
-        .fill(egui::Color32::WHITE)
-        .stroke(egui::Stroke::new(1.0, Tokens::CONTROL_BORDER))
+        .fill(crate::theme::Tokens::field())
+        .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
         .inner_margin(egui::Margin::ZERO);
     field.show(ui, |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -181,9 +181,9 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
                 arrow,
                 0.0,
                 if resp.hovered() {
-                    HOVER_FILL
+                    crate::theme::Tokens::hovered_row()
                 } else {
-                    Tokens::PANEL_DARK
+                    Tokens::panel_dark()
                 },
             );
             let c = arrow.center();
@@ -193,7 +193,7 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
                     c + Vec2::new(4.0, -2.0),
                     c + Vec2::new(0.0, 2.5),
                 ],
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
                 egui::Stroke::NONE,
             ));
             egui::Popup::menu(&resp)
@@ -406,7 +406,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         let font = egui::FontId::proportional(13.0);
         let text_w = ui
             .painter()
-            .layout_no_wrap(label.clone(), font.clone(), Tokens::TEXT)
+            .layout_no_wrap(label.clone(), font.clone(), Tokens::text())
             .size()
             .x;
         let width = (text_w + 6.0 + 22.0).max(86.0);
@@ -417,7 +417,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             egui::Align2::LEFT_CENTER,
             label,
             font,
-            Tokens::TEXT,
+            Tokens::text(),
         );
         let c = egui::pos2(rect.right() - 9.0, rect.center().y);
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
@@ -426,7 +426,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 c + Vec2::new(4.0, -2.0),
                 c + Vec2::new(0.0, 2.5),
             ],
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
             egui::Stroke::NONE,
         ));
         egui::Popup::menu(&snap_resp)
@@ -466,14 +466,14 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 Vec2::splat(STD_ICON),
             ),
             icons::Action::Launch,
-            Tokens::ICON,
+            Tokens::icon(),
         );
         ui.painter().text(
             egui::pos2(rect.left() + 30.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             tr("toolbar.launch"),
             egui::FontId::proportional(13.0),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         let c = egui::pos2(rect.right() - 9.0, rect.center().y);
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
@@ -482,7 +482,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 c + Vec2::new(4.0, -2.0),
                 c + Vec2::new(0.0, 2.5),
             ],
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
             egui::Stroke::NONE,
         ));
         egui::Popup::menu(&launch)
@@ -598,7 +598,7 @@ pub fn transform_toolbar(app: &mut App, ui: &mut Ui) {
 fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> bool {
     ui.label(
         egui::RichText::new(label)
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
     // Positions and sizes of the selection: through the drawing scale.
@@ -621,8 +621,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
         ui.set_min_height(crate::ui::propbar::BAR_H);
         // Fields and lists are white with a grey border.
         let v = ui.visuals_mut();
-        v.widgets.inactive.weak_bg_fill = egui::Color32::WHITE;
-        v.widgets.hovered.weak_bg_fill = egui::Color32::WHITE;
+        v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::field();
+        v.widgets.hovered.weak_bg_fill = crate::theme::Tokens::field();
         let shapes = app.selected_shapes();
         match app.tool {
             Tool::Shape => shape_tool_bar(app, ui),
@@ -751,7 +751,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Eraser => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.eraser_thickness"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 let mut w = app.units.from_mm(app.eraser_width);
@@ -782,7 +782,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.label(
                     egui::RichText::new(tr("hint.bar_eraser"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
             }
@@ -798,14 +798,14 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::SegmentDelete => {
                 ui.label(
                     egui::RichText::new(tr("segment_delete.hint"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
             }
             Tool::Spiral => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.revolutions"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
@@ -825,13 +825,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::GraphPaper => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.rows"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
                 ui.label(
                     egui::RichText::new(tr("toolbar.columns"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
@@ -839,7 +839,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::ActionLines => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.lines"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.action_lines_count).range(2..=500));
@@ -860,13 +860,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Table => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.rows"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=100));
                 ui.label(
                     egui::RichText::new(tr("toolbar.columns"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=100));
@@ -885,7 +885,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut changed = false;
                 ui.label(
                     egui::RichText::new(tr("toolbar.attr_fill"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 let mut has_fill = !matches!(fill, Fill::None);
@@ -907,7 +907,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(
                     egui::RichText::new(tr("toolbar.border"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 let mut width = border.as_ref().map(|b| b.width).unwrap_or(0.0);
@@ -956,19 +956,19 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(
                     egui::RichText::new(tr("toolbar.drag_to_draw_table"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
             }
             Tool::BrushStrokes => {
                 ui.label(
                     egui::RichText::new(tr("media.calligraphic"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.label(
                     egui::RichText::new(tr("toolbar.width"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(
@@ -979,7 +979,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 ui.label(
                     egui::RichText::new(tr("docker.nib_angle"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 ui.add(
@@ -1005,7 +1005,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .unwrap_or(0);
                 ui.label(
                     egui::RichText::new(trf("toolbar.anchors_n", &[("n", &n.to_string())]))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 if ui
@@ -1027,7 +1027,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.label(
                     egui::RichText::new(tr("status.anchor_hint"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
             }
@@ -1037,7 +1037,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut changed = false;
                 ui.label(
                     egui::RichText::new(tr("toolbar.drop_shadow"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 if ui
@@ -1052,7 +1052,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut opacity = (sh.opacity * 100.0).round();
                 ui.label(
                     egui::RichText::new(tr("toolbar.opacity"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 if ui
@@ -1068,7 +1068,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.label(
                     egui::RichText::new(tr("toolbar.feathering"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 let mut blur = sh.blur;
@@ -1088,7 +1088,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut dy = sh.offset.y;
                 ui.label(
                     egui::RichText::new(tr("docker.offset"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 changed |= ui
@@ -1131,7 +1131,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if shapes.is_empty() {
                     ui.label(
                         egui::RichText::new(tr("toolbar.shadow_hint"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1141,7 +1141,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if shapes.is_empty() {
                     ui.label(
                         egui::RichText::new(tr("transparency.hint"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1166,7 +1166,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 } else {
                     ui.label(
                         egui::RichText::new(tr("hint.bar_free_transform"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1191,7 +1191,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(
                     egui::RichText::new(tr("toolbar.sample_size"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 for n in [1u32, 2, 5] {
@@ -1212,18 +1212,18 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     ui.painter().rect_stroke(
                         r,
                         2.0,
-                        egui::Stroke::new(1.0, Tokens::BORDER),
+                        egui::Stroke::new(1.0, Tokens::border()),
                         egui::StrokeKind::Inside,
                     );
                     ui.label(
                         egui::RichText::new(crate::app::color_description(c))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 } else {
                     ui.label(
                         egui::RichText::new(tr("hint.bar_eyedropper"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1265,7 +1265,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     } else {
                         tr("hint.bar_attrs")
                     })
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
                 );
             }
@@ -1288,7 +1288,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut dir = offset.y.atan2(offset.x).to_degrees();
                 ui.label(
                     egui::RichText::new(tr("toolbar.depth"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 changed |= ui
@@ -1302,7 +1302,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .changed();
                 ui.label(
                     egui::RichText::new(tr("toolbar.direction"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 changed |= ui
@@ -1325,7 +1325,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.label(
                     egui::RichText::new(tr("toolbar.gap"))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 changed |= ui
@@ -1361,7 +1361,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if current.is_none() {
                     ui.label(
                         egui::RichText::new(tr("hint.bar_block_shadow"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1373,13 +1373,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             t => {
                 ui.label(
                     egui::RichText::new(trf("toolbar.tool_n", &[("t", &t.name())]))
-                        .color(Tokens::TEXT_DIM)
+                        .color(Tokens::text_dim())
                         .size(11.0),
                 );
                 if !t.implemented() {
                     ui.label(
                         egui::RichText::new(tr("toolbar.not_implemented"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -1432,7 +1432,11 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
         } else {
             tr("toolbar.curve_finish_hint")
         };
-        ui.label(egui::RichText::new(hint).color(Tokens::TEXT_DIM).size(11.0));
+        ui.label(
+            egui::RichText::new(hint)
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
     }
 }
 
@@ -1715,7 +1719,7 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
     ui.add(
         egui::Label::new(
             egui::RichText::new(tr("transparency.merge_mode"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         )
         .extend(),
@@ -1780,7 +1784,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
             ui.allocate_exact_size(egui::vec2(16.0, field.rect.height()), egui::Sense::click());
         if arrow.hovered() {
             ui.painter()
-                .rect_filled(arrow_rect.shrink(1.0), 1.0, Tokens::TOOL_HOVER);
+                .rect_filled(arrow_rect.shrink(1.0), 1.0, Tokens::tool_hover());
         }
         let c = arrow_rect.center();
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
@@ -1789,7 +1793,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                 c + egui::vec2(4.0, -2.0),
                 c + egui::vec2(0.0, 3.0),
             ],
-            Tokens::ICON,
+            Tokens::icon(),
             egui::Stroke::NONE,
         ));
         if arrow.clicked() {
@@ -1854,9 +1858,9 @@ fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(170.0, 24.0), egui::Sense::click());
                 if align == current {
-                    ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+                    ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+                    ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
                 }
                 draw_pic(
                     ui.painter(),
@@ -1865,14 +1869,14 @@ fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
                         egui::vec2(16.0, 16.0),
                     ),
                     pic,
-                    Tokens::ICON,
+                    Tokens::icon(),
                 );
                 ui.painter().text(
                     egui::pos2(rect.left() + 30.0, rect.center().y),
                     egui::Align2::LEFT_CENTER,
                     tr(key),
                     egui::FontId::proportional(13.0),
-                    Tokens::TEXT,
+                    Tokens::text(),
                 );
                 if resp.clicked() {
                     picked = Some(align);
@@ -1917,7 +1921,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
         crate::ui::propbar::sep(ui);
         ui.label(
             egui::RichText::new(tr("toolbar.text_nodes_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         return;
@@ -2134,7 +2138,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
         }
         ui.label(
             egui::RichText::new(tr("toolbar.convert_to_curves_hint"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
     }
@@ -2217,7 +2221,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         Fill::Solid(c) => {
             ui.label(
                 egui::RichText::new(tr("docker.colour"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
             changed |= color_button(ui, c);
@@ -2243,7 +2247,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
             }
             ui.label(
                 egui::RichText::new(tr("toolbar.angle"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
             changed |= ui
@@ -2257,7 +2261,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                 .changed();
             ui.label(
                 egui::RichText::new(tr("docker.edge_pad"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
             let mut pad = f.edge_pad * 100.0;
@@ -2282,7 +2286,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     vsep(ui);
     ui.label(
         egui::RichText::new(tr("toolbar.fill_hint"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
 }
@@ -2293,7 +2297,7 @@ fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
     use crate::common_shapes::{Category, CommonShape};
     ui.label(
         egui::RichText::new(tr("toolbar.shape"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
     let popup = egui::Id::new("common_shapes_popup");
@@ -2339,7 +2343,7 @@ fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
         });
     ui.label(
         egui::RichText::new(tr("toolbar.drag_to_draw"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
 }
@@ -2357,9 +2361,9 @@ fn shape_thumbnail(
     let painter = ui.painter();
     if on || resp.hovered() {
         let fill = if on {
-            Tokens::TOOL_ACTIVE
+            Tokens::tool_active()
         } else {
-            Tokens::TOOL_HOVER
+            Tokens::tool_hover()
         };
         painter.rect_filled(rect, 2.0, fill);
     }
@@ -2372,7 +2376,7 @@ fn shape_thumbnail(
             inner.bottom() - y as f32 * inner.height(),
         )
     };
-    let stroke = egui::Stroke::new(1.0, Tokens::ICON);
+    let stroke = egui::Stroke::new(1.0, Tokens::icon());
     let mut run: Vec<egui::Pos2> = Vec::new();
     let flush = |run: &mut Vec<egui::Pos2>, closed: bool| {
         if run.len() > 1 {

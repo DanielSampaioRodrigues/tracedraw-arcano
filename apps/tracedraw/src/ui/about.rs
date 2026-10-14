@@ -76,7 +76,7 @@ fn banner(ui: &mut Ui, icon: Option<&TextureHandle>) {
 
 /// One row of the facts list: a dim label and its value.
 fn fact(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
-    ui.label(RichText::new(label).color(Tokens::TEXT_DIM));
+    ui.label(RichText::new(label).color(Tokens::text_dim()));
     value(ui);
     ui.end_row();
 }
@@ -133,7 +133,7 @@ pub fn about_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                 &[("name", env!("CARGO_PKG_AUTHORS"))],
             ))
             .size(12.0)
-            .color(Tokens::TEXT_DIM),
+            .color(Tokens::text_dim()),
         );
         if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
             *close = true;

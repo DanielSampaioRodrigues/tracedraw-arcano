@@ -32,11 +32,6 @@ pub enum WindowLayout {
 pub const TITLE_H: f32 = 24.0;
 /// How far each cascaded window sits from the one before.
 const CASCADE_STEP: f32 = 28.0;
-const TITLE_ACTIVE: Color32 = Color32::from_rgb(0xCE, 0xE3, 0xFF);
-const TITLE: Color32 = Color32::from_gray(0xE6);
-const EDGE: Color32 = Color32::from_gray(0x9A);
-/// Behind the windows.
-const BACK: Color32 = Color32::from_gray(0xBE);
 
 /// What a click in the windows asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,9 +117,9 @@ fn title_button(
 ) -> bool {
     let resp = ui.interact(rect, id, Sense::click());
     if resp.hovered() {
-        ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+        ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
     }
-    paint(ui.painter(), rect.shrink(6.0), Tokens::ICON);
+    paint(ui.painter(), rect.shrink(6.0), Tokens::icon());
     resp.on_hover_text(tip).clicked()
 }
 
@@ -140,7 +135,15 @@ fn frame(
 ) -> Rect {
     let p = ui.painter();
     let bar = Rect::from_min_size(r.min, Vec2::new(r.width(), TITLE_H));
-    p.rect_filled(bar, 0.0, if active { TITLE_ACTIVE } else { TITLE });
+    p.rect_filled(
+        bar,
+        0.0,
+        if active {
+            crate::theme::Tokens::tab_active()
+        } else {
+            crate::theme::Tokens::tab_strip()
+        },
+    );
     let title_font = if active {
         crate::theme::bold(12.5)
     } else {
@@ -152,7 +155,7 @@ fn frame(
         egui::Align2::LEFT_CENTER,
         title,
         title_font,
-        Tokens::TEXT,
+        Tokens::text(),
     );
     let bar_resp = ui.interact(
         bar,
@@ -207,7 +210,14 @@ fn frame(
     ui.painter().rect_stroke(
         r,
         0.0,
-        Stroke::new(1.0, if active { Tokens::ACCENT } else { EDGE }),
+        Stroke::new(
+            1.0,
+            if active {
+                Tokens::ACCENT
+            } else {
+                crate::theme::Tokens::window_border()
+            },
+        ),
         egui::StrokeKind::Inside,
     );
     content
@@ -246,7 +256,8 @@ pub fn arranged(app: &mut App, ui: &mut Ui, area: Rect) {
         app.window_layout_seen = Some(seen);
         fit_all(app);
     }
-    ui.painter().rect_filled(area, 0.0, BACK);
+    ui.painter()
+        .rect_filled(area, 0.0, crate::theme::Tokens::page_shadow());
     let rects = window_rects(app.window_layout, n, area);
     let active = app.active_doc.min(n - 1);
     let mut act = None;

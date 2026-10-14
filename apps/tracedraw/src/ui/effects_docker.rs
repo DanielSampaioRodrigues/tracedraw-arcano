@@ -53,12 +53,12 @@ fn changed_stack(s: &Shape, change: Change) -> Option<Vec<(Effect, bool)>> {
 
 pub fn effects_docker(app: &mut App, ui: &mut Ui) {
     let Some(shape) = app.selected_shapes().into_iter().next() else {
-        ui.label(egui::RichText::new(tr("effects.select_hint")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("effects.select_hint")).color(Tokens::text_dim()));
         return;
     };
     let stack = shape.effect_stack();
     if stack.is_empty() {
-        ui.label(egui::RichText::new(tr("effects.none")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("effects.none")).color(Tokens::text_dim()));
         return;
     }
     let n = stack.len();
@@ -77,7 +77,7 @@ pub fn effects_docker(app: &mut App, ui: &mut Ui) {
             ui.label(if *on {
                 name
             } else {
-                name.color(Tokens::TEXT_DIM)
+                name.color(Tokens::text_dim())
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
@@ -105,7 +105,7 @@ pub fn effects_docker(app: &mut App, ui: &mut Ui) {
         });
     }
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(tr("effects.order_hint")).color(Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr("effects.order_hint")).color(Tokens::text_dim()));
     if let Some(stack) = change.and_then(|c| changed_stack(&shape, c)) {
         let (effects, parked) = Shape::split_stack(stack);
         app.run(Command::SetEffectStack {

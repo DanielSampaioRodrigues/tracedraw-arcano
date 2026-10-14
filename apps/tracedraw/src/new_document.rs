@@ -449,7 +449,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             };
             ui.painter().add(egui::epaint::PathShape::convex_polygon(
                 pts,
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
                 egui::Stroke::NONE,
             ));
             chrome::heading(ui, at(45.0, y + 1.0), &tr("newdoc.color_settings"));
@@ -561,7 +561,7 @@ fn preset_row(ui: &mut Ui, st: &mut NewDocState, rect: egui::Rect, menu_at: egui
     let resp = ui.interact(r, egui::Id::new("newdoc_preset_menu"), egui::Sense::click());
     if resp.hovered() {
         ui.painter()
-            .rect_filled(r, 0.0, crate::ui::chrome::CONTROL_HOVER);
+            .rect_filled(r, 0.0, crate::theme::Tokens::tool_hover());
     }
     for i in -1..=1 {
         ui.painter().circle_filled(
@@ -816,11 +816,11 @@ fn orientation_button(
             rect,
             0.0,
             egui::Color32::WHITE,
-            egui::Stroke::new(1.0, crate::ui::chrome::FIELD_BORDER),
+            egui::Stroke::new(1.0, crate::theme::Tokens::control_border()),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
-        painter.rect_filled(rect, 0.0, crate::ui::chrome::CONTROL_HOVER);
+        painter.rect_filled(rect, 0.0, crate::theme::Tokens::tool_hover());
     }
     let size = if landscape {
         egui::vec2(16.0, 12.0)

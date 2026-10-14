@@ -1,42 +1,368 @@
-//! Visual tokens: a light workspace theme. Colours live here and
-//! nowhere else.
+//! Visual tokens: the interface colours of the four themes (Options >
+//! Customization > Appearance). Colours live here and nowhere else; the
+//! theme in use is picked with [`set_theme`] and read by every token.
 
 use egui::{Color32, Visuals};
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// The interface themes, lightest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    Light,
+    MediumLight,
+    MediumDark,
+    Dark,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 4] = [
+        Theme::Light,
+        Theme::MediumLight,
+        Theme::MediumDark,
+        Theme::Dark,
+    ];
+
+    /// The name kept in the preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            Theme::Light => "light",
+            Theme::MediumLight => "medium_light",
+            Theme::MediumDark => "medium_dark",
+            Theme::Dark => "dark",
+        }
+    }
+
+    /// The theme a preference names; Light for anything else.
+    pub fn from_id(id: &str) -> Theme {
+        Theme::ALL
+            .into_iter()
+            .find(|t| t.id() == id)
+            .unwrap_or(Theme::Light)
+    }
+
+    /// The i18n key of its name.
+    pub fn key(self) -> &'static str {
+        match self {
+            Theme::Light => "options.theme_light",
+            Theme::MediumLight => "options.theme_medium_light",
+            Theme::MediumDark => "options.theme_medium_dark",
+            Theme::Dark => "options.theme_dark",
+        }
+    }
+
+    /// Light text on dark panels.
+    pub fn is_dark(self) -> bool {
+        matches!(self, Theme::MediumDark | Theme::Dark)
+    }
+
+    fn palette(self) -> &'static Palette {
+        match self {
+            Theme::Light => &LIGHT,
+            Theme::MediumLight => &MEDIUM_LIGHT,
+            Theme::MediumDark => &MEDIUM_DARK,
+            Theme::Dark => &DARK,
+        }
+    }
+}
+
+/// The status bar's light / dark button: a light theme goes to Dark, a
+/// dark one to Light.
+pub fn toggled(t: Theme) -> Theme {
+    if t.is_dark() {
+        Theme::Light
+    } else {
+        Theme::Dark
+    }
+}
+
+static CURRENT: AtomicU8 = AtomicU8::new(0);
+
+/// Use `theme` for the interface from now on (the tokens and
+/// [`visuals`]).
+pub fn set_theme(theme: Theme) {
+    let i = Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0);
+    CURRENT.store(i as u8, Ordering::Relaxed);
+}
+
+/// The theme in use.
+pub fn theme() -> Theme {
+    Theme::ALL
+        .get(CURRENT.load(Ordering::Relaxed) as usize)
+        .copied()
+        .unwrap_or(Theme::Light)
+}
+
+const fn rgb(v: u32) -> Color32 {
+    Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+}
+
+/// One theme's interface colours.
+struct Palette {
+    panel: Color32,
+    menu_bar: Color32,
+    panel_dark: Color32,
+    border: Color32,
+    icon_off: Color32,
+    text: Color32,
+    text_dim: Color32,
+    page_shadow: Color32,
+    page_border: Color32,
+    ruler_bg: Color32,
+    tool_active: Color32,
+    tool_hover: Color32,
+    icon: Color32,
+    button: Color32,
+    control_border: Color32,
+    slider_rail: Color32,
+    field: Color32,
+    menu: Color32,
+    menu_gutter: Color32,
+    menu_hover: Color32,
+    menu_hover_line: Color32,
+    menu_text_off: Color32,
+    title_bar: Color32,
+    window_border: Color32,
+    selected_row: Color32,
+    hovered_row: Color32,
+    selected_row_line: Color32,
+    control_fill: Color32,
+    tab_strip: Color32,
+    tab: Color32,
+    tab_active: Color32,
+    ruler_tick: Color32,
+    ruler_label: Color32,
+    ruler_marker: Color32,
+}
+
+const LIGHT: Palette = Palette {
+    panel: rgb(0xF4F4F4),
+    menu_bar: rgb(0xD8D8D8),
+    panel_dark: rgb(0xE1E1E1),
+    border: rgb(0xD8D8D8),
+    icon_off: rgb(0xC8C8C8),
+    text: rgb(0x1E1E1E),
+    text_dim: rgb(0x6E6E6E),
+    page_shadow: rgb(0xBFBFBF),
+    page_border: rgb(0xAAAAAA),
+    ruler_bg: rgb(0xF4F4F4),
+    tool_active: rgb(0xCCE4F7),
+    tool_hover: rgb(0xE5F1FB),
+    icon: rgb(0x2A2A2A),
+    button: rgb(0xE1E1E1),
+    control_border: rgb(0xADADAD),
+    slider_rail: rgb(0xC4C4C4),
+    field: rgb(0xFFFFFF),
+    menu: rgb(0xFFFFFF),
+    menu_gutter: rgb(0xF4F4F4),
+    menu_hover: rgb(0xE0F0FF),
+    menu_hover_line: rgb(0x00ADFE),
+    menu_text_off: rgb(0xC8C8C8),
+    title_bar: rgb(0xFFFFFF),
+    window_border: rgb(0xB2B2B2),
+    selected_row: rgb(0xCCE8FF),
+    hovered_row: rgb(0xE5F3FF),
+    selected_row_line: rgb(0x99D1FF),
+    control_fill: rgb(0xEAEAEA),
+    tab_strip: rgb(0xEAEAEA),
+    tab: rgb(0xD8D8D8),
+    tab_active: rgb(0xCEE3FF),
+    ruler_tick: rgb(0x8C8C8C),
+    ruler_label: rgb(0x767676),
+    ruler_marker: rgb(0x0B0B0B),
+};
+
+const MEDIUM_LIGHT: Palette = Palette {
+    panel: rgb(0xDCDCDC),
+    menu_bar: rgb(0xC8C8C8),
+    panel_dark: rgb(0xCDCDCD),
+    border: rgb(0xBDBDBD),
+    icon_off: rgb(0xA6A6A6),
+    text: rgb(0x1A1A1A),
+    text_dim: rgb(0x595959),
+    page_shadow: rgb(0x9E9E9E),
+    page_border: rgb(0x8C8C8C),
+    ruler_bg: rgb(0xDCDCDC),
+    tool_active: rgb(0xB5D3EC),
+    tool_hover: rgb(0xCADFF0),
+    icon: rgb(0x262626),
+    button: rgb(0xCBCBCB),
+    control_border: rgb(0x969696),
+    slider_rail: rgb(0xAEAEAE),
+    field: rgb(0xF2F2F2),
+    menu: rgb(0xE4E4E4),
+    menu_gutter: rgb(0xD6D6D6),
+    menu_hover: rgb(0xB9D9F2),
+    menu_hover_line: rgb(0x7DB8E6),
+    menu_text_off: rgb(0x8F8F8F),
+    title_bar: rgb(0xEDEDED),
+    window_border: rgb(0x868686),
+    selected_row: rgb(0xB9D9F2),
+    hovered_row: rgb(0xD0E6F6),
+    selected_row_line: rgb(0x7DB8E6),
+    control_fill: rgb(0xD2D2D2),
+    tab_strip: rgb(0xD0D0D0),
+    tab: rgb(0xC0C0C0),
+    tab_active: rgb(0xB5D3EC),
+    ruler_tick: rgb(0x707070),
+    ruler_label: rgb(0x5A5A5A),
+    ruler_marker: rgb(0x0B0B0B),
+};
+
+const MEDIUM_DARK: Palette = Palette {
+    panel: rgb(0x535353),
+    menu_bar: rgb(0x474747),
+    panel_dark: rgb(0x4A4A4A),
+    border: rgb(0x3D3D3D),
+    icon_off: rgb(0x7C7C7C),
+    text: rgb(0xEAEAEA),
+    text_dim: rgb(0xB0B0B0),
+    page_shadow: rgb(0x2E2E2E),
+    page_border: rgb(0x2A2A2A),
+    ruler_bg: rgb(0x535353),
+    tool_active: rgb(0x2C5A80),
+    tool_hover: rgb(0x3A566C),
+    icon: rgb(0xE4E4E4),
+    button: rgb(0x656565),
+    control_border: rgb(0x7E7E7E),
+    slider_rail: rgb(0x6E6E6E),
+    field: rgb(0x3F3F3F),
+    menu: rgb(0x4B4B4B),
+    menu_gutter: rgb(0x444444),
+    menu_hover: rgb(0x2C5A80),
+    menu_hover_line: rgb(0x3E78A8),
+    menu_text_off: rgb(0x8A8A8A),
+    title_bar: rgb(0x474747),
+    window_border: rgb(0x2E2E2E),
+    selected_row: rgb(0x2C5A80),
+    hovered_row: rgb(0x3A566C),
+    selected_row_line: rgb(0x3E78A8),
+    control_fill: rgb(0x5E5E5E),
+    tab_strip: rgb(0x4A4A4A),
+    tab: rgb(0x5C5C5C),
+    tab_active: rgb(0x2C5A80),
+    ruler_tick: rgb(0xA8A8A8),
+    ruler_label: rgb(0xC0C0C0),
+    ruler_marker: rgb(0xF0F0F0),
+};
+
+const DARK: Palette = Palette {
+    panel: rgb(0x323232),
+    menu_bar: rgb(0x2A2A2A),
+    panel_dark: rgb(0x2B2B2B),
+    border: rgb(0x222222),
+    icon_off: rgb(0x606060),
+    text: rgb(0xE6E6E6),
+    text_dim: rgb(0x9C9C9C),
+    page_shadow: rgb(0x151515),
+    page_border: rgb(0x111111),
+    ruler_bg: rgb(0x323232),
+    tool_active: rgb(0x1F4E75),
+    tool_hover: rgb(0x2D4558),
+    icon: rgb(0xE0E0E0),
+    button: rgb(0x464646),
+    control_border: rgb(0x606060),
+    slider_rail: rgb(0x555555),
+    field: rgb(0x262626),
+    menu: rgb(0x2D2D2D),
+    menu_gutter: rgb(0x282828),
+    menu_hover: rgb(0x1F4E75),
+    menu_hover_line: rgb(0x2F6EA3),
+    menu_text_off: rgb(0x6E6E6E),
+    title_bar: rgb(0x2A2A2A),
+    window_border: rgb(0x111111),
+    selected_row: rgb(0x1F4E75),
+    hovered_row: rgb(0x2D4558),
+    selected_row_line: rgb(0x2F6EA3),
+    control_fill: rgb(0x404040),
+    tab_strip: rgb(0x2B2B2B),
+    tab: rgb(0x3A3A3A),
+    tab_active: rgb(0x1F4E75),
+    ruler_tick: rgb(0x8A8A8A),
+    ruler_label: rgb(0xA8A8A8),
+    ruler_marker: rgb(0xF0F0F0),
+};
 
 pub struct Tokens;
 
-impl Tokens {
+macro_rules! tokens {
+    ($($(#[$doc:meta])* $name:ident),* $(,)?) => {
+        impl Tokens {
+            $(
+                $(#[$doc])*
+                pub fn $name() -> Color32 {
+                    theme().palette().$name
+                }
+            )*
+        }
+    };
+}
+
+tokens!(
     /// Toolbars, dockers, palettes, the status bar and dialog bodies.
-    pub const PANEL: Color32 = Color32::from_rgb(0xF4, 0xF4, 0xF4);
+    panel,
     /// The menu bar.
-    pub const MENU_BAR: Color32 = Color32::from_rgb(0xD8, 0xD8, 0xD8);
-    pub const PANEL_DARK: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
+    menu_bar,
+    panel_dark,
     /// Light lines: panel separators, frames of lists and docker parts.
-    pub const BORDER: Color32 = Color32::from_rgb(0xD8, 0xD8, 0xD8);
+    border,
     /// Icons of commands that cannot run now.
-    pub const ICON_OFF: Color32 = Color32::from_rgb(0xC8, 0xC8, 0xC8);
-    pub const TEXT: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
-    pub const TEXT_DIM: Color32 = Color32::from_rgb(0x6E, 0x6E, 0x6E);
+    icon_off,
+    text,
+    text_dim,
+    /// The page's drop shadow, offset right and down behind the page.
+    page_shadow,
+    page_border,
+    ruler_bg,
+    tool_active,
+    tool_hover,
+    icon,
+    /// Push buttons.
+    button,
+    /// The border of buttons, check boxes and fields.
+    control_border,
+    /// A slider's groove.
+    slider_rail,
+    /// Fields, lists and other places to type or pick in (white when light).
+    field,
+    /// The body of an open menu.
+    menu,
+    /// The strip of a menu behind its icons and check marks.
+    menu_gutter,
+    /// The box behind a hovered menu row, and its frame.
+    menu_hover,
+    menu_hover_line,
+    /// Menu rows that cannot run now.
+    menu_text_off,
+    /// Dialogs' title bars.
+    title_bar,
+    /// The frame of dialog windows.
+    window_border,
+    /// The picked row of a list, a hovered row, and the picked row's frame.
+    selected_row,
+    hovered_row,
+    selected_row_line,
+    /// Lists' and spin buttons' fill.
+    control_fill,
+    /// The document tab strip, its tabs and the tab in front.
+    tab_strip,
+    tab,
+    tab_active,
+    /// Ruler ticks, numbers and the pointer's marker.
+    ruler_tick,
+    ruler_label,
+    ruler_marker,
+);
+
+impl Tokens {
+    /// Accents, the page and the selection stay the same in every theme.
     pub const ACCENT: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
     pub const PAGE: Color32 = Color32::WHITE;
-    /// The page's drop shadow, offset right and down behind the page.
-    pub const PAGE_SHADOW: Color32 = Color32::from_rgb(0xBF, 0xBF, 0xBF);
-    pub const PAGE_BORDER: Color32 = Color32::from_rgb(0xAA, 0xAA, 0xAA);
     /// Screen offset of the page shadow, pixels.
     pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
-    pub const RULER_BG: Color32 = Color32::from_rgb(0xF4, 0xF4, 0xF4);
     pub const HANDLE: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
     pub const SELECTION: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
     /// The outline that shows where a dragged selection would go.
     pub const DRAG_OUTLINE: Color32 = Color32::from_rgb(0x1E, 0x64, 0xFF);
-    pub const TOOL_ACTIVE: Color32 = Color32::from_rgb(0xCC, 0xE4, 0xF7);
-    pub const TOOL_HOVER: Color32 = Color32::from_rgb(0xE5, 0xF1, 0xFB);
-    pub const ICON: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x2A);
-    /// Push buttons and their border, check boxes and fields.
-    pub const BUTTON: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
-    pub const CONTROL_BORDER: Color32 = Color32::from_rgb(0xAD, 0xAD, 0xAD);
-    /// A slider's groove.
-    pub const SLIDER_RAIL: Color32 = Color32::from_rgb(0xC4, 0xC4, 0xC4);
 
     pub const TOOLBOX_WIDTH: f32 = 38.0;
     pub const TOOL_BUTTON: f32 = 32.0;
@@ -44,33 +370,48 @@ impl Tokens {
 }
 
 pub fn visuals() -> Visuals {
-    let mut v = Visuals::light();
+    let mut v = if theme().is_dark() {
+        Visuals::dark()
+    } else {
+        Visuals::light()
+    };
     // Indented groups have no guide line.
     v.indent_has_left_vline = false;
-    v.panel_fill = Tokens::PANEL;
-    v.window_fill = Tokens::PANEL;
-    v.extreme_bg_color = Color32::WHITE;
-    v.faint_bg_color = Tokens::PANEL_DARK;
-    v.widgets.noninteractive.bg_fill = Tokens::PANEL;
-    v.widgets.noninteractive.fg_stroke.color = Tokens::TEXT;
-    v.widgets.noninteractive.bg_stroke.color = Tokens::BORDER;
-    // Framed controls look like the desktop's: white check boxes, radio
-    // buttons and fields with a grey border, light grey push buttons.
-    v.widgets.inactive.bg_fill = Color32::WHITE;
-    v.widgets.inactive.weak_bg_fill = Tokens::BUTTON;
-    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Tokens::CONTROL_BORDER);
-    v.widgets.inactive.fg_stroke.color = Tokens::TEXT;
+    v.panel_fill = Tokens::panel();
+    v.window_fill = Tokens::panel();
+    v.extreme_bg_color = Tokens::field();
+    v.faint_bg_color = Tokens::panel_dark();
+    v.code_bg_color = Tokens::panel_dark();
+    v.override_text_color = None;
+    v.widgets.noninteractive.bg_fill = Tokens::panel();
+    v.widgets.noninteractive.weak_bg_fill = Tokens::panel();
+    v.widgets.noninteractive.fg_stroke.color = Tokens::text();
+    v.widgets.noninteractive.bg_stroke.color = Tokens::border();
+    // Framed controls look like the desktop's: check boxes, radio
+    // buttons and fields in the field colour with a border, push buttons
+    // a shade darker than the panel.
+    v.widgets.inactive.bg_fill = Tokens::field();
+    v.widgets.inactive.weak_bg_fill = Tokens::button();
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
+    v.widgets.inactive.fg_stroke.color = Tokens::text();
     v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
     v.widgets.active.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
-    v.widgets.hovered.bg_fill = Tokens::TOOL_HOVER;
-    v.widgets.hovered.weak_bg_fill = Tokens::TOOL_HOVER;
-    v.widgets.hovered.fg_stroke.color = Tokens::TEXT;
-    v.widgets.active.bg_fill = Tokens::TOOL_ACTIVE;
-    v.widgets.active.weak_bg_fill = Tokens::TOOL_ACTIVE;
-    v.widgets.active.fg_stroke.color = Tokens::TEXT;
-    v.selection.bg_fill = Tokens::TOOL_ACTIVE;
+    v.widgets.hovered.bg_fill = Tokens::tool_hover();
+    v.widgets.hovered.weak_bg_fill = Tokens::tool_hover();
+    v.widgets.hovered.fg_stroke.color = Tokens::text();
+    v.widgets.active.bg_fill = Tokens::tool_active();
+    v.widgets.active.weak_bg_fill = Tokens::tool_active();
+    v.widgets.active.fg_stroke.color = Tokens::text();
+    v.widgets.open.bg_fill = Tokens::tool_active();
+    v.widgets.open.weak_bg_fill = Tokens::tool_active();
+    v.widgets.open.fg_stroke.color = Tokens::text();
+    v.selection.bg_fill = Tokens::tool_active();
     v.selection.stroke.color = Tokens::ACCENT;
-    v.hyperlink_color = Tokens::ACCENT;
+    v.hyperlink_color = if theme().is_dark() {
+        Color32::from_rgb(0x5C, 0xB2, 0xFF)
+    } else {
+        Tokens::ACCENT
+    };
     v.widgets.noninteractive.corner_radius = 2.0.into();
     v.widgets.inactive.corner_radius = 2.0.into();
     v.widgets.hovered.corner_radius = 2.0.into();
@@ -240,4 +581,25 @@ fn fallback_fonts(defs: &mut egui::FontDefinitions) -> Vec<String> {
         log::info!("UI fallback fonts: {}", added.join(", "));
     }
     added
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    #[test]
+    fn themes_have_their_names_and_dark_ones_light_text() {
+        let lum = |c: Color32| c.r() as u32 + c.g() as u32 + c.b() as u32;
+        for t in Theme::ALL {
+            assert_eq!(Theme::from_id(t.id()), t);
+            let p = t.palette();
+            // Text stands out from the panels in every theme.
+            assert!(lum(p.text).abs_diff(lum(p.panel)) > 300, "{t:?}");
+            assert_eq!(t.is_dark(), lum(p.text) > lum(p.panel), "{t:?}");
+        }
+        assert_eq!(Theme::from_id(""), Theme::Light);
+        assert_eq!(Theme::from_id("purple"), Theme::Light);
+        assert_eq!(toggled(Theme::MediumLight), Theme::Dark);
+        assert_eq!(toggled(Theme::MediumDark), Theme::Light);
+    }
 }

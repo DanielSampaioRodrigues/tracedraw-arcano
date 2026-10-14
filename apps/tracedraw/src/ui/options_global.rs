@@ -11,7 +11,7 @@ use crate::ui::options::{combo, grid, row_label};
 use egui::Ui;
 
 fn hint(ui: &mut Ui, key: &str) {
-    ui.label(egui::RichText::new(tr(key)).color(Tokens::TEXT_DIM));
+    ui.label(egui::RichText::new(tr(key)).color(Tokens::text_dim()));
 }
 
 /// Options > Global > Printing: what the Print dialog starts with, whether

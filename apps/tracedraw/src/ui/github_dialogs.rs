@@ -49,7 +49,7 @@ fn fields(ui: &mut Ui, f: &mut GithubForm, message: bool) {
     ui.checkbox(&mut f.remember_token, tr("github.remember_token"));
     ui.label(
         RichText::new(tr("github.token_hint"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
 }

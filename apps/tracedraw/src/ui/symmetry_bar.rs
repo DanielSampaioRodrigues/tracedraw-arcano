@@ -22,8 +22,8 @@ pub fn show(app: &mut App, ctx: &Context) {
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()
-                .fill(Tokens::PANEL)
-                .stroke(egui::Stroke::new(1.0, Tokens::BORDER))
+                .fill(Tokens::panel())
+                .stroke(egui::Stroke::new(1.0, Tokens::border()))
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -31,7 +31,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                             .add(
                                 egui::Button::new(
                                     RichText::new(format!("      {}", tr("symmetry.finish")))
-                                        .color(Tokens::TEXT),
+                                        .color(Tokens::text()),
                                 )
                                 .frame(false),
                             )

@@ -15,7 +15,11 @@ use egui::Ui;
 use tracedraw_core::shaping::Join;
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// An acceleration slider, -100 to 100 %.

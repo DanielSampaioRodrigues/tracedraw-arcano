@@ -81,6 +81,10 @@ pub struct Settings {
     /// where they were left.
     #[serde(default = "default_true")]
     pub center_dialogs: bool,
+    /// Customization > Appearance > Theme: "light", "medium_light",
+    /// "medium_dark" or "dark".
+    #[serde(default)]
+    pub theme: String,
     /// Where the toolbox, palette, toolbars and status bar sit.
     #[serde(default)]
     pub bars: crate::ui::bars::BarLayout,
@@ -924,6 +928,7 @@ impl Default for Settings {
             ui_size: 0.0,
             show_splash: true,
             center_dialogs: true,
+            theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,
             window_size: [0.0, 0.0],

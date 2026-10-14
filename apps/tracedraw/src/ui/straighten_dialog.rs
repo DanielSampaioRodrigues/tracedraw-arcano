@@ -63,7 +63,7 @@ fn icon_button(
     draw(
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
-        Tokens::ICON,
+        Tokens::icon(),
     );
     let clicked = resp.clicked();
     resp.on_hover_text(tip);
@@ -148,7 +148,7 @@ fn preview(
     painter.rect_stroke(
         area,
         0.0,
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
     match st.tool {

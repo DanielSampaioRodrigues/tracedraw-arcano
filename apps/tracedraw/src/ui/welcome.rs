@@ -51,16 +51,16 @@ pub fn welcome_screen(app: &mut App, ui: &mut Ui) {
 fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String) -> bool {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(240.0, 64.0), egui::Sense::click());
     let bg = if resp.hovered() {
-        Tokens::TOOL_HOVER
+        Tokens::tool_hover()
     } else {
-        Tokens::PANEL
+        Tokens::panel()
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 4.0, bg);
     painter.rect_stroke(
         rect,
         4.0,
-        egui::Stroke::new(1.0, Tokens::BORDER),
+        egui::Stroke::new(1.0, Tokens::border()),
         egui::epaint::StrokeKind::Inside,
     );
     let icon_rect = egui::Rect::from_center_size(
@@ -77,7 +77,7 @@ fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String)
         egui::Align2::LEFT_CENTER,
         title,
         egui::FontId::proportional(14.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     if !subtitle.is_empty() {
         painter.text(
@@ -85,7 +85,7 @@ fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String)
             egui::Align2::LEFT_CENTER,
             subtitle,
             egui::FontId::proportional(11.0),
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
     }
     resp.clicked()
@@ -128,7 +128,7 @@ fn get_started(app: &mut App, ui: &mut Ui) {
             ui.add_space(20.0);
             ui.label(
                 egui::RichText::new(tr("welcome.shortcuts_hint"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
         });
@@ -141,7 +141,7 @@ fn get_started(app: &mut App, ui: &mut Ui) {
             ui.strong(tr("welcome.recent_documents"));
             let recent = app.settings.recent_files.clone();
             if recent.is_empty() {
-                ui.label(egui::RichText::new(tr("welcome.no_recent")).color(Tokens::TEXT_DIM));
+                ui.label(egui::RichText::new(tr("welcome.no_recent")).color(Tokens::text_dim()));
             }
             ui.add_space(4.0);
             for p in recent {
@@ -181,7 +181,7 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
     let (rect, resp) = ui.allocate_exact_size(ROW, sense);
     let painter = ui.painter();
     if exists && resp.hovered() {
-        painter.rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+        painter.rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let frame = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), THUMB);
     painter.rect_filled(frame, 0.0, egui::Color32::WHITE);
@@ -199,7 +199,7 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
     painter.rect_stroke(
         frame,
         0.0,
-        egui::Stroke::new(1.0, Tokens::BORDER),
+        egui::Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let name = path
@@ -212,9 +212,9 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
         .unwrap_or_default();
     let text_x = frame.right() + 10.0;
     let color = if exists {
-        Tokens::TEXT
+        Tokens::text()
     } else {
-        Tokens::TEXT_DIM
+        Tokens::text_dim()
     };
     painter.text(
         egui::pos2(text_x, frame.top() + 6.0),
@@ -228,7 +228,7 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
         egui::Align2::LEFT_TOP,
         folder,
         egui::FontId::proportional(11.0),
-        Tokens::TEXT_DIM,
+        Tokens::text_dim(),
     );
     resp.on_hover_text(path.display().to_string()).clicked()
 }
@@ -283,7 +283,7 @@ fn workspace(app: &mut App, ui: &mut Ui) {
                     }
                     ui.label(
                         egui::RichText::new(tr(desc))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 });
@@ -437,7 +437,7 @@ fn templates(app: &mut App, ui: &mut Ui) {
                         "welcome.templates_folder",
                         &[("d", &dir.display().to_string())],
                     ))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
                 );
             }

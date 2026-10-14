@@ -272,7 +272,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     ui.painter().rect_filled(
         Rect::from_min_size(Pos2::new(full.left(), line), Vec2::new(full.width(), 1.0)),
         0.0,
-        egui::Color32::from_gray(0xD8),
+        crate::theme::Tokens::border(),
     );
     let row = if at_top {
         Rect::from_min_max(
@@ -297,13 +297,13 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         .interact(gear, egui::Id::new("status_settings"), Sense::click())
         .on_hover_text(tr("status.bar_options"));
     if gear_resp.hovered() {
-        painter.rect_filled(gear, 2.0, Tokens::TOOL_HOVER);
+        painter.rect_filled(gear, 2.0, Tokens::tool_hover());
     }
     crate::ui::icons::draw_action(
         &painter,
         gear.shrink(3.0),
         crate::ui::icons::Action::Options,
-        Tokens::ICON,
+        Tokens::icon(),
     );
     painter.add(egui::Shape::convex_polygon(
         vec![
@@ -311,7 +311,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             gear.right_bottom() + Vec2::new(-5.0, -1.0),
             gear.right_bottom() + Vec2::new(-1.0, -5.0),
         ],
-        Tokens::TEXT_DIM,
+        Tokens::text_dim(),
         Stroke::NONE,
     ));
     egui::Popup::menu(&gear_resp)
@@ -333,14 +333,16 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let fill_x = row.min.x + row.width() * 0.685;
     let outline_x = row.min.x + row.width() * 0.818;
     let proof = Rect::from_center_size(Pos2::new(row.max.x - 17.0, cy), Vec2::splat(26.0));
-    // A line sets the proof colours button apart.
-    let sep_x = (proof.min.x - 8.0).round() + 0.5;
+    // The light and dark interface button, left of it.
+    let theme_btn = proof.translate(Vec2::new(-30.0, 0.0));
+    // A line sets the two buttons apart.
+    let sep_x = (theme_btn.min.x - 8.0).round() + 0.5;
     painter.line_segment(
         [
             Pos2::new(sep_x, row.min.y + 7.0),
             Pos2::new(sep_x, row.max.y - 7.0),
         ],
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
     );
 
     // Left field and object information.
@@ -369,30 +371,30 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         0.0
     } else {
         painter
-            .layout_no_wrap(info.clone(), font.clone(), Tokens::TEXT)
+            .layout_no_wrap(info.clone(), font.clone(), Tokens::text())
             .size()
             .x
             .min((fill_x - text_x) * 0.45)
     };
     let left_max = fill_x - 16.0 - if info_w > 0.0 { info_w + 24.0 } else { 0.0 };
-    let left_galley = painter.layout_no_wrap(left, font.clone(), Tokens::TEXT);
+    let left_galley = painter.layout_no_wrap(left, font.clone(), Tokens::text());
     let left_w = left_galley.size().x.min(left_max - text_x).max(0.0);
     let clip = Rect::from_min_max(Pos2::new(text_x, row.min.y), Pos2::new(left_max, row.max.y));
     painter.with_clip_rect(clip).galley(
         Pos2::new(text_x, cy - left_galley.size().y / 2.0),
         left_galley,
-        Tokens::TEXT,
+        Tokens::text(),
     );
     if info_w > 0.0 {
         // After the left field, never closer than a placeholder's width.
         let x = (text_x + left_w + 24.0)
             .max(text_x + 156.0)
             .min(left_max + 24.0);
-        let g = painter.layout_no_wrap(info, font.clone(), Tokens::TEXT);
+        let g = painter.layout_no_wrap(info, font.clone(), Tokens::text());
         let clip = Rect::from_min_max(Pos2::new(x, row.min.y), Pos2::new(fill_x - 8.0, row.max.y));
         painter
             .with_clip_rect(clip)
-            .galley(Pos2::new(x, cy - g.size().y / 2.0), g, Tokens::TEXT);
+            .galley(Pos2::new(x, cy - g.size().y / 2.0), g, Tokens::text());
     }
 
     // Fill and outline of the selection, or of new objects.
@@ -433,7 +435,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     }
     let outline_part = Rect::from_min_max(
         Pos2::new(outline_x, row.min.y),
-        Pos2::new(proof.min.x - 8.0, row.max.y),
+        Pos2::new(theme_btn.min.x - 8.0, row.max.y),
     );
     let outline_hit = Indicator {
         id: "status_outline",
@@ -457,15 +459,46 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         });
     if proof_resp.hovered() || app.proof_colors {
         let fill = if app.proof_colors {
-            Tokens::TOOL_ACTIVE
+            Tokens::tool_active()
         } else {
-            Tokens::TOOL_HOVER
+            Tokens::tool_hover()
         };
         painter.rect_filled(proof, 2.0, fill);
     }
     proof_icon(&painter, proof.shrink(2.0));
+
+    // Light or dark interface: a moon while light (click for dark), a sun
+    // while dark.
+    let dark = crate::theme::theme().is_dark();
+    let theme_resp = ui
+        .interact(theme_btn, egui::Id::new("status_theme"), Sense::click())
+        .on_hover_text(if dark {
+            tr("status.theme_to_light")
+        } else {
+            tr("status.theme_to_dark")
+        });
+    if theme_resp.hovered() {
+        painter.rect_filled(theme_btn, 2.0, Tokens::tool_hover());
+    }
+    let behind = if theme_resp.hovered() {
+        Tokens::tool_hover()
+    } else {
+        Tokens::panel()
+    };
+    theme_icon(&painter, theme_btn.shrink(5.0), dark, behind);
+    if theme_resp.clicked() {
+        app.settings.theme = crate::theme::toggled(crate::theme::theme())
+            .id()
+            .to_string();
+    }
+
     if proof_resp.clicked() && doc {
         app.proof_colors = !app.proof_colors;
+        app.status = if app.proof_colors {
+            tr("status.proof_turned_on")
+        } else {
+            tr("status.proof_turned_off")
+        };
         app.raster.borrow_mut().invalidate();
     }
 }
@@ -487,7 +520,7 @@ impl Indicator<'_> {
             .on_hover_text(self.tip);
         let cy = part.center().y;
         let icon_r = Rect::from_center_size(Pos2::new(part.min.x + 11.0, cy), Vec2::splat(20.0));
-        crate::ui::icons::draw(painter, icon_r, self.icon, Tokens::ICON);
+        crate::ui::icons::draw(painter, icon_r, self.icon, Tokens::icon());
         let sw = Rect::from_min_size(
             Pos2::new(icon_r.max.x + 3.0, (cy - 12.5).round()),
             Vec2::new(26.0, 25.0),
@@ -499,7 +532,7 @@ impl Indicator<'_> {
             egui::Align2::LEFT_CENTER,
             self.text,
             egui::FontId::proportional(TEXT),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         resp.double_clicked()
     }
@@ -528,6 +561,26 @@ pub fn draw_swatch(painter: &egui::Painter, r: Rect, color: Option<Color32>) {
         Stroke::new(1.0, Color32::from_gray(0xAA)),
         egui::StrokeKind::Inside,
     );
+}
+
+/// A sun (`sun`) or a crescent moon in `r`, in the icon colour; `behind`
+/// is the colour under it (cut out of the moon).
+fn theme_icon(painter: &egui::Painter, r: Rect, sun: bool, behind: Color32) {
+    let c = r.center();
+    let rad = r.width().min(r.height()) / 2.0;
+    let color = Tokens::icon();
+    if sun {
+        painter.circle_filled(c, rad * 0.45, color);
+        for i in 0..8 {
+            let a = i as f32 * std::f32::consts::TAU / 8.0;
+            let d = Vec2::new(a.cos(), a.sin());
+            painter.line_segment([c + d * rad * 0.65, c + d * rad], Stroke::new(1.4, color));
+        }
+    } else {
+        // A disc with a disc of the bar's colour cut out of its right.
+        painter.circle_filled(c, rad * 0.85, color);
+        painter.circle_filled(c + Vec2::new(rad * 0.45, -rad * 0.3), rad * 0.7, behind);
+    }
 }
 
 /// The proof colours picture: a monitor whose screen is red over sky

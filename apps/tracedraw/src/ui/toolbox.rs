@@ -117,29 +117,29 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
         // The active tool's button is white with a grey frame; hovering
         // tints a button blue.
         let bg = if active {
-            egui::Color32::WHITE
+            crate::theme::Tokens::field()
         } else if resp.hovered() {
-            Tokens::TOOL_HOVER
+            Tokens::tool_hover()
         } else {
-            Tokens::PANEL
+            Tokens::panel()
         };
         ui.painter().rect_filled(rect, 0.0, bg);
         if active {
             ui.painter().rect_stroke(
                 rect,
                 0.0,
-                Stroke::new(1.0, Tokens::CONTROL_BORDER),
+                Stroke::new(1.0, Tokens::control_border()),
                 egui::StrokeKind::Inside,
             );
         }
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(22.0));
-        icons::draw(ui.painter(), icon_rect, shown, Tokens::ICON);
+        icons::draw(ui.painter(), icon_rect, shown, Tokens::icon());
         if has_flyout {
             // The flyout arrow: a small triangle at the bottom-right.
             let p = rect.right_bottom() - Vec2::new(2.0, 2.0);
             ui.painter().add(egui::epaint::PathShape::convex_polygon(
                 vec![p, p - Vec2::new(5.0, 0.0), p - Vec2::new(0.0, 5.0)],
-                Tokens::ICON,
+                Tokens::icon(),
                 Stroke::NONE,
             ));
         }
@@ -204,7 +204,7 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
             ui.painter().hline(
                 r.x_range().shrink(4.0),
                 r.center().y,
-                Stroke::new(1.0, Tokens::BORDER),
+                Stroke::new(1.0, Tokens::border()),
             );
             ui.end_row();
         } else if GROUP_BREAKS.contains(&gi) {
@@ -215,7 +215,7 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
                 ui.painter().vline(
                     r.center().x,
                     r.y_range().shrink(4.0),
-                    Stroke::new(1.0, Tokens::BORDER),
+                    Stroke::new(1.0, Tokens::border()),
                 );
             } else {
                 let (r, _) =
@@ -223,7 +223,7 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
                 ui.painter().hline(
                     r.x_range().shrink(4.0),
                     r.center().y,
-                    Stroke::new(1.0, Tokens::BORDER),
+                    Stroke::new(1.0, Tokens::border()),
                 );
             }
             ui.add_space(2.0);
@@ -280,7 +280,7 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                             let name = ui.painter().layout_no_wrap(
                                 t.name(),
                                 egui::FontId::proportional(12.0),
-                                Tokens::TEXT,
+                                Tokens::text(),
                             );
                             name.size().x
                         })
@@ -294,12 +294,12 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                         let current =
                             *t == app.tool || (*t == shown && !group.tools.contains(&app.tool));
                         if rr.hovered() {
-                            ui.painter().rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+                            ui.painter().rect_filled(r, 0.0, Tokens::tool_hover());
                         }
                         // A check mark beside the tool the button shows.
                         if current {
                             let c = Pos2::new(r.min.x + 9.0, r.center().y);
-                            let s = Stroke::new(1.4, Tokens::ICON);
+                            let s = Stroke::new(1.4, Tokens::icon());
                             ui.painter().line_segment(
                                 [c + Vec2::new(-3.5, 0.0), c + Vec2::new(-1.0, 3.0)],
                                 s,
@@ -313,13 +313,13 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                             Pos2::new(r.min.x + 30.0, r.center().y),
                             Vec2::splat(18.0),
                         );
-                        icons::draw(ui.painter(), icon, *t, Tokens::ICON);
+                        icons::draw(ui.painter(), icon, *t, Tokens::icon());
                         ui.painter().text(
                             Pos2::new(r.min.x + 46.0, r.center().y),
                             egui::Align2::LEFT_CENTER,
                             t.name(),
                             egui::FontId::proportional(12.0),
-                            Tokens::TEXT,
+                            Tokens::text(),
                         );
                         if !t.shortcut_label().is_empty() {
                             ui.painter().text(
@@ -327,7 +327,7 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                                 egui::Align2::RIGHT_CENTER,
                                 t.shortcut_label(),
                                 egui::FontId::proportional(12.0),
-                                Tokens::TEXT,
+                                Tokens::text(),
                             );
                         }
                         if rr.on_hover_ui(|ui| tool_tooltip(ui, *t)).clicked() {
@@ -340,7 +340,7 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                             ui.painter().hline(
                                 sr.x_range().shrink(6.0),
                                 sr.center().y,
-                                Stroke::new(1.0, Tokens::BORDER),
+                                Stroke::new(1.0, Tokens::border()),
                             );
                         }
                     }
@@ -385,7 +385,9 @@ fn quick_customize(app: &mut App, ui: &mut Ui, horizontal: bool) {
         ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
         ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
         ui.menu_button(
-            egui::RichText::new("+").size(18.0).color(Tokens::TEXT_DIM),
+            egui::RichText::new("+")
+                .size(18.0)
+                .color(Tokens::text_dim()),
             |ui| {
                 for (gi, group) in GROUPS.iter().enumerate() {
                     let mut on = group_visible(app, gi);

@@ -58,7 +58,7 @@ pub fn connector_bar(app: &mut App, ui: &mut Ui) {
     if shown == ConnectorKind::Rounded {
         ui.label(
             egui::RichText::new(tr("connector.radius"))
-                .color(Tokens::TEXT_DIM)
+                .color(Tokens::text_dim())
                 .size(11.0),
         );
         let mut r = selected
@@ -86,7 +86,7 @@ pub fn connector_bar(app: &mut App, ui: &mut Ui) {
     crate::ui::propbar::sep(ui);
     ui.label(
         egui::RichText::new(tr("toolbar.drag_between_objects"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
 }

@@ -36,12 +36,13 @@ double-click on a ruler, the page border or its shadow).
 
 ## Customization
 
-Appearance (interface size, desktop colour, page border, Outline flyout
-in the toolbox), Commands (shortcuts of your own for every menu command
-and the tool keys; see `shortcuts.md`), Command Bars (standard
-toolbar, property bar, toolbox, status bar, Text, Zoom and Transform
-toolbars), Color Palette (No Color well, right mouse button, document
-palette; see `color-palettes.md`).
+Appearance (Center Dialog Boxes, interface size, theme, desktop
+colour), Command Bars (the standard toolbar, property bar, toolbox,
+status bar, colour palette, Text, Zoom and Transform toolbars, with
+Reset; Lock Toolbars and the Outline flyout in the toolbox), Commands
+(shortcuts of your own for every menu command and the tool keys; see
+`shortcuts.md`), Color Palette (document palette, No Color well, right
+mouse button; see `color-palettes.md`).
 
 ## Tools
 
@@ -136,8 +137,9 @@ panel) and hosts no plug-ins.
 
 Customization > Appearance > Interface size sets how large the menus,
 bars, icons and dockers are drawn, relative to the scaling the system
-gives the monitor the window is on: 80 %, 90 %, 100 % (the default),
-110 %, 125 %, 150 %, 175 % or 200 %.
+gives the monitor the window is on: a slider and a field from 75 % to
+250 % in steps of 5 (100 % the default, Reset to Default goes back to
+it), applied when the slider is let go.
 
 - 100 % is the size of the other programs on that monitor, and it
   follows the monitor: moving the window to a monitor the system scales
@@ -194,3 +196,13 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 - `tracedraw_render` `open_curves_are_not_filled_unless_the_document_says_so`
 - `tracedraw_io` `open_curves_lose_their_fill_in_vector_exports`
 - `app::tests` start-up, backups and clip frame centring (below)
+
+## Theme
+
+Customization > Appearance > Color > Theme: Light (the default), Medium
+Light, Medium Dark or Dark (`theme.rs`, one palette each). Panels, bars,
+menus, dialogs, lists, rulers, tabs and icons take the theme's colours;
+the page, the drawing, the accent blue and the desktop colour (its own
+setting) do not. The button with a moon (light themes) or a sun (dark
+themes) at the right end of the status bar switches to Dark or to
+Light. The choice is kept in the preferences and applies at once.

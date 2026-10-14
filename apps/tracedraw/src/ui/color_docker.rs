@@ -87,9 +87,9 @@ fn set_color(app: &mut App, c: Color) {
 fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 26.0), Sense::click());
     if on {
-        ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+        ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
     } else if resp.hovered() {
-        ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+        ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let r = Rect::from_center_size(rect.center(), Vec2::splat(16.0));
     let p = ui.painter();
@@ -99,7 +99,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
             p.rect_stroke(
                 r,
                 0.0,
-                Stroke::new(1.0, Tokens::ICON),
+                Stroke::new(1.0, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -108,7 +108,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
                 let y = r.top() + 3.0 + i as f32 * 5.0;
                 p.line_segment(
                     [Pos2::new(r.left(), y), Pos2::new(r.right(), y)],
-                    Stroke::new(1.0, Tokens::ICON),
+                    Stroke::new(1.0, Tokens::icon()),
                 );
                 p.rect_filled(
                     Rect::from_center_size(
@@ -116,7 +116,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
                         Vec2::new(3.0, 4.5),
                     ),
                     0.5,
-                    Tokens::ICON,
+                    Tokens::icon(),
                 );
             }
         }
@@ -141,7 +141,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
                 p.rect_stroke(
                     cell,
                     0.0,
-                    Stroke::new(0.5, Tokens::ICON),
+                    Stroke::new(0.5, Tokens::icon()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -214,14 +214,14 @@ fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f32)> {
         p.rect_stroke(
             square,
             0.0,
-            Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Outside,
         );
         hue_strip(p, strip);
         p.rect_stroke(
             strip,
             0.0,
-            Stroke::new(1.0, Tokens::CONTROL_BORDER),
+            Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Outside,
         );
         // Markers: a ring in the square, a bar across the strip.
@@ -239,7 +239,7 @@ fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f32)> {
                 Pos2::new(strip.right() + 2.0, y + 2.0),
             ),
             1.0,
-            Stroke::new(1.5, Tokens::ICON),
+            Stroke::new(1.5, Tokens::icon()),
             egui::StrokeKind::Middle,
         );
         if sq.dragged() || sq.clicked() {
@@ -360,7 +360,7 @@ fn swatches(ui: &mut Ui, old: Option<Color>, new: Color) {
     p.rect_stroke(
         rect,
         0.0,
-        Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Outside,
     );
 }
@@ -510,7 +510,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             ui.painter().rect_stroke(
                 r,
                 0.0,
-                Stroke::new(0.5, Tokens::ICON),
+                Stroke::new(0.5, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
             ui.label(&ink.name);
@@ -618,7 +618,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
             ui.painter().rect_stroke(
                 r,
                 0.0,
-                Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, Tokens::ICON),
+                Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
             if resp.on_hover_text(name).clicked() {

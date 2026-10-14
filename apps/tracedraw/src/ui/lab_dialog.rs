@@ -277,9 +277,9 @@ fn icon_button(
     );
     crate::ui::propbar::frame(ui, rect, enabled && resp.hovered(), pressed);
     let color = if enabled {
-        Tokens::ICON
+        Tokens::icon()
     } else {
-        Tokens::BORDER
+        Tokens::border()
     };
     draw(
         ui.painter(),
@@ -467,7 +467,7 @@ fn draw_histogram(ui: &mut Ui, hist: &[u32; 256], size: Vec2) {
     painter.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
 }
@@ -561,7 +561,7 @@ fn preview(
     painter.rect_stroke(
         area,
         0.0,
-        Stroke::new(1.0, Tokens::BORDER),
+        Stroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
 
@@ -902,7 +902,7 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                         ui.painter().rect_stroke(
                             r,
                             0.0,
-                            Stroke::new(1.0, Tokens::BORDER),
+                            Stroke::new(1.0, Tokens::border()),
                             egui::StrokeKind::Inside,
                         );
                         if resp.on_hover_text(tr("dialog.lab_show_snapshot")).clicked() {

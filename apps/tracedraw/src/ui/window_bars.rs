@@ -11,11 +11,6 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// Height of the bottom row and width of the vertical scrollbar.
 pub const BAR: f32 = 17.0;
-
-const ARROW: Color32 = Color32::from_rgb(0x60, 0x60, 0x60);
-const TRACK: Color32 = Color32::from_rgb(0xF0, 0xF0, 0xF0);
-const THUMB: Color32 = Color32::from_rgb(0xCD, 0xCD, 0xCD);
-const THUMB_HOT: Color32 = Color32::from_rgb(0xA6, 0xA6, 0xA6);
 /// One click on a scroll arrow moves the view this many pixels.
 const LINE: f32 = 40.0;
 
@@ -32,10 +27,10 @@ pub fn window_bars(app: &mut App, ui: &mut Ui, full: Rect, canvas: Rect, ruler: 
         Pos2::new(full.max.x, full.max.y - BAR),
     );
     let corner = Rect::from_min_max(Pos2::new(full.max.x - BAR, full.max.y - BAR), full.max);
-    p.rect_filled(row, 0.0, Tokens::PANEL);
-    p.rect_filled(vbar, 0.0, TRACK);
-    p.rect_filled(corner, 0.0, Tokens::PANEL);
-    p.hline(row.x_range(), row.min.y, Stroke::new(1.0, Tokens::BORDER));
+    p.rect_filled(row, 0.0, Tokens::panel());
+    p.rect_filled(vbar, 0.0, crate::theme::Tokens::panel());
+    p.rect_filled(corner, 0.0, Tokens::panel());
+    p.hline(row.x_range(), row.min.y, Stroke::new(1.0, Tokens::border()));
 
     // Bottom row: navigator, page tabs, splitter, horizontal scrollbar.
     let nav_w = 200.0_f32.min(row.width() * 0.4);
@@ -100,7 +95,7 @@ fn horizontal(app: &mut App, ui: &mut Ui, bar: Rect, canvas: Rect) {
         Pos2::new(right.min.x, bar.max.y),
     );
     let p = ui.painter_at(bar);
-    p.rect_filled(bar, 0.0, TRACK);
+    p.rect_filled(bar, 0.0, crate::theme::Tokens::panel());
     if arrow_button(ui, left, "hscroll_left", Dir::Left) {
         app.view.pan(Vec2::new(LINE, 0.0));
     }
@@ -120,7 +115,15 @@ fn horizontal(app: &mut App, ui: &mut Ui, bar: Rect, canvas: Rect) {
     );
     let resp = ui.interact(track, egui::Id::new("hscroll"), Sense::click_and_drag());
     let hot = resp.dragged() || resp.hover_pos().is_some_and(|h| thumb.contains(h));
-    p.rect_filled(thumb, 0.0, if hot { THUMB_HOT } else { THUMB });
+    p.rect_filled(
+        thumb,
+        0.0,
+        if hot {
+            crate::theme::Tokens::control_border()
+        } else {
+            crate::theme::Tokens::slider_rail()
+        },
+    );
     if resp.dragged() {
         let d = resp.drag_delta().x / track.width() * w as f32;
         app.view.pan(Vec2::new(-d * app.view.zoom, 0.0));
@@ -171,7 +174,15 @@ fn vertical(app: &mut App, ui: &mut Ui, bar: Rect, canvas: Rect) {
     );
     let resp = ui.interact(track, egui::Id::new("vscroll"), Sense::click_and_drag());
     let hot = resp.dragged() || resp.hover_pos().is_some_and(|h| thumb.contains(h));
-    p.rect_filled(thumb, 0.0, if hot { THUMB_HOT } else { THUMB });
+    p.rect_filled(
+        thumb,
+        0.0,
+        if hot {
+            crate::theme::Tokens::control_border()
+        } else {
+            crate::theme::Tokens::slider_rail()
+        },
+    );
     if resp.dragged() {
         let d = resp.drag_delta().y / track.height() * h as f32;
         app.view.pan(Vec2::new(0.0, -d * app.view.zoom));
@@ -200,11 +211,11 @@ fn arrow_button(ui: &mut Ui, r: Rect, id: &str, dir: Dir) -> bool {
     let resp = ui.interact(r, egui::Id::new(id), Sense::click_and_drag());
     let p = ui.painter();
     if resp.is_pointer_button_down_on() {
-        p.rect_filled(r, 0.0, THUMB_HOT);
+        p.rect_filled(r, 0.0, crate::theme::Tokens::control_border());
     } else if resp.hovered() {
-        p.rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+        p.rect_filled(r, 0.0, Tokens::tool_hover());
     }
-    chevron(p, r.center(), dir, ARROW);
+    chevron(p, r.center(), dir, crate::theme::Tokens::text_dim());
     // Held: fire on press, then every 50 ms after 0.4 s.
     let held_id = egui::Id::new((id, "held"));
     let now = ui.input(|i| i.time);
@@ -280,7 +291,7 @@ fn splitter(app: &mut App, ui: &mut Ui, grip: Rect, rest: Rect) {
             p.rect_filled(
                 Rect::from_center_size(c, Vec2::splat(1.0)),
                 0.0,
-                Tokens::TEXT_DIM,
+                Tokens::text_dim(),
             );
         }
     }
@@ -307,7 +318,7 @@ pub fn page_navigator(app: &mut App, ui: &mut Ui) {
                 &[("n", &(idx + 1).to_string()), ("m", &n.to_string())],
             ))
             .size(11.0)
-            .color(Tokens::TEXT_DIM),
+            .color(Tokens::text_dim()),
         );
         if nav_button(ui, Glyph::Next, &tr("status.next_page")) {
             app.goto_page(idx + 1);
@@ -334,10 +345,10 @@ fn nav_button(ui: &mut Ui, g: Glyph, tip: &str) -> bool {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, BAR - 1.0), Sense::click());
     let p = ui.painter();
     if resp.hovered() {
-        p.rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+        p.rect_filled(r, 0.0, Tokens::tool_hover());
     }
     let c = r.center();
-    let color = Tokens::TEXT_DIM;
+    let color = Tokens::text_dim();
     let s = Stroke::new(1.0, color);
     let tri = |p: &egui::Painter, tip: f32| {
         // A filled triangle pointing left (tip < 0) or right.
@@ -383,7 +394,7 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
         let galley = ui.painter().layout_no_wrap(
             name.clone(),
             egui::FontId::proportional(12.0),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         let w = galley.size().x + 24.0;
         let r = Rect::from_min_max(Pos2::new(x, area.min.y), Pos2::new(x + w, area.max.y - 1.0));
@@ -400,11 +411,11 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
             Pos2::new(r.min.x + slant, r.max.y),
         ];
         let fill = if selected {
-            Color32::WHITE
+            crate::theme::Tokens::field()
         } else if resp.hovered() {
-            Tokens::TOOL_HOVER
+            Tokens::tool_hover()
         } else {
-            Tokens::PANEL_DARK
+            Tokens::panel_dark()
         };
         let p = ui.painter();
         p.add(egui::epaint::PathShape::convex_polygon(
@@ -412,7 +423,7 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
             fill,
             Stroke::NONE,
         ));
-        let edge = Stroke::new(1.0, Tokens::TEXT_DIM);
+        let edge = Stroke::new(1.0, Tokens::text_dim());
         p.line_segment([shape[0], shape[3]], edge);
         p.line_segment([shape[3], shape[2]], edge);
         p.line_segment([shape[2], shape[1]], edge);
@@ -422,7 +433,7 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
                 r.center().y - galley.size().y / 2.0,
             ),
             galley,
-            Tokens::TEXT,
+            Tokens::text(),
         );
         if resp.double_clicked() {
             double = Some(i);

@@ -17,7 +17,11 @@ use egui::{epaint, vec2, Color32, Rect, Sense, Stroke, Ui};
 use tracedraw_core::Color;
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 fn rgb32(c: Color) -> Color32 {
@@ -44,7 +48,7 @@ pub fn color_pick(
     );
     let painter = ui.painter();
     if enabled && resp.hovered() {
-        painter.rect_filled(rect, 2.0, Color32::from_rgb(0xE5, 0xF3, 0xFF));
+        painter.rect_filled(rect, 2.0, crate::theme::Tokens::hovered_row());
     }
     let swatch = Rect::from_min_size(rect.min + vec2(3.0, 4.0), vec2(20.0, 14.0));
     painter.rect_filled(swatch, 0.0, rgb32(*color));
@@ -54,9 +58,9 @@ pub fn color_pick(
         Stroke::new(
             1.0,
             if enabled {
-                Tokens::ICON
+                Tokens::icon()
             } else {
-                Tokens::BORDER
+                Tokens::border()
             },
         ),
         egui::StrokeKind::Inside,
@@ -69,9 +73,9 @@ pub fn color_pick(
             c + vec2(0.0, 2.0),
         ],
         if enabled {
-            Tokens::ICON
+            Tokens::icon()
         } else {
-            Tokens::BORDER
+            Tokens::border()
         },
         Stroke::NONE,
     ));
@@ -90,7 +94,7 @@ pub fn color_pick(
                         let (r, s) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
                         ui.painter().rect_filled(r, 0.0, rgb32(*c));
                         let edge = if *c == *color {
-                            Stroke::new(2.0, Tokens::ICON)
+                            Stroke::new(2.0, Tokens::icon())
                         } else {
                             Stroke::new(1.0, Color32::from_gray(0xC0))
                         };

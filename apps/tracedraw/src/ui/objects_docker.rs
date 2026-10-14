@@ -26,11 +26,6 @@ const INDENT: f32 = 16.0;
 /// Height of the bar with the New Layer, New Master Layer and Delete
 /// buttons.
 const BAR_H: f32 = 30.0;
-const SELECTED: Color32 = Color32::from_rgb(0xCC, 0xE8, 0xFF);
-const SELECTED_EDGE: Color32 = Color32::from_rgb(0x99, 0xD1, 0xFF);
-const HOVER: Color32 = Color32::from_rgb(0xE5, 0xF3, 0xFF);
-const LAYER_BG: Color32 = Color32::from_rgb(0xEA, 0xEA, 0xEA);
-const ACTIVE_BG: Color32 = Color32::from_rgb(0xD4, 0xE6, 0xF7);
 /// The top sheet of the layer icon: blue for a page's layers, amber for
 /// master layers.
 const LAYER_TOP: Color32 = Color32::from_rgb(0x4A, 0x90, 0xD9);
@@ -91,7 +86,11 @@ pub fn object_label(s: &Shape) -> String {
 fn paint_eye(ui: &Ui, r: Rect, on: bool) {
     let p = ui.painter();
     let c = r.center();
-    let color = if on { Tokens::ICON } else { Tokens::ICON_OFF };
+    let color = if on {
+        Tokens::icon()
+    } else {
+        Tokens::icon_off()
+    };
     let w = 6.0;
     let pts_top: Vec<Pos2> = (0..=12)
         .map(|i| {
@@ -123,7 +122,11 @@ fn paint_eye(ui: &Ui, r: Rect, on: bool) {
 fn paint_printer(ui: &Ui, r: Rect, on: bool) {
     let p = ui.painter();
     let c = r.center();
-    let color = if on { Tokens::ICON } else { Tokens::ICON_OFF };
+    let color = if on {
+        Tokens::icon()
+    } else {
+        Tokens::icon_off()
+    };
     let stroke = Stroke::new(1.0, color);
     // The sheet going in at the top.
     p.rect_stroke(
@@ -148,9 +151,9 @@ fn paint_printer(ui: &Ui, r: Rect, on: bool) {
 /// shut, pale when open.
 fn paint_lock(ui: &Ui, r: Rect, locked: bool) {
     let color = if locked {
-        Tokens::ICON
+        Tokens::icon()
     } else {
-        Tokens::ICON_OFF
+        Tokens::icon_off()
     };
     paint_padlock(ui.painter(), r, locked, color);
 }
@@ -227,12 +230,12 @@ fn paint_page_icon(p: &Painter, r: Rect, master: bool) {
     let fill = if master {
         Color32::from_rgb(0xFB, 0xE7, 0xC6)
     } else {
-        Color32::WHITE
+        crate::theme::Tokens::field()
     };
     p.add(egui::Shape::convex_polygon(
         outline,
         fill,
-        Stroke::new(1.0, Tokens::ICON),
+        Stroke::new(1.0, Tokens::icon()),
     ));
     p.add(egui::Shape::line(
         vec![
@@ -240,7 +243,7 @@ fn paint_page_icon(p: &Painter, r: Rect, master: bool) {
             Pos2::new(x1 - fold, y0 + fold),
             Pos2::new(x1, y0 + fold),
         ],
-        Stroke::new(0.8, Tokens::ICON),
+        Stroke::new(0.8, Tokens::icon()),
     ));
 }
 
@@ -259,7 +262,7 @@ fn paint_guides_icon(p: &Painter, r: Rect) {
 /// A three by three grid.
 fn paint_grid_icon(p: &Painter, r: Rect) {
     let c = r.center();
-    let stroke = Stroke::new(1.0, Color32::from_gray(0x8C));
+    let stroke = Stroke::new(1.0, crate::theme::Tokens::text_dim());
     for i in 0..4 {
         let t = -6.0 + 4.0 * i as f32;
         p.line_segment([c + Vec2::new(t, -6.0), c + Vec2::new(t, 6.0)], stroke);
@@ -285,7 +288,7 @@ fn paint_arrow(ui: &Ui, r: Rect, open: bool) {
     };
     ui.painter().add(egui::Shape::convex_polygon(
         pts,
-        Tokens::TEXT_DIM,
+        Tokens::text_dim(),
         Stroke::NONE,
     ));
 }
@@ -299,7 +302,7 @@ fn paint_swatch(ui: &Ui, r: Rect, s: &Shape) {
         .stroke
         .as_ref()
         .map(|st| crate::canvas::to_color32(st.color))
-        .unwrap_or(Tokens::TEXT_DIM);
+        .unwrap_or(Tokens::text_dim());
     match fill {
         Some(c) => {
             p.rect_filled(r, 1.0, c);
@@ -333,7 +336,11 @@ fn paint_plus_badge(p: &Painter, r: Rect) {
 /// A waste bin, pale when `on` is false.
 fn paint_bin(p: &Painter, r: Rect, on: bool) {
     let c = r.center();
-    let color = if on { Tokens::ICON } else { Tokens::ICON_OFF };
+    let color = if on {
+        Tokens::icon()
+    } else {
+        Tokens::icon_off()
+    };
     let stroke = Stroke::new(1.2, color);
     p.line_segment(
         [c + Vec2::new(-6.0, -4.5), c + Vec2::new(6.0, -4.5)],
@@ -367,16 +374,16 @@ fn row(ui: &mut Ui, look: Look) -> (Rect, egui::Response) {
     let p = ui.painter();
     match look {
         Look::Object { selected: true } => {
-            p.rect_filled(rect, 0.0, SELECTED);
+            p.rect_filled(rect, 0.0, crate::theme::Tokens::selected_row());
             p.rect_stroke(
                 rect,
                 0.0,
-                Stroke::new(1.0, SELECTED_EDGE),
+                Stroke::new(1.0, crate::theme::Tokens::selected_row_line()),
                 egui::epaint::StrokeKind::Inside,
             );
         }
         Look::Layer { active: true } => {
-            p.rect_filled(rect, 0.0, ACTIVE_BG);
+            p.rect_filled(rect, 0.0, crate::theme::Tokens::tool_active());
             p.rect_filled(
                 Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
                 0.0,
@@ -384,10 +391,10 @@ fn row(ui: &mut Ui, look: Look) -> (Rect, egui::Response) {
             );
         }
         _ if resp.hovered() => {
-            p.rect_filled(rect, 0.0, HOVER);
+            p.rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
         }
         Look::Layer { active: false } => {
-            p.rect_filled(rect, 0.0, LAYER_BG);
+            p.rect_filled(rect, 0.0, crate::theme::Tokens::tab_strip());
         }
         _ => {}
     }
@@ -483,7 +490,7 @@ fn node_row(ui: &mut Ui, id: &str, title: &str, open: bool, master: bool) -> boo
         egui::Align2::LEFT_CENTER,
         title,
         crate::theme::bold(13.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     a.clicked() || resp.clicked()
 }
@@ -534,9 +541,9 @@ fn layer_rows(
         egui::FontId::proportional(13.0)
     };
     let color = if at.shown {
-        Tokens::TEXT
+        Tokens::text()
     } else {
-        Tokens::TEXT_DIM
+        Tokens::text_dim()
     };
     let name = ui.painter().text(
         Pos2::new(x, rect.center().y),
@@ -551,7 +558,7 @@ fn layer_rows(
             egui::Align2::LEFT_CENTER,
             tr(scope_key(layer.scope)),
             egui::FontId::proportional(11.0),
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
     }
     if resp.double_clicked() {
@@ -651,7 +658,7 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
         egui::Align2::LEFT_CENTER,
         tr("docker.guides"),
         egui::FontId::proportional(13.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
 }
 
@@ -668,7 +675,12 @@ fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
     x += 20.0;
     paint_printer(ui, square(rect, x, 18.0), false);
     x += 20.0;
-    paint_padlock(ui.painter(), square(rect, x, 18.0), true, Tokens::ICON_OFF);
+    paint_padlock(
+        ui.painter(),
+        square(rect, x, 18.0),
+        true,
+        Tokens::icon_off(),
+    );
     x += 22.0;
     paint_grid_icon(ui.painter(), square(rect, x, 16.0));
     x += 22.0;
@@ -677,7 +689,7 @@ fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
         egui::Align2::LEFT_CENTER,
         tr("menu.view.document_grid"),
         egui::FontId::proportional(13.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
 }
 
@@ -714,9 +726,9 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     x += 19.0;
     let label = object_label(s);
     let color = if s.visible {
-        Tokens::TEXT
+        Tokens::text()
     } else {
-        Tokens::TEXT_DIM
+        Tokens::text_dim()
     };
     ui.painter().text(
         Pos2::new(x, rect.center().y),
@@ -742,7 +754,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
 fn bottom_bar(app: &mut App, ui: &mut Ui) {
     let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), BAR_H), Sense::hover());
     ui.painter()
-        .hline(bar.x_range(), bar.min.y, Stroke::new(1.0, Tokens::BORDER));
+        .hline(bar.x_range(), bar.min.y, Stroke::new(1.0, Tokens::border()));
     let slot =
         |x: f32| Rect::from_center_size(Pos2::new(x, bar.center().y + 1.0), Vec2::splat(24.0));
     let new_r = slot(bar.min.x + 14.0);
@@ -777,7 +789,7 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
         (delete_r, &delete, can_delete),
     ] {
         if on && resp.hovered() {
-            p.rect_filled(r, 2.0, Tokens::TOOL_HOVER);
+            p.rect_filled(r, 2.0, Tokens::tool_hover());
         }
     }
     let icon = |r: Rect| Rect::from_center_size(r.center(), Vec2::splat(16.0));

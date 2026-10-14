@@ -12,14 +12,6 @@ use tracedraw_core::{
 /// The vertical strip of docker tabs on the right edge of the window.
 /// Height of a docker's title bar (it runs across the tab column too).
 pub const TITLE_H: f32 = 27.0;
-/// The title bar, the empty part of the tab column.
-pub const TITLE_FILL: egui::Color32 = egui::Color32::from_gray(0xEA);
-/// Tabs, and the open docker's tab.
-const TAB_FILL: egui::Color32 = egui::Color32::from_gray(0xD8);
-const TAB_ACTIVE: egui::Color32 = egui::Color32::from_gray(0xB2);
-const TAB_HOVER: egui::Color32 = egui::Color32::from_gray(0xC8);
-/// The line between a docker and the tab column.
-const TAB_LINE: egui::Color32 = egui::Color32::from_gray(0xB2);
 
 /// The docker tab column: the open dockers as vertical tabs (an icon on
 /// top, the name running downwards), grey, the open one darker, then the
@@ -27,11 +19,12 @@ const TAB_LINE: egui::Color32 = egui::Color32::from_gray(0xB2);
 pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     let full = ui.max_rect();
     // The title bar's part and the line along the docker.
-    ui.painter().rect_filled(full, 0.0, TITLE_FILL);
+    ui.painter()
+        .rect_filled(full, 0.0, crate::theme::Tokens::tab_strip());
     ui.painter().vline(
         full.left() + 0.5,
         (full.top() + TITLE_H)..=full.bottom(),
-        egui::Stroke::new(1.0, TAB_LINE),
+        egui::Stroke::new(1.0, crate::theme::Tokens::window_border()),
     );
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.add_space(TITLE_H);
@@ -46,7 +39,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         let galley = ui.painter().layout_no_wrap(
             name.clone(),
             egui::FontId::proportional(12.0),
-            Tokens::TEXT,
+            Tokens::text(),
         );
         let w = galley.size().x;
         let gh = galley.size().y;
@@ -55,11 +48,11 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click());
         let bg = egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max);
         let fill = if active {
-            TAB_ACTIVE
+            crate::theme::Tokens::window_border()
         } else if resp.hovered() {
-            TAB_HOVER
+            crate::theme::Tokens::icon_off()
         } else {
-            TAB_FILL
+            crate::theme::Tokens::tab()
         };
         ui.painter().rect_filled(bg, 0.0, fill);
         if let Some(icon) = tab_icon(tab) {
@@ -73,7 +66,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         let mut ts = egui::epaint::TextShape::new(
             egui::pos2(bg.center().x + gh / 2.0, text_top),
             galley,
-            Tokens::TEXT,
+            Tokens::text(),
         );
         ts.angle = std::f32::consts::FRAC_PI_2;
         ui.painter().add(ts);
@@ -104,10 +97,10 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         ui.painter().rect_filled(
             egui::Rect::from_center_size(c, egui::vec2(18.0, 18.0)),
             0.0,
-            TAB_HOVER,
+            crate::theme::Tokens::icon_off(),
         );
     }
-    let s = egui::Stroke::new(1.5, egui::Color32::from_gray(0x8C));
+    let s = egui::Stroke::new(1.5, crate::theme::Tokens::text_dim());
     ui.painter()
         .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
     ui.painter()
@@ -138,7 +131,7 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
     match tab {
         DockerTab::Hints => Some(|p, r| {
             // A pointer with a question mark.
-            let s = egui::Stroke::new(1.2, Tokens::ICON);
+            let s = egui::Stroke::new(1.2, Tokens::icon());
             let o = r.min + egui::vec2(2.0, 1.0);
             let pts = vec![
                 o,
@@ -151,7 +144,7 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
             ];
             p.add(egui::epaint::PathShape::convex_polygon(
                 pts,
-                Tokens::ICON,
+                Tokens::icon(),
                 s,
             ));
             p.text(
@@ -159,12 +152,12 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
                 egui::Align2::CENTER_CENTER,
                 "?",
                 egui::FontId::proportional(10.0),
-                Tokens::ICON,
+                Tokens::icon(),
             );
         }),
         DockerTab::Properties => Some(|p, r| {
             // A pen over a ruled sheet.
-            let s = egui::Stroke::new(1.2, Tokens::ICON);
+            let s = egui::Stroke::new(1.2, Tokens::icon());
             let c = r.center();
             p.line_segment([c + egui::vec2(-6.0, 6.0), c + egui::vec2(5.0, -5.0)], s);
             p.line_segment([c + egui::vec2(-6.0, 6.0), c + egui::vec2(-3.0, 5.0)], s);
@@ -184,14 +177,14 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
                     c + egui::vec2(0.0, dy + 3.5),
                 ];
                 let fill = if k == 2 {
-                    Tokens::ICON
+                    Tokens::icon()
                 } else {
-                    egui::Color32::WHITE
+                    crate::theme::Tokens::field()
                 };
                 p.add(egui::epaint::PathShape::convex_polygon(
                     pts,
                     fill,
-                    egui::Stroke::new(1.0, Tokens::ICON),
+                    egui::Stroke::new(1.0, Tokens::icon()),
                 ));
             }
         }),
@@ -204,15 +197,16 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
 pub fn dockers(app: &mut App, ui: &mut Ui) {
     let full = ui.max_rect();
     let (bar, _) = ui.allocate_exact_size(egui::vec2(full.width(), TITLE_H), egui::Sense::hover());
-    ui.painter().rect_filled(bar, 0.0, TITLE_FILL);
+    ui.painter()
+        .rect_filled(bar, 0.0, crate::theme::Tokens::tab_strip());
     ui.painter().text(
         egui::pos2(bar.left() + 7.0, bar.center().y),
         egui::Align2::LEFT_CENTER,
         tr(app.docker_tab.key()),
         egui::FontId::proportional(12.0),
-        Tokens::TEXT,
+        Tokens::text(),
     );
-    let grey = egui::Color32::from_gray(0x8C);
+    let grey = crate::theme::Tokens::text_dim();
     // Close, at the right end.
     let close = egui::Rect::from_center_size(
         egui::pos2(bar.right() - 12.0, bar.center().y),
@@ -221,7 +215,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
     let resp = ui
         .interact(close, egui::Id::new("docker_close"), egui::Sense::click())
         .on_hover_text(tr("docker.close_docker"));
-    let col = if resp.hovered() { Tokens::TEXT } else { grey };
+    let col = if resp.hovered() { Tokens::text() } else { grey };
     let c = close.center();
     let s = egui::Stroke::new(1.5, col);
     ui.painter()
@@ -239,7 +233,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
     let resp = ui
         .interact(fold, egui::Id::new("docker_fold"), egui::Sense::click())
         .on_hover_text(tr("docker.collapse"));
-    let col = if resp.hovered() { Tokens::TEXT } else { grey };
+    let col = if resp.hovered() { Tokens::text() } else { grey };
     for dx in [-3.5f32, 3.0] {
         let c = fold.center() + egui::vec2(dx, 0.0);
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
@@ -256,7 +250,8 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         app.show_dockers = false;
     }
     let content = egui::Rect::from_min_max(egui::pos2(full.left(), bar.bottom()), full.max);
-    ui.painter().rect_filled(content, 0.0, egui::Color32::WHITE);
+    ui.painter()
+        .rect_filled(content, 0.0, crate::theme::Tokens::field());
     ui.scope_builder(
         egui::UiBuilder::new().max_rect(content.shrink2(egui::vec2(8.0, 6.0))),
         |ui| {
@@ -290,7 +285,7 @@ fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
             let ch = ui.color_edit_button_srgb(&mut rgb).changed();
             ui.label(
                 egui::RichText::new(crate::app::color_description(*c))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
             ch
@@ -405,7 +400,7 @@ fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
 fn properties(app: &mut App, ui: &mut Ui) {
     let shapes = app.selected_shapes();
     if shapes.is_empty() {
-        ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::text_dim()));
         ui.add_space(6.0);
         ui.strong(tr("docker.default_properties"));
         let mut fill = app.default_fill();
@@ -498,9 +493,9 @@ fn properties(app: &mut App, ui: &mut Ui) {
             let open = !app.settings.properties_closed.iter().any(|c| c == id);
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
             let fill = if open {
-                Some(Tokens::TOOL_ACTIVE)
+                Some(Tokens::tool_active())
             } else if resp.hovered() {
-                Some(Tokens::TOOL_HOVER)
+                Some(Tokens::tool_hover())
             } else {
                 None
             };
@@ -572,7 +567,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     }
                     ui.label(
                         egui::RichText::new(tr("docker.edit_with_text_tool"))
-                            .color(Tokens::TEXT_DIM)
+                            .color(Tokens::text_dim())
                             .size(11.0),
                     );
                 }
@@ -603,24 +598,24 @@ enum SectionIcon {
 impl SectionIcon {
     fn paint(self, painter: &egui::Painter, r: egui::Rect) {
         match self {
-            SectionIcon::Tool(t) => crate::ui::icons::draw(painter, r, t, Tokens::ICON),
+            SectionIcon::Tool(t) => crate::ui::icons::draw(painter, r, t, Tokens::icon()),
             SectionIcon::Effects => {
                 painter.text(
                     r.center(),
                     egui::Align2::CENTER_CENTER,
                     "fx",
                     egui::FontId::proportional(13.0),
-                    Tokens::ICON,
+                    Tokens::icon(),
                 );
             }
             SectionIcon::Summary => {
-                painter.circle_stroke(r.center(), 7.0, egui::Stroke::new(1.3, Tokens::ICON));
+                painter.circle_stroke(r.center(), 7.0, egui::Stroke::new(1.3, Tokens::icon()));
                 painter.text(
                     r.center() + egui::vec2(0.0, 0.5),
                     egui::Align2::CENTER_CENTER,
                     "i",
                     egui::FontId::proportional(11.0),
-                    Tokens::ICON,
+                    Tokens::icon(),
                 );
             }
         }
@@ -644,9 +639,9 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
     let fill = if resp.hovered() {
-        Tokens::TOOL_HOVER
+        Tokens::tool_hover()
     } else {
-        egui::Color32::from_gray(0xEC)
+        crate::theme::Tokens::control_fill()
     };
     ui.painter().rect_filled(rect, 2.0, fill);
     let c = egui::pos2(rect.left() + 10.0, rect.center().y);
@@ -665,7 +660,7 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
     };
     ui.painter().add(egui::epaint::PathShape::convex_polygon(
         points,
-        Tokens::ICON,
+        Tokens::icon(),
         egui::Stroke::NONE,
     ));
     ui.painter().text(
@@ -673,7 +668,7 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
         egui::Align2::LEFT_CENTER,
         title,
         crate::theme::bold(12.5),
-        Tokens::TEXT,
+        Tokens::text(),
     );
     if resp.clicked() {
         toggle_section(app, id);
@@ -749,7 +744,7 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
 /// The picture of a fill kind (0 none, 1 uniform, 2 gradient, 3 pattern,
 /// 4 texture, 5 mesh) in a 16 x 16 square.
 fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
-    let edge = egui::Stroke::new(1.0, Tokens::ICON);
+    let edge = egui::Stroke::new(1.0, Tokens::icon());
     let sq = r.shrink(1.0);
     match kind {
         0 => {
@@ -760,11 +755,11 @@ fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
             );
         }
         1 => {
-            painter.rect_filled(sq, 0.0, Tokens::ICON);
+            painter.rect_filled(sq, 0.0, Tokens::icon());
         }
         2 => {
             let mut mesh = egui::Mesh::default();
-            let dark = Tokens::ICON;
+            let dark = Tokens::icon();
             let light = egui::Color32::WHITE;
             mesh.colored_vertex(sq.left_top(), dark);
             mesh.colored_vertex(sq.right_top(), light);
@@ -785,7 +780,7 @@ fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
                             sq.min + egui::vec2(x as f32 * w, y as f32 * w),
                             egui::vec2(w, w),
                         );
-                        painter.rect_filled(cell, 0.0, Tokens::ICON);
+                        painter.rect_filled(cell, 0.0, Tokens::icon());
                     }
                 }
             }
@@ -801,7 +796,7 @@ fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
                 (8.5, 7.5, 1.0),
                 (12.5, 13.0, 1.0),
             ] {
-                painter.circle_filled(sq.min + egui::vec2(x, y), rad, Tokens::ICON);
+                painter.circle_filled(sq.min + egui::vec2(x, y), rad, Tokens::icon());
             }
             painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
         }
@@ -812,11 +807,11 @@ fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
                 let y = sq.top() + sq.height() * t;
                 painter.line_segment(
                     [egui::pos2(x, sq.top()), egui::pos2(x + 1.5, sq.bottom())],
-                    egui::Stroke::new(0.9, Tokens::ICON),
+                    egui::Stroke::new(0.9, Tokens::icon()),
                 );
                 painter.line_segment(
                     [egui::pos2(sq.left(), y), egui::pos2(sq.right(), y - 1.5)],
-                    egui::Stroke::new(0.9, Tokens::ICON),
+                    egui::Stroke::new(0.9, Tokens::icon()),
                 );
             }
         }
@@ -850,9 +845,9 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
             if kind == i {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
             } else if resp.hovered() {
-                ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+                ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
             }
             fill_kind_picture(
                 ui.painter(),
@@ -921,7 +916,7 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
                 .changed();
             ui.label(
                 egui::RichText::new(tr("docker.mesh_hint"))
-                    .color(Tokens::TEXT_DIM)
+                    .color(Tokens::text_dim())
                     .size(11.0),
             );
         }
@@ -1374,7 +1369,7 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     let (undo, redo) = app.engine.history_labels();
     ui.label(
         egui::RichText::new(tr("docker.undo_hint"))
-            .color(Tokens::TEXT_DIM)
+            .color(Tokens::text_dim())
             .size(11.0),
     );
     ui.add_space(4.0);
@@ -1394,7 +1389,7 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     for l in redo.iter().rev() {
         let _ = ui.selectable_label(
             false,
-            egui::RichText::new(l.to_string()).color(Tokens::TEXT_DIM),
+            egui::RichText::new(l.to_string()).color(Tokens::text_dim()),
         );
     }
     ui.add_space(6.0);

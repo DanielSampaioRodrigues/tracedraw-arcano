@@ -18,7 +18,11 @@ use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::Arrowhead;
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 /// A head at the start of a line, pointing left.

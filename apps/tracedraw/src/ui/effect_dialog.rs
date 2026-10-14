@@ -44,7 +44,7 @@ fn dial(ui: &mut Ui, deg: &mut f64) -> bool {
     let r = rect.width() / 2.0 - 2.0;
     ui.painter().circle_filled(c, r, Color32::WHITE);
     ui.painter()
-        .circle_stroke(c, r, Stroke::new(1.0, crate::theme::Tokens::BORDER));
+        .circle_stroke(c, r, Stroke::new(1.0, crate::theme::Tokens::border()));
     let a = (*deg as f32).to_radians();
     let tip = c + Vec2::new(a.cos(), -a.sin()) * (r - 2.0);
     ui.painter()
@@ -178,7 +178,7 @@ pub fn param_widget(
                             ui.painter(),
                             Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
                             crate::tools::Tool::ColorEyedropper,
-                            crate::theme::Tokens::ICON,
+                            crate::theme::Tokens::icon(),
                         );
                         if resp.on_hover_text(tr("dialog.pick_from_image")).clicked() {
                             *pick = if on {
@@ -370,9 +370,9 @@ fn tone_curve_part(
                 Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
                 crate::tools::Tool::ColorEyedropper,
                 if style < 2 {
-                    crate::theme::Tokens::ICON
+                    crate::theme::Tokens::icon()
                 } else {
-                    crate::theme::Tokens::BORDER
+                    crate::theme::Tokens::border()
                 },
             );
             if resp.on_hover_text(tr("dialog.curve_eyedropper")).clicked() && style < 2 {
@@ -571,7 +571,7 @@ fn levels_part(
     painter.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.0, crate::theme::Tokens::BORDER),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let (mr, _) = ui.allocate_exact_size(Vec2::new(width, 10.0), Sense::hover());
@@ -612,7 +612,7 @@ fn levels_part(
     ui.painter().rect_stroke(
         br,
         0.0,
-        Stroke::new(1.0, crate::theme::Tokens::BORDER),
+        Stroke::new(1.0, crate::theme::Tokens::border()),
         egui::StrokeKind::Inside,
     );
     let (or, _) = ui.allocate_exact_size(Vec2::new(width, 10.0), Sense::hover());
@@ -651,7 +651,7 @@ fn levels_part(
                 ui.painter(),
                 ir,
                 crate::tools::Tool::ColorEyedropper,
-                crate::theme::Tokens::ICON,
+                crate::theme::Tokens::icon(),
             );
             let sw = Rect::from_min_size(ir.left_bottom() - Vec2::new(0.0, 5.0), Vec2::splat(5.0));
             ui.painter().rect_filled(
@@ -892,7 +892,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
     if effects.is_empty() {
         ui.label(
             egui::RichText::new(tr("docker.no_effects"))
-                .color(crate::theme::Tokens::TEXT_DIM)
+                .color(crate::theme::Tokens::text_dim())
                 .size(11.0),
         );
     }

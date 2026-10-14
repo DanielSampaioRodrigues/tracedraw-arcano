@@ -109,7 +109,11 @@ pub fn toolbar(app: &mut App, ui: &mut Ui) {
         paint_stopwatch(
             ui.painter(),
             icon,
-            if doc { Tokens::ICON } else { Tokens::ICON_OFF },
+            if doc {
+                Tokens::icon()
+            } else {
+                Tokens::icon_off()
+            },
         );
         ui.add_enabled_ui(doc, |ui| {
             let (names, active) = if doc {
@@ -165,12 +169,16 @@ pub fn toolbar(app: &mut App, ui: &mut Ui) {
                 ui.painter().rect(
                     r,
                     0.0,
-                    Color32::from_rgb(0xE5, 0xF3, 0xFF),
-                    Stroke::new(1.0, Color32::from_rgb(0xCC, 0xE8, 0xFF)),
+                    crate::theme::Tokens::hovered_row(),
+                    Stroke::new(1.0, crate::theme::Tokens::selected_row()),
                     egui::StrokeKind::Inside,
                 );
             }
-            let color = if doc { Tokens::ICON } else { Tokens::ICON_OFF };
+            let color = if doc {
+                Tokens::icon()
+            } else {
+                Tokens::icon_off()
+            };
             paint_play_pause(ui.painter(), r, running, color);
             let resp = resp.on_hover_text(tr(if running {
                 "tracker.pause"
@@ -382,7 +390,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut TrackerDialog, close:
             }
             let (dot, _) = ui.allocate_exact_size(vec2(12.0, 18.0), Sense::hover());
             ui.painter().circle_filled(dot.center(), 4.0, state.color());
-            ui.label(RichText::new(tr(state.key())).color(Tokens::TEXT_DIM));
+            ui.label(RichText::new(tr(state.key())).color(Tokens::text_dim()));
         });
         ui.add_space(6.0);
         fields(app, ui, st);
@@ -455,7 +463,7 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
     // Header.
     let (head, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
     let p = ui.painter();
-    p.rect_filled(head, 0.0, Color32::from_gray(0xEA));
+    p.rect_filled(head, 0.0, crate::theme::Tokens::tab_strip());
     for (col, key) in [
         "",
         "tracker.task",
@@ -467,15 +475,15 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
     .enumerate()
     {
         if !key.is_empty() {
-            cell(p, head, col, &tr(key), Tokens::TEXT, false);
+            cell(p, head, col, &tr(key), Tokens::text(), false);
         }
     }
     let mut clicked = None;
     let mut activate = None;
     let list_h = (ROW_H * 8.0).min(ROW_H * tracker.tasks.len().max(3) as f32);
     let frame = egui::Frame::new()
-        .fill(Color32::WHITE)
-        .stroke(Stroke::new(1.0, crate::ui::chrome::FIELD_BORDER));
+        .fill(crate::theme::Tokens::field())
+        .stroke(Stroke::new(1.0, crate::theme::Tokens::control_border()));
     frame.show(ui, |ui| {
         ui.set_width(width - 2.0);
         egui::ScrollArea::vertical()
@@ -492,7 +500,7 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
                         egui::Align2::CENTER_CENTER,
                         tr("tracker.empty"),
                         font.clone(),
-                        Tokens::TEXT_DIM,
+                        Tokens::text_dim(),
                     );
                 }
                 for (i, task) in tracker.tasks.iter().enumerate() {
@@ -500,27 +508,27 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
                         ui.allocate_exact_size(vec2(width - 2.0, ROW_H), Sense::click());
                     let p = ui.painter();
                     if st.selected == Some(i) {
-                        p.rect_filled(r, 0.0, Tokens::TOOL_ACTIVE);
+                        p.rect_filled(r, 0.0, Tokens::tool_active());
                     } else if resp.hovered() {
-                        p.rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+                        p.rect_filled(r, 0.0, Tokens::tool_hover());
                     }
                     if tracker.active == Some(i) {
                         let c = pos2(r.left() + COLS[0] / 2.0 + 1.0, r.center().y);
                         p.circle_filled(c, 3.5, Tokens::ACCENT);
                     }
-                    cell(p, r, 1, &task.name, Tokens::TEXT, false);
+                    cell(p, r, 1, &task.name, Tokens::text(), false);
                     cell(
                         p,
                         r,
                         2,
                         &hms(tt::task_seconds(&tracker, i, pending)),
-                        Tokens::TEXT,
+                        Tokens::text(),
                         false,
                     );
                     let date =
                         |s: Option<i64>| s.map(|s| tt::date_time(s, &tz)).unwrap_or_default();
-                    cell(p, r, 3, &date(task.start), Tokens::TEXT, false);
-                    cell(p, r, 4, &date(task.finish), Tokens::TEXT, false);
+                    cell(p, r, 3, &date(task.start), Tokens::text(), false);
+                    cell(p, r, 4, &date(task.finish), Tokens::text(), false);
                     if resp.clicked() {
                         clicked = Some(i);
                     }
@@ -537,13 +545,20 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
     } else {
         0.0
     };
-    cell(ui.painter(), r, 1, &tr("tracker.total"), Tokens::TEXT, true);
+    cell(
+        ui.painter(),
+        r,
+        1,
+        &tr("tracker.total"),
+        Tokens::text(),
+        true,
+    );
     cell(
         ui.painter(),
         r,
         2,
         &hms(tracker.total_seconds() + extra),
-        Tokens::TEXT,
+        Tokens::text(),
         true,
     );
     if let Some(i) = clicked {

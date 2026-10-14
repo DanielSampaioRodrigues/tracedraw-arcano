@@ -22,7 +22,11 @@ fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
 }
 
 fn dim(ui: &mut Ui, text: String) {
-    ui.label(egui::RichText::new(text).color(Tokens::TEXT_DIM).size(11.0));
+    ui.label(
+        egui::RichText::new(text)
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
 }
 
 pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
@@ -298,7 +302,7 @@ fn style_swatches(ui: &mut Ui, fill: &Fill, stroke: &Option<tracedraw_core::Stro
     ui.painter().rect_stroke(
         r,
         2.0,
-        egui::Stroke::new(1.0, Tokens::CONTROL_BORDER),
+        egui::Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Inside,
     );
     let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
@@ -706,7 +710,7 @@ fn script_editor(app: &mut App, ui: &mut Ui) {
         rect.min,
         egui::pos2(rect.left() + GUTTER - 4.0, rect.bottom()),
     );
-    painter.rect_filled(gutter.shrink(1.0), 0.0, Tokens::PANEL);
+    painter.rect_filled(gutter.shrink(1.0), 0.0, Tokens::panel());
     for (i, (top, bottom)) in tops.iter().enumerate() {
         let line = i as u32 + 1;
         let y = mids.get(i).copied().unwrap_or((top + bottom) / 2.0);
@@ -732,7 +736,7 @@ fn script_editor(app: &mut App, ui: &mut Ui) {
             egui::Align2::RIGHT_CENTER,
             line.to_string(),
             font.clone(),
-            Tokens::TEXT_DIM,
+            Tokens::text_dim(),
         );
     }
     // The margin takes its own clicks (laid over the editor's).
