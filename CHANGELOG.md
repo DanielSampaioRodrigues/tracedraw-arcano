@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Customization > Commands: a category list (every menu, the
+  toolbox, or all) and a search above the commands with their pictures;
+  beside them a General tab (name, where the command is, its keys) and a
+  Shortcut Keys tab (press the new keys, the current ones with Delete,
+  Reset to Defaults). Tool shortcuts are set the same way.
 - Options > Customization: pages in the order Appearance, Command Bars,
   Commands, Color Palette. Appearance has Center Dialog Boxes (off,
   dialogs move by their title bar and open where they were left), a

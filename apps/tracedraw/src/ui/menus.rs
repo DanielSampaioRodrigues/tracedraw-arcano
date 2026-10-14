@@ -329,6 +329,30 @@ fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
     })
 }
 
+/// The top menus' title keys, in the menu bar's order.
+pub(crate) fn menu_titles() -> Vec<&'static str> {
+    all_menus().iter().map(|(k, _)| *k).collect()
+}
+
+/// Draw the picture the menu row of `key` shows into `r`; false when the
+/// row has none.
+pub(crate) fn draw_menu_picture(
+    painter: &egui::Painter,
+    r: egui::Rect,
+    key: &str,
+    color: egui::Color32,
+) -> bool {
+    if let Some(a) = menu_icon(key) {
+        crate::ui::icons::draw_action(painter, r, a, color);
+        true
+    } else if let Some(p) = menu_pic(key) {
+        crate::ui::propbar::draw_pic(painter, r.expand(2.0), p, color);
+        true
+    } else {
+        false
+    }
+}
+
 /// Property bar picture for a menu item, when it has one.
 fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
     use crate::ui::propbar::Pic;
