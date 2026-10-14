@@ -145,8 +145,9 @@ pub fn handle_transform(
 impl App {
     fn curve_of(&self, id: ShapeId) -> Option<(BezPath, bool, Affine)> {
         let s = self.doc().find_shape(id)?;
+        let parent = self.doc().parent_transform(id)?;
         match &s.kind {
-            ShapeKind::Path { path, closed } => Some((path.clone(), *closed, s.transform)),
+            ShapeKind::Path { path, closed } => Some((path.clone(), *closed, parent * s.transform)),
             _ => None,
         }
     }

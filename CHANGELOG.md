@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool on pictures (#60): a picture shows a node at each corner;
+  dragging one crops the picture to the reshaped outline (a clip frame
+  whose frame keeps editing as a curve). A double click no longer turns
+  a picture, text, group or clip frame into a curve, which made a
+  picture disappear.
 - Pictures on the rows of every menu: File, Edit, Layout, Object, Effects,
   Table, Tools and Help join Text, Bitmaps and Window (submenu rows
   too). Each bitmap effect's row shows the effect applied to a small

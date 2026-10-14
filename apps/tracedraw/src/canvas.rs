@@ -1293,6 +1293,21 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();
     for s in app.selected_shapes() {
+        // A clip frame (a cropped picture) shows its frame's nodes.
+        let s = match &s.kind {
+            ShapeKind::ClipFrame { frame, .. } if matches!(frame.kind, ShapeKind::Path { .. }) => {
+                app.doc().shape_on_page(frame.id).unwrap_or(s)
+            }
+            _ => s,
+        };
+        // A picture shows a node at each corner; dragging one crops it.
+        if let Some(corners) = crate::shape_tool::bitmap_corners(&s) {
+            for p in corners {
+                let fill = prefs.unselected_filled.then_some(Color32::WHITE);
+                node_marker(painter, view.to_screen(p), size, prefs.cusp, fill, main);
+            }
+            continue;
+        }
         // Text: a node per character and the two spacing arrows.
         if matches!(s.kind, ShapeKind::Text { .. }) {
             let chars = crate::text_nodes::char_nodes(&s);

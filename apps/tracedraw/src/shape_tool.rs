@@ -28,6 +28,31 @@ pub struct NodeHit {
     pub index: usize,
 }
 
+/// The four corners of a picture on the page, in node order (from its
+/// rectangle's first corner), or `None` for other objects.
+pub(crate) fn bitmap_corners(s: &tracedraw_core::Shape) -> Option<[Point; 4]> {
+    let ShapeKind::Bitmap { rect, .. } = &s.kind else {
+        return None;
+    };
+    let t = s.transform;
+    Some([
+        t * Point::new(rect.x0, rect.y0),
+        t * Point::new(rect.x1, rect.y0),
+        t * Point::new(rect.x1, rect.y1),
+        t * Point::new(rect.x0, rect.y1),
+    ])
+}
+
+/// The objects a double click with the Shape tool turns into curves:
+/// rectangles, ellipses and polygons. A picture, text, group or clip frame
+/// would lose what it is (#60).
+pub(crate) fn curves_on_double_click(kind: &ShapeKind) -> bool {
+    matches!(
+        kind,
+        ShapeKind::Rect { .. } | ShapeKind::Ellipse { .. } | ShapeKind::Polygon { .. }
+    )
+}
+
 impl App {
     /// A node drag (`Drag::NodeMove`) reaching `p`: the grabbed node snaps
     /// and the chosen nodes follow; Ctrl keeps the move horizontal or
@@ -98,12 +123,86 @@ impl App {
         snapped
     }
 
+    /// A curve's path, whether it is closed and its transform to the page
+    /// (curves inside clip frames too).
     fn path_of(&self, id: ShapeId) -> Option<(BezPath, bool, tracedraw_core::geometry::Affine)> {
-        let (_, s) = self.doc().shape(id).ok()?;
+        let s = self.doc().find_shape(id)?;
+        let parent = self.doc().parent_transform(id)?;
         match &s.kind {
-            ShapeKind::Path { path, closed } => Some((path.clone(), *closed, s.transform)),
+            ShapeKind::Path { path, closed } => Some((path.clone(), *closed, parent * s.transform)),
             _ => None,
         }
+    }
+
+    /// The curve whose nodes the Shape tool shows for the selected object
+    /// `id`: the object itself, or for a clip frame (a cropped picture)
+    /// its frame.
+    pub(crate) fn node_target(&self, id: ShapeId) -> ShapeId {
+        match self.doc().find_shape(id).map(|s| &s.kind) {
+            Some(ShapeKind::ClipFrame { frame, .. })
+                if matches!(frame.kind, ShapeKind::Path { .. }) =>
+            {
+                frame.id
+            }
+            _ => id,
+        }
+    }
+
+    /// A selected picture's corner under the pointer: the picture and the
+    /// corner (0 to 3, in [`bitmap_corners`] order).
+    fn bitmap_corner_at(&self, p: Point) -> Option<(ShapeId, usize)> {
+        let tol = NODE_PX / self.view.zoom as f64;
+        self.selected_shapes().iter().find_map(|s| {
+            bitmap_corners(s)?
+                .iter()
+                .position(|c| (*c - p).hypot() <= tol)
+                .map(|i| (s.id, i))
+        })
+    }
+
+    /// Put the picture `id` in a clip frame whose frame is the picture's
+    /// rectangle (an undo step of its own); the frame's id, whose nodes 0
+    /// to 3 are the picture's corners.
+    pub(crate) fn crop_bitmap_to_frame(&mut self, id: ShapeId) -> Option<ShapeId> {
+        let s = self.doc().find_shape(id)?.clone();
+        let ShapeKind::Bitmap { rect, .. } = &s.kind else {
+            return None;
+        };
+        let mut path = BezPath::new();
+        path.move_to((rect.x0, rect.y0));
+        path.line_to((rect.x1, rect.y0));
+        path.line_to((rect.x1, rect.y1));
+        path.line_to((rect.x0, rect.y1));
+        path.close_path();
+        let mut frame = tracedraw_core::Shape::new(
+            self.engine.new_shape_id(),
+            ShapeKind::Path { path, closed: true },
+        );
+        frame.fill = tracedraw_core::Fill::None;
+        frame.stroke = None;
+        let mut inner = s.clone();
+        inner.id = self.engine.new_shape_id();
+        inner.transform = tracedraw_core::geometry::Affine::IDENTITY;
+        let frame_id = frame.id;
+        let _ = self.engine.run_with_label(
+            &Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::ClipFrame {
+                    frame: Box::new(frame),
+                    contents: vec![inner],
+                },
+            },
+            "Crop Bitmap",
+        );
+        Some(frame_id)
+    }
+
+    /// The node targets of the selection (see [`Self::node_target`]).
+    fn node_targets(&self) -> Vec<ShapeId> {
+        self.selection
+            .iter()
+            .map(|id| self.node_target(*id))
+            .collect()
     }
 
     fn set_path(&mut self, id: ShapeId, path: BezPath, closed: bool, label: &'static str) {
@@ -129,7 +228,7 @@ impl App {
     /// Node under the pointer among selected curves.
     pub fn node_at(&self, p: Point) -> Option<NodeHit> {
         let tol = NODE_PX / self.view.zoom as f64;
-        for id in &self.selection {
+        for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
@@ -203,9 +302,17 @@ impl App {
                 }
                 return;
             }
+            // Only shapes become curves: a picture, text, group or clip
+            // frame would lose what it is (#60).
             if let Some(id) = self.hit_test(p) {
+                let shape = self
+                    .doc()
+                    .find_shape(id)
+                    .map(|s| curves_on_double_click(&s.kind));
                 self.select(vec![id]);
-                self.convert_to_curves();
+                if shape == Some(true) {
+                    self.convert_to_curves();
+                }
             }
             return;
         }
@@ -237,6 +344,25 @@ impl App {
                         chars: self.chosen_chars(key.0),
                         start: Box::new(s),
                         from: p,
+                        begun: false,
+                    };
+                    return;
+                }
+            }
+            // A picture's corner: the picture becomes a clip frame whose
+            // frame is its rectangle, and the corner moves as a node of it.
+            if let Some((id, corner)) = self.bitmap_corner_at(p) {
+                if let Some(frame) = self.crop_bitmap_to_frame(id) {
+                    self.node_selection = vec![(frame, corner)];
+                    let grab = self
+                        .selected_node_points()
+                        .first()
+                        .map(|(_, _, q)| *q)
+                        .unwrap_or(p);
+                    self.drag = Drag::NodeMove {
+                        start: self.start_curves(),
+                        from: p,
+                        grab,
                         begun: false,
                     };
                     return;
@@ -551,7 +677,7 @@ impl App {
             return;
         }
         let mut sel = Vec::new();
-        for id in &self.selection {
+        for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
@@ -570,7 +696,7 @@ impl App {
     pub(crate) fn segment_at(&self, p: Point) -> Option<(ShapeId, usize, f64)> {
         let tol = 6.0 / self.view.zoom as f64;
         let mut best: Option<(ShapeId, usize, f64, f64)> = None;
-        for id in &self.selection {
+        for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
@@ -798,7 +924,7 @@ impl App {
 
     pub fn select_all_nodes(&mut self) {
         let mut sel = Vec::new();
-        for id in &self.selection {
+        for id in &self.node_targets() {
             if let Some((path, _, _)) = self.path_of(*id) {
                 for n in nodes::nodes(&path) {
                     sel.push((*id, n.index));
@@ -1142,5 +1268,75 @@ mod eraser_tests {
         app.eraser_width = 100.0;
         app.erase_along(&[Point::new(0.0, 10.0), Point::new(40.0, 10.0)]);
         assert!(app.doc().find_shape(id).is_none());
+    }
+}
+
+#[cfg(test)]
+mod bitmap_node_tests {
+    use super::*;
+    use tracedraw_core::geometry::{Rect, Vec2};
+
+    fn picture(app: &mut App) -> ShapeId {
+        let png = tiny_skia::Pixmap::new(2, 2)
+            .and_then(|p| p.encode_png().ok())
+            .unwrap_or_default();
+        app.new_shape(ShapeKind::Bitmap {
+            rect: Rect::new(10.0, 10.0, 50.0, 40.0),
+            width_px: 2,
+            height_px: 2,
+            png,
+            fx: None,
+        })
+        .expect("picture")
+    }
+
+    #[test]
+    fn a_pictures_corner_crops_it_and_double_click_keeps_it_a_picture() {
+        let mut app = App::headless();
+        let id = picture(&mut app);
+        app.select(vec![id]);
+        let corners = bitmap_corners(app.doc().find_shape(id).expect("shape")).expect("corners");
+        assert_eq!(corners[0], Point::new(10.0, 10.0));
+        // A corner of the selected picture is a node for the Shape tool.
+        app.view.zoom = 1.0;
+        assert_eq!(app.bitmap_corner_at(Point::new(10.5, 10.5)), Some((id, 0)));
+        // Cropping: the picture goes into a clip frame of its rectangle,
+        // whose nodes the Shape tool now edits.
+        let frame = app.crop_bitmap_to_frame(id).expect("frame");
+        assert_eq!(app.node_target(id), frame);
+        app.node_selection = vec![(frame, 2)];
+        let start = app.start_curves();
+        assert_eq!(start.len(), 1);
+        app.move_start_nodes(
+            &start,
+            Vec2::new(-20.0, -10.0),
+            Point::new(50.0, 40.0),
+            false,
+        );
+        let s = app.doc().find_shape(id).expect("clip frame");
+        let ShapeKind::ClipFrame { frame: f, contents } = &s.kind else {
+            panic!("not a clip frame: {:?}", s.kind);
+        };
+        assert!(matches!(contents[0].kind, ShapeKind::Bitmap { .. }));
+        let b = tracedraw_core::geometry::Shape::bounding_box(&f.page_path());
+        assert!(
+            (b.x1 - 50.0).abs() < 1e-9 && (b.y1 - 40.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        let moved = nodes::nodes(match &f.kind {
+            ShapeKind::Path { path, .. } => path,
+            _ => panic!("frame"),
+        })
+        .into_iter()
+        .any(|n| (n.pos - Point::new(30.0, 30.0)).hypot() < 1e-9);
+        assert!(moved);
+        // A double click with the Shape tool turns shapes into curves, not
+        // pictures (#60).
+        assert!(!curves_on_double_click(&contents[0].kind));
+        assert!(curves_on_double_click(&ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            radius: 0.0,
+            corners: None,
+        }));
     }
 }
