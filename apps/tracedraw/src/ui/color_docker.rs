@@ -320,7 +320,8 @@ fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
             changed |= slider(ui, "I", i, 0.0..=255.0, 255.0);
             changed |= slider(ui, "Q", q, 0.0..=255.0, 255.0);
         }
-        Color::Registration => {}
+        // A spot ink's tint is set where the inks are listed.
+        Color::Registration | Color::Spot { .. } => {}
     }
     changed
 }

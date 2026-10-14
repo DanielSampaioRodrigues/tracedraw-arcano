@@ -29,6 +29,18 @@ pub enum Color {
     Yiq { y: f32, i: f32, q: f32 },
     /// Registration colour: prints on every separation.
     Registration,
+    /// A spot (named) ink at a tint: `ink` names it in the drawing's ink
+    /// list (`Document::inks`), `tint` is 0 to 1, and `c`, `m`, `y`, `k`
+    /// are the ink's process stand-in at full strength, so the colour
+    /// shows and converts without the list.
+    Spot {
+        ink: u32,
+        tint: f32,
+        c: f32,
+        m: f32,
+        y: f32,
+        k: f32,
+    },
 }
 
 /// Hooks for a colour engine. See `docs/decisions.md` D5.
@@ -262,12 +274,36 @@ impl Color {
             Color::Lab { .. } => "Lab",
             Color::Yiq { .. } => "YIQ",
             Color::Registration => "Registration",
+            Color::Spot { .. } => "Spot",
+        }
+    }
+
+    /// The process colour a spot ink at its tint stands for (each process
+    /// ink times the tint); other colours as they are.
+    pub fn process(self) -> Color {
+        match self {
+            Color::Spot {
+                tint, c, m, y, k, ..
+            } => {
+                let t = if tint.is_finite() { tint.clamp(0.0, 1.0) } else { 1.0 };
+                Color::Cmyk {
+                    c: c * t,
+                    m: m * t,
+                    y: y * t,
+                    k: k * t,
+                }
+            }
+            other => other,
         }
     }
 
     /// Screen colour as 8-bit sRGB. Uses the registered converter or ICC
     /// engine when there is one, else the built-in conversions.
     pub fn to_rgb8(self) -> [u8; 3] {
+        let s = self.process();
+        if s != self {
+            return s.to_rgb8();
+        }
         if let Some(conv) = engine::get() {
             if matches!(self, Color::Cmyk { .. } | Color::Lab { .. }) {
                 return conv(self);
@@ -280,6 +316,9 @@ impl Color {
     /// engine when one is installed and has a profile for the model; every
     /// other case uses [`Color::to_rgb_f32_builtin`].
     pub fn to_rgb_f32(self) -> [f32; 3] {
+        if let Color::Spot { .. } = self {
+            return self.process().to_rgb_f32();
+        }
         if matches!(
             self,
             Color::Rgb { .. } | Color::Cmyk { .. } | Color::Lab { .. }
@@ -299,6 +338,7 @@ impl Color {
             Color::Cmyk { c, m, y, k } => crate::press::cmyk_to_srgb([c, m, y, k]),
             Color::Gray { v } => [v, v, v],
             Color::Registration => [0.0, 0.0, 0.0],
+            Color::Spot { .. } => self.process().to_rgb_f32_builtin(),
             Color::Hsb { h, s, b } => hsb_to_rgb(h, s, b),
             Color::Hsl { h, s, l } => {
                 // HSL -> HSB then to RGB.
@@ -326,6 +366,9 @@ impl Color {
     pub fn convert_to(self, model: &str) -> Color {
         if self.model_name() == model {
             return self;
+        }
+        if let Color::Spot { .. } = self {
+            return self.process().convert_to(model);
         }
         if let Some(icc) = engine::icc() {
             let managed = match (self, model) {

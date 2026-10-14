@@ -4944,6 +4944,7 @@ pub fn color_description(c: Color) -> String {
             (q * 255.0).round()
         ),
         Color::Registration => "Registration".into(),
+        Color::Spot { ink, tint, .. } => format!("Spot {ink} {:.0}%", tint * 100.0),
     }
 }
 
