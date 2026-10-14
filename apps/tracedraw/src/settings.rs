@@ -224,6 +224,10 @@ pub struct Settings {
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
     pub script_filters: Vec<crate::scripting::ScriptFilter>,
+    /// File > GitHub's last repository, branch, path (and the token, when
+    /// the user asked to remember it).
+    #[serde(default)]
+    pub github: crate::github::GithubPrefs,
     /// Options > Global > Bitmap Tracing.
     #[serde(default)]
     pub tracing: crate::prefs::TracePrefs,
@@ -936,6 +940,7 @@ impl Default for Settings {
             last_update_check: 0,
             skipped_update: String::new(),
             script_filters: Vec::new(),
+            github: Default::default(),
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),

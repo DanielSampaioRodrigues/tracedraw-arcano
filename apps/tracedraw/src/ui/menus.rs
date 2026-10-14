@@ -1118,6 +1118,21 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    sub(ui, "menu.file.github", |ui| {
+        if item(ui, "menu.file.github_open", "", true) {
+            app.github.status.clear();
+            app.dialog = Dialog::GithubOpen(app.github_form(false));
+        }
+        if item(ui, "menu.file.github_save", "", doc) {
+            app.github.status.clear();
+            app.dialog = Dialog::GithubSave(app.github_form(true));
+        }
+        if item(ui, "menu.file.github_history", "", app.remote.is_some()) {
+            app.github.status.clear();
+            app.github.history = None;
+            app.dialog = Dialog::GithubHistory;
+        }
+    });
     sep(ui);
     if item(ui, "menu.file.close", "", doc) {
         app.close_document();

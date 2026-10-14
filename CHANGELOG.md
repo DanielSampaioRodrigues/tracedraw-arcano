@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- File > GitHub: open a drawing from a GitHub repository, save it back
+  as a commit with a message, and see and open its earlier versions.
 - `.cdr` version 22: connector lines (object type 0x26) are read; they
   were skipped.
 - `.cdr` versions 7 to 12: arrowheads are read and placed on their lines,

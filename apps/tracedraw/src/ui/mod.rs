@@ -37,6 +37,7 @@ pub mod extrude_bar;
 pub mod field;
 pub mod fill_tool_bars;
 pub mod font_list;
+pub mod github_dialogs;
 pub mod hints;
 pub mod icons;
 pub mod lab_dialog;

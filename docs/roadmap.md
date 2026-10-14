@@ -68,7 +68,7 @@ Status tracked in `docs/features.md`.
 - `.cdr` target versions written down, each layout confirmed on files (public notes and other readers' documentation only to confirm a layout, never their code)
 
 ## M8 Saving and collaboration (planned)
-- Git hosting: open a `.tdraw` straight from a repository (OAuth), save as a commit with a message, a branch per session, a pull request from the app, history from the log, LFS for large files, a visual diff between commits, conflicts resolved in the interface, the token kept in the system keyring
+- Git hosting: open a `.tdraw` straight from a repository, save as a commit with a message, history from the log (done with a personal access token, see `behavior/github.md`); OAuth sign-in, a branch per session, a pull request from the app, LFS for large files, a visual diff between commits, conflicts resolved in the interface, the token kept in the system keyring (open)
 - Storage: Google Drive, Dropbox, OneDrive, S3-compatible storage (AWS, MinIO, Cloudflare R2), a synced local folder, WebDAV
 - Real-time editing: a self-hosted WebSocket server, automatic merging with a CRDT (Yjs or Automerge), presence with each user's pointer and selection, optional locks per object, comments anchored to objects, permissions per project, share links that expire, version history with restore
 - Order (decided 2026-10-14): Git hosting first, without a server of our own; storage services and real-time editing later. Stable IDs per object are done

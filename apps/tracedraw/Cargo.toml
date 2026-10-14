@@ -27,6 +27,7 @@ serde.workspace = true
 serde_json.workspace = true
 boa_engine = "0.20"
 sha2 = "0.10"
+base64 = "0.22"
 qrcode = { version = "0.14", default-features = false }
 csv = "1"
 i_overlay = "9"

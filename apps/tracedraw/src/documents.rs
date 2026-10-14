@@ -45,6 +45,7 @@ pub struct DocSlot {
     pub view: View,
     pub selection: Vec<ShapeId>,
     pub file: Option<PathBuf>,
+    pub remote: Option<crate::github::Remote>,
     pub cdr_version: Option<u16>,
     pub fit_pending: bool,
     pub page_numbers: PageNumberSettings,
@@ -75,6 +76,7 @@ impl Default for DocSlot {
             view: View::default(),
             selection: Vec::new(),
             file: None,
+            remote: None,
             cdr_version: None,
             fit_pending: false,
             page_numbers: PageNumberSettings::default(),
@@ -119,6 +121,7 @@ impl App {
         };
         std::mem::swap(&mut self.engine, &mut slot.engine);
         std::mem::swap(&mut self.file, &mut slot.file);
+        std::mem::swap(&mut self.remote, &mut slot.remote);
         std::mem::swap(&mut self.cdr_version, &mut slot.cdr_version);
         std::mem::swap(&mut self.page_numbers, &mut slot.page_numbers);
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
@@ -268,6 +271,7 @@ impl App {
             .set_max_history(self.settings.undo_levels.max(1));
         self.selection.clear();
         self.file = file;
+        self.remote = None;
         self.cdr_version = None;
         self.view = View::default();
         self.fit_pending = true;

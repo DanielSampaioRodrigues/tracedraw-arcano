@@ -515,6 +515,10 @@ pub enum Dialog {
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
     About,
+    /// File > GitHub.
+    GithubOpen(crate::github::GithubForm),
+    GithubSave(crate::github::GithubForm),
+    GithubHistory,
     /// The browser version, each time the page opens: the same program
     /// compiled for the browser, what is slower there, the desktop app.
     WebNotice,
@@ -1248,6 +1252,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Export(st) => export_dialog(app, ctx, st, &mut close),
         Dialog::Print(st) => print_dialog(app, ctx, st, &mut close),
         Dialog::PrintMerge(st) => print_merge_dialog(app, ctx, st, &mut close),
+        Dialog::GithubOpen(f) => crate::ui::github_dialogs::open_dialog(app, ctx, f, &mut close),
+        Dialog::GithubSave(f) => crate::ui::github_dialogs::save_dialog(app, ctx, f, &mut close),
+        Dialog::GithubHistory => crate::ui::github_dialogs::history_dialog(app, ctx, &mut close),
         Dialog::CreateTable { rows, cols } => {
             window(ctx, tr("dialog.create_table")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -3928,6 +3935,8 @@ mod tests {
             )),
             Dialog::About,
             Dialog::WebNotice,
+            Dialog::GithubOpen(Default::default()),
+            Dialog::GithubSave(Default::default()),
         ]
     }
 

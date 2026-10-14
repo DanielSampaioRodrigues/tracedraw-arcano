@@ -147,25 +147,7 @@ pub fn remembered_key(prefs: &AiPrefs) -> String {
     }
 }
 
-/// One HTTP request, as both kinds of service take it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct HttpRequest {
-    /// `POST` (a request to draw) or `GET` (the list of models).
-    pub method: &'static str,
-    pub url: String,
-    pub headers: Vec<(String, String)>,
-    pub body: String,
-}
-
-/// What the service answered.
-#[derive(Debug, Clone, PartialEq)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub body: String,
-}
-
-/// A response, or why none came (network, address, certificate).
-pub type HttpResult = Result<HttpResponse, String>;
+pub use crate::net::{HttpRequest, HttpResponse, HttpResult};
 
 /// Who says a message of the conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -509,99 +491,9 @@ pub fn extract_script(reply: &str) -> Option<String> {
     (!code.is_empty()).then_some(code)
 }
 
-/// Send `req` and deliver the answer on `tx`: on a thread on the
-/// desktop, as a fetch in a browser.
-#[cfg(not(target_arch = "wasm32"))]
+/// Send `req` and deliver the answer on `tx` (up to 8 MB of answer).
 fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
-    std::thread::spawn(move || {
-        let _ = tx.send(send(&req));
-    });
-}
-
-#[cfg(target_arch = "wasm32")]
-fn spawn(req: HttpRequest, tx: std::sync::mpsc::Sender<HttpResult>) {
-    wasm_bindgen_futures::spawn_local(async move {
-        let _ = tx.send(send(req).await);
-        crate::web::request_repaint();
-    });
-}
-
-/// One request over HTTPS (or HTTP for local servers), waiting up to
-/// five minutes. Certificates are checked against the system's trusted
-/// ones; proxies come from the usual environment variables.
-#[cfg(not(target_arch = "wasm32"))]
-fn send(req: &HttpRequest) -> HttpResult {
-    use ureq::tls::{RootCerts, TlsConfig};
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(std::time::Duration::from_secs(300)))
-        .http_status_as_error(false)
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
-        .build()
-        .into();
-    let mut resp = if req.method == "GET" {
-        let mut r = agent.get(&req.url);
-        for (name, value) in &req.headers {
-            r = r.header(name, value);
-        }
-        r.call()
-    } else {
-        let mut r = agent.post(&req.url);
-        for (name, value) in &req.headers {
-            r = r.header(name, value);
-        }
-        r.send(req.body.as_str())
-    }
-    .map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let body = resp
-        .body_mut()
-        .with_config()
-        .limit(8 * 1024 * 1024)
-        .read_to_string()
-        .map_err(|e| e.to_string())?;
-    Ok(HttpResponse { status, body })
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn send(req: HttpRequest) -> HttpResult {
-    use wasm_bindgen::JsCast;
-    let js = |e: wasm_bindgen::JsValue| {
-        e.as_string()
-            .or_else(|| {
-                e.dyn_ref::<js_sys::Error>()
-                    .map(|e| String::from(e.message()))
-            })
-            .unwrap_or_else(|| "the request failed".to_string())
-    };
-    let init = web_sys::RequestInit::new();
-    init.set_method(req.method);
-    init.set_mode(web_sys::RequestMode::Cors);
-    if req.method != "GET" {
-        init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
-    }
-    let headers = web_sys::Headers::new().map_err(js)?;
-    for (name, value) in &req.headers {
-        headers.set(name, value).map_err(js)?;
-    }
-    init.set_headers(headers.as_ref());
-    let request = web_sys::Request::new_with_str_and_init(&req.url, &init).map_err(js)?;
-    let window = web_sys::window().ok_or("no browser window")?;
-    let resp = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request))
-        .await
-        .map_err(js)?;
-    let resp: web_sys::Response = resp.dyn_into().map_err(js)?;
-    let status = resp.status();
-    let text = wasm_bindgen_futures::JsFuture::from(resp.text().map_err(js)?)
-        .await
-        .map_err(js)?;
-    Ok(HttpResponse {
-        status,
-        body: text.as_string().unwrap_or_default(),
-    })
+    crate::net::spawn(req, 8 * 1024 * 1024, tx);
 }
 
 impl App {
@@ -1177,9 +1069,9 @@ mod tests {
             ],
             body: r#"{"a":1}"#.into(),
         };
-        let r = send(&req).expect("answered");
+        let r = crate::net::send(&req, 8 * 1024 * 1024).expect("answered");
         assert_eq!((r.status, r.body.as_str()), (200, r#"{"ok":true}"#));
-        let r = send(&req).expect("answered");
+        let r = crate::net::send(&req, 8 * 1024 * 1024).expect("answered");
         assert_eq!(r.status, 401);
         assert!(parse_reply(Provider::OpenAiCompatible, &r)
             .expect_err("an error")
@@ -1202,7 +1094,7 @@ mod tests {
             url: format!("http://{gone}/"),
             ..req
         };
-        assert!(send(&dead).is_err());
+        assert!(crate::net::send(&dead, 8 * 1024 * 1024).is_err());
     }
 
     /// A real service refuses a made-up key with its own message (needs
@@ -1217,7 +1109,7 @@ mod tests {
             "not-a-key",
             &[(Role::User, user_message("a dot", None))],
         );
-        let r = send(&req).expect("the service answers");
+        let r = crate::net::send(&req, 8 * 1024 * 1024).expect("the service answers");
         assert_eq!(r.status, 401, "{}", r.body);
         let e = parse_reply(prefs.provider, &r).expect_err("refused");
         assert!(e.contains("401"), "{e}");

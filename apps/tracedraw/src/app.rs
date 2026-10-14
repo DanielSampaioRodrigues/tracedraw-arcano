@@ -651,6 +651,10 @@ pub struct App {
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
     pub file: Option<PathBuf>,
+    /// The drawing's file in a GitHub repository, when it came from one.
+    pub remote: Option<crate::github::Remote>,
+    /// File > GitHub's session: the token, the request out, the history.
+    pub github: crate::github::GithubSession,
     /// The `.cdr` version the active drawing is saved in: the version of
     /// the `.cdr` file it came from, or the one last chosen when saving
     /// it. `None`: the version of Options > Global > File Formats.
@@ -1435,6 +1439,8 @@ impl App {
             curve: None,
             text_edit: None,
             file: None,
+            remote: None,
+            github: Default::default(),
             cdr_version: None,
             status: String::new(),
             fit_pending: true,
@@ -1708,6 +1714,9 @@ impl App {
         };
         app.load_settings();
         app.apply_runtime_settings();
+        if app.settings.github.remember_token {
+            app.github.token = app.settings.github.token.clone();
+        }
         // Start-up: the file given on the command line, else what Options >
         // General asks for: the Welcome Screen alone (no drawing open), a
         // new drawing, or the last drawing edited.
@@ -3941,6 +3950,13 @@ impl App {
     }
 
     pub fn save(&mut self, save_as: bool) {
+        // A drawing from GitHub saves back as a commit (Save As saves a
+        // file as usual).
+        if !save_as && self.remote.is_some() {
+            self.github.status.clear();
+            self.dialog = crate::ui::dialogs::Dialog::GithubSave(self.github_form(true));
+            return;
+        }
         // In a browser every save is a download, so there is no path to
         // write back to.
         if !save_as && !crate::files::WEB {

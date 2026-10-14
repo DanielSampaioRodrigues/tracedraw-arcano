@@ -52,6 +52,7 @@ mod fill_tool;
 mod font_folder;
 mod frame_type;
 mod fx;
+mod github;
 mod grammar;
 mod guides;
 mod i18n;
@@ -67,6 +68,7 @@ mod mcp;
 mod mcp_link;
 mod media;
 mod mesh_tool;
+mod net;
 mod new_document;
 mod node_edit;
 mod ops;
@@ -262,6 +264,11 @@ impl eframe::App for Shell {
         #[cfg(not(target_arch = "wasm32"))]
         if app.sync_mcp_link(ui.ctx()) {
             ui.ctx().request_repaint();
+        }
+        // An answer from GitHub (File > GitHub).
+        if app.poll_github() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
         }
         // A reply of the AI service (AI Drawing).
         if app.poll_ai() {

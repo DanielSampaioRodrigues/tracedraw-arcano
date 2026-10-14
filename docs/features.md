@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 192, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -219,6 +219,7 @@ Counts: works 192, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from | works |
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model (documents, pages, layers, shapes, fills, outlines, colours, curves with their subpaths and nodes, effects listed, added and removed), run, record macro, load/save | works (`scripting::tests`) |
+| File > GitHub: open a drawing from a repository, save it back as a commit with a message (refused over a newer version), the file's history and earlier versions; a personal access token, kept for the session or remembered | works (see `behavior/github.md`) |
 | Script filters: a script defining `TraceDrawFilter` installed from the Scripts panel adds a file format to File > Import and File > Export | works (see `behavior/script-filters.md`) |
 | Script debugger: breakpoints in the Scripts panel's margin, Debug, Continue, Step, Stop, expressions evaluated in the paused scope (desktop) | works (see `behavior/script-debugger.md`) |
 | AI Drawing panel and prompt bar (above the palette while a service is set up; Window > Toolbars; model list fetched from the service): a request in words drawn by an AI service the user sets up (Messages API or any chat completions service, local model servers included) with their own key; the reply's script runs without file access, all or nothing, as one undo step; a failing script is sent back once with its error | works (see `behavior/ai-drawing.md`) |
