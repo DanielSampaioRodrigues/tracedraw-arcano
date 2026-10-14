@@ -19,7 +19,7 @@ use crate::parse::{build_path, color_from_model, encode_png, ParseReport};
 use crate::{Error, Result};
 use std::collections::BTreeSet;
 use tracedraw_core::{
-    document::{Layer, Page, Shape, ShapeKind},
+    document::{Layer, Page, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan},
     geometry::{Affine, BezPath, Point, Rect, Size},
     style::{Arrowhead, Fountain, FountainKind, Stop},
     Color, Document, Fill, LineCap, LineJoin, Stroke,
@@ -34,6 +34,11 @@ const BEGIN_LAYER: i32 = 11;
 const END_LAYER: i32 = 12;
 const BEGIN_GROUP: i32 = 13;
 const END_GROUP: i32 = 14;
+const BEGIN_TEXT: i32 = 20;
+const END_TEXT: i32 = 21;
+const GLYPH_RUN: i32 = 65;
+const TEXT_MATRIX: i32 = 72;
+const CHAR_STYLE: i32 = 85;
 const ELLIPSE: i32 = 66;
 const POLY_CURVE: i32 = 67;
 const RECTANGLE: i32 = 68;
@@ -93,6 +98,7 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(Document, ParseReport)> 
         outlines: Vec::new(),
         arrow_pairs: Vec::new(),
         arrowheads: Vec::new(),
+        fonts: Vec::new(),
         report: ParseReport::default(),
         noted: BTreeSet::new(),
     };
@@ -104,6 +110,7 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(Document, ParseReport)> 
             b"rdot" => ctx.dashes = entries(c.data).map(|f| dashes(&f)).collect(),
             b"rotl" => ctx.outlines = entries(c.data).map(|f| outline(&f)).collect(),
             b"rota" => ctx.arrow_pairs = arrow_pairs(c.data),
+            b"rfnt" => ctx.fonts = arrowheads(c.data).map(|f| font_name(&f)).collect(),
             b"rarw" => {
                 ctx.arrowheads = arrowheads(c.data)
                     .enumerate()
@@ -522,6 +529,8 @@ struct Ctx {
     outlines: Vec<Option<[u16; 6]>>,
     arrow_pairs: Vec<(u16, u16)>,
     arrowheads: Vec<Arrowhead>,
+    /// Font names of `rfnt`, 1-based.
+    fonts: Vec<Option<String>>,
     report: ParseReport,
     /// Notes already reported once.
     noted: BTreeSet<String>,
@@ -536,6 +545,20 @@ struct PageBuild {
     clip_depth: usize,
     pending_image: Option<Placement>,
     images: Vec<Option<(u32, u32, Vec<u8>)>>,
+    text: TextState,
+}
+
+/// What the text instructions set before a glyph run draws.
+#[derive(Default)]
+struct TextState {
+    /// Text objects begun and not yet drawn by a glyph run.
+    undrawn: usize,
+    /// The baseline's start and direction on the page.
+    matrix: Option<Affine>,
+    font: u16,
+    size_mm: f64,
+    fill: Option<Fill>,
+    stroke: Option<Stroke>,
 }
 
 impl Ctx {
@@ -562,6 +585,7 @@ impl Ctx {
             clip_depth: 0,
             pending_image: None,
             images: Vec::new(),
+            text: TextState::default(),
         };
         let mut pos = 0usize;
         let mut steps = 0usize;
@@ -607,6 +631,10 @@ impl Ctx {
             }
             self.instruction(code, body, &mut page, doc);
             pos = end;
+        }
+        if page.text.undrawn > 0 {
+            self.report.skipped_objects += page.text.undrawn;
+            self.note("text without drawn characters is not read".into());
         }
         // Close what the page left open.
         self.end_layer(&mut page, doc);
@@ -699,12 +727,68 @@ impl Ctx {
                 self.report.skipped_objects += 1;
                 self.note("ellipse instructions are not read yet".into());
             }
-            20 | 21 | 65 | 70..=73 | 85 | 98..=102 => {
-                if code == 20 {
-                    self.report.skipped_objects += 1;
-                }
-                self.note("text is not read yet".into());
+            BEGIN_TEXT => page.text.undrawn += 1,
+            TEXT_MATRIX => {
+                // Field 2: a matrix (u16 type; 2 is six doubles) placing the
+                // baseline's start.
+                let f = fields(body, 0).0;
+                page.text.matrix = field(&f, 2).and_then(|m| self.matrix(m, page.size));
             }
+            CHAR_STYLE => {
+                // Field 1: rendering attributes; field 2: font (1-based in
+                // `rfnt`) and size.
+                let f = fields(body, 0).0;
+                if let Some(a) = field(&f, 1) {
+                    let (fill, stroke) = self.attributes(a);
+                    page.text.fill = Some(fill);
+                    page.text.stroke = stroke;
+                }
+                if let Some(v) = field(&f, 2) {
+                    let mut c = Cur::at(v, 0);
+                    if let (Some(font), Some(size)) = (c.u16(), c.u32()) {
+                        page.text.font = font;
+                        page.text.size_mm = f64::from(size) * self.unit_mm;
+                    }
+                }
+            }
+            GLYPH_RUN => {
+                let lines = glyph_run(body, self.unit_mm);
+                if lines.is_empty() {
+                    return;
+                }
+                let Some(matrix) = page.text.matrix else {
+                    self.note("text without a placement is not read".into());
+                    return;
+                };
+                let size_pt = page.text.size_mm / 25.4 * 72.0;
+                if !(size_pt > 0.01 && size_pt < 100_000.0) {
+                    self.note("text without a size is not read".into());
+                    return;
+                }
+                let family = usize::from(page.text.font)
+                    .checked_sub(1)
+                    .and_then(|i| self.fonts.get(i).cloned().flatten())
+                    .unwrap_or_else(|| "Arial".into());
+                page.text.undrawn = page.text.undrawn.saturating_sub(1);
+                for (at, text) in lines {
+                    let mut shape = Shape::new(
+                        doc.ids_mut().shape(),
+                        ShapeKind::Text {
+                            spans: vec![TextSpan::new(&text, &family, size_pt)],
+                            origin: Point::ZERO,
+                            frame: None,
+                            align: TextAlign::Left,
+                            para: ParagraphStyle::default(),
+                            on_path: None,
+                        },
+                    );
+                    shape.transform = matrix * Affine::translate(at.to_vec2());
+                    shape.fill = page.text.fill.clone().unwrap_or(Fill::Solid(Color::BLACK));
+                    shape.stroke = page.text.stroke.clone();
+                    push_shape(page, shape);
+                }
+            }
+            END_TEXT | 70 | 71 | 73 | 98..=102 => {}
             other => self.note(format!("instruction {other} not read")),
         }
     }
@@ -941,6 +1025,28 @@ impl Ctx {
     /// top, right, bottom as i32 each), a matrix (u16 type; type 2 is
     /// followed by six doubles a, b, c, d, e, f with x' = a x + c y + e),
     /// then a u16 and the image's number among the page's images (u16).
+    /// A matrix: u16 type, then for type 2 six doubles a, b, c, d, e, f
+    /// (x' = a x + c y + e); other types read as no change. The result
+    /// maps to the page.
+    fn matrix(&self, d: &[u8], page: Size) -> Option<Affine> {
+        let mut c = Cur::at(d, 0);
+        let u = self.unit_mm;
+        let m = match c.u16()? {
+            2 => {
+                let mut m = [0.0; 6];
+                for v in &mut m {
+                    *v = c.f64()?;
+                }
+                if m.iter().any(|v| !v.is_finite()) {
+                    return None;
+                }
+                Affine::new([m[0], m[1], m[2], m[3], m[4] * u, m[5] * u])
+            }
+            _ => Affine::IDENTITY,
+        };
+        Some(Affine::translate((page.width / 2.0, page.height / 2.0)) * m)
+    }
+
     fn placement(&mut self, body: &[u8], page: Size) -> Option<Placement> {
         let f = fields(body, 0).0;
         let mut c = Cur::at(field(&f, 2)?, 0);
@@ -1107,6 +1213,62 @@ fn group_of(mut children: Vec<Shape>, id: tracedraw_core::ShapeId) -> Option<Sha
 /// A layer's name: field 4 as a u32 count and UTF-16 letters, else the
 /// 8-bit name at the end of field 1 (page number, layer number, flags,
 /// object count, u16 length, letters).
+/// A font of `rfnt`: field 4 holds the name as a u32 length and UTF-16
+/// units, field 1 as a u16 length and bytes ending in 0.
+fn font_name(f: &[(u8, &[u8])]) -> Option<String> {
+    if let Some(v) = field(f, 4) {
+        let mut c = Cur::at(v, 0);
+        let n = c.u32()? as usize;
+        let units: Vec<u16> = (0..n.min(256)).map_while(|_| c.u16()).collect();
+        let name = String::from_utf16_lossy(&units);
+        let name = name.trim_end_matches('\0').trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    let v = field(f, 1)?;
+    let n = usize::from(Cur::at(v, 0).u16()?);
+    let bytes = v.get(2..2 + n.min(v.len().saturating_sub(2)))?;
+    let name: String = bytes
+        .iter()
+        .take_while(|b| **b != 0)
+        .map(|b| char::from(*b))
+        .collect();
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
+/// A glyph run's field 1: a u16 count, that many UTF-16 units, then each
+/// character's place from the baseline's start (i32 x, y). Characters on
+/// the same y make one line: its place (mm) and its text.
+fn glyph_run(body: &[u8], unit_mm: f64) -> Vec<(Point, String)> {
+    let f = fields(body, 0).0;
+    let Some(v) = field(&f, 1) else {
+        return Vec::new();
+    };
+    let mut c = Cur::at(v, 0);
+    let n = usize::from(c.u16().unwrap_or(0));
+    if n.saturating_mul(10) > v.len() {
+        return Vec::new();
+    }
+    let units: Vec<u16> = (0..n).map_while(|_| c.u16()).collect();
+    let places: Vec<(i32, i32)> = (0..n).map_while(|_| Some((c.i32()?, c.i32()?))).collect();
+    let mut lines: Vec<(Point, Vec<u16>)> = Vec::new();
+    for (i, unit) in units.iter().enumerate() {
+        let (x, y) = places.get(i).copied().unwrap_or((0, 0));
+        let at = Point::new(f64::from(x) * unit_mm, f64::from(y) * unit_mm);
+        match lines.last_mut() {
+            Some((start, line)) if (start.y - at.y).abs() < 1e-9 => line.push(*unit),
+            _ => lines.push((at, vec![*unit])),
+        }
+    }
+    lines
+        .into_iter()
+        .map(|(at, u)| (at, String::from_utf16_lossy(&u)))
+        .filter(|(_, t)| !t.trim().is_empty())
+        .collect()
+}
+
 fn layer_name(f: &[(u8, &[u8])]) -> Option<String> {
     if let Some(v) = field(f, 4) {
         let mut c = Cur::at(v, 0);
@@ -1756,6 +1918,76 @@ mod tests {
     }
 
     #[test]
+    fn text_from_glyph_runs() {
+        let mut m = u16s(&[2]);
+        for v in [1.0f64, 0.0, 0.0, 1.0, -100_000.0, 200_000.0] {
+            m.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut style = u16s(&[2]);
+        style.extend_from_slice(&84_667u32.to_le_bytes());
+        let mut run = u16s(&[4]);
+        run.extend_from_slice(&u16s(&"HiYo".encode_utf16().collect::<Vec<_>>()));
+        run.extend_from_slice(&le(&[0, 0, 50_000, 0, 0, -100_000, 50_000, -100_000]));
+        let pg = page(&[
+            begin_page(1_000_000, 1_000_000),
+            begin_layer("L", None),
+            instr(20, &[]),
+            instr(98, &[]),
+            instr(102, &[]),
+            instr(21, &[]),
+            instr(70, &[]),
+            instr(72, &[fld(1, &[0]), fld(2, &m)]),
+            instr(85, &[fld(1, &attrs(1, 0)), fld(2, &style)]),
+            instr(65, &[fld(1, &run)]),
+            instr(73, &[]),
+            instr(71, &[]),
+            // A text object never drawn.
+            instr(20, &[]),
+            instr(21, &[]),
+        ]);
+        let mut arial = 6u16.to_le_bytes().to_vec();
+        arial.extend_from_slice(b"Arial\0");
+        let units: Vec<u16> = "Verdana".encode_utf16().collect();
+        let mut verdana = (units.len() as u32).to_le_bytes().to_vec();
+        verdana.extend_from_slice(&u16s(&units));
+        let fonts = chunk(
+            b"rfnt",
+            &[flist(&[fld(1, &arial)]), flist(&[fld(4, &verdana)])].concat(),
+        );
+        let f = riff(&[cont(b'4'), pg, tables(), fonts].concat());
+        let (doc, rep) = open_bytes(&f, "t").expect("read");
+        assert_eq!(rep.skipped_objects, 1, "{:?}", rep.warnings);
+        let s = shapes(&doc);
+        assert_eq!(s.len(), 2);
+        for (shape, text, y) in [(s[0], "Hi", 70.0), (s[1], "Yo", 60.0)] {
+            let ShapeKind::Text { spans, frame, .. } = &shape.kind else {
+                panic!("{:?}", shape.kind);
+            };
+            assert!(frame.is_none());
+            assert_eq!(spans[0].text, text);
+            assert_eq!(spans[0].font_family, "Verdana");
+            assert!(
+                (spans[0].size_pt - 24.0).abs() < 1e-3,
+                "{}",
+                spans[0].size_pt
+            );
+            let at = shape.transform.translation();
+            assert!(
+                (at.x - 40.0).abs() < 1e-9 && (at.y - y).abs() < 1e-9,
+                "{at:?}"
+            );
+            assert_eq!(shape.fill, Fill::Solid(Color::rgb8(255, 0, 0)));
+        }
+        assert_eq!(
+            font_name(&[(1, arial.as_slice())]).as_deref(),
+            Some("Arial")
+        );
+        // Broken runs read as nothing.
+        assert!(glyph_run(&flist(&[fld(1, &u16s(&[60_000]))]), 1.0).is_empty());
+        assert!(glyph_run(&[], 1.0).is_empty());
+    }
+
+    #[test]
     fn long_instructions() {
         // A negative code: the size is a u32 after the code (assumed).
         let short = rect(&attrs(1, 0), 0, 0, 100_000, 100_000, 0, 0);
@@ -1809,6 +2041,10 @@ mod tests {
             instr(69, &[fld(1, &[0]), fld(2, &g)]),
             instr(111, &[fld(1, &le(&[1]))]),
             image_data(2, 1, &[vec![[1, 2, 3], [4, 5, 6]]]),
+            instr(20, &[]),
+            instr(72, &[fld(2, &u16s(&[2, 0, 0, 0, 0]))]),
+            instr(85, &[fld(1, &attrs(1, 0)), fld(2, &u16s(&[1, 9, 0]))]),
+            instr(65, &[fld(1, &[2, 0, 65, 0, 66, 0, 1, 0, 0, 0, 2, 0, 0, 0])]),
         ])]);
         for n in 0..f.len() {
             let _ = open_bytes(&f[..n], "t");

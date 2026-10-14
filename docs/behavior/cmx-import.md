@@ -18,10 +18,13 @@ File > Open and File > Import read `.cmx` exchange files; so does
   across the line). The lines are not pulled back under their heads.
 - Embedded 24-bit images, with their placement and crop.
 - Clips.
+- Text, as artistic text objects at the place, font, size and colour the
+  file draws it with, one object per line; the characters' spacing
+  comes from the font, not from the file.
 
 ## What does not, yet
 
-Text, lenses, bitmap, texture and pattern fills, 16-bit coordinate files
+Text the file does not draw as characters (a text stream alone), lenses, bitmap, texture and pattern fills, 16-bit coordinate files
 and big-endian files. Whatever is skipped is named once in the import
 report; opening never fails on it.
 
@@ -30,13 +33,14 @@ report; opening never fails on it.
 - `cmx::tests` in `crates/cdr`: pages, layers and shapes; outlines,
   dashes and arrowheads; arrowheads keep their size and placement, open
   parts become lines, closed parts add up and start heads are mirrored;
-  fountain fills; images after a jump; what is
+  fountain fills; images after a jump; text from glyph runs; what is
   not read is reported; long instructions; other files and versions;
   broken files never panic.
 - Public sample files compared with the previews they carry: most render
-  within an RMS difference of 0.03 to 0.07; the outlines sample (0.23;
+  within an RMS difference of 0.03 to 0.07, the text sample too (0.07,
+  0.16 before text was read); the outlines sample (0.23;
   its arrowheads now match the preview in size and place, 0.096 against
   0.119 before once the comparison allows the previews' one or two pixel
   offset; lines not pulled back under the heads), a brushes sample (0.16,
-  unread fill types), a text sample (0.16, text not read) and one more
+  unread fill types) and one more
   sample (0.22) are the known gaps.

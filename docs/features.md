@@ -205,7 +205,7 @@ Counts: works 184, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Import EPS, PostScript and PRN print files (interpreter: paths, images, text, clips, shadings, patterns, prologs; one page per `showpage` at its `/PageSize`), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
 | Import EMF and WMF (GDI paths, pens, brushes, text, DIB bitmaps, clips); export EMF and WMF | works (see `behavior/emf-wmf.md`) |
-| Import CMX: pages, layers, groups, curves, rectangles, ellipses, uniform and fountain fills, outlines with dashes and arrowheads, embedded 24-bit images, clips; not yet text, lenses and other fill types | partial (see `behavior/cmx-import.md`) |
+| Import CMX: pages, layers, groups, curves, rectangles, ellipses, uniform and fountain fills, outlines with dashes and arrowheads, embedded 24-bit images, clips, text (from the drawn characters); not yet lenses and other fill types | partial (see `behavior/cmx-import.md`) |
 | Acquire image (scanner) | not applicable: no scanner stack in pure Rust; import the scanned file instead |
 
 ## 11. Productivity and customisation

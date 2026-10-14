@@ -39,6 +39,7 @@ header bytes, the data; 0xff after the last field). Confirmed.
 | `rdot` | dash pattern: a u16 count, then the lengths in pen widths. Confirmed. |
 | `rotl` | outline: line type, screen, colour, arrowhead pair, pen and dash pattern (u16 each). Confirmed. |
 | `rota` | arrowhead pairs: a u16 count, then start and end arrowheads (u16 each, 1-based in `rarw`, 0 for none). Confirmed. |
+| `rfnt` | fonts, field lists without a count: field 1 a u16 length and the name in 8-bit characters ending in 0, field 2 10 classification bytes, field 4 the name as a u32 count and UTF-16. Confirmed on one sample. |
 | `rarw` | arrowheads, field lists one after the other without a count: field 1 is a u16 point count, the points (i32 x, y), one node byte each and a u32 (how far the line is pulled back, not used). The line ends at the origin and comes in from -x; heads keep that placement (circles centred on the end point, hooks above or below the line). 127 000 units are one outline width. Closed subpaths are filled, each on its own (an inner one is no hole); open subpaths are lines one outline width wide. At the start of a line the head is mirrored across the line, not turned round. Confirmed against the preview of the one public sample that has heads; the pull back is not used. |
 
 ## `page`: instructions
@@ -51,9 +52,14 @@ instruction), an i16 code, then field lists. Confirmed.
 | 9, 10 | begin and end a page; field 4 holds the page size (u32 width, height) |
 | 11, 12 | begin and end a layer; the name in field 4 (u32 count, UTF-16) or at the end of field 1 (8-bit) |
 | 13, 14 | begin and end a group |
+| 20, 21 | begin and end a text object (its text stream, instructions 98 to 102, is not read) |
+| 65 | glyph run: field 1 a u16 count, that many UTF-16 units, then each character's place from the baseline's start (i32 x, y); fields 2 and 3 the text again and the glyph numbers |
 | 66 | ellipse |
 | 67 | curve or polygon: field 1 the rendering attributes, field 2 the points, a node byte each |
 | 68 | rectangle: field 1 the attributes, field 2 the geometry |
+| 70, 71 and 73 | bracket the drawn text (not read) |
+| 72 | text placement: field 2 a matrix (u16 type; 2 is six doubles) whose translation is the baseline's start; field 3 the bounding box |
+| 85 | character style: field 1 the rendering attributes, field 2 the font (u16, 1-based in `rfnt`) and size (u32, coordinate units); field 3 OpenType feature tags |
 | 69 | image placement: its extent and crop (i32 each), a matrix (u16 type; type 2 is six doubles a, b, c, d, e, f with x' = a x + c y + e), a u16 and the image's number among the page's images |
 | 88, 89 | add and remove a clip |
 | 111 | jump to an absolute file offset; the bytes jumped over hold the page's images |
@@ -88,5 +94,5 @@ images; other depths are reported and left out.
 
 ## Not read yet
 
-Text (`rfnt` and the text instructions), lenses, the fills named above,
+The text stream (instructions 98 to 102), lenses, the fills named above,
 16-bit coordinate files and big-endian files.
