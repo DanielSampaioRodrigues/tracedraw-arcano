@@ -8,6 +8,9 @@ full, row-by-row status.
 
 - Fountain fills: Import Gradient reads a `.ggr` gradient file into the
   stops (#4).
+- `.cdr`: an object embedded from another program with no picture to
+  show (version 21 media objects) gets its own warning instead of
+  "object type 0x0a not modelled yet".
 - Menus, lists and dialogs open at once, without fading in, and a
   folder called `tracedraw-settings` next to the program makes a
   portable copy that keeps its preferences there (#4).

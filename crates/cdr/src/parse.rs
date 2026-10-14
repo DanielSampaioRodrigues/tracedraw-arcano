@@ -1781,7 +1781,13 @@ impl<'a> Ctx<'a> {
         coords: Option<Arg>,
         name: Option<&str>,
     ) -> Option<ShapeKind> {
-        let name = name?;
+        let Some(name) = name else {
+            // Version 21 files keep such objects in `embed/` members that
+            // hold no picture (seen: media players' saved state).
+            self.report
+                .warn("an object embedded from another program is not shown");
+            return None;
+        };
         let Some((w, h, png)) = self.embedded.get(name).cloned() else {
             self.report.warn(format!(
                 "embedded object \"{name}\" has no picture we can show"
@@ -2078,7 +2084,7 @@ impl<'a> Ctx<'a> {
             Some(k) => k,
             None => {
                 match kind_code {
-                    OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT => {}
+                    OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT | OBJ_EMBEDDED => {}
                     other => self
                         .report
                         .warn(format!("object type 0x{other:02x} not modelled yet")),
@@ -6217,6 +6223,23 @@ mod tests {
         }
         // A storage the file does not hold: skipped, named in a warning.
         assert!(rep.warnings.iter().any(|w| w.contains("Embedding 9")));
+        // Without a storage name (version 21 keeps such objects apart):
+        // skipped with its own warning, not as an unknown type.
+        let bare = list(
+            b"obj ",
+            &chunk(
+                b"loda",
+                &loda(OBJ_EMBEDDED, &[(ARG_COORDS, i32s(&[1, 1, 0, 0, 1, 1]))]),
+            ),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(12, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &bare)),
+        ]
+        .concat();
+        let (_, rep) = parse(&riff(b"CDRC", &body), 12);
+        assert!(rep.warnings.iter().any(|w| w.contains("not shown")));
+        assert!(!rep.warnings.iter().any(|w| w.contains("0x0a")));
     }
 
     #[test]
