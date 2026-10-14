@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Session recovery: drawings auto-backed up by a session that ended
+  without closing are offered at the next start; a clean exit removes
+  its auto-backups.
 - CMX import: text comes in as artistic text at its place, font, size
   and colour.
 - Options > Tools > Pick: Marquee selects touched objects (off by

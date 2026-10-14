@@ -463,6 +463,9 @@ pub enum Dialog {
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
     ConfirmResetSettings,
+    /// At start-up: drawings a session that ended without closing left in
+    /// the auto-backup folder (see `recovery.rs`).
+    Recover(Vec<crate::recovery::Found>),
     /// After a drawing opens: objects that could not be read, fonts that
     /// are not installed (Options > Global > Warnings).
     OpenNotes(OpenNotes),
@@ -970,6 +973,37 @@ pub fn show(app: &mut App, ctx: &Context) {
                 Some(_) => {
                     close = true;
                     app.after_close_question(false);
+                }
+                None => {}
+            }
+        }
+        Dialog::Recover(found) => {
+            let n = found.iter().map(|f| f.backups.len()).sum::<usize>();
+            let names: Vec<String> = found
+                .iter()
+                .flat_map(|f| &f.backups)
+                .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+                .map(|s| s.trim_start_matches("AutoBackup_of_").to_string())
+                .collect();
+            let text = trf(
+                "dialog.recover_question",
+                &[("n", &n.to_string()), ("names", &names.join(", "))],
+            );
+            let (recover, discard) = (tr("dialog.recover"), tr("dialog.discard"));
+            match crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &text,
+                &[&recover, &discard],
+            ) {
+                Some(0) => {
+                    let found = found.clone();
+                    app.recover(&found);
+                    close = true;
+                }
+                Some(_) => {
+                    crate::recovery::dismiss(found, false);
+                    close = true;
                 }
                 None => {}
             }
@@ -3598,6 +3632,10 @@ mod tests {
             Dialog::DocumentProperties,
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
+            Dialog::Recover(vec![crate::recovery::Found {
+                marker: "/nowhere/session-x.json".into(),
+                backups: vec!["/nowhere/AutoBackup_of_art.tdraw".into()],
+            }]),
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),

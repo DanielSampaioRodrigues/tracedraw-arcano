@@ -66,6 +66,12 @@ impl Engine {
         self.saved_revision = self.revision;
     }
 
+    /// Unsaved changes whatever the history holds (a drawing recovered
+    /// from a backup), until the next save.
+    pub fn mark_unsaved(&mut self) {
+        self.saved_revision = u64::MAX;
+    }
+
     /// Replace the document (open file, new document). Clears history.
     pub fn replace(&mut self, doc: Document) {
         self.doc = doc;
@@ -220,6 +226,16 @@ mod tests {
     use super::*;
     use crate::document::{Shape, ShapeKind};
     use crate::geometry::Rect;
+
+    #[test]
+    fn a_drawing_marked_unsaved_stays_so_until_saved() {
+        let mut eng = Engine::default();
+        assert!(!eng.is_dirty());
+        eng.mark_unsaved();
+        assert!(eng.is_dirty());
+        eng.mark_saved();
+        assert!(!eng.is_dirty());
+    }
 
     #[test]
     fn undo_redo_round_trip() {

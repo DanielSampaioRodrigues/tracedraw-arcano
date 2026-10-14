@@ -99,6 +99,14 @@ pub fn write_creating(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::i
     std::fs::write(path, bytes)
 }
 
+/// Delete a file (nothing in a browser).
+pub fn remove(path: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    std::fs::remove_file(path)
+}
+
 /// Choose a folder (desktop only; `None` when cancelled or in a browser).
 pub fn pick_folder() -> Option<PathBuf> {
     #[cfg(not(target_arch = "wasm32"))]

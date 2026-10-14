@@ -80,6 +80,7 @@ mod preflight;
 mod prefs;
 mod raster;
 mod recognize;
+mod recovery;
 mod scripting;
 mod segment_delete;
 mod select_region;
@@ -289,6 +290,7 @@ impl eframe::App for Shell {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Some(app) = self.app.as_mut() {
             app.save_settings();
+            app.end_session();
         }
     }
 }

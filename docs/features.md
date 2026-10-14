@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 184, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 185, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -193,6 +193,7 @@ Counts: works 184, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Native `.tdraw` save/load | works |
 | MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC; the same tools on the open window's drawings through `tracedraw --mcp-window` when Options > Global > General lets agents in (local port, token) | works (see `behavior/mcp.md`) |
 | Save Drawing dialog (folder bar, shortcuts, folder list, file name, type, `.cdr` version, title, subject, rating, replace question; in the browser name, type, version and properties); Save As `.cdr` in a chosen version, 7 to 22 (a drawing opened from a `.cdr` keeps its version; Options > Global > File Formats sets the one of new drawings): pages, layers, rectangles, ellipses, curves (with their node types), groups, text, bitmaps, solid and gradient fills, outlines, transparency | works (round trip in every version; see `cdr-format.md`, Writing, and `behavior/files.md`) |
+| Session recovery: drawings auto-backed up by a session that ended without closing are offered at the next start (Recover opens them as unsaved drawings, Discard leaves the files in the auto-backup folder); a clean exit removes its auto-backups | works (see `behavior/recovery.md`) |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, PostScript and PRN (every page), DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |

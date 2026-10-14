@@ -842,6 +842,9 @@ pub struct App {
     pub pending_command: Option<String>,
     /// When the last auto-backup ran (set on the first frame).
     pub last_auto_backup: Option<web_time::Instant>,
+    /// Session recovery: this session's marker in the auto-backup folder
+    /// (made on the first frame, desktop only).
+    pub session: Option<crate::recovery::Session>,
     /// Page size changes apply to every page (the page bar's All pages).
     pub page_size_all: bool,
     /// The property bar's object origin: (column, row) of the 3 x 3
@@ -1534,6 +1537,7 @@ impl App {
             shortcut_editor: Default::default(),
             pending_command: None,
             last_auto_backup: None,
+            session: None,
             recent_thumbs: Default::default(),
             shelf: Default::default(),
             palette_drag: None,
@@ -3983,11 +3987,96 @@ impl App {
         }
         for (name, json) in jobs {
             match crate::files::write_creating(dir.join(&name), json) {
-                Ok(()) => saved = true,
+                Ok(()) => {
+                    saved = true;
+                    if let Some(s) = self.session.as_mut().filter(|s| s.dir() == dir) {
+                        s.wrote(&name, crate::recovery::now_secs());
+                    }
+                }
                 Err(e) => log::warn!("auto-backup {name} failed: {e}"),
             }
         }
         saved
+    }
+
+    /// Session recovery, called every frame with the time in seconds: on
+    /// the first call, start this session's marker and offer what a
+    /// session that ended without closing left; then check in now and
+    /// then. Nothing happens in a browser or with auto-backup off.
+    pub fn session_tick(&mut self, now: u64) {
+        if crate::files::WEB || !self.settings.backup.auto {
+            return;
+        }
+        // Tests leave the real auto-backup folder alone unless they name one.
+        if cfg!(test) && self.settings.backup.auto_dir.is_none() {
+            return;
+        }
+        if self.session.is_none() {
+            let Some(dir) = self
+                .settings
+                .backup
+                .auto_dir
+                .clone()
+                .or_else(App::auto_backup_dir_default)
+            else {
+                return;
+            };
+            let id = crate::recovery::new_id();
+            let found = crate::recovery::find(&dir, now, Some(&id));
+            let (offer, empty): (Vec<_>, Vec<_>) =
+                found.into_iter().partition(|f| !f.backups.is_empty());
+            crate::recovery::dismiss(&empty, false);
+            if !offer.is_empty() && matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
+                self.dialog = crate::ui::dialogs::Dialog::Recover(offer);
+            }
+            self.session = Some(crate::recovery::Session::new(dir, id));
+        }
+        if let Some(s) = self.session.as_mut() {
+            s.heartbeat(now);
+        }
+    }
+
+    /// Open the drawings a session that ended without closing left, as
+    /// unsaved drawings without a file, and forget them in the folder.
+    pub fn recover(&mut self, found: &[crate::recovery::Found]) {
+        let mut opened = Vec::new();
+        for path in found.iter().flat_map(|f| &f.backups) {
+            let doc = crate::files::read_to_string(path)
+                .map_err(|e| e.to_string())
+                .and_then(|json| {
+                    tracedraw_core::Document::from_json(&json).map_err(|e| e.to_string())
+                });
+            match doc {
+                Ok(mut doc) => {
+                    // The tab shows the drawing's name the backup carries.
+                    if let Some(name) = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .and_then(|s| s.strip_prefix("AutoBackup_of_"))
+                        .filter(|s| !s.is_empty())
+                    {
+                        doc.title = name.to_string();
+                    }
+                    self.open_document(doc, None);
+                    self.engine.mark_unsaved();
+                    opened.push(path.clone());
+                }
+                Err(e) => log::warn!("recovering {}: {e}", path.display()),
+            }
+        }
+        // What opened goes from the folder; a backup that did not open
+        // stays there for the user.
+        for path in &opened {
+            let _ = crate::files::remove(path);
+        }
+        crate::recovery::dismiss(found, false);
+    }
+
+    /// A clean exit: this session's marker and auto-backups go.
+    pub fn end_session(&mut self) {
+        if let Some(s) = self.session.take() {
+            s.end();
+        }
     }
 
     /// `AutoBackup_of_<drawing name>.tdraw` for the active drawing (`None`)
@@ -5187,6 +5276,58 @@ mod tests {
             rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0 + i as f64, 10.0), true);
         }
         assert_eq!(app.engine.history_labels().0.len(), 2);
+    }
+
+    #[test]
+    fn drawings_a_session_left_without_closing_are_recovered() {
+        let dir =
+            std::env::temp_dir().join(format!("tracedraw-recover-{}", crate::recovery::new_id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let start = crate::recovery::now_secs();
+        // The first session backs a drawing up and then is gone.
+        let mut first = App::headless();
+        first.settings.backup.auto_dir = Some(dir.clone());
+        first.settings.backup.minutes = 1;
+        first.session_tick(start);
+        let t0 = web_time::Instant::now();
+        assert!(!first.auto_backup_tick(t0));
+        rect_shape(&mut first, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        assert!(first.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
+        // A second session while the first still checks in: nothing.
+        let mut second = App::headless();
+        second.settings.backup.auto_dir = Some(dir.clone());
+        second.session_tick(start + 10);
+        assert!(matches!(second.dialog, crate::ui::dialogs::Dialog::None));
+        // Long after the first stopped: its drawing is offered.
+        let mut third = App::headless();
+        third.settings.backup.auto_dir = Some(dir.clone());
+        let later = crate::recovery::now_secs() + crate::recovery::STALE_SECS + 10;
+        third.session_tick(later);
+        let crate::ui::dialogs::Dialog::Recover(found) = third.dialog.clone() else {
+            panic!("{:?}", third.dialog);
+        };
+        assert_eq!(found.iter().map(|f| f.backups.len()).sum::<usize>(), 1);
+        third.dialog = crate::ui::dialogs::Dialog::None;
+        third.recover(&found);
+        assert!(third.engine.is_dirty());
+        assert!(third.file.is_none());
+        assert!(!third.doc().title.is_empty());
+        let shapes: usize = third.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum();
+        assert_eq!(shapes, 1);
+        assert!(!found[0].backups[0].exists());
+        assert!(!found[0].marker.exists());
+        // A clean exit leaves nothing behind.
+        third.end_session();
+        second.end_session();
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .map(|d| d.flatten().collect())
+            .unwrap_or_default();
+        assert!(left.is_empty(), "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
