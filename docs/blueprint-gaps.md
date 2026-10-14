@@ -79,5 +79,5 @@ The JavaScript object model covers documents, pages, layers, shapes,
 fills, outlines, colours, `Curve` > `SubPaths` > `Nodes` (position,
 type, move, delete, add) and `Effects` (list, add any effect by its
 `.tdraw` form, `AddExtrude`, `AddBlockShadow`, remove, clear), and
-import/export filters (`behavior/script-filters.md`). Open: a script
-editor with breakpoints.
+import/export filters (`behavior/script-filters.md`); the Scripts panel
+debugs scripts with breakpoints (`behavior/script-debugger.md`).

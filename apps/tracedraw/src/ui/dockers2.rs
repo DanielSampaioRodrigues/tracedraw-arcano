@@ -525,10 +525,22 @@ fn find_replace(app: &mut App, ui: &mut Ui) {
 }
 
 fn scripts(app: &mut App, ui: &mut Ui) {
+    let debugging = app.script_debug.is_some();
     ui.horizontal_wrapped(|ui| {
-        if ui.button(tr("docker.run")).clicked() {
+        if ui
+            .add_enabled(!debugging, egui::Button::new(tr("docker.run")))
+            .clicked()
+        {
             let src = app.script_source.clone();
             app.run_script(&src);
+        }
+        if !crate::files::WEB
+            && ui
+                .add_enabled(!debugging, egui::Button::new(tr("docker.debug")))
+                .on_hover_text(tr("docker.debug_hint"))
+                .clicked()
+        {
+            app.start_script_debug();
         }
         if ui
             .selectable_label(app.recording.is_some(), tr("docker.record"))
@@ -591,17 +603,13 @@ fn scripts(app: &mut App, ui: &mut Ui) {
     if app.script_source.is_empty() {
         app.script_source = "// Example\nconst r = ActiveLayer.CreateRectangle(20, 20, 60, 40);\nr.Fill.ApplyUniformFill(Color.CMYK(0, 100, 100, 0));\nprint('Objects: ' + ActivePage.Shapes.Count);\n".into();
     }
+    if debugging {
+        script_debug_bar(app, ui);
+    }
     egui::ScrollArea::vertical()
         .id_salt("script_src")
         .max_height(220.0)
-        .show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut app.script_source)
-                    .code_editor()
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(10),
-            );
-        });
+        .show(ui, |ui| script_editor(app, ui));
     ui.separator();
     ui.strong(tr("docker.output"));
     egui::ScrollArea::vertical()
@@ -613,6 +621,129 @@ fn scripts(app: &mut App, ui: &mut Ui) {
             }
         });
     dim(ui, tr("docker.scripts_hint"));
+}
+
+/// Continue, Step and Stop for a script in the debugger, where it is,
+/// and an expression to evaluate where it paused.
+fn script_debug_bar(app: &mut App, ui: &mut Ui) {
+    use crate::scripting::DebugCtl;
+    let paused = app.debug_paused;
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(paused.is_some(), egui::Button::new(tr("docker.continue")))
+            .clicked()
+        {
+            app.debug_control(DebugCtl::Continue);
+        }
+        if ui
+            .add_enabled(paused.is_some(), egui::Button::new(tr("docker.step")))
+            .clicked()
+        {
+            app.debug_control(DebugCtl::Step);
+        }
+        if ui.button(tr("docker.stop")).clicked() {
+            app.debug_control(DebugCtl::Stop);
+        }
+        match paused {
+            Some(line) => ui.label(trf("docker.paused_at", &[("line", &line.to_string())])),
+            None => ui.label(tr("docker.running")),
+        };
+    });
+    if paused.is_some() {
+        ui.horizontal(|ui| {
+            let edit = ui.add(
+                egui::TextEdit::singleline(&mut app.debug_expr)
+                    .hint_text(tr("docker.expression"))
+                    .desired_width(ui.available_width() - 80.0),
+            );
+            let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if (ui.button(tr("docker.evaluate")).clicked() || enter)
+                && !app.debug_expr.trim().is_empty()
+            {
+                let e = app.debug_expr.trim().to_string();
+                app.debug_control(DebugCtl::Eval(e));
+            }
+        });
+    }
+}
+
+/// Width of the editor's margin with the line numbers and breakpoints.
+const GUTTER: f32 = 34.0;
+
+/// The script editor: line numbers and breakpoints (red dots, set and
+/// cleared by a click in the margin) to its left, the paused line marked.
+fn script_editor(app: &mut App, ui: &mut Ui) {
+    let out = egui::TextEdit::multiline(&mut app.script_source)
+        .code_editor()
+        .desired_width(f32::INFINITY)
+        .desired_rows(10)
+        .margin(egui::Margin {
+            left: GUTTER as i8,
+            right: 4,
+            top: 2,
+            bottom: 2,
+        })
+        .show(ui);
+    let rect = out.response.response.rect;
+    let painter = ui.painter_at(rect);
+    let font = egui::FontId::monospace(10.0);
+    // The span of each line of the script (wrapped rows belong to the
+    // line they continue) and the middle of its first row.
+    let mut tops: Vec<(f32, f32)> = Vec::new();
+    let mut mids: Vec<f32> = Vec::new();
+    let mut new_line = true;
+    for row in &out.galley.rows {
+        let r = row.rect().translate(out.galley_pos.to_vec2());
+        if new_line {
+            tops.push((r.top(), r.bottom()));
+            mids.push(r.center().y);
+        } else if let Some(last) = tops.last_mut() {
+            last.1 = r.bottom();
+        }
+        new_line = row.ends_with_newline;
+    }
+    let gutter = egui::Rect::from_min_max(
+        rect.min,
+        egui::pos2(rect.left() + GUTTER - 4.0, rect.bottom()),
+    );
+    painter.rect_filled(gutter.shrink(1.0), 0.0, Tokens::PANEL);
+    for (i, (top, bottom)) in tops.iter().enumerate() {
+        let line = i as u32 + 1;
+        let y = mids.get(i).copied().unwrap_or((top + bottom) / 2.0);
+        if app.debug_paused == Some(line) {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.left(), *top),
+                    egui::pos2(rect.right(), *bottom),
+                ),
+                0.0,
+                egui::Color32::from_rgba_unmultiplied(255, 220, 0, 60),
+            );
+        }
+        if app.breakpoints.contains(&line) {
+            painter.circle_filled(
+                egui::pos2(rect.left() + 7.0, y),
+                4.0,
+                egui::Color32::from_rgb(0xD0, 0x30, 0x30),
+            );
+        }
+        painter.text(
+            egui::pos2(rect.left() + GUTTER - 7.0, y),
+            egui::Align2::RIGHT_CENTER,
+            line.to_string(),
+            font.clone(),
+            Tokens::TEXT_DIM,
+        );
+    }
+    // The margin takes its own clicks (laid over the editor's).
+    let margin = ui.interact(gutter, ui.id().with("script_gutter"), egui::Sense::click());
+    if margin.clicked() {
+        if let Some(p) = margin.interact_pointer_pos().or(margin.hover_pos()) {
+            if let Some(i) = tops.iter().position(|(t, b)| p.y >= *t && p.y < *b) {
+                app.toggle_breakpoint(i as u32 + 1);
+            }
+        }
+    }
 }
 
 fn palettes(app: &mut App, ui: &mut Ui) {

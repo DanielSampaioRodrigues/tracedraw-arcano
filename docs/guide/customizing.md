@@ -181,6 +181,11 @@ a filter with **Install as Filter**, and its format then appears in
 **File > Import** and **File > Export**. See
 [the script filter notes](../behavior/script-filters.md).
 
+To find out what a script does, click in the margin by a line number to
+set a breakpoint and press **Debug**: the script stops there, and you can
+step through it, look at its variables with **Evaluate**, continue or
+stop. See [the debugger notes](../behavior/script-debugger.md).
+
 ### AI Drawing
 
 **Tools > AI Drawing** turns a request in words ("a red bicycle with

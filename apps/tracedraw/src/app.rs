@@ -919,6 +919,12 @@ pub struct App {
     pub context_menu: Option<(egui::Pos2, Point)>,
     pub scripts_output: Vec<String>,
     pub script_source: String,
+    /// Scripts panel debugger: the running script, the line it is paused
+    /// at, the breakpoints (lines) and the expression to evaluate.
+    pub script_debug: Option<crate::scripting::DebugRun>,
+    pub debug_paused: Option<u32>,
+    pub breakpoints: std::collections::BTreeSet<u32>,
+    pub debug_expr: String,
     /// AI Drawing: the request, the key in use, the conversation.
     pub ai: crate::ai::AiSession,
     /// AI agents editing the open drawing (MCP), while allowed.
@@ -1598,6 +1604,10 @@ impl App {
             context_menu: None,
             scripts_output: Vec::new(),
             script_source: String::new(),
+            script_debug: None,
+            debug_paused: None,
+            breakpoints: Default::default(),
+            debug_expr: String::new(),
             ai: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             mcp_link: None,

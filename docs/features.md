@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 191, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 192, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -220,6 +220,7 @@ Counts: works 191, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model (documents, pages, layers, shapes, fills, outlines, colours, curves with their subpaths and nodes, effects listed, added and removed), run, record macro, load/save | works (`scripting::tests`) |
 | Script filters: a script defining `TraceDrawFilter` installed from the Scripts panel adds a file format to File > Import and File > Export | works (see `behavior/script-filters.md`) |
+| Script debugger: breakpoints in the Scripts panel's margin, Debug, Continue, Step, Stop, expressions evaluated in the paused scope (desktop) | works (see `behavior/script-debugger.md`) |
 | AI Drawing panel and prompt bar (above the palette while a service is set up; Window > Toolbars; model list fetched from the service): a request in words drawn by an AI service the user sets up (Messages API or any chat completions service, local model servers included) with their own key; the reply's script runs without file access, all or nothing, as one undo step; a failing script is sent back once with its error | works (see `behavior/ai-drawing.md`) |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout, Touch (the interface 1.4 times larger, two-finger pan and pinch zoom); toolbar toggles | works (see `behavior/workspaces.md`) |
 | Options dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance with the interface size and desktop colour, Commands, Command Bars), Tools (Pick, Zoom/Pan, Curve tools, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |

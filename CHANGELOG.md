@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Script debugger: breakpoints in the Scripts panel's margin, Debug,
+  Continue, Step, Stop, and expressions evaluated where the script
+  paused.
 - Script filters: a script that defines `TraceDrawFilter` becomes a file
   format of File > Import and File > Export (Scripts panel, Install as
   Filter); `Shape.PathData` gives an outline as SVG path data.

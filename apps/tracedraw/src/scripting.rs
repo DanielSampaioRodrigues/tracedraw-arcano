@@ -332,8 +332,33 @@ fn evaluate(
     call: Option<&str>,
     input: Option<&str>,
 ) -> Result<Evaluated, String> {
+    evaluate_with(inner, src, call, input, None)
+}
+
+fn evaluate_with(
+    inner: HostInner,
+    src: &str,
+    call: Option<&str>,
+    input: Option<&str>,
+    debug: Option<DebugState>,
+) -> Result<Evaluated, String> {
     let trust = inner.trust;
     let mut ctx = Context::default();
+    if let Some(debug) = debug {
+        ctx.insert_data(DebugHandle(std::rc::Rc::new(debug)));
+        ctx.register_global_callable(
+            js_string!("__bp"),
+            1,
+            NativeFunction::from_fn_ptr(debug_check),
+        )
+        .map_err(|e| e.to_string())?;
+        ctx.register_global_callable(
+            js_string!("__pause"),
+            2,
+            NativeFunction::from_fn_ptr(debug_pause),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     if trust == Trust::Untrusted {
         let limits = ctx.runtime_limits_mut();
         limits.set_loop_iteration_limit(UNTRUSTED_LOOP_LIMIT);
@@ -559,6 +584,189 @@ pub fn run_filter_export(doc: Document, filter: &ScriptFilter) -> Result<String,
     ev.result?;
     ev.text
         .ok_or_else(|| format!("{}: Export() returned no text", filter.name))
+}
+
+/// Control sent to a script paused in the debugger.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DebugCtl {
+    Continue,
+    /// Run to the next statement that has a check.
+    Step,
+    /// Throw an error at the pause (and at every check after it).
+    Stop,
+    /// Evaluate an expression in the paused scope.
+    Eval(String),
+}
+
+/// What a debugged script reports.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DebugEvent {
+    /// Paused before the statement on this line; the lines printed since
+    /// the last pause.
+    Paused { line: u32, output: Vec<String> },
+    /// The result (or the error) of an [`DebugCtl::Eval`].
+    Value(String),
+}
+
+/// A script running under the debugger on a worker thread (desktop).
+pub struct DebugRun {
+    pub ctl: std::sync::mpsc::Sender<DebugCtl>,
+    pub events: std::sync::mpsc::Receiver<DebugEvent>,
+    /// The lines to stop at; the panel may change them while it runs.
+    pub breakpoints: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<u32>>>,
+    /// The lines that can hold a breakpoint.
+    pub lines: Vec<u32>,
+    handle: std::thread::JoinHandle<Result<(HostInner, Option<String>), String>>,
+}
+
+impl DebugRun {
+    pub fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+}
+
+struct DebugState {
+    ctl: std::sync::mpsc::Receiver<DebugCtl>,
+    events: std::sync::mpsc::Sender<DebugEvent>,
+    breakpoints: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<u32>>>,
+    stepping: std::cell::Cell<bool>,
+    stopped: std::cell::Cell<bool>,
+}
+
+struct DebugHandle(std::rc::Rc<DebugState>);
+impl boa_engine::gc::Finalize for DebugHandle {}
+// The debugger state holds no garbage-collected values.
+unsafe impl boa_engine::gc::Trace for DebugHandle {
+    boa_engine::gc::empty_trace!();
+}
+impl JsData for DebugHandle {}
+
+fn debug_state(ctx: &Context) -> Option<std::rc::Rc<DebugState>> {
+    ctx.get_data::<DebugHandle>().map(|h| h.0.clone())
+}
+
+fn stopped_error() -> boa_engine::JsError {
+    boa_engine::JsNativeError::error()
+        .with_message("stopped in the debugger")
+        .into()
+}
+
+/// `__bp(line)`: whether to pause before the statement on `line`.
+fn debug_check(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let Some(st) = debug_state(ctx) else {
+        return Ok(JsValue::from(false));
+    };
+    if st.stopped.get() {
+        return Err(stopped_error());
+    }
+    let line = args.first().and_then(|v| v.as_number()).unwrap_or(0.0) as u32;
+    let hit = st.stepping.get()
+        || st
+            .breakpoints
+            .lock()
+            .map(|b| b.contains(&line))
+            .unwrap_or(false);
+    Ok(JsValue::from(hit))
+}
+
+/// `__pause(line, evaluate)`: report the pause and wait for the panel.
+fn debug_pause(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let Some(st) = debug_state(ctx) else {
+        return Ok(JsValue::undefined());
+    };
+    let line = args.first().and_then(|v| v.as_number()).unwrap_or(0.0) as u32;
+    let evaluate = args.get(1).and_then(|v| v.as_callable()).cloned();
+    let output = ctx
+        .get_data::<Host>()
+        .map(|h| h.0.borrow_mut().output.drain(..).collect())
+        .unwrap_or_default();
+    if st.events.send(DebugEvent::Paused { line, output }).is_err() {
+        st.stopped.set(true);
+        return Err(stopped_error());
+    }
+    loop {
+        match st.ctl.recv() {
+            Ok(DebugCtl::Continue) => {
+                st.stepping.set(false);
+                return Ok(JsValue::undefined());
+            }
+            Ok(DebugCtl::Step) => {
+                st.stepping.set(true);
+                return Ok(JsValue::undefined());
+            }
+            Ok(DebugCtl::Eval(expr)) => {
+                let text = match &evaluate {
+                    Some(f) => match f.call(
+                        &JsValue::undefined(),
+                        &[JsValue::from(boa_engine::JsString::from(expr.as_str()))],
+                        ctx,
+                    ) {
+                        Ok(v) => v.display().to_string(),
+                        Err(e) => e.to_string(),
+                    },
+                    None => String::new(),
+                };
+                if st.events.send(DebugEvent::Value(text)).is_err() {
+                    st.stopped.set(true);
+                    return Err(stopped_error());
+                }
+            }
+            Ok(DebugCtl::Stop) | Err(_) => {
+                st.stopped.set(true);
+                return Err(stopped_error());
+            }
+        }
+    }
+}
+
+/// Run a script under the debugger on a worker thread: it pauses at the
+/// `breakpoints` (lines) and, after Step, at every statement. Desktop only.
+pub fn start_debug(app: &App, src: &str, breakpoints: &[u32]) -> Result<DebugRun, String> {
+    use std::sync::{mpsc::channel, Arc, Mutex};
+    let (code, lines) = crate::script_debug::instrument(src);
+    let set: std::collections::BTreeSet<u32> = breakpoints
+        .iter()
+        .filter_map(|l| crate::script_debug::effective_line(&lines, *l))
+        .collect();
+    let breakpoints = Arc::new(Mutex::new(set));
+    let (ctl_tx, ctl_rx) = channel();
+    let (ev_tx, ev_rx) = channel();
+    let inner = host_for(app, Trust::User);
+    let bps = breakpoints.clone();
+    let handle = std::thread::Builder::new()
+        .name("script-debug".into())
+        .spawn(move || {
+            let state = DebugState {
+                ctl: ctl_rx,
+                events: ev_tx,
+                breakpoints: bps,
+                stepping: std::cell::Cell::new(false),
+                stopped: std::cell::Cell::new(false),
+            };
+            evaluate_with(inner, &code, None, None, Some(state))
+                .map(|ev| (ev.inner, ev.result.err()))
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(DebugRun {
+        ctl: ctl_tx,
+        events: ev_rx,
+        breakpoints,
+        lines,
+        handle,
+    })
+}
+
+/// A finished debug run: its changes are applied like a script run's
+/// (kept up to an error); the printed lines and the error, if any.
+pub fn finish_debug(app: &mut App, run: DebugRun) -> (Vec<String>, Option<String>) {
+    let (inner, error) = match run.handle.join() {
+        Ok(Ok(done)) => done,
+        Ok(Err(e)) => return (Vec::new(), Some(e)),
+        Err(_) => return (Vec::new(), Some("script host lost".into())),
+    };
+    let output = inner.output;
+    apply(app, inner.commands, inner.selection, inner.page, "Script");
+    (output, error)
 }
 
 fn apply(
