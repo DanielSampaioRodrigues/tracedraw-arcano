@@ -7,6 +7,9 @@ full, row-by-row status.
 ## Unreleased
 
 - Help > Highlight What's New marks the menu rows new in this version.
+- `.cdr`: arrowheads of newer files (`arrx` records) are read, and the
+  arrowhead ids of outlines are read from their right place, so dimension
+  lines and arrows keep their heads.
 - Colour books: the spot entries of an `.ase` palette are spot colours;
   applying one adds its ink to the drawing.
 - Welcome Screen, What's New: the news covers the effect stack, 3D

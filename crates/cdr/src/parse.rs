@@ -49,6 +49,8 @@ impl ParseReport {
 const UNIT_MM: f64 = 25.4 / 254000.0;
 /// Coordinate unit of versions before 6 (1/1000 inch) to millimetres.
 const UNIT16_MM: f64 = 25.4 / 1000.0;
+/// Byte offset of the point count in an `arrx` record.
+const ARRX_COUNT_AT: usize = 268;
 
 /// Argument types of the `loda` argument table.
 pub(crate) const ARG_OUTLINE: u32 = 0x0a;
@@ -357,6 +359,8 @@ pub fn parse_document_with(
             ctx.read_pattern_tile(c);
         } else if c.is(b"arrw") {
             ctx.read_arrowhead(c);
+        } else if c.is(b"arrx") {
+            ctx.read_arrowhead_x(c);
         } else if c.is(b"font") {
             ctx.read_font(c);
         }
@@ -1103,8 +1107,46 @@ impl<'a> Ctx<'a> {
         let Some((pts, types)) = self.read_points(&mut r, n as usize) else {
             return;
         };
-        let (path, _) = build_path(&pts, &types);
-        let mut head = classify_arrowhead(&path, &pts, &types);
+        self.add_arrowhead(id, &pts, &types);
+    }
+
+    /// `arrx` (in the `arrt` list of newer files): an arrowhead definition.
+    /// Layout from one sample file (assumed beyond it): id u32, then at
+    /// byte 268 a u16 point count, 4 bytes, the node types and the points
+    /// (i32 pairs).
+    fn read_arrowhead_x(&mut self, c: &Chunk) {
+        let d = self.data(c);
+        let mut r = self.reader(d);
+        let Some(id) = r.u32() else { return };
+        let mut r = self.reader_at(d, ARRX_COUNT_AT);
+        let n = r.u16().map_or(0, usize::from);
+        if n == 0 || ARRX_COUNT_AT + 6 + 9 * n > d.len() {
+            self.report.warn(format!(
+                "arrowhead {id}: unreadable outline; drawn without arrowhead"
+            ));
+            return;
+        }
+        r.skip(4);
+        let mut types = Vec::with_capacity(n);
+        for _ in 0..n {
+            let Some(t) = r.u8() else { return };
+            types.push(t);
+        }
+        let mut pts = Vec::with_capacity(n);
+        for _ in 0..n {
+            let (Some(x), Some(y)) = (r.i32(), r.i32()) else {
+                return;
+            };
+            pts.push(Point::new(f64::from(x), f64::from(y)));
+        }
+        self.add_arrowhead(id, &pts, &types);
+    }
+
+    /// Classifies an arrowhead outline into a preset, or keeps it as a
+    /// custom head.
+    fn add_arrowhead(&mut self, id: u32, pts: &[Point], types: &[u8]) {
+        let (path, _) = build_path(pts, types);
+        let mut head = classify_arrowhead(&path, pts, types);
         if head == Arrowhead::None {
             // Not one of our presets: keep the outline itself as a custom
             // arrowhead (assumed: the file draws the tip towards +x on a
@@ -1492,8 +1534,6 @@ impl<'a> Ctx<'a> {
         let mut dash = Vec::new();
         let mut markers = (0u32, 0u32);
         if let Some(n) = r.u16() {
-            // The dash values occupy the start of a fixed 20/22-byte area
-            // that the two marker ids follow.
             let dashes_at = r.pos;
             let n = (n as usize).min(r.remaining() / 2).min(64);
             for _ in 0..n {
@@ -1501,7 +1541,9 @@ impl<'a> Ctx<'a> {
                     dash.push(x as f64);
                 }
             }
-            let mut m = self.reader_at(d, dashes_at + if v < 6 { 20 } else { 22 });
+            // From version 6 the count and ten dash slots fill 22 bytes,
+            // so the markers start 20 bytes after the first dash.
+            let mut m = self.reader_at(d, dashes_at + 20);
             if let (Some(s), Some(e)) = (m.u32(), m.u32()) {
                 markers = (s, e);
             }
@@ -5614,8 +5656,9 @@ mod tests {
         o.extend_from_slice(&color_bgr(0, 0, 0));
         o.extend_from_slice(&[0; 16]);
         o.extend_from_slice(&u16s(&[0]));
-        o.extend_from_slice(&[0; 22]);
+        o.extend_from_slice(&[0; 20]);
         o.extend_from_slice(&u32s(&[start, end]));
+        o.extend_from_slice(&[0; 2]);
         o
     }
 
@@ -5720,5 +5763,58 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.contains("arrowhead 99")));
+    }
+
+    /// `arrx` record laid out like the sample: id, zeros up to the count
+    /// at byte 268, 4 bytes, node types, then i32 points, one spare byte.
+    fn arrx(id: u32, pts: &[(i32, i32)], types: &[u8]) -> Vec<u8> {
+        let mut a = u32s(&[id]);
+        a.resize(ARRX_COUNT_AT, 0);
+        a.extend_from_slice(&u16s(&[pts.len() as u16, 10]));
+        a.extend_from_slice(&[0; 2]);
+        a.extend_from_slice(types);
+        for (x, y) in pts {
+            a.extend_from_slice(&i32s(&[*x, *y]));
+        }
+        a.push(0);
+        a
+    }
+
+    #[test]
+    fn arrx_arrowheads_are_read_and_bad_ones_skipped() {
+        // The sample's head: tip at the origin, body towards -x.
+        let head = arrx(
+            1,
+            &[
+                (-1_333_253, -357_244),
+                (0, 0),
+                (-1_333_253, 357_244),
+                (-1_333_253, -357_244),
+            ],
+            &[0x0c, 0x44, 0x44, 0x48],
+        );
+        let mut short = arrx(2, &[(0, 0), (1, 1)], &[0x0c, 0x44]);
+        short.truncate(ARRX_COUNT_AT + 8);
+        let main = riff(
+            b"CDRD",
+            &[
+                chunk(b"arrx", &head),
+                chunk(b"arrx", &short),
+                chunk(b"arrx", &[1, 0]),
+            ]
+            .concat(),
+        );
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 21);
+        for c in tree.root.find_all(b"arrx") {
+            ctx.read_arrowhead_x(c);
+        }
+        assert_eq!(ctx.arrows.get(&1), Some(&Arrowhead::Arrow));
+        assert!(!ctx.arrows.contains_key(&2));
+        assert!(ctx
+            .report
+            .warnings
+            .iter()
+            .any(|w| w.contains("arrowhead 2")));
     }
 }

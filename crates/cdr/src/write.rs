@@ -742,9 +742,10 @@ fn outl(v: Ver, id: u32, s: Option<&Stroke>) -> Vec<u8> {
     for d in &dash {
         o.u16(*d);
     }
-    o.pad_to(dashes_at + 22);
-    // No arrowheads.
-    o.u32(0).u32(0);
+    // The count and ten dash slots fill 22 bytes; the two marker ids
+    // follow (none), then 2 bytes we leave zero.
+    o.pad_to(dashes_at + 20);
+    o.u32(0).u32(0).zeros(2);
     let proper = o.done();
     let mut b = Buf::default();
     b.u32(id);
