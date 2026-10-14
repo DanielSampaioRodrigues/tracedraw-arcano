@@ -63,7 +63,7 @@ Status tracked in `docs/features.md`.
 - Scripting in Python or Lua next to JavaScript (decide which)
 
 ## M7 File format (planned)
-- `.tdraw` with a format version, migrations from older versions and a stability promise
+- `.tdraw` with a format version, migrations from older versions and a stability promise (done; see `tdraw-format.md`) (done; see `tdraw-format.md`)
 - Stable object IDs, kept across saves and copies: the base for merging and collaboration, settled before M8
 - `.cdr` target versions written down, each layout confirmed on files (public notes and other readers' documentation only to confirm a layout, never their code)
 

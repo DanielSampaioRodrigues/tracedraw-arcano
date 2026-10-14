@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.tdraw` files record their format version; older files are brought up
+  to date on opening and newer ones open as far as this version knows
+  them (see `docs/tdraw-format.md`).
+- `.tdraw` files record their format version; older files are brought up
+  to date on opening and newer ones open as far as this version knows
+  them (see `docs/tdraw-format.md`).
 - Session recovery: drawings auto-backed up by a session that ended
   without closing are offered at the next start; a clean exit removes
   its auto-backups.
