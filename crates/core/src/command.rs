@@ -196,6 +196,12 @@ pub enum Command {
         effects: Vec<crate::live::Effect>,
         parked: Vec<crate::document::ParkedEffect>,
     },
+    /// The further fills and outlines of `shapes`, replacing theirs.
+    SetExtraPaint {
+        shapes: Vec<ShapeId>,
+        fills: Vec<Fill>,
+        strokes: Vec<Stroke>,
+    },
     SetOverprint {
         shapes: Vec<ShapeId>,
         fill: Option<bool>,
@@ -347,6 +353,7 @@ impl Command {
             Command::SetEffects { effects, .. } if effects.is_empty() => "Clear Effects",
             Command::SetEffects { .. } => "Effect",
             Command::SetEffectStack { .. } => "Effects",
+            Command::SetExtraPaint { .. } => "Fills and Outlines",
             Command::SetOverprint { .. } => "Overprint",
             Command::SetLink { .. } => "Hyperlink",
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
@@ -657,6 +664,17 @@ impl Command {
                 let s = any_mut(doc, *shape)?;
                 s.effects = effects.clone();
                 s.parked_effects = parked.clone();
+            }
+            Command::SetExtraPaint {
+                shapes,
+                fills,
+                strokes,
+            } => {
+                for id in shapes {
+                    let s = any_mut(doc, *id)?;
+                    s.extra_fills = fills.clone();
+                    s.extra_strokes = strokes.clone();
+                }
             }
             Command::SetOverprint {
                 shapes,

@@ -242,6 +242,15 @@ fn write_unlinked(
         }
         return;
     }
+    // Further fills and outlines: the parts in a group, bottom first.
+    if let Some(parts) = shape.layers() {
+        let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
+        for p in &parts {
+            write_shape(p, symbols, parent, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        return;
+    }
     if let ShapeKind::Bitmap {
         rect,
         width_px,

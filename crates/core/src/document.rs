@@ -1145,6 +1145,12 @@ pub struct Shape {
     /// holds in the stack; they are kept but not drawn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parked_effects: Vec<ParkedEffect>,
+    /// Further fills, painted over `fill` in order (see [`Shape::layers`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_fills: Vec<Fill>,
+    /// Further outlines, drawn over `stroke` in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_strokes: Vec<Stroke>,
 }
 
 /// An effect switched off, and its place in the stack (see
@@ -1238,6 +1244,8 @@ impl Shape {
             uid: None,
             opacity_mask: None,
             parked_effects: Vec::new(),
+            extra_fills: Vec::new(),
+            extra_strokes: Vec::new(),
         }
     }
 
@@ -1284,6 +1292,55 @@ impl Shape {
             }
         }
         (effects, parked)
+    }
+
+    /// An object with further fills or outlines as the plain objects that
+    /// draw it, bottom first: the outlines drawn behind the fill, its
+    /// fill, each further fill, then the other outlines, its own first
+    /// (each part with no other paint; the object's shadow only under the
+    /// first part). `None` when it has no further fill or outline.
+    pub fn layers(&self) -> Option<Vec<Shape>> {
+        if self.extra_fills.is_empty() && self.extra_strokes.is_empty() {
+            return None;
+        }
+        let mut plain = self.clone();
+        plain.extra_fills.clear();
+        plain.extra_strokes.clear();
+        plain.shadow = None;
+        let strokes: Vec<&Stroke> = self.stroke.iter().chain(&self.extra_strokes).collect();
+        let stroke_part = |st: &Stroke| {
+            let mut s = plain.clone();
+            s.fill = Fill::None;
+            s.stroke = Some(st.clone());
+            s
+        };
+        let mut out = Vec::new();
+        out.extend(
+            strokes
+                .iter()
+                .filter(|s| s.behind_fill)
+                .map(|s| stroke_part(s)),
+        );
+        let mut fill = plain.clone();
+        fill.stroke = None;
+        out.push(fill);
+        for f in &self.extra_fills {
+            let mut s = plain.clone();
+            s.fill = f.clone();
+            s.stroke = None;
+            out.push(s);
+        }
+        out.extend(
+            strokes
+                .iter()
+                .filter(|s| !s.behind_fill)
+                .map(|s| stroke_part(s)),
+        );
+        // The shadow goes under the first part.
+        if let Some(first) = out.first_mut() {
+            first.shadow = self.shadow;
+        }
+        Some(out)
     }
 
     /// A rectangle's corners as they measure on the page: fixed corners as
@@ -2902,6 +2959,40 @@ pub fn migrate(v: &mut serde_json::Value, from: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn further_fills_and_outlines_draw_in_layers() {
+        use crate::{Color, Stroke};
+        let mut s = Shape::new(
+            ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        assert!(s.layers().is_none());
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = Some(Stroke::new(Color::BLACK, 1.0));
+        s.extra_fills = vec![Fill::Solid(Color::rgb8(0, 0, 255))];
+        let mut behind = Stroke::new(Color::WHITE, 3.0);
+        behind.behind_fill = true;
+        s.extra_strokes = vec![behind, Stroke::new(Color::rgb8(0, 255, 0), 0.5)];
+        let parts = s.layers().expect("parts");
+        // Behind outline, fill, further fill, outline, further outline.
+        assert_eq!(parts.len(), 5);
+        assert!(parts[0].stroke.as_ref().is_some_and(|st| st.behind_fill));
+        assert_eq!(parts[1].fill, Fill::Solid(Color::rgb8(255, 0, 0)));
+        assert_eq!(parts[2].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
+        assert!(parts[3]
+            .stroke
+            .as_ref()
+            .is_some_and(|st| st.color == Color::BLACK));
+        assert!(parts.iter().all(|p| p.layers().is_none()));
+        assert!(parts[1..].iter().all(|p| p.shadow.is_none()));
+        let back: Shape = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.extra_strokes.len(), 2);
+    }
     use crate::geometry::Point;
 
     #[test]

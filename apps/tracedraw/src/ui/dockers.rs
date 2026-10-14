@@ -302,6 +302,106 @@ fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
     changed
 }
 
+/// Give the selection these further fills and outlines (one undo step).
+fn set_extra_paint(app: &mut App, fills: Vec<Fill>, strokes: Vec<tracedraw_core::Stroke>) {
+    let shapes = app.selection.clone();
+    app.run(Command::SetExtraPaint {
+        shapes,
+        fills,
+        strokes,
+    });
+}
+
+/// The further fills of the selection (the first object's): each with
+/// its editor and a cross; Add Fill puts a copy of the fill on top.
+fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
+    let mut fills = first.extra_fills.clone();
+    let mut changed = false;
+    let mut remove = None;
+    for (i, f) in fills.iter_mut().enumerate() {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.strong(trf("docker.fill_n", &[("n", &(i + 2).to_string())]));
+            if ui
+                .small_button("\u{2715}")
+                .on_hover_text(tr("docker.remove_fill"))
+                .clicked()
+            {
+                remove = Some(i);
+            }
+        });
+        ui.push_id(("extra_fill", i), |ui| {
+            changed |= fill_editor(ui, f);
+        });
+    }
+    if let Some(i) = remove {
+        fills.remove(i);
+        changed = true;
+    }
+    ui.add_space(4.0);
+    if ui
+        .button(tr("docker.add_fill"))
+        .on_hover_text(tr("docker.add_fill_tip"))
+        .clicked()
+    {
+        fills.push(first.fill.clone());
+        changed = true;
+    }
+    if changed {
+        set_extra_paint(app, fills, first.extra_strokes.clone());
+    }
+}
+
+/// The further outlines of the selection, as [`extra_fills`].
+fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
+    let mut strokes = first.extra_strokes.clone();
+    let custom = app.settings.custom_arrowheads.clone();
+    let mut changed = false;
+    let mut remove = None;
+    for (i, st) in strokes.iter_mut().enumerate() {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.strong(trf("docker.outline_n", &[("n", &(i + 2).to_string())]));
+            if ui
+                .small_button("\u{2715}")
+                .on_hover_text(tr("docker.remove_outline"))
+                .clicked()
+            {
+                remove = Some(i);
+            }
+        });
+        ui.push_id(("extra_stroke", i), |ui| {
+            let mut s = Some(st.clone());
+            if outline_editor(ui, &mut s, &custom) {
+                if let Some(s) = s {
+                    *st = s;
+                }
+                changed = true;
+            }
+        });
+    }
+    if let Some(i) = remove {
+        strokes.remove(i);
+        changed = true;
+    }
+    ui.add_space(4.0);
+    if ui
+        .button(tr("docker.add_outline"))
+        .on_hover_text(tr("docker.add_outline_tip"))
+        .clicked()
+    {
+        let base = first
+            .stroke
+            .clone()
+            .unwrap_or_else(|| tracedraw_core::Stroke::hairline(tracedraw_core::Color::BLACK));
+        strokes.push(base);
+        changed = true;
+    }
+    if changed {
+        set_extra_paint(app, first.extra_fills.clone(), strokes);
+    }
+}
+
 fn properties(app: &mut App, ui: &mut Ui) {
     let shapes = app.selected_shapes();
     if shapes.is_empty() {
@@ -431,12 +531,14 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     let shapes = app.selection.clone();
                     app.run(Command::SetStroke { shapes, stroke });
                 }
+                extra_strokes(app, ui, first);
             }
             "fill" => {
                 let mut fill = first.fill.clone();
                 if fill_editor(ui, &mut fill) {
                     app.apply_fill(fill);
                 }
+                extra_fills(app, ui, first);
             }
             "transparency" => {
                 ui.horizontal_wrapped(|ui| crate::ui::toolbar::transparency_part(app, ui));
@@ -1360,5 +1462,23 @@ mod tests {
         draw(&ctx, &mut app);
         assert!(app.settings.properties_closed.is_empty());
         assert!(app.properties_open.is_none());
+        // Further fills and outlines show with their editors.
+        set_extra_paint(
+            &mut app,
+            vec![Fill::Solid(tracedraw_core::Color::BLACK)],
+            vec![tracedraw_core::Stroke::hairline(
+                tracedraw_core::Color::WHITE,
+            )],
+        );
+        let s = app.doc().find_shape(id).expect("shape").clone();
+        assert_eq!((s.extra_fills.len(), s.extra_strokes.len()), (1, 1));
+        draw(&ctx, &mut app);
+        app.undo();
+        assert!(app
+            .doc()
+            .find_shape(id)
+            .expect("shape")
+            .extra_fills
+            .is_empty());
     }
 }

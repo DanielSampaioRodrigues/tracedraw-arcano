@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 188, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 189, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -144,6 +144,7 @@ Counts: works 188, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 |---|---|
 | Colour models with conversions; Colour panel with a saturation and brightness viewer and hue strip, sliders per model, palette swatches, old and new colour, gamut warning, following the selected fill (see `behavior/color-docker.md`) | works |
 | Spot colours: named inks with a process stand-in, applied at a tint from the Colour panel; Separation colour spaces in PDF, a plate per ink in separations | works (see `behavior/spot-colors.md`) |
+| Several fills and outlines on one object (Properties docker: Add Fill, Add Outline, each with its editor), drawn in layers on screen and in SVG and PDF | works (see `behavior/multiple-paint.md`) |
 | Palettes: the default CMYK palette (99 named colours), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
 | Colour styles and harmonies | works |
 | Object styles (fill, outline and transparency parts; objects stay linked and follow the style; break link) and default properties of new graphics, artistic text and paragraph text, saved with the drawing | works (see `behavior/object-styles.md`) |

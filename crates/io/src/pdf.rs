@@ -519,6 +519,13 @@ impl PageWriter<'_> {
             }
             return;
         }
+        // Further fills and outlines: the parts, bottom first.
+        if let Some(parts) = shape.layers() {
+            for p in &parts {
+                self.shape(p, parent);
+            }
+            return;
+        }
         let path = transform * shape.local_path();
         if path.elements().is_empty() {
             return;

@@ -403,6 +403,13 @@ impl Renderer<'_> {
             }
             return;
         }
+        // Further fills and outlines: the parts, bottom first.
+        if let Some(parts) = shape.layers() {
+            for p in &parts {
+                self.draw_shape(p, parent);
+            }
+            return;
+        }
         let local = shape.local_path();
         if local.elements().is_empty() {
             return;
@@ -1534,6 +1541,33 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    /// A further fill paints over the fill, a further outline over the
+    /// outline.
+    #[test]
+    fn further_fills_and_outlines_paint_over_the_first() {
+        let mut r = rect(1, Rect::new(10.0, 10.0, 90.0, 90.0), Color::rgb8(255, 0, 0));
+        r.extra_fills = vec![Fill::Solid(Color::rgb8(0, 0, 255))];
+        r.stroke = Some(tracedraw_core::Stroke::new(Color::BLACK, 4.0));
+        r.extra_strokes = vec![tracedraw_core::Stroke::new(Color::rgb8(0, 255, 0), 2.0)];
+        let (doc, page) = doc_with(vec![r]);
+        let opts = RenderOptions {
+            width: 100,
+            height: 100,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 100.0,
+            },
+            ..RenderOptions::default()
+        };
+        let pm = render_page(&doc, page, &opts).unwrap();
+        assert_eq!(px(&pm, 50, 50), (0, 0, 255));
+        // On the edge the thin green outline lies over the black one.
+        assert_eq!(px(&pm, 50, 89), (0, 255, 0));
+        // Just outside it, the black one shows.
+        assert_eq!(px(&pm, 50, 91), (0, 0, 0));
     }
 
     /// A clip frame as an opacity mask: the contents show where the

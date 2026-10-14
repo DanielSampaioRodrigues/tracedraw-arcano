@@ -10,6 +10,8 @@ full, row-by-row status.
   applying one adds its ink to the drawing.
 - Effects docker: the selected object's effect stack, each effect
   switched off and on, moved up or down, or removed.
+- Several fills and outlines on one object: Add Fill and Add Outline in
+  the Properties docker paint further layers over the object's own.
 - Opacity masks: Object > Clip to Frame > Opacity Mask makes a clip frame's
   brightness set how much of its contents shows (Invert Mask the other
   way round), on screen and in SVG and PDF output.
