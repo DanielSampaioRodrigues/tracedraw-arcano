@@ -1729,7 +1729,17 @@ impl App {
                 }
             }
         }
+        if crate::files::WEB {
+            app.show_web_notice();
+        }
         app
+    }
+
+    /// Each time the browser version opens: a message that it is the same
+    /// Rust program compiled for the browser, what is slower or missing
+    /// there, and the way to the desktop app.
+    pub fn show_web_notice(&mut self) {
+        self.dialog = crate::ui::dialogs::Dialog::WebNotice;
     }
 
     /// A new document with localised default page and layer names.
@@ -5575,5 +5585,16 @@ mod tests {
         // Not saved over: a print file is not a drawing.
         assert!(back.file.is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_browser_notice_shows_at_every_visit() {
+        let mut app = App::headless();
+        app.show_web_notice();
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::WebNotice));
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        let mut next = App::headless();
+        next.show_web_notice();
+        assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::WebNotice));
     }
 }

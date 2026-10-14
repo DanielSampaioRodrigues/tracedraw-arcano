@@ -4,6 +4,12 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- The browser version says at each start that it is the same Rust
+  program as the desktop app, compiled to WebAssembly, slower in a
+  browser, and links to the desktop app.
+
 ## 0.5.0 (2026-10-14)
 
 More for print work, and better `.cdr` files:

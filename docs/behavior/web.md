@@ -44,9 +44,15 @@ and links to the desktop downloads
 code and the issues. When the editor cannot start, the splash says so,
 its bar turns red and the reason shows under it, with the links.
 
-Once the editor is up it simply runs: no message at the start, nothing
-in the menu bar, and the Welcome Screen's Get Started page leaves out
-the recent documents a browser cannot keep.
+Once the editor is up, each time the page opens, a message says that
+this is the same Rust program as the desktop app compiled to
+WebAssembly, that a browser is slower (large drawings, heavy effects,
+big files), has only the bundled fonts and opens and saves files by
+upload and download, and that the desktop app runs natively at full
+speed. OK closes it (Enter too); Download the desktop app opens the
+latest release (`app::tests::the_browser_notice_shows_at_every_visit`).
+Nothing is added to the menu bar, and the Welcome Screen's Get Started
+page leaves out the recent documents a browser cannot keep.
 
 Heavy work is slower than on the desktop because the build is optimised
 for download size (`profile.web`, `opt-level = "s"`), runs on one thread
