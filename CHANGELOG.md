@@ -9,6 +9,8 @@ full, row-by-row status.
 - Opacity masks: Object > Clip to Frame > Opacity Mask makes a clip frame's
   brightness set how much of its contents shows (Invert Mask the other
   way round), on screen and in SVG and PDF output.
+- Shelf: Add Colours keeps a drawing's document palette and colour
+  styles as an item, which placing adds to another drawing.
 - Help > Updates checks for a newer release and offers its download;
   the same check runs once a day at start (Options > Global > General).
 - Spot colours: named inks in the Colour panel, applied at a tint,

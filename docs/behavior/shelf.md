@@ -29,6 +29,17 @@ restarts. Code: `shelf.rs` (items, file, placing, pictures) and
   - bitmaps are kept whole (their PNG data is in the item).
 - At most 500 items. Adding to a full shelf does nothing and says so.
 
+## Colours
+
+- Add Colours (enabled with a drawing open) makes an item of the
+  drawing's document palette and colour styles, named "n colours", shown
+  as a grid of its colours (at most 64, eight a row). With neither, the
+  status bar says so and nothing is added.
+- Placing a colour item (Place, a double click, or dragging it onto the
+  drawing) adds its colours to the document palette and its colour
+  styles to the drawing's, leaving out colours already there and styles
+  whose name is already used; one undo step ("Place from Shelf").
+
 ## Placing
 
 - Place (button or the item's menu) and a double click put copies of the

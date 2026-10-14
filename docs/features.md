@@ -236,7 +236,7 @@ Counts: works 188, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Shortcuts of your own for every menu command (Options > Customization > Commands: search, press the keys, conflicts named, shown in the menus) | works (see `behavior/shortcuts.md`) |
 | Workspace export and import (`.tdws`: shortcuts, bars and toolbox, palette options, appearance; part by part) and the bars shown kept across restarts | works (see `behavior/workspaces.md`) |
 | Reset all settings: Options > Global, F8 while starting, `--reset-settings` (see `behavior/about-and-startup.md`) | works |
-| Shelf: objects kept for any drawing and after restarts (Add Selection, Add to Shelf on the object menu), placed by double click or by dragging onto the page, renamed, reordered and removed; symbols become objects, linked styles go along (see `behavior/shelf.md`) | works |
+| Shelf: objects and colours (document palette and colour styles) kept for any drawing and after restarts (Add Selection, Add Colours, Add to Shelf on the object menu), placed by double click or by dragging onto the page, renamed, reordered and removed; symbols become objects, linked styles go along (see `behavior/shelf.md`) | works |
 | Time Tracker: tasks per drawing saved in `.tdraw` files, a clock that stops after a set time without input, toolbar with the active task, its time and the total, dialog to add, rename, delete and edit tasks (time, start, finish), CSV and text export | works (see `behavior/time-tracker.md`) |
 
 ## 12. Print and prepress

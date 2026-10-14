@@ -58,7 +58,7 @@ Status tracked in `docs/features.md`.
 - Several fills and outlines on one object; live effects as an ordered stack, each one editable, hidden or removed
 - Bitmap tracing to curves (outline and centreline, with colour reduction and smoothing) (done; see `behavior/bitmap-tracing.md`)
 - Node types stored with the curve (done)
-- Asset library: objects, symbols, colours and styles shared between drawings
+- Asset library: objects, symbols, colours and styles shared between drawings (done: the Shelf keeps objects, with their object styles and symbols turned into objects, and colours with colour styles; see `behavior/shelf.md`)
 - Session recovery after a crash (on top of auto-backup) (done)
 - Scripting in Python or Lua next to JavaScript (decide which)
 

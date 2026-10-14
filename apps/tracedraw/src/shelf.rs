@@ -4,7 +4,9 @@
 //! together, with the object styles they link to (a placed object keeps
 //! its link only where the drawing has the same style) and every symbol
 //! instance turned into the symbol's objects, so that an item never
-//! depends on the drawing it came from.
+//! depends on the drawing it came from. An item can hold colours
+//! instead: the document palette and colour styles of a drawing, which
+//! placing adds to another drawing's.
 //!
 //! The shelf is kept in the preferences folder as `shelf.json`
 //! (`{"kind": "tracedraw-shelf", "version": 1, "items": [...]}`), in local
@@ -43,12 +45,31 @@ pub struct ShelfItem {
     /// The object styles the objects link to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<ObjectStyle>,
+    /// A colour item: document palette colours and colour styles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colors: Vec<tracedraw_core::Color>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub color_styles: Vec<tracedraw_core::document::ColorStyle>,
     /// Tells items apart while TraceDraw runs (thumbnails, selection).
     #[serde(skip)]
     pub uid: u64,
 }
 
 impl ShelfItem {
+    /// An item of colours (no objects).
+    pub fn is_colors(&self) -> bool {
+        self.shapes.is_empty() && !(self.colors.is_empty() && self.color_styles.is_empty())
+    }
+
+    /// Every colour the item holds: palette colours, then colour styles.
+    pub fn all_colors(&self) -> Vec<tracedraw_core::Color> {
+        self.colors
+            .iter()
+            .copied()
+            .chain(self.color_styles.iter().map(|c| c.color))
+            .collect()
+    }
+
     /// The bounds of the item's objects, when they have finite ones.
     pub fn bounds(&self) -> Option<Rect> {
         self.shapes
@@ -131,7 +152,7 @@ pub fn items_from_bytes(bytes: &[u8]) -> Option<Vec<ShelfItem>> {
     Some(
         file.items
             .into_iter()
-            .filter(|i| !i.shapes.is_empty())
+            .filter(|i| !i.shapes.is_empty() || i.is_colors())
             .map(|mut i| {
                 i.name = clean_name(&i.name);
                 i
@@ -258,7 +279,7 @@ impl Shelf {
     /// Add an item at the end; its uid, or `None` when the shelf is full
     /// or the item has no objects.
     pub fn push(&mut self, mut item: ShelfItem) -> Option<u64> {
-        if self.items.len() >= MAX_ITEMS || item.shapes.is_empty() {
+        if self.items.len() >= MAX_ITEMS || (item.shapes.is_empty() && !item.is_colors()) {
             return None;
         }
         item.uid = self.new_uid();
@@ -388,13 +409,63 @@ pub fn make_item(
         name: clean_name(name),
         shapes,
         styles,
+        colors: Vec::new(),
+        color_styles: Vec::new(),
         uid: 0,
     }
+}
+
+/// A colour item holding a drawing's palette and colour styles.
+pub fn make_color_item(
+    name: &str,
+    colors: &[tracedraw_core::Color],
+    styles: &[tracedraw_core::document::ColorStyle],
+) -> ShelfItem {
+    ShelfItem {
+        name: clean_name(name),
+        shapes: Vec::new(),
+        styles: Vec::new(),
+        colors: colors.to_vec(),
+        color_styles: styles.to_vec(),
+        uid: 0,
+    }
+}
+
+/// A colour item's picture: its colours as squares (at most 64, in rows
+/// of 8), premultiplied RGBA.
+fn color_thumbnail(colors: &[tracedraw_core::Color], px: u32) -> Option<(Vec<u8>, u32, u32)> {
+    if colors.is_empty() {
+        return None;
+    }
+    let n = colors.len().min(64);
+    let cols = n.min(8);
+    let rows = n.div_ceil(8);
+    let cell = (px.clamp(8, 512) as usize / cols).max(2);
+    let (w, h) = (cell * cols, cell * rows);
+    let mut out = vec![0u8; w * h * 4];
+    for (i, c) in colors.iter().take(n).enumerate() {
+        let [r, g, b] = c.to_rgb8();
+        let (cx, cy) = (i % cols * cell, i / cols * cell);
+        for y in cy..cy + cell {
+            for x in cx..cx + cell {
+                // A one pixel gap between squares.
+                if x == cx + cell - 1 || y == cy + cell - 1 {
+                    continue;
+                }
+                let o = (y * w + x) * 4;
+                out[o..o + 4].copy_from_slice(&[r, g, b, 255]);
+            }
+        }
+    }
+    Some((out, w as u32, h as u32))
 }
 
 /// A picture of the item, `px` pixels on its long side at most, on a
 /// transparent background (premultiplied RGBA), with its pixel size.
 pub fn thumbnail(item: &ShelfItem, px: u32) -> Option<(Vec<u8>, u32, u32)> {
+    if item.is_colors() {
+        return color_thumbnail(&item.all_colors(), px);
+    }
     let b = item.bounds()?;
     let px = px.clamp(8, 512) as f64;
     // A margin so that outlines on the edge show whole.
@@ -484,6 +555,9 @@ impl App {
         let Some(item) = self.shelf.item(uid).cloned() else {
             return false;
         };
+        if item.is_colors() {
+            return self.shelf_place_colors(&item);
+        }
         let Some(bounds) = item.bounds() else {
             return false;
         };
@@ -520,6 +594,65 @@ impl App {
             return false;
         }
         self.select(ids);
+        self.status = trf("shelf.placed", &[("name", &item.name)]);
+        true
+    }
+
+    /// The drawing's document palette and colour styles as a new colour
+    /// item; false when it has none or the shelf is full.
+    pub fn shelf_add_colors(&mut self) -> bool {
+        self.shelf.ensure_loaded();
+        let doc = self.doc();
+        if doc.palette.is_empty() && doc.color_styles.is_empty() {
+            self.status = tr("shelf.no_colors");
+            return false;
+        }
+        let n = doc.palette.len() + doc.color_styles.len();
+        let name = trf("shelf.colors_n", &[("n", &n.to_string())]);
+        let item = make_color_item(&name, &doc.palette, &doc.color_styles);
+        let name = item.name.clone();
+        match self.shelf.push(item) {
+            Some(uid) => {
+                self.shelf.selected = Some(uid);
+                self.shelf.save();
+                self.status = trf("shelf.added", &[("name", &name)]);
+                true
+            }
+            None => {
+                self.status = trf("shelf.full", &[("n", &MAX_ITEMS.to_string())]);
+                false
+            }
+        }
+    }
+
+    /// A colour item placed: its colours join the document palette and
+    /// its colour styles the drawing's (those it has by name are left as
+    /// they are), as one undo step.
+    fn shelf_place_colors(&mut self, item: &ShelfItem) -> bool {
+        if !self.has_document() || self.show_welcome {
+            self.status = tr("shelf.no_drawing");
+            return false;
+        }
+        let mut palette = self.doc().palette.clone();
+        for c in &item.colors {
+            if !palette.contains(c) {
+                palette.push(*c);
+            }
+        }
+        let mut styles = self.doc().color_styles.clone();
+        for c in &item.color_styles {
+            if !styles.iter().any(|s| s.name == c.name) {
+                styles.push(c.clone());
+            }
+        }
+        let cmds = vec![
+            Command::SetDocumentPalette { colors: palette },
+            Command::SetColorStyles { styles },
+        ];
+        if let Err(e) = self.engine.run_batch("Place from Shelf", &cmds) {
+            self.status = e.to_string();
+            return false;
+        }
         self.status = trf("shelf.placed", &[("name", &item.name)]);
         true
     }
@@ -665,6 +798,44 @@ mod tests {
     }
 
     #[test]
+    fn colors_go_on_the_shelf_and_into_another_drawing() {
+        use tracedraw_core::{document::ColorStyle, Color};
+        let mut app = App::headless();
+        assert!(!app.shelf_add_colors(), "no colours yet");
+        let red = Color::rgb8(255, 0, 0);
+        app.run(Command::SetDocumentPalette { colors: vec![red] });
+        app.run(Command::SetColorStyles {
+            styles: vec![ColorStyle {
+                name: "Brand".into(),
+                color: Color::rgb8(0, 0, 255),
+                harmony: None,
+            }],
+        });
+        assert!(app.shelf_add_colors());
+        let uid = app.shelf.selected.expect("chosen");
+        let item = app.shelf.item(uid).expect("item").clone();
+        assert!(item.is_colors());
+        assert_eq!(item.all_colors().len(), 2);
+        let (px, w, h) = thumbnail(&item, 64).expect("picture");
+        assert_eq!(px.len(), (w * h * 4) as usize);
+        // Kept through the file.
+        let back =
+            items_from_bytes(&items_to_bytes(&[item.clone()]).expect("bytes")).expect("items");
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].colors, vec![red]);
+        // Another drawing gets them, once; undo takes them back.
+        app.new_document();
+        assert!(app.doc().palette.is_empty());
+        assert!(app.shelf_place(uid, None));
+        assert!(app.shelf_place(uid, None));
+        assert_eq!(app.doc().palette, vec![red]);
+        assert_eq!(app.doc().color_styles.len(), 1);
+        app.undo();
+        app.undo();
+        assert!(app.doc().palette.is_empty());
+    }
+
+    #[test]
     fn symbols_become_objects_and_styles_travel_along() {
         let mut app = App::headless();
         let r = rect(&mut app, 0.0, 0.0, 10.0, 10.0);
@@ -792,6 +963,8 @@ mod tests {
                 },
             )],
             styles: vec![],
+            colors: vec![],
+            color_styles: vec![],
             uid: 0,
         };
         for _ in 0..MAX_ITEMS {

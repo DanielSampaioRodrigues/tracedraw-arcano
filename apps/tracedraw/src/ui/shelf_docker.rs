@@ -35,6 +35,13 @@ pub fn shelf(app: &mut App, ui: &mut Ui) {
             app.shelf_add_selection();
         }
         if ui
+            .add_enabled(drawing, egui::Button::new(tr("shelf.add_colors")))
+            .on_hover_text(tr("shelf.add_colors_tip"))
+            .clicked()
+        {
+            app.shelf_add_colors();
+        }
+        if ui
             .add_enabled(
                 chosen.is_some() && drawing,
                 egui::Button::new(tr("shelf.place")),
