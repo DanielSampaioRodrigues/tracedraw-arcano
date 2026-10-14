@@ -61,6 +61,15 @@ the number add the selection to the group. Groups are saved with the
 drawing; objects deleted since drop out. With text selected, Ctrl+8 and
 Ctrl+2 keep changing the text size.
 
+## Node tracking
+
+Options > Display > Enable node tracking (off by default): with the Pick
+tool, the pointer over a node of a selected curve takes the Shape tool's
+arrow with the node mark, and a drag there moves that node (snapping
+like the Shape tool's node drags; Ctrl keeps it horizontal or vertical;
+one undo step). The object can then no longer be moved by dragging it at
+one of its nodes. Not in rotate mode.
+
 ## Dragging the selection
 
 While the selection is moved, scaled, turned or slanted, the objects stay

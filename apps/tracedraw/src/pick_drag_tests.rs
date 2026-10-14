@@ -1736,3 +1736,34 @@ fn ctrl_keeps_the_freehand_selection_a_rectangle() {
         ctrl,
     );
 }
+
+#[test]
+fn node_tracking_drags_a_curves_node_with_the_pick_tool() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The rectangle's corner node at (60, 40), dragged 10 mm right.
+    let corner = app.view.to_screen(Point::new(60.0, 40.0));
+    let to = app.view.to_screen(Point::new(70.0, 40.0));
+    // Off (the default): the whole object moves.
+    assert!(!app.settings.node_tracking);
+    let before = bounds(&app, id);
+    drag(&ctx, &mut app, corner, to, Modifiers::NONE, Vec::new());
+    let after = bounds(&app, id);
+    assert!(close(after.width(), before.width()), "{before:?} {after:?}");
+    assert!(close(after.x0 - before.x0, 10.0), "{before:?} {after:?}");
+    app.undo();
+    // On: only that node moves; the object widens on its right side.
+    app.settings.node_tracking = true;
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let before = bounds(&app, id);
+    drag(&ctx, &mut app, corner, to, Modifiers::NONE, Vec::new());
+    let after = bounds(&app, id);
+    assert!(close(after.x0, before.x0), "{before:?} {after:?}");
+    assert!(close(after.x1, before.x1 + 10.0), "{before:?} {after:?}");
+    assert_eq!(app.tool, Tool::Pick);
+    // One undo step puts the node back.
+    app.undo();
+    assert!(close(bounds(&app, id).x1, before.x1));
+}

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Node tracking (Options > Display, off by default): the Pick tool drags
+  the nodes of a selected curve.
 - Pick tool: Ctrl+click goes one group level further in at each click;
   Ctrl keeps the marquee square; Space drops a copy while scaling, turning
   or slanting too. Ctrl+Space switches to the Pick tool from any tool.

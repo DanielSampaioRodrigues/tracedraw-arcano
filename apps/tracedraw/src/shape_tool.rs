@@ -29,6 +29,57 @@ pub struct NodeHit {
 }
 
 impl App {
+    /// A node drag (`Drag::NodeMove`) reaching `p`: the grabbed node snaps
+    /// and the chosen nodes follow; Ctrl keeps the move horizontal or
+    /// vertical. One undo step for the whole drag.
+    pub(crate) fn node_move_to(&mut self, p: Point, mods: Modifiers) {
+        let Drag::NodeMove {
+            start,
+            from,
+            grab,
+            begun,
+        } = self.drag.clone()
+        else {
+            return;
+        };
+        let mut d = p - from;
+        let horizontal = (mods.ctrl || mods.command).then_some(d.x.abs() >= d.y.abs());
+        let exclude: Vec<ShapeId> = start.iter().map(|c| c.shape).collect();
+        d = self.snapped_node_move(grab, d, horizontal, &exclude);
+        self.move_start_nodes(&start, d, grab, begun);
+        self.drag = Drag::NodeMove {
+            start,
+            from,
+            grab,
+            begun: true,
+        };
+    }
+
+    /// Node tracking (Options > Display): a press with the Pick tool on a
+    /// node of a selected curve chooses that node and starts dragging it.
+    pub(crate) fn start_tracked_node_drag(&mut self, p: Point) -> bool {
+        if !self.settings.node_tracking {
+            return false;
+        }
+        let Some(hit) = self.node_at(p) else {
+            return false;
+        };
+        self.node_selection = vec![(hit.shape, hit.index)];
+        let grab = self
+            .selected_node_points()
+            .into_iter()
+            .find(|(id, i, _)| (*id, *i) == (hit.shape, hit.index))
+            .map(|(_, _, q)| q)
+            .unwrap_or(p);
+        self.drag = Drag::NodeMove {
+            start: self.start_curves(),
+            from: p,
+            grab,
+            begun: false,
+        };
+        true
+    }
+
     /// The move of a grabbed node by `d` (page space): the node snaps to
     /// the grid, the page, guidelines and other objects, and the move
     /// follows it. `horizontal` keeps the move on one axis, before and
@@ -323,25 +374,7 @@ impl App {
                         begun: true,
                     };
                 }
-                Drag::NodeMove {
-                    start,
-                    from,
-                    grab,
-                    begun,
-                } => {
-                    let mut d = p - from;
-                    // Ctrl keeps the move horizontal or vertical.
-                    let horizontal = (mods.ctrl || mods.command).then_some(d.x.abs() >= d.y.abs());
-                    let exclude: Vec<ShapeId> = start.iter().map(|c| c.shape).collect();
-                    d = self.snapped_node_move(grab, d, horizontal, &exclude);
-                    self.move_start_nodes(&start, d, grab, begun);
-                    self.drag = Drag::NodeMove {
-                        start,
-                        from,
-                        grab,
-                        begun: true,
-                    };
-                }
+                Drag::NodeMove { .. } => self.node_move_to(p, mods),
                 Drag::NodeTransform {
                     handle,
                     start,

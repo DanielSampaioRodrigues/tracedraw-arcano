@@ -875,6 +875,9 @@ impl App {
                 self.drag = Drag::Pivot;
                 return;
             }
+            if !self.rotate_mode && self.start_tracked_node_drag(p) {
+                return;
+            }
             if let Some(h) = self.handle_at(screen) {
                 let b = self.selection_bounds().unwrap_or(Rect::ZERO);
                 if self.rotate_mode {
@@ -971,6 +974,10 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
+            if matches!(self.drag, Drag::NodeMove { .. }) {
+                self.node_move_to(p, mods);
+                return;
+            }
             self.pick_drag_to(p, mods);
         }
         self.stamp_on_space(response);

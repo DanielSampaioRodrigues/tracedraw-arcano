@@ -613,6 +613,7 @@ fn display_page(app: &mut App, ui: &mut Ui) {
             &mut app.settings.hide_bbox_curve_tools,
             tr("options.hide_bbox_curve_tools"),
         );
+        ui.checkbox(&mut app.settings.node_tracking, tr("options.node_tracking"));
     });
     chrome::section(ui, &tr("options.full_screen_preview"));
     ui.indent("fsp", |ui| {

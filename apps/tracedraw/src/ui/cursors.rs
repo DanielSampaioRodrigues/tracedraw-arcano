@@ -108,10 +108,19 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
             })
         }
         Drag::MoveGuide { guide, .. } => return Some(across_guide(&guide.line)),
+        Drag::NodeMove { .. } => return Some(ToolCursor::ShapeArrow(ShapeMark::Node)),
         Drag::None => {}
         _ => return None,
     }
     let pos = pos?;
+    // Node tracking: over a node of a selected curve, the Shape tool's
+    // arrow with the node mark.
+    if app.settings.node_tracking
+        && !app.rotate_mode
+        && app.node_at(app.view.to_page(pos)).is_some()
+    {
+        return Some(ToolCursor::ShapeArrow(ShapeMark::Node));
+    }
     if app.pivot_at(pos) || app.center_mark_at(pos) {
         return Some(moving);
     }

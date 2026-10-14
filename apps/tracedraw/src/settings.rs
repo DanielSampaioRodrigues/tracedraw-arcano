@@ -96,6 +96,10 @@ pub struct Settings {
     pub show_tooltips: bool,
     #[serde(default)]
     pub hide_bbox_curve_tools: bool,
+    /// Options > Display: the Pick tool selects and drags the nodes of a
+    /// selected curve (node tracking).
+    #[serde(default)]
+    pub node_tracking: bool,
     #[serde(default = "default_true")]
     pub preview_page_border: bool,
     /// Options > Edit: Ctrl constrains rotation and line angles to
@@ -865,6 +869,7 @@ impl Default for Settings {
             undo_levels: default_undo_levels(),
             show_tooltips: true,
             hide_bbox_curve_tools: false,
+            node_tracking: false,
             preview_page_border: true,
             constrain_angle: default_constrain_angle(),
             precision: default_precision(),
