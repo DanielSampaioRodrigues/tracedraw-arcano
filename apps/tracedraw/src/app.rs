@@ -845,6 +845,8 @@ pub struct App {
     /// Session recovery: this session's marker in the auto-backup folder
     /// (made on the first frame, desktop only).
     pub session: Option<crate::recovery::Session>,
+    /// Help > Highlight What's New: the menus mark what is new.
+    pub highlight_whats_new: bool,
     /// Help > Updates and the daily check at start.
     pub updates: crate::updates::Checker,
     /// The running check was started at start, not asked for: only a
@@ -1546,6 +1548,7 @@ impl App {
             pending_command: None,
             last_auto_backup: None,
             session: None,
+            highlight_whats_new: false,
             updates: Default::default(),
             update_quiet: false,
             recent_thumbs: Default::default(),

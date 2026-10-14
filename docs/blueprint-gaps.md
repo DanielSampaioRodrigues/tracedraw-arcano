@@ -20,7 +20,6 @@ exceptions, shown disabled so the layout stays complete:
 | Object | Rollover | web-page interactivity with no HTML export target |
 | Bitmaps | Plug-ins | no third-party filter host; the built-in effects cover the stock filters |
 | Window | Cascade, Tile, Combine, Dock | document tabs by design (New Window opens a second window of the drawing) |
-| Help | Highlight What's New | no per-release highlight data yet |
 
 ## Fills, colour and effects
 

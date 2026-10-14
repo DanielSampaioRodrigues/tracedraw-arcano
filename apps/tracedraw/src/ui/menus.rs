@@ -226,6 +226,47 @@ pub(crate) fn item_label(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool
 
 /// A menu item with a ready label and an optional icon; `id` names it for
 /// the test replay.
+/// Help > Highlight What's New: the menu rows new in this version and the
+/// submenus that lead to them, by their keys. Each version replaces the
+/// list with its own.
+pub const NEW_IN_THIS_VERSION: &[&str] = &[
+    // Window > New Window.
+    "menu.window",
+    "menu.window.new_window",
+    // Window > Dockers > Effects (the effect stack).
+    "menu.window.dockers",
+    "docker.effects",
+    // Object > Clip to Frame > Opacity Mask, Invert Mask.
+    "menu.object",
+    "menu.object.clip_frame",
+    "menu.object.clip_frame_opacity_mask",
+    "menu.object.clip_frame_invert_mask",
+    // Help > Updates checks for a newer release.
+    "menu.help",
+    "menu.help.updates",
+];
+
+thread_local! {
+    /// Whether Help > Highlight What's New is on (set from the app each
+    /// frame the menus draw).
+    static HIGHLIGHT_NEW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_highlight_new(on: bool) {
+    HIGHLIGHT_NEW.with(|h| h.set(on));
+}
+
+/// Whether the row `key` is marked as new now.
+pub fn marked_new(key: &str) -> bool {
+    HIGHLIGHT_NEW.with(|h| h.get()) && NEW_IN_THIS_VERSION.contains(&key)
+}
+
+/// The mark of a new row: a small accent disc at the row's right end.
+fn paint_new_mark(ui: &Ui, row: egui::Rect) {
+    let c = egui::pos2(row.right() - 8.0, row.center().y);
+    ui.painter().circle_filled(c, 3.5, Tokens::ACCENT);
+}
+
 fn item_text(
     ui: &mut Ui,
     label: &str,
@@ -239,6 +280,9 @@ fn item_text(
     }
     let shortcut = invoke::shown_shortcut(id, shortcut);
     let (r, _) = menu_row(ui, label, &shortcut, enabled, Mark::None);
+    if marked_new(id) {
+        paint_new_mark(ui, r.rect);
+    }
     #[cfg(test)]
     if replay::hit(id, enabled) {
         return true;
@@ -321,6 +365,9 @@ fn mark_item_if(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark, enabled: boo
     }
     let shortcut = invoke::shown_shortcut(key, shortcut);
     let (r, _) = menu_row(ui, &tr(key), &shortcut, enabled, mark);
+    if marked_new(key) {
+        paint_new_mark(ui, r.rect);
+    }
     #[cfg(test)]
     if replay::hit(key, enabled) {
         return true;
@@ -359,6 +406,10 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
         return;
     }
     let (resp, slot) = menu_row(ui, &tr(key), "", true, Mark::Submenu);
+    if marked_new(key) {
+        // Left of the submenu arrow.
+        paint_new_mark(ui, resp.rect.translate(egui::vec2(-14.0, 0.0)));
+    }
     let open = egui::containers::menu::MenuState::from_ui(ui, |state, _| {
         state.open_item == Some(egui::containers::menu::SubMenu::id_from_widget_id(resp.id))
     });
@@ -743,6 +794,24 @@ mod tests {
         assert_eq!(all.shortcut, "Ctrl+A");
         assert!(find("menu.window.new_window").is_some());
         assert!(find("menu.window.cascade").is_some());
+        // Every row Highlight What's New marks is a command, or a menu or
+        // submenu on the way to one.
+        // (Window > Dockers lists the panels, which are not commands.)
+        for key in NEW_IN_THIS_VERSION {
+            let docker = *key == "menu.window.dockers"
+                || DockerTab::ALL.iter().any(|t| t.key() == *key);
+            assert!(
+                docker
+                    || find(key).is_some()
+                    || entries.iter().any(|e| e.path.iter().any(|p| p == key)),
+                "{key} is not in the menus"
+            );
+        }
+        assert!(!marked_new("menu.help.updates"));
+        set_highlight_new(true);
+        assert!(marked_new("menu.help.updates"));
+        assert!(!marked_new("menu.file.export"));
+        set_highlight_new(false);
         assert!(
             find("menu.edit.select_all").is_none(),
             "submenus are not commands"
@@ -945,16 +1014,27 @@ fn menu_bar_style(style: &mut egui::Style) {
 }
 
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
+    set_highlight_new(app.highlight_whats_new);
     egui::MenuBar::new()
         .style(menu_bar_style)
         .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
         .ui(ui, |ui| {
             let menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| -> egui::Response {
-                ui.menu_button(tr(key), |ui| {
-                    ui.set_min_width(MENU_WIDTH);
-                    body(ui, |ui| f(ui))
-                })
-                .response
+                let r = ui
+                    .menu_button(tr(key), |ui| {
+                        ui.set_min_width(MENU_WIDTH);
+                        body(ui, |ui| f(ui))
+                    })
+                    .response;
+                if marked_new(key) {
+                    // A dot over the title's top right corner.
+                    ui.painter().circle_filled(
+                        egui::pos2(r.rect.right() - 3.0, r.rect.top() + 4.0),
+                        3.0,
+                        Tokens::ACCENT,
+                    );
+                }
+                r
             };
             let mut titles = vec![menu(ui, "menu.file", &mut |ui| file_menu(app, ui))];
             // With no drawing open only File, Tools, Window and Help remain.
@@ -2650,7 +2730,14 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         app.show_welcome = true;
         app.welcome_tab = crate::app::WelcomeTab::News;
     }
-    todo_sub(ui, "menu.help.highlight_whats_new");
+    if check(
+        ui,
+        "menu.help.highlight_whats_new",
+        "",
+        app.highlight_whats_new,
+    ) {
+        app.highlight_whats_new = !app.highlight_whats_new;
+    }
     sep(ui);
     if item(ui, "menu.help.updates", "", true) {
         if crate::files::WEB {

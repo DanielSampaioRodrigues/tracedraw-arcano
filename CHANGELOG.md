@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Help > Highlight What's New marks the menu rows new in this version.
 - Colour books: the spot entries of an `.ase` palette are spot colours;
   applying one adds its ink to the drawing.
 - Welcome Screen, What's New: the news covers the effect stack, 3D
