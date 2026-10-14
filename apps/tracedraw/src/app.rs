@@ -3272,9 +3272,44 @@ impl App {
             let before = self.engine.revision();
             self.run(Command::SetFill { shapes, fill });
             if let Some(c) = used.filter(|_| self.engine.revision() != before) {
+                self.add_ink_for(c);
                 self.remember_color(c);
             }
         }
+    }
+
+    /// A spot colour from a colour book (a palette's spot colour) whose
+    /// ink the drawing does not have yet: the ink joins the drawing's list,
+    /// named as in the palette, as part of the step that applied it.
+    pub fn add_ink_for(&mut self, c: Color) {
+        let Color::Spot {
+            ink,
+            c: cc,
+            m,
+            y,
+            k,
+            ..
+        } = c
+        else {
+            return;
+        };
+        if self.doc().ink(ink).is_some() {
+            return;
+        }
+        let name = self
+            .palettes
+            .iter()
+            .flat_map(|p| &p.colors)
+            .find(|(_, pc)| matches!(pc, Color::Spot { ink: i, .. } if *i == ink))
+            .map(|(n, _)| n.clone())
+            .unwrap_or_else(|| format!("Spot {ink:08x}"));
+        let mut inks = self.doc().inks.clone();
+        inks.push(tracedraw_core::document::Ink {
+            id: ink,
+            name,
+            cmyk: [cc, m, y, k],
+        });
+        let _ = self.engine.amend(&Command::SetInks { inks });
     }
 
     /// Add a colour to the document palette as a step of its own (its
@@ -3331,6 +3366,7 @@ impl App {
             if let Err(e) = self.engine.run_batch("Outline Color", &cmds) {
                 self.status = e.to_string();
             } else if let Some(c) = color {
+                self.add_ink_for(c);
                 self.remember_color(c);
             }
         }

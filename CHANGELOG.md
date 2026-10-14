@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour books: the spot entries of an `.ase` palette are spot colours;
+  applying one adds its ink to the drawing.
 - Effects docker: the selected object's effect stack, each effect
   switched off and on, moved up or down, or removed.
 - Opacity masks: Object > Clip to Frame > Opacity Mask makes a clip frame's

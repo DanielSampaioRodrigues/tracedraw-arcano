@@ -332,6 +332,35 @@ fn be_f32(d: &[u8], i: usize) -> Option<f32> {
 }
 
 /// Adobe Swatch Exchange: blocks of colour entries with UTF-16 names.
+/// The ink number a palette's spot colour named `name` goes by: the same
+/// name gives the same number in every drawing (FNV-1a, the top bit set
+/// so it never meets the small numbers a drawing gives its own inks).
+pub fn spot_ink_id(name: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in name.trim().bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h | 0x8000_0000
+}
+
+/// A palette's spot colour: the ink named `name` at full strength, with
+/// `c` in process inks as its stand-in.
+pub fn spot_color(name: &str, c: Color) -> Color {
+    let [cc, m, y, k] = match c.convert_to("CMYK") {
+        Color::Cmyk { c, m, y, k } => [c, m, y, k],
+        _ => [0.0, 0.0, 0.0, 1.0],
+    };
+    Color::Spot {
+        ink: spot_ink_id(name),
+        tint: 1.0,
+        c: cc,
+        m,
+        y,
+        k,
+    }
+}
+
 pub fn parse_ase(d: &[u8]) -> Vec<(String, Color)> {
     let mut out = Vec::new();
     if d.len() < 12 || &d[0..4] != b"ASEF" {
@@ -362,6 +391,13 @@ pub fn parse_ase(d: &[u8]) -> Vec<(String, Color)> {
             let mpos = name_start + name_bytes;
             let model = d.get(mpos..mpos + 4).unwrap_or(b"RGB ");
             let v = |k: usize| be_f32(d, mpos + 4 + 4 * k).unwrap_or(0.0);
+            let values = match model {
+                b"CMYK" => 4,
+                b"Gray" => 1,
+                _ => 3,
+            };
+            // After the values, the colour type: 0 global, 1 spot, 2 normal.
+            let spot = be_u16(d, mpos + 4 + 4 * values) == Some(1);
             let color = match model {
                 b"RGB " => Color::Rgb {
                     r: v(0),
@@ -381,6 +417,11 @@ pub fn parse_ase(d: &[u8]) -> Vec<(String, Color)> {
                 },
                 b"Gray" => Color::Gray { v: v(0) },
                 _ => Color::BLACK,
+            };
+            let color = if spot {
+                spot_color(&name, color)
+            } else {
+                color
             };
             out.push((name, color));
         }
@@ -538,6 +579,84 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].0, "A");
         assert_eq!(v[0].1.to_rgb8(), [255, 128, 0]);
+    }
+
+    /// A spot entry (colour type 1) of a colour book.
+    fn ase_spot(name: &str, cmyk: [f32; 4], kind: u16) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(b"ASEF");
+        d.extend_from_slice(&1u16.to_be_bytes());
+        d.extend_from_slice(&0u16.to_be_bytes());
+        d.extend_from_slice(&1u32.to_be_bytes());
+        let units: Vec<u16> = name.encode_utf16().collect();
+        let mut body = Vec::new();
+        body.extend_from_slice(&((units.len() + 1) as u16).to_be_bytes());
+        for u in units {
+            body.extend_from_slice(&u.to_be_bytes());
+        }
+        body.extend_from_slice(&0u16.to_be_bytes());
+        body.extend_from_slice(b"CMYK");
+        for v in cmyk {
+            body.extend_from_slice(&v.to_be_bytes());
+        }
+        body.extend_from_slice(&kind.to_be_bytes());
+        d.extend_from_slice(&1u16.to_be_bytes());
+        d.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        d.extend_from_slice(&body);
+        d
+    }
+
+    #[test]
+    fn colour_book_spot_entries_are_spot_colours() {
+        let v = parse_ase(&ase_spot("Gold 871", [0.0, 0.2, 0.8, 0.1], 1));
+        assert_eq!(v.len(), 1);
+        let Color::Spot { ink, tint, m, .. } = v[0].1 else {
+            panic!("{:?}", v[0].1);
+        };
+        assert_eq!(ink, spot_ink_id("Gold 871"));
+        assert!(ink & 0x8000_0000 != 0);
+        assert_eq!(tint, 1.0);
+        assert!((m - 0.2).abs() < 1e-6);
+        // Global and normal entries stay process colours.
+        for kind in [0, 2] {
+            let v = parse_ase(&ase_spot("Gold 871", [0.0, 0.2, 0.8, 0.1], kind));
+            assert!(matches!(v[0].1, Color::Cmyk { .. }));
+        }
+        assert_eq!(spot_ink_id(" Gold 871 "), spot_ink_id("Gold 871"));
+        assert_ne!(spot_ink_id("Gold 871"), spot_ink_id("Gold 872"));
+    }
+
+    #[test]
+    fn a_colour_book_spot_colour_brings_its_ink_along() {
+        use tracedraw_core::{Fill, ShapeKind};
+        let mut app = crate::app::App::headless();
+        let gold = spot_color("Gold 871", Color::cmyk_pct(0.0, 20.0, 80.0, 10.0));
+        app.palettes.push(Palette {
+            name: "Book".into(),
+            key: "",
+            colors: vec![("Gold 871".into(), gold)],
+            builtin: false,
+            path: None,
+        });
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.select(vec![id]);
+        app.apply_fill(Fill::Solid(gold));
+        assert_eq!(app.doc().inks.len(), 1);
+        assert_eq!(app.doc().inks[0].name, "Gold 871");
+        // Applied again (as an outline too): still one ink.
+        app.apply_outline_color(Some(gold));
+        assert_eq!(app.doc().inks.len(), 1);
+        // The ink went in with the fill: undoing the outline and the fill
+        // takes it out.
+        app.undo();
+        app.undo();
+        assert!(app.doc().inks.is_empty());
     }
 
     #[test]

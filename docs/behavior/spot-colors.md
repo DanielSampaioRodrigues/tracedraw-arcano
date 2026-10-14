@@ -16,6 +16,20 @@ the tint to the selection) and a cross that takes the ink off the list
 strength applied. A name typed in Ink name and New spot ink add an ink
 standing for the new colour (in process inks); names are unique.
 
+## Colour books
+
+A palette file can be a colour book of spot inks: in an `.ase` palette,
+an entry whose colour type is 1 (spot) becomes a spot colour named as
+the entry, standing for its colour in process inks; global (0) and
+normal (2) entries stay process colours. Its ink number comes from the
+name (FNV-1a with the top bit set), so the same name is the same ink in
+every drawing. Applying one (palette click, drag, the Colour panel) adds
+the ink to the drawing's list, under the palette's name, as part of the
+same undo step, unless the drawing has it already. Licensed colour
+books are not bundled; a book the user owns opens like any palette
+(Window > Color Palettes > Open Palette, `.tdpal`, `.gpl`, `.ase`,
+`.aco`).
+
 ## Output
 
 - On screen and in bitmap, SVG and `.cdr` output a spot colour is its
@@ -35,3 +49,5 @@ standing for the new colour (in process inks); names are unique.
 - `pdf::tests::spot_colors_print_on_separation_color_spaces` (io)
 - `export::tests::spot_inks_get_plates_of_their_own`
 - `ui::color_docker::tests::spot_inks_are_added_applied_and_removed`
+- `palette::tests::colour_book_spot_entries_are_spot_colours`
+- `palette::tests::a_colour_book_spot_colour_brings_its_ink_along`
