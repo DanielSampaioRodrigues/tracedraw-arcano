@@ -74,6 +74,6 @@ Status tracked in `docs/features.md`.
 - Open decisions: asynchronous (Git), synchronous (real time) or both; a `.tdraw` layout that merges well, with stable IDs per object (none of this works without them, so they come first)
 
 ## M9 Release (planned)
-- Automatic updates from inside the app (checking and downloading done, see `behavior/updates.md`; installing in place, without the system's installer, open)
+- Automatic updates from inside the app (checking and downloading done, see `behavior/updates.md`; installing in place done for the Linux AppImage; Windows and macOS still go through the system's installer)
 - User documentation (done; see `guide/README.md`)
 - Public launch and announcement once Pick and Shape tool parity is reached

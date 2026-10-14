@@ -849,6 +849,8 @@ pub struct App {
     pub highlight_whats_new: bool,
     /// Help > Updates and the daily check at start.
     pub updates: crate::updates::Checker,
+    /// Help > Updates, Install: an AppImage replaced in place.
+    pub installer: crate::updates::Installer,
     /// The running check was started at start, not asked for: only a
     /// newer release, not skipped, is shown.
     pub update_quiet: bool,
@@ -1556,6 +1558,7 @@ impl App {
             session: None,
             highlight_whats_new: false,
             updates: Default::default(),
+            installer: Default::default(),
             update_quiet: false,
             recent_thumbs: Default::default(),
             shelf: Default::default(),

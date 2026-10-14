@@ -986,7 +986,52 @@ pub fn show(app: &mut App, ctx: &Context) {
             use crate::updates::UpdateState;
             let version = env!("CARGO_PKG_VERSION");
             let close_label = tr("dialog.close");
+            let install = app.installer.get();
             match app.updates.get() {
+                UpdateState::Available(r) if install != crate::updates::InstallState::Idle => {
+                    use crate::updates::InstallState;
+                    let (text, buttons): (String, Vec<String>) = match &install {
+                        InstallState::Downloading { done, total } => {
+                            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                            let mb = |b: u64| format!("{:.1}", b as f64 / 1_048_576.0);
+                            (
+                                trf(
+                                    "updates.downloading",
+                                    &[
+                                        ("new", &r.version),
+                                        ("done", &mb(*done)),
+                                        ("total", &mb(*total)),
+                                    ],
+                                ),
+                                vec![close_label.clone()],
+                            )
+                        }
+                        InstallState::Installed(v) => (
+                            trf("updates.installed", &[("new", v)]),
+                            vec![close_label.clone()],
+                        ),
+                        InstallState::Failed(e) => (
+                            trf("updates.install_failed", &[("error", e)]),
+                            vec![tr("updates.download"), close_label.clone()],
+                        ),
+                        InstallState::Idle => (String::new(), vec![close_label.clone()]),
+                    };
+                    let labels: Vec<&str> = buttons.iter().map(String::as_str).collect();
+                    match crate::ui::chrome::message_box(
+                        ctx,
+                        crate::ui::chrome::MessageIcon::Info,
+                        &text,
+                        &labels,
+                    ) {
+                        Some(0) if matches!(install, InstallState::Failed(_)) => {
+                            let url = r.download.clone().unwrap_or_else(|| r.page.clone());
+                            app.open_url(&url);
+                            close = true;
+                        }
+                        Some(_) => close = true,
+                        None => {}
+                    }
+                }
                 UpdateState::Idle | UpdateState::Checking => {
                     ctx.request_repaint_after(std::time::Duration::from_millis(200));
                     if crate::ui::chrome::message_box(
@@ -1023,12 +1068,39 @@ pub fn show(app: &mut App, ctx: &Context) {
                         tr("updates.notes"),
                         tr("updates.skip"),
                     );
+                    // A running AppImage can be replaced in place.
+                    let target = crate::updates::appimage_target();
+                    let in_place = r.appimage.clone().zip(target);
+                    let install_label = tr("updates.install");
+                    let mut labels: Vec<&str> = Vec::new();
+                    if in_place.is_some() {
+                        labels.push(&install_label);
+                    }
+                    labels.extend([download.as_str(), &notes, &skip, &close_label]);
+                    let first = usize::from(in_place.is_some());
                     match crate::ui::chrome::message_box(
                         ctx,
                         crate::ui::chrome::MessageIcon::Info,
                         &text,
-                        &[&download, &notes, &skip, &close_label],
-                    ) {
+                        &labels,
+                    )
+                    .map(|i| {
+                        if in_place.is_some() && i == 0 {
+                            usize::MAX
+                        } else {
+                            i - first
+                        }
+                    }) {
+                        Some(usize::MAX) => {
+                            if let Some((package, target)) = in_place {
+                                app.installer.start(
+                                    r.version.clone(),
+                                    package,
+                                    target,
+                                    Some(ctx.clone()),
+                                );
+                            }
+                        }
                         Some(0) => {
                             let url = r.download.clone().unwrap_or_else(|| r.page.clone());
                             app.open_url(&url);
@@ -3889,6 +3961,54 @@ mod tests {
             assert!(!app.doc().pages.is_empty(), "{name}: the document survived");
             app.dialog = Dialog::None;
             app.select_all();
+        }
+    }
+
+    /// The Updates dialog draws in every state of a check and of an
+    /// install in place.
+    #[test]
+    fn the_updates_dialog_draws_every_state() {
+        use crate::updates::{InstallState, Package, Release, UpdateState};
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        let release = Release {
+            version: "9.0.0".into(),
+            page: "https://example.org/r".into(),
+            download: None,
+            appimage: Some(Package {
+                url: "https://example.org/a.AppImage".into(),
+                sha256: "0".repeat(64),
+                size: 3 << 20,
+            }),
+        };
+        let checks = [
+            UpdateState::Idle,
+            UpdateState::Checking,
+            UpdateState::Latest,
+            UpdateState::Available(release),
+            UpdateState::Failed("offline".into()),
+        ];
+        let installs = [
+            InstallState::Idle,
+            InstallState::Downloading {
+                done: 1 << 20,
+                total: 3 << 20,
+            },
+            InstallState::Installed("9.0.0".into()),
+            InstallState::Failed("digest".into()),
+        ];
+        for check in &checks {
+            for install in &installs {
+                *app.updates.state.lock().expect("lock") = check.clone();
+                *app.installer.state.lock().expect("lock") = install.clone();
+                app.dialog = Dialog::Updates;
+                frame(&ctx, &mut app, false);
+                frame(&ctx, &mut app, false);
+                assert!(
+                    matches!(app.dialog, Dialog::Updates),
+                    "{check:?} {install:?}: still open"
+                );
+            }
         }
     }
 }

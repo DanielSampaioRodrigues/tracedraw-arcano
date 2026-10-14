@@ -9,6 +9,8 @@ full, row-by-row status.
 - Script debugger: breakpoints in the Scripts panel's margin, Debug,
   Continue, Step, Stop, and expressions evaluated where the script
   paused.
+- Help > Updates: a Linux AppImage installs the new release in place
+  (Install), after checking the download's size and SHA-256 digest.
 - Script filters: a script that defines `TraceDrawFilter` becomes a file
   format of File > Import and File > Export (Scripts panel, Install as
   Filter); `Shape.PathData` gives an outline as SVG path data.

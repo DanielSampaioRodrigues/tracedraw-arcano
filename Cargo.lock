@@ -3857,6 +3857,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "tiny-skia",
  "tracedraw-cdr",
  "tracedraw-core",
