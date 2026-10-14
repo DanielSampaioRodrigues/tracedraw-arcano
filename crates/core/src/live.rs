@@ -97,6 +97,11 @@ pub enum Effect {
         /// One colour for the whole body.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         solid: Option<Color>,
+        /// Turn in space, the first light's elevation and further lights
+        /// (see [`crate::extrude3d`]); `bevel` is the width of the near
+        /// cap's bevel in mm.
+        #[serde(default, skip_serializing_if = "crate::extrude3d::Solid::is_plain")]
+        space: crate::extrude3d::Solid,
     },
     /// Bevel inside the outline: an inset band lit from `light_angle`.
     Bevel {
@@ -548,9 +553,10 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 kind,
                 on_object,
                 solid,
-                ..
+                bevel,
+                space,
             } => {
-                if let Some(body) = extrude_body(
+                if let Some(mut body) = extrude_body(
                     &main,
                     *depth,
                     *vanishing,
@@ -560,9 +566,14 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                     *kind,
                     *on_object,
                 ) {
+                    body.bevel = *bevel;
+                    body.solid = space.clone();
                     let faces = body.faces(&main);
                     below.extend(faces.below);
                     above.extend(faces.above);
+                    if let Some(m) = faces.main {
+                        main = m;
+                    }
                 }
             }
             Effect::Bevel {
@@ -873,6 +884,8 @@ pub fn extrude_body(
         coloring,
         light_angle,
         light_intensity,
+        bevel: 0.0,
+        solid: Default::default(),
     })
 }
 
@@ -1331,6 +1344,7 @@ mod tests {
             kind: None,
             on_object: false,
             solid: None,
+            space: Default::default(),
         });
         let ev = evaluate(&s);
         // The far face and the two faces that show (toward the vector),

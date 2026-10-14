@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 185, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, several lights and bevels; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 186, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -128,7 +128,7 @@ Counts: works 185, partial 3 (`.cdr` content coverage; Extrude's 3D rotation, se
 | Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the centre marker dragged, the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |
 | Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |
 | Perspective (Add Perspective, node drag) | works |
-| Extrude, live: six types (small and big back and front toward a vanishing point locked to the object or the page, back and front parallel), depth, colour from the object, solid or a shade, one light; hidden faces left out, curved sides as one outlined surface, every subpath extruded; the tool's drag and handle, a bar and the panel editing the selected extrusion (see `behavior/extrude.md`); 3D rotation, several lights and bevels not done | partial |
+| Extrude, live: six types (small and big back and front toward a vanishing point locked to the object or the page, back and front parallel), depth, colour from the object, solid or a shade, up to three lights with their elevation, the body turned in space, a bevel on the front edge; hidden faces left out, curved sides as one outlined surface, every subpath extruded; the tool's drag and handle, a bar (3D menu) and the panel editing the selected extrusion (see `behavior/extrude.md`) | works |
 | Bevel (soft edge, emboss) | works |
 | Block shadow (depth, direction, colour, gap on the property bar) | works |
 | Transparency: uniform, gradient, pattern, texture; merge modes; fill/outline/all | works |

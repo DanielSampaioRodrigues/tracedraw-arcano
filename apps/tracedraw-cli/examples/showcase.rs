@@ -555,6 +555,7 @@ fn effects(dir: &Path) {
         kind: None,
         on_object: false,
         solid: None,
+        space: Default::default(),
     });
     b.add(t, "Extrude");
 

@@ -9,6 +9,9 @@ full, row-by-row status.
 - Session recovery: drawings auto-backed up by a session that ended
   without closing are offered at the next start; a clean exit removes
   its auto-backups.
+- Extrude: the body turns in space (x, y, z), takes up to three lights
+  with their elevation, and a bevel on its front edge (panel, and the
+  bar's 3D menu).
 - CMX import: text comes in as artistic text at its place, font, size
   and colour.
 - Options > Tools > Pick: Marquee selects touched objects (off by

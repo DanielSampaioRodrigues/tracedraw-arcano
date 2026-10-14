@@ -2,8 +2,9 @@
 //! Extrude panel, and the handles of the selected extrusions. Controls:
 //! the kind of body; the vector (parallel bodies) or the depth, the
 //! vanishing point and what it is locked to; the colour (the object's
-//! fill, solid, or a shade between two colours); the light's angle and
-//! intensity. They show the selected extrusion and edit the selected
+//! fill, solid, or a shade between two colours); the light's angle,
+//! intensity and elevation, two further lights, the turn in space and the
+//! bevel. They show the selected extrusion and edit the selected
 //! extrusions live.
 
 use crate::app::App;
@@ -174,6 +175,94 @@ pub fn extrude_controls(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The turn in space, the first light's elevation, the further lights and
+/// the bevel (the panel shows them; the bar in a menu).
+pub fn extrude_space(app: &mut App, ui: &mut Ui) {
+    app.sync_extrude_settings();
+    let mut s = app.extrude;
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        dim(ui, tr("extrude.elevation"));
+        changed |= degrees(
+            ui,
+            &mut s.elevation,
+            0.0..=90.0,
+            &tr("extrude.elevation_tip"),
+        );
+    });
+    ui.horizontal(|ui| {
+        dim(ui, tr("extrude.rotation"));
+        for (i, axis) in ["x", "y", "z"].into_iter().enumerate() {
+            changed |= degrees(
+                ui,
+                &mut s.rotation[i],
+                -360.0..=360.0,
+                &format!("{} ({axis})", tr("extrude.rotation_tip")),
+            );
+        }
+        if ui
+            .add_enabled(
+                s.rotation != [0.0; 3],
+                egui::Button::new(tr("docker.reset")),
+            )
+            .clicked()
+        {
+            s.rotation = [0.0; 3];
+            changed = true;
+        }
+    });
+    for i in 0..s.lights.len() {
+        ui.horizontal(|ui| {
+            let (on, light) = &mut s.lights[i];
+            changed |= ui
+                .checkbox(
+                    on,
+                    crate::i18n::trf("extrude.light_n", &[("n", &(i + 2).to_string())]),
+                )
+                .changed();
+            ui.add_enabled_ui(*on, |ui| {
+                changed |= degrees(ui, &mut light.angle, 0.0..=360.0, &tr("docker.light_angle"));
+                changed |= degrees(
+                    ui,
+                    &mut light.elevation,
+                    0.0..=90.0,
+                    &tr("extrude.elevation"),
+                );
+                changed |= ui
+                    .add(
+                        NumField::new(&mut light.intensity)
+                            .range(0.0..=100.0)
+                            .max_decimals(0)
+                            .width(40.0),
+                    )
+                    .on_hover_text(tr("docker.light_intensity"))
+                    .changed();
+            });
+        });
+    }
+    ui.horizontal(|ui| {
+        dim(ui, tr("docker.bevel"));
+        changed |= length(ui, app, &mut s.bevel, &tr("extrude.bevel_tip"));
+    });
+    if changed {
+        app.extrude = s;
+        app.apply_extrude_settings();
+    }
+}
+
+/// An angle field in degrees; true when it changed.
+fn degrees(ui: &mut Ui, v: &mut f64, range: std::ops::RangeInclusive<f64>, tip: &str) -> bool {
+    ui.add(
+        NumField::new(v)
+            .range(range)
+            .max_decimals(1)
+            .suffix("\u{b0}")
+            .width(52.0),
+    )
+    .on_hover_text(tip)
+    .changed()
+}
+
 /// Apply (for selected objects with no extrusion), Clear Extrude and
 /// Break Apart.
 pub fn extrude_actions(app: &mut App, ui: &mut Ui) {
@@ -209,6 +298,11 @@ pub fn extrude_actions(app: &mut App, ui: &mut Ui) {
 /// The bar.
 pub fn extrude_bar(app: &mut App, ui: &mut Ui) {
     extrude_controls(app, ui);
+    ui.menu_button(tr("extrude.space_menu"), |ui| {
+        ui.vertical(|ui| extrude_space(app, ui));
+    })
+    .response
+    .on_hover_text(tr("extrude.space_menu_tip"));
     sep(ui);
     extrude_actions(app, ui);
     sep(ui);
@@ -256,7 +350,7 @@ pub fn draw_handles(app: &App, painter: &Painter) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracedraw_core::{geometry::Rect, ShapeKind};
+    use tracedraw_core::{geometry::Rect, live::Effect, ShapeKind};
 
     #[test]
     fn the_bar_and_the_panel_draw_for_every_kind() {
@@ -282,6 +376,7 @@ mod tests {
                 if panel {
                     ui.vertical(|ui| {
                         extrude_controls(app, ui);
+                        extrude_space(app, ui);
                         extrude_actions(app, ui);
                     });
                 } else {
@@ -306,5 +401,51 @@ mod tests {
         frame(&mut app, true);
         assert_eq!(app.extrude.kind, ExtrudeKind::BigBack);
         assert_eq!(app.extrusion_handles().len(), 1);
+        // The turn, the lights and the bevel go to the effect and come
+        // back from it.
+        app.extrude.rotation = [10.0, 20.0, 30.0];
+        app.extrude.elevation = 40.0;
+        app.extrude.lights[1] = (true, crate::extrude_tool::NEW_LIGHT);
+        app.extrude.bevel = 1.5;
+        app.apply_extrude_settings();
+        frame(&mut app, true);
+        frame(&mut app, false);
+        let Some(Effect::Extrude { space, bevel, .. }) = app
+            .selected_shapes()
+            .first()
+            .and_then(|s| {
+                s.effects
+                    .iter()
+                    .find(|e| matches!(e, Effect::Extrude { .. }))
+            })
+            .cloned()
+        else {
+            panic!("no extrusion");
+        };
+        assert_eq!(space.rotation, [10.0, 20.0, 30.0]);
+        assert_eq!(space.lights.len(), 1);
+        assert!((bevel - 1.5).abs() < 1e-9);
+        let mut back = crate::extrude_tool::ExtrudeSettings::default();
+        back.take(
+            &Effect::Extrude {
+                depth: Default::default(),
+                vanishing: None,
+                amount: 0.0,
+                shade_from: None,
+                shade_to: None,
+                light_angle: 0.0,
+                light_intensity: 0.0,
+                bevel,
+                kind: None,
+                on_object: false,
+                solid: None,
+                space,
+            },
+            Default::default(),
+            Default::default(),
+        );
+        assert!(back.lights[0].0);
+        assert!(!back.lights[1].0);
+        assert_eq!(back.elevation, 40.0);
     }
 }

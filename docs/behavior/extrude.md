@@ -85,7 +85,46 @@ parallel, or Small back when they have a vanishing point.
   it; Break Apart turns the effects into objects.
 - Effects > Extrude opens the panel with the same controls. The values
   are kept in the preferences (`tools.extrude`).
-- Not done: 3D rotation of the body, more than one light, bevels.
+
+## Turn, lights and bevel
+
+The panel shows these under the other controls; the bar has them in its
+3D menu. The geometry is in `tracedraw_core::extrude3d`.
+
+| Control | Default | Range |
+|---|---|---|
+| Elevation (first light) | 0 | 0 to 90 degrees above the drawing |
+| Turn x, y, z | 0, 0, 0 | -360 to 360 degrees; Reset puts them back |
+| Light 2, Light 3 | off; 45 degrees, 30 up, 50 when switched on | angle, elevation, intensity |
+| Bevel | 0 | a width in document units |
+
+- The body is a prism: the outline at depth 0 and a copy at depth `L`,
+  the offset's length (parallel bodies) or the depth share of the
+  distance from the outline's middle to the vanishing point. A parallel
+  body runs in space along its offset across and as far in depth, and is
+  seen straight on, so untouched it is the flat body; the other types are
+  seen from the vanishing point (Small: a perspective that puts the copy
+  where the flat body has it, `s = t d / (t d + 1 - d)` of the way to the
+  vanishing point at depth share `t`; Big: `d t` of the way away from it).
+- The turn is about the middle of the body, by x (the top tips away),
+  then y (the right side turns away), then z (counterclockwise). The
+  object itself becomes the turned front face; turned away, the far face
+  shows instead.
+- A face shows when its outward side faces the viewer (its drawn corners
+  run counterclockwise with that side up); faces are drawn farthest
+  first.
+- Light: the first light keeps the flat formula with its elevation,
+  `0.55 + 0.45 (k (n . l + 1) / 2 + 1 - k)`; each further light adds
+  `0.3 k max(0, n . l)`; the result stays within 0.2 to 1. A face's
+  normal is worked out as if the body ran straight back, so an untouched
+  body is lit as the flat one.
+- Bevel: the front face shrinks by the width (each corner along its
+  bisector, at most three widths) and a band slopes from it to the
+  outline one width deep; at most 0.9 of the depth and of half the
+  object's smaller side. The band takes the near colour; open subpaths
+  have none.
+- Untouched (no turn, the first light in the plane, no further light, no
+  bevel), the body is the flat one above.
 
 ## Checks
 
@@ -97,7 +136,13 @@ parallel, or Small back when they have a vanishing point.
 - `extrude_tool::tests::a_drag_extrudes_toward_the_pointer`
 - `extrude_tool::tests::the_bar_edits_the_selected_extrusion`
 - `extrude_tool::tests::settings_read_older_effects_and_stay_in_range`
-- `ui::extrude_bar::tests::the_bar_and_the_panel_draw_for_every_kind`
+- `ui::extrude_bar::tests::the_bar_and_the_panel_draw_for_every_kind` (with the turn, lights and bevel, which go to the effect and back)
+- `extrude3d::tests::untouched_with_a_raised_light_it_draws_as_the_flat_body`
+- `extrude3d::tests::turning_shows_the_side_turned_toward_the_viewer`
+- `extrude3d::tests::a_half_turn_hides_the_object_and_shows_the_far_cap`
+- `extrude3d::tests::a_bevel_shrinks_the_near_cap_and_adds_a_band`
+- `extrude3d::tests::further_lights_brighten_the_faces_they_reach`
+- `extrude3d::tests::broken_values_never_panic`
 - Given a 20 mm square, Back parallel, offset (10, 10), then the far
   face is the square at (10, 10) and only the top and right faces show,
   the top one lighter with the light from the top left.

@@ -17,6 +17,7 @@ pub mod effects;
 pub mod engine;
 pub mod envelope;
 pub mod extrude;
+pub mod extrude3d;
 pub mod geometry;
 pub mod icc;
 pub mod id;

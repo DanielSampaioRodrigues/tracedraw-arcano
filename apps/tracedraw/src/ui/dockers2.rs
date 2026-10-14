@@ -844,6 +844,7 @@ fn contour(app: &mut App, ui: &mut Ui) {
 
 fn extrude(app: &mut App, ui: &mut Ui) {
     crate::ui::extrude_bar::extrude_controls(app, ui);
+    crate::ui::extrude_bar::extrude_space(app, ui);
     crate::ui::extrude_bar::extrude_actions(app, ui);
 }
 

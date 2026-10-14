@@ -79,7 +79,7 @@ pub enum Coloring {
 }
 
 /// What a body is built from, in the object's parent space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Body {
     pub kind: ExtrudeKind,
     /// Parallel bodies: from the object to the copy.
@@ -92,13 +92,19 @@ pub struct Body {
     /// Degrees (0 = from the right, counterclockwise) and 0 to 100.
     pub light_angle: f64,
     pub light_intensity: f64,
+    /// Width of the bevel on the near cap's edge, mm (0: none).
+    pub bevel: f64,
+    /// Turn in space and further lights (see [`crate::extrude3d`]).
+    pub solid: crate::extrude3d::Solid,
 }
 
-/// The faces behind the object and in front of it.
+/// The faces behind the object and in front of it, and what the object
+/// itself becomes when the body is turned or bevelled.
 #[derive(Debug, Clone, Default)]
 pub struct Faces {
     pub below: Vec<Shape>,
     pub above: Vec<Shape>,
+    pub main: Option<Shape>,
 }
 
 /// Points per subpath before an outline is resampled.
@@ -276,6 +282,31 @@ impl Body {
         let subs = polylines(&shape.page_path());
         if subs.is_empty() {
             return out;
+        }
+        if !self.solid.is_plain() || (self.bevel.is_finite() && self.bevel > 0.0) {
+            // Each subpath with the outside on the right of travel.
+            let oriented: Vec<(Vec<Point>, bool, bool)> = subs
+                .iter()
+                .enumerate()
+                .map(|(i, (pts, c))| {
+                    let hole = *c
+                        && subs
+                            .iter()
+                            .enumerate()
+                            .filter(|(j, (o, oc))| {
+                                *j != i && *oc && o.len() >= 3 && inside(o, pts[0])
+                            })
+                            .count()
+                            % 2
+                            == 1;
+                    let mut pts = pts.clone();
+                    if *c && (area2(&pts) >= 0.0) == hole {
+                        pts.reverse();
+                    }
+                    (pts, *c, hole)
+                })
+                .collect();
+            return crate::extrude3d::faces(self, shape, &oriented);
         }
         let base = shape.fill.preview_color().unwrap_or(Color::WHITE);
         let (from, to) = match self.coloring {
@@ -527,6 +558,8 @@ mod tests {
             coloring: Coloring::Object,
             light_angle: 135.0,
             light_intensity: 50.0,
+            bevel: 0.0,
+            solid: Default::default(),
         }
     }
 

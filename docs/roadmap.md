@@ -51,7 +51,7 @@ Status tracked in `docs/features.md`.
 
 ## M6 Editing, colour and effects (planned)
 - Pick and Shape tool parity: every interaction checked side by side, one behaviour at a time (in progress)
-- Extrude: 3D rotation, several lights and bevels (partial today)
+- Extrude: 3D rotation, several lights and bevels (done; see `behavior/extrude.md`)
 - Opacity masks as objects of their own, next to transparency
 - Artboards: free-standing drawing areas next to pages (decide whether they replace pages or sit beside them)
 - Spot colours with named inks through to separations; colour books the user loads (licensed books are not bundled)

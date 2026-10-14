@@ -16,6 +16,7 @@ use crate::app::App;
 use serde::{Deserialize, Serialize};
 use tracedraw_core::{
     extrude::ExtrudeKind,
+    extrude3d::{Light, Solid, MAX_EXTRA_LIGHTS},
     geometry::{Affine, Point, Vec2},
     live::Effect,
     Color, Command, ShapeId, ShapeKind,
@@ -80,7 +81,22 @@ pub struct ExtrudeSettings {
     /// to 100.
     pub light_angle: f64,
     pub light_intensity: f64,
+    /// The turn in space, degrees about x, y and z.
+    pub rotation: [f64; 3],
+    /// The first light's elevation, degrees.
+    pub elevation: f64,
+    /// Further lights: on or off, and where they come from.
+    pub lights: [(bool, Light); MAX_EXTRA_LIGHTS],
+    /// Bevel width on the near cap's edge, mm.
+    pub bevel: f64,
 }
+
+/// A further light as it starts when switched on.
+pub const NEW_LIGHT: Light = Light {
+    angle: 45.0,
+    elevation: 30.0,
+    intensity: 50.0,
+};
 
 impl Default for ExtrudeSettings {
     fn default() -> Self {
@@ -96,6 +112,10 @@ impl Default for ExtrudeSettings {
             shade_to: Color::rgb8(40, 40, 40),
             light_angle: 135.0,
             light_intensity: 50.0,
+            rotation: [0.0; 3],
+            elevation: 0.0,
+            lights: [(false, NEW_LIGHT); MAX_EXTRA_LIGHTS],
+            bevel: 0.0,
         }
     }
 }
@@ -127,7 +147,34 @@ impl ExtrudeSettings {
             ),
             light_angle: fin(self.light_angle, 0.0, 360.0, d.light_angle),
             light_intensity: fin(self.light_intensity, 0.0, 100.0, d.light_intensity),
+            rotation: self.rotation.map(|a| fin(a, -360.0, 360.0, 0.0)),
+            elevation: fin(self.elevation, 0.0, 90.0, 0.0),
+            lights: self.lights.map(|(on, l)| {
+                (
+                    on,
+                    Light {
+                        angle: fin(l.angle, 0.0, 360.0, NEW_LIGHT.angle),
+                        elevation: fin(l.elevation, 0.0, 90.0, NEW_LIGHT.elevation),
+                        intensity: fin(l.intensity, 0.0, 100.0, NEW_LIGHT.intensity),
+                    },
+                )
+            }),
+            bevel: fin(self.bevel, 0.0, FAR, 0.0),
             ..self
+        }
+    }
+
+    /// The turn, elevation and lights as the effect keeps them.
+    pub fn space(&self) -> Solid {
+        Solid {
+            rotation: self.rotation,
+            elevation: self.elevation,
+            lights: self
+                .lights
+                .iter()
+                .filter(|(on, _)| *on)
+                .map(|(_, l)| *l)
+                .collect(),
         }
     }
 
@@ -152,10 +199,11 @@ impl ExtrudeSettings {
             shade_to: shade.then_some(s.shade_to),
             light_angle: s.light_angle,
             light_intensity: s.light_intensity,
-            bevel: 0.0,
+            bevel: s.bevel,
             kind: Some(s.kind),
             on_object: s.on_object,
             solid: (s.color == ExtrudeColor::Solid).then_some(s.solid),
+            space: s.space(),
         }
     }
 
@@ -173,11 +221,21 @@ impl ExtrudeSettings {
             kind,
             on_object,
             solid,
-            ..
+            bevel,
+            space,
         } = e
         else {
             return;
         };
+        self.rotation = space.rotation;
+        self.elevation = space.elevation;
+        self.bevel = *bevel;
+        for (i, slot) in self.lights.iter_mut().enumerate() {
+            *slot = match space.lights.get(i) {
+                Some(l) => (true, *l),
+                None => (false, slot.1),
+            };
+        }
         self.kind = kind.unwrap_or(if vanishing.is_some() {
             ExtrudeKind::SmallBack
         } else {
@@ -650,6 +708,7 @@ mod tests {
             kind: None,
             on_object: false,
             solid: None,
+            space: Default::default(),
         };
         let mut s = ExtrudeSettings::default();
         s.take(&old, Affine::translate((3.0, 0.0)), Affine::IDENTITY);
