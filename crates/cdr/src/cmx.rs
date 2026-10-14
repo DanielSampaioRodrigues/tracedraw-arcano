@@ -15,12 +15,12 @@
 //! mm in every file seen), with the origin at the page's centre and y up.
 //! `docs/cmx-format.md` lists every layout fact with its status.
 
-use crate::parse::{build_path, classify_arrowhead, color_from_model, encode_png, ParseReport};
+use crate::parse::{build_path, color_from_model, encode_png, ParseReport};
 use crate::{Error, Result};
 use std::collections::BTreeSet;
 use tracedraw_core::{
     document::{Layer, Page, Shape, ShapeKind},
-    geometry::{Affine, Point, Rect, Size},
+    geometry::{Affine, BezPath, Point, Rect, Size},
     style::{Arrowhead, Fountain, FountainKind, Stop},
     Color, Document, Fill, LineCap, LineJoin, Stroke,
 };
@@ -389,8 +389,10 @@ fn arrowheads(d: &[u8]) -> impl Iterator<Item = Vec<(u8, &[u8])>> {
 
 /// An arrowhead: field 1 holds a u16 count, the points (i32 x, y), one
 /// node byte each and a u32 (how far the line is pulled back, not used).
-/// The tip points to +x; only its shape matters, the size follows the
-/// outline's width.
+/// The line ends at the origin and comes in from -x; the head keeps the
+/// placement and size the file gives it (see [`HEAD_UNITS_PER_WIDTH`]),
+/// parts of it may lie ahead of the end point. Closed subpaths are filled,
+/// open ones are drawn as lines one outline width wide.
 fn arrowhead(f: &[(u8, &[u8])], number: usize) -> Arrowhead {
     let Some(d) = field(f, 1) else {
         return Arrowhead::None;
@@ -411,10 +413,96 @@ fn arrowhead(f: &[(u8, &[u8])], number: usize) -> Arrowhead {
         return Arrowhead::None;
     };
     let (path, _) = build_path(&pts, types);
-    match classify_arrowhead(&path, &pts, types) {
-        Arrowhead::None => Arrowhead::from_shape_path(&path, format!("Arrowhead {number}")),
-        preset => preset,
+    let shape = stroke_open_subpaths(&path, HEAD_UNITS_PER_WIDTH);
+    Arrowhead::from_placed_path(&shape, format!("Arrowhead {number}"), HEAD_UNITS_PER_WIDTH)
+}
+
+/// A head used at the start of a line. The file draws it as the mirror
+/// image of the end head across the line's normal: the side above the line
+/// stays above. Our heads are turned round to face backwards at the start,
+/// which also swaps the sides, so the outline is flipped across the line
+/// first.
+fn start_head(head: Arrowhead) -> Arrowhead {
+    match head {
+        Arrowhead::Custom { path, name } => Arrowhead::Custom {
+            path: Affine::scale_non_uniform(1.0, -1.0) * path,
+            name,
+        },
+        other => other,
     }
+}
+
+/// Arrowhead units (`rarw`) per outline width: 127 000 units (half an inch
+/// of 1/254 000) are one outline width. Measured on a public sample file
+/// against the preview picture it carries (see `docs/cmx-format.md`).
+const HEAD_UNITS_PER_WIDTH: f64 = 127_000.0;
+
+/// `path` with every open subpath replaced by the area a round pen of
+/// `width` sweeps along it; closed subpaths are kept, turned to one
+/// orientation.
+fn stroke_open_subpaths(path: &BezPath, width: f64) -> BezPath {
+    use tracedraw_core::geometry::PathEl;
+    let mut out = BezPath::new();
+    let mut sub: Vec<PathEl> = Vec::new();
+    let flush = |sub: &mut Vec<PathEl>, closed: bool, out: &mut BezPath| {
+        if sub.is_empty() {
+            return;
+        }
+        let part = BezPath::from_vec(std::mem::take(sub));
+        if closed {
+            // Every closed subpath is filled on its own (a smaller one
+            // inside a larger one is not a hole): give them all the
+            // orientation of the swept bands so they add up.
+            use tracedraw_core::geometry::Shape as _;
+            let part = if part.area() < 0.0 {
+                part.reverse_subpaths()
+            } else {
+                part
+            };
+            out.extend(part.elements().iter().copied());
+            if !matches!(out.elements().last(), Some(PathEl::ClosePath)) {
+                out.close_path();
+            }
+        } else {
+            let mut line = Vec::new();
+            tracedraw_core::geometry::flatten(&part, width / 20.0, &mut |el| match el {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => line.push(p),
+                _ => {}
+            });
+            // A lone move draws nothing.
+            if line.len() < 2 {
+                return;
+            }
+            let band = tracedraw_core::shaping::stroke_band(&line, width, false);
+            out.extend(band.elements().iter().copied());
+        }
+    };
+    // Where the current subpath started: drawing on after a close starts
+    // from there.
+    let mut start = Point::ZERO;
+    for el in path.elements() {
+        match el {
+            PathEl::MoveTo(p) => {
+                flush(&mut sub, false, &mut out);
+                start = *p;
+                sub.push(*el);
+            }
+            PathEl::ClosePath => {
+                if !sub.is_empty() {
+                    sub.push(*el);
+                }
+                flush(&mut sub, true, &mut out);
+            }
+            _ => {
+                if sub.is_empty() {
+                    sub.push(PathEl::MoveTo(start));
+                }
+                sub.push(*el);
+            }
+        }
+    }
+    flush(&mut sub, false, &mut out);
+    out
 }
 
 /// An image placement waiting for its pixels: the extent in local
@@ -828,7 +916,7 @@ impl Ctx {
         };
         Some(Stroke {
             color: self.color(color).unwrap_or(Color::BLACK),
-            start_arrow: head(start),
+            start_arrow: start_head(head(start)),
             end_arrow: head(end),
             width,
             cap: match caps_join & 0x0f {
@@ -1185,9 +1273,12 @@ mod tests {
                 chunk(b"rota", &pairs)
             },
             {
-                // A closed triangle, tip to +x: a filled arrow.
+                // A closed triangle, tip to +x, 381 000 units (three
+                // outline widths) tall: a filled arrow.
                 let mut f1 = 4u16.to_le_bytes().to_vec();
-                f1.extend_from_slice(&le(&[-500, 300, 0, 0, -500, -300, -500, 300]));
+                f1.extend_from_slice(&le(&[
+                    -381_000, 190_500, 0, 0, -381_000, -190_500, -381_000, 190_500,
+                ]));
                 f1.extend_from_slice(&[0x0c, 0x44, 0x44, 0x48]);
                 f1.extend_from_slice(&le(&[100]));
                 chunk(b"rarw", &flist(&[fld(1, &f1), fld(2, &[0; 10])]))
@@ -1358,7 +1449,129 @@ mod tests {
         assert_eq!(o.cap, LineCap::Round);
         assert_eq!(o.color, Color::rgb8(255, 0, 0));
         assert_eq!(o.start_arrow, Arrowhead::None);
-        assert_eq!(o.end_arrow, Arrowhead::Arrow);
+        assert_eq!(o.end_arrow.name(), "Arrowhead 1");
+        // The head keeps the file's size: three outline widths tall, as
+        // long as it is tall, whatever the width.
+        let mut line = tracedraw_core::BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        for width in [1.0, 2.5] {
+            let stroke = Stroke { width, ..o.clone() };
+            let heads = tracedraw_core::arrowhead_paths(&line, &stroke);
+            assert_eq!(heads.len(), 1);
+            let b = tracedraw_core::geometry::Shape::bounding_box(&heads[0]);
+            assert!((b.height() - 3.0 * width).abs() < 1e-9, "{b:?}");
+            assert!((b.width() - 3.0 * width).abs() < 1e-9, "{b:?}");
+            assert!((b.x1 - 50.0).abs() < 1e-9, "{b:?}");
+        }
+    }
+
+    #[test]
+    fn arrowheads_keep_size_and_placement() {
+        use tracedraw_core::geometry::Shape as _;
+        let head = |pts: &[i32], types: &[u8]| {
+            let mut f1 = u16::try_from(types.len()).unwrap().to_le_bytes().to_vec();
+            f1.extend_from_slice(&le(pts));
+            f1.extend_from_slice(types);
+            f1.extend_from_slice(&le(&[0]));
+            let data = flist(&[fld(1, &f1)]);
+            let f = arrowheads(&data).next().expect("one head");
+            arrowhead(&f, 7)
+        };
+        // Head space: one unit is four outline widths, 508 000 file units.
+        let bounds = |a: &Arrowhead| match a {
+            Arrowhead::Custom { path, .. } => path.bounding_box(),
+            other => panic!("expected a custom head: {other:?}"),
+        };
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-3;
+        // A closed diamond 254 000 units tall: two widths.
+        let diamond = head(
+            &[
+                0, 0, -127_000, 127_000, -254_000, 0, -127_000, -127_000, 0, 0,
+            ],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48],
+        );
+        assert_eq!(diamond.name(), "Arrowhead 7");
+        let b = bounds(&diamond);
+        assert!(
+            near(b.height(), 0.5) && near(b.x1, 0.0) && near(b.y0, -0.25),
+            "{b:?}"
+        );
+        // A large one is not shrunk to the preset size.
+        let big = head(
+            &[0, 0, -1_270_000, 635_000, -1_270_000, -635_000, 0, 0],
+            &[0x0c, 0x44, 0x44, 0x48],
+        );
+        assert!(near(bounds(&big).height(), 2.5));
+        // A square behind the end point, one centred on it and one drawn
+        // above the line keep their places.
+        let square = head(
+            &[
+                -254_000, -127_000, 0, -127_000, 0, 127_000, -254_000, 127_000, -254_000, -127_000,
+            ],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48],
+        );
+        let b = bounds(&square);
+        assert!(
+            near(b.x1, 0.0) && near(b.y0, -0.25) && near(b.y1, 0.25),
+            "{b:?}"
+        );
+        let centred = head(
+            &[
+                -127_000, -127_000, 127_000, -127_000, 127_000, 127_000, -127_000, 127_000,
+                -127_000, -127_000,
+            ],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48],
+        );
+        let b = bounds(&centred);
+        assert!(near(b.x0, -0.25) && near(b.x1, 0.25), "{b:?}");
+        let above = head(
+            &[0, 127_000, -254_000, 127_000, -254_000, 508_000, 0, 127_000],
+            &[0x0c, 0x44, 0x44, 0x48],
+        );
+        let b = bounds(&above);
+        assert!(near(b.y0, 0.25) && near(b.y1, 1.0), "{b:?}");
+        // An open head is drawn as a line one outline width (0.25) wide
+        // with round ends: here a V and a bar across the end point.
+        let open = head(
+            &[-500_000, 300_000, 0, 0, -500_000, -300_000],
+            &[0x04, 0x44, 0x44],
+        );
+        let b = bounds(&open);
+        assert!(
+            near(b.x1, 0.125) && near(b.height(), (600_000.0 + 127_000.0) / 508_000.0),
+            "{b:?}"
+        );
+        let bar = head(&[0, -254_000, 0, 254_000], &[0x04, 0x44]);
+        let b = bounds(&bar);
+        assert!(near(b.width(), 0.25) && near(b.height(), 1.25), "{b:?}");
+        // Swept bands turn the same way as the closed subpaths below, so a
+        // head mixing both fills every part.
+        let Arrowhead::Custom { path, .. } = &bar else {
+            panic!("{bar:?}");
+        };
+        assert!(path.area() > 0.0, "{}", path.area());
+        // Closed subpaths add up: an inner square drawn the other way round
+        // is no hole.
+        let both = head(
+            &[
+                -254_000, -127_000, 0, -127_000, 0, 127_000, -254_000, 127_000, -254_000, -127_000,
+                -190_500, -63_500, -190_500, 63_500, -63_500, 63_500, -63_500, -63_500, -190_500,
+                -63_500,
+            ],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48, 0x0c, 0x44, 0x44, 0x44, 0x48],
+        );
+        let Arrowhead::Custom { path, .. } = &both else {
+            panic!("{both:?}");
+        };
+        assert!(near(path.area(), 0.25 + 0.0625), "{}", path.area());
+        // At the start of a line the head is flipped across the line, so
+        // the part above the line stays above it once turned round.
+        let b = bounds(&start_head(above));
+        assert!(near(b.y0, -1.0) && near(b.y1, -0.25), "{b:?}");
+        assert_eq!(start_head(Arrowhead::Circle), Arrowhead::Circle);
+        // Unreadable heads give none.
+        assert_eq!(head(&[0, 0], &[0x04]), Arrowhead::None);
     }
 
     #[test]

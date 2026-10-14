@@ -535,14 +535,22 @@ pub enum LineJoin {
     Bevel,
 }
 
+/// The preset arrowhead size in outline widths (the head-space unit; see
+/// [`Arrowhead`]). Hairlines count as 0.25 mm and the size is at least 1 mm.
+pub const HEAD_SIZE_PER_WIDTH: f64 = 4.0;
+
 /// Arrowheads at the ends of open curves.
 ///
 /// Presets are drawn by [`arrowhead_paths`]; a `Custom` head carries its own
-/// outline in a normalised head space: the bounding box is exactly one unit
-/// tall and centred on y = 0, the tip (largest x) sits at x = 0 and the
-/// shape extends towards negative x, i.e. back along the curve. At draw
-/// time the unit is the preset size (four outline widths, at least 1 mm),
-/// x follows the curve direction at the end point and y its left normal.
+/// outline in a normalised head space: the bounding box is centred on
+/// y = 0, the tip (largest x) sits at x = 0 and the shape extends towards
+/// negative x, i.e. back along the curve, exactly one unit tall
+/// ([`Arrowhead::from_shape_path`]). Heads an importer reads with their own
+/// placement and size ([`Arrowhead::from_placed_path`]) keep both instead:
+/// the origin is the curve's end point and the head may reach past it. At
+/// draw time the unit is the preset size ([`HEAD_SIZE_PER_WIDTH`] outline
+/// widths, at least 1 mm), x follows the curve direction at the end point
+/// and y its left normal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Arrowhead {
@@ -618,6 +626,40 @@ impl Arrowhead {
             Affine::scale(scale) * Affine::translate((-b.x1, -center_y)) * path.clone();
         Arrowhead::Custom {
             path: normalised,
+            name: name.into(),
+        }
+    }
+
+    /// Build a custom head from an imported outline that is already placed
+    /// the way the file draws it: the curve's end point at the origin, the
+    /// curve coming in from -x, and `units_per_width` outline units making
+    /// one outline width. The placement and size are kept as they are (no
+    /// normalising), so the head is drawn as the file sizes it, whatever
+    /// part of it lies ahead of or beside the end point. A head larger than
+    /// 100 outline widths is scaled down to that. An empty or degenerate
+    /// outline, or a unit that is not a finite positive number, gives
+    /// `Arrowhead::None`.
+    pub fn from_placed_path(
+        path: &crate::geometry::BezPath,
+        name: impl Into<String>,
+        units_per_width: f64,
+    ) -> Arrowhead {
+        use crate::geometry::Shape as _;
+        if path.elements().is_empty() || !(units_per_width.is_finite() && units_per_width > 0.0) {
+            return Arrowhead::None;
+        }
+        let b = path.bounding_box();
+        if !(b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+            return Arrowhead::None;
+        }
+        let extent = b.width().max(b.height()) / units_per_width;
+        if extent <= 1e-9 {
+            return Arrowhead::None;
+        }
+        // Head space: one unit is HEAD_SIZE_PER_WIDTH outline widths.
+        let scale = 1.0 / (units_per_width * HEAD_SIZE_PER_WIDTH) * (100.0 / extent).min(1.0);
+        Arrowhead::Custom {
+            path: Affine::scale(scale) * path.clone(),
             name: name.into(),
         }
     }
@@ -861,7 +903,7 @@ pub fn arrowhead_paths(
     } else {
         stroke.width
     };
-    let size = (w * 4.0).max(1.0);
+    let size = (w * HEAD_SIZE_PER_WIDTH).max(1.0);
     let mut pts: Vec<Point> = Vec::new();
     let mut closed = false;
     kurbo::flatten(path.elements().iter().copied(), 0.05, &mut |el| match el {
@@ -987,6 +1029,51 @@ mod arrowhead_tests {
         );
         assert!(b.x1.abs() < 1e-9, "tip must be at x = 0: {b:?}");
         assert!((b.x0 + 1.0).abs() < 1e-9, "20 wide over 20 tall: {b:?}");
+    }
+
+    #[test]
+    fn placed_head_keeps_its_size_and_place() {
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        // 20 wide and 20 tall, tip at (10, 0): with 10 units per outline
+        // width it is two widths tall and reaches one width past the end
+        // point.
+        let mut placed = BezPath::new();
+        placed.move_to((-10.0, -10.0));
+        placed.line_to((10.0, 0.0));
+        placed.line_to((-10.0, 10.0));
+        placed.close_path();
+        let head = Arrowhead::from_placed_path(&placed, "Tri", 10.0);
+        assert_eq!(head.name(), "Tri");
+        for width in [1.0, 0.5, 2.0] {
+            let stroke = Stroke {
+                end_arrow: head.clone(),
+                ..Stroke::new(Color::BLACK, width)
+            };
+            let heads = arrowhead_paths(&line, &stroke);
+            assert_eq!(heads.len(), 1);
+            let b = heads[0].bounding_box();
+            assert!((b.height() - 2.0 * width).abs() < 1e-9, "{width}: {b:?}");
+            assert!((b.x1 - (50.0 + width)).abs() < 1e-9, "{width}: {b:?}");
+            assert!((b.y0 + width).abs() < 1e-9, "{width}: {b:?}");
+        }
+        // Huge heads are capped at 100 outline widths.
+        let Arrowhead::Custom { path, .. } = Arrowhead::from_placed_path(&triangle(), "Tri", 1e-6)
+        else {
+            panic!("expected a custom head");
+        };
+        assert!((path.bounding_box().height() - 100.0 / HEAD_SIZE_PER_WIDTH).abs() < 1e-9);
+        for bad in [0.0, -3.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                Arrowhead::from_placed_path(&triangle(), "Tri", bad),
+                Arrowhead::None
+            );
+        }
+        assert_eq!(
+            Arrowhead::from_placed_path(&BezPath::new(), "empty", 5.0),
+            Arrowhead::None
+        );
     }
 
     #[test]

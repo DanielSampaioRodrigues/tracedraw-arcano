@@ -39,7 +39,7 @@ header bytes, the data; 0xff after the last field). Confirmed.
 | `rdot` | dash pattern: a u16 count, then the lengths in pen widths. Confirmed. |
 | `rotl` | outline: line type, screen, colour, arrowhead pair, pen and dash pattern (u16 each). Confirmed. |
 | `rota` | arrowhead pairs: a u16 count, then start and end arrowheads (u16 each, 1-based in `rarw`, 0 for none). Confirmed. |
-| `rarw` | arrowheads, field lists one after the other without a count: field 1 is a u16 point count, the points (i32 x, y), one node byte each and a u32 (how far the line is pulled back, not used). The tip points to +x. Confirmed; the size relative to the outline width is assumed (heads come out smaller than the previews show). |
+| `rarw` | arrowheads, field lists one after the other without a count: field 1 is a u16 point count, the points (i32 x, y), one node byte each and a u32 (how far the line is pulled back, not used). The line ends at the origin and comes in from -x; heads keep that placement (circles centred on the end point, hooks above or below the line). 127 000 units are one outline width. Closed subpaths are filled, each on its own (an inner one is no hole); open subpaths are lines one outline width wide. At the start of a line the head is mirrored across the line, not turned round. Confirmed against the preview of the one public sample that has heads; the pull back is not used. |
 
 ## `page`: instructions
 

@@ -9,6 +9,9 @@ full, row-by-row status.
 - Window > New Window: another window of the same drawing, "name:1" and
   "name:2", each with its own view and selection; edits, undo and saving
   are shared, and closing one window keeps the drawing open in the other.
+- CMX import: arrowheads come in at the size and place the file gives
+  them, open heads as lines and start heads the right way up, as the
+  files' previews show.
 - Shape tool: a node's type is kept with the curve once chosen, so C and S
   switch it both ways and a cusp node with aligned handles moves its
   handles apart.

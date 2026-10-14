@@ -12,8 +12,10 @@ File > Open and File > Import read `.cmx` exchange files; so does
 - Uniform fills, and fountain fills (linear, radial, conical, square)
   with their colours, angle, centre and edge pad.
 - Outlines: colour, width, caps, join, behind fill, scaling with the
-  object, dash patterns, and arrowheads (as custom heads, or the preset
-  heads they match).
+  object, dash patterns, and arrowheads as custom heads, at the size and
+  place the file gives them (127 000 head units to one outline width;
+  open parts drawn as lines one outline width wide; start heads mirrored
+  across the line). The lines are not pulled back under their heads.
 - Embedded 24-bit images, with their placement and crop.
 - Clips.
 
@@ -26,11 +28,15 @@ report; opening never fails on it.
 ## Checks
 
 - `cmx::tests` in `crates/cdr`: pages, layers and shapes; outlines,
-  dashes and arrowheads; fountain fills; images after a jump; what is
+  dashes and arrowheads; arrowheads keep their size and placement, open
+  parts become lines, closed parts add up and start heads are mirrored;
+  fountain fills; images after a jump; what is
   not read is reported; long instructions; other files and versions;
   broken files never panic.
 - Public sample files compared with the previews they carry: most render
-  within an RMS difference of 0.03 to 0.07; the outlines sample (0.23,
-  arrowheads smaller than in the preview), a brushes sample (0.16,
+  within an RMS difference of 0.03 to 0.07; the outlines sample (0.23;
+  its arrowheads now match the preview in size and place, 0.096 against
+  0.119 before once the comparison allows the previews' one or two pixel
+  offset; lines not pulled back under the heads), a brushes sample (0.16,
   unread fill types), a text sample (0.16, text not read) and one more
   sample (0.22) are the known gaps.
