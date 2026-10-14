@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fountain fills: Import Gradient reads a `.ggr` gradient file into the
+  stops (#4).
 - Menus, lists and dialogs open at once, without fading in, and a
   folder called `tracedraw-settings` next to the program makes a
   portable copy that keeps its preferences there (#4).

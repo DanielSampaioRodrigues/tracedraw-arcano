@@ -65,3 +65,13 @@ Bounding box `b` of the object in page space, centre `c`.
   makes the angle 90 degrees.
 - Given a radial fill, dragging the centre node to (30, 15) on that
   rectangle sets the offset to (0.5, 0.5); beyond the edge it clamps to 1.
+
+## Importing a gradient
+
+The fountain fill editor's Import Gradient button reads a `.ggr` file
+(`tracedraw_io::ggr`) and replaces the stops with it. Plain linear
+segments with their middle halfway give their two ends; segments with
+another blending (curved, sine, sphere, step), a middle elsewhere or an
+HSV colouring are sampled into 17 stops. End colours given as the
+foreground or background colour read as black and white. Transparency
+in the file is not kept (fountain stops are opaque).

@@ -983,6 +983,28 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             }
         });
     }
+    // A `.ggr` gradient file replaces the stops.
+    if ui
+        .button(tr("docker.import_gradient"))
+        .on_hover_text(tr("docker.import_gradient_tip"))
+        .clicked()
+    {
+        crate::files::Dialog::new()
+            .add_filter("GIMP gradient", &["ggr"])
+            .pick_into("fountain_ggr");
+    }
+    if let Some(path) = crate::files::take_picked("fountain_ggr") {
+        match crate::files::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| tracedraw_io::ggr::read(&text))
+        {
+            Ok(g) => {
+                f.stops = g.stops;
+                changed = true;
+            }
+            Err(e) => log::warn!("{}: {e}", path.display()),
+        }
+    }
     if let Some(i) = insert {
         let next = f.stops.get(i + 1).map(|s| s.pos).unwrap_or(1.0);
         let pos = (f.stops[i].pos + next) / 2.0;

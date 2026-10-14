@@ -6,6 +6,7 @@ pub mod dxf;
 pub mod emf;
 pub mod eps;
 pub mod eps_import;
+pub mod ggr;
 pub mod html;
 pub mod pdf;
 pub mod pdf_crypt;
