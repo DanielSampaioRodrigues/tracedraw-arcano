@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 187, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 188, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
