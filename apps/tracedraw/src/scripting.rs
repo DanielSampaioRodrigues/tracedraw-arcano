@@ -3,7 +3,7 @@
 //! `ActivePage`, `ActiveLayer`, `Shapes`, `Shape` with `Fill`, `Outline`,
 //! `Move`, `Rotate`, `Stretch`, `Delete`, `Duplicate`, `ConvertToCurves`,
 //! `Curve` with `SubPaths` and `Nodes` (position, type, move, delete,
-//! add), `Effects` (count, type, remove, clear),
+//! add), `Effects` (count, type, add, remove, clear),
 //! plus `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`,
 //! `CreateCurve`, `CreatePath` (SVG path data), `CreatePolygon`. Recorded
 //! macros are plain scripts.
@@ -131,6 +131,9 @@ class Effects {
   Item(i) { const t = this.types[i-1]; return t === undefined ? null : { Type: t, Index: i }; }
   Remove(i) { __call('remove_effects', {id:this.id, index:i-1}); }
   Clear() { __call('remove_effects', {id:this.id}); }
+  Add(effect) { __call('add_effect', {id:this.id, effect:effect}); return this.Count; }
+  AddExtrude(dx, dy) { return this.Add({effect:'extrude', depth:{x:dx, y:dy}, vanishing:null, amount:0, shade_from:null, shade_to:null, light_angle:135, light_intensity:50, bevel:0, kind:'back_parallel'}); }
+  AddBlockShadow(dx, dy, color) { return this.Add({effect:'blockshadow', offset:{x:dx, y:dy}, color:(color || Color.RGB(0,0,0)).v, gap:0}); }
 }
 class Node {
   constructor(id, index) { this.id = id; this.index = index; }
@@ -901,6 +904,19 @@ impl HostInner {
                     .collect();
                 json!({"types": types})
             }
+            "add_effect" => {
+                let id = id_arg(a, "id")?;
+                let effect: tracedraw_core::live::Effect =
+                    serde_json::from_value(a.get("effect").cloned().unwrap_or(Value::Null))
+                        .map_err(|e| format!("not an effect: {e}"))?;
+                let mut effects = self.shape(id)?.effects;
+                effects.push(effect);
+                self.run(Command::SetEffects {
+                    shape: ShapeId(id),
+                    effects,
+                })?;
+                json!({})
+            }
             "remove_effects" => {
                 let id = id_arg(a, "id")?;
                 let mut effects = self.shape(id)?.effects;
@@ -1491,7 +1507,20 @@ mod tests {
         )
         .expect("runs");
         assert_eq!(out, vec!["2 blockshadow", "1", "0", "none"]);
-        assert!(app.doc().find_shape(id).expect("shape").effects.is_empty());
+        let out = run(
+            &mut app,
+            r#"
+            const r = ActiveSelection.Item(1);
+            r.Effects.AddExtrude(5, 5);
+            r.Effects.AddBlockShadow(1, -1, Color.RGB(255, 0, 0));
+            print(r.Effects.Count, r.Effects.Item(1).Type, r.Effects.Item(2).Type);
+            try { r.Effects.Add({effect: 'nothing'}); } catch (e) { print('refused'); }
+            print(r.Effects.Count);
+            "#,
+        )
+        .expect("runs");
+        assert_eq!(out, vec!["2 extrude blockshadow", "refused", "2"]);
+        assert_eq!(app.doc().find_shape(id).expect("shape").effects.len(), 2);
     }
 
     #[test]

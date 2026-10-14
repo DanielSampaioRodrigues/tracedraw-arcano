@@ -12,6 +12,8 @@ full, row-by-row status.
 - Shelf: Add Colours keeps a drawing's document palette and colour
   styles as an item, which placing adds to another drawing.
 - A user guide in `docs/guide/`.
+- Scripts: `Shape.Effects.Add` adds any effect in its `.tdraw` form,
+  with `AddExtrude` and `AddBlockShadow` as shortcuts.
 - Help > Updates checks for a newer release and offers its download;
   the same check runs once a day at start (Options > Global > General).
 - Spot colours: named inks in the Colour panel, applied at a tint,
