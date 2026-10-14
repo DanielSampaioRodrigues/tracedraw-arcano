@@ -2601,6 +2601,7 @@ status.click_blend_path = "انقر على المنحنى لاستخدامه ك�
 status.click_frame = "انقر على الكائن لاستخدامه كإطار"
 status.click_reference_object = "انقر على الكائن المرجعي"
 status.click_source_object = "انقر على الكائن المطلوب النسخ منه"
+status.click_text_path = "انقر على المسار الذي سيُحاذى النص معه (النقر بالزر الأيمن يلغي)"
 status.clip_frame_cancelled = "تم إلغاء القص داخل الإطار"
 status.clip_frame_select_contents = "حدد المحتوى أولاً، ثم اختر الإطار"
 status.cloned_effect = "تم استنساخ التأثير: يتبع تأثير الكائن المصدر حتى يتم تحرير النسخة"

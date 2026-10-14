@@ -1011,6 +1011,12 @@ fn text_page(app: &mut App, ui: &mut Ui) {
         &mut app.show_non_printing,
         tr("menu.text.show_non_printing"),
     );
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(tr("menu.text.paragraph_text_frame")).strong());
+    ui.checkbox(
+        &mut app.settings.show_text_frames,
+        tr("menu.text.show_text_frames"),
+    );
 }
 
 // ----- Customization -----------------------------------------------------

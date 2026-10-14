@@ -166,18 +166,46 @@ impl Checker {
     }
 
     /// Start a check unless one is running; `ctx` gets a frame when it
-    /// ends. Nothing happens in a browser.
+    /// ends. In a browser the check is a fetch of the same address.
     pub fn start(&self, ctx: Option<egui::Context>) {
+        if let Ok(mut s) = self.state.lock() {
+            if *s == UpdateState::Checking {
+                return;
+            }
+            *s = UpdateState::Checking;
+        }
         #[cfg(target_arch = "wasm32")]
-        let _ = ctx;
+        {
+            let state = self.state.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let req = crate::net::HttpRequest {
+                    method: "GET",
+                    url: LATEST_URL.into(),
+                    headers: vec![("Accept".into(), "application/vnd.github+json".into())],
+                    body: String::new(),
+                };
+                let next = match crate::net::send(req).await {
+                    Ok(r) if r.status == 200 => {
+                        match parse_latest(&r.body, env!("CARGO_PKG_VERSION"), "web", "wasm32") {
+                            Ok(Some(r)) => UpdateState::Available(r),
+                            Ok(None) => UpdateState::Latest,
+                            Err(e) => UpdateState::Failed(e),
+                        }
+                    }
+                    Ok(r) => UpdateState::Failed(format!("GitHub answered {}", r.status)),
+                    Err(e) => UpdateState::Failed(e),
+                };
+                if let Ok(mut s) = state.lock() {
+                    *s = next;
+                }
+                if let Some(ctx) = ctx {
+                    ctx.request_repaint();
+                }
+                crate::web::request_repaint();
+            });
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(mut s) = self.state.lock() {
-                if *s == UpdateState::Checking {
-                    return;
-                }
-                *s = UpdateState::Checking;
-            }
             let state = self.state.clone();
             std::thread::spawn(move || {
                 let result = fetch().and_then(|json| {

@@ -503,6 +503,8 @@ pub enum Dialog {
     TextBullets,
     TextDropCap,
     TextStatistics,
+    /// Text > Change Case: the case picked, applied on OK.
+    ChangeCase(crate::ops2::CaseMode),
     SpellCheck(SpellState),
     Thesaurus(ThesaurusState),
     Encode(EncodeState),
@@ -1042,9 +1044,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                     ctx.request_repaint_after(std::time::Duration::from_millis(200));
                     if crate::ui::chrome::message_box(
                         ctx,
-                        crate::ui::chrome::MessageIcon::Info,
+                        crate::ui::chrome::MessageIcon::Busy,
                         &tr("updates.checking"),
-                        &[&close_label],
+                        &[&tr("dialog.cancel")],
                     )
                     .is_some()
                     {
@@ -1538,6 +1540,28 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Effect(st) => crate::ui::effect_dialog::effect_dialog(app, ctx, st, &mut close),
         Dialog::TextTabs | Dialog::TextColumns | Dialog::TextBullets | Dialog::TextDropCap => {
             paragraph_dialog(app, ctx, &dialog, &mut close)
+        }
+        Dialog::ChangeCase(mode) => {
+            let title = tr("menu.text.change_case");
+            let title = title.trim_end_matches(['.', '\u{2026}']).to_string();
+            let mut apply = false;
+            window(ctx, title).show(ctx, |ui| {
+                use crate::ops2::CaseMode;
+                for (key, m) in [
+                    ("menu.text.case_sentence", CaseMode::Sentence),
+                    ("menu.text.case_lower", CaseMode::Lower),
+                    ("menu.text.case_upper", CaseMode::Upper),
+                    ("menu.text.case_title", CaseMode::Title),
+                    ("menu.text.case_toggle", CaseMode::Toggle),
+                ] {
+                    ui.radio_value(mode, m, tr(key));
+                }
+                ui.add_space(8.0);
+                apply = ok_cancel(ui, &mut close);
+            });
+            if apply {
+                app.change_case(*mode);
+            }
         }
         Dialog::TextStatistics => {
             window(ctx, tr("dialog.text_statistics")).show(ctx, |ui| {
@@ -2812,19 +2836,16 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
         Dialog::TextBullets => tr("menu.text.bullets"),
         _ => tr("menu.text.drop_cap"),
     };
-    let Some(s) = app
+    // The selected text's paragraph, or with no text selected the
+    // defaults new paragraph text gets.
+    let target = app
         .selected_shapes()
         .into_iter()
-        .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
-    else {
-        *close = true;
-        return;
-    };
-    let ShapeKind::Text { para, .. } = &s.kind else {
-        *close = true;
-        return;
-    };
-    let mut p = para.clone();
+        .find_map(|s| match &s.kind {
+            ShapeKind::Text { para, .. } => Some((Some(s.id), para.clone())),
+            _ => None,
+        });
+    let (target, mut p) = target.unwrap_or_else(|| (None, app.doc().defaults.paragraph.clone()));
     let mut changed = false;
     let u = app.units;
     window(ctx, title).show(ctx, |ui| {
@@ -2897,7 +2918,10 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
         }
     });
     if changed {
-        app.set_paragraph_style(s.id, p);
+        match target {
+            Some(id) => app.set_paragraph_style(id, p),
+            None => app.set_default_paragraph(p),
+        }
     }
 }
 
@@ -3854,6 +3878,7 @@ mod tests {
             Dialog::TextBullets,
             Dialog::TextDropCap,
             Dialog::TextStatistics,
+            Dialog::ChangeCase(crate::ops2::CaseMode::Sentence),
             Dialog::SpellCheck(SpellState::default()),
             Dialog::Thesaurus(ThesaurusState::default()),
             Dialog::Encode(EncodeState::default()),

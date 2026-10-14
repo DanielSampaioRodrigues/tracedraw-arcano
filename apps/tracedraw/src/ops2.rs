@@ -1545,6 +1545,73 @@ impl App {
         }
     }
 
+    /// Text > Fit Text to Path from the menu: a text and a path selected
+    /// go together at once; otherwise the next click picks the path.
+    pub fn begin_fit_text_to_path(&mut self) {
+        let shapes = self.selected_shapes();
+        let texts = shapes
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
+            .count();
+        if texts > 0 && texts < shapes.len() {
+            self.fit_text_to_path();
+            return;
+        }
+        self.pending_text_path = true;
+        self.status = crate::i18n::tr("status.click_text_path");
+    }
+
+    /// The path picked for Fit Text to Path: the selected text goes on it,
+    /// or with no text selected a new empty text starts on it, ready to
+    /// type.
+    pub fn fit_text_to_picked_path(&mut self, path_id: ShapeId) {
+        let Ok((_, curve)) = self.doc().shape(path_id) else {
+            return;
+        };
+        if matches!(curve.kind, ShapeKind::Text { .. }) {
+            self.status = crate::i18n::tr("status.click_text_path");
+            self.pending_text_path = true;
+            return;
+        }
+        let path = curve.page_path();
+        let text = self
+            .selected_shapes()
+            .iter()
+            .find(|s| s.id != path_id && matches!(s.kind, ShapeKind::Text { .. }))
+            .map(|s| s.id);
+        if let Some(t) = text {
+            self.selection = vec![t, path_id];
+            self.fit_text_to_path();
+            return;
+        }
+        self.finish_text();
+        let span = TextSpan {
+            bold: self.text_bold,
+            italic: self.text_italic,
+            ..TextSpan::new("", self.text_font.clone(), self.text_size_pt)
+        };
+        let para = tracedraw_core::ParagraphStyle {
+            hyphenate: self.text_hyphenation,
+            ..Default::default()
+        };
+        if let Some(id) = self.new_shape(ShapeKind::Text {
+            spans: vec![span],
+            origin: Point::ZERO,
+            frame: None,
+            align: self.text_align,
+            para,
+            on_path: Some(tracedraw_core::TextOnPath {
+                path,
+                offset: 0.0,
+                distance: 0.0,
+                mirror: false,
+            }),
+        }) {
+            self.text_edit = Some(crate::app::TextEdit::at_end(id, 0));
+            self.select(vec![id]);
+        }
+    }
+
     /// Text > Fit Text to Path: select a text and a curve.
     pub fn fit_text_to_path(&mut self) {
         let shapes = self.selected_shapes();
@@ -2226,6 +2293,55 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fit_text_to_path_waits_for_a_path_and_starts_text_on_it() {
+        let mut app = App::headless();
+        let mut line = tracedraw_core::geometry::BezPath::new();
+        line.move_to((10.0, 50.0));
+        line.line_to((90.0, 50.0));
+        let path = app
+            .new_shape(ShapeKind::Path {
+                path: line,
+                closed: false,
+            })
+            .expect("path");
+        app.selection.clear();
+        app.begin_fit_text_to_path();
+        assert!(app.pending_text_path);
+        app.fit_text_to_picked_path(path);
+        let id = app.selection[0];
+        let on_path = app
+            .doc()
+            .shape(id)
+            .ok()
+            .and_then(|(_, s)| match &s.kind {
+                ShapeKind::Text { on_path, .. } => on_path.clone(),
+                _ => None,
+            })
+            .expect("text on the path");
+        assert_eq!(on_path.path.elements().len(), 2);
+        assert!(app.text_edit.is_some());
+        // A selected text and path go together at once.
+        app.insert_text("abc");
+        app.finish_text();
+        let text = id;
+        app.straighten_text();
+        app.selection = vec![text, path];
+        app.pending_text_path = false;
+        app.begin_fit_text_to_path();
+        assert!(!app.pending_text_path);
+        let fitted = app.doc().shape(text).ok().is_some_and(|(_, s)| {
+            matches!(
+                &s.kind,
+                ShapeKind::Text {
+                    on_path: Some(_),
+                    ..
+                }
+            )
+        });
+        assert!(fitted);
+    }
 
     #[test]
     fn case_modes() {

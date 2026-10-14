@@ -2601,6 +2601,7 @@ status.click_blend_path = "Cliquez sur la courbe à utiliser comme trajet du dé
 status.click_frame = "Cliquez sur l'objet à utiliser comme cadre"
 status.click_reference_object = "Cliquez sur l'objet de référence"
 status.click_source_object = "Cliquez sur l'objet à partir duquel copier"
+status.click_text_path = "Cliquez sur le tracé auquel adapter le texte (clic droit pour annuler)"
 status.clip_frame_cancelled = "Découpe dans un cadre annulée"
 status.clip_frame_select_contents = "Sélectionnez d'abord le contenu, puis choisissez le cadre"
 status.cloned_effect = "Effet cloné : il suit l'effet de l'objet source jusqu'à ce que le clone soit modifié"

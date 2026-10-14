@@ -9,6 +9,15 @@ full, row-by-row status.
 - Effects menu: the groups in alphabetical order, Picture Mosaic before
   Vector Mosaic, and Effects > Blur > Smart Blur (smooths flat areas,
   keeps edges).
+- Text, Bitmaps and Window menus: pictures on the rows; Tabs, Columns,
+  Bullets and Drop Cap work with no text selected and set what new
+  paragraph text gets; Fit Text to Path with no path selected waits for
+  a click on the path (and starts a new text on it when no text is
+  selected); Change Case is a dialog; Show Text Frames moved to
+  Options > Text; the trace submenus are greyed without a bitmap; the
+  drawing in front has a dot in the Window menu.
+- Help > Updates checks in the browser too (it opened the releases
+  page), and the check shows a turning ring with Cancel.
 - Bitmap effects (Effects > Blur, Texture, Creative and the others) work
   on vector objects: the object stays editable and is drawn with its
   effects; Flatten Effects makes it a bitmap.

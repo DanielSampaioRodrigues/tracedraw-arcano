@@ -199,6 +199,9 @@ pub enum MessageIcon {
     Question,
     /// Something to know: an "i".
     Info,
+    /// Work going on (checking for updates): a turning ring of dashes,
+    /// the text in bold.
+    Busy,
 }
 
 /// Paint a 32 px message icon at `rect`: a blue disc with a white
@@ -210,6 +213,24 @@ fn paint_message_icon(ui: &Ui, rect: Rect, icon: MessageIcon) {
     let mark = match icon {
         MessageIcon::Question => "?",
         MessageIcon::Info => "i",
+        MessageIcon::Busy => {
+            // Eight dashes; the brightest one goes round once a second.
+            let t = ui.input(|i| i.time);
+            let lead = (t * 8.0) as usize % 8;
+            for k in 0..8usize {
+                let a = k as f32 * std::f32::consts::TAU / 8.0;
+                let d = Vec2::new(a.cos(), a.sin());
+                let age = (lead + 8 - k) % 8;
+                let grey = (40 + age * 24).min(220) as u8;
+                p.line_segment(
+                    [c + d * r * 0.45, c + d * r * 0.8],
+                    Stroke::new(2.0, Color32::from_gray(grey)),
+                );
+            }
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
+            return;
+        }
     };
     p.circle_filled(c, r, Color32::from_rgb(0x1F, 0x6F, 0xC5));
     p.circle_stroke(
@@ -362,7 +383,11 @@ fn message_box_with(
             ui.vertical(|ui| {
                 ui.add_space(6.0);
                 ui.set_max_width(380.0);
-                ui.add(egui::Label::new(egui::RichText::new(text).size(13.5)).wrap());
+                let mut rich = egui::RichText::new(text).size(13.5);
+                if icon == MessageIcon::Busy {
+                    rich = rich.strong();
+                }
+                ui.add(egui::Label::new(rich).wrap());
             });
         });
         if let Some((label, checked)) = check {

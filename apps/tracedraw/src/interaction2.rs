@@ -23,6 +23,7 @@ impl App {
             || self.pending_copy_envelope
             || self.pending_clone_effect.is_some()
             || self.pending_blend_path
+            || self.pending_text_path
             || self.pending_palette_sample;
         if !waiting {
             return false;
@@ -34,6 +35,7 @@ impl App {
             self.pending_copy_envelope = false;
             self.pending_clone_effect = None;
             self.pending_blend_path = false;
+            self.pending_text_path = false;
             self.pending_palette_sample = false;
             self.status = tr("status.cancelled");
             return true;
@@ -79,6 +81,12 @@ impl App {
             self.pending_blend_path = false;
             if let Some(t) = target {
                 self.set_blend_path(t);
+            }
+        } else if self.pending_text_path {
+            self.pending_text_path = false;
+            if let Some(t) = target {
+                self.fit_text_to_picked_path(t);
+                return true;
             }
         }
         self.status.clear();

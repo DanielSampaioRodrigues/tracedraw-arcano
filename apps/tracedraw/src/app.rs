@@ -992,6 +992,8 @@ pub struct App {
     pub color_docker: crate::ui::color_docker::ColorDockerState,
     pub lens_synced_to: Option<ShapeId>,
     pub pending_blend_path: bool,
+    /// Text > Fit Text to Path waits for a click on the path.
+    pub pending_text_path: bool,
     /// The document palette's eyedropper waits for a click on the drawing.
     pub pending_palette_sample: bool,
     pub envelope_keep_lines: bool,
@@ -1655,6 +1657,7 @@ impl App {
             color_docker: Default::default(),
             lens_synced_to: None,
             pending_blend_path: false,
+            pending_text_path: false,
             pending_palette_sample: false,
             envelope_keep_lines: false,
             media_mode: crate::media::MediaMode::Calligraphic,

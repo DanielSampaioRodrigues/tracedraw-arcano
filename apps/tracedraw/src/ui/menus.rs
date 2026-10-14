@@ -336,6 +336,35 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
         "menu.view.zoom_in" => Pic::ZoomIn,
         "menu.view.zoom_out" => Pic::ZoomOut,
         "menu.view.zoom_to_fit" => Pic::ZoomAll,
+        "menu.text.tabs" => Pic::Tabs,
+        "menu.text.columns" => Pic::Columns,
+        "menu.text.bullets" => Pic::Bullets,
+        "menu.text.drop_cap" => Pic::DropCap,
+        "menu.text.text_statistics" => Pic::TextStatistics,
+        "menu.text.edit_text" => Pic::EditText,
+        "menu.text.convert" => Pic::ConvertText,
+        "menu.text.fit_text_to_path" => Pic::FitTextToPath,
+        "menu.text.straighten_text" => Pic::StraightenText,
+        "menu.text.align_to_baseline" => Pic::AlignBaseline,
+        "menu.text.change_case" => Pic::ChangeCase,
+        "menu.text.encode" => Pic::Encode,
+        "menu.bitmaps.convert_to_bitmap" => Pic::ConvertToBitmap,
+        "menu.bitmaps.straighten_image" => Pic::StraightenImage,
+        "menu.bitmaps.edit_bitmap" => Pic::EditBitmap,
+        "menu.bitmaps.crop_bitmap" => Pic::CropBitmap,
+        "menu.bitmaps.resample" => Pic::Resample,
+        "menu.bitmaps.break_link" => Pic::BreakLink,
+        "menu.bitmaps.update_from_link" => Pic::UpdateLink,
+        "menu.bitmaps.quick_trace" => Pic::QuickTrace,
+        "menu.window.new_window" => Pic::NewWindow,
+        "menu.window.refresh_window" => Pic::RefreshWindow,
+        "menu.window.close_window" => Pic::CloseWindow,
+        "menu.window.close_all" => Pic::CloseAll,
+        "menu.window.cascade" => Pic::Cascade,
+        "menu.window.tile_horizontally" => Pic::TileHorizontally,
+        "menu.window.tile_vertically" => Pic::TileVertically,
+        "menu.window.combine_windows" => Pic::CombineWindows,
+        "menu.window.dock_window" => Pic::DockWindow,
         _ => return None,
     })
 }
@@ -387,6 +416,20 @@ fn todo_sub(ui: &mut Ui, key: &str) {
         return;
     }
     menu_row(ui, &tr(key), "", false, Mark::Submenu);
+}
+
+/// A submenu that is greyed and does not open while `enabled` is false;
+/// its items still count for shortcuts and the command list.
+pub(crate) fn sub_if<R>(ui: &mut Ui, key: &str, enabled: bool, add: impl FnOnce(&mut Ui) -> R) {
+    #[cfg(test)]
+    let replaying = replay::active();
+    #[cfg(not(test))]
+    let replaying = false;
+    if enabled || invoke::active() || replaying {
+        sub(ui, key, add);
+    } else {
+        menu_row(ui, &tr(key), "", false, Mark::Submenu);
+    }
 }
 
 /// A submenu row: the submenu opens beside it while it is hovered.
@@ -2136,7 +2179,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.quick_trace", "", has_bitmap) {
         app.quick_trace();
     }
-    sub(ui, "menu.bitmaps.centerline_trace", |ui| {
+    sub_if(ui, "menu.bitmaps.centerline_trace", has_bitmap, |ui| {
         for (key, preset) in [
             (
                 "menu.bitmaps.trace_technical",
@@ -2155,7 +2198,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    sub(ui, "menu.bitmaps.outline_trace", |ui| {
+    sub_if(ui, "menu.bitmaps.outline_trace", has_bitmap, |ui| {
         for (key, preset) in [
             ("menu.bitmaps.trace_line_art", crate::trace::Preset::LineArt),
             ("menu.bitmaps.trace_logo", crate::trace::Preset::Logo),
@@ -2199,16 +2242,16 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         .selected_shapes()
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Text { frame: Some(_), .. }));
-    if item(ui, "menu.text.tabs", "", is_para) {
+    if item(ui, "menu.text.tabs", "", true) {
         app.dialog = Dialog::TextTabs;
     }
-    if item(ui, "menu.text.columns", "", is_para) {
+    if item(ui, "menu.text.columns", "", true) {
         app.dialog = Dialog::TextColumns;
     }
-    if item(ui, "menu.text.bullets", "", is_para) {
+    if item(ui, "menu.text.bullets", "", true) {
         app.dialog = Dialog::TextBullets;
     }
-    if item(ui, "menu.text.drop_cap", "", is_para) {
+    if item(ui, "menu.text.drop_cap", "", true) {
         app.dialog = Dialog::TextDropCap;
     }
     if item(ui, "menu.text.text_statistics", "", true) {
@@ -2244,14 +2287,6 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.text.show_non_printing", "", app.show_non_printing) {
         app.show_non_printing = !app.show_non_printing;
     }
-    if check(
-        ui,
-        "menu.text.show_text_frames",
-        "",
-        app.settings.show_text_frames,
-    ) {
-        app.settings.show_text_frames = !app.settings.show_text_frames;
-    }
     sep(ui);
     sub(ui, "menu.text.paragraph_text_frame", |ui| {
         if item(ui, "menu.text.frame_fit_text", "", is_para) {
@@ -2266,13 +2301,10 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sep(ui);
-    if item(
-        ui,
-        "menu.text.fit_text_to_path",
-        "",
-        is_text && app.selection.len() == 2,
-    ) {
-        app.fit_text_to_path();
+    // With a text and a path selected they go together; otherwise the
+    // next click picks the path.
+    if item(ui, "menu.text.fit_text_to_path", "", app.has_document()) {
+        app.begin_fit_text_to_path();
     }
     // Shifted and rotated characters go back (the selected characters
     // while editing, the chosen character nodes with the Shape tool, else
@@ -2287,7 +2319,13 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         .text_shapes()
         .iter()
         .any(|s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.baseline_grid_mm > 0.0));
-    if check(ui, "menu.text.align_to_baseline_grid", "", on_grid) {
+    if mark_item_if(
+        ui,
+        "menu.text.align_to_baseline_grid",
+        "",
+        Mark::Check(on_grid),
+        is_para,
+    ) {
         app.toggle_baseline_grid();
     }
     sep(ui);
@@ -2312,19 +2350,9 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sep(ui);
-    sub(ui, "menu.text.change_case", |ui| {
-        for (key, mode) in [
-            ("menu.text.case_sentence", crate::ops2::CaseMode::Sentence),
-            ("menu.text.case_lower", crate::ops2::CaseMode::Lower),
-            ("menu.text.case_upper", crate::ops2::CaseMode::Upper),
-            ("menu.text.case_title", crate::ops2::CaseMode::Title),
-            ("menu.text.case_toggle", crate::ops2::CaseMode::Toggle),
-        ] {
-            if item(ui, key, "", is_text) {
-                app.change_case(mode);
-            }
-        }
-    });
+    if item(ui, "menu.text.change_case", "", is_text) {
+        app.dialog = Dialog::ChangeCase(crate::ops2::CaseMode::Sentence);
+    }
     if item(ui, "menu.text.make_web_compatible", "", is_text) {
         app.make_text_web_compatible();
     }
@@ -2715,14 +2743,14 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sep(ui);
-    if check(ui, "menu.window.welcome_screen", "", app.show_welcome) {
+    if radio(ui, "menu.window.welcome_screen", "", app.show_welcome) {
         app.show_welcome = true;
     }
-    // One entry per open drawing, numbered.
+    // One entry per open drawing; a dot marks the one in front.
     for i in 0..app.docs.len() {
-        let title = format!("{} {}", i + 1, app.document_tab_title(i));
+        let title = app.document_tab_title(i);
         let on = !app.show_welcome && i == app.active_doc;
-        if menu_row(ui, &title, "", true, Mark::Check(on)).0.clicked() {
+        if menu_row(ui, &title, "", true, Mark::Radio(on)).0.clicked() {
             ui.close();
             app.switch_document(i);
         }
@@ -2773,12 +2801,7 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     if item(ui, "menu.help.updates", "", true) {
-        if crate::files::WEB {
-            // The browser build is always the latest.
-            app.open_url(crate::updates::RELEASES_PAGE);
-        } else {
-            app.check_for_updates(Some(ui.ctx().clone()));
-        }
+        app.check_for_updates(Some(ui.ctx().clone()));
     }
     if item(ui, "menu.help.message_settings", "", true) {
         app.dialog = Dialog::Options;

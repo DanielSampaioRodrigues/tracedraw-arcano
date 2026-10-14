@@ -2601,6 +2601,7 @@ status.click_blend_path = "ブレンドパスとして使用する曲線をク�
 status.click_frame = "フレームとして使用するオブジェクトをクリックしてください"
 status.click_reference_object = "基準オブジェクトをクリックしてください"
 status.click_source_object = "コピー元のオブジェクトをクリックしてください"
+status.click_text_path = "テキストを沿わせるパスをクリックします (右クリックでキャンセル)"
 status.clip_frame_cancelled = "フレームへのクリップをキャンセルしました"
 status.clip_frame_select_contents = "先に内容を選択し、次にフレームを選択してください"
 status.cloned_effect = "効果を複製しました。複製を編集するまで元オブジェクトの効果に追従します"

@@ -2601,6 +2601,7 @@ status.click_blend_path = "Klikněte na křivku, kterou chcete použít jako ces
 status.click_frame = "Klikněte na objekt, který chcete použít jako rámeček"
 status.click_reference_object = "Klikněte na referenční objekt"
 status.click_source_object = "Klikněte na objekt, ze kterého chcete kopírovat"
+status.click_text_path = "Klikněte na cestu, ke které se má text přizpůsobit (pravé tlačítko zruší)"
 status.clip_frame_cancelled = "Oříznutí do rámečku zrušeno"
 status.clip_frame_select_contents = "Nejprve vyberte obsah, poté zvolte rámeček"
 status.cloned_effect = "Efekt naklonován: řídí se efektem zdrojového objektu, dokud klon neupravíte"

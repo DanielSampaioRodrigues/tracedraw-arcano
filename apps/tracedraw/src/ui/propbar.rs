@@ -128,6 +128,33 @@ pub enum Pic {
     EnvelopeClear,
     EnvelopeCopy,
     KeepLines,
+    // Menu rows (drawn by `menu_pics`).
+    Tabs,
+    Columns,
+    TextStatistics,
+    ConvertText,
+    FitTextToPath,
+    StraightenText,
+    AlignBaseline,
+    ChangeCase,
+    Encode,
+    ConvertToBitmap,
+    StraightenImage,
+    EditBitmap,
+    CropBitmap,
+    Resample,
+    BreakLink,
+    UpdateLink,
+    QuickTrace,
+    NewWindow,
+    RefreshWindow,
+    CloseWindow,
+    CloseAll,
+    Cascade,
+    TileHorizontally,
+    TileVertically,
+    CombineWindows,
+    DockWindow,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -196,6 +223,32 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
         | Pic::EnvelopeClear
         | Pic::EnvelopeCopy
         | Pic::KeepLines => crate::ui::envelope_ui::draw_envelope_pic(painter, r, pic, color),
+        Pic::Tabs
+        | Pic::Columns
+        | Pic::TextStatistics
+        | Pic::ConvertText
+        | Pic::FitTextToPath
+        | Pic::StraightenText
+        | Pic::AlignBaseline
+        | Pic::ChangeCase
+        | Pic::Encode
+        | Pic::ConvertToBitmap
+        | Pic::StraightenImage
+        | Pic::EditBitmap
+        | Pic::CropBitmap
+        | Pic::Resample
+        | Pic::BreakLink
+        | Pic::UpdateLink
+        | Pic::QuickTrace
+        | Pic::NewWindow
+        | Pic::RefreshWindow
+        | Pic::CloseWindow
+        | Pic::CloseAll
+        | Pic::Cascade
+        | Pic::TileHorizontally
+        | Pic::TileVertically
+        | Pic::CombineWindows
+        | Pic::DockWindow => crate::ui::menu_pics::draw(painter, r, pic, color),
         Pic::Width => {
             line((2.0, 3.0), (2.0, 13.0), thin);
             line((14.0, 3.0), (14.0, 13.0), thin);

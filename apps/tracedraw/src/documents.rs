@@ -242,6 +242,7 @@ impl App {
         self.envelope_drag = None;
         self.pending_clone_effect = None;
         self.pending_blend_path = false;
+        self.pending_text_path = false;
         self.anchor_sel = None;
         self.effect_node_drag = None;
         self.selected_effect_node = None;

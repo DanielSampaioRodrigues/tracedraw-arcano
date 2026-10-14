@@ -2601,6 +2601,7 @@ status.click_blend_path = "ब्लेंड पाथ के रूप मे�
 status.click_frame = "फ़्रेम के रूप में उपयोग करने वाले ऑब्जेक्ट पर क्लिक करें"
 status.click_reference_object = "संदर्भ ऑब्जेक्ट पर क्लिक करें"
 status.click_source_object = "जिस ऑब्जेक्ट से कॉपी करना है उस पर क्लिक करें"
+status.click_text_path = "उस पथ पर क्लिक करें जिस पर टेक्स्ट फ़िट करना है (राइट-क्लिक रद्द करता है)"
 status.clip_frame_cancelled = "फ़्रेम में क्लिप रद्द किया गया"
 status.clip_frame_select_contents = "पहले सामग्री चुनें, फिर फ़्रेम चुनें"
 status.cloned_effect = "प्रभाव क्लोन हुआ: क्लोन संपादित होने तक यह स्रोत ऑब्जेक्ट के प्रभाव का अनुसरण करता है"

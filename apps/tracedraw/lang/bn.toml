@@ -2601,6 +2601,7 @@ status.click_blend_path = "ব্লেন্ড পাথ হিসেবে �
 status.click_frame = "ফ্রেম হিসেবে ব্যবহার করতে অবজেক্টে ক্লিক করুন"
 status.click_reference_object = "রেফারেন্স অবজেক্টে ক্লিক করুন"
 status.click_source_object = "যে অবজেক্ট থেকে কপি করবেন তাতে ক্লিক করুন"
+status.click_text_path = "যে পাথে টেক্সট বসাতে চান তাতে ক্লিক করুন (ডান-ক্লিকে বাতিল)"
 status.clip_frame_cancelled = "ফ্রেমে ক্লিপ বাতিল হয়েছে"
 status.clip_frame_select_contents = "প্রথমে বিষয়বস্তু নির্বাচন করুন, তারপর ফ্রেম বেছে নিন"
 status.cloned_effect = "ইফেক্ট ক্লোন হয়েছে: ক্লোন সম্পাদনা না করা পর্যন্ত এটি উৎস অবজেক্টের ইফেক্ট অনুসরণ করে"

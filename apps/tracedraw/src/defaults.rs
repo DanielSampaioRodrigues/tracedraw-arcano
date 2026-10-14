@@ -128,6 +128,15 @@ impl App {
         self.status = trf("status.defaults_changed", &[("kinds", &names.join(", "))]);
     }
 
+    /// The tabs, columns, bullets and drop cap new paragraph text gets.
+    pub fn set_default_paragraph(&mut self, para: tracedraw_core::ParagraphStyle) {
+        let mut defaults = self.doc().defaults.clone();
+        defaults.paragraph = para;
+        if defaults != self.doc().defaults {
+            self.run(Command::SetObjectDefaults { defaults });
+        }
+    }
+
     /// Change one kind's defaults at once (the Properties and Object
     /// Styles panels, patterns made into the default fill).
     pub fn set_default_properties(
@@ -209,5 +218,28 @@ mod tests {
         assert!(p.stroke.is_none());
         DefaultChange::OutlineColor(None).apply(&mut p);
         assert!(p.stroke.is_none());
+    }
+
+    #[test]
+    fn paragraph_layout_with_nothing_selected_reaches_new_paragraph_text() {
+        let mut app = App::headless();
+        app.selection.clear();
+        let mut para = app.doc().defaults.paragraph.clone();
+        para.columns = 2;
+        para.bullets = true;
+        app.set_default_paragraph(para);
+        app.start_text(
+            tracedraw_core::geometry::Point::new(10.0, 10.0),
+            Some(tracedraw_core::geometry::Size::new(50.0, 30.0)),
+        );
+        let id = app.selection[0];
+        let Ok((_, s)) = app.doc().shape(id) else {
+            panic!("no text");
+        };
+        let ShapeKind::Text { para, .. } = &s.kind else {
+            panic!("not text");
+        };
+        assert_eq!((para.columns, para.bullets), (2, true));
+        assert_eq!(para.hyphenate, app.text_hyphenation);
     }
 }

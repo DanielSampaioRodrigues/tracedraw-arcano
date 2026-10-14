@@ -2601,6 +2601,7 @@ status.click_blend_path = "Haga clic en la curva que será el trayecto de la mez
 status.click_frame = "Haga clic en el objeto que será el marco"
 status.click_reference_object = "Haga clic en el objeto de referencia"
 status.click_source_object = "Haga clic en el objeto de origen"
+status.click_text_path = "Haga clic en el trayecto al que se ajustará el texto (clic derecho cancela)"
 status.clip_frame_cancelled = "Recortar en marco cancelado"
 status.clip_frame_select_contents = "Seleccione primero el contenido y luego elija el marco"
 status.cloned_effect = "Efecto clonado: sigue al efecto del objeto de origen hasta que el clon se edite"

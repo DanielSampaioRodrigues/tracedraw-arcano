@@ -2601,6 +2601,7 @@ status.click_blend_path = "Karışım yolu olarak kullanılacak eğriye tıklay�
 status.click_frame = "Çerçeve olarak kullanılacak nesneye tıklayın"
 status.click_reference_object = "Referans nesneye tıklayın"
 status.click_source_object = "Kopyalanacak nesneye tıklayın"
+status.click_text_path = "Metnin yerleştirileceği yolu tıklatın (sağ tık iptal eder)"
 status.clip_frame_cancelled = "Çerçeveye Kırp iptal edildi"
 status.clip_frame_select_contents = "Önce içeriği seçin, ardından çerçeveyi seçin"
 status.cloned_effect = "Efekt klonlandı: klon düzenlenene kadar kaynak nesnenin efektini izler"

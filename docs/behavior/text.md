@@ -107,7 +107,7 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   bottom edge's middle when the text does not fit (the layout says so;
   kept per document revision). The lines that do not fit are not drawn,
   printed or exported; they show again when the frame grows, and flow
-  into the next frame of a linked chain. Text > Show Text Frames (on by default, kept between
+  into the next frame of a linked chain. Options > Text > Show Text Frames (on by default, kept between
   sessions) shows every frame; off, only the selected and edited ones
   show.
 - Scaling a paragraph text with the Pick tool's handles, or with the
@@ -360,3 +360,16 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   filler that fits (the larger one more), eight more words would
   overflow the larger one, the artistic text is unchanged, and one undo
   brings the old text back.
+
+## Text menu without a selection
+
+- Tabs, Columns, Bullets and Drop Cap with no text selected edit the
+  defaults new paragraph text gets (`Document::defaults.paragraph`,
+  saved with the drawing, one undo step); their spacing and indents are
+  left alone.
+- Fit Text to Path with a text and another object selected fits the text
+  at once. Otherwise the status bar asks for a click on the path (a
+  right-click cancels): the selected text goes on it, or with no text
+  selected an empty text starts on the path, ready to type.
+- Change Case opens a dialog with Sentence case, lowercase, UPPERCASE,
+  Title Case and tOGGLE cASE; it needs a text selected.

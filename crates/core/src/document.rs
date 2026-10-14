@@ -1894,6 +1894,10 @@ pub struct ObjectDefaults {
     pub graphic: DefaultProperties,
     pub artistic_text: DefaultProperties,
     pub paragraph_text: DefaultProperties,
+    /// Tabs, columns, bullets and drop caps new paragraph text gets
+    /// (Text > Tabs, Columns, Bullets, Drop Cap with no paragraph text
+    /// selected).
+    pub paragraph: ParagraphStyle,
 }
 
 /// One kind's defaults.
@@ -1948,6 +1952,7 @@ impl Default for ObjectDefaults {
             },
             artistic_text: text.clone(),
             paragraph_text: text,
+            paragraph: ParagraphStyle::default(),
         }
     }
 }
@@ -1974,6 +1979,28 @@ impl ObjectDefaults {
         let d = self.get(DefaultKind::of(&shape.kind));
         shape.fill = d.fill.clone();
         shape.stroke = d.stroke.clone();
+        if let ShapeKind::Text {
+            frame: Some(_),
+            para,
+            ..
+        } = &mut shape.kind
+        {
+            self.paragraph.apply_layout_to(para);
+        }
+    }
+}
+
+impl ParagraphStyle {
+    /// Copy the tabs, columns, bullets and drop cap of `self` to `to`,
+    /// leaving its spacing and indents.
+    pub fn apply_layout_to(&self, to: &mut ParagraphStyle) {
+        to.tabs = self.tabs.clone();
+        to.columns = self.columns;
+        to.gutter = self.gutter;
+        to.bullets = self.bullets;
+        to.bullet_char = self.bullet_char.clone();
+        to.bullet_indent = self.bullet_indent;
+        to.drop_cap_lines = self.drop_cap_lines;
     }
 }
 
