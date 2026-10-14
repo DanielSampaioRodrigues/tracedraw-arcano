@@ -2,6 +2,8 @@
 //! model: `Application.ActiveDocument`,
 //! `ActivePage`, `ActiveLayer`, `Shapes`, `Shape` with `Fill`, `Outline`,
 //! `Move`, `Rotate`, `Stretch`, `Delete`, `Duplicate`, `ConvertToCurves`,
+//! `Curve` with `SubPaths` and `Nodes` (position, type, move, delete,
+//! add), `Effects` (count, type, remove, clear),
 //! plus `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`,
 //! `CreateCurve`, `CreatePath` (SVG path data), `CreatePolygon`. Recorded
 //! macros are plain scripts.
@@ -119,7 +121,54 @@ class Shape {
   SetOpacity(pct) { __call('set_opacity', {id:this.id, opacity:1 - pct/100}); }
   get Transparency() { return __call('shape_info', {id:this.id}).transparency; }
   AddDropShadow(dx, dy, opacity) { __call('drop_shadow', {id:this.id, dx:dx, dy:dy, opacity:opacity===undefined?50:opacity}); }
-  get Curve() { const id = this.id; return { Nodes: { get Count() { return __call('node_count', {id:id}).count; } } }; }
+  get Curve() { return new Curve(this.id); }
+  get Effects() { return new Effects(this.id); }
+}
+class Effects {
+  constructor(id) { this.id = id; }
+  get types() { return __call('effects', {id:this.id}).types; }
+  get Count() { return this.types.length; }
+  Item(i) { const t = this.types[i-1]; return t === undefined ? null : { Type: t, Index: i }; }
+  Remove(i) { __call('remove_effects', {id:this.id, index:i-1}); }
+  Clear() { __call('remove_effects', {id:this.id}); }
+}
+class Node {
+  constructor(id, index) { this.id = id; this.index = index; }
+  get info() { return __call('curve_nodes', {id:this.id}).nodes.find(n => n.index === this.index); }
+  get PositionX() { return this.info.x; }
+  get PositionY() { return this.info.y; }
+  get Type() { return this.info.type; }
+  set Type(t) { __call('node_type', {id:this.id, index:this.index, type:t}); }
+  get SubPathIndex() { return this.info.subpath + 1; }
+  get IsEnding() { return this.info.ending; }
+  SetPosition(x, y) { __call('node_move', {id:this.id, index:this.index, x:x, y:y}); }
+  Move(dx, dy) { __call('node_move', {id:this.id, index:this.index, dx:dx, dy:dy}); }
+  Delete() { __call('node_delete', {id:this.id, index:this.index}); }
+  AddNodeBefore(t) { __call('node_add', {id:this.id, index:this.index, t:t===undefined?0.5:t}); }
+}
+class Nodes {
+  constructor(id, subpath) { this.id = id; this.subpath = subpath; }
+  get list() { const all = __call('curve_nodes', {id:this.id}).nodes; return this.subpath === null ? all : all.filter(n => n.subpath === this.subpath); }
+  get Count() { return this.list.length; }
+  Item(i) { const n = this.list[i-1]; return n ? new Node(this.id, n.index) : null; }
+  get First() { return this.Item(1); }
+  get Last() { return this.Item(this.Count); }
+  forEach(f) { this.list.map(n => new Node(this.id, n.index)).forEach(f); }
+}
+class SubPath {
+  constructor(id, i) { this.id = id; this.i = i; this.Nodes = new Nodes(id, i); }
+  get Closed() { return __call('curve_info', {id:this.id}).subpaths[this.i].closed; }
+  get Index() { return this.i + 1; }
+}
+class SubPaths {
+  constructor(id) { this.id = id; }
+  get Count() { return __call('curve_info', {id:this.id}).subpaths.length; }
+  Item(i) { return i >= 1 && i <= this.Count ? new SubPath(this.id, i-1) : null; }
+  forEach(f) { for (let i = 1; i <= this.Count; i++) f(this.Item(i)); }
+}
+class Curve {
+  constructor(id) { this.id = id; this.Nodes = new Nodes(id, null); this.SubPaths = new SubPaths(id); }
+  get Closed() { return __call('curve_info', {id:this.id}).subpaths.every(p => p.closed); }
 }
 class ShapeRange {
   constructor(ids) { this.ids = ids; }
@@ -729,6 +778,145 @@ impl HostInner {
                     Affine::translate((num(a, "dx", 0.0), num(a, "dy", 0.0))) * s.transform;
                 self.add(layer, s)?
             }
+            "curve_info" | "curve_nodes" => {
+                let s = self.shape(id_arg(a, "id")?)?;
+                // Other objects read as the curve they draw.
+                let owned = match &s.kind {
+                    ShapeKind::Path { path, .. } => path.clone(),
+                    _ => s.local_path(),
+                };
+                let path = &owned;
+                let els = path.elements();
+                // Subpath of each element, and whether each subpath closes.
+                let mut sub_of = Vec::with_capacity(els.len());
+                let mut closed: Vec<bool> = Vec::new();
+                for e in els {
+                    if matches!(e, kurbo::PathEl::MoveTo(_)) {
+                        closed.push(false);
+                    }
+                    let k = closed.len().saturating_sub(1);
+                    if matches!(e, kurbo::PathEl::ClosePath) {
+                        if let Some(c) = closed.last_mut() {
+                            *c = true;
+                        }
+                    }
+                    sub_of.push(k);
+                }
+                let nodes: Vec<Value> = tracedraw_core::nodes::nodes(path)
+                    .iter()
+                    .map(|n| {
+                        let p = s.transform * n.pos;
+                        let ty = match tracedraw_core::nodes::node_type_with(
+                            path,
+                            n.index,
+                            &s.node_types,
+                        ) {
+                            tracedraw_core::nodes::NodeType::Cusp => "cusp",
+                            tracedraw_core::nodes::NodeType::Smooth => "smooth",
+                            tracedraw_core::nodes::NodeType::Symmetrical => "symmetrical",
+                        };
+                        let sub = sub_of.get(n.index).copied().unwrap_or(0);
+                        let ending = !closed.get(sub).copied().unwrap_or(false)
+                            && (n.ctrl_in.is_none() || n.ctrl_out.is_none())
+                            && matches!(
+                                (els.get(n.index), els.get(n.index + 1)),
+                                (Some(kurbo::PathEl::MoveTo(_)), _)
+                                    | (_, None)
+                                    | (_, Some(kurbo::PathEl::MoveTo(_)))
+                            );
+                        json!({"index": n.index, "x": p.x, "y": p.y, "type": ty,
+                               "subpath": sub, "ending": ending})
+                    })
+                    .collect();
+                let subpaths: Vec<Value> = closed.iter().map(|c| json!({"closed": c})).collect();
+                json!({"nodes": nodes, "subpaths": subpaths})
+            }
+            "node_move" | "node_type" | "node_delete" | "node_add" => {
+                let id = id_arg(a, "id")?;
+                let s = self.shape(id)?;
+                let ShapeKind::Path { path, closed } = &s.kind else {
+                    return Err("not a curve: convert it to curves first".into());
+                };
+                let index = id_arg(a, "index")? as usize;
+                let node = tracedraw_core::nodes::nodes(path)
+                    .into_iter()
+                    .find(|n| n.index == index)
+                    .ok_or_else(|| format!("no node {index}"))?;
+                let mut types = s.node_types.clone();
+                let new_path = match method {
+                    "node_move" => {
+                        let at = s.transform * node.pos;
+                        let to = Point::new(num(a, "x", at.x), num(a, "y", at.y))
+                            + kurbo::Vec2::new(num(a, "dx", 0.0), num(a, "dy", 0.0));
+                        let inv = s.transform.inverse();
+                        let d = inv * to - inv * at;
+                        if !(d.x.is_finite() && d.y.is_finite()) {
+                            return Err("the curve cannot be moved there".into());
+                        }
+                        tracedraw_core::nodes::move_node(path, index, d)
+                    }
+                    "node_type" => {
+                        let ty = match a.get("type").and_then(|t| t.as_str()).unwrap_or("") {
+                            "cusp" => tracedraw_core::nodes::NodeType::Cusp,
+                            "smooth" => tracedraw_core::nodes::NodeType::Smooth,
+                            "symmetrical" => tracedraw_core::nodes::NodeType::Symmetrical,
+                            other => return Err(format!("no node type {other:?}")),
+                        };
+                        types.insert(index, ty);
+                        tracedraw_core::nodes::set_node_type(path, index, ty)
+                    }
+                    "node_delete" => tracedraw_core::nodes::delete_node(path, index),
+                    _ => tracedraw_core::nodes::add_node(
+                        path,
+                        index,
+                        num(a, "t", 0.5).clamp(0.0, 1.0),
+                    ),
+                };
+                self.run(Command::SetShapeKind {
+                    shape: ShapeId(id),
+                    kind: ShapeKind::Path {
+                        path: new_path,
+                        closed: *closed,
+                    },
+                })?;
+                if method == "node_type" {
+                    self.run(Command::SetNodeTypes {
+                        shape: ShapeId(id),
+                        types,
+                    })?;
+                }
+                json!({})
+            }
+            "effects" => {
+                let s = self.shape(id_arg(a, "id")?)?;
+                let types: Vec<Value> = s
+                    .effects
+                    .iter()
+                    .map(|e| {
+                        serde_json::to_value(e)
+                            .ok()
+                            .and_then(|v| v.get("effect").cloned())
+                            .unwrap_or(Value::Null)
+                    })
+                    .collect();
+                json!({"types": types})
+            }
+            "remove_effects" => {
+                let id = id_arg(a, "id")?;
+                let mut effects = self.shape(id)?.effects;
+                match a.get("index").and_then(|v| v.as_u64()) {
+                    Some(i) if (i as usize) < effects.len() => {
+                        effects.remove(i as usize);
+                    }
+                    Some(i) => return Err(format!("no effect {}", i + 1)),
+                    None => effects.clear(),
+                }
+                self.run(Command::SetEffects {
+                    shape: ShapeId(id),
+                    effects,
+                })?;
+                json!({})
+            }
             "convert_to_curves" => {
                 let id = id_arg(a, "id")?;
                 let s = self.shape(id)?;
@@ -1235,6 +1423,75 @@ mod tests {
         let mut a = app();
         let r = run(&mut a, "nosuchthing.foo();");
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn curves_show_their_subpaths_and_nodes() {
+        let mut app = app();
+        let out = run(
+            &mut app,
+            r#"
+            const c = ActiveLayer.CreateCurve([[0,0],[10,0],[10,10]], false);
+            print(c.Curve.SubPaths.Count, c.Curve.Nodes.Count, c.Curve.Closed);
+            const n = c.Curve.Nodes.Item(2);
+            print(n.PositionX, n.PositionY, n.Type, c.Curve.Nodes.First.IsEnding);
+            n.Move(5, 1);
+            print(c.Curve.Nodes.Item(2).PositionX, c.Curve.Nodes.Item(2).PositionY);
+            c.Curve.Nodes.Item(3).SetPosition(20, 20);
+            c.Curve.Nodes.Item(2).AddNodeBefore(0.5);
+            print(c.Curve.Nodes.Count);
+            c.Curve.Nodes.Item(2).Delete();
+            print(c.Curve.Nodes.Count, c.Curve.Nodes.Last.PositionX);
+            const r = ActiveLayer.CreateRectangle(0, 0, 10, 10);
+            print(r.Curve.Nodes.Count);
+            try { r.Curve.Nodes.Item(1).Move(1, 1); } catch (e) { print('err'); }
+            "#,
+        )
+        .expect("runs");
+        assert_eq!(out[0], "1 3 false");
+        assert_eq!(out[1], "10 0 cusp true");
+        assert_eq!(out[2], "15 1");
+        assert_eq!(out[3], "4");
+        assert_eq!(out[4], "3 20");
+        assert_eq!(out[5], "4");
+        assert_eq!(out[6], "err");
+    }
+
+    #[test]
+    fn effects_are_listed_and_removed() {
+        let mut app = app();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        let effects = vec![
+            tracedraw_core::live::Effect::BlockShadow {
+                offset: kurbo::Vec2::new(1.0, -1.0),
+                color: Color::BLACK,
+                gap: 0.0,
+            };
+            2
+        ];
+        app.run(Command::SetEffects { shape: id, effects });
+        app.select(vec![id]);
+        let out = run(
+            &mut app,
+            r#"
+            const r = ActiveSelection.Item(1);
+            print(r.Effects.Count, r.Effects.Item(1).Type);
+            r.Effects.Remove(1);
+            print(r.Effects.Count);
+            r.Effects.Clear();
+            print(r.Effects.Count);
+            try { r.Effects.Remove(1); } catch (e) { print('none'); }
+            "#,
+        )
+        .expect("runs");
+        assert_eq!(out, vec!["2 blockshadow", "1", "0", "none"]);
+        assert!(app.doc().find_shape(id).expect("shape").effects.is_empty());
     }
 
     #[test]

@@ -14,6 +14,9 @@ full, row-by-row status.
   them (see `docs/tdraw-format.md`).
 - Every object has a stable identity, kept across saving, undo and
   moves between drawings; copies get their own.
+- Scripts: `Shape.Curve` gives the curve's subpaths and nodes (position,
+  type, move, delete, add), `Shape.Effects` lists, removes and clears
+  effects.
 - Session recovery: drawings auto-backed up by a session that ended
   without closing are offered at the next start; a clean exit removes
   its auto-backups.

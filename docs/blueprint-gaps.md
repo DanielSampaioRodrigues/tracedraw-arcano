@@ -19,7 +19,7 @@ exceptions, shown disabled so the layout stays complete:
 | File | Acquire Image | no scanner (TWAIN/WIA/SANE) stack in pure Rust; import the scanned file |
 | Object | Rollover | web-page interactivity with no HTML export target |
 | Bitmaps | Plug-ins | no third-party filter host; the built-in effects cover the stock filters |
-| Window | New Window, Cascade, Tile, Combine, Dock | single window with document tabs by design |
+| Window | Cascade, Tile, Combine, Dock | document tabs by design (New Window opens a second window of the drawing) |
 | Help | Highlight What's New | no per-release highlight data yet |
 
 ## Fills, colour and effects
@@ -75,6 +75,7 @@ EPS, DXF, EMF, WMF, PLT, PSD, HTML, PDF/X-1a, X-3, X-4, `.cdr` (version
 ## Automation
 
 The JavaScript object model covers documents, pages, layers, shapes,
-fills, outlines and colours. Open: `Curve` > `SubPath` > `Node` access,
-effects from scripts, import/export filters, and a script editor with
-breakpoints.
+fills, outlines, colours, `Curve` > `SubPaths` > `Nodes` (position,
+type, move, delete, add) and `Effects` (list, remove, clear). Open:
+adding effects from scripts, import/export filters, and a script editor
+with breakpoints.
