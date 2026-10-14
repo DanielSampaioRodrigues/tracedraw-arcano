@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Effects menu: the groups in alphabetical order, Picture Mosaic before
+  Vector Mosaic, and Effects > Blur > Smart Blur (smooths flat areas,
+  keeps edges).
 - Bitmap effects (Effects > Blur, Texture, Creative and the others) work
   on vector objects: the object stays editable and is drawn with its
   effects; Flatten Effects makes it a bitmap.

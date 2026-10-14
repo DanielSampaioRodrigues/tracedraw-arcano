@@ -55,6 +55,12 @@ pub const EFFECTS: &[EffectSpec] = &[
         reach: no_reach,
     },
     EffectSpec {
+        id: "smart_blur",
+        params: &[range("amount", 1.0, 100.0, 50.0, 1.0)],
+        apply: smart_blur,
+        reach: no_reach,
+    },
+    EffectSpec {
         id: "smooth",
         params: &[range("percentage", 1.0, 100.0, 50.0, 1.0)],
         apply: smooth,
@@ -176,6 +182,46 @@ pub fn radial_blur(img: &RgbaImage, p: &P) -> RgbaImage {
             add_premultiplied(&mut acc, &s);
         }
         unpremultiply(acc, (2 * n + 1) as f32)
+    })
+}
+
+/// Smart Blur: smooths flat areas and keeps edges. Each pixel takes the
+/// average of the neighbours within a radius of 1 to 5 pixels whose
+/// colour is close to its own (no channel more than 80 % of Amount, in
+/// levels of 255, away); Amount sets both.
+pub fn smart_blur(img: &RgbaImage, p: &P) -> RgbaImage {
+    let amount = p.f32("amount").clamp(1.0, 100.0);
+    let r = (1.0 + amount / 25.0).round() as i32;
+    let limit = amount * 0.8;
+    let (w, h) = (img.width() as i32, img.height() as i32);
+    map_px(img, |x, y, c| {
+        let mut acc = [0f32; 4];
+        let mut n = 0.0f32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let (sx, sy) = (x as i32 + dx, y as i32 + dy);
+                if sx < 0 || sy < 0 || sx >= w || sy >= h {
+                    continue;
+                }
+                let q = img.get_pixel(sx as u32, sy as u32);
+                let near = (0..4).all(|k| (q[k] as f32 - c[k] as f32).abs() <= limit);
+                if near {
+                    for k in 0..4 {
+                        acc[k] += q[k] as f32;
+                    }
+                    n += 1.0;
+                }
+            }
+        }
+        if n == 0.0 {
+            return *c;
+        }
+        Rgba([
+            (acc[0] / n).round() as u8,
+            (acc[1] / n).round() as u8,
+            (acc[2] / n).round() as u8,
+            (acc[3] / n).round() as u8,
+        ])
     })
 }
 

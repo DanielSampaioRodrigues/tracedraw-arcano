@@ -26,12 +26,15 @@ later, and removing the last one gives the original back.
 
 ## Effects menu
 
-- Effects > Adjust, Transform and Correction, then the special effect
-  groups (3D Effects, Art Strokes, Blur, Camera, Color Transform,
-  Contour, Creative, Custom, Distort, Noise, Sharpen, Texture). Items
-  with settings end in "...".
+- The groups in alphabetical order of their English names: 3D Effects,
+  Adjust, Art Strokes, Blur, Camera, Color Transform, Contour,
+  Correction, Creative, Custom, Distort, Noise, Sharpen, Texture,
+  Transform. Items with settings end in "...". Below them Brush Strokes,
+  Bevel, Blend, Contour, Envelope, Extrude, Lens, Picture Mosaic and
+  Vector Mosaic.
+- The bitmap groups are on for any selection (see "On vector objects").
 - An item without settings (Auto Adjust, Desaturate, Invert Colors)
-  adds the effect to every selected bitmap at once. The others open the
+  adds the effect to every selected object at once. The others open the
   effect's dialog; OK adds it to every selected bitmap. Either way the
   whole selection changes in one undo step ("Add Effect").
 - Shortcuts with a bitmap selected: Ctrl+B Brightness/Contrast/Intensity,
@@ -214,6 +217,7 @@ transparent areas.
 | Low Pass | Percentage 50 (1 to 100); Radius 3 (1 to 100) | A Gaussian with sigma Radius mixed in by Percentage. Reach: `3 x Radius`. |
 | Motion Blur | Distance 10 (1 to 200); Direction 0° | The average over Distance pixels along Direction (at most 96 samples, spaced out for longer streaks). Reach: Distance. |
 | Radial Blur | Amount 10 (1 to 100); Center x 50 (0 to 100); Center y 50 (0 to 100) | Averages along arcs about the centre, longer farther out (Amount). |
+| Smart Blur | Amount 50 (1 to 100) | Smooths flat areas and keeps edges: each pixel averages the neighbours within 1 + Amount / 25 pixels (rounded) whose channels are all within 0.8 × Amount levels of its own. |
 | Smooth | Percentage 50 (1 to 100) | A 3 x 3 average mixed in by Percentage. |
 | Soften | Percentage 50 (1 to 100) | A Gaussian with sigma 0.7 mixed in by Percentage. |
 | Zoom | Amount 20 (1 to 100); Center x 50 (0 to 100); Center y 50 (0 to 100) | Averages along the rays to the centre (Amount). |

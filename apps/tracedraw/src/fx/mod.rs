@@ -207,21 +207,22 @@ pub fn catalog() -> impl Iterator<Item = &'static EffectSpec> {
 /// The Effects menu's bitmap groups: (i18n key, effects).
 pub fn groups() -> Vec<(&'static str, &'static [EffectSpec])> {
     vec![
-        ("menu.effects.adjust", adjust::EFFECTS),
-        ("menu.effects.transform", adjust::TRANSFORM),
-        ("menu.effects.correction", adjust::CORRECTION),
+        // In alphabetical order of their English names.
         ("menu.effects.3d", texture::THREE_D),
+        ("menu.effects.adjust", adjust::EFFECTS),
         ("menu.effects.art_strokes", art::EFFECTS),
         ("menu.effects.blur", blur::EFFECTS),
         ("menu.effects.camera", camera::EFFECTS),
         ("menu.effects.color_transform", color::TRANSFORM),
         ("menu.effects.contour_group", color::CONTOUR),
+        ("menu.effects.correction", adjust::CORRECTION),
         ("menu.effects.creative", creative::EFFECTS),
         ("menu.effects.custom", texture::CUSTOM),
         ("menu.effects.distort", distort::EFFECTS),
         ("menu.effects.noise", noise::NOISE),
         ("menu.effects.sharpen", noise::SHARPEN),
         ("menu.effects.texture", texture::TEXTURE),
+        ("menu.effects.transform", adjust::TRANSFORM),
     ]
 }
 
