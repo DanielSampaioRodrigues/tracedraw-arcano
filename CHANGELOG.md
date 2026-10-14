@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Opacity masks: Object > Clip Frame > Opacity Mask makes a clip frame's
+- Opacity masks: Object > Clip to Frame > Opacity Mask makes a clip frame's
   brightness set how much of its contents shows (Invert Mask the other
   way round), on screen and in SVG and PDF output.
 - Help > Updates checks for a newer release and offers its download;

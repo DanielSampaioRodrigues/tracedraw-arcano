@@ -28,7 +28,7 @@ outline are drawn, the contents are clipped to the frame's path.
 
 ## Opacity mask
 
-Object > Clip Frame > Opacity Mask (a check item) turns the selected clip
+Object > Clip to Frame > Opacity Mask (a check item) turns the selected clip
 frames into opacity masks and back: the frame is no longer drawn and no
 longer clips hard; its brightness (its fill, gradients and patterns
 included, through the luminance of the colour) sets how much of the
