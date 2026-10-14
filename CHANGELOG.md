@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: a node's type is kept with the curve once chosen, so C and S
+  switch it both ways and a cusp node with aligned handles moves its
+  handles apart.
 - Node tracking (Options > Display, off by default): the Pick tool drags
   the nodes of a selected curve.
 - Pick tool: Ctrl+click goes one group level further in at each click;

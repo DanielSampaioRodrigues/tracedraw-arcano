@@ -7,7 +7,7 @@
 
 use crate::geometry::{BezPath, PathEl, Point, Vec2};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NodeType {
     /// Handles move independently.
     Cusp,
@@ -146,6 +146,21 @@ pub fn nodes(path: &BezPath) -> Vec<Node> {
     out
 }
 
+/// The type of node `index`: the one chosen for it in `chosen` (a curve's
+/// `Shape::node_types`) when the node exists, else as its handles read.
+pub fn node_type_with(
+    path: &BezPath,
+    index: usize,
+    chosen: &std::collections::BTreeMap<usize, NodeType>,
+) -> NodeType {
+    match chosen.get(&index) {
+        Some(t) if nodes(path).iter().any(|n| n.index == index) => *t,
+        _ => node_type(path, index),
+    }
+}
+
+/// The type of node `index` as its handles read: aligned handles are
+/// smooth, aligned ones of equal length symmetrical, the rest cusp.
 pub fn node_type(path: &BezPath, index: usize) -> NodeType {
     let Some(n) = nodes(path).into_iter().find(|n| n.index == index) else {
         return NodeType::Cusp;

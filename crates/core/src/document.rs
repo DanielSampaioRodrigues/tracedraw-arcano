@@ -1125,6 +1125,12 @@ pub struct Shape {
     /// The object style it is linked to ([`ObjectStyle::id`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<u32>,
+    /// A curve's node types as chosen (node element index to type), kept
+    /// where its handles alone would read otherwise: a cusp node with
+    /// aligned handles, a smooth one with handles of equal length.
+    /// Cleared when the curve gains or loses nodes.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub node_types: std::collections::BTreeMap<usize, crate::nodes::NodeType>,
 }
 
 fn one() -> f64 {
@@ -1151,6 +1157,7 @@ impl Shape {
             effects: Vec::new(),
             wrap_text: false,
             style: None,
+            node_types: std::collections::BTreeMap::new(),
         }
     }
 

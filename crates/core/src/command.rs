@@ -58,6 +58,12 @@ pub enum Command {
     SetMetadata {
         metadata: Metadata,
     },
+    /// The node types chosen for curve `shape` (node element index to
+    /// type), replacing the ones it had.
+    SetNodeTypes {
+        shape: ShapeId,
+        types: std::collections::BTreeMap<usize, crate::nodes::NodeType>,
+    },
     /// Store `shapes` as selection group `number` (0 to 9); no shapes
     /// removes the group.
     SetSelectionGroup {
@@ -262,6 +268,14 @@ pub enum Command {
     },
 }
 
+/// How many nodes a curve has (0 for other kinds).
+fn node_count(kind: &ShapeKind) -> usize {
+    match kind {
+        ShapeKind::Path { path, .. } => crate::nodes::nodes(path).len(),
+        _ => 0,
+    }
+}
+
 impl Command {
     /// True for commands that change state kept outside the undo history
     /// (the Time Tracker's records): the engine applies them without an
@@ -285,6 +299,7 @@ impl Command {
             Command::SetMetadata { .. } => "Document Properties",
             Command::SetTimeTracker { .. } => "Time Tracker",
             Command::SetSelectionGroup { .. } => "Selection Group",
+            Command::SetNodeTypes { .. } => "Node Type",
             Command::SetObjectStyles { .. } => "Object Styles",
             Command::LinkObjectStyle { style: Some(_), .. } => "Apply Style",
             Command::LinkObjectStyle { style: None, .. } => "Break Link to Style",
@@ -520,7 +535,18 @@ impl Command {
                     any_mut(doc, *id)?.stroke = stroke.clone();
                 }
             }
-            Command::SetShapeKind { shape, kind } => any_mut(doc, *shape)?.kind = kind.clone(),
+            Command::SetShapeKind { shape, kind } => {
+                let s = any_mut(doc, *shape)?;
+                // Chosen node types follow node indices: a curve that
+                // gains or loses nodes drops them.
+                if !s.node_types.is_empty() && node_count(&s.kind) != node_count(kind) {
+                    s.node_types.clear();
+                }
+                s.kind = kind.clone();
+            }
+            Command::SetNodeTypes { shape, types } => {
+                any_mut(doc, *shape)?.node_types = types.clone()
+            }
             Command::SetShapeName { shape, name } => any_mut(doc, *shape)?.name = name.clone(),
 
             Command::Reorder {
@@ -970,6 +996,79 @@ fn restyle(doc: &mut Document) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn chosen_node_types_are_kept_until_the_node_count_changes() {
+        use crate::nodes::NodeType;
+        let mut doc = Document::default();
+        let page = doc.pages[0].id;
+        let layer = doc.page(page).expect("page").layers[0].id;
+        let mut path = BezPath::new();
+        path.move_to((0.0, 0.0));
+        path.curve_to((5.0, 0.0), (10.0, 0.0), (15.0, 0.0));
+        path.curve_to((20.0, 0.0), (25.0, 5.0), (30.0, 10.0));
+        let id = doc.ids_mut().shape();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: path.clone(),
+                closed: false,
+            },
+        );
+        let mut eng = crate::Engine::new(doc);
+        eng.run(&Command::AddShape { layer, shape }).expect("added");
+        // The middle node has aligned handles of equal length: it reads
+        // symmetrical, yet it is kept cusp once chosen so.
+        let mid = crate::nodes::nodes(&path)[1].index;
+        assert_eq!(crate::nodes::node_type(&path, mid), NodeType::Symmetrical);
+        let mut types = std::collections::BTreeMap::new();
+        types.insert(mid, NodeType::Cusp);
+        eng.run(&Command::SetNodeTypes { shape: id, types })
+            .expect("types");
+        let s = eng.document().find_shape(id).expect("shape");
+        assert_eq!(
+            crate::nodes::node_type_with(&path, mid, &s.node_types),
+            NodeType::Cusp
+        );
+        // Saved and read back.
+        let json = serde_json::to_string(eng.document()).expect("saved");
+        let back: Document = serde_json::from_str(&json).expect("read");
+        assert_eq!(back.find_shape(id).expect("shape").node_types.len(), 1);
+        // A node moved: the curve keeps its node count, and the type.
+        let moved = crate::nodes::move_node(&path, mid, crate::geometry::Vec2::new(0.0, 2.0));
+        eng.run(&Command::SetShapeKind {
+            shape: id,
+            kind: ShapeKind::Path {
+                path: moved.clone(),
+                closed: false,
+            },
+        })
+        .expect("moved");
+        assert_eq!(
+            eng.document()
+                .find_shape(id)
+                .expect("shape")
+                .node_types
+                .len(),
+            1
+        );
+        // A node more: the types no longer match their nodes and go.
+        let added = crate::nodes::add_node(&moved, mid, 0.5);
+        eng.run(&Command::SetShapeKind {
+            shape: id,
+            kind: ShapeKind::Path {
+                path: added,
+                closed: false,
+            },
+        })
+        .expect("added node");
+        assert!(eng
+            .document()
+            .find_shape(id)
+            .expect("shape")
+            .node_types
+            .is_empty());
+    }
 
     #[test]
     fn selection_groups_are_kept_saved_and_undone() {

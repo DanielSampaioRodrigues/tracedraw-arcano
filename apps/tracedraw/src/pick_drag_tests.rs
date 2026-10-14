@@ -1258,20 +1258,19 @@ fn node_keys_in_the_shape_tool() {
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let hit = app.node_at(Point::new(40.0, 30.0)).expect("node");
     app.node_selection = vec![(hit.shape, hit.index)];
-    let ty = |app: &App| match app.doc().find_shape(c).map(|s| s.kind.clone()) {
-        Some(ShapeKind::Path { path, .. }) => tracedraw_core::nodes::node_type(&path, hit.index),
-        _ => panic!("curve"),
-    };
+    let ty = |app: &App| app.node_type_of(c, hit.index);
     use tracedraw_core::nodes::NodeType;
     assert_eq!(ty(&app), NodeType::Cusp);
-    // C turns a cusp node smooth, S a smooth node symmetrical, Y makes it
-    // symmetrical. (A node's type follows its handles: aligned handles
-    // read as smooth, aligned ones of equal length as symmetrical, so the
-    // way back, cusp from smooth or smooth from symmetrical, shows only
-    // once a handle moves.)
+    // C switches cusp and smooth, S symmetrical and smooth (a cusp node
+    // becomes symmetrical), Y makes it symmetrical. The type is kept with
+    // the curve, so the way back shows although the handles stay aligned.
     for (k, want) in [
         (egui::Key::C, NodeType::Smooth),
+        (egui::Key::C, NodeType::Cusp),
         (egui::Key::S, NodeType::Symmetrical),
+        (egui::Key::S, NodeType::Smooth),
+        (egui::Key::S, NodeType::Symmetrical),
+        (egui::Key::C, NodeType::Cusp),
         (egui::Key::Y, NodeType::Symmetrical),
     ] {
         frame(
@@ -1284,6 +1283,39 @@ fn node_keys_in_the_shape_tool() {
         // Still the Shape tool, nothing aligned.
         assert_eq!(app.tool, Tool::Shape);
     }
+    // C makes the symmetrical node cusp; its handles stay aligned, and a
+    // handle dragged now moves alone.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::C, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(ty(&app), NodeType::Cusp);
+    let handles = |app: &App| match app.doc().find_shape(c).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => tracedraw_core::nodes::nodes(&path)
+            .into_iter()
+            .find(|n| n.index == hit.index)
+            .map(|n| (n.ctrl_in, n.ctrl_out))
+            .expect("node"),
+        _ => panic!("curve"),
+    };
+    let (before_in, before_out) = handles(&app);
+    let out = before_out.expect("out handle");
+    let from = app.view.to_screen(out);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(0.0, -25.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let (after_in, after_out) = handles(&app);
+    assert_ne!(after_out, before_out, "the dragged handle moved");
+    assert_eq!(after_in, before_in, "the other handle stayed");
+    assert_eq!(ty(&app), NodeType::Cusp);
+    app.node_selection = vec![(hit.shape, hit.index)];
     // Home and End choose the curve's first and last node.
     frame(
         &ctx,

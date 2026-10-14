@@ -420,7 +420,7 @@ impl App {
                         let ty = if mods.ctrl {
                             NodeType::Cusp
                         } else {
-                            nodes::node_type(&path, index)
+                            self.node_type_of(shape, index)
                         };
                         let np = nodes::move_handle(&path, index, which, lp, ty);
                         self.set_path(shape, np, closed, "Edit Handle");
@@ -695,8 +695,49 @@ impl App {
         self.node_selection.clear();
     }
 
+    /// Make the chosen nodes `ty`: their handles are aligned (and of equal
+    /// length) as the type needs, and the type is kept with the curve, so
+    /// a cusp node with aligned handles stays cusp. One undo step.
     pub fn set_selected_node_type(&mut self, ty: NodeType) {
-        self.for_each_selected_node("Node Type", move |p, i| nodes::set_node_type(p, i, ty));
+        let mut by_shape: std::collections::BTreeMap<ShapeId, Vec<usize>> = Default::default();
+        for (id, i) in self.node_selection.clone() {
+            by_shape.entry(id).or_default().push(i);
+        }
+        let mut cmds = Vec::new();
+        for (id, idxs) in by_shape {
+            let Some((mut path, closed, _)) = self.path_of(id) else {
+                continue;
+            };
+            let mut types = self
+                .doc()
+                .shape(id)
+                .map(|(_, s)| s.node_types.clone())
+                .unwrap_or_default();
+            for i in idxs {
+                path = nodes::set_node_type(&path, i, ty);
+                types.insert(i, ty);
+            }
+            cmds.push(Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path { path, closed },
+            });
+            cmds.push(Command::SetNodeTypes { shape: id, types });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Node Type", &cmds);
+        }
+    }
+
+    /// The type of node `index` of curve `id`: as chosen for it, else as
+    /// its handles read.
+    pub fn node_type_of(&self, id: ShapeId, index: usize) -> NodeType {
+        match self.doc().shape(id) {
+            Ok((_, s)) => match &s.kind {
+                ShapeKind::Path { path, .. } => nodes::node_type_with(path, index, &s.node_types),
+                _ => NodeType::Cusp,
+            },
+            Err(_) => NodeType::Cusp,
+        }
     }
 
     pub fn selected_segments_to_line(&mut self) {
@@ -770,8 +811,8 @@ impl App {
     /// Node type of the first selected node, for the property bar.
     pub fn current_node_type(&self) -> Option<NodeType> {
         let (id, i) = *self.node_selection.first()?;
-        let (path, _, _) = self.path_of(id)?;
-        Some(nodes::node_type(&path, i))
+        self.path_of(id)?;
+        Some(self.node_type_of(id, i))
     }
 }
 
