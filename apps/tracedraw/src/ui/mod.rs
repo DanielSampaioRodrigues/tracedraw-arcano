@@ -211,6 +211,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     // Session recovery: this session's marker, and what one that ended
     // without closing left.
     app.session_tick(crate::recovery::now_secs());
+    // Help > Updates, once a day.
+    app.update_tick(crate::recovery::now_secs(), Some(ctx.clone()));
     // Options > Save > Auto-backup.
     if app.auto_backup_tick(web_time::Instant::now()) {
         app.status = tr("status.auto_backup_saved");

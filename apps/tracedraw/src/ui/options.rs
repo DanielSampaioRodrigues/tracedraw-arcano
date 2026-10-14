@@ -1637,6 +1637,9 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
             });
         ui.end_row();
     });
+    #[cfg(not(target_arch = "wasm32"))]
+    ui.checkbox(&mut app.settings.check_updates, tr("options.check_updates"))
+        .on_hover_text(tr("options.check_updates_tip"));
     // AI agents on this computer and the open drawing (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
     {

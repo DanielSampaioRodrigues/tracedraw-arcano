@@ -845,6 +845,11 @@ pub struct App {
     /// Session recovery: this session's marker in the auto-backup folder
     /// (made on the first frame, desktop only).
     pub session: Option<crate::recovery::Session>,
+    /// Help > Updates and the daily check at start.
+    pub updates: crate::updates::Checker,
+    /// The running check was started at start, not asked for: only a
+    /// newer release, not skipped, is shown.
+    pub update_quiet: bool,
     /// Page size changes apply to every page (the page bar's All pages).
     pub page_size_all: bool,
     /// The property bar's object origin: (column, row) of the 3 x 3
@@ -1538,6 +1543,8 @@ impl App {
             pending_command: None,
             last_auto_backup: None,
             session: None,
+            updates: Default::default(),
+            update_quiet: false,
             recent_thumbs: Default::default(),
             shelf: Default::default(),
             palette_drag: None,
@@ -4070,6 +4077,44 @@ impl App {
             let _ = crate::files::remove(path);
         }
         crate::recovery::dismiss(found, false);
+    }
+
+    /// Help > Updates: check now and show the answer.
+    pub fn check_for_updates(&mut self, ctx: Option<egui::Context>) {
+        self.update_quiet = false;
+        self.updates.start(ctx);
+        self.dialog = crate::ui::dialogs::Dialog::Updates;
+    }
+
+    /// Called every frame with the time in seconds: once a day (Options >
+    /// Global > General), start a quiet check; when it finds a release
+    /// newer than this one that the user did not skip, show it.
+    pub fn update_tick(&mut self, now: u64, ctx: Option<egui::Context>) {
+        if crate::files::WEB || cfg!(test) {
+            return;
+        }
+        if self.settings.check_updates
+            && now.saturating_sub(self.settings.last_update_check) >= crate::updates::DAILY
+            && self.updates.get() == crate::updates::UpdateState::Idle
+        {
+            self.settings.last_update_check = now;
+            self.update_quiet = true;
+            self.updates.start(ctx);
+        }
+        if self.update_quiet {
+            match self.updates.get() {
+                crate::updates::UpdateState::Checking => {}
+                crate::updates::UpdateState::Available(r)
+                    if r.version != self.settings.skipped_update
+                        && matches!(self.dialog, crate::ui::dialogs::Dialog::None) =>
+                {
+                    self.update_quiet = false;
+                    self.dialog = crate::ui::dialogs::Dialog::Updates;
+                }
+                crate::updates::UpdateState::Available(_) => {}
+                _ => self.update_quiet = false,
+            }
+        }
     }
 
     /// A clean exit: this session's marker and auto-backups go.

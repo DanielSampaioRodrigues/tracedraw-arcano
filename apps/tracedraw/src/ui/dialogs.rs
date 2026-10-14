@@ -466,6 +466,8 @@ pub enum Dialog {
     /// At start-up: drawings a session that ended without closing left in
     /// the auto-backup folder (see `recovery.rs`).
     Recover(Vec<crate::recovery::Found>),
+    /// Help > Updates: where the check stands, and a newer release.
+    Updates,
     /// After a drawing opens: objects that could not be read, fonts that
     /// are not installed (Options > Global > Warnings).
     OpenNotes(OpenNotes),
@@ -975,6 +977,86 @@ pub fn show(app: &mut App, ctx: &Context) {
                     app.after_close_question(false);
                 }
                 None => {}
+            }
+        }
+        Dialog::Updates => {
+            use crate::updates::UpdateState;
+            let version = env!("CARGO_PKG_VERSION");
+            let close_label = tr("dialog.close");
+            match app.updates.get() {
+                UpdateState::Idle | UpdateState::Checking => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                    if crate::ui::chrome::message_box(
+                        ctx,
+                        crate::ui::chrome::MessageIcon::Info,
+                        &tr("updates.checking"),
+                        &[&close_label],
+                    )
+                    .is_some()
+                    {
+                        close = true;
+                    }
+                }
+                UpdateState::Latest => {
+                    let text = trf("updates.latest", &[("version", version)]);
+                    if crate::ui::chrome::message_box(
+                        ctx,
+                        crate::ui::chrome::MessageIcon::Info,
+                        &text,
+                        &[&close_label],
+                    )
+                    .is_some()
+                    {
+                        close = true;
+                    }
+                }
+                UpdateState::Available(r) => {
+                    let text = trf(
+                        "updates.available",
+                        &[("new", &r.version), ("version", version)],
+                    );
+                    let (download, notes, skip) = (
+                        tr("updates.download"),
+                        tr("updates.notes"),
+                        tr("updates.skip"),
+                    );
+                    match crate::ui::chrome::message_box(
+                        ctx,
+                        crate::ui::chrome::MessageIcon::Info,
+                        &text,
+                        &[&download, &notes, &skip, &close_label],
+                    ) {
+                        Some(0) => {
+                            let url = r.download.clone().unwrap_or_else(|| r.page.clone());
+                            app.open_url(&url);
+                            close = true;
+                        }
+                        Some(1) => app.open_url(&r.page),
+                        Some(2) => {
+                            app.settings.skipped_update = r.version.clone();
+                            close = true;
+                        }
+                        Some(_) => close = true,
+                        None => {}
+                    }
+                }
+                UpdateState::Failed(e) => {
+                    let text = trf("updates.failed", &[("error", &e)]);
+                    let open = tr("updates.open_releases");
+                    match crate::ui::chrome::message_box(
+                        ctx,
+                        crate::ui::chrome::MessageIcon::Info,
+                        &text,
+                        &[&open, &close_label],
+                    ) {
+                        Some(0) => {
+                            app.open_url(crate::updates::RELEASES_PAGE);
+                            close = true;
+                        }
+                        Some(_) => close = true,
+                        None => {}
+                    }
+                }
             }
         }
         Dialog::Recover(found) => {
@@ -3632,6 +3714,7 @@ mod tests {
             Dialog::DocumentProperties,
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
+            Dialog::Updates,
             Dialog::Recover(vec![crate::recovery::Found {
                 marker: "/nowhere/session-x.json".into(),
                 backups: vec!["/nowhere/AutoBackup_of_art.tdraw".into()],

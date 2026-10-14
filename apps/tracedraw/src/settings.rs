@@ -210,6 +210,16 @@ pub struct Settings {
     /// open drawing (MCP, `tracedraw --mcp-window`).
     #[serde(default)]
     pub mcp_window: bool,
+    /// Options > Global > General: look for a newer release once a day at
+    /// start (desktop).
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
+    /// When that check last ran, seconds since 1970.
+    #[serde(default)]
+    pub last_update_check: u64,
+    /// A release the user chose to skip: not offered again at start.
+    #[serde(default)]
+    pub skipped_update: String,
     /// Options > Global > Bitmap Tracing.
     #[serde(default)]
     pub tracing: crate::prefs::TracePrefs,
@@ -918,6 +928,9 @@ impl Default for Settings {
             formats: Default::default(),
             ai: Default::default(),
             mcp_window: false,
+            check_updates: true,
+            last_update_check: 0,
+            skipped_update: String::new(),
             tracing: Default::default(),
             warnings: Default::default(),
             curves: Default::default(),

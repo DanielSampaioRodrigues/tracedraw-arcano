@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 186, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 187, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -225,6 +225,7 @@ Counts: works 186, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Save settings as default | works |
 | Preferences kept across restarts and saved as they change (desktop file, browser local storage): Options, bars, dockers, units, snapping, tool settings, what the window shows, dockers' choices (see `behavior/workspaces.md`, Kept across restarts) | works |
 | Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
+| Help > Updates and a daily check at start (Options > Global > General): a newer release offers its download for this system, its notes, or skipping it | works (see `behavior/updates.md`) |
 | Border and Grommet (large-format finishing) | works |
 | Vector Mosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
 | Picture Mosaic (bitmap mosaics from an image library folder): columns and rows from the shape, blending, duplicates with tile spacing, Single, Stack and Array composition, Stretch and Remove edges, document, custom, tile and output size priorities, keep original | works (see `behavior/picture-mosaic.md`); a library is one folder, read on worker threads |

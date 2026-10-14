@@ -2639,7 +2639,12 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     todo_sub(ui, "menu.help.highlight_whats_new");
     sep(ui);
     if item(ui, "menu.help.updates", "", true) {
-        app.open_url("https://github.com/igtoth/tracedraw/releases");
+        if crate::files::WEB {
+            // The browser build is always the latest.
+            app.open_url(crate::updates::RELEASES_PAGE);
+        } else {
+            app.check_for_updates(Some(ui.ctx().clone()));
+        }
     }
     if item(ui, "menu.help.message_settings", "", true) {
         app.dialog = Dialog::Options;
