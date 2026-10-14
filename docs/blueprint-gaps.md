@@ -53,7 +53,8 @@ exceptions, shown disabled so the layout stays complete:
   members of the ZIP container), the code pages of text before
   version 12, and the `arrx` arrowheads of newer files (one version 21
   sample).
-- Still open in the reader: splines (0x26, layout not public), vector
+- Still open in the reader: splines (0x26 seen only as connector lines, which
+  are read), vector
   pattern (10) and PostScript (6) fills, text before version 7, tabs,
   bullets and drop caps from `stlt` (tables skipped by size), the `ftil`
   fill transform, lenses and other effects, fonts embedded with

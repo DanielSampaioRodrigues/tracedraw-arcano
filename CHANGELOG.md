@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` version 22: connector lines (object type 0x26) are read; they
+  were skipped.
 - `.cdr` versions 7 to 12: arrowheads are read and placed on their lines,
   artistic text stands where the file puts it (it was drawn far off the
   page), and version 12 text stored as one byte a character reads right.

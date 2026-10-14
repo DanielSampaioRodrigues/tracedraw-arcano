@@ -78,6 +78,8 @@ pub(crate) const OBJ_BITMAP: u32 = 0x05;
 const OBJ_PARAGRAPH_TEXT: u32 = 0x06;
 const OBJ_POLYGON: u32 = 0x14;
 const OBJ_PATH: u32 = 0x25;
+/// A straight connector line whose ends are in its `ppdt` record.
+const OBJ_CONNECTOR: u32 = 0x26;
 
 /// Little-endian cursor over a chunk payload. `v16` selects the 16-bit
 /// layouts of versions before 6 for integers, coordinates and angles.
@@ -1699,6 +1701,33 @@ impl<'a> Ctx<'a> {
 
     /// The object's `bbox` chunk: its box on the page (file coordinates,
     /// origin at the page centre).
+    /// Object type 0x26 (a version 22 file): a connector line. Its
+    /// `LIST npps` holds a `ppdt` record: u32 0, u32 1, then the start and
+    /// the end point (coordinates), then what the ends attach to. The
+    /// file's preview draws each as a straight line between the two points.
+    fn read_connector(&mut self, oc: &Chunk) -> Option<ShapeKind> {
+        let mut found = None;
+        oc.walk(&mut |c, _| {
+            if found.is_none() && c.is(b"ppdt") {
+                found = Some(c);
+            }
+        });
+        let d = self.data(found?);
+        let mut r = self.reader_at(d, 8);
+        let a = Point::new(r.coord()?, r.coord()?);
+        let b = Point::new(r.coord()?, r.coord()?);
+        if ![a.x, a.y, b.x, b.y].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let mut path = BezPath::new();
+        path.move_to(a);
+        path.line_to(b);
+        Some(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+    }
+
     fn object_bbox(&self, oc: &Chunk) -> Option<Rect> {
         let c = oc.find(b"bbox")?;
         let d = self.data(c);
@@ -1918,6 +1947,7 @@ impl<'a> Ctx<'a> {
                 };
                 self.build_text(kind_code, d, coords, oc, style_id, &fill, frame)
             }
+            OBJ_CONNECTOR => self.read_connector(oc),
             _ => coords.and_then(|a| self.read_geometry(kind_code, d, a, polygon)),
         };
         let kind = match kind {
@@ -5919,5 +5949,47 @@ mod tests {
         assert_eq!(arrows(1), (Arrowhead::Arrow, Arrowhead::None));
         assert_eq!(arrows(2), (Arrowhead::None, Arrowhead::Arrow));
         assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
+    }
+
+    #[test]
+    fn connectors_are_straight_lines_between_their_ends() {
+        // ppdt: 0, 1, start, end (25.4 mm apart), then attachment data.
+        let mut ppdt = u32s(&[0, 1]);
+        ppdt.extend_from_slice(&i32s(&[0, 0, 254_000, 0]));
+        ppdt.extend_from_slice(&[0; 32]);
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"loda", &loda(OBJ_CONNECTOR, &[])),
+                list(
+                    b"npps",
+                    &[chunk(b"ppid", &[0; 16]), chunk(b"ppdt", &ppdt)].concat(),
+                ),
+            ]
+            .concat(),
+        );
+        // A connector without its record is skipped with a warning.
+        let bare = list(b"obj ", &chunk(b"loda", &loda(OBJ_CONNECTOR, &[])));
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &[obj, bare].concat())),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR9", &body), 9);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Path { path, closed } => {
+                use tracedraw_core::geometry::Shape as _;
+                assert!(!closed);
+                assert_eq!(path.elements().len(), 2);
+                let b = path.bounding_box();
+                assert!(
+                    (b.width() - 25.4).abs() < 1e-9 && b.height().abs() < 1e-9,
+                    "{b:?}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(rep.warnings.iter().any(|w| w.contains("0x26")));
     }
 }
