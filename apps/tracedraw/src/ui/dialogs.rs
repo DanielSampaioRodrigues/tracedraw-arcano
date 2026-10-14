@@ -2837,6 +2837,7 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
         Dialog::TextBullets => tr("menu.text.bullets"),
         _ => tr("menu.text.drop_cap"),
     };
+    let title = title.trim_end_matches(['.', '\u{2026}']).to_string();
     // The selected text's paragraph, or with no text selected the
     // defaults new paragraph text gets.
     let target = app

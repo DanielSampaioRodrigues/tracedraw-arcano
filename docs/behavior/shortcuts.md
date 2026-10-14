@@ -125,3 +125,17 @@ name.
 - Given Export waiting for its keys, when Ctrl+D is pressed, then Export
   has Ctrl+D and the page says it was Duplicate's; Enter alone is not
   taken and Esc stops waiting with the options still open.
+
+## Access keys in menus
+
+- Every menu title and row has one letter underlined (`ui/menus.rs`,
+  `access`): the first letter or digit starting a word that no earlier
+  row of the same menu took, else the first free one anywhere. Letters
+  outside A to Z and 0 to 9 are skipped, so labels in other scripts may
+  have none.
+- With a menu open, pressing a row's letter (without Ctrl or Alt) works
+  as a click: an item runs, a submenu opens. Only the innermost open
+  menu takes the key.
+- Alt and a title's letter opens that menu, except E, S, X, Q and Z,
+  which commands use with Alt.
+- While any menu or list is open, the drawing's shortcuts do not run.

@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Menus have access keys: one letter of each title and row is
+  underlined; with a menu open, pressing it picks the row (or opens its
+  submenu), and Alt with a title's letter opens that menu (except the
+  Alt letters commands use: E, S, X, Q, Z). Shortcuts wait while a menu
+  is open.
 - Options > Customization > Commands: a category list (every menu, the
   toolbox, or all) and a search above the commands with their pictures;
   beside them a General tab (name, where the command is, its keys) and a

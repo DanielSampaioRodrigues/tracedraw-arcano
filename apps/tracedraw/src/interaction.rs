@@ -1813,6 +1813,10 @@ impl App {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
+        // An open menu takes the keys: its rows' access keys, arrows, Esc.
+        if egui::Popup::is_any_open(ctx) {
+            return;
+        }
         // A modal dialog owns the keyboard: Esc closes it, the rest is
         // not interpreted as shortcuts.
         if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {

@@ -60,7 +60,10 @@ pub(crate) fn body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         ui.set_min_width(w);
     }
     let slot = ui.painter().add(egui::Shape::Noop);
-    let r = add(ui);
+    let r = {
+        let _keys = access::Scope::new();
+        add(ui)
+    };
     let rows = ui.min_rect();
     ui.ctx().data_mut(|d| d.insert_temp(width_id, rows.width()));
     let gutter = egui::Rect::from_min_max(
@@ -114,12 +117,32 @@ fn menu_row(
             egui::Sense::hover()
         },
     );
+    let mut resp = resp;
+    // The access key: underlined; pressed while this is the innermost
+    // open menu, it works as a click on the row.
+    let access = access::pick(label);
+    if let Some((_, c)) = access {
+        if enabled && access::pressed(ui, c) {
+            resp.flags
+                .insert(egui::response::Flags::FAKE_PRIMARY_CLICKED);
+        }
+    }
     let painter = ui.painter();
     let slot = painter.add(egui::Shape::Noop);
     if enabled && resp.hovered() {
         painter.set(slot, highlight(rect));
     }
     let color = if enabled { MENU_TEXT } else { MENU_TEXT_OFF };
+    if let Some((at, _)) = access {
+        access::underline(
+            painter,
+            egui::pos2(rect.left() + LABEL_X, rect.center().y),
+            label,
+            at,
+            FONT,
+            color,
+        );
+    }
     let mid = egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y);
     match mark {
         Mark::Check(true) => {
@@ -487,6 +510,159 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
         ui.set_min_width(MENU_WIDTH);
         body(ui, add)
     });
+}
+
+/// Access keys: one letter of each menu row, underlined, that picks the
+/// row from the keyboard while its menu is open; the menu bar's titles
+/// open with Alt and their letter.
+pub(crate) mod access {
+    use egui::Ui;
+    use std::cell::RefCell;
+
+    thread_local! {
+        /// The letters taken in each menu body being drawn, innermost last.
+        static TAKEN: RefCell<Vec<Vec<char>>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// The letters of one menu body, for as long as it is drawn.
+    pub struct Scope;
+
+    impl Scope {
+        pub fn new() -> Scope {
+            TAKEN.with(|t| t.borrow_mut().push(Vec::new()));
+            Scope
+        }
+    }
+
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            TAKEN.with(|t| {
+                t.borrow_mut().pop();
+            });
+        }
+    }
+
+    /// The access key of `label` among `taken`: the first letter or digit
+    /// starting a word that is free, else the first free one anywhere.
+    /// Returns its char index and the letter in lower case.
+    pub fn choose(label: &str, taken: &[char]) -> Option<(usize, char)> {
+        let chars: Vec<char> = label.chars().collect();
+        // Letters and digits a key press can give.
+        let free = |c: char| c.is_ascii_alphanumeric() && !taken.contains(&c.to_ascii_lowercase());
+        let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
+        let word_start = |i: usize| i == 0 || !chars[i - 1].is_alphanumeric();
+        (0..chars.len())
+            .find(|&i| word_start(i) && free(chars[i]))
+            .or_else(|| (0..chars.len()).find(|&i| free(chars[i])))
+            .map(|i| (i, lower(chars[i])))
+    }
+
+    /// The access key of a row of the menu body being drawn (none outside
+    /// a body).
+    pub fn pick(label: &str) -> Option<(usize, char)> {
+        TAKEN.with(|t| {
+            let mut t = t.borrow_mut();
+            let taken = t.last_mut()?;
+            let picked = choose(label, taken)?;
+            taken.push(picked.1);
+            Some(picked)
+        })
+    }
+
+    /// The key of an ASCII letter or digit.
+    pub fn key_of(c: char) -> Option<egui::Key> {
+        egui::Key::from_name(&c.to_ascii_uppercase().to_string())
+    }
+
+    /// `c` was pressed without Ctrl or Alt and this menu has no submenu
+    /// open (the innermost open menu takes the keys).
+    pub fn pressed(ui: &Ui, c: char) -> bool {
+        let Some(key) = key_of(c) else {
+            return false;
+        };
+        let hit = ui.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
+                    if *k == key && !(modifiers.ctrl || modifiers.alt || modifiers.command))
+            })
+        });
+        hit && egui::containers::menu::MenuState::from_ui(ui, |state, _| state.open_item.is_none())
+    }
+
+    /// Underline the char at `at` of `label` drawn left-centred at `pos`.
+    pub fn underline(
+        painter: &egui::Painter,
+        pos: egui::Pos2,
+        label: &str,
+        at: usize,
+        size: f32,
+        color: egui::Color32,
+    ) {
+        let font = egui::FontId::proportional(size);
+        let before: String = label.chars().take(at).collect();
+        let this: String = label.chars().skip(at).take(1).collect();
+        let (x0, w, h) = painter.fonts_mut(|f| {
+            let full = f.layout_no_wrap(label.to_string(), font.clone(), color);
+            (
+                f.layout_no_wrap(before, font.clone(), color).size().x,
+                f.layout_no_wrap(this, font.clone(), color).size().x,
+                full.size().y,
+            )
+        });
+        let y = (pos.y + h / 2.0 - 2.0).round() + 0.5;
+        painter.line_segment(
+            [egui::pos2(pos.x + x0, y), egui::pos2(pos.x + x0 + w, y)],
+            egui::Stroke::new(1.0, color),
+        );
+    }
+
+    /// A menu bar title with its access key underlined.
+    pub fn title(
+        label: &str,
+        at: Option<usize>,
+        size: f32,
+        color: egui::Color32,
+    ) -> egui::WidgetText {
+        let mut job = egui::text::LayoutJob::default();
+        for (i, ch) in label.chars().enumerate() {
+            job.append(
+                &ch.to_string(),
+                0.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::proportional(size),
+                    color,
+                    underline: if Some(i) == at {
+                        egui::Stroke::new(1.0, color)
+                    } else {
+                        egui::Stroke::NONE
+                    },
+                    ..Default::default()
+                },
+            );
+        }
+        job.into()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn access_keys_prefer_free_word_starts() {
+            assert_eq!(choose("Save As...", &[]), Some((0, 's')));
+            assert_eq!(choose("Save As...", &['s']), Some((5, 'a')));
+            assert_eq!(choose("Save As...", &['s', 'a']), Some((2, 'v')));
+            assert_eq!(choose("...", &[]), None);
+            // Rows nest: each body keeps its own letters.
+            let _outer = Scope::new();
+            assert_eq!(pick("File"), Some((0, 'f')));
+            {
+                let _inner = Scope::new();
+                assert_eq!(pick("Find"), Some((0, 'f')));
+            }
+            assert_eq!(pick("Find"), Some((1, 'i')));
+        }
+    }
 }
 
 /// Menu commands without the menus on screen. A shortcut chosen in
@@ -1086,12 +1262,20 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         .style(menu_bar_style)
         .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
         .ui(ui, |ui| {
-            let menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| -> egui::Response {
+            // Each title's access key, for Alt and the letter.
+            let mut keys: Vec<char> = Vec::new();
+            let mut menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| -> egui::Response {
+                let label = tr(key);
+                let access = access::choose(&label, &keys);
+                keys.push(access.map(|a| a.1).unwrap_or(' '));
                 let r = ui
-                    .menu_button(tr(key), |ui| {
-                        ui.set_min_width(MENU_WIDTH);
-                        body(ui, |ui| f(ui))
-                    })
+                    .menu_button(
+                        access::title(&label, access.map(|a| a.0), BAR_FONT, MENU_TEXT),
+                        |ui| {
+                            ui.set_min_width(MENU_WIDTH);
+                            body(ui, |ui| f(ui))
+                        },
+                    )
                     .response;
                 if marked_new(key) {
                     // A dot over the title's top right corner.
@@ -1119,7 +1303,34 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             titles.push(menu(ui, "menu.window", &mut |ui| window_menu(app, ui)));
             titles.push(menu(ui, "menu.help", &mut |ui| help_menu(app, ui)));
             switch_on_hover(ui.ctx(), &titles);
+            open_with_alt(ui.ctx(), &titles, &keys);
         });
+}
+
+/// Alt+letter used by commands (symmetry, Alt+Q, Alt+Z): they keep it
+/// over opening a menu.
+const ALT_TAKEN: [char; 5] = ['e', 's', 'x', 'q', 'z'];
+
+/// Alt and a title's access key open that menu (closing another one).
+fn open_with_alt(ctx: &egui::Context, titles: &[egui::Response], keys: &[char]) {
+    let popup_id = egui::Popup::default_response_id;
+    let hit = keys.iter().zip(titles).find(|(c, _)| {
+        !ALT_TAKEN.contains(c)
+            && access::key_of(**c).is_some_and(|key| {
+                ctx.input(|i| {
+                    i.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
+                            if *k == key && modifiers.alt && !modifiers.ctrl && !modifiers.shift)
+                    })
+                })
+            })
+    });
+    if let Some((_, r)) = hit {
+        for t in titles {
+            egui::Popup::close_id(ctx, popup_id(t));
+        }
+        egui::Popup::open_id(ctx, popup_id(r));
+    }
 }
 
 /// With one menu open, pointing at another title of the bar opens that
