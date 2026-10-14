@@ -127,6 +127,10 @@ pub struct Settings {
     /// by default).
     #[serde(default = "default_true")]
     pub treat_all_filled: bool,
+    /// Options > Tools > Pick: a marquee also takes the objects it only
+    /// touches (off by default; Alt does it either way round).
+    #[serde(default)]
+    pub marquee_touching: bool,
     /// The one-time changes already made to preferences saved by older
     /// versions (see `Settings::upgrade`); 0 in files that predate them.
     #[serde(default)]
@@ -878,6 +882,7 @@ impl Default for Settings {
             backup: BackupPrefs::default(),
             text_increment_pt: default_text_increment(),
             treat_all_filled: true,
+            marquee_touching: false,
             upgrades: UPGRADES,
             crosshair_cursor: false,
             screen_ppi: default_screen_ppi(),

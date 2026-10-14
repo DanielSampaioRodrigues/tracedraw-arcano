@@ -860,6 +860,23 @@ fn alt_marquees_take_what_they_touch() {
     assert_eq!(app.selection.len(), 2);
 }
 
+#[test]
+fn the_touching_option_swaps_what_alt_does() {
+    let (ctx, mut app, [_a, _b, c], group) = grouped();
+    app.settings.marquee_touching = true;
+    let from = app.view.to_screen(Point::new(90.0, 112.0));
+    let to = app.view.to_screen(Point::new(112.0, 158.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let mut sel = app.selection.clone();
+    sel.sort_by_key(|s| s.raw());
+    let mut want = vec![group, c];
+    want.sort_by_key(|s| s.raw());
+    assert_eq!(sel, want);
+    app.select(Vec::new());
+    drag(&ctx, &mut app, from, to, Modifiers::ALT, Vec::new());
+    assert!(app.selection.is_empty());
+}
+
 /// The screen points of a lasso through `pts` (page), in small steps as a
 /// hand draws it.
 fn lasso_path(app: &App, pts: &[Point]) -> Vec<Pos2> {

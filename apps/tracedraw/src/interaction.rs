@@ -961,13 +961,13 @@ impl App {
                     self.drag = if self.tool == Tool::FreeformPick {
                         Drag::Lasso {
                             points: vec![p],
-                            touching: mods.alt,
+                            touching: mods.alt != self.settings.marquee_touching,
                         }
                     } else {
                         Drag::Marquee {
                             start: p,
                             current: p,
-                            touching: mods.alt,
+                            touching: mods.alt != self.settings.marquee_touching,
                         }
                     };
                 }
@@ -1145,7 +1145,7 @@ impl App {
                     q = *start + Vec2::new(side * d.x.signum(), side * d.y.signum());
                 }
                 *current = q;
-                *touching = mods.alt;
+                *touching = mods.alt != self.settings.marquee_touching;
             }
             Drag::Lasso { points, touching } => {
                 // Ctrl keeps the freehand selection a rectangle.
@@ -1155,7 +1155,7 @@ impl App {
                 } else {
                     points.push(p);
                 }
-                *touching = mods.alt;
+                *touching = mods.alt != self.settings.marquee_touching;
             }
             Drag::Scale {
                 current, mods: m, ..

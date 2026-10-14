@@ -1354,6 +1354,11 @@ fn pick_page(app: &mut App, ui: &mut Ui) {
         &mut app.settings.treat_all_filled,
         tr("options.treat_all_filled"),
     );
+    ui.checkbox(
+        &mut app.settings.marquee_touching,
+        tr("options.marquee_touching"),
+    )
+    .on_hover_text(tr("options.marquee_touching_tip"));
 }
 
 fn zoom_pan_page(app: &mut App, ui: &mut Ui) {

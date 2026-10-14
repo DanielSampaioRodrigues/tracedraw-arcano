@@ -7,7 +7,7 @@
 | Ctrl+click | the object inside a group, one level further in at each click (the first level inside the topmost group, then the group or object inside that, down to the innermost object); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
 | Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups; Shift+Alt adds it |
 | Click on a selected object (any of a selection), or on the centre mark | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
-| Drag on empty | marquee (a dashed blue frame); objects wholly inside are selected; with Alt held when the drag ends, every object the frame touches: its outline crosses or lies in the frame, or the frame lies in its fill (text, bitmaps, tables and clip frames anywhere in their box; a group when one of its objects counts); Shift keeps the selection and adds; Ctrl keeps the marquee square |
+| Drag on empty | marquee (a dashed blue frame); objects wholly inside are selected; with Alt held when the drag ends, every object the frame touches: its outline crosses or lies in the frame, or the frame lies in its fill (text, bitmaps, tables and clip frames anywhere in their box; a group when one of its objects counts); Shift keeps the selection and adds; Ctrl keeps the marquee square; with Options > Tools > Pick, Marquee selects touched objects, Alt works the other way round |
 | Drag the centre mark (the "x") | moves the selection, also where the mark lies on nothing (an outline-only ring) |
 | Drag object | move with the pointer (snapped); Ctrl keeps the move horizontal or vertical, whichever is longer; Space drops a copy where the selection is and the move goes on (also while scaling, turning or slanting: the copy takes the transform reached); let go over the document palette to add the objects' colours to it instead of moving them |
 | Corner handle | scale proportionally from the opposite corner; Shift from the centre; Ctrl in whole steps of 100 % (crossing the other side gives the mirror image at the same size); Alt scales freely |
@@ -183,6 +183,7 @@ break instead.
 - `pick_drag_tests::ctrl_click_chooses_an_object_inside_a_group`
 - `pick_drag_tests::alt_click_digs_to_the_object_beneath`
 - `pick_drag_tests::alt_marquees_take_what_they_touch`
+- `pick_drag_tests::the_touching_option_swaps_what_alt_does`
 - `pick_drag_tests::clicking_the_selection_or_its_centre_mark_turns_the_handles`
 - `pick_drag_tests::the_pointer_shows_moves_for_objects_and_guidelines`
 - `pick_drag_tests::scale_handles_snap_to_other_objects_not_to_the_selection`

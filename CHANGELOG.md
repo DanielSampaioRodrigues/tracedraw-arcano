@@ -8,6 +8,9 @@ full, row-by-row status.
 
 - CMX import: text comes in as artistic text at its place, font, size
   and colour.
+- Options > Tools > Pick: Marquee selects touched objects (off by
+  default) makes a marquee take the objects it only touches, Alt then
+  taking only those wholly inside (#2).
 - Window > New Window: another window of the same drawing, "name:1" and
   "name:2", each with its own view and selection; edits, undo and saving
   are shared, and closing one window keeps the drawing open in the other.

@@ -46,7 +46,9 @@ palette; see `color-palettes.md`).
 ## Tools
 
 Pick (cross hair cursor; treat all objects as filled, on by default:
-unfilled objects are picked inside too), Zoom/Pan (right mouse button of the Zoom tool:
+unfilled objects are picked inside too; marquee selects touched objects,
+off by default: a marquee or freehand selection takes what it touches and
+Alt only what lies wholly inside), Zoom/Pan (right mouse button of the Zoom tool:
 zoom out or context menu; mouse wheel action), Curve tools (Freehand
 smoothing, 0 to 100, 50 by default; Join and close within, 1 to 50
 screen pixels, 5 by default; see `curve-tools.md`), Rectangle (Rectangle
