@@ -3105,6 +3105,7 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Hints;
     }
+    sep(ui);
     if item(ui, "menu.help.welcome_screen", "", true) {
         app.show_welcome = true;
     }
