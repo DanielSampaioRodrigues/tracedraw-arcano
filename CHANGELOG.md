@@ -11,6 +11,12 @@ full, row-by-row status.
   submenu), and Alt with a title's letter opens that menu (except the
   Alt letters commands use: E, S, X, Q, Z). Shortcuts wait while a menu
   is open.
+- `.cdr` version 12: guidelines are read into the pages' guides (they
+  were skipped objects), pictures embedded from a paint program show in
+  their place, spot library colours show as black at their tint instead
+  of solid black, and a text on a path finds its path when its box ends
+  just short of the path. The empty compressed block every version 12
+  file starts with no longer logs a warning.
 - Options > Customization > Commands: a category list (every menu, the
   toolbox, or all) and a search above the commands with their pictures;
   beside them a General tab (name, where the command is, its keys) and a

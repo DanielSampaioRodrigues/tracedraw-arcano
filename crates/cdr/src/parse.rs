@@ -80,6 +80,14 @@ const OBJ_POLYGON: u32 = 0x14;
 const OBJ_PATH: u32 = 0x25;
 /// A straight connector line whose ends are in its `ppdt` record.
 const OBJ_CONNECTOR: u32 = 0x26;
+/// An object embedded from another program (seen in version 12 files):
+/// its name argument names the storage of an `ole2` chunk, its coordinates
+/// hold its size and two opposite corners.
+const OBJ_EMBEDDED: u32 = 0x0a;
+/// A guideline (seen in version 12 files on the guides layer).
+const OBJ_GUIDE: u32 = 0x16;
+/// Argument of a guideline: its line (see [`Ctx::read_guide`]).
+const ARG_GUIDE_LINE: u32 = 16000;
 
 /// Little-endian cursor over a chunk payload. `v16` selects the 16-bit
 /// layouts of versions before 6 for integers, coordinates and angles.
@@ -230,6 +238,9 @@ struct Ctx<'a> {
     fills: HashMap<u32, FillDef>,
     outlines: HashMap<u32, OutlineDef>,
     bitmaps: HashMap<u32, BitmapDef>,
+    /// Pictures of objects embedded from other programs, by storage name
+    /// (`ole2` chunks).
+    embedded: HashMap<String, crate::ole::Picture>,
     /// Two-colour pattern tiles (`bmpf`), 1 bit per pixel: true = front.
     pattern_tiles: HashMap<u32, PatternBits>,
     /// `font` chunks by font id: family name and character set.
@@ -243,6 +254,12 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
+    /// Colours of a spot colour library met (shown as tints of black).
+    library_colors: usize,
+    /// Guidelines of the page being read (objects of type 0x16).
+    guides: Vec<tracedraw_core::document::Guide>,
+    /// The last object read was a guideline, not a skipped object.
+    last_was_guide: bool,
     /// The text object being read is fitted to a path (a sibling supplies
     /// the path).
     pending_on_path: Option<OnPathText>,
@@ -290,12 +307,16 @@ impl<'a> Ctx<'a> {
             fills: HashMap::new(),
             outlines: HashMap::new(),
             bitmaps: HashMap::new(),
+            embedded: HashMap::new(),
             pattern_tiles: HashMap::new(),
             fonts: HashMap::new(),
             name_charset: 0,
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
+            guides: Vec::new(),
+            last_was_guide: false,
+            library_colors: 0,
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
@@ -365,6 +386,9 @@ pub fn parse_document_with(
             ctx.read_arrowhead_x(c);
         } else if c.is(b"font") {
             ctx.read_font(c);
+        } else if c.is(b"ole2") {
+            let pictures = crate::ole::embedded_pictures(ctx.data(c));
+            ctx.embedded.extend(pictures);
         }
     });
     ctx.read_bitmaps(&bitmaps);
@@ -458,6 +482,7 @@ pub fn parse_document_with(
             page.layers
                 .push(Layer::new(doc.ids_mut().layer(), "Layer 1"));
         }
+        page.guides = std::mem::take(&mut ctx.guides);
         doc.pages.push(page);
     }
 
@@ -467,9 +492,15 @@ pub fn parse_document_with(
         && (first_is_master || doc.pages[0].layers.iter().all(|l| l.shapes.is_empty()))
         && doc.pages[0].layers.iter().all(|l| l.shapes.is_empty())
     {
-        doc.pages.remove(0);
+        // The master page's guidelines show on every page.
+        let master = doc.pages.remove(0);
         for (i, p) in doc.pages.iter_mut().enumerate() {
             p.name = format!("Page {}", i + 1);
+            for g in &master.guides {
+                if !p.guides.contains(g) {
+                    p.guides.push(*g);
+                }
+            }
         }
     }
     if doc.pages.is_empty() {
@@ -485,6 +516,12 @@ pub fn parse_document_with(
         });
     }
 
+    if ctx.library_colors > 0 {
+        let n = ctx.library_colors;
+        ctx.report.warn(format!(
+            "{n} colour(s) from a spot colour library (model 0x01) shown as tints of black"
+        ));
+    }
     ctx.report.pages = doc.pages.len();
     ctx.report.layers = doc.pages.iter().map(|p| p.layers.len()).sum();
     ctx.report.shapes = doc
@@ -637,11 +674,19 @@ impl<'a> Ctx<'a> {
         if model == 0 && b == [0; 4] {
             return Some(Color::BLACK);
         }
+        // A colour of a spot colour library (seen in version 12 files):
+        // its number in the library (u16) and a tint in percent (u16). The
+        // libraries' colours are not in the file; the tint of black stands
+        // in, so tints keep their lightness.
+        if model == 0x01 {
+            self.library_colors += 1;
+            return Some(library_color_stand_in(b));
+        }
         Some(match color_from_model(model, b) {
             Some(c) => c,
             None => {
                 self.report.warn(format!(
-                    "colour model 0x{model:02x} not modelled; using black"
+                    "colour model 0x{model:02x} (value {b:02x?}) not modelled; using black"
                 ));
                 Color::BLACK
             }
@@ -1728,6 +1773,75 @@ impl<'a> Ctx<'a> {
         })
     }
 
+    /// An embedded object drawn as its picture: coordinates are the size
+    /// (two coordinates) and two opposite corners.
+    fn read_embedded(
+        &mut self,
+        d: &[u8],
+        coords: Option<Arg>,
+        name: Option<&str>,
+    ) -> Option<ShapeKind> {
+        let name = name?;
+        let Some((w, h, png)) = self.embedded.get(name).cloned() else {
+            self.report.warn(format!(
+                "embedded object \"{name}\" has no picture we can show"
+            ));
+            return None;
+        };
+        let mut r = self.reader_at(d, coords?.off + 8);
+        let (x0, y0, x1, y1) = (r.coord()?, r.coord()?, r.coord()?, r.coord()?);
+        let rect = Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
+        if !(rect.width() > 0.0 && rect.height() > 0.0) {
+            return None;
+        }
+        Some(ShapeKind::Bitmap {
+            rect,
+            width_px: w,
+            height_px: h,
+            png,
+            fx: None,
+        })
+    }
+
+    /// A guideline's line (argument 16000, versions 6 and later): 12 bytes
+    /// not used here, the angle (millionths of a degree, 90 for vertical
+    /// lines; the points say the same), then two points the line passes
+    /// through (and a third, the second again). Points
+    /// are from the page centre like the objects'; vertical and
+    /// horizontal lines become plain guidelines. Seen in version 12 files.
+    fn read_guide(
+        &self,
+        d: &[u8],
+        arg: Arg,
+        page_size: Size,
+    ) -> Option<tracedraw_core::document::Guide> {
+        use tracedraw_core::document::{Guide, GuideLine};
+        if self.v16() || arg.end.saturating_sub(arg.off) < 32 {
+            return None;
+        }
+        let mut r = self.reader_at(d, arg.off + 16);
+        let (x1, y1, x2, y2) = (r.coord()?, r.coord()?, r.coord()?, r.coord()?);
+        if ![x1, y1, x2, y2].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let (cx, cy) = (page_size.width / 2.0, page_size.height / 2.0);
+        let eps = 1e-6;
+        let line = if (x1 - x2).abs() < eps && (y1 - y2).abs() >= eps {
+            GuideLine::Vertical { x: x1 + cx }
+        } else if (y1 - y2).abs() < eps && (x1 - x2).abs() >= eps {
+            GuideLine::Horizontal { y: y1 + cy }
+        } else if (x1 - x2).abs() >= eps || (y1 - y2).abs() >= eps {
+            GuideLine::Angled {
+                x: (x1 + x2) / 2.0 + cx,
+                y: (y1 + y2) / 2.0 + cy,
+                angle: (y2 - y1).atan2(x2 - x1).to_degrees(),
+            }
+        } else {
+            return None;
+        };
+        Some(Guide::from(line))
+    }
+
     fn object_bbox(&self, oc: &Chunk) -> Option<Rect> {
         let c = oc.find(b"bbox")?;
         let d = self.data(c);
@@ -1857,6 +1971,15 @@ impl<'a> Ctx<'a> {
         let d = self.data(loda);
         let l = self.read_loda(d)?;
         let kind_code = l.kind;
+        if kind_code == OBJ_GUIDE {
+            self.last_was_guide = true;
+            let line = l.args.iter().find(|a| a.ty == ARG_GUIDE_LINE);
+            match line.and_then(|a| self.read_guide(d, *a, page_size)) {
+                Some(g) => self.guides.push(g),
+                None => self.report.warn("a guideline could not be read"),
+            }
+            return None;
+        }
         log::debug!(
             "object type 0x{kind_code:02x}, args (type, bytes): {:?}",
             l.args
@@ -1948,6 +2071,7 @@ impl<'a> Ctx<'a> {
                 self.build_text(kind_code, d, coords, oc, style_id, &fill, frame)
             }
             OBJ_CONNECTOR => self.read_connector(oc),
+            OBJ_EMBEDDED => self.read_embedded(d, coords, name.as_deref()),
             _ => coords.and_then(|a| self.read_geometry(kind_code, d, a, polygon)),
         };
         let kind = match kind {
@@ -2039,6 +2163,7 @@ impl<'a> Ctx<'a> {
                         }
                         out.push(shape);
                     }
+                    None if std::mem::take(&mut self.last_was_guide) => {}
                     None => self.report.skipped_objects += 1,
                 }
             } else if c.is(b"grp ") {
@@ -2826,7 +2951,12 @@ fn text_on(
 /// text's box on the page (1 mm to spare), the nearest such point to the
 /// box's centre when several do.
 fn path_for_text(shapes: &[Shape], curves: &[usize], fitted: &OnPathText) -> Option<usize> {
-    let b = fitted.page_box?.inflate(1.0, 1.0);
+    // The text's start lies on its path, inside the text's box or just
+    // outside it (text set below a path, seen in version 12 files: 0.8 mm
+    // out on a 340 mm box), so the box grows by 2 % of its size.
+    let pb = fitted.page_box?;
+    let grow = 1.0 + 0.02 * pb.width().max(pb.height());
+    let b = pb.inflate(grow, grow);
     let mut best: Option<(usize, f64)> = None;
     for &ci in curves {
         let Some(curve) = shapes.get(ci) else {
@@ -2836,7 +2966,10 @@ fn path_for_text(shapes: &[Shape], curves: &[usize], fitted: &OnPathText) -> Opt
         let Some((p, _)) = tp.baseline().at(at) else {
             continue;
         };
-        log::debug!("text on path: curve {ci} puts the text at {p:?} (box {b:?})");
+        log::debug!(
+            "text on path: curve {ci} ({:?}) puts the text at {p:?} (box {b:?})",
+            curve.bounds()
+        );
         if !b.contains(p) {
             continue;
         }
@@ -2967,6 +3100,13 @@ pub(crate) fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) ->
 /// also set on the move-to of a closed subpath, which we ignore).
 /// A colour from its model code and four value bytes (the encoding shared
 /// by `.cdr` from version 5 and CMX): `None` for models we do not model.
+/// What a spot colour library's colour (model 0x01: number u16, tint in
+/// percent u16) is shown as: black at its tint.
+pub(crate) fn library_color_stand_in(b: [u8; 4]) -> Color {
+    let tint = u16::from_le_bytes([b[2], b[3]]).min(100) as f32;
+    Color::cmyk_pct(0.0, 0.0, 0.0, tint)
+}
+
 pub(crate) fn color_from_model(model: u16, b: [u8; 4]) -> Option<Color> {
     Some(match model {
         // CMYK in percent
@@ -5991,5 +6131,108 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(rep.warnings.iter().any(|w| w.contains("0x26")));
+    }
+
+    #[test]
+    fn guidelines_become_page_guides_not_skipped_objects() {
+        // 12 bytes, the angle, then the line's points from the page centre:
+        // a vertical line 10 mm right of centre, a horizontal one 20 mm
+        // below it.
+        let guide = |pts: &[i32], angle: i32| {
+            let mut a = vec![0u8; 12];
+            a.extend_from_slice(&i32s(&[angle]));
+            a.extend_from_slice(&i32s(pts));
+            chunk(b"loda", &loda(OBJ_GUIDE, &[(ARG_GUIDE_LINE, a)]))
+        };
+        let far = 228_600_000;
+        let v = list(
+            b"obj ",
+            &guide(&[100_000, -far, 100_000, far, 100_000, far], 90_000_000),
+        );
+        let h = list(
+            b"obj ",
+            &guide(&[-far, -200_000, far, -200_000, 0, -200_000], 0),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &[v, h].concat())),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR9", &body), 9);
+        assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
+        use tracedraw_core::document::GuideLine;
+        let page = &doc.pages[0];
+        let (cx, cy) = (page.size.width / 2.0, page.size.height / 2.0);
+        let lines: Vec<GuideLine> = page.guides.iter().map(|g| g.line).collect();
+        assert_eq!(
+            lines,
+            vec![
+                GuideLine::Vertical { x: cx + 10.0 },
+                GuideLine::Horizontal { y: cy - 20.0 }
+            ]
+        );
+    }
+
+    #[test]
+    fn embedded_pictures_show_in_their_objects_rectangle() {
+        // Size, then two corners: 20 by 10 mm around the page centre.
+        let obj = |storage: &str| {
+            let mut coords = i32s(&[200_000, 100_000]);
+            coords.extend_from_slice(&i32s(&[-100_000, 50_000, 100_000, -50_000]));
+            let name: Vec<u8> = storage
+                .encode_utf16()
+                .chain([0])
+                .flat_map(|u| u.to_le_bytes())
+                .collect();
+            list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(OBJ_EMBEDDED, &[(ARG_NAME, name), (ARG_COORDS, coords)]),
+                ),
+            )
+        };
+        let body = [
+            chunk(b"mcfg", &mcfg(12, 2_540_000, 2_540_000)),
+            chunk(b"ole2", &crate::ole::tests::compound_with_picture()),
+            list(
+                b"page",
+                &list(b"layr", &[obj("Embedding 3"), obj("Embedding 9")].concat()),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRC", &body), 12);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Bitmap {
+                rect,
+                width_px,
+                height_px,
+                ..
+            } => {
+                assert_eq!((*width_px, *height_px), (2, 2));
+                assert!((rect.width() - 20.0).abs() < 1e-9 && (rect.height() - 10.0).abs() < 1e-9);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A storage the file does not hold: skipped, named in a warning.
+        assert!(rep.warnings.iter().any(|w| w.contains("Embedding 9")));
+    }
+
+    #[test]
+    fn library_colours_stand_in_as_tints_of_black() {
+        // Number 123, tint 10 % and 100 %; a tint past 100 is 100.
+        assert_eq!(
+            library_color_stand_in([0x7b, 0, 10, 0]),
+            Color::cmyk_pct(0.0, 0.0, 0.0, 10.0)
+        );
+        assert_eq!(
+            library_color_stand_in([0x7b, 0, 100, 0]),
+            Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)
+        );
+        assert_eq!(
+            library_color_stand_in([0, 0, 0xff, 0xff]),
+            Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)
+        );
     }
 }

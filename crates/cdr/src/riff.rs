@@ -296,6 +296,10 @@ fn inflate_cmpr(
         log::warn!("cmpr block at {first} could not be inflated");
         return Vec::new();
     };
+    // Version 12 files start with a `cmpr` holding two empty streams.
+    if chunks.is_empty() {
+        return Vec::new();
+    }
     let sizes: Vec<u32> = inflate_cpng(buf, second, second.saturating_add(c1 as usize).min(end))
         .unwrap_or_default()
         .chunks_exact(4)
@@ -330,11 +334,7 @@ fn inflate_cpng(buf: &[u8], start: usize, end: usize) -> Option<Vec<u8>> {
     let mut inflated = Vec::new();
     let mut dec = flate2::read::ZlibDecoder::new(&block[8..]);
     std::io::Read::read_to_end(&mut dec, &mut inflated).ok()?;
-    if inflated.is_empty() {
-        None
-    } else {
-        Some(inflated)
-    }
+    Some(inflated)
 }
 
 #[cfg(test)]
@@ -419,6 +419,28 @@ mod tests {
         let page = inner.find(b"page").expect("page inside inflated stream");
         let vrsn = page.find(b"vrsn").expect("vrsn inside page");
         assert_eq!(tree.data(&file, vrsn), &[0x84, 0x03]);
+    }
+
+    #[test]
+    fn an_empty_cmpr_list_is_no_chunk_and_no_warning() {
+        // Two CPng blocks of empty zlib streams, as version 12 files have.
+        let empty = deflate(&[]);
+        let mut block = b"CPng\x01\x00\x04\x00".to_vec();
+        block.extend_from_slice(&empty);
+        let mut body = Vec::new();
+        for _ in 0..2 {
+            body.extend_from_slice(&(block.len() as u32).to_le_bytes());
+            body.extend_from_slice(&0u32.to_le_bytes());
+        }
+        body.extend_from_slice(&block);
+        body.extend_from_slice(&block);
+        assert_eq!(inflate_cpng(&block, 0, block.len()), Some(Vec::new()));
+        let mut riff_body = b"CDR9".to_vec();
+        riff_body.extend_from_slice(&list(b"cmpr", &body));
+        let file = chunk(b"RIFF", &riff_body);
+        let tree = parse(&file).unwrap();
+        let outer = tree.root.find(b"cmpr").expect("cmpr list");
+        assert!(outer.children.is_empty());
     }
 
     #[test]

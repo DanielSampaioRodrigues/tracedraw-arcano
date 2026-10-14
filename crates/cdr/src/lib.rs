@@ -21,6 +21,7 @@
 pub mod cmx;
 pub mod container;
 pub mod eot;
+pub mod ole;
 pub mod parse;
 pub mod riff;
 mod text;
