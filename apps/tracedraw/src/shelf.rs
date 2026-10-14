@@ -819,8 +819,8 @@ mod tests {
         let (px, w, h) = thumbnail(&item, 64).expect("picture");
         assert_eq!(px.len(), (w * h * 4) as usize);
         // Kept through the file.
-        let back =
-            items_from_bytes(&items_to_bytes(std::slice::from_ref(&item)).expect("bytes")).expect("items");
+        let back = items_from_bytes(&items_to_bytes(std::slice::from_ref(&item)).expect("bytes"))
+            .expect("items");
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].colors, vec![red]);
         // Another drawing gets them, once; undo takes them back.
