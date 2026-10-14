@@ -351,6 +351,49 @@ impl App {
         let mut cmds = Vec::new();
         let mut new_sel = Vec::new();
         for s in shapes {
+            // A vector object with bitmap effects becomes the bitmap of its
+            // picture, in its place.
+            if let Some(pic) = s.drawn_as() {
+                let id = vec![s.id];
+                cmds.extend([
+                    Command::SetShapeKind {
+                        shape: s.id,
+                        kind: pic.kind,
+                    },
+                    Command::SetFill {
+                        shapes: id.clone(),
+                        fill: tracedraw_core::Fill::None,
+                    },
+                    Command::SetStroke {
+                        shapes: id.clone(),
+                        stroke: None,
+                    },
+                    Command::SetExtraPaint {
+                        shapes: id.clone(),
+                        fills: Vec::new(),
+                        strokes: Vec::new(),
+                    },
+                    Command::SetShadow {
+                        shapes: id.clone(),
+                        shadow: None,
+                    },
+                    Command::SetEffectStack {
+                        shape: s.id,
+                        effects: Vec::new(),
+                        parked: Vec::new(),
+                    },
+                    Command::SetOpacity {
+                        shapes: id,
+                        opacity: 1.0,
+                    },
+                    Command::SetRasterFx {
+                        shape: s.id,
+                        fx: None,
+                    },
+                ]);
+                new_sel.push(s.id);
+                continue;
+            }
             // A bitmap's effects become its pixels.
             if let ShapeKind::Bitmap {
                 rect,

@@ -70,6 +70,10 @@ fn write_shape(
     next_grad: &mut usize,
     indent: usize,
 ) {
+    // Bitmap effects on a vector object: its picture in its place.
+    if let Some(pic) = shape.drawn_as() {
+        return write_shape(&pic, symbols, parent, out, defs, next_grad, indent);
+    }
     let link = shape
         .link
         .as_deref()

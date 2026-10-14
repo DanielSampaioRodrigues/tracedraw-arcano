@@ -388,3 +388,26 @@ through the master curve, then its channel's curve.
 - Given a document with effects and the switch off, when it is saved and
   loaded, then it is equal, and a file without the fields loads with
   defaults (`bitmap_effects_round_trip_and_plain_bitmaps_stay_short`).
+
+## On vector objects
+
+The Effects menu's bitmap effects work on any object, not only bitmaps.
+A vector object keeps its shape, fill and outlines; its effects are kept
+with it (`Shape::raster_fx`) and it is drawn as the picture they make:
+the object alone, drawn in its own space at 300 dpi (fewer pixels when it
+would pass 4 million) with a margin of 2 mm, its outline width and 8 % of
+its size, then the visible effects in order. The picture is kept in the
+drawing, so the screen, PDF, SVG, EPS and EMF draw it without the
+effects' code; DXF and PLT draw the object itself.
+
+- The effect dialog previews the object's picture before and after.
+- The Properties docker's FX section lists, edits, hides, reorders and
+  removes the effects as for a bitmap.
+- Any change to the object (nodes, colour, outline, a scale) makes the
+  picture again as part of the same undo step; a move or a turn keeps
+  it (it lives in the object's own space).
+- Effects > Flatten Effects turns the object into the bitmap of its
+  picture, in its place.
+
+Checks: `fx::tests::bitmap_effects_on_a_vector_object_draw_its_picture`,
+`fx::tests::the_picture_follows_the_object_and_flattens_to_a_bitmap`.

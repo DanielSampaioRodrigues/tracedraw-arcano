@@ -283,6 +283,8 @@ impl eframe::App for Shell {
         ui::root(app, ui);
         // Dimensions moved or scaled this frame show their new values.
         app.bake_dimensions();
+        // Bitmap effects on vector objects follow what changed them.
+        app.sync_raster_fx();
         // Connectors follow the objects they join.
         app.refresh_connectors();
         // Callouts follow their text.

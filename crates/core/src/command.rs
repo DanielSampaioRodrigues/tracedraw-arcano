@@ -106,6 +106,12 @@ pub enum Command {
         shape: ShapeId,
         mask: Option<crate::document::OpacityMask>,
     },
+    /// Bitmap effects (and their picture) on a vector object; `None`
+    /// removes them.
+    SetRasterFx {
+        shape: ShapeId,
+        fx: Option<Box<crate::document::RasterFx>>,
+    },
     AddSymbol {
         symbol: Symbol,
     },
@@ -330,6 +336,7 @@ impl Command {
             Command::SetDocumentPalette { .. } => "Document Palette",
             Command::SetInks { .. } => "Spot Inks",
             Command::SetOpacityMask { .. } => "Opacity Mask",
+            Command::SetRasterFx { .. } => "Effect",
             Command::AddSymbol { .. } => "New Symbol",
             Command::MovePage { .. } => "Move Page",
             Command::DeleteLayer { .. } => "Delete Layer",
@@ -499,6 +506,12 @@ impl Command {
                     return Err(Error::NotClipFrame(*shape));
                 }
                 s.opacity_mask = *mask;
+            }
+            Command::SetRasterFx { shape, fx } => {
+                let s = doc
+                    .find_shape_mut(*shape)
+                    .ok_or(Error::ShapeNotFound(*shape))?;
+                s.raster_fx = fx.clone();
             }
             Command::AddSymbol { symbol } => {
                 doc.symbols.push(symbol.clone());

@@ -240,6 +240,10 @@ impl Writer<'_> {
     }
 
     fn shape(&mut self, shape: &Shape, parent: Affine) {
+        // Bitmap effects on a vector object: its picture in its place.
+        if let Some(pic) = shape.drawn_as() {
+            return self.shape(&pic, parent);
+        }
         if !shape.visible {
             return;
         }

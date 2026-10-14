@@ -1151,6 +1151,40 @@ pub struct Shape {
     /// Further outlines, drawn over `stroke` in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_strokes: Vec<Stroke>,
+    /// Bitmap effects on an object that is not a bitmap: the object stays
+    /// as it is and is drawn as the picture they make of it (see
+    /// [`Shape::drawn_as`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raster_fx: Option<Box<RasterFx>>,
+}
+
+/// Bitmap effects on a vector object, and the picture they make of it.
+/// The picture is made by the app (which holds the effects) and kept with
+/// the drawing, so every output draws it without the effects' code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RasterFx {
+    pub effects: Vec<BitmapEffect>,
+    /// Where the picture goes, in the object's own space (under its
+    /// transform); larger than the object where effects spread.
+    pub rect: Rect,
+    pub width_px: u32,
+    pub height_px: u32,
+    /// The object with its visible effects; empty until made.
+    #[serde(with = "png_bytes")]
+    pub png: Vec<u8>,
+    /// A fingerprint of what the picture was made from (see
+    /// [`Shape::raster_source`]); another one means it is out of date.
+    #[serde(default)]
+    pub source: u64,
+}
+
+/// The lengths the transform gives the object's x and y unit vectors.
+pub fn transform_scale(t: Affine) -> (f64, f64) {
+    let c = t.as_coeffs();
+    (
+        (c[0] * c[0] + c[1] * c[1]).sqrt(),
+        (c[2] * c[2] + c[3] * c[3]).sqrt(),
+    )
 }
 
 /// An effect switched off, and its place in the stack (see
@@ -1246,7 +1280,58 @@ impl Shape {
             parked_effects: Vec::new(),
             extra_fills: Vec::new(),
             extra_strokes: Vec::new(),
+            raster_fx: None,
         }
+    }
+
+    /// How the object is drawn: itself, or, with visible bitmap effects
+    /// whose picture is made, a bitmap of that picture in its place (its
+    /// fill, outlines, shadow, effects and opacity are in the picture).
+    pub fn drawn_as(&self) -> Option<Shape> {
+        let fx = self.raster_fx.as_ref()?;
+        if fx.png.is_empty() || !fx.effects.iter().any(|e| e.visible) {
+            return None;
+        }
+        let mut s = self.clone();
+        s.kind = ShapeKind::Bitmap {
+            rect: fx.rect,
+            width_px: fx.width_px,
+            height_px: fx.height_px,
+            png: fx.png.clone(),
+            fx: None,
+        };
+        s.raster_fx = None;
+        s.fill = Fill::None;
+        s.stroke = None;
+        s.extra_fills.clear();
+        s.extra_strokes.clear();
+        s.shadow = None;
+        s.effects.clear();
+        s.parked_effects.clear();
+        s.opacity = 1.0;
+        Some(s)
+    }
+
+    /// A fingerprint of what a bitmap-effect picture is made from: the
+    /// object without its picture and place, and the scale of its
+    /// transform (which sets the picture's resolution).
+    pub fn raster_source(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut c = self.clone();
+        let (sx, sy) = transform_scale(c.transform);
+        c.transform = Affine::IDENTITY;
+        if let Some(fx) = c.raster_fx.as_mut() {
+            fx.png.clear();
+            fx.source = 0;
+            fx.rect = Rect::ZERO;
+            fx.width_px = 0;
+            fx.height_px = 0;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(&c).unwrap_or_default().hash(&mut h);
+        ((sx * 1000.0).round() as i64).hash(&mut h);
+        ((sy * 1000.0).round() as i64).hash(&mut h);
+        h.finish()
     }
 
     /// The effect stack in order, each effect with whether it is on: the

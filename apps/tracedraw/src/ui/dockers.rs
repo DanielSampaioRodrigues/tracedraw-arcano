@@ -482,9 +482,8 @@ fn properties(app: &mut App, ui: &mut Ui) {
             SectionIcon::Tool(crate::tools::Tool::Rectangle),
         ));
     }
-    if matches!(first.kind, ShapeKind::Bitmap { .. }) {
-        sections.push(("effects", "docker.fx", SectionIcon::Effects));
-    }
+    // Bitmap effects: a bitmap's, or a vector object's.
+    sections.push(("effects", "docker.fx", SectionIcon::Effects));
     if matches!(first.kind, ShapeKind::Text { .. }) {
         sections.push((
             "character",

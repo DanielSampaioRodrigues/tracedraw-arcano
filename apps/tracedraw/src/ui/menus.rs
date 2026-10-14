@@ -1998,7 +1998,9 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
                     "..."
                 };
                 let label = format!("{}{dots}", tr(&format!("fx.{}", fx.id)));
-                if item_label(ui, &label, shortcut, has_bitmap) {
+                // Bitmaps and vector objects alike (a vector object is
+                // drawn as the picture its effects make of it).
+                if item_label(ui, &label, shortcut, has_bitmap || has) {
                     crate::ui::effect_dialog::choose_effect(app, fx.id);
                 }
             }

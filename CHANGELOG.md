@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Bitmap effects (Effects > Blur, Texture, Creative and the others) work
+  on vector objects: the object stays editable and is drawn with its
+  effects; Flatten Effects makes it a bitmap.
 - File > GitHub: open a drawing from a GitHub repository, save it back
   as a commit with a message, and see and open its earlier versions.
 - `.cdr` version 22: connector lines (object type 0x26) are read; they

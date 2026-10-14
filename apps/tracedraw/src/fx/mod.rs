@@ -343,9 +343,118 @@ pub fn render_stack(
     Some((img, rect))
 }
 
+/// Resolution of the pictures bitmap effects make of vector objects.
+pub const VECTOR_FX_DPI: f64 = 300.0;
+/// The most pixels such a picture has (the resolution drops to stay under).
+const VECTOR_FX_MAX_PIXELS: f64 = 4_000_000.0;
+
+/// A vector object drawn alone, without its bitmap effects, as a picture
+/// for them: in its own space scaled as its transform scales it (so the
+/// picture keeps its resolution on the page), with a margin for what
+/// spreads past its edges. The PNG, its size in pixels and its place in
+/// the object's own space.
+pub fn vector_base(
+    shape: &tracedraw_core::Shape,
+    symbols: &[tracedraw_core::Symbol],
+    dpi: f64,
+) -> Option<(Vec<u8>, u32, u32, tracedraw_core::Rect)> {
+    use tracedraw_core::geometry::{Affine, Rect, Size};
+    let (sx, sy) = tracedraw_core::document::transform_scale(shape.transform);
+    if !(sx > 1e-9 && sy > 1e-9 && sx.is_finite() && sy.is_finite()) {
+        return None;
+    }
+    let mut c = shape.clone();
+    c.raster_fx = None;
+    c.transform = Affine::scale_non_uniform(sx, sy);
+    let b = c.bounds();
+    if !(b.width().is_finite() && b.height().is_finite()) || b.width() <= 0.0 && b.height() <= 0.0 {
+        return None;
+    }
+    let stroke = c.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
+    let m = 2.0 + stroke + 0.08 * b.width().max(b.height());
+    let b = Rect::new(b.x0 - m, b.y0 - m, b.x1 + m, b.y1 + m);
+    let mut zoom = dpi / 25.4;
+    let pixels = b.width() * b.height() * zoom * zoom;
+    if pixels > VECTOR_FX_MAX_PIXELS {
+        zoom *= (VECTOR_FX_MAX_PIXELS / pixels).sqrt();
+    }
+    let w = (b.width() * zoom).ceil().max(1.0) as u32;
+    let h = (b.height() * zoom).ceil().max(1.0) as u32;
+    let mut tmp = tracedraw_core::Document::new("fx", Size::new(b.width(), b.height()));
+    tmp.symbols = symbols.to_vec();
+    c.transform = Affine::translate((-b.x0, -b.y0)) * c.transform;
+    let page = tmp.pages[0].id;
+    let layer = tmp.pages[0].layers[0].id;
+    tmp.layer_mut(layer).ok()?.shapes.push(c);
+    let pm = tracedraw_render::render_page(
+        &tmp,
+        page,
+        &tracedraw_render::RenderOptions {
+            width: w,
+            height: h,
+            view: tracedraw_render::ViewTransform {
+                zoom,
+                origin_x: 0.0,
+                origin_y: h as f64,
+            },
+            preview: None,
+            wireframe: false,
+            ..tracedraw_render::RenderOptions::default()
+        },
+    )?;
+    let png = pm.encode_png().ok()?;
+    let local = Rect::new(b.x0 / sx, b.y0 / sy, b.x1 / sx, b.y1 / sy);
+    Some((png, w, h, local))
+}
+
+/// Bitmap effects on a vector object with their picture made, or `None`
+/// when the object cannot be drawn.
+pub fn vector_raster_fx(
+    shape: &tracedraw_core::Shape,
+    symbols: &[tracedraw_core::Symbol],
+    effects: Vec<BitmapEffect>,
+    auto_inflate: bool,
+) -> Option<Box<tracedraw_core::document::RasterFx>> {
+    use tracedraw_core::document::RasterFx;
+    let mut target = shape.clone();
+    target.raster_fx = Some(Box::new(RasterFx {
+        effects: effects.clone(),
+        rect: tracedraw_core::Rect::ZERO,
+        width_px: 0,
+        height_px: 0,
+        png: Vec::new(),
+        source: 0,
+    }));
+    let source = target.raster_source();
+    let (png, w, h, rect) = vector_base(shape, symbols, VECTOR_FX_DPI)?;
+    let stack = BitmapFxStack {
+        rect,
+        width_px: w,
+        height_px: h,
+        png,
+        effects: effects.clone(),
+    };
+    let (img, rect) = render_stack(&stack, auto_inflate)?;
+    let png = crate::bitmap_fx::encode(&img)?;
+    Some(Box::new(RasterFx {
+        effects,
+        rect,
+        width_px: img.width(),
+        height_px: img.height(),
+        png,
+        source,
+    }))
+}
+
+/// Shapes may hold bitmap effects: everything but bitmaps (their own
+/// effects), text being edited aside, and hidden helpers.
+fn takes_vector_fx(kind: &tracedraw_core::document::ShapeKind) -> bool {
+    !matches!(kind, tracedraw_core::document::ShapeKind::Bitmap { .. })
+}
+
 impl crate::app::App {
-    /// Change the effects of the bitmap `id` (its original kept aside);
-    /// returns the command, or `None` when it is not a bitmap.
+    /// Change the effects of the object `id`: a bitmap's (its original
+    /// kept aside), or a vector object's (drawn as their picture).
     pub fn bitmap_fx_command(
         &self,
         id: tracedraw_core::ShapeId,
@@ -353,6 +462,25 @@ impl crate::app::App {
     ) -> Option<tracedraw_core::Command> {
         use tracedraw_core::document::ShapeKind;
         let s = self.doc().find_shape(id)?;
+        if takes_vector_fx(&s.kind) {
+            let mut effects = s
+                .raster_fx
+                .as_ref()
+                .map(|fx| fx.effects.clone())
+                .unwrap_or_default();
+            f(&mut effects);
+            let fx = if effects.is_empty() {
+                None
+            } else {
+                Some(vector_raster_fx(
+                    s,
+                    &self.doc().symbols,
+                    effects,
+                    self.doc().metadata.auto_inflate_bitmaps(),
+                )?)
+            };
+            return Some(tracedraw_core::Command::SetRasterFx { shape: id, fx });
+        }
         let ShapeKind::Bitmap {
             rect,
             width_px,
@@ -444,12 +572,94 @@ impl crate::app::App {
             .unwrap_or_default()
     }
 
-    /// A bitmap's original pixels and effects, when it has effects.
+    /// A bitmap's original pixels and effects, when it has effects; for a
+    /// vector object with bitmap effects, its picture without them (made
+    /// once per state of the object) and the effects.
     pub fn bitmap_fx_stack(&self, id: tracedraw_core::ShapeId) -> Option<BitmapFxStack> {
         use tracedraw_core::document::ShapeKind;
-        match self.doc().find_shape(id).map(|s| &s.kind) {
-            Some(ShapeKind::Bitmap { fx: Some(st), .. }) => Some((**st).clone()),
-            _ => None,
+        let s = self.doc().find_shape(id)?;
+        match &s.kind {
+            ShapeKind::Bitmap { fx: Some(st), .. } => Some((**st).clone()),
+            ShapeKind::Bitmap { .. } => None,
+            _ => {
+                let fx = s.raster_fx.as_ref()?;
+                let (png, w, h, rect) = self.vector_base_cached(s)?;
+                Some(BitmapFxStack {
+                    rect,
+                    width_px: w,
+                    height_px: h,
+                    png,
+                    effects: fx.effects.clone(),
+                })
+            }
+        }
+    }
+
+    /// [`vector_base`] of `s`, kept for the last object asked about until
+    /// it changes (the effect dialogs ask every frame).
+    pub fn vector_base_cached(
+        &self,
+        s: &tracedraw_core::Shape,
+    ) -> Option<(Vec<u8>, u32, u32, tracedraw_core::Rect)> {
+        let key = (s.id, s.raster_source());
+        if let Some((k, v)) = self.vector_fx_base.borrow().as_ref() {
+            if *k == key {
+                return Some(v.clone());
+            }
+        }
+        let v = vector_base(s, &self.doc().symbols, VECTOR_FX_DPI)?;
+        *self.vector_fx_base.borrow_mut() = Some((key, v.clone()));
+        Some(v)
+    }
+
+    /// Each frame: remake the picture of every object whose bitmap effects
+    /// were made from an earlier state of it (moved nodes, a new colour,
+    /// a scale), as part of the step that changed it.
+    pub fn sync_raster_fx(&mut self) {
+        fn walk(s: &tracedraw_core::Shape, out: &mut Vec<tracedraw_core::Shape>) {
+            if let Some(fx) = &s.raster_fx {
+                if fx.source != s.raster_source() {
+                    out.push(s.clone());
+                }
+            }
+            if let tracedraw_core::document::ShapeKind::Group { children } = &s.kind {
+                for c in children {
+                    walk(c, out);
+                }
+            }
+        }
+        if !self.has_document() {
+            return;
+        }
+        let mut stale = Vec::new();
+        for layer in self.doc().all_layers() {
+            for s in &layer.shapes {
+                walk(s, &mut stale);
+            }
+        }
+        for s in stale {
+            let Some(fx) = &s.raster_fx else { continue };
+            let made = vector_raster_fx(
+                &s,
+                &self.doc().symbols,
+                fx.effects.clone(),
+                self.doc().metadata.auto_inflate_bitmaps(),
+            );
+            let cmd = tracedraw_core::Command::SetRasterFx {
+                shape: s.id,
+                fx: made.or_else(|| {
+                    // Not drawable now: keep the effects, mark as made.
+                    let mut f = fx.clone();
+                    f.png.clear();
+                    let mut t = s.clone();
+                    t.raster_fx = Some(f.clone());
+                    f.source = t.raster_source();
+                    Some(f)
+                }),
+            };
+            if let Err(e) = self.engine.amend(&cmd) {
+                self.status = e.to_string();
+            }
         }
     }
 }
@@ -875,5 +1085,120 @@ mod tests {
         app.undo();
         app.undo();
         assert!(!app.doc().metadata.auto_inflate_bitmaps());
+    }
+
+    fn red_rect_app() -> (crate::app::App, tracedraw_core::ShapeId) {
+        use tracedraw_core::{document::ShapeKind, geometry::Rect, Color, Command, Fill};
+        let mut app = crate::app::App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(20.0, 20.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::rgb8(220, 20, 20)),
+        });
+        app.select(vec![id]);
+        (app, id)
+    }
+
+    fn pixel_at(app: &crate::app::App, x_mm: f64, y_mm: f64) -> [u8; 4] {
+        let doc = app.doc();
+        let pid = doc.pages[0].id;
+        let pm = tracedraw_render::render_page_image(doc, pid, 25.4).expect("render");
+        let h = pm.height() as f64;
+        let px = pm
+            .pixel(x_mm as u32, (h - y_mm) as u32)
+            .expect("in the page")
+            .demultiply();
+        [px.red(), px.green(), px.blue(), px.alpha()]
+    }
+
+    #[test]
+    fn bitmap_effects_on_a_vector_object_draw_its_picture() {
+        let (mut app, id) = red_rect_app();
+        assert_eq!(pixel_at(&app, 40.0, 30.0)[..3], [220, 20, 20]);
+        app.add_bitmap_effect(new_effect("invert_colors"));
+        let s = app.doc().find_shape(id).expect("shape").clone();
+        // Still a rectangle, drawn as its inverted picture.
+        assert!(matches!(
+            s.kind,
+            tracedraw_core::document::ShapeKind::Rect { .. }
+        ));
+        let fx = s.raster_fx.clone().expect("effects");
+        assert_eq!(fx.effects.len(), 1);
+        assert!(!fx.png.is_empty());
+        assert_eq!(fx.source, s.raster_source());
+        let p = pixel_at(&app, 40.0, 30.0);
+        assert!(p[0] < 60 && p[1] > 200 && p[2] > 200, "{p:?}");
+        // The Properties docker lists it like a bitmap's.
+        assert_eq!(app.bitmap_effects(id).len(), 1);
+        assert!(app.bitmap_fx_stack(id).is_some());
+        // Hidden: drawn as itself again.
+        app.edit_bitmap_effects(id, "Show or Hide Effect", |l| l[0].visible = false);
+        assert_eq!(pixel_at(&app, 40.0, 30.0)[..3], [220, 20, 20]);
+        app.edit_bitmap_effects(id, "Show or Hide Effect", |l| l[0].visible = true);
+        // Undo takes back the showing, the hiding, then the effect.
+        app.undo();
+        app.undo();
+        assert!(app.doc().find_shape(id).expect("shape").raster_fx.is_some());
+        app.undo();
+        assert!(app.doc().find_shape(id).expect("shape").raster_fx.is_none());
+        assert_eq!(pixel_at(&app, 40.0, 30.0)[..3], [220, 20, 20]);
+    }
+
+    #[test]
+    fn the_picture_follows_the_object_and_flattens_to_a_bitmap() {
+        use tracedraw_core::{geometry::Affine, Color, Command, Fill};
+        let (mut app, id) = red_rect_app();
+        app.add_bitmap_effect(new_effect("invert_colors"));
+        let made = app.doc().find_shape(id).unwrap().raster_fx.clone().unwrap();
+        // A move keeps the picture (it lives in the object's own space).
+        app.run(Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::translate((50.0, 50.0)),
+        });
+        app.sync_raster_fx();
+        assert_eq!(
+            app.doc().find_shape(id).unwrap().raster_fx.as_ref(),
+            Some(&made)
+        );
+        let p = pixel_at(&app, 90.0, 80.0);
+        assert!(p[0] < 60 && p[1] > 200, "{p:?}");
+        // A new colour makes it again, in the same step.
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::rgb8(0, 0, 255)),
+        });
+        let stale = app.doc().find_shape(id).unwrap().clone();
+        assert_ne!(
+            stale.raster_fx.as_ref().unwrap().source,
+            stale.raster_source()
+        );
+        app.sync_raster_fx();
+        let s = app.doc().find_shape(id).unwrap().clone();
+        assert_eq!(s.raster_fx.as_ref().unwrap().source, s.raster_source());
+        let p = pixel_at(&app, 90.0, 80.0);
+        assert!(
+            p[0] > 200 && p[1] > 200 && p[2] < 60,
+            "inverted blue is yellow: {p:?}"
+        );
+        // Flatten Effects: a bitmap in its place, looking the same.
+        app.select(vec![id]);
+        app.flatten_effects();
+        let s = app.doc().find_shape(id).unwrap().clone();
+        assert!(matches!(
+            s.kind,
+            tracedraw_core::document::ShapeKind::Bitmap { .. }
+        ));
+        assert!(s.raster_fx.is_none());
+        let p = pixel_at(&app, 90.0, 80.0);
+        assert!(p[0] > 200 && p[1] > 200 && p[2] < 60, "{p:?}");
+        // Exports draw the picture too.
+        let svg = tracedraw_io::svg::page_to_svg(app.doc(), 0);
+        assert!(svg.contains("<image"));
     }
 }

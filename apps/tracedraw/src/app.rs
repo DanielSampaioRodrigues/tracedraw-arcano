@@ -653,6 +653,11 @@ pub struct App {
     pub file: Option<PathBuf>,
     /// The drawing's file in a GitHub repository, when it came from one.
     pub remote: Option<crate::github::Remote>,
+    /// The last vector object's picture without its bitmap effects, by its
+    /// id and state (see `App::vector_base_cached`).
+    #[allow(clippy::type_complexity)]
+    pub vector_fx_base:
+        std::cell::RefCell<Option<((ShapeId, u64), (Vec<u8>, u32, u32, tracedraw_core::Rect))>>,
     /// File > GitHub's session: the token, the request out, the history.
     pub github: crate::github::GithubSession,
     /// The `.cdr` version the active drawing is saved in: the version of
@@ -1440,6 +1445,7 @@ impl App {
             text_edit: None,
             file: None,
             remote: None,
+            vector_fx_base: Default::default(),
             github: Default::default(),
             cdr_version: None,
             status: String::new(),

@@ -36,22 +36,37 @@ fn color_image(img: &RgbaImage) -> ColorImage {
     ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw())
 }
 
-/// The first selected bitmap: its id, pixels per inch and PNG bytes.
+/// The first selected bitmap: its id, pixels per inch and PNG bytes; else
+/// the first selected object as a picture (what bitmap effects start
+/// from: its picture with its effects when it has some, else itself).
 pub fn selected_bitmap(app: &App) -> Option<(ShapeId, f32, Vec<u8>)> {
-    app.selected_shapes()
-        .into_iter()
-        .find_map(|s| match s.kind {
-            ShapeKind::Bitmap {
-                rect,
-                width_px,
-                png,
-                ..
-            } => {
-                let mm = rect.width().abs().max(1e-6);
-                Some((s.id, (width_px as f64 / (mm / 25.4)) as f32, png))
-            }
-            _ => None,
-        })
+    let shapes = app.selected_shapes();
+    let bitmap = shapes.iter().find_map(|s| match &s.kind {
+        ShapeKind::Bitmap {
+            rect,
+            width_px,
+            png,
+            ..
+        } => {
+            let mm = rect.width().abs().max(1e-6);
+            Some((s.id, (*width_px as f64 / (mm / 25.4)) as f32, png.clone()))
+        }
+        _ => None,
+    });
+    bitmap.or_else(|| {
+        let s = shapes.first()?;
+        if let Some(fx) = s.raster_fx.as_ref().filter(|f| !f.png.is_empty()) {
+            let mm = fx.rect.width().abs().max(1e-6);
+            return Some((
+                s.id,
+                (fx.width_px as f64 / (mm / 25.4)) as f32,
+                fx.png.clone(),
+            ));
+        }
+        let (png, w, _, rect) = app.vector_base_cached(s)?;
+        let mm = rect.width().abs().max(1e-6);
+        Some((s.id, (w as f64 / (mm / 25.4)) as f32, png))
+    })
 }
 
 /// What a preview starts from.
