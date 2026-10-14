@@ -697,7 +697,10 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        let runs = if v >= 12 {
+        // From version 12 the text is UTF-16, two bytes a character; a
+        // version 12 file with one byte a character (as many bytes as
+        // characters) holds 8-bit text like the versions before.
+        let runs = if v >= 12 && !(nbytes == nc && nc > 0) {
             split_runs(&decode_utf16le(text), &styles)
         } else {
             split_byte_runs(text, &styles)

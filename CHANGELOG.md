@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` versions 7 to 12: arrowheads are read and placed on their lines,
+  artistic text stands where the file puts it (it was drawn far off the
+  page), and version 12 text stored as one byte a character reads right.
+- `tracedraw-cli inspect file.cdr <chunk>` prints the data of every
+  chunk with that id in hex.
 - The browser version says at each start that it is the same Rust
   program as the desktop app, compiled to WebAssembly, slower in a
   browser, and links to the desktop app.

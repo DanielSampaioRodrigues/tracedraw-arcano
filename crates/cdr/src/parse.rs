@@ -1089,24 +1089,32 @@ impl<'a> Ctx<'a> {
         );
     }
 
-    /// `arrw`: an arrowhead definition. Layout assumed (not in the public
-    /// spec): id u32, point count u32, then a point list as in geometry.
+    /// `arrw`: an arrowhead definition, seen in version 11 and 12 files:
+    /// id u32, 4 bytes, the point count u16 at byte 8, 4 bytes, the node
+    /// types, one byte, then the points (i32 pairs) and one spare byte.
     /// The outline is classified into one of our presets by its shape.
     fn read_arrowhead(&mut self, c: &Chunk) {
         let d = self.data(c);
         let mut r = self.reader(d);
         let Some(id) = r.u32() else { return };
-        let Some(n) = r.u32() else { return };
-        let point_size = if self.v16() { 4 } else { 8 };
-        if n == 0 || n as usize > r.remaining() / (point_size + 1) {
+        let n = self.reader_at(d, 8).u16().map_or(0, usize::from);
+        if n == 0 || 15 + 9 * n > d.len() {
             self.report.warn(format!(
                 "arrowhead {id}: unreadable outline; drawn without arrowhead"
             ));
             return;
         }
-        let Some((pts, types)) = self.read_points(&mut r, n as usize) else {
+        let Some(types) = d.get(14..14 + n).map(<[u8]>::to_vec) else {
             return;
         };
+        let mut r = self.reader_at(d, 15 + n);
+        let mut pts = Vec::with_capacity(n);
+        for _ in 0..n {
+            let (Some(x), Some(y)) = (r.i32(), r.i32()) else {
+                return;
+            };
+            pts.push(Point::new(f64::from(x), f64::from(y)));
+        }
         self.add_arrowhead(id, &pts, &types);
     }
 
@@ -1345,9 +1353,12 @@ impl<'a> Ctx<'a> {
                     frame = Some(Size::new(w.abs(), h.abs()));
                     origin = Point::new(0.0, -h.abs());
                 }
-            } else {
+            } else if self.v >= 13 {
                 origin = Point::new(r.coord()?, r.coord()?);
             }
+            // Before version 13 the argument holds record ids, not a
+            // place (files of versions 7 to 12): the text starts at the
+            // origin and the transform places it.
         }
         let mut txsm = None;
         oc.walk(&mut |c, _| {
@@ -1541,9 +1552,10 @@ impl<'a> Ctx<'a> {
                     dash.push(x as f64);
                 }
             }
-            // From version 6 the count and ten dash slots fill 22 bytes,
-            // so the markers start 20 bytes after the first dash.
-            let mut m = self.reader_at(d, dashes_at + 20);
+            // The marker ids follow a fixed dash area: 22 bytes after the
+            // first dash in the untagged records before version 13 (files
+            // of versions 11 and 12), 20 in the tagged ones (version 21).
+            let mut m = self.reader_at(d, dashes_at + if (6..13).contains(&v) { 22 } else { 20 });
             if let (Some(s), Some(e)) = (m.u32(), m.u32()) {
                 markers = (s, e);
             }
@@ -4434,7 +4446,9 @@ mod tests {
                 align,
                 ..
             } => {
-                assert!((origin.x - 25.4).abs() < 1e-9 && (origin.y - 12.7).abs() < 1e-9);
+                // Before version 13 the coordinates argument holds record
+                // ids; the text starts at the origin.
+                assert!(origin.x.abs() < 1e-9 && origin.y.abs() < 1e-9, "{origin:?}");
                 assert!(frame.is_none());
                 assert_eq!(*align, TextAlign::Left);
                 assert_eq!(spans.len(), 2, "{spans:?}");
@@ -5635,12 +5649,17 @@ mod tests {
 
     // Arrowheads.
 
+    /// `arrw` laid out like the version 11 and 12 samples: id, 4 bytes,
+    /// the count, 4 bytes, the node types, a byte, the points, a byte.
     fn arrw(id: u32, pts: &[(i32, i32)], types: &[u8]) -> Vec<u8> {
-        let mut a = u32s(&[id, pts.len() as u32]);
+        let mut a = u32s(&[id, 0]);
+        a.extend_from_slice(&u16s(&[pts.len() as u16, 11, 0]));
+        a.extend_from_slice(types);
+        a.push(0);
         for (x, y) in pts {
             a.extend_from_slice(&i32s(&[*x, *y]));
         }
-        a.extend_from_slice(types);
+        a.push(0);
         a
     }
 
@@ -5816,5 +5835,89 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.contains("arrowhead 2")));
+    }
+
+    #[test]
+    fn version_12_text_with_a_byte_a_character_is_8_bit() {
+        let styles = [Style7 {
+            chars: 4,
+            font: None,
+            flags: None,
+            size_units: None,
+            fill: None,
+        }];
+        // The UTF-16 form: as two bytes a character.
+        let wide = txsm7(12, false, &styles, "Next");
+        let mut warn = |_: String| {};
+        let read = |d: &[u8], warn: &mut dyn FnMut(String)| {
+            text::read_txsm(d, 12, warn).map(|t| {
+                t.paragraphs[0]
+                    .runs
+                    .iter()
+                    .map(|r| r.text.clone())
+                    .collect::<String>()
+            })
+        };
+        assert_eq!(read(&wide, &mut warn).as_deref(), Some("Next"));
+        // The same record with the text as one byte a character (as a
+        // version 12 sample stores it): its byte count equals its length.
+        let tail = 4 + 8 + 1; // count, UTF-16 text, no path
+        let mut narrow = wide[..wide.len() - tail].to_vec();
+        narrow.extend_from_slice(&u32s(&[4]));
+        narrow.extend_from_slice(b"Next");
+        narrow.push(0);
+        assert_eq!(read(&narrow, &mut warn).as_deref(), Some("Next"));
+    }
+
+    /// A version 12 outline: 52 bytes where version 13 has the matrix, and
+    /// the marker ids 22 bytes after the first dash.
+    fn outl_v12(id: u32, start: u32, end: u32) -> Vec<u8> {
+        let mut o = u32s(&[id]);
+        // Line type 2 (a line), caps, join, 2 bytes, width, stretch, 2
+        // bytes, nib angle.
+        o.extend_from_slice(&u16s(&[2, 0, 0, 0]));
+        o.extend_from_slice(&i32s(&[2540]));
+        o.extend_from_slice(&u16s(&[100, 0]));
+        o.extend_from_slice(&i32s(&[0]));
+        o.extend_from_slice(&[0; 52]);
+        o.extend_from_slice(&color_bgr(0, 0, 0));
+        o.extend_from_slice(&[0; 16]);
+        o.extend_from_slice(&u16s(&[0]));
+        o.extend_from_slice(&[0; 22]);
+        o.extend_from_slice(&u32s(&[start, end]));
+        o
+    }
+
+    #[test]
+    fn version_12_outlines_find_their_arrowheads() {
+        let triangle = arrw(
+            0x07da_c718,
+            &[(0, 0), (-777_494, 388_620), (-777_494, -388_874), (0, 0)],
+            &[0x0c, 0x44, 0x44, 0x48],
+        );
+        let main = riff(
+            b"CDRD",
+            &[
+                chunk(b"arrw", &triangle),
+                chunk(b"outl", &outl_v12(1, 0x07da_c718, 0)),
+                chunk(b"outl", &outl_v12(2, 0, 0x07da_c718)),
+            ]
+            .concat(),
+        );
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 12);
+        for c in tree.root.find_all(b"arrw") {
+            ctx.read_arrowhead(c);
+        }
+        for c in tree.root.find_all(b"outl") {
+            ctx.read_outline(c);
+        }
+        let arrows = |id: u32| {
+            let s = ctx.outlines[&id].stroke.clone().expect("stroke");
+            (s.start_arrow, s.end_arrow)
+        };
+        assert_eq!(arrows(1), (Arrowhead::Arrow, Arrowhead::None));
+        assert_eq!(arrows(2), (Arrowhead::None, Arrowhead::Arrow));
+        assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
     }
 }
