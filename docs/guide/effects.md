@@ -163,6 +163,11 @@ A clip frame shows objects only inside another object's shape.
 - **Extract Contents** takes the objects out again.
 - **Lock Contents to Frame** (on to start with) makes the contents move
   with the frame.
+- **Opacity Mask** turns the frame into a mask: the frame is no longer
+  drawn, and its brightness decides how much of the contents shows,
+  fully where it is white and not at all where it is black. Give the
+  frame a fountain fill from white to black to fade the contents out.
+  **Invert Mask** swaps that.
 
 Right-click an object and use **Frame Type** to turn it into an empty
 clip frame, or into an empty paragraph text frame of its size. See

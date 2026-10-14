@@ -16,7 +16,7 @@ once; switch between them with the tabs or the **Window** menu.
 TraceDraw opens:
 
 - `.tdraw`, its own format;
-- `.cdr` files, versions 7 to 21 (see [below](#cdr-files));
+- `.cdr` files, versions 7 to 22 (see [below](#cdr-files));
 - SVG and SVGZ;
 - PDF and AI (PDF-compatible ones and older PostScript-based ones),
   asking for the password when a protected PDF needs one;
@@ -79,7 +79,7 @@ See [the saving notes](../behavior/files.md).
 
 TraceDraw reads and writes `.cdr` files independently:
 
-- **Reading**: versions 7 to 21 open with their pages, layers, shapes,
+- **Reading**: versions 7 to 22 open with their pages, layers, shapes,
   curves, text, groups, bitmaps, fills, outlines and more. Some content
   is not read yet (for example splines and most lenses and effects);
   [the feature status](../features.md) lists what.
