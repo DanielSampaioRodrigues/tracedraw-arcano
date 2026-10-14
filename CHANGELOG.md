@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Menus, lists and dialogs open at once, without fading in, and a
+  folder called `tracedraw-settings` next to the program makes a
+  portable copy that keeps its preferences there (#4).
 - Shape tool on pictures (#60): a picture shows a node at each corner;
   dragging one crops the picture to the reshaped outline (a clip frame
   whose frame keeps editing as a curve). A double click no longer turns

@@ -1388,6 +1388,9 @@ impl App {
         });
         ctx.set_visuals(theme::visuals());
         ctx.all_styles_mut(|style| {
+            // Menus, lists and dialogs appear at once, without fading in
+            // (#4).
+            style.animation_time = 0.0;
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
             // Interface text at 13 px, the size labels, lists, menus and

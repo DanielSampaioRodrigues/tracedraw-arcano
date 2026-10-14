@@ -206,3 +206,17 @@ the page, the drawing, the accent blue and the desktop colour (its own
 setting) do not. The button with a moon (light themes) or a sun (dark
 themes) at the right end of the status bar switches to Dark or to
 Light. The choice is kept in the preferences and applies at once.
+
+## Where the preferences are kept
+
+- `TRACEDRAW_CONFIG_DIR` when it is set.
+- Otherwise a folder called `tracedraw-settings` next to the program,
+  when there is one: a portable copy (on a USB stick, say) keeps its
+  preferences there and leaves nothing on the computer.
+- Otherwise the system's place: `%APPDATA%\TraceDraw` on Windows,
+  `~/Library/Application Support/TraceDraw` on macOS,
+  `$XDG_CONFIG_HOME/tracedraw` (or `~/.config/tracedraw`) elsewhere; the
+  browser keeps them in its local storage.
+
+Menus, lists and dialogs appear at once, without fading in.
+

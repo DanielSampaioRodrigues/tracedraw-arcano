@@ -960,9 +960,25 @@ impl Default for Settings {
     }
 }
 
+/// The folder of a portable copy: a folder called `tracedraw-settings`
+/// next to the program keeps its preferences there (a USB stick, a copy
+/// that leaves no trace on the computer).
+pub const PORTABLE_DIR: &str = "tracedraw-settings";
+
+/// The portable settings folder next to the program `exe`, when there is
+/// one.
+pub fn portable_dir(exe: &std::path::Path) -> Option<PathBuf> {
+    let dir = exe.parent()?.join(PORTABLE_DIR);
+    dir.is_dir().then_some(dir)
+}
+
 pub fn config_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("TRACEDRAW_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| portable_dir(&e)) {
+        return Some(dir);
     }
     #[cfg(target_os = "windows")]
     {
@@ -1165,5 +1181,17 @@ mod tests {
         );
         assert!(r.shortcuts.is_empty() && r.shown_bars.is_none());
         assert_eq!((r.ui_size, r.language.as_str()), (0.0, ""));
+    }
+
+    #[test]
+    fn a_settings_folder_next_to_the_program_makes_it_portable() {
+        let base = std::env::temp_dir().join(format!("tracedraw-portable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("dir");
+        let exe = base.join("tracedraw.exe");
+        assert_eq!(portable_dir(&exe), None);
+        std::fs::create_dir_all(base.join(PORTABLE_DIR)).expect("dir");
+        assert_eq!(portable_dir(&exe), Some(base.join(PORTABLE_DIR)));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
