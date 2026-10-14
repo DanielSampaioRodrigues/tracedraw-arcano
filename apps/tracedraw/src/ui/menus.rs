@@ -798,8 +798,8 @@ mod tests {
         // submenu on the way to one.
         // (Window > Dockers lists the panels, which are not commands.)
         for key in NEW_IN_THIS_VERSION {
-            let docker = *key == "menu.window.dockers"
-                || DockerTab::ALL.iter().any(|t| t.key() == *key);
+            let docker =
+                *key == "menu.window.dockers" || DockerTab::ALL.iter().any(|t| t.key() == *key);
             assert!(
                 docker
                     || find(key).is_some()

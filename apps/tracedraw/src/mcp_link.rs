@@ -192,18 +192,29 @@ fn serve_connection(stream: TcpStream, token: &str, tx: &Sender<Incoming>, wake:
         );
         let _ = out.flush();
     };
+    // A refused request's body is read (up to the size limit) before the
+    // answer: closing a socket with unread data resets the connection,
+    // and the client may then lose the answer.
+    let refuse = |reader: &mut std::io::BufReader<TcpStream>, out: &mut TcpStream, status: &str| {
+        let _ = std::io::copy(
+            &mut reader.by_ref().take(length.min(MAX_BODY) as u64),
+            &mut std::io::sink(),
+        );
+        respond(out, status, "{}");
+        let _ = out.shutdown(std::net::Shutdown::Write);
+    };
     if path != "/mcp" {
-        respond(&mut out, "404 Not Found", "{}");
+        refuse(&mut reader, &mut out, "404 Not Found");
         return;
     }
     if method != "POST" {
-        respond(&mut out, "405 Method Not Allowed", "{}");
+        refuse(&mut reader, &mut out, "405 Method Not Allowed");
         return;
     }
     // Web pages may not drive the window, and only the bridge (or a client
     // given the token) may.
     if origin || auth != format!("Bearer {token}") {
-        respond(&mut out, "403 Forbidden", "{}");
+        refuse(&mut reader, &mut out, "403 Forbidden");
         return;
     }
     if length > MAX_BODY {
