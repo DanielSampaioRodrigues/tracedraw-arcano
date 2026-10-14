@@ -308,6 +308,59 @@ impl Renderer<'_> {
             }
             return;
         }
+        if let (ShapeKind::ClipFrame { frame, contents }, Some(om)) =
+            (&shape.kind, shape.opacity_mask)
+        {
+            // Opacity mask: the frame drawn alone gives, by its brightness,
+            // how much of the contents shows; the frame itself is not drawn.
+            let (w, h) = (self.pixmap.width(), self.pixmap.height());
+            if let (Some(mut frame_px), Some(mut layer)) = (Pixmap::new(w, h), Pixmap::new(w, h)) {
+                {
+                    let mut fill_only = (**frame).clone();
+                    fill_only.stroke = None;
+                    let mut sub = self.sub(&mut frame_px);
+                    sub.draw_shape(&fill_only, transform);
+                }
+                if om.invert {
+                    // Black shows: white where the frame is black, and
+                    // nothing outside the frame.
+                    for p in frame_px.pixels_mut() {
+                        let c = p.demultiply();
+                        let a = c.alpha();
+                        let inv = |v: u8| 255 - v;
+                        *p = tiny_skia::ColorU8::from_rgba(
+                            inv(c.red()),
+                            inv(c.green()),
+                            inv(c.blue()),
+                            a,
+                        )
+                        .premultiply();
+                    }
+                }
+                let mask =
+                    tiny_skia::Mask::from_pixmap(frame_px.as_ref(), tiny_skia::MaskType::Luminance);
+                {
+                    let mut sub = self.sub(&mut layer);
+                    for c in contents {
+                        let t = sub.child_transform(c, transform);
+                        sub.draw_shape(c, t);
+                    }
+                }
+                let pp = tiny_skia::PixmapPaint {
+                    opacity: shape.opacity.clamp(0.0, 1.0) as f32,
+                    ..Default::default()
+                };
+                self.pixmap.draw_pixmap(
+                    0,
+                    0,
+                    layer.as_ref(),
+                    &pp,
+                    Transform::identity(),
+                    Some(&mask),
+                );
+            }
+            return;
+        }
         if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
             // Frame's fill first, contents clipped to the frame, then the frame's outline.
             let mut frame_fill_only = (**frame).clone();
@@ -1481,6 +1534,73 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    /// A clip frame as an opacity mask: the contents show where the
+    /// frame is light, not where it is dark, and nothing outside it; the
+    /// frame is not drawn. Inverted, the other way round.
+    #[test]
+    fn opacity_masks_show_the_contents_by_the_frame_brightness() {
+        let red = Color::rgb8(255, 0, 0);
+        let contents = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), red);
+        // The frame: white on the left half, black on the right, covering
+        // the middle 80 mm.
+        let mut frame = rect(2, Rect::new(10.0, 10.0, 90.0, 90.0), Color::WHITE);
+        frame.fill = Fill::Fountain(Fountain {
+            kind: FountainKind::Linear,
+            stops: vec![
+                Stop {
+                    pos: 0.0,
+                    color: Color::WHITE,
+                },
+                Stop {
+                    pos: 0.499,
+                    color: Color::WHITE,
+                },
+                Stop {
+                    pos: 0.501,
+                    color: Color::BLACK,
+                },
+                Stop {
+                    pos: 1.0,
+                    color: Color::BLACK,
+                },
+            ],
+            ..Fountain::two(FountainKind::Linear, Color::WHITE, Color::BLACK, 0.0)
+        });
+        let mut clip = Shape::new(
+            tracedraw_core::ShapeId(3),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![contents],
+            },
+        );
+        clip.opacity_mask = Some(tracedraw_core::document::OpacityMask { invert: false });
+        let opts = RenderOptions {
+            width: 100,
+            height: 100,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 100.0,
+            },
+            ..RenderOptions::default()
+        };
+        let render = |clip: &Shape| {
+            let (doc, page) = doc_with(vec![clip.clone()]);
+            render_page(&doc, page, &opts).unwrap()
+        };
+        let pm = render(&clip);
+        // White part: the red shows fully; black part and outside: nothing.
+        assert_eq!(pm.pixel(25, 50).unwrap().alpha(), 255);
+        assert_eq!(px(&pm, 25, 50), (255, 0, 0));
+        assert_eq!(pm.pixel(75, 50).unwrap().alpha(), 0);
+        assert_eq!(pm.pixel(5, 50).unwrap().alpha(), 0);
+        clip.opacity_mask = Some(tracedraw_core::document::OpacityMask { invert: true });
+        let pm = render(&clip);
+        assert_eq!(pm.pixel(25, 50).unwrap().alpha(), 0);
+        assert_eq!(pm.pixel(75, 50).unwrap().alpha(), 255);
+        assert_eq!(pm.pixel(5, 50).unwrap().alpha(), 0);
     }
 
     /// The drag preview moves an object inside a moved group by the

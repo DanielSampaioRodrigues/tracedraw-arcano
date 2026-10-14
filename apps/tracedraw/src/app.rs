@@ -5325,6 +5325,41 @@ mod tests {
     }
 
     #[test]
+    fn clip_frames_turn_into_opacity_masks_and_back() {
+        let mut app = App::headless();
+        let frame = Shape::new(
+            ShapeId(0),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let clip = app
+            .new_shape(ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: Vec::new(),
+            })
+            .expect("clip");
+        app.select(vec![clip]);
+        app.set_opacity_masks(true, false);
+        let mask = |app: &App| app.doc().find_shape(clip).and_then(|s| s.opacity_mask);
+        assert_eq!(
+            mask(&app),
+            Some(tracedraw_core::document::OpacityMask { invert: false })
+        );
+        app.set_opacity_masks(true, true);
+        assert_eq!(
+            mask(&app),
+            Some(tracedraw_core::document::OpacityMask { invert: true })
+        );
+        app.set_opacity_masks(false, false);
+        assert_eq!(mask(&app), None);
+        app.undo();
+        assert!(mask(&app).is_some_and(|m| m.invert));
+    }
+
+    #[test]
     fn drawings_a_session_left_without_closing_are_recovered() {
         let dir =
             std::env::temp_dir().join(format!("tracedraw-recover-{}", crate::recovery::new_id()));

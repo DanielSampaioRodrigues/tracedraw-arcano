@@ -655,6 +655,27 @@ impl App {
         }
     }
 
+    /// Object > Clip Frame > Opacity Mask and Invert Mask: the selected
+    /// clip frames as opacity masks (`on`), inverted or not, or as hard
+    /// clips again; one undo step.
+    pub fn set_opacity_masks(&mut self, on: bool, invert: bool) {
+        let cmds: Vec<Command> = self
+            .selected_shapes()
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .map(|s| Command::SetOpacityMask {
+                shape: s.id,
+                mask: on.then_some(tracedraw_core::document::OpacityMask { invert }),
+            })
+            .collect();
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Opacity Mask", &cmds) {
+            self.status = e.to_string();
+        }
+    }
+
     /// After moving unlocked clip frames by `t`, keep their contents in place.
     pub fn compensate_unlocked_clip_frames(&mut self, ids: &[ShapeId], t: Affine) {
         let inv = t.inverse();

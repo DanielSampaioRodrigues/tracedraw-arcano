@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opacity masks: Object > Clip Frame > Opacity Mask makes a clip frame's
+  brightness set how much of its contents shows (Invert Mask the other
+  way round), on screen and in SVG and PDF output.
 - Help > Updates checks for a newer release and offers its download;
   the same check runs once a day at start (Options > Global > General).
 - Spot colours: named inks in the Colour panel, applied at a tint,

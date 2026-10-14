@@ -177,6 +177,44 @@ fn write_unlinked(
         let _ = writeln!(out, "{pad}</g>");
         return;
     }
+    if let (ShapeKind::ClipFrame { frame, contents }, Some(om)) = (&shape.kind, shape.opacity_mask)
+    {
+        // Opacity mask: the frame's fill is a luminance mask over the
+        // contents (inverted through a colour matrix); the frame is not
+        // drawn.
+        let id = shape.id.raw();
+        let mut fill_only = (**frame).clone();
+        fill_only.stroke = None;
+        let mut m = String::new();
+        write_shape(&fill_only, symbols, transform, &mut m, defs, next_grad, 3);
+        let mut mask = format!(
+            "    <mask id=\"mask{id}\" maskUnits=\"userSpaceOnUse\" x=\"-100000\" y=\"-100000\" width=\"200000\" height=\"200000\">\n"
+        );
+        if om.invert {
+            let _ = writeln!(
+                defs,
+                "    <filter id=\"maskinv{id}\"><feColorMatrix type=\"matrix\" values=\"-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0\"/></filter>"
+            );
+            let _ = writeln!(mask, "      <g filter=\"url(#maskinv{id})\">");
+            mask.push_str(&m);
+            mask.push_str("      </g>\n");
+        } else {
+            mask.push_str(&m);
+        }
+        mask.push_str("    </mask>\n");
+        defs.push_str(&mask);
+        let opacity = if shape.opacity < 1.0 {
+            format!(" opacity=\"{}\"", fmt(shape.opacity))
+        } else {
+            String::new()
+        };
+        let _ = writeln!(out, "{pad}<g id=\"{id}\" mask=\"url(#mask{id})\"{opacity}>");
+        for c in contents {
+            write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        return;
+    }
     if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
         // Frame fill, then the contents clipped to the frame, then its outline.
         let mut fill_only = (**frame).clone();
@@ -556,6 +594,44 @@ fn escape(s: &str) -> String {
 mod tests {
     use super::*;
     use tracedraw_core::{geometry::Rect, Color, Document, Stroke};
+
+    #[test]
+    fn opacity_masks_are_svg_masks() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let contents = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let mut frame = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(5.0, 5.0, 35.0, 35.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        frame.fill = Fill::Solid(Color::WHITE);
+        let mut clip = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![contents],
+            },
+        );
+        let id = clip.id.raw();
+        clip.opacity_mask = Some(tracedraw_core::document::OpacityMask { invert: true });
+        doc.layer_mut(layer).unwrap().shapes.push(clip);
+        let svg = page_to_svg(&doc, 0);
+        assert!(svg.contains(&format!("<mask id=\"mask{id}\"")), "{svg}");
+        assert!(svg.contains(&format!("mask=\"url(#mask{id})\"")));
+        assert!(svg.contains("feColorMatrix"), "inverted");
+        assert!(!svg.contains("clip-path"));
+    }
 
     #[test]
     fn linked_objects_sit_inside_links() {

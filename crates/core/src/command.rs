@@ -101,6 +101,11 @@ pub enum Command {
     SetInks {
         inks: Vec<crate::document::Ink>,
     },
+    /// Draw clip frame `shape` as an opacity mask (`None`: a hard clip).
+    SetOpacityMask {
+        shape: ShapeId,
+        mask: Option<crate::document::OpacityMask>,
+    },
     AddSymbol {
         symbol: Symbol,
     },
@@ -311,6 +316,7 @@ impl Command {
             Command::SetColorStyles { .. } => "Color Styles",
             Command::SetDocumentPalette { .. } => "Document Palette",
             Command::SetInks { .. } => "Spot Inks",
+            Command::SetOpacityMask { .. } => "Opacity Mask",
             Command::AddSymbol { .. } => "New Symbol",
             Command::MovePage { .. } => "Move Page",
             Command::DeleteLayer { .. } => "Delete Layer",
@@ -469,6 +475,15 @@ impl Command {
             }
             Command::SetInks { inks } => {
                 doc.inks = inks.clone();
+            }
+            Command::SetOpacityMask { shape, mask } => {
+                let s = doc
+                    .find_shape_mut(*shape)
+                    .ok_or(Error::ShapeNotFound(*shape))?;
+                if !matches!(s.kind, ShapeKind::ClipFrame { .. }) {
+                    return Err(Error::NotClipFrame(*shape));
+                }
+                s.opacity_mask = *mask;
             }
             Command::AddSymbol { symbol } => {
                 doc.symbols.push(symbol.clone());
@@ -1111,6 +1126,48 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn only_clip_frames_take_an_opacity_mask() {
+        use crate::document::OpacityMask;
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let r = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let rid = r.id;
+        let clip = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(r.clone()),
+                contents: Vec::new(),
+            },
+        );
+        let cid = clip.id;
+        doc.layer_mut(layer).unwrap().shapes.extend([r, clip]);
+        let mask = Some(OpacityMask { invert: true });
+        assert!(Command::SetOpacityMask { shape: rid, mask }
+            .apply(&mut doc)
+            .is_err());
+        Command::SetOpacityMask { shape: cid, mask }
+            .apply(&mut doc)
+            .unwrap();
+        assert_eq!(doc.find_shape(cid).unwrap().opacity_mask, mask);
+        let back = Document::from_json(&doc.to_json().unwrap()).unwrap();
+        assert_eq!(back.find_shape(cid).unwrap().opacity_mask, mask);
+        Command::SetOpacityMask {
+            shape: cid,
+            mask: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert!(doc.find_shape(cid).unwrap().opacity_mask.is_none());
+    }
     use crate::geometry::Rect;
 
     fn rect(doc: &mut Document, x: f64) -> Shape {

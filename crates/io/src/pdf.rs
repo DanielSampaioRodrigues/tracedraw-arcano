@@ -483,6 +483,14 @@ impl PageWriter<'_> {
             }
             return;
         }
+        if shape.opacity_mask.is_some() && matches!(shape.kind, ShapeKind::ClipFrame { .. }) {
+            // An opacity mask has no plain PDF form here: it goes in as a
+            // picture with its transparency.
+            if let Some(raster) = raster_of(shape, parent, self.symbols, MASK_DPI) {
+                self.shape(&raster, Affine::IDENTITY);
+            }
+            return;
+        }
         if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
             let mut fill_only = (**frame).clone();
             fill_only.stroke = None;
@@ -883,7 +891,7 @@ pub fn document_to_pdf(doc: &Document) -> Vec<u8> {
 /// Objects that need flattening for X-1a/X-3: non-opaque ones and those
 /// with transparency or lens effects.
 fn needs_flattening(s: &Shape) -> bool {
-    if s.opacity < 1.0 {
+    if s.opacity < 1.0 || s.opacity_mask.is_some() {
         return true;
     }
     if s.effects.iter().any(|e| {
@@ -981,6 +989,68 @@ fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64)
         out.push(raster);
     }
     out
+}
+
+/// The resolution opacity masks are drawn at in PDF output.
+const MASK_DPI: f64 = 300.0;
+
+/// `shape` (placed by `parent`) drawn on its own as a bitmap object with
+/// its transparency, covering its bounds; the resolution drops so the
+/// picture stays within 40 million pixels.
+fn raster_of(
+    shape: &Shape,
+    parent: Affine,
+    symbols: &[tracedraw_core::Symbol],
+    dpi: f64,
+) -> Option<Shape> {
+    let b = parent.transform_rect_bbox(shape.bounds());
+    if !(b.width() > 0.0 && b.height() > 0.0 && b.width().is_finite() && b.height().is_finite()) {
+        return None;
+    }
+    let area_in2 = (b.width() / 25.4) * (b.height() / 25.4);
+    let dpi = dpi.min((40.0e6 / area_in2.max(1e-9)).sqrt()).max(1.0);
+    let mut tmp = Document::new("mask", tracedraw_core::Size::new(b.width(), b.height()));
+    tmp.symbols = symbols.to_vec();
+    let mut placed = shape.clone();
+    placed.transform = Affine::translate((-b.x0, -b.y0)) * parent * shape.transform;
+    tmp.pages[0].background = None;
+    tmp.pages[0].layers[0].shapes = vec![placed];
+    let pid = tmp.pages[0].id;
+    // On a transparent background (not the white page of a page picture).
+    let zoom = dpi / 25.4;
+    let (w, h) = (
+        (b.width() * zoom).ceil().max(1.0) as u32,
+        (b.height() * zoom).ceil().max(1.0) as u32,
+    );
+    let pm = tracedraw_render::render_page(
+        &tmp,
+        pid,
+        &tracedraw_render::RenderOptions {
+            width: w,
+            height: h,
+            view: tracedraw_render::ViewTransform {
+                zoom,
+                origin_x: 0.0,
+                origin_y: h as f64,
+            },
+            ..Default::default()
+        },
+    )?;
+    let png = pm.encode_png().ok()?;
+    let mut raster = Shape::new(
+        shape.id,
+        ShapeKind::Bitmap {
+            // Whole pixels: the picture reaches a little past the bounds.
+            rect: Rect::new(b.x0, b.y0, b.x0 + w as f64 / zoom, b.y0 + h as f64 / zoom),
+            width_px: pm.width(),
+            height_px: pm.height(),
+            png,
+            fx: None,
+        },
+    );
+    raster.fill = Fill::None;
+    raster.stroke = None;
+    Some(raster)
 }
 
 /// Write every page with the given options (PDF/X, bleed, metadata).
@@ -1598,6 +1668,45 @@ mod tests {
         assert!(!text.contains("/Separation"));
         assert_eq!(pdf_name("A/B c"), "/A#2FB#20c");
         assert_eq!(pdf_name(""), "/Spot");
+    }
+
+    #[test]
+    fn opacity_masks_go_in_as_transparent_pictures() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut contents = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        contents.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        let mut frame = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Ellipse {
+                rect: Rect::new(5.0, 5.0, 35.0, 35.0),
+                arc: None,
+            },
+        );
+        frame.fill = Fill::linear(Color::WHITE, Color::BLACK, 0.0);
+        let mut clip = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![contents],
+            },
+        );
+        clip.opacity_mask = Some(tracedraw_core::document::OpacityMask::default());
+        doc.layer_mut(layer).unwrap().shapes.push(clip);
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        assert!(text.contains("/Subtype /Image"), "a picture");
+        assert!(text.contains("/SMask"), "with its transparency");
+        assert!(
+            !text.contains("/ShadingType"),
+            "the frame's gradient is not drawn"
+        );
     }
 
     #[test]

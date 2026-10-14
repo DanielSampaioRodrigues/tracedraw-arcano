@@ -1550,6 +1550,20 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.object.clip_frame_lock", "", is_clip && locked) && is_clip {
             app.toggle_clip_frame_lock();
         }
+        let masks: Vec<_> = app
+            .selected_shapes()
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .map(|s| s.opacity_mask)
+            .collect();
+        let masked = !masks.is_empty() && masks.iter().all(|m| m.is_some());
+        if check(ui, "menu.object.clip_frame_opacity_mask", "", masked) && is_clip {
+            app.set_opacity_masks(!masked, false);
+        }
+        let inverted = masked && masks.iter().all(|m| m.is_some_and(|m| m.invert));
+        if check(ui, "menu.object.clip_frame_invert_mask", "", inverted) && masked {
+            app.set_opacity_masks(true, !inverted);
+        }
     });
     sub(ui, "menu.object.symmetry", |ui| {
         let has_sym = app.selected_symmetry().is_some();

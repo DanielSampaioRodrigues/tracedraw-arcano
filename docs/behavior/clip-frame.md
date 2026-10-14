@@ -26,6 +26,24 @@ outline are drawn, the contents are clipped to the frame's path.
   moves alone and the contents stay where they are
   (`compensate_unlocked_clip_frames` undoes the transform on them).
 
+## Opacity mask
+
+Object > Clip Frame > Opacity Mask (a check item) turns the selected clip
+frames into opacity masks and back: the frame is no longer drawn and no
+longer clips hard; its brightness (its fill, gradients and patterns
+included, through the luminance of the colour) sets how much of the
+contents shows, white fully, black not at all, nothing outside the
+frame. Invert Mask swaps that (black shows). Place inside, extract, edit
+in place and lock work as for any clip frame. One undo step each.
+
+- Screen and bitmaps: the frame is drawn alone and its luminance masks
+  the contents' layer (`Shape::opacity_mask`, `crates/render`).
+- SVG: a `<mask>` holding the frame's fill (inverted through a
+  `feColorMatrix` filter), on a group of the contents.
+- PDF: the masked object goes in as a picture with its transparency
+  (300 dpi, at most 40 million pixels); PDF/X-1a flattens it with what
+  lies under it.
+
 ## Frame Type (object context menu)
 
 - Create Empty Clip Frame: each selected object that is not a clip
@@ -49,5 +67,10 @@ outline are drawn, the contents are clipped to the frame's path.
 - Given a `.cdr` bitmap with a crop outline smaller than the image, then
   the reader produces a clip frame of the bitmap inside the crop path
   (confirmed with the 2019 banner file).
+- `render::tests::opacity_masks_show_the_contents_by_the_frame_brightness`,
+  `svg::tests::opacity_masks_are_svg_masks`,
+  `pdf::tests::opacity_masks_go_in_as_transparent_pictures`,
+  `command::tests::only_clip_frames_take_an_opacity_mask`,
+  `app::tests::clip_frames_turn_into_opacity_masks_and_back`.
 - `frame_type::tests::empty_clip_frames_come_and_go_in_place`,
   `frame_type::tests::an_object_gives_way_to_an_empty_text_frame_of_its_size`.

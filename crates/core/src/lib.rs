@@ -70,6 +70,8 @@ pub enum Error {
     StyleNotFound(u32),
     #[error("selection group {0} is not 0 to 9")]
     SelectionGroup(u8),
+    #[error("object {0:?} is not a clip frame")]
+    NotClipFrame(ShapeId),
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

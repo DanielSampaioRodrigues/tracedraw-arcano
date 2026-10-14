@@ -1135,6 +1135,20 @@ pub struct Shape {
     /// drawings (see [`Uid`]); the engine gives one to every object.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uid: Option<Uid>,
+    /// A clip frame drawn as an opacity mask: its frame's brightness (its
+    /// fill, gradients included) sets how much of the contents shows,
+    /// white fully and black not at all, instead of a hard clip; the
+    /// frame itself is not drawn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity_mask: Option<OpacityMask>,
+}
+
+/// How a clip frame masks its contents (see `Shape::opacity_mask`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct OpacityMask {
+    /// Black shows and white hides.
+    #[serde(default)]
+    pub invert: bool,
 }
 
 /// An object's stable identity: 128 bits, written as 32 hex digits. Unlike
@@ -1210,6 +1224,7 @@ impl Shape {
             style: None,
             node_types: std::collections::BTreeMap::new(),
             uid: None,
+            opacity_mask: None,
         }
     }
 
