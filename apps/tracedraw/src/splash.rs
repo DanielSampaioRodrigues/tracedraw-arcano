@@ -331,7 +331,7 @@ mod tests {
             .get(&egui::ViewportId::ROOT)
             .expect("the root viewport")
             .commands;
-        let at = |want: &dyn Fn(&V) -> bool| cmds.iter().position(|c| want(c));
+        let at = |want: &dyn Fn(&V) -> bool| cmds.iter().position(want);
         let max = at(&|c| matches!(c, V::MaxInnerSize(s) if s == &egui::Vec2::INFINITY))
             .expect("the maximum is cleared");
         let min =

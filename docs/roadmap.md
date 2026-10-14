@@ -53,14 +53,14 @@ Status tracked in `docs/features.md`.
 - Pick and Shape tool parity: every interaction checked side by side, one behaviour at a time (in progress)
 - Extrude: 3D rotation, several lights and bevels (done; see `behavior/extrude.md`)
 - Opacity masks as objects of their own, next to transparency (done: a clip frame drawn as an opacity mask; see `behavior/clip-frame.md`)
-- Artboards: free-standing drawing areas next to pages (decide whether they replace pages or sit beside them)
+- Artboards: not planned (decided 2026-10-14: pages stay the only drawing areas, as in `.cdr`)
 - Spot colours with named inks through to separations (done; see `behavior/spot-colors.md`); colour books the user loads (done: spot entries of `.ase` palettes; licensed books are not bundled)
 - Several fills and outlines on one object (done; see `behavior/multiple-paint.md`); live effects as an ordered stack, each one editable, hidden or removed (done: the Effects docker, see `behavior/effects-docker.md`)
 - Bitmap tracing to curves (outline and centreline, with colour reduction and smoothing) (done; see `behavior/bitmap-tracing.md`)
 - Node types stored with the curve (done)
 - Asset library: objects, symbols, colours and styles shared between drawings (done: the Shelf keeps objects, with their object styles and symbols turned into objects, and colours with colour styles; see `behavior/shelf.md`)
 - Session recovery after a crash (on top of auto-backup) (done)
-- Scripting in Python or Lua next to JavaScript (decide which)
+- Scripting stays JavaScript only (decided 2026-10-14: one object model, recorded macros in JavaScript, runs in the browser too)
 
 ## M7 File format (planned)
 - `.tdraw` with a format version, migrations from older versions and a stability promise (done; see `tdraw-format.md`)
@@ -71,9 +71,9 @@ Status tracked in `docs/features.md`.
 - Git hosting: open a `.tdraw` straight from a repository (OAuth), save as a commit with a message, a branch per session, a pull request from the app, history from the log, LFS for large files, a visual diff between commits, conflicts resolved in the interface, the token kept in the system keyring
 - Storage: Google Drive, Dropbox, OneDrive, S3-compatible storage (AWS, MinIO, Cloudflare R2), a synced local folder, WebDAV
 - Real-time editing: a self-hosted WebSocket server, automatic merging with a CRDT (Yjs or Automerge), presence with each user's pointer and selection, optional locks per object, comments anchored to objects, permissions per project, share links that expire, version history with restore
-- Open decisions: asynchronous (Git), synchronous (real time) or both; a `.tdraw` layout that merges well, with stable IDs per object (none of this works without them, so they come first)
+- Order (decided 2026-10-14): Git hosting first, without a server of our own; storage services and real-time editing later. Stable IDs per object are done
 
 ## M9 Release (planned)
-- Automatic updates from inside the app (checking and downloading done, see `behavior/updates.md`; installing in place done for the Linux AppImage; Windows and macOS still go through the system's installer)
+- Automatic updates from inside the app (checking and downloading done, see `behavior/updates.md`; installing in place done for the Linux AppImage; Windows and macOS wait for code signing and a test on real machines)
 - User documentation (done; see `guide/README.md`)
 - Public launch and announcement once Pick and Shape tool parity is reached
