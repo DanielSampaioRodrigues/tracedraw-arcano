@@ -8,6 +8,9 @@ full, row-by-row status.
 
 - Colour books: the spot entries of an `.ase` palette are spot colours;
   applying one adds its ink to the drawing.
+- Welcome Screen, What's New: the news covers the effect stack, 3D
+  extrude, spot colours and opacity masks, and the language setting's
+  place (Tools > Options > Global > General).
 - Effects docker: the selected object's effect stack, each effect
   switched off and on, moved up or down, or removed.
 - Several fills and outlines on one object: Add Fill and Add Outline in
