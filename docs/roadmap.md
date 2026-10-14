@@ -75,5 +75,5 @@ Status tracked in `docs/features.md`.
 
 ## M9 Release (planned)
 - Automatic updates from inside the app (checking and downloading done, see `behavior/updates.md`; installing in place, without the system's installer, open)
-- User documentation
+- User documentation (done; see `guide/README.md`)
 - Public launch and announcement once Pick and Shape tool parity is reached
