@@ -50,8 +50,9 @@ exceptions, shown disabled so the layout stays complete:
   (from the frame flag and the sibling curve), line spacing, character
   spacing and indents from `stlt`, custom arrowhead outlines kept as
   custom arrowheads, version 21 inline run colours, embedded fonts (EOT
-  members of the ZIP container) and the code pages of text before
-  version 12.
+  members of the ZIP container), the code pages of text before
+  version 12, and the `arrx` arrowheads of newer files (one version 21
+  sample).
 - Still open in the reader: splines (0x26, layout not public), vector
   pattern (10) and PostScript (6) fills, text before version 7, tabs,
   bullets and drop caps from `stlt` (tables skipped by size), the `ftil`
@@ -64,7 +65,8 @@ exceptions, shown disabled so the layout stays complete:
 
 ## Formats to add
 
-Import: CMX (no public specification), DWG (proprietary), CGM.
+Import: DWG (proprietary), CGM; CMX lenses and bitmap fills (CMX import
+otherwise done, from sample files: there is no public specification).
 Export: CMX.
 Done: SVG, SVGZ, PDF, AI (PDF-compatible), EPS/PostScript, DXF, PSD,
 EMF, WMF, PLT, TXT, RTF and DOCX import; SVG, PDF, AI (PDF-compatible),
