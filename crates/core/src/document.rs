@@ -1131,6 +1131,57 @@ pub struct Shape {
     /// Cleared when the curve gains or loses nodes.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub node_types: std::collections::BTreeMap<usize, crate::nodes::NodeType>,
+    /// The object's identity across saves, undo and moves between
+    /// drawings (see [`Uid`]); the engine gives one to every object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<Uid>,
+}
+
+/// An object's stable identity: 128 bits, written as 32 hex digits. Unlike
+/// [`ShapeId`] (a number counted per drawing), it stays the same when the
+/// drawing is saved and opened again, when a step is undone and when the
+/// object is cut and pasted into another drawing; a copy that would share
+/// it with its original gets a new one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Uid(pub u128);
+
+impl std::fmt::Display for Uid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:032x}", self.0)
+    }
+}
+
+impl Serialize for Uid {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Uid {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        u128::from_str_radix(s.trim(), 16)
+            .map(Uid)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// The next value of a SplitMix64 sequence.
+fn splitmix(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+impl Uid {
+    /// A new identity from the generator `state`.
+    pub fn next(state: &mut u64) -> Uid {
+        let hi = u128::from(splitmix(state));
+        let lo = u128::from(splitmix(state));
+        Uid((hi << 64) | lo)
+    }
 }
 
 fn one() -> f64 {
@@ -1158,6 +1209,7 @@ impl Shape {
             wrap_text: false,
             style: None,
             node_types: std::collections::BTreeMap::new(),
+            uid: None,
         }
     }
 
@@ -2582,6 +2634,85 @@ impl Document {
             .flat_map(|l| &l.shapes)
             .map(Shape::bounds)
             .reduce(|a, b| a.union(b)))
+    }
+
+    /// Give every object an identity of its own: objects without one, and
+    /// every object but the oldest (lowest id) of those sharing one, get a
+    /// new one from `state`. Objects in groups, master layers and symbols
+    /// count too. Returns how many were given one.
+    pub fn assign_uids(&mut self, state: &mut u64) -> usize {
+        fn visit(shapes: &[Shape], f: &mut dyn FnMut(&Shape)) {
+            for s in shapes {
+                f(s);
+                if let ShapeKind::Group { children } = &s.kind {
+                    visit(children, f);
+                }
+            }
+        }
+        fn visit_mut(shapes: &mut [Shape], f: &mut dyn FnMut(&mut Shape)) {
+            for s in shapes {
+                f(s);
+                if let ShapeKind::Group { children } = &mut s.kind {
+                    visit_mut(children, f);
+                }
+            }
+        }
+        // Who keeps each identity: the lowest id carrying it.
+        let mut owner: std::collections::HashMap<Uid, ShapeId> = std::collections::HashMap::new();
+        let mut count = 0usize;
+        let mut carried = 0usize;
+        {
+            let mut note = |s: &Shape| {
+                count += 1;
+                if let Some(u) = s.uid {
+                    carried += 1;
+                    let e = owner.entry(u).or_insert(s.id);
+                    if s.id < *e {
+                        *e = s.id;
+                    }
+                }
+            };
+            for l in self
+                .pages
+                .iter()
+                .flat_map(|p| &p.layers)
+                .chain(&self.master)
+            {
+                visit(&l.shapes, &mut note);
+            }
+            for sym in &self.symbols {
+                visit(std::slice::from_ref(&sym.shape), &mut note);
+            }
+        }
+        // Every object carries an identity no other one does.
+        if carried == count && owner.len() == count {
+            return 0;
+        }
+        let mut seen: std::collections::HashSet<Uid> = std::collections::HashSet::new();
+        let mut given = 0;
+        let mut fix = |s: &mut Shape| {
+            let keep = s
+                .uid
+                .is_some_and(|u| owner.get(&u) == Some(&s.id) && seen.insert(u));
+            if !keep {
+                let mut u = Uid::next(state);
+                while owner.contains_key(&u) || !seen.insert(u) {
+                    u = Uid::next(state);
+                }
+                s.uid = Some(u);
+                given += 1;
+            }
+        };
+        for l in self.pages.iter_mut().flat_map(|p| &mut p.layers) {
+            visit_mut(&mut l.shapes, &mut fix);
+        }
+        for l in &mut self.master {
+            visit_mut(&mut l.shapes, &mut fix);
+        }
+        for sym in &mut self.symbols {
+            visit_mut(std::slice::from_mut(&mut sym.shape), &mut fix);
+        }
+        given
     }
 
     /// Serialize to the native `.tdraw` JSON format: the document's

@@ -12,6 +12,8 @@ full, row-by-row status.
 - `.tdraw` files record their format version; older files are brought up
   to date on opening and newer ones open as far as this version knows
   them (see `docs/tdraw-format.md`).
+- Every object has a stable identity, kept across saving, undo and
+  moves between drawings; copies get their own.
 - Session recovery: drawings auto-backed up by a session that ended
   without closing are offered at the next start; a clean exit removes
   its auto-backups.

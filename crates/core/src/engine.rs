@@ -29,6 +29,19 @@ pub struct Engine {
     /// join that step only while nothing happened since.
     step_revision: u64,
     max_history: usize,
+    /// Generator of object identities ([`crate::document::Uid`]).
+    uid_state: u64,
+}
+
+/// A seed no other engine in this run has: std's per-run random hash keys
+/// over a counter.
+fn fresh_seed() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(COUNTER.fetch_add(1, Ordering::Relaxed));
+    h.finish()
 }
 
 impl Default for Engine {
@@ -39,7 +52,7 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new(doc: Document) -> Self {
-        Engine {
+        let mut e = Engine {
             doc,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -47,7 +60,10 @@ impl Engine {
             saved_revision: 0,
             step_revision: u64::MAX,
             max_history: 200,
-        }
+            uid_state: fresh_seed(),
+        };
+        e.doc.assign_uids(&mut e.uid_state);
+        e
     }
 
     pub fn document(&self) -> &Document {
@@ -75,6 +91,7 @@ impl Engine {
     /// Replace the document (open file, new document). Clears history.
     pub fn replace(&mut self, doc: Document) {
         self.doc = doc;
+        self.doc.assign_uids(&mut self.uid_state);
         self.undo.clear();
         self.redo.clear();
         self.revision += 1;
@@ -97,6 +114,7 @@ impl Engine {
         }
         let before = self.doc.clone();
         cmd.apply(&mut self.doc)?;
+        self.doc.assign_uids(&mut self.uid_state);
         self.undo.push(HistoryEntry {
             label,
             before,
@@ -122,6 +140,7 @@ impl Engine {
         for c in cmds {
             c.apply(&mut doc)?;
         }
+        doc.assign_uids(&mut self.uid_state);
         self.doc = doc;
         self.undo.push(HistoryEntry {
             label,
@@ -148,6 +167,7 @@ impl Engine {
         };
         let mut doc = self.doc.clone();
         cmd.apply(&mut doc)?;
+        doc.assign_uids(&mut self.uid_state);
         self.doc = doc;
         last.after = self.doc.clone();
         self.revision += 1;
@@ -226,6 +246,54 @@ mod tests {
     use super::*;
     use crate::document::{Shape, ShapeKind};
     use crate::geometry::Rect;
+
+    #[test]
+    fn objects_keep_their_identity_and_copies_get_their_own() {
+        use crate::document::{Shape, ShapeKind};
+        use crate::geometry::Rect;
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        eng.run(&Command::AddShape { layer, shape }).unwrap();
+        let uid = eng.document().layer(layer).unwrap().shapes[0]
+            .uid
+            .expect("given one");
+        // Saved and opened again: the same.
+        let back = Document::from_json(&eng.document().to_json().unwrap()).unwrap();
+        let again = Engine::new(back);
+        assert_eq!(
+            again.document().layer(layer).unwrap().shapes[0].uid,
+            Some(uid)
+        );
+        // A copy carrying it gets its own; the original keeps it.
+        let mut copy = eng.document().layer(layer).unwrap().shapes[0].clone();
+        copy.id = eng.new_shape_id();
+        eng.run(&Command::AddShape { layer, shape: copy }).unwrap();
+        let shapes = &eng.document().layer(layer).unwrap().shapes;
+        assert_eq!(shapes[0].uid, Some(uid));
+        assert!(shapes[1].uid.is_some() && shapes[1].uid != Some(uid));
+        // Undo and redo bring back the same identities.
+        let second = shapes[1].uid;
+        eng.undo().unwrap();
+        eng.redo().unwrap();
+        assert_eq!(eng.document().layer(layer).unwrap().shapes[1].uid, second);
+        // Written as 32 hex digits.
+        let json = serde_json::to_string(&uid).unwrap();
+        assert_eq!(json.len(), 34);
+        assert_eq!(
+            serde_json::from_str::<crate::document::Uid>(&json).unwrap(),
+            uid
+        );
+        assert!(serde_json::from_str::<crate::document::Uid>("\"zz\"").is_err());
+    }
 
     #[test]
     fn a_drawing_marked_unsaved_stays_so_until_saved() {

@@ -45,6 +45,19 @@ The document model and everything that changes it.
 Units: millimetres, Y up, origin at the page's bottom-left corner. Angles
 in degrees, counter-clockwise positive. Text sizes in points.
 
+### Object identity
+
+Two numbers name an object. `ShapeId` is counted per drawing and is what
+commands refer to. `Uid` (128 bits, written as 32 hex digits in
+`.tdraw`) is the object's identity for merging and collaboration: the
+engine gives one to every object without one after each step and on
+opening, and when two objects carry the same one (a copy), the one with
+the lower `ShapeId` keeps it and the other gets a new one. It survives
+saving and opening, undo and redo, and a cut and paste into another
+drawing. Files written before it existed get identities on opening,
+kept from the next save on. Generator: SplitMix64 from a seed of std's
+per-run random hash keys (`engine.rs`, `Document::assign_uids`).
+
 ## cdr
 
 Clean-room reader for `.cdr`. `container.rs` detects RIFF or ZIP and the
