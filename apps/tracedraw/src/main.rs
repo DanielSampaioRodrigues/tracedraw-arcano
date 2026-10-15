@@ -45,6 +45,7 @@ mod effects_ui;
 mod encode;
 mod envelope_edit;
 mod export;
+mod export_assets;
 mod extrude_tool;
 mod eyedropper;
 mod files;

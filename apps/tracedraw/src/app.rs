@@ -986,6 +986,8 @@ pub struct App {
     pub recent_thumbs: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     /// The Shelf docker's items, kept across drawings and sessions.
     pub shelf: crate::shelf::Shelf,
+    /// The Export docker's assets.
+    pub export_assets: crate::export_assets::ExportAssets,
     /// A colour dragged from a palette (`Some(None)`: No Color).
     pub palette_drag: Option<Option<Color>>,
     /// Where the document palette is this frame (a drop target).
@@ -1257,13 +1259,14 @@ pub enum DockerTab {
     VectorMosaic,
     PictureMosaic,
     Shelf,
+    Export,
     AiDrawing,
     AiGenerate,
     Effects,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 39] = [
+    pub const ALL: [DockerTab; 40] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1279,6 +1282,7 @@ impl DockerTab {
         DockerTab::ObjectStyles,
         DockerTab::FindReplace,
         DockerTab::AiGenerate,
+        DockerTab::Export,
         DockerTab::Scripts,
         DockerTab::Palettes,
         DockerTab::Lens,
@@ -1344,6 +1348,7 @@ impl DockerTab {
             DockerTab::VectorMosaic => "docker.vector_mosaic",
             DockerTab::PictureMosaic => "docker.picture_mosaic",
             DockerTab::Shelf => "docker.shelf",
+            DockerTab::Export => "docker.export",
             DockerTab::AiDrawing => "docker.ai_drawing",
             DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Effects => "docker.effects",
@@ -1600,6 +1605,7 @@ impl App {
             update_quiet: false,
             recent_thumbs: Default::default(),
             shelf: Default::default(),
+            export_assets: crate::export_assets::ExportAssets::new(),
             palette_drag: None,
             doc_palette_rect: None,
             pointer_screen: None,
