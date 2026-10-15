@@ -781,6 +781,33 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
         });
         ui.end_row();
     });
+    // Focus mode.
+    crate::ui::chrome::section(ui, &tr("options.focus_inactive"));
+    ui.horizontal(|ui| {
+        let mut v = app.settings.focus_visibility as f32;
+        if ui
+            .add(
+                egui::Slider::new(&mut v, 0.0..=100.0)
+                    .suffix(" %")
+                    .integer(),
+            )
+            .changed()
+        {
+            app.settings.focus_visibility = v.round() as u8;
+        }
+        if ui.button(tr("dialog.reset")).clicked() {
+            app.settings.focus_visibility = 20;
+        }
+    });
+    ui.label(
+        egui::RichText::new(tr("options.focus_inactive_hint"))
+            .color(crate::theme::Tokens::text_dim()),
+    );
+    ui.add_space(6.0);
+    ui.checkbox(
+        &mut app.settings.focus_double_click,
+        tr("options.focus_double_click"),
+    );
 }
 
 fn shape_label(s: NodeShape) -> String {

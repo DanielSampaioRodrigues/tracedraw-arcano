@@ -638,6 +638,8 @@ pub struct App {
     pub tool: Tool,
     pub previous_tool: Tool,
     pub selection: Vec<ShapeId>,
+    /// Focus mode: the object being edited on its own (see `focus.rs`).
+    pub focus: Vec<ShapeId>,
     /// Second click on a selected object switches to rotate/skew handles.
     pub rotate_mode: bool,
     /// Where the user moved the centre of rotation (otherwise the
@@ -1450,6 +1452,7 @@ impl App {
             tool: Tool::Pick,
             previous_tool: Tool::Pick,
             selection: Vec::new(),
+            focus: Vec::new(),
             rotate_mode: false,
             pivots: Pivots::default(),
             drag: Drag::None,

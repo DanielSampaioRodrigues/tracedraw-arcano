@@ -623,7 +623,18 @@ impl Command {
                     .iter()
                     .map(|id| doc.locate(*id).map(|(l, i)| (*id, l, i)))
                     .collect::<Result<_>>()?;
-                located.sort_by_key(|(_, _, i)| *i);
+                // Bottom to top: by layer (in drawing order), then by place
+                // in the layer, so members from several layers keep the
+                // order they were drawn in.
+                let layer_rank = |l: LayerId| {
+                    doc.pages
+                        .iter()
+                        .flat_map(|p| p.layers.iter())
+                        .chain(doc.master.iter())
+                        .position(|x| x.id == l)
+                        .unwrap_or(usize::MAX)
+                };
+                located.sort_by_key(|(_, l, i)| (layer_rank(*l), *i));
                 let layer_id = located[0].1;
                 let insert_at = located[0].2;
                 let mut children = Vec::with_capacity(shapes.len());
@@ -1394,6 +1405,42 @@ mod tests {
         assert_eq!(shapes.len(), 2);
         let bb = shapes[1].bounds();
         assert!((bb.x0 - 25.0).abs() < 1e-9 && (bb.y0 - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn grouping_objects_of_several_layers_keeps_their_drawing_order() {
+        let mut doc = Document::default();
+        let page = doc.pages[0].id;
+        let lower = doc.pages[0].layers[0].id;
+        Command::AddLayer {
+            page,
+            name: "Upper".into(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let upper = doc.pages[0].layers[1].id;
+        // The lower layer holds two objects, the upper one one: the upper
+        // object is drawn last although it is first in its layer.
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 20.0);
+        let c = rect(&mut doc, 40.0);
+        let (ia, ib, ic) = (a.id, b.id, c.id);
+        for (layer, s) in [(lower, a), (lower, b), (upper, c)] {
+            Command::AddShape { layer, shape: s }
+                .apply(&mut doc)
+                .unwrap();
+        }
+        Command::Group {
+            shapes: vec![ic, ib, ia],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let g = &doc.layer(lower).unwrap().shapes[0];
+        let ShapeKind::Group { children } = &g.kind else {
+            panic!("a group");
+        };
+        let order: Vec<_> = children.iter().map(|s| s.id).collect();
+        assert_eq!(order, vec![ia, ib, ic]);
     }
 
     #[test]

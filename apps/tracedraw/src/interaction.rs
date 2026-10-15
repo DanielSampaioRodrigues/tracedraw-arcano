@@ -139,6 +139,17 @@ impl App {
     /// The topmost object at `p` that `skip` does not rule out.
     pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
         let tol = 3.0 / self.view.zoom as f64;
+        // Focus mode: only the parts of the object in focus (or itself).
+        if let Some(f) = self.focus_shape_on_page() {
+            return match &f.kind {
+                ShapeKind::Group { .. } => self
+                    .children_hit(&f, p, tol)
+                    .into_iter()
+                    .find(|c| !skip(c.id))
+                    .map(|c| c.id),
+                _ => (!skip(f.id) && self.shape_hit(&f, p, tol)).then_some(f.id),
+            };
+        }
         self.page_layers()
             .into_iter()
             .rev()
@@ -1060,7 +1071,12 @@ impl App {
                 return;
             }
             if let Some(id) = self.hit_test(p) {
-                if let Ok((_, s)) = self.doc().shape(id) {
+                // A group or clip frame: into focus mode.
+                if self.focus_on_double_click(id) {
+                    self.focus_on(id);
+                    return;
+                }
+                if let Some(s) = self.doc().find_shape(id).cloned() {
                     if matches!(s.kind, ShapeKind::Text { .. }) {
                         // Straight into editing that text, caret at the end.
                         self.select(vec![id]);
@@ -2271,6 +2287,10 @@ impl App {
             && !egui::Popup::is_any_open(ctx)
             && self.crop_area.take().is_none()
         {
+            // In focus mode with nothing selected: one level out.
+            if self.selection.is_empty() && self.focus_target().is_some() {
+                self.focus_up();
+            }
             self.curve = None;
             self.dimension_points.clear();
             self.eyedropper_reset();

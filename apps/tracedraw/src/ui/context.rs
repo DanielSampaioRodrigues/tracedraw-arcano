@@ -165,6 +165,16 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         }
         sep(ui);
     }
+    // One object (a group most of all): edit it on its own.
+    if ci(
+        ui,
+        close,
+        "context.bring_into_focus",
+        "",
+        shapes.len() == 1 && app.focus_target() != Some(shapes[0].id),
+    ) {
+        app.bring_into_focus();
+    }
     if ci(
         ui,
         close,

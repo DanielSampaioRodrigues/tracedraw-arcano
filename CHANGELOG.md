@@ -51,6 +51,11 @@ by the newest versions opening with their fills and spot colours.
   Studio, llama.cpp and vLLM on the same computer for AI Drawing; LocalAI
   for pictures) fill in the address, which stays editable. A new "AI
   features" topic in the Hints panel explains online and local services.
+- Focus mode: double-click a group or clip frame, or Bring into Focus
+  in the context menu, to edit its objects with the rest of the drawing
+  faded (Tools > Options > TraceDraw > Edit sets how much); a breadcrumb at the
+  top of the window goes back up, as does Esc.
+- Grouping objects from several layers keeps their drawing order.
 - The dark theme's picked items show white text on blue.
 - README: new screenshots (templates, AI Generate) and some in the dark
   themes.

@@ -38,6 +38,7 @@ pub mod envelope_ui;
 pub mod extrude_bar;
 pub mod field;
 pub mod fill_tool_bars;
+pub mod focus_bar;
 pub mod font_list;
 pub mod fx_icons;
 pub mod github_dialogs;
@@ -539,6 +540,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
     if app.has_document() && !app.show_welcome {
         symmetry_bar::show(app, &ctx);
+        focus_bar::show(app, &ctx);
     }
     dialogs::show(app, &ctx);
 }

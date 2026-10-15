@@ -140,6 +140,14 @@ pub struct Settings {
     /// by default).
     #[serde(default = "default_true")]
     pub treat_all_filled: bool,
+    /// Options > TraceDraw > Edit: how visible the objects outside the
+    /// one in focus stay, in percent.
+    #[serde(default = "default_focus_visibility")]
+    pub focus_visibility: u8,
+    /// Options > TraceDraw > Edit: a double click on a group brings it
+    /// into focus.
+    #[serde(default = "default_true")]
+    pub focus_double_click: bool,
     /// Options > Tools > Pick: a marquee also takes the objects it only
     /// touches (off by default; Alt does it either way round).
     #[serde(default)]
@@ -920,6 +928,8 @@ impl Default for Settings {
             backup: BackupPrefs::default(),
             text_increment_pt: default_text_increment(),
             treat_all_filled: true,
+            focus_visibility: default_focus_visibility(),
+            focus_double_click: true,
             marquee_touching: false,
             upgrades: UPGRADES,
             crosshair_cursor: false,
@@ -1123,6 +1133,14 @@ impl Settings {
     }
 }
 
+fn ai_enabled_default() -> bool {
+    true
+}
+
+fn default_focus_visibility() -> u8 {
+    20
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1208,8 +1226,4 @@ mod tests {
         assert_eq!(portable_dir(&exe), Some(base.join(PORTABLE_DIR)));
         let _ = std::fs::remove_dir_all(&base);
     }
-}
-
-fn ai_enabled_default() -> bool {
-    true
 }

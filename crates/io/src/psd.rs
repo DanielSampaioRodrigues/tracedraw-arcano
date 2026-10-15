@@ -956,6 +956,7 @@ pub fn page_to_psd(doc: &Document, page_index: usize, dpi: f64) -> Option<Vec<u8
         complex_effects: true,
         anti_alias: true,
         draft: false,
+        focus: None,
     };
 
     // One render per visible layer, with every other layer hidden.

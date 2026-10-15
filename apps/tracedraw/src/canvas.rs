@@ -385,6 +385,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         app.simulate_overprints,
         app.rasterize_complex_effects,
         app.proof_colors,
+        app.focus_target().map(|id| (id, app.focus_visibility())),
     ) {
         painter.image(
             tex,

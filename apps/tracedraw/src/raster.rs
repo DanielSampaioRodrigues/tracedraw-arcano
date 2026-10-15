@@ -103,6 +103,7 @@ struct Key {
     simulate_overprints: bool,
     complex_effects: bool,
     proof: bool,
+    focus: Option<(ShapeId, u32)>,
 }
 
 impl Raster {
@@ -127,6 +128,7 @@ impl Raster {
         simulate_overprints: bool,
         complex_effects: bool,
         proof: bool,
+        focus: Option<(ShapeId, f32)>,
     ) -> Option<TextureId> {
         let ppp = ctx.pixels_per_point();
         let w = (rect.width() * ppp).round().max(1.0) as u32;
@@ -142,6 +144,7 @@ impl Raster {
             simulate_overprints,
             complex_effects,
             proof,
+            focus: focus.map(|(id, v)| (id, (v * 1000.0) as u32)),
         };
         if self.key.as_ref() == Some(&key) {
             if let Some(t) = &self.texture {
@@ -163,6 +166,7 @@ impl Raster {
             complex_effects,
             anti_alias: true,
             draft: true,
+            focus,
         };
         let pixmap = render_page(doc, page, &opts)?;
         let lut = if proof {
@@ -232,7 +236,7 @@ mod tests {
         let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(320.0, 200.0));
         let draw = |raster: &mut Raster, rect: Rect| {
             raster.texture(
-                &ctx, &doc, page, &view, rect, None, 1, false, false, false, false,
+                &ctx, &doc, page, &view, rect, None, 1, false, false, false, false, None,
             )
         };
         assert!(draw(&mut raster, at(40.0, 160.0)).is_some());
