@@ -492,14 +492,16 @@ fn sumi(v: Ver, doc: &Document) -> Vec<u8> {
 /// lists after the picture and info: the first with the bitmaps (or
 /// nothing), the second with the document tables and the pages.
 fn compress_riff(tree: Vec<Node>) -> Vec<Node> {
+    const INFO: [u8; 4] = *b"INFO";
+    const BMPT: [u8; 4] = *b"bmpt";
     let mut head = Vec::new();
     let mut bitmaps = Vec::new();
     let mut body = Vec::new();
     for n in tree {
         match &n {
             Node::Chunk(id, _) if [b"vrsn", b"DISP"].contains(&id) => head.push(n),
-            Node::List(kind, _) if kind == b"INFO" => head.push(n),
-            Node::List(kind, _) if kind == b"bmpt" => bitmaps.push(n),
+            Node::List(INFO, _) => head.push(n),
+            Node::List(BMPT, _) => bitmaps.push(n),
             _ => body.push(n),
         }
     }
