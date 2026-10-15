@@ -111,7 +111,7 @@ fn get_started(app: &mut App, ui: &mut Ui) {
                 tr("welcome.new_from_template"),
                 String::new(),
             ) {
-                app.welcome_tab = WelcomeTab::Templates;
+                app.open_template_dialog();
             }
             ui.add_space(8.0);
             if big_button(
@@ -347,62 +347,19 @@ fn templates(app: &mut App, ui: &mut Ui) {
         ui.add_space(24.0);
         ui.vertical(|ui| {
             ui.strong(tr("welcome.templates"));
-            ui.horizontal_wrapped(|ui| {
-                for (key, size) in [
-                    (
-                        "welcome.tpl_a4_portrait",
-                        tracedraw_core::document::paper::A4,
-                    ),
-                    (
-                        "welcome.tpl_a4_landscape",
-                        tracedraw_core::geometry::Size::new(297.0, 210.0),
-                    ),
-                    ("welcome.tpl_a3", tracedraw_core::document::paper::A3),
-                    (
-                        "welcome.tpl_letter",
-                        tracedraw_core::document::paper::LETTER,
-                    ),
-                    (
-                        "welcome.tpl_business_card",
-                        tracedraw_core::geometry::Size::new(90.0, 50.0),
-                    ),
-                    (
-                        "welcome.tpl_poster",
-                        tracedraw_core::geometry::Size::new(420.0, 594.0),
-                    ),
-                    (
-                        "welcome.tpl_web_1080p",
-                        tracedraw_core::geometry::Size::new(
-                            1920.0 * 25.4 / 96.0,
-                            1080.0 * 25.4 / 96.0,
-                        ),
-                    ),
-                    (
-                        "welcome.tpl_social_square",
-                        tracedraw_core::geometry::Size::new(
-                            1080.0 * 25.4 / 96.0,
-                            1080.0 * 25.4 / 96.0,
-                        ),
-                    ),
-                ] {
-                    if ui
-                        .add_sized(
-                            [150.0, 54.0],
-                            egui::Button::new(format!(
-                                "{}\n{} x {} mm",
-                                tr(key),
-                                size.width.round(),
-                                size.height.round()
-                            )),
-                        )
-                        .clicked()
-                    {
-                        let name = app.next_untitled_name();
-                        let doc = App::localized_document(name, size);
+            let list = crate::templates::built_in();
+            if let Some(i) = crate::ui::template_dialog::strip(ui, &list) {
+                if let Some(t) = list.get(i) {
+                    let name = app.next_untitled_name();
+                    if let Some(doc) = crate::templates::document(t, &name) {
                         app.open_document(doc, None);
                     }
                 }
-            });
+            }
+            ui.add_space(6.0);
+            if ui.button(tr("tpl.more")).clicked() {
+                app.open_template_dialog();
+            }
             ui.add_space(12.0);
             ui.strong(tr("welcome.my_templates"));
             if ui.button(tr("welcome.open_template")).clicked() {

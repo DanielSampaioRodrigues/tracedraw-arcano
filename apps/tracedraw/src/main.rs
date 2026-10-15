@@ -100,6 +100,7 @@ mod splash;
 mod straighten;
 mod styles;
 mod table;
+mod templates;
 mod text_editing;
 mod text_frames;
 mod text_nodes;

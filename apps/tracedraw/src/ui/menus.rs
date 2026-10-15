@@ -1459,8 +1459,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.request_new_document();
     }
     if item(ui, "menu.file.new_from_template", "", true) {
-        app.show_welcome = true;
-        app.welcome_tab = crate::app::WelcomeTab::Templates;
+        app.open_template_dialog();
     }
     if item(ui, "menu.file.open", "Ctrl+O", true) {
         app.open_dialog();

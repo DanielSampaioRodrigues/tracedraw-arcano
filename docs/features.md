@@ -184,7 +184,7 @@ Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Document properties and metadata, rendering resolution, baseline grid | works |
 | Guidelines panel, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
 | Insert page number (active layer, all, odd, even) | works |
-| Templates: save as template, new from template | works |
+| Templates: save as template, new from template (dialog with search, source and category lists, thumbnails, details pane; blank and designed built-in templates and the user's own, see [behavior](behavior/new-from-template.md)) | works |
 
 ## 10. Import and export
 

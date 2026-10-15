@@ -4,6 +4,19 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- File > New From Template is a dialog: search, a list of where
+  templates come from and one of categories, thumbnails with a size
+  slider, and a details pane. Besides blank pages it offers designed
+  templates (business cards, flyers, a poster, a letterhead, a
+  certificate, an invoice, a banner, a social post and a label) and the
+  user's own `.tdt` files. The Welcome Screen's Templates page shows them
+  as thumbnails.
+- Dark theme: darker bars and menus, a grey desktop around the page
+  (unless another desktop colour is set) and blue for the tab, row and
+  tool in front.
+
 ## 0.6.0 (2026-10-15)
 
 Closer to everyday drawing work: menus with pictures and access keys,

@@ -1886,6 +1886,10 @@ impl App {
     /// The colour around the page (Options > Customization), white by
     /// default.
     pub fn desktop_color(&self) -> egui::Color32 {
+        // The default white desktop follows the theme.
+        if self.settings.desktop_rgb == [255, 255, 255] {
+            return crate::theme::Tokens::desktop();
+        }
         let [r, g, b] = self.settings.desktop_rgb;
         egui::Color32::from_rgb(r, g, b)
     }
@@ -2526,6 +2530,11 @@ impl App {
             return;
         }
         self.close_active_document();
+    }
+
+    /// File > New From Template.
+    pub fn open_template_dialog(&mut self) {
+        self.dialog = crate::ui::dialogs::Dialog::NewFromTemplate(Box::default());
     }
 
     pub fn save_as_template(&mut self) {

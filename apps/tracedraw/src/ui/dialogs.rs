@@ -446,6 +446,8 @@ pub struct PaletteEditorState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
     None,
+    /// File > New From Template.
+    NewFromTemplate(Box<crate::ui::template_dialog::TemplateState>),
     /// Bitmaps > Mode > Black and White, Duotone and Paletted.
     BitmapBw(crate::bitmap_modes::BwSettings),
     BitmapDuotone(crate::ui::bitmap_dialogs::DuotoneState),
@@ -1559,6 +1561,7 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Trace(st) => trace_dialog(app, ctx, st, &mut close),
+        Dialog::NewFromTemplate(st) => crate::ui::template_dialog::dialog(app, ctx, st, &mut close),
         Dialog::Effect(st) => crate::ui::effect_dialog::effect_dialog(app, ctx, st, &mut close),
         Dialog::TextTabs | Dialog::TextColumns | Dialog::TextBullets | Dialog::TextDropCap => {
             paragraph_dialog(app, ctx, &dialog, &mut close)

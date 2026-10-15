@@ -132,6 +132,8 @@ struct Palette {
     ruler_tick: Color32,
     ruler_label: Color32,
     ruler_marker: Color32,
+    /// The desktop around the page, unless the user picked a colour.
+    desktop: Color32,
 }
 
 const LIGHT: Palette = Palette {
@@ -169,6 +171,7 @@ const LIGHT: Palette = Palette {
     ruler_tick: rgb(0x8C8C8C),
     ruler_label: rgb(0x767676),
     ruler_marker: rgb(0x0B0B0B),
+    desktop: rgb(0xFFFFFF),
 };
 
 const MEDIUM_LIGHT: Palette = Palette {
@@ -206,6 +209,7 @@ const MEDIUM_LIGHT: Palette = Palette {
     ruler_tick: rgb(0x707070),
     ruler_label: rgb(0x5A5A5A),
     ruler_marker: rgb(0x0B0B0B),
+    desktop: rgb(0xFFFFFF),
 };
 
 const MEDIUM_DARK: Palette = Palette {
@@ -243,43 +247,45 @@ const MEDIUM_DARK: Palette = Palette {
     ruler_tick: rgb(0xA8A8A8),
     ruler_label: rgb(0xC0C0C0),
     ruler_marker: rgb(0xF0F0F0),
+    desktop: rgb(0x5E5E5E),
 };
 
 const DARK: Palette = Palette {
-    panel: rgb(0x323232),
-    menu_bar: rgb(0x2A2A2A),
-    panel_dark: rgb(0x2B2B2B),
-    border: rgb(0x222222),
-    icon_off: rgb(0x606060),
-    text: rgb(0xE6E6E6),
-    text_dim: rgb(0x9C9C9C),
-    page_shadow: rgb(0x151515),
+    panel: rgb(0x2B2B2B),
+    menu_bar: rgb(0x1F1F1F),
+    panel_dark: rgb(0x252525),
+    border: rgb(0x1A1A1A),
+    icon_off: rgb(0x5A5A5A),
+    text: rgb(0xE0E0E0),
+    text_dim: rgb(0x9A9A9A),
+    page_shadow: rgb(0x1A1A1A),
     page_border: rgb(0x111111),
-    ruler_bg: rgb(0x323232),
-    tool_active: rgb(0x1F4E75),
-    tool_hover: rgb(0x2D4558),
-    icon: rgb(0xE0E0E0),
-    button: rgb(0x464646),
-    control_border: rgb(0x606060),
-    slider_rail: rgb(0x555555),
-    field: rgb(0x262626),
-    menu: rgb(0x2D2D2D),
-    menu_gutter: rgb(0x282828),
-    menu_hover: rgb(0x1F4E75),
-    menu_hover_line: rgb(0x2F6EA3),
-    menu_text_off: rgb(0x6E6E6E),
-    title_bar: rgb(0x2A2A2A),
-    window_border: rgb(0x111111),
-    selected_row: rgb(0x1F4E75),
-    hovered_row: rgb(0x2D4558),
-    selected_row_line: rgb(0x2F6EA3),
-    control_fill: rgb(0x404040),
-    tab_strip: rgb(0x2B2B2B),
-    tab: rgb(0x3A3A3A),
-    tab_active: rgb(0x1F4E75),
+    ruler_bg: rgb(0x2B2B2B),
+    tool_active: rgb(0x2A5C8A),
+    tool_hover: rgb(0x3A3A3A),
+    icon: rgb(0xD8D8D8),
+    button: rgb(0x3A3A3A),
+    control_border: rgb(0x505050),
+    slider_rail: rgb(0x4A4A4A),
+    field: rgb(0x1E1E1E),
+    menu: rgb(0x2B2B2B),
+    menu_gutter: rgb(0x262626),
+    menu_hover: rgb(0x2A5C8A),
+    menu_hover_line: rgb(0x3D7AB8),
+    menu_text_off: rgb(0x6A6A6A),
+    title_bar: rgb(0x1F1F1F),
+    window_border: rgb(0x0F0F0F),
+    selected_row: rgb(0x2A5C8A),
+    hovered_row: rgb(0x353535),
+    selected_row_line: rgb(0x3D7AB8),
+    control_fill: rgb(0x333333),
+    tab_strip: rgb(0x252525),
+    tab: rgb(0x333333),
+    tab_active: rgb(0x2A5C8A),
     ruler_tick: rgb(0x8A8A8A),
     ruler_label: rgb(0xA8A8A8),
     ruler_marker: rgb(0xF0F0F0),
+    desktop: rgb(0x3D3D3D),
 };
 
 pub struct Tokens;
@@ -351,6 +357,7 @@ tokens!(
     ruler_tick,
     ruler_label,
     ruler_marker,
+    desktop,
 );
 
 impl Tokens {
