@@ -79,14 +79,32 @@ pub struct Png {
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
-    let tree = w.document(doc);
+    let mut tree = w.document(doc);
+    if !v.zip() {
+        // RIFF files carry their picture and an empty keywords and
+        // comment list right after `vrsn`.
+        let at = tree
+            .iter()
+            .position(|n| matches!(n, Node::Chunk(id, _) if id == b"vrsn"))
+            .map_or(0, |i| i + 1);
+        let mut extra = Vec::new();
+        if let Some(disp) = previews.pages.first().and_then(|p| disp(v, &p.data)) {
+            extra.push(chunk(b"DISP", disp));
+        }
+        let empty = vec![0u8; if v.unicode() { 2 } else { 128 }];
+        extra.push(list(
+            b"INFO",
+            vec![chunk(b"IKEY", empty.clone()), chunk(b"ICMT", empty)],
+        ));
+        tree.splice(at..at, extra);
+    }
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
         zip_v16(v, doc, &root, &files, previews)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
-            zip_v14(&riff)
+            zip_v14(v, doc, &riff, previews)
         } else {
             riff
         }
@@ -464,11 +482,229 @@ fn redirect(nodes: &[Node], file: Option<usize>, files: &mut DataFiles, out: &mu
     }
 }
 
-fn zip_v14(riff: &[u8]) -> Vec<u8> {
+/// `DISP`: the picture of a RIFF file (before version 14): a u32 8, then a
+/// device-independent bitmap of the drawing fitted into a square on white,
+/// 96 pixels and 8 bits with a 256-colour palette before version 13, 128
+/// pixels and 24 bits from 13, as files of those versions hold.
+fn disp(v: Ver, png: &[u8]) -> Option<Vec<u8>> {
+    let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
+    let (sw, sh) = (pm.width() as f64, pm.height() as f64);
+    let true_colour = v.0 >= 13;
+    let side: usize = if true_colour { 128 } else { 96 };
+    let scale = (side as f64 / sw).min(side as f64 / sh);
+    let (dw, dh) = (sw * scale, sh * scale);
+    let (ox, oy) = ((side as f64 - dw) / 2.0, (side as f64 - dh) / 2.0);
+    let px = pm.pixels();
+    // The picture's colour at square pixel (x, y), top-down, on white.
+    let sample = |x: usize, y: usize| -> [u8; 3] {
+        let fx = (x as f64 + 0.5 - ox) / scale;
+        let fy = (y as f64 + 0.5 - oy) / scale;
+        if fx < 0.0 || fy < 0.0 || fx >= sw || fy >= sh {
+            return [255, 255, 255];
+        }
+        let i = fy as usize * pm.width() as usize + fx as usize;
+        match px.get(i) {
+            Some(p) => {
+                let c = p.demultiply();
+                let a = u32::from(c.alpha());
+                let w = |v: u8| ((u32::from(v) * a + 255 * (255 - a)) / 255) as u8;
+                [w(c.red()), w(c.green()), w(c.blue())]
+            }
+            None => [255, 255, 255],
+        }
+    };
+    let bpp: u16 = if true_colour { 24 } else { 8 };
+    let row = (side * usize::from(bpp) / 8).div_ceil(4) * 4;
+    let colours: u32 = if true_colour { 0 } else { 256 };
+    let mut b = Vec::new();
+    b.extend_from_slice(&8u32.to_le_bytes());
+    b.extend_from_slice(&40u32.to_le_bytes());
+    b.extend_from_slice(&(side as i32).to_le_bytes());
+    b.extend_from_slice(&(side as i32).to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&bpp.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b.extend_from_slice(&((row * side) as u32).to_le_bytes());
+    b.extend_from_slice(&3780i32.to_le_bytes());
+    b.extend_from_slice(&3780i32.to_le_bytes());
+    b.extend_from_slice(&colours.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    // The 8-bit palette: a 6 x 6 x 6 colour cube, then 40 greys.
+    let level = |i: usize| (i * 51) as u8;
+    if !true_colour {
+        for i in 0..216 {
+            let (r, g, bl) = (level(i / 36), level(i / 6 % 6), level(i % 6));
+            b.extend_from_slice(&[bl, g, r, 0]);
+        }
+        for i in 0..40u32 {
+            let g = (i * 255 / 39) as u8;
+            b.extend_from_slice(&[g, g, g, 0]);
+        }
+    }
+    let nearest = |c: [u8; 3]| -> u8 {
+        let cube = |v: u8| (u32::from(v) + 25) / 51;
+        let idx = cube(c[0]) * 36 + cube(c[1]) * 6 + cube(c[2]);
+        let grey = (u32::from(c[0]) + u32::from(c[1]) + u32::from(c[2])) / 3;
+        let spread = c
+            .iter()
+            .map(|v| (i32::from(*v) - grey as i32).abs())
+            .max()
+            .unwrap_or(0);
+        if spread < 8 {
+            (216 + (grey * 39 + 127) / 255) as u8
+        } else {
+            idx as u8
+        }
+    };
+    for y in (0..side).rev() {
+        let start = b.len();
+        for x in 0..side {
+            let c = sample(x, y);
+            if true_colour {
+                b.extend_from_slice(&[c[2], c[1], c[0]]);
+            } else {
+                b.push(nearest(c));
+            }
+        }
+        b.resize(start + row, 0);
+    }
+    Some(b)
+}
+
+/// A PNG picture as a 24-bit bottom-up BMP file on white (the thumbnails
+/// of version 14 and 15 packages), or `None` when it cannot be decoded.
+fn png_to_bmp(png: &[u8]) -> Option<Vec<u8>> {
+    let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
+    let (w, h) = (pm.width() as usize, pm.height() as usize);
+    let row = (w * 3).div_ceil(4) * 4;
+    let size = 54 + row * h;
+    let mut b = Vec::with_capacity(size);
+    b.extend_from_slice(b"BM");
+    b.extend_from_slice(&(size as u32).to_le_bytes());
+    b.extend_from_slice(&[0; 4]);
+    b.extend_from_slice(&54u32.to_le_bytes());
+    b.extend_from_slice(&40u32.to_le_bytes());
+    b.extend_from_slice(&(w as i32).to_le_bytes());
+    b.extend_from_slice(&(h as i32).to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&24u16.to_le_bytes());
+    b.extend_from_slice(&[0; 4]);
+    b.extend_from_slice(&((row * h) as u32).to_le_bytes());
+    // 72 pixels per inch, no palette.
+    b.extend_from_slice(&2835i32.to_le_bytes());
+    b.extend_from_slice(&2835i32.to_le_bytes());
+    b.extend_from_slice(&[0; 8]);
+    let px = pm.pixels();
+    for y in (0..h).rev() {
+        let start = b.len();
+        for x in 0..w {
+            let c = px.get(y * w + x)?.demultiply();
+            let a = u32::from(c.alpha());
+            let on_white = |v: u8| ((u32::from(v) * a + 255 * (255 - a)) / 255) as u8;
+            b.extend_from_slice(&[on_white(c.blue()), on_white(c.green()), on_white(c.red())]);
+        }
+        b.resize(start + row, 0);
+    }
+    Some(b)
+}
+
+/// `metadata/metadata.xml` of version 14 and 15 packages: a summary of
+/// the drawing (fonts used, title, the version that wrote it, pages,
+/// layers and the first page's size in coordinate units).
+fn summary_xml(v: Ver, doc: &Document) -> String {
+    let mut fonts: Vec<String> = Vec::new();
+    fn walk(shapes: &[tracedraw_core::Shape], fonts: &mut Vec<String>) {
+        for s in shapes {
+            match &s.kind {
+                tracedraw_core::ShapeKind::Text { spans, .. } => {
+                    for sp in spans {
+                        if !fonts.contains(&sp.font_family) {
+                            fonts.push(sp.font_family.clone());
+                        }
+                    }
+                }
+                tracedraw_core::ShapeKind::Group { children } => walk(children, fonts),
+                _ => {}
+            }
+        }
+    }
+    let mut layers = 0;
+    for p in &doc.pages {
+        for l in &p.layers {
+            layers += 1;
+            walk(&l.shapes, &mut fonts);
+        }
+    }
+    fonts.sort();
+    let bag = if fonts.is_empty() {
+        "                <rdf:Bag />\n".to_string()
+    } else {
+        let mut b = String::from("                <rdf:Bag>\n");
+        for f in &fonts {
+            b.push_str(&format!(
+                "                    <rdf:li>{}</rdf:li>\n",
+                xml_escape(f)
+            ));
+        }
+        b.push_str("                </rdf:Bag>\n");
+        b
+    };
+    let (w, h) = doc
+        .pages
+        .first()
+        .map(|p| (p.size.width, p.size.height))
+        .unwrap_or((0.0, 0.0));
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n    <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n        <rdf:Description rdf:about=\"\" xmlns=\"{TEXTINFO_NS}\">\n            <FontsUsed>\n{bag}            </FontsUsed>\n            <Title>{}</Title>\n            <AppVersion>{ver}</AppVersion>\n            <CoreVersion>{ver}</CoreVersion>\n            <NumPages>{}</NumPages>\n            <NumLayers>{layers}</NumLayers>\n            <PageWidth>{}</PageWidth>\n            <PageHeight>{}</PageHeight>\n        </rdf:Description>\n    </rdf:RDF>\n</x:xmpmeta>\n",
+        xml_escape(&doc.title),
+        doc.pages.len(),
+        (w * UNITS_PER_MM).round() as i64,
+        (h * UNITS_PER_MM).round() as i64,
+        ver = u32::from(v.0) * 100,
+    )
+}
+
+/// Versions 14 and 15: the RIFF stream stored, its pictures as BMP files,
+/// a summary, the names and an empty link list, as files of these versions
+/// hold them.
+fn zip_v14(v: Ver, doc: &Document, riff: &[u8], previews: &Previews) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored =
         zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    let ok = zip.start_file("content/riffData.cdr", stored).is_ok() && zip.write_all(riff).is_ok();
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut ok =
+        zip.start_file("content/riffData.cdr", stored).is_ok() && zip.write_all(riff).is_ok();
+    let thumbnail = previews
+        .thumbnail
+        .as_ref()
+        .and_then(|p| png_to_bmp(&p.data));
+    if let Some(bmp) = thumbnail {
+        ok &= zip
+            .start_file("metadata/thumbnails/thumbnail.bmp", deflated)
+            .is_ok()
+            && zip.write_all(&bmp).is_ok();
+    }
+    for (i, p) in previews.pages.iter().enumerate() {
+        if let Some(bmp) = png_to_bmp(&p.data) {
+            ok &= zip
+                .start_file(format!("metadata/thumbnails/page{}.bmp", i + 1), deflated)
+                .is_ok()
+                && zip.write_all(&bmp).is_ok();
+        }
+    }
+    let textinfo = textinfo_xml(doc);
+    let members: [(&str, String); 3] = [
+        ("metadata/metadata.xml", summary_xml(v, doc)),
+        ("metadata/textinfo.xml", textinfo),
+        (
+            "links.xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<linkInfo />\n".to_string(),
+        ),
+    ];
+    for (name, text) in members {
+        ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
+    }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
         _ => Vec::new(),
@@ -602,6 +838,26 @@ fn textinfo_xml(doc: &Document) -> String {
     )
 }
 
+/// `styles/document.cdss`: the document's default styles (graphic,
+/// artistic and paragraph text, artistic media, callouts, dimensions, bar
+/// and QR codes) and its colour styles, as JSON. Every file of versions 17
+/// to 26 holds these styles with the same fields; the values are the ones
+/// most files hold (black fill and hairline outline, 12 pt text, ...),
+/// and `version` is the file's (in hundreds).
+const DOCUMENT_STYLES: &str = include_str!("document_styles.json");
+
+fn document_styles(v: Ver) -> String {
+    DOCUMENT_STYLES.replacen(
+        "\"version\": 0,",
+        &format!("\"version\": {},", u32::from(v.0) * 100),
+        1,
+    )
+}
+
+/// `color/docPalette.xml`: the document palette (empty: the colours a
+/// drawing uses live in its fills).
+const DOC_PALETTE_XML: &str = "<?xml version=\"1.0\"?>\r\n<palette guid=\"3f8e2a71-6c4d-4b19-a0e5-9d2c7b61f483\" name=\"Document Palette\"/>\r\n";
+
 /// `color/color.xml`: the colour model of the document and which kinds of
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
@@ -633,9 +889,11 @@ fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Pr
             .is_ok()
             && zip.write_all(&p.data).is_ok();
     }
-    let members: [(&str, String); 5] = [
+    let members: [(&str, String); 7] = [
         ("color/color.xml", COLOR_XML.to_string()),
         ("META-INF/textinfo.xml", textinfo_xml(doc)),
+        ("color/docPalette.xml", DOC_PALETTE_XML.to_string()),
+        ("styles/document.cdss", document_styles(v)),
         ("META-INF/metadata.xml", metadata_xml(v, doc)),
         (
             "META-INF/links.xml",
@@ -719,6 +977,29 @@ fn fill_colour(fill: &Fill) -> Option<Color> {
         Fill::Fountain(f) => f.stops.first().map(|s| s.color),
         other => other.preview_color(),
     }
+}
+
+/// `pref` (version 16+, after `mcfg`): the document's preferences as
+/// pairs of NUL-terminated UTF-16 strings, a key and its value. Files hold
+/// up to a hundred and fifty; the three every file of versions 17 to 26
+/// holds are written, with the values they hold.
+const PREFERENCES: [(&str, &str); 3] = [
+    ("Options - General/EmbedFontsOnSave", "1"),
+    ("Options - View/SimulateOverprints", "0"),
+    ("Options - View/ViewQuality", "4"),
+];
+
+fn pref() -> Vec<u8> {
+    let mut b = Vec::new();
+    for (k, val) in PREFERENCES {
+        for s in [k, val] {
+            for u in s.encode_utf16() {
+                b.extend_from_slice(&u.to_le_bytes());
+            }
+            b.extend_from_slice(&[0, 0]);
+        }
+    }
+    b
 }
 
 fn fountain_type(kind: FountainKind) -> u8 {
@@ -1787,6 +2068,9 @@ impl<'a> Writer<'a> {
             docl.push(chunk(b"pfrd", vec![0; if v.tagged() { 2 } else { 1 }]));
         }
         docl.push(chunk(b"mcfg", mcfg(v, first.width, first.height)));
+        if v.redirects() {
+            docl.push(chunk(b"pref", pref()));
+        }
         let content = content.unwrap_or(Rect::ZERO);
         let centre = Point::new(first.width / 2.0, first.height / 2.0);
         docl.push(chunk(b"ptrt", box_bytes(content - centre.to_vec2())));
@@ -1826,6 +2110,11 @@ impl<'a> Writer<'a> {
         } else {
             // Before version 16 the style table is the body of a list.
             docl.push(Node::RawList(*b"stlt", styles));
+        }
+        if !v.zip() {
+            // RIFF files (before version 14) end the document tables
+            // with an empty `uil` list.
+            docl.push(list(b"uil ", Vec::new()));
         }
         out.push(list(b"doc ", docl));
         out.push(self.master_page());

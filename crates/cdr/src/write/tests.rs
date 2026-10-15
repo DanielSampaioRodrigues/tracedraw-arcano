@@ -652,7 +652,18 @@ fn files_are_laid_out_as_the_versions_have_them() {
             let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
             let names: Vec<&str> = z.file_names().collect();
             if v < 16 {
-                assert_eq!(names, ["content/riffData.cdr"], "{v}");
+                // The RIFF stream first and stored; without pictures the
+                // summary, names and link list follow.
+                assert_eq!(
+                    names,
+                    [
+                        "content/riffData.cdr",
+                        "metadata/metadata.xml",
+                        "metadata/textinfo.xml",
+                        "links.xml"
+                    ],
+                    "{v}"
+                );
             } else {
                 for n in [
                     "content/root.dat",
@@ -1307,4 +1318,105 @@ fn centred_gradients_are_written_from_their_edge_and_read_back() {
         }
     }
 >>>>>>> 541771d (.cdr: radial and square gradients run from the edge in the file)
+}
+
+#[test]
+fn every_version_writes_what_files_of_that_version_hold() {
+    use std::io::Read;
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    doc.pages[0].layers[0].shapes = vec![r];
+    doc.set_ids(ids);
+    // A 2 x 1 picture: red then blue.
+    let mut pm = tiny_skia::Pixmap::new(2, 1).expect("pixmap");
+    pm.pixels_mut()[0] = tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 0, 255).expect("red");
+    pm.pixels_mut()[1] = tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).expect("blue");
+    let png = Png {
+        data: pm.encode_png().expect("png"),
+        width: 2,
+        height: 1,
+    };
+    let previews = Previews {
+        thumbnail: Some(png.clone()),
+        pages: vec![png],
+    };
+    for v in versions() {
+        let bytes = document_to_cdr_version_with(&doc, v, &previews);
+        let (ids, _, _) = chunk_ids(&bytes);
+        let has = |name: &str| ids.iter().any(|i| i.trim() == name);
+        if v < 14 {
+            // RIFF: the picture and the empty keywords and comment after
+            // `vrsn`, an empty `uil` list among the document tables.
+            assert_eq!(ids[1].trim(), "vrsn", "{v}: {ids:?}");
+            assert_eq!(ids[2].trim(), "DISP", "{v}: {ids:?}");
+            assert!(has("INFO") && has("IKEY") && has("ICMT"), "{v}");
+            assert!(has("uil"), "{v}: {ids:?}");
+            let disp = find_chunk(&bytes, b"DISP").expect("DISP");
+            let side = if v >= 13 { 128 } else { 96 };
+            assert_eq!(u32::from_le_bytes(disp[0..4].try_into().unwrap()), 8);
+            assert_eq!(i32::from_le_bytes(disp[8..12].try_into().unwrap()), side);
+            let bpp = u16::from_le_bytes(disp[18..20].try_into().unwrap());
+            assert_eq!(bpp, if v >= 13 { 24 } else { 8 }, "{v}");
+            assert!(!has("pref"));
+            continue;
+        }
+        assert!(!has("DISP") && !has("uil"), "{v}");
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+        let names: Vec<String> = z.file_names().map(String::from).collect();
+        if v < 16 {
+            for n in [
+                "content/riffData.cdr",
+                "metadata/thumbnails/thumbnail.bmp",
+                "metadata/thumbnails/page1.bmp",
+                "metadata/metadata.xml",
+                "metadata/textinfo.xml",
+                "links.xml",
+            ] {
+                assert!(names.iter().any(|m| m == n), "{v}: {n} in {names:?}");
+            }
+            let mut bmp = Vec::new();
+            z.by_name("metadata/thumbnails/page1.bmp")
+                .expect("bmp")
+                .read_to_end(&mut bmp)
+                .expect("bytes");
+            assert_eq!(&bmp[..2], b"BM");
+            // Bottom-up, B G R: red first, then blue.
+            assert_eq!(&bmp[54..60], &[0, 0, 255, 255, 0, 0]);
+            assert!(!has("pref"));
+        } else {
+            for n in ["color/docPalette.xml", "styles/document.cdss"] {
+                assert!(names.iter().any(|m| m == n), "{v}: {n}");
+            }
+            let mut cdss = String::new();
+            z.by_name("styles/document.cdss")
+                .expect("styles")
+                .read_to_string(&mut cdss)
+                .expect("text");
+            assert!(cdss.contains(&format!("\"version\": {},", u32::from(v) * 100)));
+            for style in ["~graphic~", "~artistic~", "~paragraph~", "~artisticmedia~"] {
+                assert!(cdss.contains(style), "{v}: {style}");
+            }
+            // `pref` after `mcfg`.
+            let at = |n: &str| ids.iter().position(|i| i.trim() == n);
+            assert!(
+                at("pref").is_some() && at("mcfg") < at("pref"),
+                "{v}: {ids:?}"
+            );
+        }
+    }
+}
+
+/// The payload of the first chunk `id` in a RIFF file.
+fn find_chunk(bytes: &[u8], id: &[u8; 4]) -> Option<Vec<u8>> {
+    let at = bytes.windows(4).position(|w| w == id)?;
+    let len = u32::from_le_bytes(bytes.get(at + 4..at + 8)?.try_into().ok()?) as usize;
+    bytes.get(at + 8..at + 8 + len).map(<[u8]>::to_vec)
 }

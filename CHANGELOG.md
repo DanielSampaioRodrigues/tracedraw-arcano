@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- `.cdr` files saved by TraceDraw carry what files of each version hold
+  so other programs can open them: the document preferences and default
+  styles (versions 16+), the summary, names and thumbnails of versions 14
+  and 15, and the picture and info lists of RIFF files (before 14). A
+  version 17 file saved this way was reported unreadable (issue #98).
 - Save Bitmap As in a bitmap's context menu writes its pixels to a PNG.
 - Shift + double-click on the Rectangle tool draws a rectangle around
   the selection.
