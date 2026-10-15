@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview; print merge), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -263,8 +263,8 @@ Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Capability | Status |
 |---|---|
 | Print (PDF to the system viewer), copies, range, bleed; imposition (as in document, several pages per sheet, booklet, step and repeat) on fitted or paper sheets; printers' marks (crop marks at every cut, registration targets, colour bars, densitometer scale, page information), mirror and invert of the whole sheet | works (see `behavior/printing.md`) |
-| Print preview | works |
-| Print merge from CSV (create/load, edit, perform) | works |
+| Print preview | partial: File > Print Preview shows the page full screen; no sheet view, imposition, marks or separation plates yet |
+| Print merge from CSV (load, insert fields, perform into pages) | partial: no record grid to add or edit records, no numeric columns, image or QR fields |
 | Separations and overprint simulation | works |
 | Preflight: thirteen checks (empty or overflowing text, missing fonts, small and rich black text, RGB in CMYK, objects off the page, low and very high bitmap resolution, thin outlines, white overprint, empty pages, objects that will not print) with thresholds, a list that selects the object, and a summary in the Print dialog | works (see `behavior/preflight.md`) |
 
