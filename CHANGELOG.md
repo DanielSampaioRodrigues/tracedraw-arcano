@@ -9,6 +9,8 @@ full, row-by-row status.
 - `.cdr` files of versions 11 and later saved by TraceDraw give every
   text the line breaking tables files of those versions carry after it
   (`txtj`), as other programs write them (#98).
+- `.cdr` files of versions 18 to 22 saved by TraceDraw give every
+  object's transform the tag files of those versions carry (#98).
 
 ## 0.8.0 (2026-10-15)
 

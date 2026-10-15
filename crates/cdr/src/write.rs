@@ -121,6 +121,8 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
 const UNITS_PER_MM: f64 = 254000.0 / 25.4;
 /// The "since version" tag records of version 13 and later start with.
 const SINCE_13: u32 = 1300;
+/// The `trfd` record tag of version 18 and later.
+const TRFD_SINCE_18: u32 = 1740;
 /// Halftone screen of fills and outlines: 45 degrees, 60 lines per inch.
 const SCREEN: [u8; 8] = [0x40, 0xa5, 0xae, 0x02, 0x3c, 0x00, 0x00, 0x00];
 /// A full ellipse is stored from 270 to 270 degrees (millionths).
@@ -1409,10 +1411,16 @@ fn outl(v: Ver, id: u32, s: Option<&Stroke>) -> Vec<u8> {
 
 /// `trfd`: one transform record (type 8): the matrix rows (a c e; b d f),
 /// translation in coordinate units.
+///
+/// The record opens with a tag from version 13: [1300, 0] up to version
+/// 17, [1740, 56] from 18 (56 = the matrix and the 8 bytes after it).
+/// Files of every version accept either tag when they are read.
 fn trfd(v: Ver, m: Affine) -> Vec<u8> {
     let c = m.as_coeffs();
     let mut rec = Buf::default();
-    if v.tagged() {
+    if v.0 >= 18 {
+        rec.u32(TRFD_SINCE_18).u32(56);
+    } else if v.tagged() {
         rec.u32(SINCE_13).u32(0);
     }
     rec.u16(8).zeros(6);
