@@ -1321,6 +1321,60 @@ impl DockerTab {
         DockerTab::Effects,
     ];
 
+    /// Window > Panels, in groups divided by separators, in the order of
+    /// the usual Dockers menu; the effect panels go in their own submenu
+    /// (`EFFECTS_MENU`).
+    pub const MENU_GROUPS: [&'static [DockerTab]; 9] = [
+        &[
+            DockerTab::Properties,
+            DockerTab::Objects,
+            DockerTab::Pages,
+            DockerTab::Comments,
+            DockerTab::ObjectData,
+            DockerTab::ObjectStyles,
+            DockerTab::Symbols,
+            DockerTab::FindReplace,
+            DockerTab::Export,
+            DockerTab::AiGenerate,
+        ],
+        &[DockerTab::Transformations, DockerTab::Coordinates],
+        &[DockerTab::Guidelines],
+        &[DockerTab::AlignDistribute, DockerTab::StepAndRepeat],
+        &[
+            DockerTab::Shaping,
+            DockerTab::Corners,
+            DockerTab::JoinCurves,
+        ],
+        &[
+            DockerTab::Text,
+            DockerTab::FontSampler,
+            DockerTab::Glyphs,
+            DockerTab::Fonts,
+        ],
+        &[
+            DockerTab::Color,
+            DockerTab::Palettes,
+            DockerTab::ColorStyles,
+        ],
+        &[DockerTab::Shelf, DockerTab::Links],
+        &[DockerTab::Undo, DockerTab::Hints, DockerTab::Scripts],
+    ];
+
+    /// Window > Panels > Effects.
+    pub const EFFECTS_MENU: [DockerTab; 11] = [
+        DockerTab::Effects,
+        DockerTab::Blend,
+        DockerTab::Contour,
+        DockerTab::Envelope,
+        DockerTab::Extrude,
+        DockerTab::Bevel,
+        DockerTab::Lens,
+        DockerTab::BrushStrokes,
+        DockerTab::BitmapMask,
+        DockerTab::VectorMosaic,
+        DockerTab::PictureMosaic,
+    ];
+
     /// i18n key of the docker's title.
     pub fn key(self) -> &'static str {
         match self {

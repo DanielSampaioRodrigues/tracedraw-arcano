@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- Window > Panels in groups, in the usual order of a Dockers menu
+  (Properties, Objects, Pages, Comments... then Transformations, Guidelines,
+  alignment, shaping, text, colour), with the effect panels in an Effects
+  submenu; the menu no longer runs off the screen.
 - AI in one place, as in the AI Generate docker of other editors: AI
   Drawing is now its fourth mode, Draw with words (also Object > AI
   Generate > Draw with Words), and no longer a separate menu item and

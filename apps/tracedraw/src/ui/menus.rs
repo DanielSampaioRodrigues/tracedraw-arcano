@@ -1028,6 +1028,20 @@ pub(crate) mod replay {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_panels_menu_lists_every_panel_once() {
+        let mut listed: Vec<DockerTab> = DockerTab::MENU_GROUPS
+            .iter()
+            .flat_map(|g| g.iter().copied())
+            .chain(DockerTab::EFFECTS_MENU)
+            .collect();
+        assert_eq!(listed.len(), DockerTab::ALL.len());
+        listed.dedup();
+        for t in DockerTab::ALL {
+            assert_eq!(listed.iter().filter(|x| **x == t).count(), 1, "{t:?}");
+        }
+    }
+
     use super::*;
     use egui::Context;
     use tracedraw_core::geometry::{Point, Rect};
@@ -3017,7 +3031,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     });
     sep(ui);
     sub(ui, "menu.window.dockers", |ui| {
-        for tab in DockerTab::ALL {
+        let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
             if check(
                 ui,
                 tab.key(),
@@ -3026,6 +3040,23 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             ) {
                 app.show_dockers = true;
                 app.docker_tab = tab;
+            }
+        };
+        for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
+            if i > 0 {
+                sep(ui);
+            }
+            for tab in group.iter() {
+                row(ui, app, *tab);
+            }
+            // The effect panels follow the text group, as a submenu.
+            if i == 5 {
+                sep(ui);
+                sub(ui, "menu.window.dockers_effects", |ui| {
+                    for tab in DockerTab::EFFECTS_MENU {
+                        row(ui, app, tab);
+                    }
+                });
             }
         }
     });
