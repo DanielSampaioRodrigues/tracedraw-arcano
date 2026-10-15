@@ -4,7 +4,14 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.6.0 (2026-10-15)
+
+Closer to everyday drawing work: menus with pictures and access keys,
+themes from light to dark, a Customization dialog with command bars,
+commands and their shortcut keys, bitmap effects that keep vector
+objects editable, symmetry editing, the Shape tool cropping pictures,
+drawings opened from and saved to GitHub, and `.cdr` files saved by the
+newest versions opening with their fills and spot colours.
 
 - `.cdr` files saved by the newest versions (also when saved for older
   versions) keep their fills: text and backgrounds no longer go missing.
