@@ -733,7 +733,12 @@ fn fountain_type(kind: FountainKind) -> u8 {
 /// `fild`: a fill record. See `docs/cdr-format.md` for both layouts.
 fn fild(v: Ver, id: u32, fill: &Fill) -> Vec<u8> {
     let fill = match fill {
-        Fill::None | Fill::Solid(_) | Fill::Fountain(_) => fill.clone(),
+        Fill::Fountain(f) => {
+            let mut f = f.clone();
+            crate::mirror_centred_stops(&mut f);
+            Fill::Fountain(f)
+        }
+        Fill::None | Fill::Solid(_) => fill.clone(),
         other => other.preview_color().map(Fill::Solid).unwrap_or(Fill::None),
     };
     let mut b = Buf::default();

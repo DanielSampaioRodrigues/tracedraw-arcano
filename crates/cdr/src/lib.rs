@@ -51,6 +51,20 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Files list a radial or square gradient's colours from its edge to its
+/// centre (a sun drawn red in the middle stores yellow first); ours run
+/// from the centre out. The same mirror turns either order into the
+/// other.
+pub(crate) fn mirror_centred_stops(f: &mut tracedraw_core::Fountain) {
+    use tracedraw_core::FountainKind;
+    if matches!(f.kind, FountainKind::Radial | FountainKind::Square) {
+        for s in &mut f.stops {
+            s.pos = 1.0 - s.pos;
+        }
+        f.stops.reverse();
+    }
+}
+
 /// Read a `.cdr` file into a document. The report lists what was skipped.
 pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseReport)> {
     let bytes = std::fs::read(path.as_ref())?;

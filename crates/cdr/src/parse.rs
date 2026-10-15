@@ -907,13 +907,15 @@ impl<'a> Ctx<'a> {
                 }
             }
         }
-        Some(Fill::Fountain(Fountain {
+        let mut fountain = Fountain {
             kind,
             stops,
             angle,
             offset,
             edge_pad,
-        }))
+        };
+        crate::mirror_centred_stops(&mut fountain);
+        Some(Fill::Fountain(fountain))
     }
 
     /// Colour bitmap (9) and texture (11) fill body: the pattern id, tile
@@ -3929,6 +3931,11 @@ mod tests {
                 assert_eq!(f.stops.len(), 3);
                 assert_eq!(f.stops[1].color, Color::rgb8(0, 255, 0));
                 assert!((f.stops[1].pos - 0.5).abs() < 1e-9);
+                // The file lists a radial gradient from its edge: red is
+                // the outside, blue the centre (ours run from the centre).
+                assert_eq!(f.stops[0].color, Color::rgb8(0, 0, 255));
+                assert_eq!(f.stops[2].color, Color::rgb8(255, 0, 0));
+                assert!(f.stops[0].pos.abs() < 1e-9 && (f.stops[2].pos - 1.0).abs() < 1e-9);
                 assert!((f.offset.x - 0.1).abs() < 1e-9 && (f.offset.y + 0.2).abs() < 1e-9);
                 assert!((f.edge_pad - 0.05).abs() < 1e-9);
             }

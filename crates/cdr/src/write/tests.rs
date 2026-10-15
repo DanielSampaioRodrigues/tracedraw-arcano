@@ -1181,6 +1181,7 @@ fn chosen_node_types_round_trip_in_the_continuity_bits() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn version_16_and_later_files_are_a_complete_package() {
     use std::io::Read;
     let mut doc = doc_with(Vec::new());
@@ -1259,4 +1260,51 @@ fn version_16_and_later_files_are_a_complete_package() {
     let bytes = document_to_cdr_version(&doc, 17);
     let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
     assert!(!z.file_names().any(|n| n.starts_with("previews/")));
+=======
+fn centred_gradients_are_written_from_their_edge_and_read_back() {
+    use tracedraw_core::{Fountain, FountainKind, Stop};
+    let red = Color::rgb8(255, 0, 0);
+    let yellow = Color::rgb8(255, 255, 0);
+    for kind in [
+        FountainKind::Radial,
+        FountainKind::Square,
+        FountainKind::Linear,
+    ] {
+        let f = Fountain {
+            kind,
+            stops: vec![
+                Stop {
+                    pos: 0.0,
+                    color: red,
+                },
+                Stop {
+                    pos: 0.3,
+                    color: Color::rgb8(255, 128, 0),
+                },
+                Stop {
+                    pos: 1.0,
+                    color: yellow,
+                },
+            ],
+            angle: 0.0,
+            offset: tracedraw_core::geometry::Point::ZERO,
+            edge_pad: 0.0,
+        };
+        let mut mirrored = f.clone();
+        crate::mirror_centred_stops(&mut mirrored);
+        if kind == FountainKind::Linear {
+            assert_eq!(mirrored, f);
+        } else {
+            // Edge first: yellow at 0, the orange stop 0.7 from the edge.
+            assert_eq!(mirrored.stops[0].color, yellow);
+            assert!((mirrored.stops[1].pos - 0.7).abs() < 1e-9);
+            let mut back = mirrored.clone();
+            crate::mirror_centred_stops(&mut back);
+            for (x, y) in back.stops.iter().zip(&f.stops) {
+                assert_eq!(x.color, y.color);
+                assert!((x.pos - y.pos).abs() < 1e-9);
+            }
+        }
+    }
+>>>>>>> 541771d (.cdr: radial and square gradients run from the edge in the file)
 }
