@@ -192,6 +192,36 @@ impl App {
             .is_some()
     }
 
+    /// The selected bitmap's PNG, its effects included.
+    pub fn selected_bitmap_png(&self) -> Option<Vec<u8>> {
+        let id = self.selected_bitmap()?;
+        match &self.doc().find_shape(id)?.kind {
+            ShapeKind::Bitmap { png, .. } => Some(png.clone()),
+            _ => None,
+        }
+    }
+
+    /// Save Bitmap As (the bitmap's context menu): its pixels, effects
+    /// included, to a PNG file.
+    pub fn save_bitmap_as(&mut self) {
+        let Some(png) = self.selected_bitmap_png() else {
+            return;
+        };
+        let name = format!("{}.png", self.document_name());
+        crate::files::Dialog::new()
+            .add_filter("PNG", &["png"])
+            .set_file_name(name)
+            .save_file(self, move |app, path| {
+                app.status = match crate::files::write(&path, &png) {
+                    Ok(()) => crate::i18n::trf(
+                        "status.exported",
+                        &[("path", &path.display().to_string())],
+                    ),
+                    Err(e) => crate::i18n::trf("status.export_failed", &[("e", &e.to_string())]),
+                };
+            });
+    }
+
     /// Bitmaps > Edit Bitmap: write the pixels to a PNG next to the system's
     /// temporary files, link the object to it and open the system editor.
     pub fn edit_bitmap_externally(&mut self) {

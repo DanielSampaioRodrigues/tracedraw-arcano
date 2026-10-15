@@ -178,7 +178,7 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Bitmap colour mask | works |
 | Inflate bitmap: Auto Inflate Bitmap switch, Manually Inflate Bitmap (Inflate to pixels, Inflate by percent, Maintain aspect ratio) | works (see `behavior/bitmap-effects.md`) |
 | Bitmap tracing: quick, centreline, outline; presets; smoothing, detail, colour count; before and after preview in the dialog (see `behavior/bitmap-tracing.md`) | works |
-| Edit bitmap in the system editor, linked bitmaps (update from link, break link) | works |
+| Edit bitmap in the system editor, linked bitmaps (update from link, break link); Save Bitmap As (context menu: the pixels, effects included, to a PNG file) | works |
 
 ## 9. Layout and document
 

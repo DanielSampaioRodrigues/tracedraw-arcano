@@ -431,3 +431,8 @@ its default settings to a 64-pixel landscape, and its name below.
   selected the tiles are faded and say so above.
 - The pictures are made the first time they show, six per frame, so the
   window opens at once.
+
+## Save Bitmap As
+
+The bitmap's context menu writes its pixels, the effects in its stack
+included, to a PNG file (a download in the browser).

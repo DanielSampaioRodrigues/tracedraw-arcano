@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- Save Bitmap As in a bitmap's context menu writes its pixels to a PNG.
 - Shift + double-click on the Rectangle tool draws a rectangle around
   the selection.
 - `.cdr` radial and square gradients are no longer inside out: files

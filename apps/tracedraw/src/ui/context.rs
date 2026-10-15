@@ -151,6 +151,15 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         if ci(ui, close, "menu.bitmaps.remove_background", "", ai) {
             app.ai_remove_background();
         }
+        if ci(
+            ui,
+            close,
+            "menu.bitmaps.save_bitmap_as",
+            "",
+            app.selected_bitmap().is_some(),
+        ) {
+            app.save_bitmap_as();
+        }
         if ci(ui, close, "menu.bitmaps.quick_trace", "", true) {
             app.quick_trace();
         }

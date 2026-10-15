@@ -850,6 +850,29 @@ mod smoke_tests {
     }
 
     #[test]
+    fn save_bitmap_as_takes_the_selected_bitmaps_pixels() {
+        let mut app = App::headless();
+        assert_eq!(app.selected_bitmap_png(), None);
+        let png = vec![0x89, b'P', b'N', b'G', 1, 2, 3];
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Bitmap {
+                rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                width_px: 1,
+                height_px: 1,
+                png: png.clone(),
+                fx: None,
+            })
+            .expect("bitmap");
+        app.select(vec![id]);
+        assert_eq!(app.selected_bitmap_png(), Some(png));
+        let other = app
+            .new_shape(tracedraw_core::ShapeKind::Ellipse {
+                rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 5.0, 5.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.select(vec![other]);
+        assert_eq!(app.selected_bitmap_png(), None);
     fn shift_double_click_frames_the_selection() {
         let mut app = App::headless();
         let id = app
