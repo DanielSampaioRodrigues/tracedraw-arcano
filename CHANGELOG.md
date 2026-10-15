@@ -4,7 +4,13 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.7.0 (2026-10-15)
+
+Start faster and bring your own AI: a New From Template dialog with
+designed templates, AI Generate (create, remix and vectorize pictures),
+Remove Background and Tools > Options > AI to connect online or local
+services with your own keys, a darker dark theme, and `.cdr` files saved
+by the newest versions opening with their fills and spot colours.
 
 - AI, with the user's own API keys: Tools > Options > AI turns AI
   features on or off and sets up a drawing service and an image service
