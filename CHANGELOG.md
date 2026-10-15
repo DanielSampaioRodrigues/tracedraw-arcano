@@ -56,6 +56,8 @@ by the newest versions opening with their fills and spot colours.
   faded (Tools > Options > TraceDraw > Edit sets how much); a breadcrumb at the
   top of the window goes back up, as does Esc.
 - Grouping objects from several layers keeps their drawing order.
+- View > Multipage View shows every page in a grid; click any page to
+  work on it in place.
 - The dark theme's picked items show white text on blue.
 - README: new screenshots (templates, AI Generate) and some in the dark
   themes.

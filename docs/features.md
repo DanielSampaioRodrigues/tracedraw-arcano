@@ -67,6 +67,7 @@ Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
 | Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu, panel and the property bar with several objects selected); Trim keeps the sources, Intersect keeps both; the panel's leave-original choices per operation (see `behavior/shaping.md`) | works |
 | Combine, Break apart, Group, Ungroup, Ungroup all | works |
+| Multipage View (View menu): every page in a grid with its name, a press on another page makes it current in place, Zoom to Fit shows all pages | works (see `behavior/multipage-view.md`) |
 | Focus mode: double-click a group or clip frame (or Bring into Focus) to edit its members with the rest faded; breadcrumb, Esc goes up, visibility setting | works (see `behavior/focus-mode.md`) |
 | Join Curves panel: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
 | Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |

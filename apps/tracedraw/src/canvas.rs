@@ -297,6 +297,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
 fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>) {
     let view = &app.view;
     painter.rect_filled(rect, 0.0, app.desktop_color());
+    if app.multipage {
+        crate::multipage::draw_other_pages(app, painter, rect);
+    }
 
     // Page: a flat grey shadow offset right and down, the white page, a
     // one-pixel grey border (pixel-aligned so it stays crisp).

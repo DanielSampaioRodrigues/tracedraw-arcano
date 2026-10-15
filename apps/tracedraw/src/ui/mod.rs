@@ -519,7 +519,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         dialogs::show(app, &ctx);
         return;
     }
-    if app.page_sorter {
+    if app.page_sorter && !app.multipage {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| preview::page_sorter(app, ui));
@@ -558,7 +558,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     app.anchor_view(canvas_rect.min);
 
     if app.fit_pending {
-        app.view.fit(app.page_rect(), canvas_rect);
+        app.view.fit(app.fit_rect(), canvas_rect);
         app.fit_pending = false;
     }
 
@@ -629,6 +629,17 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
 
     // A guideline or the ruler origin dragged out of the rulers
     // follows the pointer until release.
+    if app.multipage && two_fingers.is_none() {
+        let press = ui.input(|i| {
+            i.pointer
+                .primary_pressed()
+                .then(|| i.pointer.interact_pos())
+                .flatten()
+        });
+        if let Some(s) = press.filter(|s| canvas_rect.contains(*s)) {
+            app.multipage_press(s);
+        }
+    }
     if two_fingers.is_none() && !rulers::ruler_drag(app, ui) {
         app.canvas_input(&response, mods);
     }

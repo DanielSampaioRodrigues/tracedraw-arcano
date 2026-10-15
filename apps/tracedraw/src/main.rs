@@ -71,6 +71,7 @@ mod mcp;
 mod mcp_link;
 mod media;
 mod mesh_tool;
+mod multipage;
 mod net;
 mod new_document;
 mod node_edit;

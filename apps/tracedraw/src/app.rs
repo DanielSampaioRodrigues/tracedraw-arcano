@@ -836,6 +836,10 @@ pub struct App {
     pub fullscreen_preview: bool,
     pub preview_selected_only: bool,
     pub page_sorter: bool,
+    /// View > Multipage View: every page laid out beside the current one.
+    pub multipage: bool,
+    /// Textures of the other pages in the Multipage View.
+    pub page_rasters: std::cell::RefCell<std::collections::HashMap<PageId, crate::raster::Raster>>,
     pub view_mode: ViewMode,
     pub proof_colors: bool,
     pub show_page_border: bool,
@@ -1570,6 +1574,8 @@ impl App {
             fullscreen_preview: false,
             preview_selected_only: false,
             page_sorter: false,
+            multipage: false,
+            page_rasters: Default::default(),
             view_mode: ViewMode::Enhanced,
             proof_colors: false,
             show_page_border: true,
@@ -4894,6 +4900,10 @@ impl App {
     }
 
     pub fn zoom_to_fit(&mut self) {
+        if self.multipage {
+            self.fit_pending = true;
+            return;
+        }
         let Some(b) = self.doc().content_bounds(self.page).ok().flatten() else {
             self.fit_pending = true;
             return;
@@ -4977,6 +4987,12 @@ impl App {
     }
 
     pub fn goto_page(&mut self, idx: usize) {
+        if self.multipage {
+            if let Some(id) = self.doc().pages.get(idx).map(|p| p.id) {
+                self.multipage_activate(id);
+            }
+            return;
+        }
         if let Some(p) = self.doc().pages.get(idx) {
             self.page = p.id;
             self.selection.clear();

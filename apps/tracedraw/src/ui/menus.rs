@@ -1736,6 +1736,12 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     }
     if check(ui, "menu.view.page_sorter", "", app.page_sorter) {
         app.page_sorter = !app.page_sorter;
+        if app.page_sorter {
+            app.multipage = false;
+        }
+    }
+    if check(ui, "menu.view.multipage", "", app.multipage) {
+        app.set_multipage(!app.multipage);
     }
     sep(ui);
     if item(ui, "menu.view.zoom_in", "Ctrl++", true) {
