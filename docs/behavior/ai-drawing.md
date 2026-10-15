@@ -30,6 +30,10 @@ model in use is always listed.
 
 ## Connection
 
+The connection is also set in Tools > Options > AI > Drawing service
+(see `ai-options.md`); with AI features turned off there, Draw and the
+prompt bar are off and the panel shows a banner.
+
 The Connection section is open until a key is entered for a service that
 needs one.
 

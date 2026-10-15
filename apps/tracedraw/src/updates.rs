@@ -183,6 +183,7 @@ impl Checker {
                     url: LATEST_URL.into(),
                     headers: vec![("Accept".into(), "application/vnd.github+json".into())],
                     body: String::new(),
+                    bytes: Vec::new(),
                 };
                 let next = match crate::net::send(req).await {
                     Ok(r) if r.status == 200 => {

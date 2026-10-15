@@ -21,7 +21,7 @@ const RIGHT_W: f32 = 330.0;
 /// The bar shows: a drawing is open, a service is set up and the bar is
 /// not turned off.
 pub fn visible(app: &App) -> bool {
-    app.settings.ai.show_bar && app.has_document() && !app.show_welcome && app.ai_ready()
+    app.settings.ai.show_bar && app.has_document() && !app.show_welcome && app.ai_drawing_ready()
 }
 
 /// The state of the last request, short, and its colour.

@@ -941,6 +941,8 @@ pub struct App {
     pub debug_expr: String,
     /// AI Drawing: the request, the key in use, the conversation.
     pub ai: crate::ai::AiSession,
+    /// AI Generate and Remove Background.
+    pub ai_image: crate::ai_image::ImageSession,
     /// AI agents editing the open drawing (MCP), while allowed.
     #[cfg(not(target_arch = "wasm32"))]
     pub mcp_link: Option<crate::mcp_link::Link>,
@@ -1248,11 +1250,12 @@ pub enum DockerTab {
     PictureMosaic,
     Shelf,
     AiDrawing,
+    AiGenerate,
     Effects,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 38] = [
+    pub const ALL: [DockerTab; 39] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1290,6 +1293,7 @@ impl DockerTab {
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
         DockerTab::AiDrawing,
+        DockerTab::AiGenerate,
         DockerTab::Effects,
     ];
 
@@ -1333,6 +1337,7 @@ impl DockerTab {
             DockerTab::PictureMosaic => "docker.picture_mosaic",
             DockerTab::Shelf => "docker.shelf",
             DockerTab::AiDrawing => "docker.ai_drawing",
+            DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Effects => "docker.effects",
         }
     }
@@ -1633,6 +1638,7 @@ impl App {
             breakpoints: Default::default(),
             debug_expr: String::new(),
             ai: Default::default(),
+            ai_image: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             mcp_link: None,
             find_state: Default::default(),
@@ -1916,6 +1922,7 @@ impl App {
     pub fn apply_settings(&mut self, mut s: crate::settings::Settings) {
         s.bars.migrate();
         self.ai.key = crate::ai::remembered_key(&s.ai);
+        self.ai_image.key = crate::ai_image::remembered_key(&s.ai_image);
         let lang = if s.language.is_empty() {
             crate::i18n::system_language().to_string()
         } else {
@@ -2530,6 +2537,15 @@ impl App {
             return;
         }
         self.close_active_document();
+    }
+
+    /// Tools > AI Generate: the AI Generate docker in front.
+    pub fn open_ai_generate(&mut self) {
+        if !self.open_dockers.contains(&DockerTab::AiGenerate) {
+            self.open_dockers.push(DockerTab::AiGenerate);
+        }
+        self.show_dockers = true;
+        self.docker_tab = DockerTab::AiGenerate;
     }
 
     /// File > New From Template.

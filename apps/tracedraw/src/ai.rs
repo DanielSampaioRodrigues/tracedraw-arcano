@@ -353,6 +353,7 @@ pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) ->
         url: prefs.endpoint(),
         headers: headers(prefs, key),
         body: body.to_string(),
+        bytes: Vec::new(),
     }
 }
 
@@ -363,6 +364,7 @@ pub fn build_models_request(prefs: &AiPrefs, key: &str) -> HttpRequest {
         url: prefs.models_endpoint(),
         headers: headers(prefs, key),
         body: String::new(),
+        bytes: Vec::new(),
     }
 }
 
@@ -504,7 +506,9 @@ impl App {
         }
         let request = self.ai.request.trim().to_string();
         let prefs = self.settings.ai.clone();
-        let problem = if request.is_empty() {
+        let problem = if !self.ai_features_on() {
+            Some("aiimg.off")
+        } else if request.is_empty() {
             Some("ai.need_request")
         } else if prefs.provider.needs_key() && self.ai.key.trim().is_empty() {
             Some("ai.need_key")
@@ -1068,6 +1072,7 @@ mod tests {
                 ("authorization".into(), "Bearer k".into()),
             ],
             body: r#"{"a":1}"#.into(),
+            bytes: Vec::new(),
         };
         let r = crate::net::send(&req, 8 * 1024 * 1024).expect("answered");
         assert_eq!((r.status, r.body.as_str()), (200, r#"{"ok":true}"#));

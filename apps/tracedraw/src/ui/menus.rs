@@ -2473,6 +2473,11 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
         app.dialog = Dialog::Resample { dpi: 300.0 };
     }
+    // AI: greyed until an image service is set up (Tools > Options > AI).
+    let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();
+    if item(ui, "menu.bitmaps.remove_background", "", cutout) {
+        app.ai_remove_background();
+    }
     // Black and white, duotone and paletted open their dialogs; the
     // others convert at once.
     sub(ui, "menu.bitmaps.mode", |ui| {
@@ -2841,6 +2846,10 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::Options;
             app.options_page = crate::ui::dialogs::OptionsPage::Workspace;
         }
+        if item(ui, "menu.tools.options_ai", "", true) {
+            app.dialog = Dialog::Options;
+            app.options_page = crate::ui::dialogs::OptionsPage::AiGeneral;
+        }
     });
     if item(ui, "menu.tools.save_settings_as_default", "", true) {
         app.save_defaults();
@@ -2868,6 +2877,9 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
         }
         app.show_dockers = true;
         app.docker_tab = DockerTab::AiDrawing;
+    }
+    if item(ui, "menu.tools.ai_generate", "", true) {
+        app.open_ai_generate();
     }
     if item(ui, "menu.tools.font_manager", "", true) {
         app.dialog = Dialog::FontManager(Default::default());

@@ -215,6 +215,13 @@ pub struct Settings {
     /// AI Drawing: the service, address, model and (when asked) the key.
     #[serde(default)]
     pub ai: crate::ai::AiPrefs,
+    /// Tools > Options > AI: AI features on (they still need a service
+    /// set up with the user's key).
+    #[serde(default = "ai_enabled_default")]
+    pub ai_enabled: bool,
+    /// AI Generate and Remove Background: the image service.
+    #[serde(default)]
+    pub ai_image: crate::ai_image::ImagePrefs,
     /// Options > Global > General: AI agents on this computer may edit the
     /// open drawing (MCP, `tracedraw --mcp-window`).
     #[serde(default)]
@@ -946,6 +953,8 @@ impl Default for Settings {
             printing: Default::default(),
             formats: Default::default(),
             ai: Default::default(),
+            ai_enabled: true,
+            ai_image: Default::default(),
             mcp_window: false,
             check_updates: true,
             last_update_check: 0,
@@ -1194,4 +1203,8 @@ mod tests {
         assert_eq!(portable_dir(&exe), Some(base.join(PORTABLE_DIR)));
         let _ = std::fs::remove_dir_all(&base);
     }
+}
+
+fn ai_enabled_default() -> bool {
+    true
 }

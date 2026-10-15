@@ -413,7 +413,13 @@ pub fn visuals() -> Visuals {
     v.widgets.open.weak_bg_fill = Tokens::tool_active();
     v.widgets.open.fg_stroke.color = Tokens::text();
     v.selection.bg_fill = Tokens::tool_active();
-    v.selection.stroke.color = Tokens::ACCENT;
+    // Text on the picked fill: the accent on light themes, white on dark
+    // ones (the accent would not read on the dark blue).
+    v.selection.stroke.color = if theme().is_dark() {
+        Color32::WHITE
+    } else {
+        Tokens::ACCENT
+    };
     v.hyperlink_color = if theme().is_dark() {
         Color32::from_rgb(0x5C, 0xB2, 0xFF)
     } else {

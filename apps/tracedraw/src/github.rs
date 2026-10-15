@@ -165,6 +165,7 @@ pub fn meta_request(r: &Remote, reference: &str, token: &str) -> HttpRequest {
         ),
         headers: headers(token, "application/vnd.github+json"),
         body: String::new(),
+        bytes: Vec::new(),
     }
 }
 
@@ -179,6 +180,7 @@ pub fn raw_request(r: &Remote, reference: &str, token: &str) -> HttpRequest {
         ),
         headers: headers(token, "application/vnd.github.raw+json"),
         body: String::new(),
+        bytes: Vec::new(),
     }
 }
 
@@ -198,6 +200,7 @@ pub fn put_request(r: &Remote, content: &[u8], message: &str, token: &str) -> Ht
         url: contents_url(&r.owner, &r.repo, &r.path),
         headers: headers(token, "application/vnd.github+json"),
         body: body.to_string(),
+        bytes: Vec::new(),
     }
 }
 
@@ -214,6 +217,7 @@ pub fn history_request(r: &Remote, token: &str) -> HttpRequest {
         ),
         headers: headers(token, "application/vnd.github+json"),
         body: String::new(),
+        bytes: Vec::new(),
     }
 }
 

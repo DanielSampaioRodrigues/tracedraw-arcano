@@ -11,6 +11,7 @@
 //! TraceDraw desktop app: a thin egui shell over the engine.
 
 mod ai;
+mod ai_image;
 mod anchors;
 mod app;
 mod autocorrect;
@@ -273,6 +274,11 @@ impl eframe::App for Shell {
         }
         // A reply of the AI service (AI Drawing).
         if app.poll_ai() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        // Pictures from the image service (AI Generate).
+        if app.poll_ai_image() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }

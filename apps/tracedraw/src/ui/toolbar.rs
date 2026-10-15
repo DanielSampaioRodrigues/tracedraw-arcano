@@ -501,7 +501,90 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                     ui.close();
                 }
             });
+        std_sep(ui);
+        ai_button(app, ui);
     });
+}
+
+/// AI Generate on the standard toolbar: the AI docker, with the other AI
+/// commands in its list.
+fn ai_button(app: &mut App, ui: &mut Ui) {
+    let label = tr("toolbar.ai_generate");
+    let galley = ui.painter().layout_no_wrap(
+        label.clone(),
+        egui::FontId::proportional(13.0),
+        Tokens::text(),
+    );
+    let w = galley.size().x + 52.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, STD), egui::Sense::click());
+    std_frame(ui, rect, resp.hovered(), false);
+    let p = ui.painter();
+    p.text(
+        egui::pos2(rect.left() + 14.0, rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        "\u{2726}",
+        egui::FontId::proportional(15.0),
+        Tokens::ACCENT,
+    );
+    p.galley(
+        egui::pos2(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        Tokens::text(),
+    );
+    let c = egui::pos2(rect.right() - 9.0, rect.center().y);
+    p.add(egui::epaint::PathShape::convex_polygon(
+        vec![
+            c + Vec2::new(-4.0, -2.0),
+            c + Vec2::new(4.0, -2.0),
+            c + Vec2::new(0.0, 2.5),
+        ],
+        Tokens::text_dim(),
+        egui::Stroke::NONE,
+    ));
+    let resp = resp.on_hover_text(tr("toolbar.ai_generate_tip"));
+    // The arrow is a button of its own: it opens the list.
+    let arrow_rect =
+        egui::Rect::from_min_max(egui::pos2(rect.right() - 18.0, rect.top()), rect.max);
+    let arrow = ui.interact(
+        arrow_rect,
+        egui::Id::new("ai_menu_arrow"),
+        egui::Sense::click(),
+    );
+    if resp.clicked() && !arrow.clicked() && !arrow.hovered() {
+        app.open_ai_generate();
+    }
+    egui::Popup::menu(&arrow)
+        .id(egui::Id::new("ai_menu"))
+        .show(|ui| {
+            if ui.button(tr("menu.tools.ai_generate")).clicked() {
+                app.open_ai_generate();
+                ui.close();
+            }
+            if ui.button(tr("menu.tools.ai_drawing")).clicked() {
+                if !app.open_dockers.contains(&crate::app::DockerTab::AiDrawing) {
+                    app.open_dockers.push(crate::app::DockerTab::AiDrawing);
+                }
+                app.show_dockers = true;
+                app.docker_tab = crate::app::DockerTab::AiDrawing;
+                ui.close();
+            }
+            let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some();
+            if ui
+                .add_enabled(
+                    cutout,
+                    egui::Button::new(tr("menu.bitmaps.remove_background")),
+                )
+                .clicked()
+            {
+                app.ai_remove_background();
+                ui.close();
+            }
+            ui.separator();
+            if ui.button(tr("menu.tools.options_ai")).clicked() {
+                crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiGeneral);
+                ui.close();
+            }
+        });
 }
 
 /// Window > Toolbars > Text: font controls as a standalone bar.
@@ -1500,6 +1583,28 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
     }
     if ui.button(tr("menu.bitmaps.resample")).clicked() {
         app.dialog = Dialog::Resample { dpi: 300.0 };
+    }
+    // AI: greyed until an image service is set up.
+    let ready = app.ai_image_ready() && app.ai_source_bitmap().is_some();
+    let busy = app.ai_image.busy();
+    let tip = if app.ai_image_ready() {
+        tr("toolbar.remove_background_tip")
+    } else {
+        tr("aiui.needs_setup_tip")
+    };
+    if ui
+        .add_enabled(
+            ready && !busy,
+            egui::Button::new(format!("\u{2726} {}", tr("toolbar.remove_background"))),
+        )
+        .on_hover_text(tip.clone())
+        .on_disabled_hover_text(tip)
+        .clicked()
+    {
+        app.ai_remove_background();
+    }
+    if busy {
+        ui.spinner();
     }
 }
 

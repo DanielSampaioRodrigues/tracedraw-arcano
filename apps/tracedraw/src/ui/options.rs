@@ -20,6 +20,7 @@ pub enum OptionsSet {
     Tools,
     Global,
     Workspaces,
+    Ai,
     Document,
 }
 
@@ -60,6 +61,10 @@ pub enum OptionsPage {
     FileLocations,
     // Tools > Options > Workspaces.
     Workspace,
+    // Tools > Options > AI.
+    AiGeneral,
+    AiDrawing,
+    AiImages,
     // Layout > Document Options.
     DocumentGeneral,
     PageSize,
@@ -99,6 +104,7 @@ impl OptionsSet {
                 FileLocations,
             ],
             OptionsSet::Workspaces => &[Workspace],
+            OptionsSet::Ai => &[AiGeneral, AiDrawing, AiImages],
             OptionsSet::Document => &[
                 DocumentGeneral,
                 PageSize,
@@ -119,6 +125,7 @@ impl OptionsSet {
             OptionsSet::Tools => tr("options.title_tools"),
             OptionsSet::Global => tr("options.title_global"),
             OptionsSet::Workspaces => tr("options.title_workspaces"),
+            OptionsSet::Ai => tr("options.title_ai"),
             OptionsSet::Document => tr("dialog.document_options"),
         }
     }
@@ -132,6 +139,7 @@ impl OptionsPage {
             OptionsSet::Tools,
             OptionsSet::Global,
             OptionsSet::Workspaces,
+            OptionsSet::Ai,
             OptionsSet::Document,
         ]
         .into_iter()
@@ -170,6 +178,9 @@ impl OptionsPage {
             BitmapTracing => "options.bitmap_tracing",
             Warnings => "options.warnings",
             Workspace => "options.workspace",
+            AiGeneral => "options.general",
+            AiDrawing => "options.ai_drawing_service",
+            AiImages => "options.ai_image_service",
             PageSize => "options.page_size",
             Layout => "options.layout",
             Background => "options.background",
@@ -520,6 +531,9 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         Warnings => crate::ui::options_global::warnings_page(app, ui),
         FileLocations => file_locations_page(app, ui),
         Workspace => workspace_page(app, ui),
+        AiGeneral => crate::ui::ai_ui::general_page(app, ui),
+        AiDrawing => crate::ui::ai_ui::drawing_page(app, ui),
+        AiImages => crate::ui::ai_ui::images_page(app, ui),
         DocumentGeneral => document_general_page(app, ui),
         PageSize => crate::ui::dialogs::page_size_page(app, ui),
         Layout => layout_page(app, ui),
@@ -2264,6 +2278,7 @@ mod tests {
             OptionsSet::Tools,
             OptionsSet::Global,
             OptionsSet::Workspaces,
+            OptionsSet::Ai,
             OptionsSet::Document,
         ];
         let mut seen = Vec::new();
@@ -2302,6 +2317,7 @@ mod tests {
             OptionsSet::Tools,
             OptionsSet::Global,
             OptionsSet::Workspaces,
+            OptionsSet::Ai,
             OptionsSet::Document,
         ] {
             for p in set.pages() {

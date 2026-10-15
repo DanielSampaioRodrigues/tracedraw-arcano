@@ -18,6 +18,9 @@ fn dim(ui: &mut Ui, text: String) {
 }
 
 pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
+    if !app.ai_features_on() {
+        crate::ui::ai_ui::banner(app, ui, crate::ui::ai_ui::Need::Drawing);
+    }
     // The connection, open until a key is set where one is needed.
     let provider = app.settings.ai.provider;
     let needs_setup = provider.needs_key() && app.ai.key.trim().is_empty();
@@ -43,7 +46,11 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
             if ui.button(tr("dialog.cancel")).clicked() {
                 app.ai_cancel();
             }
-        } else if ui.button(tr("ai.draw")).clicked() || ctrl_enter {
+        } else if ui
+            .add_enabled(app.ai_features_on(), egui::Button::new(tr("ai.draw")))
+            .clicked()
+            || (ctrl_enter && app.ai_features_on())
+        {
             app.ai_draw();
         }
         if ui
@@ -98,7 +105,7 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
 }
 
 /// Service, address, model and key, and whether the key is remembered.
-fn connection(app: &mut App, ui: &mut Ui) {
+pub fn connection(app: &mut App, ui: &mut Ui) {
     let prefs = &mut app.settings.ai;
     grid("ai_connection_grid").show(ui, |ui| {
         row_label(ui, &tr("ai.provider"));

@@ -242,6 +242,10 @@ pub fn for_key(key: &str) -> Option<Glyph> {
         "menu.tools.color_management" => ColorManagement,
         "menu.tools.font_manager" => FontManager,
         "menu.tools.ai_drawing" => Ai,
+        "menu.tools.ai_generate"
+        | "menu.tools.options_ai"
+        | "menu.bitmaps.remove_background"
+        | "context.ai_remix" => Ai,
         "menu.tools.time_tracker" => Clock,
         "menu.tools.scripts_run" | "menu.tools.scripts_docker" => Script,
         "menu.tools.scripts_record" => Record,

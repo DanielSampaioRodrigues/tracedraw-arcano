@@ -10,6 +10,9 @@ pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    /// A binary body (multipart uploads); sent instead of `body` when
+    /// not empty.
+    pub bytes: Vec<u8>,
 }
 
 /// What the service answered.
@@ -76,7 +79,11 @@ pub fn send(req: &HttpRequest, limit: u64) -> HttpResult {
             for (name, value) in &req.headers {
                 r = r.header(name, value);
             }
-            r.send(req.body.as_str())
+            if req.bytes.is_empty() {
+                r.send(req.body.as_str())
+            } else {
+                r.send(&req.bytes[..])
+            }
         }
     }
     .map_err(|e| e.to_string())?;
@@ -105,7 +112,12 @@ pub async fn send(req: HttpRequest) -> HttpResult {
     init.set_method(req.method);
     init.set_mode(web_sys::RequestMode::Cors);
     if req.method != "GET" {
-        init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
+        if req.bytes.is_empty() {
+            init.set_body(&wasm_bindgen::JsValue::from_str(&req.body));
+        } else {
+            let array = js_sys::Uint8Array::from(&req.bytes[..]);
+            init.set_body(&array);
+        }
     }
     let headers = web_sys::Headers::new().map_err(js)?;
     for (name, value) in &req.headers {

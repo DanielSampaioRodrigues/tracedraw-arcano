@@ -6,6 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- AI, with the user's own API keys: Tools > Options > AI turns AI
+  features on or off and sets up a drawing service and an image service
+  (Google Gemini API or OpenAI Images API or compatible), each with Test
+  Connection. The AI Generate docker (also a button on the standard
+  toolbar) creates pictures from a prompt with aspect ratio, style and
+  palette presets, remixes the selected bitmap, and creates vectors (a
+  generated illustration traced into curves). Remove Background (Bitmaps
+  menu, property bar, context menu) keeps a picture's subject and makes
+  the rest transparent. AI commands are greyed out, and the dockers show
+  a banner with Set Up AI, while their service is not ready.
+- The dark theme's picked items show white text on blue.
 - File > New From Template is a dialog: search, a list of where
   templates come from and one of categories, thumbnails with a size
   slider, and a details pane. Besides blank pages it offers designed
