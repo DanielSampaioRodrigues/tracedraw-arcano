@@ -22,7 +22,7 @@ Status tracked in `docs/features.md`.
   formatting from the style tables
 
 ## M2 Drawing (done)
-- All 62 tools, node editing, transform handles, snapping, rulers
+- All 64 tools, node editing, transform handles, snapping, rulers
 - tiny-skia renderer: fills of every kind, dashes, hairlines, effects
 - Text engine with shaping, paragraph layout, text on path, tables
 - Live effects, lenses, transparency, mesh fill, symbols, master layers
@@ -61,6 +61,8 @@ Status tracked in `docs/features.md`.
 - Asset library: objects, symbols, colours and styles shared between drawings (done: the Shelf keeps objects, with their object styles and symbols turned into objects, and colours with colour styles; see `behavior/shelf.md`)
 - Session recovery after a crash (on top of auto-backup) (done)
 - Scripting stays JavaScript only (decided 2026-10-14: one object model, recorded macros in JavaScript, runs in the browser too)
+- Drawing window: focus mode, Multipage View, Draw in Perspective (one-, two- and three-point), variable-width outlines, painterly brushes, review comments and an Export panel for many assets at once (done; see the `behavior/` pages of each)
+- Accessibility: the desktop's text size and high contrast themes followed, coloured tool icons (done; see `behavior/options.md`)
 
 ## M7 File format (planned)
 - `.tdraw` with a format version, migrations from older versions and a stability promise (done; see `tdraw-format.md`)
