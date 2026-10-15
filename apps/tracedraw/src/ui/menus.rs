@@ -27,12 +27,12 @@ pub(crate) fn menu_popup_style(style: &mut egui::Style) {
     style.visuals.window_fill = crate::theme::Tokens::menu();
     style.visuals.window_stroke = egui::Stroke::new(1.0, crate::theme::Tokens::window_border());
     style.visuals.menu_corner_radius = egui::CornerRadius::ZERO;
-    style.visuals.popup_shadow = egui::epaint::Shadow {
+    style.visuals.popup_shadow = crate::theme::shadow(egui::epaint::Shadow {
         offset: [2, 2],
         blur: 4,
         spread: 0,
         color: egui::Color32::from_black_alpha(30),
-    };
+    });
     style.spacing.menu_margin = egui::Margin {
         left: 0,
         right: 0,

@@ -43,12 +43,12 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
             Frame::new()
                 .fill(crate::theme::Tokens::title_bar())
                 .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
-                .shadow(egui::epaint::Shadow {
+                .shadow(crate::theme::shadow(egui::epaint::Shadow {
                     offset: [0, 4],
                     blur: 16,
                     spread: 0,
                     color: Color32::from_black_alpha(60),
-                })
+                }))
                 .inner_margin(Margin::ZERO),
         )
         .show(ctx, |ui| {
@@ -172,12 +172,12 @@ fn window_frame() -> Frame {
     Frame::new()
         .fill(crate::theme::Tokens::title_bar())
         .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
-        .shadow(egui::epaint::Shadow {
+        .shadow(crate::theme::shadow(egui::epaint::Shadow {
             offset: [0, 4],
             blur: 16,
             spread: 0,
             color: Color32::from_black_alpha(60),
-        })
+        }))
         .inner_margin(Margin::ZERO)
 }
 

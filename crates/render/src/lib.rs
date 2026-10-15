@@ -1074,16 +1074,33 @@ impl Renderer<'_> {
         use tracedraw_core::geometry::Shape as _;
         let b = bbox(page_path);
         let sb = (self.screen * b.to_path(0.01)).bounding_box();
-        let w = (sb.width().ceil() as u32).clamp(1, 4096);
-        let h = (sb.height().ceil() as u32).clamp(1, 4096);
+        if !(sb.width() > 0.0 && sb.height() > 0.0) {
+            return;
+        }
+        // Only the part on the canvas is worked out (zoomed in, the object
+        // may be far larger than the window), with a pixel of margin for
+        // smooth edges.
+        let vis = sb.intersect(tracedraw_core::Rect::new(
+            -1.0,
+            -1.0,
+            self.pixmap.width() as f64 + 1.0,
+            self.pixmap.height() as f64 + 1.0,
+        ));
+        if !(vis.width() > 0.0 && vis.height() > 0.0) {
+            return;
+        }
+        let (x0, y0) = (vis.x0.floor(), vis.y0.floor());
+        let w = ((vis.x1.ceil() - x0) as u32).clamp(1, 8192);
+        let h = ((vis.y1.ceil() - y0) as u32).clamp(1, 8192);
         let Some(mut pm) = Pixmap::new(w, h) else {
             return;
         };
         let px = pm.pixels_mut();
+        let (bw, bh) = (sb.width(), sb.height());
         for y in 0..h {
             for x in 0..w {
-                let u = (x as f64 + 0.5) / w as f64;
-                let v = 1.0 - (y as f64 + 0.5) / h as f64;
+                let u = (x0 + x as f64 + 0.5 - sb.x0) / bw;
+                let v = 1.0 - (y0 + y as f64 + 0.5 - sb.y0) / bh;
                 let [r, g, bb] = f(u, v).to_rgb8();
                 px[(y * w + x) as usize] =
                     tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
@@ -1096,7 +1113,7 @@ impl Renderer<'_> {
             SpreadMode::Pad,
             tiny_skia::FilterQuality::Bilinear,
             1.0,
-            Transform::from_translate(sb.x0 as f32, sb.y0 as f32),
+            Transform::from_translate(x0 as f32, y0 as f32),
         );
         self.pixmap
             .fill_path(sk, &paint, rule, Transform::identity(), None);
@@ -2212,6 +2229,59 @@ mod tests {
         assert_eq!(a.data(), b.data());
         let v: std::collections::HashSet<u8> = (0..30).map(|x| px(&a, x, 15).0).collect();
         assert!(v.len() > 3, "texture should vary");
+    }
+
+    #[test]
+    fn procedural_fills_work_out_only_the_visible_part() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 2.0, 2.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Texture(Texture {
+            kind: TextureKind::Clouds,
+            color_a: Color::rgb8(0, 0, 0),
+            color_b: Color::rgb8(255, 255, 255),
+            scale: 0.5,
+            seed: 3,
+        });
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let page = doc.pages[0].id;
+        let view = |w: u32, ox: f64, zoom: f64| RenderOptions {
+            width: w,
+            height: 64,
+            view: ViewTransform {
+                zoom,
+                origin_x: ox,
+                origin_y: 64.0,
+            },
+            ..Default::default()
+        };
+        // The whole square, then its right half alone: the same pixels.
+        let whole = render_page(&doc, page, &view(64, 0.0, 32.0)).unwrap();
+        let half = render_page(&doc, page, &view(32, -32.0, 32.0)).unwrap();
+        for y in [5u32, 30, 60] {
+            for x in [2u32, 15, 29] {
+                assert_eq!(
+                    whole.pixel(x + 32, y).unwrap(),
+                    half.pixel(x, y).unwrap(),
+                    "{x},{y}"
+                );
+            }
+        }
+        // Zoomed so far that the square is 200 000 pixels wide: only the
+        // window is worked out, at once.
+        let t = std::time::Instant::now();
+        let deep = render_page(&doc, page, &view(64, 0.0, 100_000.0)).unwrap();
+        assert!(t.elapsed().as_secs_f64() < 2.0);
+        assert!(deep.pixel(10, 10).unwrap().alpha() == 255);
     }
 
     #[test]

@@ -84,6 +84,27 @@ pub fn set_theme(theme: Theme) {
     CURRENT.store(i as u8, Ordering::Relaxed);
 }
 
+static SHADOWS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Customization > Appearance > Shadows under menus and dialogs.
+pub fn set_shadows(on: bool) {
+    SHADOWS.store(on, Ordering::Relaxed);
+}
+
+/// Menus and dialogs cast shadows.
+pub fn shadows() -> bool {
+    SHADOWS.load(Ordering::Relaxed)
+}
+
+/// `s`, or no shadow when shadows are off.
+pub fn shadow(s: egui::epaint::Shadow) -> egui::epaint::Shadow {
+    if shadows() {
+        s
+    } else {
+        egui::epaint::Shadow::NONE
+    }
+}
+
 /// The theme in use.
 pub fn theme() -> Theme {
     Theme::ALL
@@ -384,6 +405,10 @@ pub fn visuals() -> Visuals {
     };
     // Indented groups have no guide line.
     v.indent_has_left_vline = false;
+    if !shadows() {
+        v.window_shadow = egui::epaint::Shadow::NONE;
+        v.popup_shadow = egui::epaint::Shadow::NONE;
+    }
     v.panel_fill = Tokens::panel();
     v.window_fill = Tokens::panel();
     v.extreme_bg_color = Tokens::field();
@@ -614,5 +639,25 @@ mod theme_tests {
         assert_eq!(Theme::from_id("purple"), Theme::Light);
         assert_eq!(toggled(Theme::MediumLight), Theme::Dark);
         assert_eq!(toggled(Theme::MediumDark), Theme::Light);
+    }
+}
+
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+
+    #[test]
+    fn shadows_can_be_turned_off() {
+        let s = egui::epaint::Shadow {
+            offset: [2, 2],
+            blur: 4,
+            spread: 0,
+            color: Color32::BLACK,
+        };
+        set_shadows(false);
+        assert_eq!(shadow(s), egui::epaint::Shadow::NONE);
+        assert_eq!(visuals().window_shadow, egui::epaint::Shadow::NONE);
+        set_shadows(true);
+        assert_eq!(shadow(s), s);
     }
 }

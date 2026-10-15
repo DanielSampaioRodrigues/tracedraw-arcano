@@ -929,6 +929,24 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
     changed
 }
 
+/// Stops drawn left to right as one mesh.
+fn gradient_swatch(p: &egui::Painter, r: egui::Rect, stops: &[tracedraw_core::Stop]) {
+    let mut mesh = egui::Mesh::default();
+    for (i, st) in stops.iter().enumerate() {
+        let [cr, cg, cb] = st.color.to_rgb8();
+        let c = egui::Color32::from_rgb(cr, cg, cb);
+        let x = r.left() + r.width() * st.pos.clamp(0.0, 1.0) as f32;
+        mesh.colored_vertex(egui::pos2(x, r.top()), c);
+        mesh.colored_vertex(egui::pos2(x, r.bottom()), c);
+        if i > 0 {
+            let a = (i as u32 - 1) * 2;
+            mesh.add_triangle(a, a + 1, a + 2);
+            mesh.add_triangle(a + 1, a + 3, a + 2);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+}
+
 fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -945,6 +963,37 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             }
         }
     });
+    // Built-in gradients: a click replaces the stops.
+    egui::CollapsingHeader::new(tr("docker.gradient_presets"))
+        .id_salt("fountain_presets")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
+                for (i, (key, _)) in crate::gradient_presets::PRESETS.iter().enumerate() {
+                    let (r, resp) =
+                        ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
+                    if let Some(stops) = crate::gradient_presets::stops(i) {
+                        gradient_swatch(ui.painter(), r, &stops);
+                        let line = if resp.hovered() {
+                            crate::theme::Tokens::ACCENT
+                        } else {
+                            crate::theme::Tokens::border()
+                        };
+                        ui.painter().rect_stroke(
+                            r,
+                            2.0,
+                            egui::Stroke::new(1.0, line),
+                            egui::StrokeKind::Inside,
+                        );
+                        if resp.on_hover_text(tr(key)).clicked() {
+                            f.stops = stops;
+                            changed = true;
+                        }
+                    }
+                }
+            });
+        });
     // Stops: position and colour, add after, remove (keep at least two).
     let mut remove = None;
     let mut insert = None;

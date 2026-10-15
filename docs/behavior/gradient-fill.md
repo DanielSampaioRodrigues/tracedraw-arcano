@@ -75,3 +75,12 @@ another blending (curved, sine, sphere, step), a middle elsewhere or an
 HSV colouring are sampled into 17 stops. End colours given as the
 foreground or background colour read as black and white. Transparency
 in the file is not kept (fountain stops are opaque).
+
+## Built-in gradients
+
+The fill editor's Gradients section shows 24 swatches (Black to white,
+Sunset, Ocean, Rainbow, Gold, Silver, Copper, Chrome, Fire, Ice, Forest,
+Sky, Dusk, Aurora, Pastel, Neon, Peach, Mint, Berry, Lavender, Desert,
+Steel, Sepia, Charcoal; `gradient_presets.rs`). A click replaces the
+stops and keeps the type, angle and centre. Checked by
+`gradient_presets::tests::every_preset_runs_from_0_to_1_in_order`.

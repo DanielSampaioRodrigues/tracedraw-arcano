@@ -81,6 +81,10 @@ pub struct Settings {
     /// where they were left.
     #[serde(default = "default_true")]
     pub center_dialogs: bool,
+    /// Customization > Appearance: shadows under menus and dialogs (off
+    /// draws less, for slower graphics).
+    #[serde(default = "default_true")]
+    pub ui_shadows: bool,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -935,6 +939,7 @@ impl Default for Settings {
             ui_size: 0.0,
             show_splash: true,
             center_dialogs: true,
+            ui_shadows: true,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,

@@ -22,6 +22,12 @@ by the newest versions opening with their fills and spot colours.
   menu, property bar, context menu) keeps a picture's subject and makes
   the rest transparent. AI commands are greyed out, and the dockers show
   a banner with Set Up AI, while their service is not ready.
+- Fountain fills offer 24 built-in gradients (metals, sunsets, skies,
+  pastels and more) as swatches in the fill editor (#4).
+- Texture and other procedural fills work out only the part in the
+  window, so zooming into a cloud-filled shape stays quick (#4).
+- Options > Customization > Appearance: Shadows under menus and dialogs
+  can be turned off (#4).
 - AI Generate docker, more complete: mode buttons and an information
   page (services, models, costs, what is sent); a reference picture from
   the selection or a file (the source of Remix, an example for Create)

@@ -110,6 +110,14 @@ pub(crate) fn apply_theme(ctx: &egui::Context, id: &str) {
     }
 }
 
+/// Shadows under menus and dialogs on or off, as the preferences say.
+pub(crate) fn apply_shadows(ctx: &egui::Context, on: bool) {
+    if on != crate::theme::shadows() {
+        crate::theme::set_shadows(on);
+        ctx.set_visuals(crate::theme::visuals());
+    }
+}
+
 /// Interface sizes relative to the system's scaling, as the tests try.
 #[cfg(test)]
 pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
@@ -186,6 +194,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
     apply_theme(&ctx, &app.settings.theme);
+    apply_shadows(&ctx, app.settings.ui_shadows);
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.

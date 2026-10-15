@@ -54,6 +54,7 @@ mod font_folder;
 mod frame_type;
 mod fx;
 mod github;
+mod gradient_presets;
 mod grammar;
 mod guides;
 mod i18n;
