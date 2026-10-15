@@ -44,6 +44,7 @@ struct Actions {
     select: Option<ShapeId>,
     rename_layer: Option<(LayerId, String)>,
     rename_object: Option<(ShapeId, String)>,
+    rename_page: Option<String>,
     delete_layer: Option<LayerId>,
     reorder: Option<(LayerId, usize)>,
     collapse: Option<LayerId>,
@@ -438,7 +439,18 @@ pub fn objects(app: &mut App, ui: &mut Ui) {
         let active = app.active_layer();
         ui.spacing_mut().item_spacing.y = 0.0;
         let page_open = !app.objects_page_closed;
-        act.toggle_page = node_row(ui, "objects_page", &page.name, page_open, false);
+        let (toggle, resp) = node_row(ui, "objects_page", &page.name, page_open, false);
+        act.toggle_page = toggle;
+        // Double-click (or the context menu) renames the page.
+        if resp.double_clicked() {
+            act.rename_page = Some(page.name.clone());
+        }
+        resp.context_menu(|ui| {
+            if ui.button(tr("docker.rename")).clicked() {
+                act.rename_page = Some(page.name.clone());
+                ui.close();
+            }
+        });
         if page_open {
             let count = page.layers.len();
             for (i, layer) in page.layers.iter().enumerate().rev() {
@@ -458,7 +470,8 @@ pub fn objects(app: &mut App, ui: &mut Ui) {
             &tr("docker.master_page"),
             master_open,
             true,
-        );
+        )
+        .0;
         if master_open {
             let count = doc.master.len();
             for (i, layer) in doc.master.iter().enumerate().rev() {
@@ -478,8 +491,14 @@ pub fn objects(app: &mut App, ui: &mut Ui) {
 }
 
 /// The page or Master Page node: an arrow, the page icon and the title in
-/// bold. True when clicked (to open or close it).
-fn node_row(ui: &mut Ui, id: &str, title: &str, open: bool, master: bool) -> bool {
+/// bold. True when clicked (to open or close it), and the row's response.
+fn node_row(
+    ui: &mut Ui,
+    id: &str,
+    title: &str,
+    open: bool,
+    master: bool,
+) -> (bool, egui::Response) {
     let (rect, resp) = row(ui, Look::Node);
     let x = rect.left() + 3.0;
     let (ar, a) = hot(ui, rect, x, 14.0, egui::Id::new((id, "arrow")));
@@ -492,7 +511,9 @@ fn node_row(ui: &mut Ui, id: &str, title: &str, open: bool, master: bool) -> boo
         crate::theme::bold(13.0),
         Tokens::text(),
     );
-    a.clicked() || resp.clicked()
+    // A double-click is two clicks, so renaming closes and reopens the
+    // node and leaves it as it was.
+    (a.clicked() || resp.clicked(), resp)
 }
 
 /// A layer's row, then its objects when it is open.
@@ -942,6 +963,9 @@ fn apply(app: &mut App, ui: &Ui, act: Actions) {
     }
     if let Some((layer, name)) = act.rename_layer {
         app.dialog = crate::ui::dialogs::Dialog::RenameLayer { layer, name };
+    }
+    if let Some(name) = act.rename_page {
+        app.dialog = crate::ui::dialogs::Dialog::RenamePage { name };
     }
     if let Some((shape, name)) = act.rename_object {
         app.dialog = crate::ui::dialogs::Dialog::RenameObject { shape, name };

@@ -33,6 +33,8 @@ Layer and New Master Layer at the left and Delete at the right.
   any of those pages while the layer is visible and unlocked.
 - Double-click a layer to rename it; double-click an object to name it
   (Rename Object; an empty name goes back to the description).
+- Double-click the page node, or pick Rename in its context menu, to
+  rename the page (the Rename Page dialog, as in Layout > Rename Page).
 - A layer's context menu: Rename, Move Up, Move Down, Delete Layer (a
   page keeps its last layer); a master layer's adds Show On (All pages,
   Odd pages, Even pages).

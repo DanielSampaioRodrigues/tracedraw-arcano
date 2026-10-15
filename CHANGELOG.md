@@ -9,6 +9,8 @@ full, row-by-row status.
 - View > Pixels shows the document's pixels when zoomed in: the drawing
   is rendered at the document resolution and enlarged as square blocks,
   lined up with the pixel grid, so edges look as they will once exported.
+- Objects panel: double-click the page (or its context menu) to rename
+  it.
 - Window > Panels in groups, in the usual order of a Dockers menu
   (Properties, Objects, Pages, Comments... then Transformations, Guidelines,
   alignment, shaping, text, colour), with the effect panels in an Effects
