@@ -249,6 +249,12 @@ pub enum Lens {
         outline: Color,
         fill: Color,
     },
+    /// Bitmap effects applied to whatever lies beneath, in order (the
+    /// application supplies them to the renderer; see
+    /// `tracedraw_render::set_pixel_effects`).
+    Effects {
+        effects: Vec<crate::BitmapEffect>,
+    },
 }
 
 impl Lens {
@@ -265,6 +271,7 @@ impl Lens {
             Lens::TintedGrayscale { .. } => "Tinted Grayscale",
             Lens::Transparency { .. } => "Transparency",
             Lens::Wireframe { .. } => "Wireframe",
+            Lens::Effects { .. } => "Bitmap Effects",
         }
     }
 
@@ -360,7 +367,10 @@ impl Lens {
                     c[2] * (1.0 - r) + k[2] * r,
                 ]
             }
-            Lens::FishEye { .. } | Lens::Magnify { .. } | Lens::Wireframe { .. } => c,
+            Lens::FishEye { .. }
+            | Lens::Magnify { .. }
+            | Lens::Wireframe { .. }
+            | Lens::Effects { .. } => c,
         }
     }
 }

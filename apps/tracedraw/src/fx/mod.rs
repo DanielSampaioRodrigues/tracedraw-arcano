@@ -239,6 +239,18 @@ pub fn new_effect(id: &str) -> BitmapEffect {
     }
 }
 
+/// The Bitmap Effects lens: run the visible effects over straight RGBA
+/// pixels in place (registered with the renderer at start-up).
+pub fn lens_effects(effects: &[BitmapEffect], width: u32, height: u32, rgba: &mut Vec<u8>) {
+    let Some(mut img) = RgbaImage::from_raw(width, height, std::mem::take(rgba)) else {
+        return;
+    };
+    for e in effects.iter().filter(|e| e.visible) {
+        img = apply_effect(&img, e);
+    }
+    *rgba = img.into_raw();
+}
+
 /// Run one effect (unknown ones leave the image as it is).
 pub fn apply_effect(img: &RgbaImage, e: &BitmapEffect) -> RgbaImage {
     match spec(&e.id) {

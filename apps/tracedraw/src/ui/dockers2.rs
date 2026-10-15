@@ -880,6 +880,42 @@ fn lens(app: &mut App, ui: &mut Ui) {
                 color_button(ui, &mut l.color);
             });
         }
+        12 => {
+            // The effects, in the order they run, each with its default
+            // settings; Effects > Effect Picker adds them too.
+            let mut remove = None;
+            for (i, e) in l.effects.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}. {}", i + 1, tr(&format!("fx.{}", e.id))));
+                    if ui.small_button("\u{2715}").clicked() {
+                        remove = Some(i);
+                    }
+                });
+            }
+            if let Some(i) = remove {
+                l.effects.remove(i);
+            }
+            egui::ComboBox::from_id_salt("lens_fx_add")
+                .selected_text(tr("lens.add_effect"))
+                .height(360.0)
+                .show_ui(ui, |ui| {
+                    for (group, list) in crate::fx::groups() {
+                        ui.label(
+                            egui::RichText::new(tr(group))
+                                .color(Tokens::text_dim())
+                                .size(11.0),
+                        );
+                        for fx in list.iter() {
+                            if ui
+                                .selectable_label(false, tr(&format!("fx.{}", fx.id)))
+                                .clicked()
+                            {
+                                l.effects.push(crate::fx::new_effect(fx.id));
+                            }
+                        }
+                    }
+                });
+        }
         _ => {}
     }
     ui.checkbox(&mut l.frozen, tr("docker.frozen"));

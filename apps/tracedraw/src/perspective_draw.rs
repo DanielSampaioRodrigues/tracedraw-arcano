@@ -633,7 +633,6 @@ pub fn show_bar(app: &mut App, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracedraw_core::geometry::Shape as _;
 
     #[test]
     fn every_plane_maps_the_unit_square_onto_its_quad_and_back() {

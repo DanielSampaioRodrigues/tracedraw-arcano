@@ -3762,3 +3762,7 @@ resample.pixels_tip = "Cada píxel sigue siendo un cuadrado de un color: para pi
 resample.detail = "Ampliar con detalle"
 resample.detail_tip = "Suave, después se vuelven a realzar los bordes que la ampliación suaviza, más en ampliaciones mayores."
 resample.sizes = "Original {ow} x {oh} px, nuevo {w} x {h} px ({mb} MB)"
+lens.bitmap_effects = "Efectos de mapa de bits"
+lens.add_effect = "Añadir efecto..."
+effect_picker.as_lens = "Aplicar como lente"
+effect_picker.as_lens_tip = "El objeto seleccionado se convierte en lente: el efecto cambia lo que hay debajo, no el objeto"

@@ -15,6 +15,7 @@ A lens changes how objects beneath it appear, without changing them.
 | Tinted grayscale | colour | black |
 | Transparency | rate 0..100, colour | 50, white |
 | Wireframe | outline colour, fill colour | |
+| Bitmap effects | any bitmap effects, in order | none |
 
 Shortcut: Alt+F3. Options: Frozen (bakes), Viewpoint, Remove face.
 
@@ -31,6 +32,17 @@ Shortcut: Alt+F3. Options: Frozen (bakes), Viewpoint, Remove face.
 - Tinted grayscale: `y * tint`.
 - Transparency: `c * (1 - rate/100) + k * rate/100`.
 - Invert: `1 - c`.
+
+- Bitmap effects: the bitmap effects (Effects menu, each with its default
+  settings) run, in order, over what lies beneath, and the result shows
+  inside the lens. The effects see 24 pixels past the lens's box, so
+  blurs and the like do not stop short at its edge. Their settings are in
+  pixels of the picture being drawn, so on screen they follow the zoom.
+  Add them in the Lens panel (Add effect, ✕ removes one) or with
+  Effects > Effect Picker > Apply as a lens, which adds the clicked effect
+  to the selection's lens (making one when there is none). Where the
+  bitmap effects are not available (the command-line converter), the
+  lens shows what is beneath unchanged.
 
 Lenses render as a second pass: the scene beneath is rasterised, the
 lens function is applied inside the shape's mask, then the result is

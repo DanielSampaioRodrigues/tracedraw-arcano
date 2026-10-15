@@ -33,6 +33,9 @@ pub struct EffectPicker {
     pub filter: Filter,
     /// Effect ids, most recent first.
     pub recent: Vec<String>,
+    /// A click adds the effect to the selection's Bitmap Effects lens
+    /// (what lies beneath changes) instead of to the object itself.
+    pub as_lens: bool,
 }
 
 impl EffectPicker {
@@ -133,6 +136,8 @@ pub fn show(app: &mut App, ctx: &Context) {
                         }
                     });
             });
+            ui.checkbox(&mut picker.as_lens, tr("effect_picker.as_lens"))
+                .on_hover_text(tr("effect_picker.as_lens_tip"));
             if !has {
                 ui.label(
                     egui::RichText::new(tr("effect_picker.select_first"))
@@ -232,7 +237,11 @@ pub fn show(app: &mut App, ctx: &Context) {
     }
     if let Some(id) = chosen {
         app.effect_picker.used(id);
-        crate::ui::effect_dialog::choose_effect(app, id);
+        if app.effect_picker.as_lens {
+            app.add_lens_effect(id);
+        } else {
+            crate::ui::effect_dialog::choose_effect(app, id);
+        }
     }
 }
 

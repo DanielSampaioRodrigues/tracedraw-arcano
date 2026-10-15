@@ -11,6 +11,9 @@ full, row-by-row status.
   pixels for pixel art and Enlarge with detail.
 - Draw in Perspective: Put on Plane lays existing objects onto the
   active plane.
+- Bitmap effects as lenses: a Bitmap Effects lens runs any of the bitmap
+  effects over what lies beneath it (Lens panel, or Effect Picker >
+  Apply as a lens).
 
 ## 0.7.0 (2026-10-15)
 

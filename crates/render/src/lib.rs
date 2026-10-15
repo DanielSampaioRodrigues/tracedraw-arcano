@@ -48,6 +48,19 @@ pub struct Preview {
     pub transform: Affine,
 }
 
+/// Runs bitmap effects over straight (not premultiplied) RGBA pixels of
+/// `width` x `height`, in place. The renderer has no bitmap effects of its
+/// own: the application that has them registers this for the Bitmap
+/// Effects lens; without it the lens shows what is beneath unchanged.
+pub type PixelEffects = fn(&[tracedraw_core::BitmapEffect], u32, u32, &mut Vec<u8>);
+
+static PIXEL_EFFECTS: std::sync::OnceLock<PixelEffects> = std::sync::OnceLock::new();
+
+/// Register the bitmap effects (once; later calls are ignored).
+pub fn set_pixel_effects(f: PixelEffects) {
+    let _ = PIXEL_EFFECTS.set(f);
+}
+
 pub struct RenderOptions {
     pub width: u32,
     pub height: u32,
@@ -741,6 +754,35 @@ impl Renderer<'_> {
                 _ => [1.0, 1.0, 1.0],
             }
         };
+        // Bitmap Effects lens: the effects run over what lies beneath (with
+        // a margin, so blurs and the like see past the edge), then the
+        // result shows inside the lens.
+        let filtered: Option<(u32, u32, u32, Vec<u8>)> = match lens {
+            Lens::Effects { effects } => PIXEL_EFFECTS.get().and_then(|run| {
+                let m = 24;
+                let (rx0, ry0) = (x0.saturating_sub(m), y0.saturating_sub(m));
+                let (rx1, ry1) = ((x1 + m).min(w), (y1 + m).min(h));
+                let (rw, rh) = (rx1.checked_sub(rx0)?, ry1.checked_sub(ry0)?);
+                if rw == 0 || rh == 0 {
+                    return None;
+                }
+                let mut buf = Vec::with_capacity((rw * rh * 4) as usize);
+                for y in ry0..ry1 {
+                    for x in rx0..rx1 {
+                        let c = src_px(x as i64, y as i64);
+                        buf.extend_from_slice(&[
+                            (c[0] * 255.0).round() as u8,
+                            (c[1] * 255.0).round() as u8,
+                            (c[2] * 255.0).round() as u8,
+                            255,
+                        ]);
+                    }
+                }
+                run(effects, rw, rh, &mut buf);
+                (buf.len() == (rw * rh * 4) as usize).then_some((rx0, ry0, rw, buf))
+            }),
+            _ => None,
+        };
         let pixels = self.pixmap.pixels_mut();
         for y in y0..y1 {
             for x in x0..x1 {
@@ -749,6 +791,20 @@ impl Renderer<'_> {
                     continue;
                 }
                 let c = match lens {
+                    Lens::Effects { .. } => match &filtered {
+                        Some((rx0, ry0, rw, buf)) => {
+                            let i = (((y - ry0) * rw + (x - rx0)) * 4) as usize;
+                            match buf.get(i..i + 3) {
+                                Some(p) => [
+                                    p[0] as f32 / 255.0,
+                                    p[1] as f32 / 255.0,
+                                    p[2] as f32 / 255.0,
+                                ],
+                                None => src_px(x as i64, y as i64),
+                            }
+                        }
+                        None => src_px(x as i64, y as i64),
+                    },
                     Lens::FishEye { rate } => {
                         let r = (*rate / 1000.0).clamp(-0.95, 10.0);
                         let dx = x as f64 - center.x;
@@ -1994,6 +2050,35 @@ mod tests {
         let (doc, page) = doc_with(vec![base, lens]);
         let pm = render_page_image(&doc, page, 25.4).unwrap();
         assert_eq!(px(&pm, 50, 50), (0, 255, 255));
+        assert_eq!(px(&pm, 5, 5), (255, 0, 0));
+    }
+
+    #[test]
+    fn bitmap_effects_lens_runs_the_registered_effects_beneath_it() {
+        // A stand-in for the application's effects: "swap" swaps red and
+        // blue.
+        fn run(effects: &[tracedraw_core::BitmapEffect], _w: u32, _h: u32, rgba: &mut Vec<u8>) {
+            if effects.iter().any(|e| e.id == "swap") {
+                for px in rgba.chunks_mut(4) {
+                    px.swap(0, 2);
+                }
+            }
+        }
+        set_pixel_effects(run);
+        let base = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::rgb8(255, 0, 0));
+        let mut lens = rect(2, Rect::new(25.0, 25.0, 75.0, 75.0), Color::WHITE);
+        lens.effects.push(tracedraw_core::live::Effect::Lens(
+            tracedraw_core::live::Lens::Effects {
+                effects: vec![tracedraw_core::BitmapEffect {
+                    id: "swap".into(),
+                    params: Default::default(),
+                    visible: true,
+                }],
+            },
+        ));
+        let (doc, page) = doc_with(vec![base, lens]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        assert_eq!(px(&pm, 50, 50), (0, 0, 255));
         assert_eq!(px(&pm, 5, 5), (255, 0, 0));
     }
 

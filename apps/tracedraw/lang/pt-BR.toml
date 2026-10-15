@@ -3762,3 +3762,7 @@ resample.pixels_tip = "Cada pixel continua um quadrado de uma cor: para pixel ar
 resample.detail = "Ampliar com detalhes"
 resample.detail_tip = "Suave, depois as bordas que a ampliação suaviza são realçadas de novo, mais em ampliações maiores."
 resample.sizes = "Original {ow} x {oh} px, novo {w} x {h} px ({mb} MB)"
+lens.bitmap_effects = "Efeitos de bitmap"
+lens.add_effect = "Adicionar efeito..."
+effect_picker.as_lens = "Aplicar como lente"
+effect_picker.as_lens_tip = "O objeto selecionado vira uma lente: o efeito muda o que está embaixo dele, não o objeto"

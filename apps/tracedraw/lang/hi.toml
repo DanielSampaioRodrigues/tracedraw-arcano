@@ -3762,3 +3762,7 @@ resample.pixels_tip = "Every pixel stays a square of one colour: for pixel art, 
 resample.detail = "Enlarge with detail"
 resample.detail_tip = "Smooth, then the edges an enlargement softens are sharpened again, more for bigger enlargements."
 resample.sizes = "Original {ow} x {oh} px, new {w} x {h} px ({mb} MB)"
+lens.bitmap_effects = "Bitmap Effects"
+lens.add_effect = "Add effect..."
+effect_picker.as_lens = "Apply as a lens"
+effect_picker.as_lens_tip = "The selected object becomes a lens: the effect changes what lies beneath it, not the object"

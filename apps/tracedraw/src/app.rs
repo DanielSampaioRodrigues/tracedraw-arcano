@@ -1414,6 +1414,8 @@ impl App {
     pub fn new(ctx: &egui::Context, open: Option<PathBuf>) -> Self {
         // egui quits on Ctrl+Q by default; here Ctrl+Q is Convert to Curves
         // and the application closes through File > Exit (Alt+F4).
+        // The Bitmap Effects lens runs the application's bitmap effects.
+        tracedraw_render::set_pixel_effects(crate::fx::lens_effects);
         ctx.options_mut(|o| {
             o.quit_shortcuts.clear();
             // Ctrl+plus and Ctrl+minus zoom the drawing, not the interface;
