@@ -392,10 +392,12 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         app.rasterize_complex_effects,
         app.proof_colors,
         app.focus_target().map(|id| (id, app.focus_visibility())),
+        (app.view_mode == crate::app::ViewMode::Pixels).then(|| app.document_dpi()),
     ) {
+        let (tex, at) = tex;
         painter.image(
             tex,
-            rect,
+            at,
             ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
             Color32::WHITE,
         );
@@ -1128,8 +1130,8 @@ pub fn screen_px_per_doc_px(app: &App) -> f64 {
 }
 
 /// The pixel grid: one cell per document pixel, aligned with the page's
-/// bottom-left corner, in the Pixels view (or with pixel rulers) from 800%
-/// zoom.
+/// bottom-left corner, in the Pixels view (or with pixel rulers) once a
+/// document pixel spans 8 screen pixels.
 fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
     let pixel_mode =
         app.view_mode == crate::app::ViewMode::Pixels || app.units == crate::app::Units::Pixels;

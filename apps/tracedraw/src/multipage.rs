@@ -180,7 +180,9 @@ pub fn draw_other_pages(app: &App, painter: &Painter, rect: ERect) {
                     app.rasterize_complex_effects,
                     app.proof_colors,
                     None,
+                    None,
                 ) {
+                    let (tex, _) = tex;
                     painter.image(
                         tex,
                         clip,

@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- View > Pixels shows the document's pixels when zoomed in: the drawing
+  is rendered at the document resolution and enlarged as square blocks,
+  lined up with the pixel grid, so edges look as they will once exported.
 - Window > Panels in groups, in the usual order of a Dockers menu
   (Properties, Objects, Pages, Comments... then Transformations, Guidelines,
   alignment, shaping, text, colour), with the effect panels in an Effects

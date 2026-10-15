@@ -98,6 +98,13 @@ stand for a distance in the world (`drawing_scale.rs`):
 - Colour (light grey) and opacity (100%) are document settings.
 - In the Pixels view, 100% zoom is one screen pixel per document pixel,
   as the zoom box shows it; otherwise 100% is real size at 96 dpi.
+- In the Pixels view the drawing is rendered at the document resolution
+  and blown up without smoothing once a document pixel covers a screen
+  pixel or more, so zooming in shows each pixel as a square block of one
+  colour (anti-aliased edges as grey or tinted blocks), lined up with the
+  pixel grid. Zoomed out further, the drawing is rendered at the screen's
+  resolution as in the other views. The rendered area is capped at 8192
+  pixels a side; past that the screen-resolution render is used.
 
 ## Guidelines
 
