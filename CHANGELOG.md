@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- Shift + double-click on the Rectangle tool draws a rectangle around
+  the selection.
 - `.cdr` radial and square gradients are no longer inside out: files
   list their colours from the edge to the centre (written that way too).
 - `.cdr`: strokes an artistic brush draws along a curve (linked groups)

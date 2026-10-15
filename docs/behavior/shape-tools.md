@@ -48,7 +48,9 @@ whatever tool is active.
 - The sizes on the bar are page sizes in the ruler unit; with relative
   scaling on a stretched rectangle shows the smaller of its two scales.
 - Double-clicking the tool button draws a page frame: a rectangle the
-  size of the page, selected.
+  size of the page, selected. With Shift held, the rectangle frames the
+  selection as drawn (its effects included); with nothing selected, the
+  page.
 
 ## Ellipse (F7)
 

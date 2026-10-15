@@ -188,11 +188,12 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
         }
         // Double-clicking a tool button: Pick selects every object, Shape
         // every node, Zoom fits the drawing, Rectangle adds a frame around
-        // the page.
+        // the page (with Shift, around the selection).
         if resp.double_clicked() {
             match shown {
                 Tool::Pick => app.select_all(),
                 Tool::Zoom => app.zoom_to_fit(),
+                Tool::Rectangle if ui.input(|i| i.modifiers.shift) => app.add_selection_frame(),
                 Tool::Rectangle => app.add_page_frame(),
                 // The Shape tool selects every node of the selected curves.
                 Tool::Shape => app.select_all_nodes(),

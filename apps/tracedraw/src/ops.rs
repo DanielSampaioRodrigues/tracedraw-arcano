@@ -404,6 +404,25 @@ impl App {
         }
     }
 
+    /// Shift + double-click on the Rectangle tool: a rectangle around the
+    /// selection as it is drawn (its effects included), selected; with
+    /// nothing selected, the page frame.
+    pub fn add_selection_frame(&mut self) {
+        let Some(b) = self.selection_bounds().filter(|b| {
+            b.width().is_finite() && b.height().is_finite() && b.width() > 0.0 && b.height() > 0.0
+        }) else {
+            self.add_page_frame();
+            return;
+        };
+        if let Some(id) = self.new_shape(tracedraw_core::ShapeKind::Rect {
+            rect: b,
+            radius: 0.0,
+            corners: None,
+        }) {
+            self.select(vec![id]);
+        }
+    }
+
     /// Layout > Page Background > Bitmap: an image file as the page's
     /// background, scaled to cover the page.
     pub fn set_page_background_image(
@@ -828,6 +847,35 @@ mod smoke_tests {
         assert!((b.width() - size.width).abs() < 1e-6);
         assert!((b.height() - size.height).abs() < 1e-6);
         assert!(b.x0.abs() < 1e-6 && b.y0.abs() < 1e-6);
+    }
+
+    #[test]
+    fn shift_double_click_frames_the_selection() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Ellipse {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 20.0, 50.0, 40.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.select(vec![id]);
+        let want = app.selection_bounds().expect("bounds");
+        app.add_selection_frame();
+        let shapes = app.selected_shapes();
+        assert_eq!(shapes.len(), 1);
+        assert!(matches!(
+            shapes[0].kind,
+            tracedraw_core::ShapeKind::Rect { .. }
+        ));
+        let b = shapes[0].bounds();
+        assert!((b.x0 - want.x0).abs() < 1e-6 && (b.x1 - want.x1).abs() < 1e-6);
+        assert!((b.y0 - want.y0).abs() < 1e-6 && (b.y1 - want.y1).abs() < 1e-6);
+        // Nothing selected: the page frame.
+        app.select(Vec::new());
+        app.add_selection_frame();
+        let size = app.page_size();
+        let b = app.selected_shapes()[0].bounds();
+        assert!((b.width() - size.width).abs() < 1e-6);
     }
 
     #[test]

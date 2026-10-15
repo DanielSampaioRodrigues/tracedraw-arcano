@@ -27,7 +27,7 @@ To draw a rectangle: pick the **Rectangle** tool (`F6`) and drag.
 - The **3-point rectangle** tool, in the same flyout, draws a rectangle
   at any angle.
 - Double-click the Rectangle tool's button to draw a frame the size of
-  the page.
+  the page; hold Shift to frame the selection instead.
 
 To round the corners, use the property bar:
 
