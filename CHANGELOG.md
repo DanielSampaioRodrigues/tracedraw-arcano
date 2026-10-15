@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` files saved by the newest versions (also when saved for older
+  versions) keep their fills: text and backgrounds no longer go missing.
+  Colours from spot colour libraries, which the file names by number
+  only, take the look the file's own page picture shows instead of
+  black, and character spacing is counted in spaces, so widely spaced
+  headings fit their frames (#67).
 - Fountain fills: Import Gradient reads a `.ggr` gradient file into the
   stops (#4).
 - `.cdr`: an object embedded from another program with no picture to

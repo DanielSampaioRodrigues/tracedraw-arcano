@@ -24,6 +24,7 @@ pub mod eot;
 pub mod ole;
 pub mod parse;
 pub mod riff;
+pub mod spot;
 mod text;
 pub mod write;
 
@@ -84,6 +85,17 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
         .into_iter()
         .map(|(_, c)| c)
         .collect();
+    // Spot library colours take what the file's page preview shows.
+    if !doc_report.0.inks.is_empty() {
+        if let Some(preview) = container::page_preview(bytes, &container) {
+            let n = spot::colours_from_preview(&mut doc_report.0, &preview);
+            if n > 0 {
+                doc_report.1.warn(format!(
+                    "{n} spot colour(s) take their look from the file's preview"
+                ));
+            }
+        }
+    }
     let (fonts, notes) = container::embedded_fonts(bytes, &container);
     doc_report.0.fonts = fonts;
     doc_report.0.cmyk_profile = cmyk_profile;

@@ -84,6 +84,12 @@ const OBJ_CONNECTOR: u32 = 0x26;
 /// its name argument names the storage of an `ole2` chunk, its coordinates
 /// hold its size and two opposite corners.
 const OBJ_EMBEDDED: u32 = 0x0a;
+/// The tag of records added by version 24 and later at the start of fill
+/// records (a 16-byte id), which files saved for older versions carry too.
+const NEWER_RECORD_TAG: u32 = 2400;
+
+/// The width of the space character in ems, for character spacing.
+const SPACE_EM: f64 = 0.25;
 /// A guideline (seen in version 12 files on the guides layer).
 const OBJ_GUIDE: u32 = 0x16;
 /// Argument of a guideline: its line (see [`Ctx::read_guide`]).
@@ -254,8 +260,8 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
-    /// Colours of a spot colour library met (shown as tints of black).
-    library_colors: usize,
+    /// Colours of spot colour libraries met: (library, number).
+    library_inks: std::collections::BTreeSet<(u16, u16)>,
     /// Guidelines of the page being read (objects of type 0x16).
     guides: Vec<tracedraw_core::document::Guide>,
     /// The last object read was a guideline, not a skipped object.
@@ -316,7 +322,7 @@ impl<'a> Ctx<'a> {
             pending_crop: None,
             guides: Vec::new(),
             last_was_guide: false,
-            library_colors: 0,
+            library_inks: Default::default(),
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
@@ -516,10 +522,13 @@ pub fn parse_document_with(
         });
     }
 
-    if ctx.library_colors > 0 {
-        let n = ctx.library_colors;
+    if !ctx.library_inks.is_empty() {
+        let n = ctx.library_inks.len();
+        for (palette, number) in &ctx.library_inks {
+            doc.inks.push(crate::spot::ink_entry(*palette, *number));
+        }
         ctx.report.warn(format!(
-            "{n} colour(s) from a spot colour library (model 0x01) shown as tints of black"
+            "{n} spot colour(s) from colour libraries: the file names them by number only"
         ));
     }
     ctx.report.pages = doc.pages.len();
@@ -649,9 +658,10 @@ impl<'a> Ctx<'a> {
     /// bytes, 4 value bytes (12 bytes). Version 4: model u16, C M Y K as
     /// u16 each, 2 unknown bytes. Before 4: model u8, 4 value bytes.
     fn read_color(&mut self, r: &mut Reader) -> Option<Color> {
+        let mut palette = 0u16;
         let (model, b) = if self.v >= 5 {
             let model = r.u16()?;
-            let _palette = r.u16()?;
+            palette = r.u16()?;
             r.skip(4);
             let raw = r.u32()?;
             (model, raw.to_le_bytes())
@@ -674,13 +684,17 @@ impl<'a> Ctx<'a> {
         if model == 0 && b == [0; 4] {
             return Some(Color::BLACK);
         }
-        // A colour of a spot colour library (seen in version 12 files):
-        // its number in the library (u16) and a tint in percent (u16). The
-        // libraries' colours are not in the file; the tint of black stands
-        // in, so tints keep their lightness.
-        if model == 0x01 {
-            self.library_colors += 1;
-            return Some(library_color_stand_in(b));
+        // A colour of a spot colour library (model 1, and 0x0e for the
+        // libraries numbered in hex; seen in versions 12 to 22): its number
+        // in the library (u16) and a tint in percent (u16), the palette
+        // field naming the library. The colour itself is not in the file:
+        // it becomes a spot ink, black until the file's preview tells
+        // (`spot::colours_from_preview`).
+        if model == 0x01 || model == 0x0e {
+            let number = u16::from_le_bytes([b[0], b[1]]);
+            let tint = u16::from_le_bytes([b[2], b[3]]);
+            self.library_inks.insert((palette, number));
+            return Some(crate::spot::library_color(palette, number, tint));
         }
         Some(match color_from_model(model, b) {
             Some(c) => c,
@@ -705,9 +719,19 @@ impl<'a> Ctx<'a> {
         let mut body_end = d.len();
         if v >= 13 {
             // version 13+: a "since version" tag (1300) and the body length.
-            let _since = r.u32();
-            if let Some(len) = r.u32() {
+            // Files written by version 24 and later start with a record of
+            // their own (tag 2400, a 16-byte id), in files saved for older
+            // versions too; it is skipped.
+            for _ in 0..4 {
+                let (Some(since), Some(len)) = (r.u32(), r.u32()) else {
+                    return;
+                };
+                if since >= NEWER_RECORD_TAG {
+                    r.pos = r.pos.saturating_add(len as usize);
+                    continue;
+                }
                 body_end = body_end.min(r.pos.saturating_add(len as usize));
+                break;
             }
         }
         let Some(ftype) = r.u16() else { return };
@@ -1349,7 +1373,9 @@ impl<'a> Ctx<'a> {
         }
         if let Some(cs) = style.char_spacing {
             if cs != 0.0 {
-                span.tracking_pct = cs * 100.0;
+                // The file counts character spacing in widths of the
+                // space character, taken here as a quarter of the em.
+                span.tracking_pct = cs * 100.0 * SPACE_EM;
             }
         }
         if let Some(inline) = style.fill_color {
@@ -3106,13 +3132,6 @@ pub(crate) fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) ->
 /// also set on the move-to of a closed subpath, which we ignore).
 /// A colour from its model code and four value bytes (the encoding shared
 /// by `.cdr` from version 5 and CMX): `None` for models we do not model.
-/// What a spot colour library's colour (model 0x01: number u16, tint in
-/// percent u16) is shown as: black at its tint.
-pub(crate) fn library_color_stand_in(b: [u8; 4]) -> Color {
-    let tint = u16::from_le_bytes([b[2], b[3]]).min(100) as f32;
-    Color::cmyk_pct(0.0, 0.0, 0.0, tint)
-}
-
 pub(crate) fn color_from_model(model: u16, b: [u8; 4]) -> Option<Color> {
     Some(match model {
         // CMYK in percent
@@ -3604,6 +3623,39 @@ mod tests {
         let c = tree.root.find(b"fild").unwrap();
         ctx.read_fill(c);
         assert_eq!(ctx.fills[&3].fill, Fill::Solid(Color::rgb8(10, 20, 30)));
+    }
+
+    #[test]
+    fn fills_skip_the_leading_record_newer_writers_add() {
+        // Newer writers put a record of their own (tag 2400, a 16-byte
+        // id) before the usual 1300 record, also in files saved for older
+        // versions.
+        let mut props = vec![0x01u8];
+        props.extend_from_slice(&12u32.to_le_bytes());
+        props.extend_from_slice(&color_bgr(10, 20, 30));
+        props.push(0x00);
+        let mut solid = u32s(&[1300, props.len() as u32]);
+        solid.extend_from_slice(&props);
+        let mut fild = u32s(&[3, 2400, 16]);
+        fild.extend_from_slice(&[0xab; 16]);
+        fild.extend_from_slice(&u32s(&[1300, (solid.len() + 2) as u32]));
+        fild.extend_from_slice(&u16s(&[1]));
+        fild.extend_from_slice(&solid);
+        let main = riff(b"CDRF", &chunk(b"fild", &fild));
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 15);
+        ctx.read_fill(tree.root.find(b"fild").unwrap());
+        assert_eq!(ctx.fills[&3].fill, Fill::Solid(Color::rgb8(10, 20, 30)));
+        // Cut anywhere: no panic.
+        for cut in 0..fild.len() {
+            let main = riff(b"CDRF", &chunk(b"fild", &fild[..cut]));
+            if let Ok(tree) = crate::riff::parse(&main) {
+                let mut ctx = Ctx::new(&main, &tree, 15);
+                if let Some(c) = tree.root.find(b"fild") {
+                    ctx.read_fill(c);
+                }
+            }
+        }
     }
 
     #[test]
@@ -5407,7 +5459,7 @@ mod tests {
                 assert_eq!(spans[0].font_family, "Verdana");
                 assert!((spans[0].size_pt - 36.0).abs() < 1e-9);
                 assert!(spans[0].italic && !spans[0].bold);
-                assert!((spans[0].tracking_pct - 5.0).abs() < 1e-9);
+                assert!((spans[0].tracking_pct - 5.0 * SPACE_EM).abs() < 1e-9);
                 assert!((para.leading_pct - 150.0).abs() < 1e-9);
                 assert!((para.left_indent - 25.4).abs() < 1e-9, "{para:?}");
                 assert!((para.first_line_indent - 6.35).abs() < 1e-9);
@@ -6240,22 +6292,5 @@ mod tests {
         let (_, rep) = parse(&riff(b"CDRC", &body), 12);
         assert!(rep.warnings.iter().any(|w| w.contains("not shown")));
         assert!(!rep.warnings.iter().any(|w| w.contains("0x0a")));
-    }
-
-    #[test]
-    fn library_colours_stand_in_as_tints_of_black() {
-        // Number 123, tint 10 % and 100 %; a tint past 100 is 100.
-        assert_eq!(
-            library_color_stand_in([0x7b, 0, 10, 0]),
-            Color::cmyk_pct(0.0, 0.0, 0.0, 10.0)
-        );
-        assert_eq!(
-            library_color_stand_in([0x7b, 0, 100, 0]),
-            Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)
-        );
-        assert_eq!(
-            library_color_stand_in([0, 0, 0xff, 0xff]),
-            Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)
-        );
     }
 }

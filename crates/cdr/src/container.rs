@@ -186,6 +186,31 @@ const MAX_EMBEDDED: u64 = 64 << 20;
 /// under `color/profiles/cmyk/`, seen in version 17 to 21 files next to
 /// `color/color.xml`, which names it), when it reads as an ICC profile.
 /// `None` for RIFF files and files without one.
+/// The picture of the first page a ZIP container keeps (`previews/` from
+/// version 17, `metadata/thumbnails/` before), when there is one.
+pub fn page_preview(bytes: &[u8], container: &Container) -> Option<crate::spot::Preview> {
+    if container.kind == ContainerKind::Riff {
+        return None;
+    }
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    for name in ["previews/page1.png", "metadata/thumbnails/page1.bmp"] {
+        let Ok(f) = archive.by_name(name) else {
+            continue;
+        };
+        if f.size() > MAX_PROFILE {
+            continue;
+        }
+        let mut data = Vec::new();
+        if std::io::Read::read_to_end(&mut f.take(MAX_PROFILE), &mut data).is_err() {
+            continue;
+        }
+        if let Some(p) = crate::spot::Preview::decode(&data) {
+            return Some(p);
+        }
+    }
+    None
+}
+
 pub fn cmyk_profile(
     bytes: &[u8],
     container: &Container,
