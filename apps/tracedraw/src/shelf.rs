@@ -502,6 +502,7 @@ pub fn thumbnail(item: &ShelfItem, px: u32) -> Option<(Vec<u8>, u32, u32)> {
             preview: None,
             wireframe: false,
             anti_alias: true,
+            draft: true,
             ..tracedraw_render::RenderOptions::default()
         },
     )?;

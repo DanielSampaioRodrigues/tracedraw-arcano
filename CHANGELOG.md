@@ -12,6 +12,13 @@ Remove Background and Tools > Options > AI to connect online or local
 services with your own keys, a darker dark theme, and `.cdr` files saved
 by the newest versions opening with their fills and spot colours.
 
+- Faster textures and other per-pixel fills on screen (#4): worked out
+  on all processor cores, on a coarser grid when they cover much of the
+  window (exports keep every pixel), with their end colours converted
+  once instead of per pixel, and kept between redraws, so dragging other
+  objects or changing the selection does not compute them again. A
+  window-sized cloud texture draws about three to four times faster on
+  two cores, and again from memory when unchanged.
 - AI, with the user's own API keys: Tools > Options > AI turns AI
   features on or off and sets up a drawing service and an image service
   (Google Gemini API or OpenAI Images API or compatible), each with Test

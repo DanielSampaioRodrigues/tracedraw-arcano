@@ -66,6 +66,10 @@ pub struct RenderOptions {
     /// Smooth edges (Convert to Bitmap's Anti-aliasing); off gives hard
     /// pixel edges.
     pub anti_alias: bool,
+    /// On screen: large procedural fills (textures, conical and square
+    /// gradients) may be worked out on a coarser grid. Exports keep every
+    /// pixel.
+    pub draft: bool,
 }
 
 impl Default for RenderOptions {
@@ -83,6 +87,7 @@ impl Default for RenderOptions {
             simulate_overprints: false,
             complex_effects: true,
             anti_alias: true,
+            draft: false,
         }
     }
 }
@@ -96,6 +101,7 @@ struct Flags {
     /// Fill open subpaths (the document's "Fill open curves").
     fill_open_curves: bool,
     anti_alias: bool,
+    draft: bool,
 }
 
 impl Flags {
@@ -106,6 +112,7 @@ impl Flags {
             complex_effects: opts.complex_effects,
             fill_open_curves: false,
             anti_alias: opts.anti_alias,
+            draft: opts.draft,
         }
     }
 }
@@ -118,6 +125,7 @@ impl Default for Flags {
             complex_effects: true,
             fill_open_curves: false,
             anti_alias: true,
+            draft: false,
         }
     }
 }
@@ -905,7 +913,8 @@ impl Renderer<'_> {
                     tracedraw_core::FountainKind::Conical
                     | tracedraw_core::FountainKind::Square => {
                         let f2 = f.clone();
-                        self.fill_procedural(page_path, sk, rule, move |u, v| {
+                        let key = format!("{f:?}");
+                        self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let dx = u - 0.5 - f2.offset.x / 2.0;
                             let dy = v - 0.5 - f2.offset.y / 2.0;
                             let t = match f2.kind {
@@ -931,11 +940,21 @@ impl Renderer<'_> {
             Fill::Texture(t) => {
                 let b = bbox(page_path);
                 let t2 = t.clone();
-                self.fill_procedural(page_path, sk, rule, move |u, v| {
+                let key = format!("{t:?}");
+                // The end colours once (a CMYK colour's conversion is not
+                // cheap), then blended per pixel as `lerp_color` does.
+                let ca = t.color_a.to_rgb8();
+                let cb = t.color_b.to_rgb8();
+                self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                     let x = u * b.width() / t2.scale.max(0.1);
                     let y = v * b.height() / t2.scale.max(0.1);
-                    let n = texture_value(t2.kind, x, y, t2.seed);
-                    tracedraw_core::style::lerp_color(t2.color_a, t2.color_b, n as f32)
+                    let n = texture_value(t2.kind, x, y, t2.seed) as f32;
+                    let l = |x: u8, y: u8| {
+                        (x as f32 + (y as f32 - x as f32) * n)
+                            .round()
+                            .clamp(0.0, 255.0) as u8
+                    };
+                    Color::rgb8(l(ca[0], cb[0]), l(ca[1], cb[1]), l(ca[2], cb[2]))
                 });
             }
         }
@@ -1077,13 +1096,18 @@ impl Renderer<'_> {
     }
 
     /// Fill with a per-pixel function over the path's bounding box
-    /// (u, v in 0..1, v up).
+    /// (u, v in 0..1, v up). Only the part on the canvas is worked out;
+    /// large areas are worked out on a coarser grid (the functions are
+    /// smooth) and on several threads, and the last results are kept, so
+    /// a drawing redrawn with the object in the same place (another object
+    /// dragged, the selection changed) does not compute it again.
     fn fill_procedural(
         &mut self,
         page_path: &BezPath,
         sk: &SkPath,
         rule: FillRule,
-        f: impl Fn(f64, f64) -> Color,
+        key: &str,
+        f: impl Fn(f64, f64) -> Color + Sync,
     ) {
         use tracedraw_core::geometry::Shape as _;
         let b = bbox(page_path);
@@ -1091,9 +1115,8 @@ impl Renderer<'_> {
         if !(sb.width() > 0.0 && sb.height() > 0.0) {
             return;
         }
-        // Only the part on the canvas is worked out (zoomed in, the object
-        // may be far larger than the window), with a pixel of margin for
-        // smooth edges.
+        // Zoomed in, the object may be far larger than the window; a pixel
+        // of margin keeps the edges smooth.
         let vis = sb.intersect(tracedraw_core::Rect::new(
             -1.0,
             -1.0,
@@ -1104,22 +1127,40 @@ impl Renderer<'_> {
             return;
         }
         let (x0, y0) = (vis.x0.floor(), vis.y0.floor());
-        let w = ((vis.x1.ceil() - x0) as u32).clamp(1, 8192);
-        let h = ((vis.y1.ceil() - y0) as u32).clamp(1, 8192);
-        let Some(mut pm) = Pixmap::new(w, h) else {
-            return;
+        let full_w = ((vis.x1.ceil() - x0) as u32).clamp(1, 8192);
+        let full_h = ((vis.y1.ceil() - y0) as u32).clamp(1, 8192);
+        let step = if self.flags.draft {
+            procedural_step(full_w, full_h)
+        } else {
+            1
         };
-        let px = pm.pixels_mut();
-        let (bw, bh) = (sb.width(), sb.height());
-        for y in 0..h {
-            for x in 0..w {
-                let u = (x0 + x as f64 + 0.5 - sb.x0) / bw;
-                let v = 1.0 - (y0 + y as f64 + 0.5 - sb.y0) / bh;
-                let [r, g, bb] = f(u, v).to_rgb8();
-                px[(y * w + x) as usize] =
-                    tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+        let w = full_w.div_ceil(step).max(1);
+        let h = full_h.div_ceil(step).max(1);
+        let cache_key = format!(
+            "{key}|{:.2},{:.2},{:.2},{:.2}|{x0},{y0},{w},{h},{step}",
+            sb.x0, sb.y0, sb.x1, sb.y1
+        );
+        let pm = match procedural_cache_get(&cache_key) {
+            Some(pm) => pm,
+            None => {
+                let Some(mut pm) = Pixmap::new(w, h) else {
+                    return;
+                };
+                let (bw, bh) = (sb.width(), sb.height());
+                let st = step as f64;
+                let row = |y: u32, out: &mut [tiny_skia::PremultipliedColorU8]| {
+                    for (x, px) in out.iter_mut().enumerate() {
+                        let u = (x0 + (x as f64 + 0.5) * st - sb.x0) / bw;
+                        let v = 1.0 - (y0 + (y as f64 + 0.5) * st - sb.y0) / bh;
+                        let [r, g, bb] = f(u, v).to_rgb8();
+                        *px = tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+                    }
+                };
+                for_rows(pm.pixels_mut(), w as usize, &row);
+                procedural_cache_put(cache_key, pm.clone());
+                pm
             }
-        }
+        };
         let mut paint = Paint::default();
         paint.anti_alias = self.flags.anti_alias;
         paint.shader = tiny_skia::Pattern::new(
@@ -1127,7 +1168,7 @@ impl Renderer<'_> {
             SpreadMode::Pad,
             tiny_skia::FilterQuality::Bilinear,
             1.0,
-            Transform::from_translate(x0 as f32, y0 as f32),
+            Transform::from_translate(x0 as f32, y0 as f32).pre_scale(step as f32, step as f32),
         );
         self.pixmap
             .fill_path(sk, &paint, rule, Transform::identity(), None);
@@ -1382,6 +1423,88 @@ fn pad_pos(f: &tracedraw_core::Fountain, pos: f64) -> f64 {
 }
 
 /// Cheap value noise in 0..1 for texture fills.
+/// The grid of a procedural fill over `w` by `h` pixels: every pixel up
+/// to about a third of a megapixel, then every second or third.
+fn procedural_step(w: u32, h: u32) -> u32 {
+    match w as u64 * h as u64 {
+        0..=350_000 => 1,
+        350_001..=1_400_000 => 2,
+        _ => 3,
+    }
+}
+
+/// Fill the rows of `px` (`w` pixels wide) with `row`, on several threads
+/// where there are some.
+fn for_rows(
+    px: &mut [tiny_skia::PremultipliedColorU8],
+    w: usize,
+    row: &(impl Fn(u32, &mut [tiny_skia::PremultipliedColorU8]) + Sync),
+) {
+    if w == 0 {
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(8);
+        let rows = px.len() / w;
+        if threads > 1 && rows >= 64 {
+            let per = rows.div_ceil(threads);
+            std::thread::scope(|scope| {
+                for (k, chunk) in px.chunks_mut(per * w).enumerate() {
+                    scope.spawn(move || {
+                        for (i, line) in chunk.chunks_mut(w).enumerate() {
+                            row((k * per + i) as u32, line);
+                        }
+                    });
+                }
+            });
+            return;
+        }
+    }
+    for (y, line) in px.chunks_mut(w).enumerate() {
+        row(y as u32, line);
+    }
+}
+
+/// The last procedural fills worked out, newest last: up to this many,
+/// and up to this many pixels together.
+const PROCEDURAL_CACHE: usize = 12;
+const PROCEDURAL_CACHE_PIXELS: usize = 12_000_000;
+
+thread_local! {
+    static PROCEDURAL: std::cell::RefCell<Vec<(String, Pixmap)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn procedural_cache_get(key: &str) -> Option<Pixmap> {
+    PROCEDURAL.with(|c| {
+        let mut c = c.borrow_mut();
+        let i = c.iter().position(|(k, _)| k == key)?;
+        let hit = c.remove(i);
+        let pm = hit.1.clone();
+        c.push(hit);
+        Some(pm)
+    })
+}
+
+fn procedural_cache_put(key: String, pm: Pixmap) {
+    PROCEDURAL.with(|c| {
+        let mut c = c.borrow_mut();
+        c.push((key, pm));
+        let mut total: usize = c
+            .iter()
+            .map(|(_, p)| p.width() as usize * p.height() as usize)
+            .sum();
+        while c.len() > PROCEDURAL_CACHE || (total > PROCEDURAL_CACHE_PIXELS && c.len() > 1) {
+            let (_, old) = c.remove(0);
+            total -= old.width() as usize * old.height() as usize;
+        }
+    })
+}
+
 fn noise(x: f64, y: f64, seed: u32) -> f64 {
     fn hash(ix: i64, iy: i64, seed: u32) -> f64 {
         let mut h = (ix as u64).wrapping_mul(0x9E3779B97F4A7C15)
@@ -1525,6 +1648,7 @@ pub fn render_page_image_with(
             simulate_overprints: opts.simulate_overprints,
             complex_effects: opts.complex_effects,
             anti_alias: opts.anti_alias,
+            draft: false,
         },
     )?;
     let mut out = Pixmap::new(w, h)?;
@@ -2243,6 +2367,62 @@ mod tests {
         assert_eq!(a.data(), b.data());
         let v: std::collections::HashSet<u8> = (0..30).map(|x| px(&a, x, 15).0).collect();
         assert!(v.len() > 3, "texture should vary");
+    }
+
+    #[test]
+    fn large_textures_on_screen_are_quick_and_exports_keep_every_pixel() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(300.0, 300.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 300.0, 300.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Texture(Texture {
+            kind: TextureKind::Clouds,
+            color_a: Color::Cmyk {
+                c: 1.0,
+                m: 0.2,
+                y: 0.0,
+                k: 0.1,
+            },
+            color_b: Color::rgb8(255, 255, 255),
+            scale: 40.0,
+            seed: 11,
+        });
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let page = doc.pages[0].id;
+        let opts = |draft: bool| RenderOptions {
+            width: 1600,
+            height: 1000,
+            view: ViewTransform {
+                zoom: 6.0,
+                origin_x: -100.0,
+                origin_y: 1500.0,
+            },
+            draft,
+            ..Default::default()
+        };
+        let exact = render_page(&doc, page, &opts(false)).unwrap();
+        let t = std::time::Instant::now();
+        let draft = render_page(&doc, page, &opts(true)).unwrap();
+        let first = t.elapsed();
+        let t = std::time::Instant::now();
+        let again = render_page(&doc, page, &opts(true)).unwrap();
+        let cached = t.elapsed();
+        assert_eq!(draft.data(), again.data(), "the kept result is the same");
+        assert!(cached <= first, "{cached:?} {first:?}");
+        // The coarser grid stays close to the exact picture.
+        let mut worst = 0i32;
+        for (a, b) in exact.pixels().iter().zip(draft.pixels()).step_by(97) {
+            worst = worst.max((a.red() as i32 - b.red() as i32).abs());
+        }
+        assert!(worst < 40, "{worst}");
     }
 
     #[test]

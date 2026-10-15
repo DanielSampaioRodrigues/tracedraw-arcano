@@ -162,6 +162,7 @@ impl Raster {
             simulate_overprints,
             complex_effects,
             anti_alias: true,
+            draft: true,
         };
         let pixmap = render_page(doc, page, &opts)?;
         let lut = if proof {

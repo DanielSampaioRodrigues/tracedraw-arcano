@@ -1253,6 +1253,7 @@ impl App {
                 preview: None,
                 wireframe: false,
                 anti_alias,
+                draft: false,
                 ..tracedraw_render::RenderOptions::default()
             },
         )?;
