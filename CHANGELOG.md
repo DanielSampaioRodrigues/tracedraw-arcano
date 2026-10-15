@@ -4,7 +4,18 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## 0.8.0 (not yet released)
+## 0.8.0 (2026-10-15)
+
+`.cdr` files saved by TraceDraw now carry everything files of their
+version hold, so other programs can open them (a version 17 file was
+reported unreadable); version 12 text, centring, line spacing and text
+on circles, radial and square gradients and brushed strokes open as
+drawn, and a large file that took minutes opens in a fraction of a
+second. Also: the Pixels view shows document pixels when zoomed in, AI
+Generate gathers all AI drawing in one panel, Window > Panels in groups,
+Bitmaps > Resample, bitmap effects as lenses, Put on Plane in
+perspective drawing, Save Bitmap As, a frame around the selection and
+renaming a page from the Objects panel.
 
 - `.cdr` files saved by TraceDraw carry what files of each version hold
   so other programs can open them: the document preferences and default
