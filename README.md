@@ -172,6 +172,22 @@ or the moon button at the right of the status bar).
       Create pictures from a prompt with aspect ratio, style and palette presets, remix a selected picture, create vectors (a generated illustration traced into curves), remove a picture's background, and draw shapes from a request in words. TraceDraw has no AI of its own and no account: Tools &rsaquo; Options &rsaquo; AI connects the services you choose (Google Gemini, OpenAI or compatible APIs, local servers included), and nothing is sent until you ask.
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-painterly.jpg" alt="A landscape painted with painterly brushes (watercolour sky, ink wash and dry brush hills, bristle and fur grass, speckled flowers) with the brush picker open on the property bar" width="100%">
+      <br>
+      <sub>The Painterly Brush tool and its brush picker.</sub>
+      <h3>Paint with brushes</h3>
+      Twelve painterly brushes in three groups (chalk, charcoal, pastel; ink wash, watercolour, dry brush; bristle, fur, spray, speckle, cloud, silk ribbon) paint freehand strokes or the outline of any object. A brushstroke stays a curve: reshape it with the Shape tool, recolour it from the palette, change its brush, size or transparency, and export it to SVG and PDF.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-perspective.jpg" alt="Draw in Perspective in the medium dark theme: a one-point grid over a room with checked floor tiles, windows and doors on the walls and lights on the ceiling" width="100%">
+      <br>
+      <sub>Draw in Perspective with a one-point grid.</sub>
+      <h3>Draw in perspective</h3>
+      One-, two- and three-point grids with vanishing points you drag. Whatever you draw with a drawing tool lands on the floor, a wall or the ceiling in perspective, as an exact perspective effect you can still edit. Variable-width outlines, focus mode, a multipage view, an export panel for many assets at once and review comments round out the drawing window.
+    </td>
+  </tr>
 </table>
 
 <br>
@@ -181,12 +197,12 @@ or the moon button at the right of the status bar).
 <table>
   <tr>
     <td width="33%" valign="top">
-      <h4>62 tools</h4>
-      Pick &middot; Freehand Pick &middot; Free Transform &middot; Shape &middot; Smooth &middot; Smear &middot; Twirl &middot; Attract &middot; Repel &middot; Smudge &middot; Roughen &middot; Crop &middot; Knife &middot; Segment Delete &middot; Eraser &middot; Zoom &middot; Pan &middot; Freehand &middot; 2-Point Line &middot; Bezier &middot; Pen &middot; B-Spline &middot; Polyline &middot; 3-Point Curve &middot; Shape Recognition &middot; Sketch &middot; Brush Strokes (preset, brush, sprayer, calligraphic, expression) &middot; Rectangle and 3-Point Rectangle &middot; Ellipse and 3-Point Ellipse &middot; Polygon &middot; Star &middot; Spiral &middot; Common Shapes &middot; Action Lines &middot; Graph Paper &middot; Text &middot; Table &middot; five dimension tools &middot; three connectors &middot; Drop Shadow &middot; Contour &middot; Blend &middot; Distort &middot; Envelope &middot; Extrude &middot; Block Shadow &middot; Transparency &middot; two eyedroppers &middot; Interactive Fill &middot; Area Fill &middot; Mesh Fill &middot; Outline Pen &middot; Outline Colour
+      <h4>64 tools</h4>
+      Pick &middot; Freehand Pick &middot; Free Transform &middot; Shape &middot; Smooth &middot; Smear &middot; Twirl &middot; Attract &middot; Repel &middot; Smudge &middot; Roughen &middot; Variable Outline &middot; Crop &middot; Knife &middot; Segment Delete &middot; Eraser &middot; Zoom &middot; Pan &middot; Freehand &middot; 2-Point Line &middot; Bezier &middot; Pen &middot; B-Spline &middot; Polyline &middot; 3-Point Curve &middot; Shape Recognition &middot; Sketch &middot; Brush Strokes (preset, brush, sprayer, calligraphic, expression) &middot; Painterly Brush (twelve brushes) &middot; Rectangle and 3-Point Rectangle &middot; Ellipse and 3-Point Ellipse &middot; Polygon &middot; Star &middot; Spiral &middot; Common Shapes &middot; Action Lines &middot; Graph Paper &middot; Text &middot; Table &middot; five dimension tools &middot; three connectors &middot; Drop Shadow &middot; Contour &middot; Blend &middot; Distort &middot; Envelope &middot; Extrude &middot; Block Shadow &middot; Transparency &middot; two eyedroppers &middot; Interactive Fill &middot; Area Fill &middot; Mesh Fill &middot; Outline Pen &middot; Outline Colour
     </td>
     <td width="33%" valign="top">
-      <h4>36 panels</h4>
-      Properties &middot; Objects &middot; Hints &middot; Transformations &middot; Undo &middot; Align and Distribute &middot; Shaping &middot; Step and Repeat &middot; Text &middot; Glyphs &middot; Colour &middot; Colour Styles &middot; Object Styles &middot; Find and Replace &middot; Scripts &middot; Palettes &middot; Lens &middot; Blend &middot; Contour &middot; Envelope &middot; Extrude &middot; Bevel &middot; Brush Strokes &middot; Bitmap Mask &middot; Object Data &middot; Links &middot; Symbols &middot; Pages &middot; Guidelines &middot; Fonts &middot; Corners &middot; Join Curves &middot; Coordinates &middot; Vector Mosaic &middot; Picture Mosaic &middot; Shelf
+      <h4>41 panels</h4>
+      Properties &middot; Objects &middot; Hints &middot; Transformations &middot; Undo &middot; Align and Distribute &middot; Shaping &middot; Step and Repeat &middot; Text &middot; Glyphs &middot; Colour &middot; Colour Styles &middot; Object Styles &middot; Find and Replace &middot; Scripts &middot; Palettes &middot; Lens &middot; Blend &middot; Contour &middot; Envelope &middot; Extrude &middot; Bevel &middot; Brush Strokes &middot; Bitmap Mask &middot; Object Data &middot; Links &middot; Symbols &middot; Pages &middot; Guidelines &middot; Fonts &middot; Corners &middot; Join Curves &middot; Coordinates &middot; Vector Mosaic &middot; Picture Mosaic &middot; Shelf &middot; Effects &middot; Export &middot; Comments &middot; AI Drawing &middot; AI Generate
     </td>
     <td width="33%" valign="top">
       <h4>Documents and pages</h4>

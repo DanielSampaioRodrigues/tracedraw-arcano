@@ -81,8 +81,8 @@ by the newest versions opening with their fills and spot colours.
   make it thicker or thinner at that point, one side with Alt; widths on
   the property bar.
 - The dark theme's picked items show white text on blue.
-- README: new screenshots (templates, AI Generate) and some in the dark
-  themes.
+- README: new screenshots (templates, AI Generate, painterly brushes,
+  drawing in perspective) and some in the dark themes.
 - File > New From Template is a dialog: search, a list of where
   templates come from and one of categories, thumbnails with a size
   slider, and a details pane. Besides blank pages it offers designed

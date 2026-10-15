@@ -52,4 +52,6 @@ scene export "$DRAWINGS/poster.tdraw"
 scene templates ""
 scene ai "$DRAWINGS/photo.tdraw" en_US.UTF-8 dark "$AI"
 scene languages "$DRAWINGS/type.tdraw" ja_JP.UTF-8
+scene painterly "$DRAWINGS/brushes.tdraw"
+scene perspective "$DRAWINGS/room.tdraw" en_US.UTF-8 medium_dark
 rm -rf "$SHOTS"

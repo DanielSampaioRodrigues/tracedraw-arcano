@@ -9,6 +9,9 @@
 //! - `fills.tdraw`: every fill type.
 //! - `photo.tdraw`: the poster rendered and placed as a bitmap.
 //! - `leaf.tdraw`: a leaf of smooth curves, for node editing.
+//! - `brushes.tdraw`: a landscape painted with the painterly brushes.
+//! - `room.tdraw`: a room in one-point perspective (floor tiles, wall
+//!   panels and ceiling lights laid onto the planes of the default grid).
 //!
 //! Everything is drawn here from scratch; the fonts are open fonts (Inter
 //! and Lora) and fall back to the system's when missing.
@@ -946,6 +949,327 @@ fn leaf(dir: &Path) {
     b.save(dir, "leaf.tdraw");
 }
 
+/// A brushstroke along smooth points.
+fn brushstroke(
+    b: &mut Build,
+    pts: &[(f64, f64)],
+    color: &str,
+    size: f64,
+    brush: tracedraw_core::painterly::PainterlyBrush,
+    seed: u32,
+    name: &str,
+) {
+    let points: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
+    let path = tracedraw_core::geometry::smooth_path(&points, false);
+    let mut s = b.shape(ShapeKind::Path {
+        path,
+        closed: false,
+    });
+    let mut st = Stroke::new(hex(color), size);
+    st.painterly = Some(tracedraw_core::painterly::Painterly {
+        brush,
+        transparency: 0.1,
+        seed,
+    });
+    s.stroke = Some(st);
+    b.add(s, name);
+}
+
+fn brushes(dir: &Path) {
+    use tracedraw_core::painterly::PainterlyBrush as P;
+    let mut b = Build::new("Brushes", Size::new(297.0, 210.0));
+    b.layer("Paper");
+    let mut paper = b.shape(rect(0.0, 0.0, 297.0, 210.0, 0.0));
+    paper.fill = fountain(
+        FountainKind::Linear,
+        90.0,
+        &[(0.0, "#F7EFE2"), (1.0, "#FFF9F0")],
+    );
+    b.add(paper, "Paper");
+    b.layer("Sky");
+    for (i, y) in [182.0, 170.0, 158.0].iter().enumerate() {
+        brushstroke(
+            &mut b,
+            &[
+                (14.0, *y),
+                (90.0, y + 4.0),
+                (180.0, y - 3.0),
+                (283.0, y + 2.0),
+            ],
+            ["#3F82D0", "#5E9BDD", "#86B6E8"][i],
+            18.0,
+            P::Watercolor,
+            10 + i as u32,
+            "Sky wash",
+        );
+    }
+    brushstroke(
+        &mut b,
+        &[(40.0, 168.0), (70.0, 172.0), (100.0, 167.0)],
+        "#FFFFFF",
+        14.0,
+        P::Cloud,
+        21,
+        "Cloud",
+    );
+    brushstroke(
+        &mut b,
+        &[(180.0, 176.0), (215.0, 180.0), (250.0, 175.0)],
+        "#FFFFFF",
+        12.0,
+        P::Cloud,
+        22,
+        "Cloud",
+    );
+    let mut sun = b.shape(ellipse(232.0, 150.0, 13.0, 13.0));
+    sun.fill = fountain(
+        FountainKind::Radial,
+        0.0,
+        &[(0.0, "#FFE48A"), (1.0, "#F6B44B")],
+    );
+    b.add(sun, "Sun");
+    b.layer("Hills");
+    brushstroke(
+        &mut b,
+        &[
+            (10.0, 112.0),
+            (70.0, 132.0),
+            (140.0, 118.0),
+            (210.0, 136.0),
+            (290.0, 120.0),
+        ],
+        "#5E8C6A",
+        22.0,
+        P::InkWash,
+        31,
+        "Far hills",
+    );
+    brushstroke(
+        &mut b,
+        &[
+            (10.0, 92.0),
+            (80.0, 104.0),
+            (160.0, 88.0),
+            (230.0, 100.0),
+            (290.0, 90.0),
+        ],
+        "#2F6B3F",
+        22.0,
+        P::DryBrush,
+        32,
+        "Near hills",
+    );
+    b.layer("Meadow");
+    for (i, y) in [70.0, 56.0, 42.0, 28.0].iter().enumerate() {
+        brushstroke(
+            &mut b,
+            &[
+                (8.0, *y),
+                (100.0, y + 3.0),
+                (200.0, y - 2.0),
+                (290.0, y + 1.0),
+            ],
+            ["#6BAA4E", "#5C9A42", "#4C8A36", "#3E7A2C"][i],
+            14.0,
+            if i % 2 == 0 { P::Bristle } else { P::Fur },
+            40 + i as u32,
+            "Grass",
+        );
+    }
+    brushstroke(
+        &mut b,
+        &[(30.0, 52.0), (120.0, 60.0), (210.0, 48.0), (270.0, 58.0)],
+        "#F2C14E",
+        10.0,
+        P::Speckle,
+        51,
+        "Flowers",
+    );
+    brushstroke(
+        &mut b,
+        &[(40.0, 30.0), (120.0, 36.0), (200.0, 26.0), (260.0, 34.0)],
+        "#E86A92",
+        8.0,
+        P::Spray,
+        52,
+        "Blossoms",
+    );
+    b.layer("Title");
+    brushstroke(
+        &mut b,
+        &[(22.0, 18.0), (60.0, 16.0), (100.0, 19.0)],
+        "#2E2A26",
+        5.0,
+        P::Charcoal,
+        61,
+        "Signature",
+    );
+    brushstroke(
+        &mut b,
+        &[(196.0, 22.0), (225.0, 16.0), (255.0, 24.0), (282.0, 17.0)],
+        "#C04A7A",
+        7.0,
+        P::Ribbon,
+        62,
+        "Ribbon",
+    );
+    b.save(dir, "brushes.tdraw");
+}
+
+fn room(dir: &Path) {
+    // The default one-point grid of Draw in Perspective on this page.
+    let (w, h) = (297.0, 210.0);
+    let vp = Point::new(w * 0.5, h * 0.55);
+    let (l, r, bt, tp) = (w * 0.15, w * 0.15 + w * 0.7, h * 0.08, h * 0.08 + h * 0.75);
+    let f = 0.7;
+    let toward = |p: Point| p + (vp - p) * f;
+    let (lb, rb, lt, rt) = (
+        Point::new(l, bt),
+        Point::new(r, bt),
+        Point::new(l, tp),
+        Point::new(r, tp),
+    );
+    let unit = [
+        Point::new(0.0, 0.0),
+        Point::new(1.0, 0.0),
+        Point::new(1.0, 1.0),
+        Point::new(0.0, 1.0),
+    ];
+    let planes = [
+        [lb, rb, toward(rb), toward(lb)],
+        [lb, toward(lb), toward(lt), lt],
+        [toward(rb), rb, rt, toward(rt)],
+        [toward(lt), toward(rt), rt, lt],
+        [toward(lb), toward(rb), toward(rt), toward(lt)],
+    ];
+    let mut b = Build::new("Room", Size::new(w, h));
+    let mut laid = |b: &mut Build,
+                    plane: usize,
+                    u0: f64,
+                    w0: f64,
+                    u1: f64,
+                    w1: f64,
+                    fill: Fill,
+                    name: &str| {
+        let q = planes[plane];
+        let Some(hm) = tracedraw_core::live::homography(&unit, &q) else {
+            return;
+        };
+        let m = |u: f64, v: f64| tracedraw_core::live::map_homography(&hm, Point::new(u, v));
+        let corners = [m(u0, w0), m(u1, w0), m(u1, w1), m(u0, w1)];
+        let mut bx = Rect::from_points(corners[0], corners[1]);
+        for c in &corners[2..] {
+            bx = bx.union_pt(*c);
+        }
+        let mut s = b.shape(rect(bx.x0, bx.y0, bx.x1, bx.y1, 0.0));
+        s.fill = fill;
+        s.stroke = Some(Stroke::new(hex("#33415C"), 0.3));
+        s.effects.push(Effect::Perspective { corners });
+        b.add(s, name);
+    };
+    b.layer("Back wall");
+    let mut back = b.shape(rect(
+        toward(lb).x,
+        toward(lb).y,
+        toward(rt).x,
+        toward(rt).y,
+        0.0,
+    ));
+    back.fill = fountain(
+        FountainKind::Linear,
+        90.0,
+        &[(0.0, "#F4D9C6"), (1.0, "#FBEBDD")],
+    );
+    b.add(back, "Back wall");
+    b.layer("Floor");
+    let n = 6;
+    for i in 0..n {
+        for j in 0..n {
+            let dark = (i + j) % 2 == 0;
+            let (u0, w0) = (i as f64 / n as f64, j as f64 / n as f64);
+            laid(
+                &mut b,
+                0,
+                u0,
+                w0,
+                u0 + 1.0 / n as f64,
+                w0 + 1.0 / n as f64,
+                Fill::Solid(hex(if dark { "#2F4858" } else { "#E8E2D6" })),
+                "Tile",
+            );
+        }
+    }
+    b.layer("Walls");
+    laid(
+        &mut b,
+        1,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        Fill::Solid(hex("#9BC1BC")),
+        "Left wall",
+    );
+    laid(
+        &mut b,
+        2,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        Fill::Solid(hex("#ED6A5A")),
+        "Right wall",
+    );
+    laid(
+        &mut b,
+        3,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        Fill::Solid(hex("#F7F3E3")),
+        "Ceiling",
+    );
+    for k in 0..3 {
+        let u = 0.1 + k as f64 * 0.3;
+        laid(
+            &mut b,
+            1,
+            u,
+            0.35,
+            u + 0.2,
+            0.75,
+            fountain(
+                FountainKind::Linear,
+                90.0,
+                &[(0.0, "#5D9CEC"), (1.0, "#BFE0FF")],
+            ),
+            "Window",
+        );
+        laid(
+            &mut b,
+            2,
+            u,
+            0.3,
+            u + 0.18,
+            0.8,
+            Fill::Solid(hex("#F4E1A1")),
+            "Door",
+        );
+        laid(
+            &mut b,
+            3,
+            0.35,
+            0.15 + k as f64 * 0.28,
+            0.65,
+            0.25 + k as f64 * 0.28,
+            Fill::Solid(hex("#FFF4B8")),
+            "Light",
+        );
+    }
+    b.save(dir, "room.tdraw");
+}
+
 fn main() {
     tracedraw_text::install();
     let dir = PathBuf::from(std::env::args().nth(1).unwrap_or_else(|| "showcase".into()));
@@ -959,4 +1283,6 @@ fn main() {
     typography(&dir);
     fills(&dir);
     leaf(&dir);
+    brushes(&dir);
+    room(&dir);
 }
