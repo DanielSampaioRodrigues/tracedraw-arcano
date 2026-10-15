@@ -3368,25 +3368,32 @@ pub(crate) fn file_node_types(
     types: &[u8],
 ) -> std::collections::BTreeMap<usize, tracedraw_core::nodes::NodeType> {
     use tracedraw_core::nodes::{self, NodeType};
-    let mut ends: Vec<(Point, u8)> = pts
+    let ends: Vec<(Point, u8)> = pts
         .iter()
         .zip(types)
         .filter(|(_, t)| *t >> 6 != 0b11)
         .map(|(p, t)| (*p, (t >> 4) & 3))
         .collect();
+    let mut used = vec![false; ends.len()];
+    // Nodes come in the order the points were written: look from where
+    // the last match was first, so a curve of thousands of nodes is read
+    // in one pass (whole-list searches made a large file take minutes).
+    let mut cursor = 0;
     let mut out = std::collections::BTreeMap::new();
     for n in nodes::nodes(path) {
-        let Some(k) = ends.iter().position(|(p, _)| (*p - n.pos).hypot() < 1e-9) else {
+        let matches = |k: &usize| !used[*k] && (ends[*k].0 - n.pos).hypot() < 1e-9;
+        let Some(k) = (cursor..ends.len()).chain(0..cursor).find(|k| matches(k)) else {
             continue;
         };
-        let (_, bits) = ends.remove(k);
-        let ty = match bits {
+        used[k] = true;
+        cursor = k + 1;
+        let ty = match ends[k].1 {
             0 => NodeType::Cusp,
             1 => NodeType::Smooth,
             2 => NodeType::Symmetrical,
             _ => continue,
         };
-        if nodes::node_type(path, n.index) != ty {
+        if nodes::node_type_of(&n) != ty {
             out.insert(n.index, ty);
         }
     }
@@ -6368,6 +6375,31 @@ mod tests {
         narrow.extend_from_slice(b"Next");
         narrow.push(0);
         assert_eq!(read(&narrow, &mut warn).as_deref(), Some("Next"));
+    }
+
+    #[test]
+    fn node_types_of_a_long_curve_are_read_in_one_pass() {
+        use tracedraw_core::nodes::NodeType;
+        // A zigzag of 20 000 line nodes, every third marked smooth in the
+        // file (its straight segments read as cusps): each marked node is
+        // kept with its type. Searching the whole curve for every node
+        // made a file with such curves take minutes to open.
+        let n = 20_000;
+        let pts: Vec<Point> = (0..n)
+            .map(|i| Point::new(i as f64, if i % 2 == 0 { 0.0 } else { 1.0 }))
+            .collect();
+        let types: Vec<u8> = (0..n)
+            .map(|i| {
+                let op = if i == 0 { 0x00 } else { 0x40 };
+                op | if i % 3 == 0 { 0x10 } else { 0x00 }
+            })
+            .collect();
+        let (path, _) = build_path(&pts, &types);
+        let start = std::time::Instant::now();
+        let kept = file_node_types(&path, &pts, &types);
+        assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
+        assert_eq!(kept.len(), (0..n).filter(|i| i % 3 == 0).count());
+        assert!(kept.values().all(|t| *t == NodeType::Smooth));
     }
 
     #[test]

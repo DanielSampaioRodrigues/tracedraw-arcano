@@ -1228,11 +1228,7 @@ impl HostInner {
                     .iter()
                     .map(|n| {
                         let p = s.transform * n.pos;
-                        let ty = match tracedraw_core::nodes::node_type_with(
-                            path,
-                            n.index,
-                            &s.node_types,
-                        ) {
+                        let ty = match tracedraw_core::nodes::node_type_of_with(n, &s.node_types) {
                             tracedraw_core::nodes::NodeType::Cusp => "cusp",
                             tracedraw_core::nodes::NodeType::Smooth => "smooth",
                             tracedraw_core::nodes::NodeType::Symmetrical => "symmetrical",

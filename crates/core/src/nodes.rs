@@ -159,12 +159,31 @@ pub fn node_type_with(
     }
 }
 
+/// [`node_type_with`] for a node already found by [`nodes`] (no search of
+/// the path: callers going over every node stay linear).
+pub fn node_type_of_with(
+    n: &Node,
+    chosen: &std::collections::BTreeMap<usize, NodeType>,
+) -> NodeType {
+    chosen
+        .get(&n.index)
+        .copied()
+        .unwrap_or_else(|| node_type_of(n))
+}
+
 /// The type of node `index` as its handles read: aligned handles are
 /// smooth, aligned ones of equal length symmetrical, the rest cusp.
 pub fn node_type(path: &BezPath, index: usize) -> NodeType {
-    let Some(n) = nodes(path).into_iter().find(|n| n.index == index) else {
-        return NodeType::Cusp;
-    };
+    match nodes(path).into_iter().find(|n| n.index == index) {
+        Some(n) => node_type_of(&n),
+        None => NodeType::Cusp,
+    }
+}
+
+/// The type a node's handles show (see [`node_type`]), for a node already
+/// found by [`nodes`]; a curve's nodes classified one by one this way are
+/// worked out once instead of once a node.
+pub fn node_type_of(n: &Node) -> NodeType {
     let (Some(a), Some(b)) = (n.ctrl_in, n.ctrl_out) else {
         return NodeType::Cusp;
     };

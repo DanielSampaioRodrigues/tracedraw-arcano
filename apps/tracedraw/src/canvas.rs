@@ -1411,7 +1411,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
                     draw_control_handle(painter, p, cp, main);
                 }
             }
-            let shape = match nodes::node_type_with(path, n.index, &s.node_types) {
+            let shape = match nodes::node_type_of_with(&n, &s.node_types) {
                 nodes::NodeType::Cusp => prefs.cusp,
                 nodes::NodeType::Smooth => prefs.smooth,
                 nodes::NodeType::Symmetrical => prefs.symmetrical,

@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- Opening a `.cdr` file with long curves is fast again: a 4 MB tutorial
+  file took over three minutes, now a fraction of a second (node types
+  were worked out once a node instead of once a curve). Saving `.cdr`
+  and showing nodes in the Shape tool had the same slowdown.
 - View > Pixels shows the document's pixels when zoomed in: the drawing
   is rendered at the document resolution and enlarged as square blocks,
   lined up with the pixel grid, so edges look as they will once exported.

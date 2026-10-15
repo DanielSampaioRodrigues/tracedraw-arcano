@@ -1248,7 +1248,7 @@ fn curve_coords_typed(
     let continuity: std::collections::BTreeMap<usize, u8> = nodes::nodes(path)
         .into_iter()
         .map(|n| {
-            let bits = match nodes::node_type_with(path, n.index, chosen) {
+            let bits = match nodes::node_type_of_with(&n, chosen) {
                 NodeType::Cusp => 0x00,
                 NodeType::Smooth => 0x10,
                 NodeType::Symmetrical => 0x20,
