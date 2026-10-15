@@ -412,8 +412,22 @@ impl App {
         }
     }
 
+    /// Lay the selected objects onto the active plane, one undo step each.
+    pub fn lay_selection_onto_plane(&mut self) -> usize {
+        let ids = self.selection.clone();
+        ids.into_iter()
+            .filter(|id| self.lay_onto_plane_with(*id, false))
+            .count()
+    }
+
     /// Lay `id` onto the active plane (one undo step with its drawing).
     pub fn lay_onto_plane(&mut self, id: ShapeId) -> bool {
+        self.lay_onto_plane_with(id, true)
+    }
+
+    /// Lay `id` onto the active plane; with `amend`, as part of the step
+    /// just recorded.
+    fn lay_onto_plane_with(&mut self, id: ShapeId, amend: bool) -> bool {
         let Some(session) = self.perspective.as_ref() else {
             return false;
         };
@@ -434,7 +448,7 @@ impl App {
         effects.retain(|e| !matches!(e, Effect::Perspective { .. }));
         effects.push(Effect::Perspective { corners });
         let cmd = Command::SetEffects { shape: id, effects };
-        if self.engine.amend(&cmd).is_err() {
+        if !amend || self.engine.amend(&cmd).is_err() {
             self.run(cmd);
         }
         true
@@ -588,6 +602,7 @@ pub fn show_bar(app: &mut App, ctx: &egui::Context) {
                         }
                         ui.separator();
                         ui.checkbox(&mut s.grid, tr("perspective.grid"));
+                        ui.separator();
                         ui.label(tr("perspective.depth"));
                         let mut d = (s.depth * 100.0).round();
                         if ui
@@ -601,6 +616,14 @@ pub fn show_bar(app: &mut App, ctx: &egui::Context) {
                         {
                             s.depth = d / 100.0;
                         }
+                    }
+                    let some = !app.selection.is_empty();
+                    if ui
+                        .add_enabled(some, egui::Button::new(tr("perspective.put_on_plane")))
+                        .on_hover_text(tr("perspective.put_on_plane_tip"))
+                        .clicked()
+                    {
+                        app.lay_selection_onto_plane();
                     }
                 });
             });
@@ -740,6 +763,18 @@ mod tests {
         );
         app.run(Command::AddShape { layer, shape });
         app.perspective_tick();
+        assert!(app
+            .doc()
+            .find_shape(id2)
+            .is_some_and(|s| s.effects.is_empty()));
+        // Put on Plane lays an existing object down as a step of its own.
+        app.select(vec![id2]);
+        assert_eq!(app.lay_selection_onto_plane(), 1);
+        assert!(app
+            .doc()
+            .find_shape(id2)
+            .is_some_and(|s| !s.effects.is_empty()));
+        app.undo();
         assert!(app
             .doc()
             .find_shape(id2)

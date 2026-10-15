@@ -19,6 +19,8 @@ At the top left of the drawing window:
 - Grid: show the grid lines.
 - Depth (5 to 98 %): how far towards the vanishing points the grid
   reaches.
+- Put on Plane: lays the selected objects (drawn before, pasted or
+  imported) onto the active plane, one undo step each.
 
 ## Defaults
 
