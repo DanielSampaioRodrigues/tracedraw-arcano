@@ -5,7 +5,7 @@
 //! and a button that hides the bar. See docs/behavior/ai-drawing.md.
 
 use crate::ai::AiStatus;
-use crate::app::{App, DockerTab};
+use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use egui::{RichText, Ui};
@@ -78,11 +78,7 @@ pub fn ai_bar(app: &mut App, ui: &mut Ui) {
                 .on_hover_text(tr("ai.settings"))
                 .clicked()
             {
-                if !app.open_dockers.contains(&DockerTab::AiDrawing) {
-                    app.open_dockers.push(DockerTab::AiDrawing);
-                }
-                app.show_dockers = true;
-                app.docker_tab = DockerTab::AiDrawing;
+                app.open_ai_drawing();
             }
             if let Some((text, colour)) = state(app) {
                 ui.add(

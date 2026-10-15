@@ -1272,13 +1272,12 @@ pub enum DockerTab {
     Shelf,
     Export,
     Comments,
-    AiDrawing,
     AiGenerate,
     Effects,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 42] = [
+    pub const ALL: [DockerTab; 41] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1319,7 +1318,6 @@ impl DockerTab {
         DockerTab::VectorMosaic,
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
-        DockerTab::AiDrawing,
         DockerTab::Effects,
     ];
 
@@ -1365,7 +1363,6 @@ impl DockerTab {
             DockerTab::Shelf => "docker.shelf",
             DockerTab::Export => "docker.export",
             DockerTab::Comments => "docker.comments",
-            DockerTab::AiDrawing => "docker.ai_drawing",
             DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Effects => "docker.effects",
         }
@@ -2394,7 +2391,15 @@ impl App {
     /// Put the docker tab column back as `setup` says; names of no docker
     /// are skipped.
     pub fn set_docker_setup(&mut self, setup: &crate::settings::DockerSetup) {
-        let by_key = |k: &str| DockerTab::ALL.iter().copied().find(|t| t.key() == k);
+        // AI Drawing is a mode of AI Generate now.
+        let by_key = |k: &str| {
+            let k = if k == "docker.ai_drawing" {
+                "docker.ai_generate"
+            } else {
+                k
+            };
+            DockerTab::ALL.iter().copied().find(|t| t.key() == k)
+        };
         let mut open: Vec<DockerTab> = Vec::new();
         for t in setup.open.iter().filter_map(|k| by_key(k)) {
             if !open.contains(&t) {
@@ -2581,6 +2586,13 @@ impl App {
     }
 
     /// Tools > AI Generate: the AI Generate docker in front.
+    /// The AI Generate docker in its Draw with words mode.
+    pub fn open_ai_drawing(&mut self) {
+        self.ai_image.mode = crate::ai_image::Mode::Draw;
+        self.ai_image.info = false;
+        self.open_ai_generate();
+    }
+
     pub fn open_ai_generate(&mut self) {
         if !self.open_dockers.contains(&DockerTab::AiGenerate) {
             self.open_dockers.push(DockerTab::AiGenerate);

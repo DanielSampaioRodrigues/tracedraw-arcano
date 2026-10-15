@@ -241,7 +241,7 @@ pub fn for_key(key: &str) -> Option<Glyph> {
         "menu.table.distribute_columns" => DistCols,
         "menu.tools.color_management" => ColorManagement,
         "menu.tools.font_manager" => FontManager,
-        "menu.tools.ai_drawing" => Ai,
+        "menu.tools.ai_drawing" | "menu.object.ai_draw_words" => Ai,
         "menu.tools.ai_generate"
         | "menu.tools.options_ai"
         | "menu.bitmaps.remove_background"

@@ -57,6 +57,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             (Mode::Create, "\u{1F5BC}", "aigen.mode_create"),
             (Mode::Remix, "\u{1F504}", "aigen.mode_remix"),
             (Mode::Vector, "\u{2712}", "aigen.mode_vector"),
+            (Mode::Draw, "\u{270D}", "aigen.mode_draw"),
         ] {
             let on = app.ai_image.mode == mode && !app.ai_image.info;
             if ui
@@ -89,6 +90,23 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         return;
     }
     let mode = app.ai_image.mode;
+    if mode == Mode::Draw {
+        // Draw with words: the drawing service makes and changes objects.
+        ui.label(RichText::new(tr("aigen.draw_title")).strong());
+        ui.label(
+            RichText::new(tr("aigen.draw_about"))
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("aigen_draw")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width() - 10.0);
+                crate::ui::ai_docker::ai_drawing(app, ui);
+            });
+        return;
+    }
     let svg = mode == Mode::Vector && app.ai_image.vector_engine == VectorEngine::Svg;
     let need = if svg { Need::Drawing } else { Need::Images };
     banner(app, ui, need);
@@ -101,6 +119,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         Mode::Create => ("aigen.create_title", "aigen.create_about"),
         Mode::Remix => ("aigen.remix_title", "aigen.remix_about"),
         Mode::Vector => ("aigen.vector_title", "aigen.vector_about"),
+        Mode::Draw => ("aigen.draw_title", "aigen.draw_about"),
     };
     // The settings and results scroll; the footer stays at the bottom.
     let footer_h = 118.0;

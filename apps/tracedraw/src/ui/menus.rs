@@ -1962,6 +1962,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 "menu.object.ai_create_vector",
                 crate::ai_image::Mode::Vector,
             ),
+            ("menu.object.ai_draw_words", crate::ai_image::Mode::Draw),
         ] {
             if item(ui, key, "", doc) {
                 app.ai_image.mode = mode;
@@ -2925,13 +2926,6 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
             app.toggle_recording();
         }
     });
-    if item(ui, "menu.tools.ai_drawing", "", true) {
-        if !app.open_dockers.contains(&DockerTab::AiDrawing) {
-            app.open_dockers.push(DockerTab::AiDrawing);
-        }
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::AiDrawing;
-    }
     if item(ui, "menu.tools.ai_generate", "", true) {
         app.open_ai_generate();
     }

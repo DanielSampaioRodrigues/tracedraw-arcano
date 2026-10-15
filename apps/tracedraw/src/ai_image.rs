@@ -812,6 +812,9 @@ pub enum Mode {
     Create,
     Remix,
     Vector,
+    /// Draw and change the drawing's objects from a request in words,
+    /// through the drawing service (see `ai.rs`).
+    Draw,
 }
 
 /// Where the requests stand.
@@ -984,6 +987,7 @@ impl App {
             Mode::Create => self.ai_create(false),
             Mode::Vector => self.ai_create(true),
             Mode::Remix => self.ai_remix(),
+            Mode::Draw => self.ai_draw(),
         }
     }
 

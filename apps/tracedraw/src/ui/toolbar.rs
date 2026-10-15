@@ -560,12 +560,8 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
                 app.open_ai_generate();
                 ui.close();
             }
-            if ui.button(tr("menu.tools.ai_drawing")).clicked() {
-                if !app.open_dockers.contains(&crate::app::DockerTab::AiDrawing) {
-                    app.open_dockers.push(crate::app::DockerTab::AiDrawing);
-                }
-                app.show_dockers = true;
-                app.docker_tab = crate::app::DockerTab::AiDrawing;
+            if ui.button(tr("menu.object.ai_draw_words")).clicked() {
+                app.open_ai_drawing();
                 ui.close();
             }
             let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some();

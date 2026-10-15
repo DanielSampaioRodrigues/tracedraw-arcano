@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## 0.8.0 (not yet released)
 
+- AI in one place, as in the AI Generate docker of other editors: AI
+  Drawing is now its fourth mode, Draw with words (also Object > AI
+  Generate > Draw with Words), and no longer a separate menu item and
+  panel.
 - Bitmaps > Resample: width and height in pixels or percent, the
   resolution, aspect ratio kept or not, and four methods, among them Hard
   pixels for pixel art and Enlarge with detail.

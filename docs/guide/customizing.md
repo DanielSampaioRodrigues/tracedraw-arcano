@@ -188,7 +188,7 @@ stop. See [the debugger notes](../behavior/script-debugger.md).
 
 ### AI Drawing
 
-**Tools > AI Drawing** turns a request in words ("a red bicycle with
+**AI Generate > Draw with words** (the docker's fourth mode) turns a request in words ("a red bicycle with
 blue wheels") into a drawing. It uses an AI service you set up yourself,
 with your own key: a Messages API service, any chat completions service,
 or a model server on your own computer. The service writes a script,

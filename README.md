@@ -201,8 +201,8 @@ or the moon button at the right of the status bar).
       Pick &middot; Freehand Pick &middot; Free Transform &middot; Shape &middot; Smooth &middot; Smear &middot; Twirl &middot; Attract &middot; Repel &middot; Smudge &middot; Roughen &middot; Variable Outline &middot; Crop &middot; Knife &middot; Segment Delete &middot; Eraser &middot; Zoom &middot; Pan &middot; Freehand &middot; 2-Point Line &middot; Bezier &middot; Pen &middot; B-Spline &middot; Polyline &middot; 3-Point Curve &middot; Shape Recognition &middot; Sketch &middot; Brush Strokes (preset, brush, sprayer, calligraphic, expression) &middot; Painterly Brush (twelve brushes) &middot; Rectangle and 3-Point Rectangle &middot; Ellipse and 3-Point Ellipse &middot; Polygon &middot; Star &middot; Spiral &middot; Common Shapes &middot; Action Lines &middot; Graph Paper &middot; Text &middot; Table &middot; five dimension tools &middot; three connectors &middot; Drop Shadow &middot; Contour &middot; Blend &middot; Distort &middot; Envelope &middot; Extrude &middot; Block Shadow &middot; Transparency &middot; two eyedroppers &middot; Interactive Fill &middot; Area Fill &middot; Mesh Fill &middot; Outline Pen &middot; Outline Colour
     </td>
     <td width="33%" valign="top">
-      <h4>42 panels</h4>
-      Properties &middot; Objects &middot; Hints &middot; Transformations &middot; Undo &middot; Align and Distribute &middot; Shaping &middot; Step and Repeat &middot; Text &middot; Glyphs &middot; Colour &middot; Colour Styles &middot; Object Styles &middot; Find and Replace &middot; Scripts &middot; Palettes &middot; Lens &middot; Blend &middot; Contour &middot; Envelope &middot; Extrude &middot; Bevel &middot; Brush Strokes &middot; Bitmap Mask &middot; Object Data &middot; Links &middot; Symbols &middot; Pages &middot; Guidelines &middot; Fonts &middot; Font Sampler &middot; Corners &middot; Join Curves &middot; Coordinates &middot; Vector Mosaic &middot; Picture Mosaic &middot; Shelf &middot; Effects &middot; Export &middot; Comments &middot; AI Drawing &middot; AI Generate
+      <h4>41 panels</h4>
+      Properties &middot; Objects &middot; Hints &middot; Transformations &middot; Undo &middot; Align and Distribute &middot; Shaping &middot; Step and Repeat &middot; Text &middot; Glyphs &middot; Colour &middot; Colour Styles &middot; Object Styles &middot; Find and Replace &middot; Scripts &middot; Palettes &middot; Lens &middot; Blend &middot; Contour &middot; Envelope &middot; Extrude &middot; Bevel &middot; Brush Strokes &middot; Bitmap Mask &middot; Object Data &middot; Links &middot; Symbols &middot; Pages &middot; Guidelines &middot; Fonts &middot; Font Sampler &middot; Corners &middot; Join Curves &middot; Coordinates &middot; Vector Mosaic &middot; Picture Mosaic &middot; Shelf &middot; Effects &middot; Export &middot; Comments &middot; AI Generate (with Draw with words)
     </td>
     <td width="33%" valign="top">
       <h4>Documents and pages</h4>
@@ -296,7 +296,7 @@ for (let i = 0; i < 12; i++) {
 
 See [`docs/behavior/mcp.md`](docs/behavior/mcp.md) for the MCP tools.
 
-**AI Drawing** (Tools > AI Drawing) writes those scripts for you: describe
+**Draw with words** (a mode of the AI Generate docker) writes those scripts for you: describe
 what to draw or change, and an AI service you set up with your own key
 (the Messages API, any chat completions service, or a model server on
 your own computer) writes the script, which runs as one undo step without

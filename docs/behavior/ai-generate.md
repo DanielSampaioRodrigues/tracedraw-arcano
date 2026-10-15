@@ -8,7 +8,7 @@ the user asks. The work is in `apps/tracedraw/src/ai_image.rs`.
 ## Where
 
 - Tools > AI Generate, the AI Generate button on the standard toolbar
-  (its arrow lists AI Generate, AI Drawing, Remove Background and
+  (its arrow lists AI Generate, Draw with Words, Remove Background and
   Options > AI) and Window > Dockers open the AI Generate docker.
 - Bitmaps > Remove Background, the Remove Background button on the
   property bar of a selected bitmap, and Remove Background and Remix with
@@ -170,3 +170,10 @@ composition; the AI Generate docker opens in Remix with that request,
 no style or palette preset, and shows the results, which are placed
 like any Remix result. Greyed out until an image service is set up, or
 while a request is under way.
+
+## Draw with words
+
+The fourth mode, Draw with words, holds what used to be the separate AI
+Drawing panel: a request in words makes or changes objects of the
+drawing through the drawing service (see `ai-drawing.md`). Drawings
+whose docker column had AI Drawing open show AI Generate instead.

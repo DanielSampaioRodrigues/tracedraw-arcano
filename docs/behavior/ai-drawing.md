@@ -1,6 +1,6 @@
 # AI Drawing
 
-Tools > AI Drawing (also Window > Dockers > AI Drawing) opens a panel
+The AI Generate docker's Draw with words mode (its fourth mode button; also Object > AI Generate > Draw with Words and the arrow of the toolbar's AI Generate button) shows a panel
 that turns a request in words ("a red bicycle with blue wheels", "make
 the circle bigger and put the title under it") into a drawing. An AI
 service of the user's choice, with the user's own key, writes a program
@@ -15,7 +15,7 @@ one; a chat completions service at an address of the user's needs no
 key), a bar shows above the colour palette, as wide as the drawing
 window: "AI", the model list, the request (Enter draws, like Draw), Draw
 (a spinner and Cancel while waiting), what the last request did, `...`
-(opens the AI Drawing panel) and `x` (hides the bar). Window > Toolbars >
+(opens AI Generate in Draw with words) and `x` (hides the bar). Window > Toolbars >
 AI Prompt Bar and "Show the prompt bar above the palette" in the panel
 turn it on and off (on by default); it does not show on the Welcome
 Screen. The request is shared with the panel's, and a request that drew
