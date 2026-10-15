@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` files of versions 16 and later saved by TraceDraw open in other
+  programs again: text frames are numbered as their objects, text
+  carries its complete default style and run records with their letter
+  counts, and curve nodes carry the marks those versions write, so curves
+  also keep their fill (#98).
 - `.cdr` files of versions 11 and later saved by TraceDraw give every
   text the line breaking tables files of those versions carry after it
   (`txtj`), as other programs write them (#98).

@@ -1532,9 +1532,8 @@ fn a_drawings_cmyk_profile_is_stored_and_named() {
 fn txtj_holds_the_three_line_breaking_tables() {
     let t = txtj();
     assert_eq!(t.len(), 528);
-    let hex = |r: std::ops::Range<usize>| -> String {
-        t[r].iter().map(|b| format!("{b:02x}")).collect()
-    };
+    let hex =
+        |r: std::ops::Range<usize>| -> String { t[r].iter().map(|b| format!("{b:02x}")).collect() };
     // The table bytes of files of versions 16 to 21.
     assert_eq!(
         hex(0..170),
@@ -1555,12 +1554,17 @@ fn txtj_holds_the_three_line_breaking_tables() {
     );
     assert_eq!(hex(420..440), "080000002c002e003f003f003f003f002c002e00");
     // Everything between the tables is zero.
-    assert!(t[170..312].iter().chain(&t[356..420]).chain(&t[440..]).all(|&b| b == 0));
+    assert!(t[170..312]
+        .iter()
+        .chain(&t[356..420])
+        .chain(&t[440..])
+        .all(|&b| b == 0));
+}
 
+#[test]
 fn transforms_carry_the_tag_of_their_version() {
     // Files of versions 13 to 17 open each `trfd` record with [1300, 0],
-    // files of 18 and later with [1740, 56]; a version 21 file with the
-    // older tag closed the program that opened it.
+    // files of 18 and later with [1740, 56].
     let mut ids = Document::new("w", Size::new(200.0, 100.0)).ids().clone();
     let doc = doc_with(vec![Shape::new(
         ids.shape(),
@@ -1595,4 +1599,74 @@ fn transforms_carry_the_tag_of_their_version() {
             }
         }
     }
+}
+
+#[test]
+fn curve_nodes_carry_the_marks_of_version_16_files() {
+    // A closed square, then an open line: move, three lines, the closing
+    // line; move, line.
+    let mut c = Buf::default();
+    c.u32(7);
+    for _ in 0..7 {
+        c.i32(0).i32(0);
+    }
+    c.bytes(&[0x00, 0x40, 0x40, 0x40, 0x48, 0x00, 0x40]);
+    let mut coords = c.done();
+    mark_nodes(&mut coords);
+    assert_eq!(
+        &coords[4 + 8 * 7..],
+        &[0x0c, 0x44, 0x44, 0x44, 0x48, 0x04, 0x44]
+    );
+    // Control points keep their byte.
+    let mut c = Buf::default();
+    c.u32(4);
+    for _ in 0..4 {
+        c.i32(0).i32(0);
+    }
+    c.bytes(&[0x00, 0xc0, 0xc0, 0x90]);
+    let mut coords = c.done();
+    mark_nodes(&mut coords);
+    assert_eq!(&coords[4 + 8 * 4..], &[0x04, 0xc0, 0xc0, 0x94]);
+}
+
+#[test]
+fn version_21_text_records_are_numbered_and_complete() {
+    let mut ids = Document::new("w", Size::new(200.0, 100.0)).ids().clone();
+    let a = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Ab", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let b = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Cde", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![a, b]);
+    let bytes = document_to_cdr_version(&doc, 21);
+    let (_, tree, riff) = chunk_ids(&bytes);
+    let mut records = Vec::new();
+    let mut numbers = Vec::new();
+    tree.root.walk(&mut |ch, _| {
+        if ch.is(b"txsm") {
+            records.push(tree.data(&riff, ch).to_vec());
+        }
+        if ch.is(b"spnd") {
+            numbers.push(u32::from_le_bytes(
+                tree.data(&riff, ch).try_into().expect("u32"),
+            ));
+        }
+    });
+    assert_eq!(records.len(), 2);
+    for (t, n) in records.iter().zip(&numbers) {
+        // The frame is numbered as its object.
+        assert_eq!(&t[45..49], &n.to_le_bytes(), "frame number");
+        let s = String::from_utf8_lossy(t);
+        assert!(
+            s.contains(r#""interLineSpacing":"1000000""#),
+            "complete style"
+        );
+        assert!(s.contains(r#"{"character":{}}"#), "empty run style");
+    }
+    assert_ne!(numbers[0], numbers[1]);
 }

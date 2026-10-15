@@ -313,6 +313,17 @@ fn name_bytes(v: Ver, s: &str) -> Vec<u8> {
 
 /// A style string argument or record: its length and text (UTF-16 before
 /// version 17, counted in units; bytes after).
+/// The locale of a text record: a count, then that many UTF-16 units.
+fn locale_bytes() -> Vec<u8> {
+    let units = utf16(TEXT_LOCALE);
+    let mut b = Buf::default();
+    b.u32((units.len() / 2) as u32).bytes(&units);
+    b.done()
+}
+
+/// The locale text records are written with.
+const TEXT_LOCALE: &str = "ENU";
+
 fn style_string(v: Ver, s: &str) -> Vec<u8> {
     let mut b = Buf::default();
     if v.byte_strings() {
@@ -1474,7 +1485,11 @@ fn txtj() -> Vec<u8> {
     for (at, n, chars) in TABLES {
         b.pad_to(at);
         b.u32(n as u32);
-        for u in chars.encode_utf16().chain(std::iter::repeat(u16::from(b'?'))).take(n) {
+        for u in chars
+            .encode_utf16()
+            .chain(std::iter::repeat(u16::from(b'?')))
+            .take(n)
+        {
             b.u16(u);
         }
     }
@@ -1988,6 +2003,41 @@ fn curve_coords_typed(
     Some(out.done())
 }
 
+/// The node marks files of versions 16 and later carry in a curve's node
+/// bytes: bit 2 on every node but the control points and the node that
+/// closes a subpath, and bit 3 also on the start of a closed subpath.
+/// Curves without them are drawn without their fill and can make the
+/// program that opens the file hang.
+fn mark_nodes(coords: &mut [u8]) {
+    let n = coords
+        .get(0..4)
+        .and_then(|b| b.try_into().ok())
+        .map_or(0, u32::from_le_bytes) as usize;
+    let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) else {
+        return;
+    };
+    let mut start = 0;
+    for k in 0..=types.len() {
+        let ends = k == types.len() || (k > start && types[k] & 0xc0 == 0);
+        if !ends {
+            continue;
+        }
+        let closed = types.get(k.wrapping_sub(1)).is_some_and(|t| t & 0x08 != 0);
+        for (i, t) in types.iter_mut().enumerate().take(k).skip(start) {
+            if *t & 0xc0 == 0xc0 || (closed && i + 1 == k) {
+                continue;
+            }
+            *t |= 0x04;
+        }
+        if closed {
+            if let Some(t) = types.get_mut(start) {
+                *t |= 0x08;
+            }
+        }
+        start = k;
+    }
+}
+
 /// A box as `bbox` stores it: top left, then bottom right (file units,
 /// y up).
 fn box_bytes(r: Rect) -> Vec<u8> {
@@ -2082,6 +2132,50 @@ fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
         None => String::new(),
     };
     format!(r#""character":{{{fill}"latin":{font},"RTL":{font},"farEast":{font}}}"#)
+}
+
+/// A text paragraph's whole default style, as files of versions 16 and
+/// later write it: the first run's font, size, weight and colour, the
+/// alignment, and every other member with the values files hold when it
+/// is not set.
+fn full_text_style(sp: Option<&TextSpan>, fill: Option<&Fill>, align: TextAlign) -> String {
+    let black = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
+    let colour = fill
+        .and_then(fill_colour)
+        .map(colour_spec)
+        .unwrap_or_else(|| black.to_string());
+    let (family, size, weight, italic, underline, strike) = match sp {
+        Some(sp) => (
+            sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
+            (sp.size_pt * 254000.0 / 72.0).round() as i64,
+            if sp.bold { 4096 } else { 64 },
+            u8::from(sp.italic),
+            u8::from(sp.underline),
+            u8::from(sp.strikethrough),
+        ),
+        None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
+    };
+    let font = |charset: u32| {
+        format!(
+            r#"{{"overline":"0","effect":"0","version":"","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"4","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
+        )
+    };
+    let screen = "0,0,45000000,60,0";
+    format!(
+        concat!(
+            r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"{screen}"}},"#,
+            r#""angle":"0","outline":{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{black}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}},"#,
+            r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
+            r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"1000000","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
+        ),
+        colour = colour,
+        screen = screen,
+        black = black,
+        rtl = font(178),
+        latin = font(0),
+        far = font(128),
+        justify = justify_code(align),
+    )
 }
 
 /// The `justify` value of a style string: 1 left, 2 centre, 3 right, 4
@@ -2808,9 +2902,12 @@ impl<'a> Writer<'a> {
                     ShapeKind::Path { path, .. } => curve_coords_typed(path, &s.node_types),
                     _ => curve_coords(&s.local_path()),
                 };
-                let Some(coords) = coords else {
+                let Some(mut coords) = coords else {
                     return none();
                 };
+                if v.0 >= 16 {
+                    mark_nodes(&mut coords);
+                }
                 self.place(
                     s,
                     OBJ_CURVE,
@@ -2949,8 +3046,10 @@ impl<'a> Writer<'a> {
             .u32(0)
             .u16(if v.0 >= 17 { 1700 } else { 1600 })
             .zeros(3);
-        // One frame: its id, the text's matrix, not on a path, 8 unknown.
-        t.u32(1).u32(1);
+        // One frame, numbered as the text object (its `spnd`), the text's
+        // matrix, not on a path, 8 unknown. A frame number other than the
+        // object's own makes the program that opens the file hang.
+        t.u32(1).u32(self.next_spnd);
         let c = m.as_coeffs();
         for x in [
             c[0],
@@ -2970,28 +3069,43 @@ impl<'a> Writer<'a> {
                 self.font_id(&sp.font_family);
             }
             let first = runs.first().or(spans.first());
-            let default = match first {
-                Some(sp) => {
-                    let json = run_style_json(sp, Some(fill));
-                    // The alignment goes with the paragraph.
-                    let mut j = json;
-                    j.pop();
-                    format!(
-                        r#"{j},"paragraph":{{"justify":"{}"}}}}"#,
-                        justify_code(align)
-                    )
-                }
-                None => "{}".to_string(),
-            };
+            // The paragraph's default style is complete, as files hold it:
+            // a style that leaves out the spacings makes the program that
+            // opens the file hang.
+            let default = full_text_style(first, Some(fill), align);
             t.u32(style_for(align))
                 .zeros(1)
                 .u8(0)
                 .bytes(&style_string(v, &default));
             // One record per run; a letter's override index selects it.
-            t.u32(runs.len() as u32);
-            for sp in runs {
-                let json = run_style_json(sp, sp.fill.as_ref().or(Some(fill)));
-                t.u16(0).u16(1).u16(0).bytes(&style_string(v, &json));
+            // One record per run: its letter count (the last one counts the
+            // paragraph end too), no URL, a locale, then its style: empty
+            // when the run has the paragraph's own. Records of no letters
+            // make the program that opens the file hang.
+            t.u32(runs.len().max(1) as u32);
+            let single = runs.len() <= 1;
+            for (k, sp) in runs.iter().enumerate() {
+                let mut n = sp.text.chars().count();
+                if k + 1 == runs.len() {
+                    n += 1;
+                }
+                let json = if single {
+                    r#"{"character":{}}"#.to_string()
+                } else {
+                    run_style_json(sp, sp.fill.as_ref().or(Some(fill)))
+                };
+                t.u16(n.min(usize::from(u16::MAX)) as u16)
+                    .u16(0)
+                    .u16(4)
+                    .bytes(&locale_bytes())
+                    .bytes(&style_string(v, &json));
+            }
+            if runs.is_empty() {
+                t.u16(1)
+                    .u16(0)
+                    .u16(4)
+                    .bytes(&locale_bytes())
+                    .bytes(&style_string(v, r#"{"character":{}}"#));
             }
             let mut text = String::new();
             let mut index = Vec::new();
