@@ -873,6 +873,9 @@ mod smoke_tests {
             .expect("ellipse");
         app.select(vec![other]);
         assert_eq!(app.selected_bitmap_png(), None);
+    }
+
+    #[test]
     fn shift_double_click_frames_the_selection() {
         let mut app = App::headless();
         let id = app

@@ -1192,7 +1192,6 @@ fn chosen_node_types_round_trip_in_the_continuity_bits() {
 }
 
 #[test]
-<<<<<<< HEAD
 fn version_16_and_later_files_are_a_complete_package() {
     use std::io::Read;
     let mut doc = doc_with(Vec::new());
@@ -1271,7 +1270,9 @@ fn version_16_and_later_files_are_a_complete_package() {
     let bytes = document_to_cdr_version(&doc, 17);
     let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
     assert!(!z.file_names().any(|n| n.starts_with("previews/")));
-=======
+}
+
+#[test]
 fn centred_gradients_are_written_from_their_edge_and_read_back() {
     use tracedraw_core::{Fountain, FountainKind, Stop};
     let red = Color::rgb8(255, 0, 0);
@@ -1317,7 +1318,6 @@ fn centred_gradients_are_written_from_their_edge_and_read_back() {
             }
         }
     }
->>>>>>> 541771d (.cdr: radial and square gradients run from the edge in the file)
 }
 
 #[test]
