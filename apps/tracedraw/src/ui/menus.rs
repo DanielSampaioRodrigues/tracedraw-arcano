@@ -2520,6 +2520,14 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.remove_background", "", cutout) {
         app.ai_remove_background();
     }
+    let styled = app.ai_image_ready() && !app.selection.is_empty() && !app.ai_image.busy();
+    sub(ui, "menu.bitmaps.ai_art_styles", |ui| {
+        for (i, (key, _)) in crate::ai_image::ART_STYLES.iter().enumerate() {
+            if item(ui, key, "", styled) {
+                app.ai_art_style(i);
+            }
+        }
+    });
     // Black and white, duotone and paletted open their dialogs; the
     // others convert at once.
     sub(ui, "menu.bitmaps.mode", |ui| {

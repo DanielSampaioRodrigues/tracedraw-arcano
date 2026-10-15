@@ -303,6 +303,19 @@ pub const VECTOR_STYLES: [(&str, &str); 6] = [
 
 /// Ready-made remix requests (the workflows remixing is good at): the
 /// i18n key of the name and the prompt it fills in.
+/// Bitmaps > AI Art Styles: the picture repainted in a style, keeping
+/// what it shows (i18n key, request).
+pub const ART_STYLES: [(&str, &str); 8] = [
+    ("aiimg.art_oil", "Repaint this picture as an oil painting with thick, visible brush strokes and rich colour. Keep its subject and composition exactly."),
+    ("aiimg.art_watercolor", "Repaint this picture as a loose watercolour painting on textured paper, with soft washes and bleeding edges. Keep its subject and composition exactly."),
+    ("aiimg.art_pencil", "Redraw this picture as a detailed graphite pencil sketch with shading and cross-hatching on white paper. Keep its subject and composition exactly."),
+    ("aiimg.art_ink", "Redraw this picture as a black ink drawing with bold outlines and hatching. Keep its subject and composition exactly."),
+    ("aiimg.art_pastel", "Repaint this picture as a soft chalk pastel drawing on toned paper. Keep its subject and composition exactly."),
+    ("aiimg.art_pop", "Repaint this picture as pop art with flat bright colours, thick outlines and halftone dots. Keep its subject and composition exactly."),
+    ("aiimg.art_woodcut", "Redraw this picture as a woodcut print with carved lines in two colours. Keep its subject and composition exactly."),
+    ("aiimg.art_mosaic", "Recreate this picture as a stained glass mosaic with lead lines between coloured pieces. Keep its subject and composition exactly."),
+];
+
 pub const REMIX_IDEAS: [(&str, &str); 6] = [
     ("aiimg.remix_mockup", "Use this design to decorate a photorealistic mockup of a mug, a notebook and a folded standing menu on a cafe table."),
     ("aiimg.remix_restore", "Restore this old photo as if it was taken today with a high-resolution camera: repair scratches and tears, fill in missing areas, clean and sharpen it, keep the faces unchanged."),
@@ -1187,6 +1200,23 @@ impl App {
         self.poll_ai_image();
     }
 
+    /// Bitmaps > AI Art Styles: remix the selection with the request of
+    /// style `i` (the AI Generate docker shows it and the results).
+    pub fn ai_art_style(&mut self, i: usize) {
+        let Some((_, words)) = ART_STYLES.get(i) else {
+            return;
+        };
+        self.ai_image.mode = Mode::Remix;
+        self.ai_image.info = false;
+        self.ai_image.remix_prompt = (*words).to_string();
+        self.ai_image.style = None;
+        self.ai_image.palette = None;
+        // The picture picked now, not one chosen before.
+        self.ai_image.source = None;
+        self.open_ai_generate();
+        self.ai_remix();
+    }
+
     /// Bitmaps > Remove Background: the selected bitmap's subject kept,
     /// the rest made transparent, as one undo step.
     pub fn ai_remove_background(&mut self) {
@@ -1865,6 +1895,41 @@ mod tests {
             panic!()
         };
         assert!((rect.height() - 40.0).abs() < 1e-9 && (rect.width() - 80.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn art_styles_remix_the_selection_with_their_request() {
+        let mut app = ready_app(ImageProvider::Gemini);
+        let pic = png(8, 8, |_, _| [255, 255, 255, 255]);
+        let layer = app.active_layer().expect("a layer");
+        let id = app.engine.new_shape_id();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Bitmap {
+                rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+                width_px: 8,
+                height_px: 8,
+                png: pic,
+                fx: Default::default(),
+            },
+        );
+        s.fill = tracedraw_core::Fill::None;
+        app.run(tracedraw_core::Command::AddShape { layer, shape: s });
+        app.select(vec![id]);
+        app.ai_image.style = Some(0);
+        app.ai_image.fake = Some(|_| gemini_reply(&png(8, 8, |_, _| [0, 0, 255, 255])));
+        app.ai_art_style(2);
+        assert_eq!(app.ai_image.mode, Mode::Remix);
+        assert_eq!(app.ai_image.style, None);
+        assert_eq!(app.ai_image.remix_prompt, ART_STYLES[2].1);
+        assert!(app.ai_image.sent[0].body.contains("pencil sketch"));
+        assert_eq!(app.docker_tab, crate::app::DockerTab::AiGenerate);
+        assert_eq!(count_bitmaps(&app), 2);
+        // Every style has its menu name.
+        for (key, words) in ART_STYLES {
+            assert_ne!(crate::i18n::tr(key), key);
+            assert!(words.contains("Keep its subject"));
+        }
     }
 
     #[test]

@@ -56,6 +56,9 @@ by the newest versions opening with their fills and spot colours.
   faded (Tools > Options > TraceDraw > Edit sets how much); a breadcrumb at the
   top of the window goes back up, as does Esc.
 - Grouping objects from several layers keeps their drawing order.
+- Bitmaps > AI Art Styles: repaint the selection as an oil painting,
+  watercolour, pencil sketch, ink drawing, chalk pastel, pop art, woodcut
+  or stained glass through your image service.
 - View > Draw in Perspective: one-, two- and three-point grids; what you
   draw lands on the ground, a wall or the ceiling in perspective and
   stays editable.

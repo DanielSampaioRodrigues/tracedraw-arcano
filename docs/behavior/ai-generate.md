@@ -158,3 +158,15 @@ text).
   shapes and undo (`ai_image::tests::svg_vectors_come_from_the_drawing_service_as_shapes`).
 - The docker draws in every mode and state
   (`ui::ai_generate_docker::tests::the_docker_draws_in_every_mode_and_state`).
+
+## AI Art Styles
+
+Bitmaps > AI Art Styles repaints the selection (a bitmap as it is,
+other objects drawn as a picture first) in one of eight styles: Oil
+Painting, Watercolour, Pencil Sketch, Ink Drawing, Chalk Pastel, Pop
+Art, Woodcut and Stained Glass. Each is a Remix with a fixed request
+that names the style and asks to keep the picture's subject and
+composition; the AI Generate docker opens in Remix with that request,
+no style or palette preset, and shows the results, which are placed
+like any Remix result. Greyed out until an image service is set up, or
+while a request is under way.
