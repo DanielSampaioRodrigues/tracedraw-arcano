@@ -986,6 +986,39 @@ fn document_styles(v: Ver) -> String {
 /// drawing uses live in its fills).
 const DOC_PALETTE_XML: &str = "<?xml version=\"1.0\"?>\r\n<palette guid=\"3f8e2a71-6c4d-4b19-a0e5-9d2c7b61f483\" name=\"Document Palette\"/>\r\n";
 
+/// `color/color.xml` naming the document's CMYK profile, when it carries
+/// one (stored under `color/profiles/cmyk/`), before the colour model, as
+/// files with profiles have it.
+fn color_xml(doc: &Document) -> String {
+    match &doc.cmyk_profile {
+        Some(p) => COLOR_XML.replacen(
+            "<ColorContext>",
+            &format!(
+                "<ColorContext><ColorProfile id=\"Cmyk\">{}</ColorProfile>",
+                xml_escape(&p.name)
+            ),
+            1,
+        ),
+        None => COLOR_XML.to_string(),
+    }
+}
+
+/// The member a CMYK profile is stored as: its name in lower-case letters
+/// and digits (`uswebcoatedswopv2.icc`).
+fn cmyk_profile_member(name: &str) -> String {
+    let file: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    let file = if file.is_empty() {
+        "profile".to_string()
+    } else {
+        file
+    };
+    format!("color/profiles/cmyk/{file}.icc")
+}
+
 /// `color/color.xml`: the colour model of the document and which kinds of
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
@@ -1017,8 +1050,15 @@ fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Pr
             .is_ok()
             && zip.write_all(&p.data).is_ok();
     }
-    let members: [(&str, String); 7] = [
-        ("color/color.xml", COLOR_XML.to_string()),
+    ok &= zip.start_file("color/color.xml", deflated).is_ok()
+        && zip.write_all(color_xml(doc).as_bytes()).is_ok();
+    if let Some(p) = &doc.cmyk_profile {
+        ok &= zip
+            .start_file(cmyk_profile_member(&p.name), deflated)
+            .is_ok()
+            && zip.write_all(&p.data).is_ok();
+    }
+    let members: [(&str, String); 6] = [
         ("META-INF/textinfo.xml", textinfo_xml(doc)),
         ("color/docPalette.xml", DOC_PALETTE_XML.to_string()),
         ("styles/document.cdss", document_styles(v)),

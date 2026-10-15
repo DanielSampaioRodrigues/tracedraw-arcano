@@ -1488,3 +1488,35 @@ fn riff_streams_are_compressed_and_end_with_a_summary() {
         }
     }
 }
+
+#[test]
+fn a_drawings_cmyk_profile_is_stored_and_named() {
+    use std::io::Read;
+    let mut doc = doc_with(Vec::new());
+    let data =
+        tracedraw_core::icc::test_profiles::Builder::new(b"prtr", b"CMYK", b"Lab ", 2).build();
+    doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new(
+        "Press & Proof v2",
+        data.clone(),
+    ));
+    let bytes = document_to_cdr_version(&doc, 21);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+    let mut color = String::new();
+    z.by_name("color/color.xml")
+        .expect("colour settings")
+        .read_to_string(&mut color)
+        .expect("text");
+    assert!(
+        color.starts_with("<Color><ColorContext><ColorProfile id=\"Cmyk\">Press &amp; Proof v2</ColorProfile><ColorModel>"),
+        "{color}"
+    );
+    let mut stored = Vec::new();
+    z.by_name("color/profiles/cmyk/pressproofv2.icc")
+        .expect("profile")
+        .read_to_end(&mut stored)
+        .expect("bytes");
+    assert_eq!(stored, data);
+    // It comes back with the drawing.
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
+    assert_eq!(back.cmyk_profile.map(|p| p.data.len()), Some(data.len()));
+}
