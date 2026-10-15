@@ -108,6 +108,28 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
 pub fn connection(app: &mut App, ui: &mut Ui) {
     let prefs = &mut app.settings.ai;
     grid("ai_connection_grid").show(ui, |ui| {
+        row_label(ui, &tr("aipreset.label"));
+        let current = crate::ai::preset_of(&*prefs);
+        let shown = current
+            .and_then(|i| crate::ai::PRESETS.get(i))
+            .map(|(k, _, _)| tr(k))
+            .unwrap_or_else(|| tr("aipreset.custom"));
+        egui::ComboBox::from_id_salt("ai_preset")
+            .width(FIELD_W)
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                for (i, (key, provider, endpoint)) in crate::ai::PRESETS.iter().enumerate() {
+                    if ui.selectable_label(current == Some(i), tr(key)).clicked() {
+                        prefs.provider = *provider;
+                        prefs.endpoint = endpoint.to_string();
+                        prefs.model.clear();
+                        app.ai.models.clear();
+                    }
+                }
+            })
+            .response
+            .on_hover_text(tr("aipreset.tip"));
+        ui.end_row();
         row_label(ui, &tr("ai.provider"));
         let mut provider = prefs.provider;
         if combo(

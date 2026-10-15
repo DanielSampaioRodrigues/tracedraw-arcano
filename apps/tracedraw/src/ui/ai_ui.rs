@@ -215,6 +215,28 @@ pub fn images_page(app: &mut App, ui: &mut Ui) {
 pub fn image_connection(app: &mut App, ui: &mut Ui) {
     let prefs = &mut app.settings.ai_image;
     grid("ai_image_grid").show(ui, |ui| {
+        row_label(ui, &tr("aipreset.label"));
+        let current = crate::ai_image::preset_of(&*prefs);
+        let shown = current
+            .and_then(|i| crate::ai_image::PRESETS.get(i))
+            .map(|(k, _, _)| tr(k))
+            .unwrap_or_else(|| tr("aipreset.custom"));
+        egui::ComboBox::from_id_salt("ai_image_preset")
+            .width(FIELD_W)
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                for (i, (key, provider, endpoint)) in crate::ai_image::PRESETS.iter().enumerate() {
+                    if ui.selectable_label(current == Some(i), tr(key)).clicked() {
+                        prefs.provider = *provider;
+                        prefs.endpoint = endpoint.to_string();
+                        prefs.model.clear();
+                        app.ai_image.models.clear();
+                    }
+                }
+            })
+            .response
+            .on_hover_text(tr("aipreset.tip"));
+        ui.end_row();
         row_label(ui, &tr("ai.provider"));
         let mut provider = prefs.provider;
         if combo(
@@ -346,6 +368,30 @@ mod tests {
         }
         app.ai_image.status = crate::ai_image::ImageStatus::Failed("bad key".into());
         frame(&ctx, &mut app, images_page);
+    }
+
+    #[test]
+    fn presets_fill_the_address_and_typed_ones_stay_custom() {
+        let mut d = crate::ai::AiPrefs::default();
+        assert_eq!(crate::ai::preset_of(&d), Some(0), "the usual service");
+        let (_, provider, endpoint) = crate::ai::PRESETS[3];
+        d.provider = provider;
+        d.endpoint = endpoint.to_string();
+        assert_eq!(crate::ai::preset_of(&d), Some(3));
+        assert_eq!(d.endpoint(), "http://localhost:11434/v1/chat/completions");
+        // A local server needs no key to be ready.
+        let mut app = App::headless();
+        app.settings.ai = d.clone();
+        app.settings.ai.model = "llama3.2".into();
+        assert!(app.ai_drawing_ready());
+        d.endpoint = "http://my-box:9000/v1/chat/completions".into();
+        assert_eq!(crate::ai::preset_of(&d), None);
+        let mut i = crate::ai_image::ImagePrefs::default();
+        assert_eq!(crate::ai_image::preset_of(&i), Some(0));
+        i.provider = ImageProvider::OpenAi;
+        i.endpoint = "http://localhost:8080/v1/".into();
+        assert_eq!(crate::ai_image::preset_of(&i), Some(2));
+        assert!(!i.needs_key());
     }
 
     #[test]

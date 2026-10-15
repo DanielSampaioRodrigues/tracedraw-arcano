@@ -77,7 +77,9 @@
 
 Every screenshot is TraceDraw itself, captured headless by
 `scripts/visual/readme_shots.sh` from drawings made from scratch by
-`apps/tracedraw-cli/examples/showcase.rs`.
+`apps/tracedraw-cli/examples/showcase.rs`. Some are in the Dark and
+Medium Dark themes (Options &rsaquo; Customization &rsaquo; Appearance,
+or the moon button at the right of the status bar).
 
 <table>
   <tr>
@@ -152,6 +154,22 @@ Every screenshot is TraceDraw itself, captured headless by
       <sub>The same page with the interface in Japanese.</sub>
       <h3>In your language</h3>
       English, Chinese (Simplified), Hindi, Spanish, French, Arabic with a right-to-left layout, Bengali, Russian, Portuguese (Brazil), Indonesian, German, Japanese, Chinese (Traditional), Italian, Dutch, Polish, Turkish and Czech, with system fonts found for every script. Options &rsaquo; Global switches the language at once.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-templates.jpg" alt="The New from Template dialog: a search field, source and category lists, a grid of template thumbnails with the invoice picked, and a details pane with its category and page size" width="100%">
+      <br>
+      <sub>File &rsaquo; New From Template with the invoice picked.</sub>
+      <h3>Start from a template</h3>
+      Blank pages in the usual sizes and designed templates (business cards, flyers, a poster, a letterhead, a certificate, an invoice, a banner, a social post, a label), every part an ordinary editable object. Search them, filter by category, and keep your own: File &rsaquo; Save as Template puts a drawing in the list.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/tracedraw-ai.jpg" alt="The AI Generate docker in the dark theme with a prompt, the Watercolor style and the Warm palette picked, next to the poster" width="100%">
+      <br>
+      <sub>The AI Generate docker, in the dark theme.</sub>
+      <h3>AI with your own keys</h3>
+      Create pictures from a prompt with aspect ratio, style and palette presets, remix a selected picture, create vectors (a generated illustration traced into curves), remove a picture's background, and draw shapes from a request in words. TraceDraw has no AI of its own and no account: Tools &rsaquo; Options &rsaquo; AI connects the services you choose (Google Gemini, OpenAI or compatible APIs, local servers included), and nothing is sent until you ask.
     </td>
   </tr>
 </table>

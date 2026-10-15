@@ -14,6 +14,38 @@ AI Generate button's list) with three pages.
 - What is sent: only what a command needs, to the service set up, when
   the user runs it.
 
+## Presets
+
+Both service pages start with a Preset list that fills in the kind of
+service and the address (the model is cleared so the service's own
+applies); the address stays editable, and a typed one shows as "Custom
+(typed address)".
+
+| Drawing service | Address |
+|---|---|
+| Anthropic (Messages API) | the usual one |
+| OpenAI | the usual one |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` |
+| Ollama (this computer) | `http://localhost:11434/v1/chat/completions` |
+| LM Studio (this computer) | `http://localhost:1234/v1/chat/completions` |
+| llama.cpp server (this computer) | `http://localhost:8080/v1/chat/completions` |
+| vLLM (this computer) | `http://localhost:8000/v1/chat/completions` |
+
+| Image service | Address |
+|---|---|
+| Google Gemini | the usual one |
+| OpenAI | the usual one |
+| LocalAI (this computer) | `http://localhost:8080/v1` |
+
+A service at an address of the user's needs no key.
+
+## Hints
+
+The Hints panel has an "AI features" topic: where each service stands,
+online services and their keys, AI on this computer (the presets above),
+local pictures, the browser (a local server must allow the page's
+origin, such as `OLLAMA_ORIGINS=*`), what is sent, and Set Up AI.
+
 ## Drawing service
 
 The text service of AI Drawing (see `ai-drawing.md`): service, address,
@@ -43,6 +75,9 @@ own API key) and Set Up AI..., which opens the page that sets it up.
 - The pages and the banner draw in every state with both image services
   (`ui::ai_ui::tests::the_pages_and_the_banner_draw_in_every_state`);
   every options page draws (`ui::options::tests::every_page_draws`).
+- Presets fill in the address, a local server needs no key, and a typed
+  address is custom
+  (`ui::ai_ui::tests::presets_fill_the_address_and_typed_ones_stay_custom`).
 - The image key is written to the preferences only when it is to be
   remembered; older preference files turn AI features on
   (`ui::ai_ui::tests::the_image_key_is_kept_only_when_asked`).

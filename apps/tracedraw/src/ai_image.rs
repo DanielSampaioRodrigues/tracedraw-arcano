@@ -64,6 +64,26 @@ impl ImageProvider {
     }
 }
 
+/// Ready-made image services: the i18n key of the name, the kind of
+/// service and its address (empty: the usual one). The address stays
+/// editable after one is picked.
+pub const PRESETS: [(&str, ImageProvider, &str); 3] = [
+    ("aipreset.gemini", ImageProvider::Gemini, ""),
+    ("aipreset.openai", ImageProvider::OpenAi, ""),
+    (
+        "aipreset.localai",
+        ImageProvider::OpenAi,
+        "http://localhost:8080/v1",
+    ),
+];
+
+/// The preset the image service matches, if any.
+pub fn preset_of(prefs: &ImagePrefs) -> Option<usize> {
+    PRESETS.iter().position(|(_, p, e)| {
+        *p == prefs.provider && prefs.endpoint.trim().trim_end_matches('/') == *e
+    })
+}
+
 /// The image service, kept with the preferences. The key is kept here
 /// only while `remember_key` is on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

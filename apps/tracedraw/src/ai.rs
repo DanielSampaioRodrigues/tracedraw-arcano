@@ -75,6 +75,45 @@ impl Provider {
     }
 }
 
+/// Ready-made connections: the i18n key of the name, the kind of service
+/// and its address. The address stays editable after one is picked.
+pub const PRESETS: [(&str, Provider, &str); 7] = [
+    ("aipreset.anthropic", Provider::Anthropic, ""),
+    ("aipreset.openai", Provider::OpenAiCompatible, ""),
+    (
+        "aipreset.gemini",
+        Provider::OpenAiCompatible,
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    ),
+    (
+        "aipreset.ollama",
+        Provider::OpenAiCompatible,
+        "http://localhost:11434/v1/chat/completions",
+    ),
+    (
+        "aipreset.lm_studio",
+        Provider::OpenAiCompatible,
+        "http://localhost:1234/v1/chat/completions",
+    ),
+    (
+        "aipreset.llama_cpp",
+        Provider::OpenAiCompatible,
+        "http://localhost:8080/v1/chat/completions",
+    ),
+    (
+        "aipreset.vllm",
+        Provider::OpenAiCompatible,
+        "http://localhost:8000/v1/chat/completions",
+    ),
+];
+
+/// The preset the connection matches, if any.
+pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
+    PRESETS.iter().position(|(_, p, e)| {
+        *p == prefs.provider && prefs.endpoint.trim().trim_end_matches('/') == *e
+    })
+}
+
 /// The connection, kept with the preferences. The key is kept here only
 /// while `remember_key` is on; otherwise it lives in the session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

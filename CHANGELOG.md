@@ -16,7 +16,13 @@ full, row-by-row status.
   menu, property bar, context menu) keeps a picture's subject and makes
   the rest transparent. AI commands are greyed out, and the dockers show
   a banner with Set Up AI, while their service is not ready.
+- AI service presets (Anthropic, OpenAI, Google Gemini, and Ollama, LM
+  Studio, llama.cpp and vLLM on the same computer for AI Drawing; LocalAI
+  for pictures) fill in the address, which stays editable. A new "AI
+  features" topic in the Hints panel explains online and local services.
 - The dark theme's picked items show white text on blue.
+- README: new screenshots (templates, AI Generate) and some in the dark
+  themes.
 - File > New From Template is a dialog: search, a list of where
   templates come from and one of categories, thumbnails with a size
   slider, and a details pane. Besides blank pages it offers designed
