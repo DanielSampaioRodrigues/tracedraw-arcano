@@ -97,7 +97,7 @@ or the moon button at the right of the status bar).
       <br>
       <sub>Six live effects on one page; the blend's steps and accelerations in its panel.</sub>
       <h3>Effects that stay live</h3>
-      Blend, Contour, Extrude, Drop Shadow, Block Shadow, Envelope, Distort, Perspective, Bevel, Symmetry, eleven Lens types and Transparency with merge modes. Each one is kept with its object and stays editable from its panel or the property bar: change the steps of a contour, send a blend along a path, move an envelope's nodes.
+      Blend, Contour, Extrude, Drop Shadow, Block Shadow, Envelope, Distort, Perspective, Bevel, Symmetry, twelve Lens types (one runs any bitmap effect over what lies beneath) and Transparency with merge modes. Each one is kept with its object and stays editable from its panel or the property bar: change the steps of a contour, send a blend along a path, move an envelope's nodes.
     </td>
   </tr>
   <tr>
