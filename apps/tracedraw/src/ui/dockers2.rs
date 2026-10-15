@@ -56,6 +56,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Pages => pages(app, ui),
         DockerTab::Guidelines => guidelines(app, ui),
         DockerTab::Fonts => fonts(app, ui),
+        DockerTab::FontSampler => crate::ui::font_sampler::font_sampler(app, ui),
         DockerTab::Corners => corners(app, ui),
         DockerTab::JoinCurves => join_curves(app, ui),
         DockerTab::Coordinates => crate::ui::coords_docker::coordinates(app, ui),

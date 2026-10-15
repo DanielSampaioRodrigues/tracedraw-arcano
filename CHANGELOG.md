@@ -56,6 +56,8 @@ by the newest versions opening with their fills and spot colours.
   faded (Tools > Options > TraceDraw > Edit sets how much); a breadcrumb at the
   top of the window goes back up, as does Esc.
 - Grouping objects from several layers keeps their drawing order.
+- Text > Font Sampler: compare fonts with your own sample text, side by
+  side, and apply one with a click.
 - Bitmaps > AI Art Styles: repaint the selection as an oil painting,
   watercolour, pencil sketch, ink drawing, chalk pastel, pop art, woodcut
   or stained glass through your image service.

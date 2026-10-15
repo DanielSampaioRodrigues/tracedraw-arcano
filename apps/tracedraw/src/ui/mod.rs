@@ -43,6 +43,7 @@ pub mod field;
 pub mod fill_tool_bars;
 pub mod focus_bar;
 pub mod font_list;
+pub mod font_sampler;
 pub mod fx_icons;
 pub mod github_dialogs;
 pub mod hints;

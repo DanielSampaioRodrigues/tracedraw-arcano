@@ -838,6 +838,8 @@ pub struct App {
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
     pub multipage: bool,
+    /// The Font Sampler docker.
+    pub font_sampler: crate::ui::font_sampler::FontSampler,
     /// View > Draw in Perspective.
     pub perspective: Option<crate::perspective_draw::Session>,
     /// Effects > Effect Picker.
@@ -1261,6 +1263,7 @@ pub enum DockerTab {
     Pages,
     Guidelines,
     Fonts,
+    FontSampler,
     Corners,
     JoinCurves,
     Coordinates,
@@ -1275,7 +1278,7 @@ pub enum DockerTab {
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 41] = [
+    pub const ALL: [DockerTab; 42] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1309,6 +1312,7 @@ impl DockerTab {
         DockerTab::Pages,
         DockerTab::Guidelines,
         DockerTab::Fonts,
+        DockerTab::FontSampler,
         DockerTab::Corners,
         DockerTab::JoinCurves,
         DockerTab::Coordinates,
@@ -1352,6 +1356,7 @@ impl DockerTab {
             DockerTab::Pages => "docker.pages",
             DockerTab::Guidelines => "docker.guidelines",
             DockerTab::Fonts => "docker.fonts",
+            DockerTab::FontSampler => "docker.font_sampler",
             DockerTab::Corners => "docker.corners_docker",
             DockerTab::JoinCurves => "docker.join_curves",
             DockerTab::Coordinates => "docker.coordinates",
@@ -1593,6 +1598,7 @@ impl App {
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
+            font_sampler: Default::default(),
             perspective: None,
             effect_picker: Default::default(),
             comments: Default::default(),

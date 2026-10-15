@@ -373,3 +373,19 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   selected an empty text starts on the path, ready to type.
 - Change Case opens a dialog with Sentence case, lowercase, UPPERCASE,
   Title Case and tOGGLE cASE; it needs a text selected.
+
+## Font Sampler
+
+Text > Font Sampler (a panel) compares fonts: a line of sample text set
+in each chosen font, one under the other, on white cards.
+
+- The sample is what is typed in the field at the top, or the pangram
+  in the interface language when it is empty.
+- Size: 10 to 96 pixels to the em (28 by default); a sample longer than
+  the panel is cut off at its edge.
+- The first time it opens it lists the text font and the fonts of the
+  drawing. Add font: type part of a name and click one of the first
+  eight matches; at most 24 fonts are listed, each once. ✕ removes one.
+- A font that is not installed shows in its stand-in, and says which.
+- A click on a sample gives the selected text that font (or makes it the
+  text font when nothing is selected); the text font is ticked.

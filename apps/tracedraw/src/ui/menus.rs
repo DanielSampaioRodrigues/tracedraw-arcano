@@ -2654,6 +2654,10 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.text.text_statistics", "", true) {
         app.dialog = Dialog::TextStatistics;
     }
+    if item(ui, "menu.text.font_sampler", "", true) {
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::FontSampler;
+    }
     sep(ui);
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
         app.edit_selected_text();

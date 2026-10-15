@@ -95,7 +95,7 @@ struct PictureKey {
 
 impl FontPreviews {
     /// Start again when fonts came in since the last frame.
-    fn refresh(&mut self) {
+    pub fn refresh(&mut self) {
         let g = tracedraw_text::fonts().generation();
         if g != self.generation || self.pictures.len() > MAX_PICTURES {
             self.generation = g;
@@ -116,7 +116,7 @@ impl FontPreviews {
 
     /// `text` in `family` at `em_px` pixels to the em, as a texture (cached);
     /// `None` when the family is not installed or draws nothing.
-    fn picture(
+    pub fn picture(
         &mut self,
         ctx: &egui::Context,
         family: &str,
