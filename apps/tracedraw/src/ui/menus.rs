@@ -1936,6 +1936,29 @@ fn layout_menu(app: &mut App, ui: &mut Ui) {
 fn object_menu(app: &mut App, ui: &mut Ui) {
     let has = !app.selection.is_empty();
     let many = app.selection.len() > 1;
+    // AI Generate: the docker in each mode, and Remove Background.
+    sub(ui, "menu.object.ai_generate", |ui| {
+        let doc = app.has_document();
+        for (key, mode) in [
+            ("menu.object.ai_create_image", crate::ai_image::Mode::Create),
+            ("menu.object.ai_remix_image", crate::ai_image::Mode::Remix),
+            (
+                "menu.object.ai_create_vector",
+                crate::ai_image::Mode::Vector,
+            ),
+        ] {
+            if item(ui, key, "", doc) {
+                app.ai_image.mode = mode;
+                app.ai_image.info = false;
+                app.open_ai_generate();
+            }
+        }
+        let cutout =
+            app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();
+        if item(ui, "menu.bitmaps.remove_background", "", cutout) {
+            app.ai_remove_background();
+        }
+    });
     sub(ui, "menu.object.create", |ui| {
         if item(ui, "menu.object.create_table", "", true) {
             app.dialog = Dialog::CreateTable {

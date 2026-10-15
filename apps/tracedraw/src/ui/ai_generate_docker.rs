@@ -1,8 +1,12 @@
 //! The AI Generate docker: Create image, Remix image and Create vectors
-//! through the image service the user set up (Tools > Options > AI). The
-//! work is in `ai_image.rs`; see docs/behavior/ai-generate.md.
+//! through the AI services the user set up (Tools > Options > AI), with
+//! an information page. The work is in `ai_image.rs`; see
+//! docs/behavior/ai-generate.md.
 
-use crate::ai_image::{Aspect, ImageStatus, Mode, MAX_COUNT, PALETTES, STYLES};
+use crate::ai_image::{
+    Aspect, ImageStatus, Mode, VectorEngine, IDEAS, MAX_COUNT, PALETTES, REMIX_IDEAS, STYLES,
+    VECTOR_STYLES,
+};
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
@@ -11,56 +15,454 @@ use egui::{Color32, RichText, Sense, Ui, Vec2};
 
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
 
-/// Prompts Inspire Me picks from.
-const IDEAS: [&str; 8] = [
-    "A lighthouse on a rocky coast at dawn, seagulls, calm sea",
-    "A cosy reading corner with plants and warm lamp light",
-    "A fox in a snowy forest, looking over its shoulder",
-    "A retro bicycle with a basket of flowers against a pastel wall",
-    "A mountain cabin under a starry sky with the northern lights",
-    "A bowl of ramen seen from above on a wooden table",
-    "A hot air balloon festival over green hills",
-    "A friendly robot watering plants in a greenhouse",
-];
-
-fn heading(ui: &mut Ui, key: &str) {
+/// A section title with a Reset button at the right. True when Reset was
+/// pressed.
+fn heading(ui: &mut Ui, key: &str, reset: bool) -> bool {
     ui.add_space(6.0);
-    ui.label(RichText::new(tr(key)).strong());
+    let mut pressed = false;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tr(key)).strong());
+        if reset {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                pressed = ui
+                    .small_button("\u{21BA}")
+                    .on_hover_text(tr("aigen.reset"))
+                    .clicked();
+            });
+        }
+    });
+    pressed
+}
+
+/// The notes of a known model, for the model's help button.
+fn model_note(model: &str) -> String {
+    let key = if model.contains("pro") && model.contains("gemini") {
+        "aigen.model_gemini_pro"
+    } else if model.contains("gemini") {
+        "aigen.model_gemini"
+    } else if model.starts_with("gpt-image") {
+        "aigen.model_gpt_image"
+    } else if model.starts_with("dall-e") {
+        "aigen.model_dalle"
+    } else {
+        "aigen.model_other"
+    };
+    tr(key)
 }
 
 pub fn ai_generate(app: &mut App, ui: &mut Ui) {
-    let ready = app.ai_image_ready();
-    banner(app, ui, Need::Images);
-    // The three modes.
+    // The modes as picture buttons, and the information page at the right.
     ui.horizontal(|ui| {
-        for (mode, key) in [
-            (Mode::Create, "aigen.mode_create"),
-            (Mode::Remix, "aigen.mode_remix"),
-            (Mode::Vector, "aigen.mode_vector"),
+        for (mode, glyph, key) in [
+            (Mode::Create, "\u{1F5BC}", "aigen.mode_create"),
+            (Mode::Remix, "\u{1F504}", "aigen.mode_remix"),
+            (Mode::Vector, "\u{2712}", "aigen.mode_vector"),
         ] {
+            let on = app.ai_image.mode == mode && !app.ai_image.info;
             if ui
-                .selectable_label(app.ai_image.mode == mode, tr(key))
+                .selectable_label(on, RichText::new(glyph).size(16.0))
+                .on_hover_text(tr(key))
                 .clicked()
             {
                 app.ai_image.mode = mode;
+                app.ai_image.info = false;
             }
         }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .selectable_label(app.ai_image.info, RichText::new("\u{2139}").size(16.0))
+                .on_hover_text(tr("aigen.info"))
+                .clicked()
+            {
+                app.ai_image.info = !app.ai_image.info;
+            }
+        });
     });
+    if app.ai_image.info {
+        egui::ScrollArea::vertical()
+            .id_salt("aigen_info")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_max_width(ui.available_width() - 10.0);
+                info_page(app, ui)
+            });
+        return;
+    }
     let mode = app.ai_image.mode;
+    let svg = mode == Mode::Vector && app.ai_image.vector_engine == VectorEngine::Svg;
+    let need = if svg { Need::Drawing } else { Need::Images };
+    banner(app, ui, need);
+    let ready = if svg {
+        app.ai_drawing_ready()
+    } else {
+        app.ai_image_ready()
+    };
     let (title, about) = match mode {
         Mode::Create => ("aigen.create_title", "aigen.create_about"),
         Mode::Remix => ("aigen.remix_title", "aigen.remix_about"),
         Mode::Vector => ("aigen.vector_title", "aigen.vector_about"),
     };
-    heading(ui, title);
-    ui.label(
-        RichText::new(tr(about))
-            .color(Tokens::text_dim())
-            .size(11.0),
+    // The settings and results scroll; the footer stays at the bottom.
+    let footer_h = 118.0;
+    let scroll_h = (ui.available_height() - footer_h).max(120.0);
+    egui::ScrollArea::vertical()
+        .id_salt("aigen_scroll")
+        .max_height(scroll_h)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width() - 10.0);
+            ui.label(RichText::new(tr(title)).strong());
+            ui.label(
+                RichText::new(tr(about))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            );
+            ui.add_enabled_ui(ready && !app.ai_image.busy(), |ui| body(app, ui, mode, svg));
+            results(app, ui);
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(tr("aigen.privacy"))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            );
+        });
+    footer(app, ui, mode, ready);
+}
+
+fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
+    if mode == Mode::Vector {
+        ui.horizontal(|ui| {
+            ui.label(tr("aigen.engine"));
+            ui.selectable_value(
+                &mut app.ai_image.vector_engine,
+                VectorEngine::Trace,
+                tr("aigen.engine_trace"),
+            )
+            .on_hover_text(tr("aigen.engine_trace_tip"));
+            ui.selectable_value(
+                &mut app.ai_image.vector_engine,
+                VectorEngine::Svg,
+                tr("aigen.engine_svg"),
+            )
+            .on_hover_text(tr("aigen.engine_svg_tip"));
+        });
+    }
+    // The model in use, from the service's list, and its notes.
+    ui.horizontal(|ui| {
+        ui.label(tr("ai.model"));
+        if svg {
+            ui.label(RichText::new(app.settings.ai.model()).strong());
+            return;
+        }
+        let current = app.settings.ai_image.model();
+        let mut list: Vec<String> = if app.ai_image.models.is_empty() {
+            app.settings
+                .ai_image
+                .provider
+                .preset_models()
+                .iter()
+                .map(|m| m.to_string())
+                .collect()
+        } else {
+            app.ai_image.models.clone()
+        };
+        if !list.contains(&current) {
+            list.insert(0, current.clone());
+        }
+        egui::ComboBox::from_id_salt("aigen_model")
+            .width((ui.available_width() - 34.0).max(80.0))
+            .selected_text(current.clone())
+            .show_ui(ui, |ui| {
+                for m in &list {
+                    if ui.selectable_label(*m == current, m).clicked() {
+                        app.settings.ai_image.model = m.clone();
+                    }
+                }
+            });
+        ui.small_button("?").on_hover_text(model_note(&current));
+    });
+    // The reference picture: needed to remix, optional otherwise.
+    if !svg {
+        let key = if mode == Mode::Remix {
+            "aigen.source"
+        } else {
+            "aigen.example"
+        };
+        if heading(ui, key, app.ai_image.source.is_some()) {
+            app.ai_image.source = None;
+        }
+        source(app, ui, mode);
+    }
+    // The prompt, with Reset.
+    let reset = heading(ui, "aigen.prompt", true);
+    let text = match mode {
+        Mode::Remix => &mut app.ai_image.remix_prompt,
+        _ => &mut app.ai_image.prompt,
+    };
+    if reset {
+        text.clear();
+    }
+    ui.add(
+        egui::TextEdit::multiline(text)
+            .id(egui::Id::new("aigen_prompt"))
+            .hint_text(tr(match mode {
+                Mode::Remix => "aigen.remix_hint",
+                _ => "aigen.prompt_hint",
+            }))
+            .desired_rows(6)
+            .desired_width(f32::INFINITY),
     );
-    ui.add_enabled_ui(ready && !app.ai_image.busy(), |ui| body(app, ui, mode));
-    ui.add_space(8.0);
-    // Generate, or the spinner and Cancel.
+    if mode == Mode::Remix {
+        // Ready-made requests for the usual remixes.
+        ui.horizontal_wrapped(|ui| {
+            for (key, prompt) in REMIX_IDEAS {
+                if ui.small_button(tr(key)).on_hover_text(prompt).clicked() {
+                    app.ai_image.remix_prompt = prompt.to_string();
+                }
+            }
+        });
+    } else {
+        if ui
+            .button(format!("\u{1F4A1} {}", tr("aigen.inspire")))
+            .clicked()
+        {
+            let n = app.ai_image.prompt.len() + app.ai_image.results.len() * 7;
+            let mut pick = IDEAS[n % IDEAS.len()];
+            if pick == app.ai_image.prompt {
+                pick = IDEAS[(n + 1) % IDEAS.len()];
+            }
+            app.ai_image.prompt = pick.to_string();
+        }
+        ui.horizontal(|ui| {
+            ui.label(tr("aigen.aspect"));
+            let current = app.ai_image.aspect;
+            egui::ComboBox::from_id_salt("aigen_aspect")
+                .width(ui.available_width() - 8.0)
+                .selected_text(tr(current.key()))
+                .show_ui(ui, |ui| {
+                    if app.ai_image.source.is_some() {
+                        ui.selectable_value(
+                            &mut app.ai_image.aspect,
+                            Aspect::MatchSource,
+                            tr(Aspect::MatchSource.key()),
+                        );
+                    }
+                    for a in Aspect::ALL {
+                        ui.selectable_value(&mut app.ai_image.aspect, a, tr(a.key()));
+                    }
+                });
+        });
+    }
+    // Style and palette fold away to make room for the results.
+    let folded = app.ai_image.folded;
+    ui.vertical_centered(|ui| {
+        if ui
+            .small_button(if folded { "\u{2304}" } else { "\u{2303}" })
+            .on_hover_text(tr(if folded { "aigen.unfold" } else { "aigen.fold" }))
+            .clicked()
+        {
+            app.ai_image.folded = !folded;
+        }
+    });
+    if folded {
+        return;
+    }
+    let vector = mode == Mode::Vector;
+    if heading(ui, "aigen.style", true) {
+        app.ai_image.style = None;
+        app.ai_image.vector_style = None;
+    }
+    let cols = 3;
+    egui::Grid::new("aigen_styles")
+        .num_columns(cols)
+        .spacing([4.0, 4.0])
+        .show(ui, |ui| {
+            let list: &[(&str, &str)] = if vector { &VECTOR_STYLES } else { &STYLES };
+            for (i, (key, _)) in list.iter().enumerate() {
+                let current = if vector {
+                    app.ai_image.vector_style
+                } else {
+                    app.ai_image.style
+                };
+                let on = current == Some(i);
+                let swatch = if vector { 6 + i } else { i };
+                if tile(ui, &tr(key), on, |p, r| style_swatch(p, r, swatch)).clicked() {
+                    let v = if on { None } else { Some(i) };
+                    if vector {
+                        app.ai_image.vector_style = v;
+                    } else {
+                        app.ai_image.style = v;
+                    }
+                }
+                if i % cols == cols - 1 {
+                    ui.end_row();
+                }
+            }
+        });
+    if heading(ui, "aigen.palette", true) {
+        app.ai_image.palette = None;
+    }
+    let cols = 4;
+    egui::Grid::new("aigen_palettes")
+        .num_columns(cols)
+        .spacing([4.0, 4.0])
+        .show(ui, |ui| {
+            for (i, (key, _, colours)) in PALETTES.iter().enumerate() {
+                let on = app.ai_image.palette == Some(i);
+                if tile(ui, &tr(key), on, |p, r| gradient(p, r, colours)).clicked() {
+                    app.ai_image.palette = if on { None } else { Some(i) };
+                }
+                if i % cols == cols - 1 {
+                    ui.end_row();
+                }
+            }
+        });
+}
+
+/// The reference picture with Use Selection and Import File under it.
+fn source(app: &mut App, ui: &mut Ui, mode: Mode) {
+    let shown = app.ai_image.source.clone().or_else(|| {
+        // Remix starts from the selected bitmap until another is chosen.
+        (mode == Mode::Remix)
+            .then(|| app.ai_source_bitmap())
+            .flatten()
+            .and_then(|(id, png)| {
+                let img = crate::bitmap_fx::decode(&png)?;
+                Some(crate::ai_image::SourceImage {
+                    png,
+                    width: img.width(),
+                    height: img.height(),
+                    shape: Some(id),
+                })
+            })
+    });
+    let w = ui.available_width().min(240.0);
+    match shown.as_ref().and_then(|s| texture(ui.ctx(), &s.png)) {
+        Some(tex) => {
+            let s = tex.size_vec2();
+            let scale = (w / s.x).min(150.0 / s.y);
+            ui.vertical_centered(|ui| {
+                ui.add(egui::Image::new((tex.id(), s * scale)));
+            });
+        }
+        None => {
+            ui.vertical_centered(|ui| {
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, 70.0), Sense::hover());
+                ui.painter().rect_stroke(
+                    r,
+                    3.0,
+                    egui::Stroke::new(1.0, Tokens::border()),
+                    egui::StrokeKind::Inside,
+                );
+                ui.painter().text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    tr(if mode == Mode::Remix {
+                        "aigen.select_bitmap"
+                    } else {
+                        "aigen.example_hint"
+                    }),
+                    egui::FontId::proportional(11.0),
+                    Tokens::text_dim(),
+                );
+            });
+        }
+    }
+    ui.vertical_centered(|ui| {
+        ui.horizontal(|ui| {
+            ui.add_space((ui.available_width() - 64.0).max(0.0) / 2.0);
+            if ui
+                .small_button("\u{2B1A}")
+                .on_hover_text(tr("aigen.use_selection"))
+                .clicked()
+            {
+                app.ai_source_from_selection();
+            }
+            if ui
+                .small_button("\u{1F4C2}")
+                .on_hover_text(tr("aigen.import_source"))
+                .clicked()
+            {
+                app.ai_source_from_file();
+            }
+        });
+    });
+}
+
+/// The pictures of the last Generate; a click inserts one.
+fn results(app: &mut App, ui: &mut Ui) {
+    if app.ai_image.results.is_empty() {
+        return;
+    }
+    let mut place = None;
+    egui::CollapsingHeader::new(RichText::new(tr("aigen.results")).strong())
+        .id_salt("aigen_results")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let n = app.ai_image.results.len();
+                let side = if n == 1 {
+                    ui.available_width().min(240.0)
+                } else {
+                    ((ui.available_width() - 8.0) / 2.0).min(120.0)
+                };
+                for (i, r) in app.ai_image.results.iter().enumerate() {
+                    if let Some(tex) = texture(ui.ctx(), &r.png) {
+                        let s = tex.size_vec2();
+                        let scale = side / s.x.max(s.y);
+                        let resp = ui
+                            .add(egui::Image::new((tex.id(), s * scale)).sense(Sense::click()))
+                            .on_hover_text(tr("aigen.place_again"));
+                        if resp.clicked() {
+                            place = Some(i);
+                        }
+                    }
+                }
+            });
+            ui.label(
+                RichText::new(tr("aigen.results_note"))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            );
+        });
+    if let Some(img) = place.and_then(|i| app.ai_image.results.get(i).cloned()) {
+        app.ai_place_image(&img, None, false);
+    }
+}
+
+/// Images, what will be sent, Generate (or the spinner and Cancel) and
+/// the outcome.
+fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
+    ui.separator();
+    let svg = mode == Mode::Vector && app.ai_image.vector_engine == VectorEngine::Svg;
+    ui.add_enabled_ui(ready && !app.ai_image.busy(), |ui| {
+        ui.horizontal(|ui| {
+            if !svg {
+                ui.label(tr("aigen.images"));
+                ui.add(egui::DragValue::new(&mut app.ai_image.count).range(1..=MAX_COUNT));
+            }
+            ui.checkbox(&mut app.ai_image.auto_place, tr("aigen.auto_place"))
+                .on_hover_text(tr("aigen.auto_place_tip"));
+        });
+    });
+    let service = if svg {
+        tr(app.settings.ai.provider.key())
+    } else {
+        tr(app.settings.ai_image.provider.key())
+    };
+    let requests = if svg {
+        1
+    } else {
+        app.ai_image.count.clamp(1, MAX_COUNT) as usize
+    };
+    ui.label(
+        RichText::new(trf(
+            "aigen.requests",
+            &[("n", &requests.to_string()), ("service", &service)],
+        ))
+        .color(Tokens::text_dim())
+        .size(11.0),
+    );
     if app.ai_image.busy() {
         ui.horizontal(|ui| {
             ui.spinner();
@@ -75,11 +477,10 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             }
         });
     } else {
+        let has_source = app.ai_image.source.is_some() || app.ai_source_bitmap().is_some();
         let can = ready
             && match mode {
-                Mode::Remix => {
-                    app.ai_source_bitmap().is_some() && !app.ai_image.remix_prompt.trim().is_empty()
-                }
+                Mode::Remix => has_source && !app.ai_image.remix_prompt.trim().is_empty(),
                 _ => !app.ai_image.prompt.trim().is_empty(),
             };
         let button =
@@ -98,159 +499,61 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         }
         _ => {}
     }
-    results(app, ui);
-    ui.add_space(6.0);
-    ui.separator();
-    ui.label(
-        RichText::new(tr("aigen.privacy"))
-            .color(Tokens::text_dim())
-            .size(11.0),
-    );
 }
 
-fn body(app: &mut App, ui: &mut Ui, mode: Mode) {
-    // The model in use, from the image service's list.
-    ui.horizontal(|ui| {
-        ui.label(tr("ai.model"));
-        let prefs = &mut app.settings.ai_image;
-        let current = prefs.model();
-        let mut list: Vec<String> = if app.ai_image.models.is_empty() {
-            prefs
-                .provider
-                .preset_models()
-                .iter()
-                .map(|m| m.to_string())
-                .collect()
+/// The information page: what AI Generate does, where each service
+/// stands, the models, what is sent and who bills it.
+fn info_page(app: &mut App, ui: &mut Ui) {
+    ui.label(RichText::new(tr("aigen.info_title")).strong().size(14.0));
+    ui.add_space(4.0);
+    for key in [
+        "aigen.info_about",
+        "aigen.info_create",
+        "aigen.info_remix",
+        "aigen.info_vector",
+        "aigen.info_cutout",
+    ] {
+        ui.label(tr(key));
+        ui.add_space(3.0);
+    }
+    ui.add_space(4.0);
+    ui.label(RichText::new(tr("aiui.services")).strong());
+    for (key, provider, model, ready) in [
+        (
+            "aiui.image_service",
+            tr(app.settings.ai_image.provider.key()),
+            app.settings.ai_image.model(),
+            app.ai_image_ready(),
+        ),
+        (
+            "aiui.drawing_service",
+            tr(app.settings.ai.provider.key()),
+            app.settings.ai.model(),
+            app.ai_drawing_ready(),
+        ),
+    ] {
+        let state = if ready {
+            tr("aiui.ready")
         } else {
-            app.ai_image.models.clone()
+            tr("aiui.not_ready")
         };
-        if !list.contains(&current) {
-            list.insert(0, current.clone());
-        }
-        egui::ComboBox::from_id_salt("aigen_model")
-            .width(ui.available_width() - 8.0)
-            .selected_text(current.clone())
-            .show_ui(ui, |ui| {
-                for m in &list {
-                    if ui.selectable_label(*m == current, m).clicked() {
-                        prefs.model = m.clone();
-                    }
-                }
-            });
-    });
-    if mode == Mode::Remix {
-        heading(ui, "aigen.source");
-        source(app, ui);
+        ui.add(
+            egui::Label::new(format!(
+                "{} {provider} \u{2022} {model} \u{2022} {state}",
+                tr(key)
+            ))
+            .wrap(),
+        );
     }
-    // The prompt, with Reset.
-    ui.horizontal(|ui| {
-        heading(ui, "aigen.prompt");
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .small_button("\u{21BA}")
-                .on_hover_text(tr("aigen.reset"))
-                .clicked()
-            {
-                match mode {
-                    Mode::Remix => app.ai_image.remix_prompt.clear(),
-                    _ => app.ai_image.prompt.clear(),
-                }
-            }
-        });
-    });
-    let text = match mode {
-        Mode::Remix => &mut app.ai_image.remix_prompt,
-        _ => &mut app.ai_image.prompt,
-    };
-    ui.add(
-        egui::TextEdit::multiline(text)
-            .id(egui::Id::new("aigen_prompt"))
-            .hint_text(tr(match mode {
-                Mode::Remix => "aigen.remix_hint",
-                _ => "aigen.prompt_hint",
-            }))
-            .desired_rows(5)
-            .desired_width(f32::INFINITY),
-    );
-    if mode != Mode::Remix {
-        if ui
-            .button(format!("\u{1F4A1} {}", tr("aigen.inspire")))
-            .clicked()
-        {
-            let n = app.ai_image.results.len() + app.ai_image.prompt.len();
-            app.ai_image.prompt = IDEAS[n % IDEAS.len()].to_string();
-        }
-        ui.horizontal(|ui| {
-            ui.label(tr("aigen.aspect"));
-            let current = app.ai_image.aspect;
-            egui::ComboBox::from_id_salt("aigen_aspect")
-                .width(ui.available_width() - 8.0)
-                .selected_text(tr(current.key()))
-                .show_ui(ui, |ui| {
-                    for a in Aspect::ALL {
-                        ui.selectable_value(&mut app.ai_image.aspect, a, tr(a.key()));
-                    }
-                });
-        });
-    }
-    if mode != Mode::Vector {
-        heading(ui, "aigen.style");
-        let cols = 3;
-        egui::Grid::new("aigen_styles")
-            .num_columns(cols)
-            .spacing([4.0, 4.0])
-            .show(ui, |ui| {
-                for (i, (key, _)) in STYLES.iter().enumerate() {
-                    let on = app.ai_image.style == Some(i);
-                    if tile(ui, &tr(key), on, |p, r| style_swatch(p, r, i)).clicked() {
-                        app.ai_image.style = if on { None } else { Some(i) };
-                    }
-                    if i % cols == cols - 1 {
-                        ui.end_row();
-                    }
-                }
-            });
-    }
-    heading(ui, "aigen.palette");
-    let cols = 4;
-    egui::Grid::new("aigen_palettes")
-        .num_columns(cols)
-        .spacing([4.0, 4.0])
-        .show(ui, |ui| {
-            for (i, (key, _, colours)) in PALETTES.iter().enumerate() {
-                let on = app.ai_image.palette == Some(i);
-                if tile(ui, &tr(key), on, |p, r| gradient(p, r, colours)).clicked() {
-                    app.ai_image.palette = if on { None } else { Some(i) };
-                }
-                if i % cols == cols - 1 {
-                    ui.end_row();
-                }
-            }
-        });
-    if mode == Mode::Create {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(tr("aigen.images"));
-            ui.add(egui::DragValue::new(&mut app.ai_image.count).range(1..=MAX_COUNT));
-        });
-    }
-}
-
-/// The selected bitmap, or what to select.
-fn source(app: &mut App, ui: &mut Ui) {
-    match app.ai_source_bitmap() {
-        Some((_, png)) => {
-            if let Some(tex) = texture(ui.ctx(), &png) {
-                let s = tex.size_vec2();
-                let scale = (ui.available_width().min(220.0) / s.x).min(140.0 / s.y);
-                ui.vertical_centered(|ui| {
-                    ui.add(egui::Image::new((tex.id(), s * scale)));
-                });
-            }
-        }
-        None => {
-            ui.label(RichText::new(tr("aigen.select_bitmap")).color(Tokens::text_dim()));
-        }
+    ui.add_space(4.0);
+    ui.label(RichText::new(tr("aigen.info_costs_title")).strong());
+    ui.label(tr("aigen.info_costs"));
+    ui.add_space(4.0);
+    ui.label(RichText::new(tr("aiui.privacy_title")).strong());
+    ui.label(RichText::new(tr("aiui.privacy")).color(Tokens::text_dim()));
+    ui.add_space(6.0);
+    if ui.button(tr("aiui.set_up")).clicked() {
+        crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiGeneral);
     }
 }
 
@@ -282,32 +585,6 @@ fn texture(ctx: &egui::Context, png: &[u8]) -> Option<egui::TextureHandle> {
     let t = ctx.load_texture("aigen", image, egui::TextureOptions::LINEAR);
     ctx.data_mut(|d| d.insert_temp(key, t.clone()));
     Some(t)
-}
-
-/// The pictures made this session; a click puts one on the page again.
-fn results(app: &mut App, ui: &mut Ui) {
-    if app.ai_image.results.is_empty() {
-        return;
-    }
-    heading(ui, "aigen.results");
-    let mut place = None;
-    ui.horizontal_wrapped(|ui| {
-        for (i, r) in app.ai_image.results.iter().enumerate() {
-            if let Some(tex) = texture(ui.ctx(), &r.png) {
-                let s = tex.size_vec2();
-                let scale = 72.0 / s.x.max(s.y);
-                let resp = ui
-                    .add(egui::Image::new((tex.id(), s * scale)).sense(Sense::click()))
-                    .on_hover_text(tr("aigen.place_again"));
-                if resp.clicked() {
-                    place = Some(i);
-                }
-            }
-        }
-    });
-    if let Some(img) = place.and_then(|i| app.ai_image.results.get(i).cloned()) {
-        app.ai_place_image(&img, None, false);
-    }
 }
 
 /// A square tile with a picture and a name under it.
@@ -415,6 +692,53 @@ fn style_swatch(p: &egui::Painter, r: egui::Rect, i: usize) {
                 s * 0.35,
                 Color32::from_white_alpha(120),
             );
+        }
+        // Vector styles: flat, line, comic, icon, sticker, silhouette.
+        6 => {
+            p.rect_filled(r, 0.0, Color32::from_rgb(0xF4, 0xE9, 0xD8));
+            p.circle_filled(
+                c + Vec2::new(-s * 0.6, 0.0),
+                s * 0.9,
+                Color32::from_rgb(0xE8, 0x50, 0x5B),
+            );
+            p.rect_filled(
+                egui::Rect::from_center_size(c + Vec2::new(s * 0.7, s * 0.2), Vec2::splat(s * 1.4)),
+                0.0,
+                Color32::from_rgb(0x2F, 0xB5, 0xA8),
+            );
+        }
+        7 => {
+            p.rect_filled(r, 0.0, Color32::WHITE);
+            p.circle_stroke(c, s * 1.1, egui::Stroke::new(1.4, Color32::BLACK));
+            p.line_segment(
+                [c - Vec2::splat(s), c + Vec2::splat(s)],
+                egui::Stroke::new(1.4, Color32::BLACK),
+            );
+        }
+        8 => {
+            p.rect_filled(r, 0.0, Color32::from_rgb(0x4F, 0xC3, 0xF7));
+            leaf(
+                Color32::from_rgb(0xFF, 0xC1, 0x07),
+                egui::Stroke::new(2.5, Color32::BLACK),
+            );
+        }
+        9 => {
+            p.rect_filled(r, 0.0, Color32::from_rgb(0xEC, 0xEF, 0xF1));
+            p.circle_stroke(
+                c,
+                s * 1.1,
+                egui::Stroke::new(3.0, Color32::from_rgb(0x26, 0x32, 0x38)),
+            );
+            p.circle_filled(c, s * 0.35, Color32::from_rgb(0x26, 0x32, 0x38));
+        }
+        10 => {
+            p.rect_filled(r, 0.0, Color32::from_rgb(0x9C, 0x27, 0xB0));
+            p.circle_filled(c, s * 1.25, Color32::WHITE);
+            p.circle_filled(c, s * 1.0, Color32::from_rgb(0xFF, 0x70, 0x43));
+        }
+        11 => {
+            p.rect_filled(r, 0.0, Color32::from_rgb(0xFF, 0xF8, 0xE1));
+            leaf(Color32::from_rgb(0x21, 0x21, 0x21), egui::Stroke::NONE);
         }
         // Pop art.
         _ => {

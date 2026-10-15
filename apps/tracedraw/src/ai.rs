@@ -370,6 +370,16 @@ fn headers(prefs: &AiPrefs, key: &str) -> Vec<(String, String)> {
 /// The HTTP request for `messages` (oldest first, starting and ending
 /// with the user's) to the service `prefs` describe.
 pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) -> HttpRequest {
+    build_request_with(prefs, key, SYSTEM_PROMPT, messages)
+}
+
+/// [`build_request`] with other instructions (`system`).
+pub fn build_request_with(
+    prefs: &AiPrefs,
+    key: &str,
+    system: &str,
+    messages: &[(Role, String)],
+) -> HttpRequest {
     let msgs: Vec<Value> = messages
         .iter()
         .map(|(role, text)| json!({"role": role.name(), "content": text}))
@@ -378,11 +388,11 @@ pub fn build_request(prefs: &AiPrefs, key: &str, messages: &[(Role, String)]) ->
         Provider::Anthropic => json!({
             "model": prefs.model(),
             "max_tokens": MAX_TOKENS,
-            "system": SYSTEM_PROMPT,
+            "system": system,
             "messages": msgs,
         }),
         Provider::OpenAiCompatible => {
-            let mut all = vec![json!({"role": "system", "content": SYSTEM_PROMPT})];
+            let mut all = vec![json!({"role": "system", "content": system})];
             all.extend(msgs);
             json!({"model": prefs.model(), "messages": all})
         }

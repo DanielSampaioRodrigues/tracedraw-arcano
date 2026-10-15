@@ -143,18 +143,44 @@ pub enum Aspect {
     Portrait34,
     Portrait23,
     Tall916,
+    Landscape54,
+    Portrait45,
+    Ultrawide219,
+    /// The reference image's own shape.
+    MatchSource,
 }
 
 impl Aspect {
-    pub const ALL: [Aspect; 7] = [
+    pub const ALL: [Aspect; 10] = [
         Aspect::Square,
+        Aspect::Landscape54,
         Aspect::Landscape43,
         Aspect::Landscape32,
         Aspect::Wide169,
+        Aspect::Ultrawide219,
+        Aspect::Portrait45,
         Aspect::Portrait34,
         Aspect::Portrait23,
         Aspect::Tall916,
     ];
+
+    /// The ratio nearest to a `w` by `h` picture.
+    pub fn nearest(w: u32, h: u32) -> Aspect {
+        let r = (w.max(1) as f64 / h.max(1) as f64).ln();
+        Aspect::ALL
+            .into_iter()
+            .min_by(|a, b| {
+                let d = |x: Aspect| (x.value().ln() - r).abs();
+                d(*a).total_cmp(&d(*b))
+            })
+            .unwrap_or_default()
+    }
+
+    /// Width over height.
+    fn value(self) -> f64 {
+        let (w, h) = self.ratio().split_once(':').unwrap_or(("1", "1"));
+        w.parse::<f64>().unwrap_or(1.0) / h.parse::<f64>().unwrap_or(1.0).max(1e-9)
+    }
 
     pub fn key(self) -> &'static str {
         match self {
@@ -165,6 +191,10 @@ impl Aspect {
             Aspect::Portrait34 => "aiimg.aspect_34",
             Aspect::Portrait23 => "aiimg.aspect_23",
             Aspect::Tall916 => "aiimg.aspect_916",
+            Aspect::Landscape54 => "aiimg.aspect_54",
+            Aspect::Portrait45 => "aiimg.aspect_45",
+            Aspect::Ultrawide219 => "aiimg.aspect_219",
+            Aspect::MatchSource => "aiimg.aspect_match",
         }
     }
 
@@ -178,13 +208,21 @@ impl Aspect {
             Aspect::Portrait34 => "3:4",
             Aspect::Portrait23 => "2:3",
             Aspect::Tall916 => "9:16",
+            Aspect::Landscape54 => "5:4",
+            Aspect::Portrait45 => "4:5",
+            Aspect::Ultrawide219 => "21:9",
+            Aspect::MatchSource => "1:1",
         }
     }
 
     fn landscape(self) -> Option<bool> {
         match self {
-            Aspect::Square => None,
-            Aspect::Landscape43 | Aspect::Landscape32 | Aspect::Wide169 => Some(true),
+            Aspect::Square | Aspect::MatchSource => None,
+            Aspect::Landscape43
+            | Aspect::Landscape32
+            | Aspect::Wide169
+            | Aspect::Landscape54
+            | Aspect::Ultrawide219 => Some(true),
             _ => Some(false),
         }
     }
@@ -233,6 +271,63 @@ pub const STYLES: [(&str, &str); 6] = [
         "Pop art, bold outlines, halftone dots, saturated colours.",
     ),
 ];
+
+/// Styles of Create vectors: the i18n key of the name and the words
+/// added to the prompt.
+pub const VECTOR_STYLES: [(&str, &str); 6] = [
+    (
+        "aiimg.vstyle_flat",
+        "Flat illustration with clean geometric shapes.",
+    ),
+    (
+        "aiimg.vstyle_line",
+        "Line art: even black strokes, no fills.",
+    ),
+    (
+        "aiimg.vstyle_comic",
+        "Comic book style: bold black outlines, flat cel colours.",
+    ),
+    (
+        "aiimg.vstyle_icon",
+        "A simple icon: few shapes, thick strokes, centred.",
+    ),
+    (
+        "aiimg.vstyle_sticker",
+        "A sticker: bold shapes with a thick white border.",
+    ),
+    ("aiimg.vstyle_silhouette", "A single-colour silhouette."),
+];
+
+/// Ready-made remix requests (the workflows remixing is good at): the
+/// i18n key of the name and the prompt it fills in.
+pub const REMIX_IDEAS: [(&str, &str); 6] = [
+    ("aiimg.remix_mockup", "Use this design to decorate a photorealistic mockup of a mug, a notebook and a folded standing menu on a cafe table."),
+    ("aiimg.remix_restore", "Restore this old photo as if it was taken today with a high-resolution camera: repair scratches and tears, fill in missing areas, clean and sharpen it, keep the faces unchanged."),
+    ("aiimg.remix_colorize", "Colorize this sketch as a natural watercolour painting, complete the unfinished parts and add a soft summer landscape background."),
+    ("aiimg.remix_background", "Replace the background with a peaceful sunlit forest, keep the subject exactly as it is."),
+    ("aiimg.remix_season", "Turn this scene into winter: snow on the ground, cold light, winter clothing, keep the composition."),
+    ("aiimg.remix_recolor", "Recolour the design with a light beige background, yellow and red accents and deep blue details, keep every shape."),
+];
+
+/// Prompts Inspire Me picks from.
+pub const IDEAS: [&str; 12] = [
+    "A lighthouse on a rocky coast at dawn, seagulls, calm sea",
+    "A cosy reading corner with plants and warm lamp light",
+    "A fox in a snowy forest, looking over its shoulder",
+    "A retro bicycle with a basket of flowers against a pastel wall",
+    "A mountain cabin under a starry sky with the northern lights",
+    "A bowl of ramen seen from above on a wooden table",
+    "A hot air balloon flying above layered mountains and forested hills, soft clouds",
+    "A friendly robot watering plants in a greenhouse",
+    "A cheerful yeti caricature dancing in the Himalayas, big glasses, red t-shirt",
+    "An astronaut woman with a striking helmet visor on a purple planet",
+    "Folk art heart of flowers, cats and birds in bright colours",
+    "A futuristic treehouse in a redwood forest, glass walls, morning mist",
+];
+
+/// The instructions of Create vectors with the drawing service: the
+/// reply is an SVG document.
+pub const SVG_PROMPT: &str = "You are a vector illustrator. Reply with one complete, valid SVG document and nothing else: an <svg> element with xmlns=\"http://www.w3.org/2000/svg\" and a viewBox, made only of path, rect, circle, ellipse, polygon, polyline, line and g elements with solid fill and stroke colours (linear and radial gradients allowed). No text, no images, no scripts, no external references, no CSS classes. Use clean, closed shapes in a pleasing composition and keep it under 400 elements.";
 
 /// Colour palette presets: the i18n key of the name, the words added to
 /// the prompt and the colours of its swatch.
@@ -465,6 +560,30 @@ fn gemini_request(
     }
 }
 
+/// The request for new pictures that follow a reference picture: Gemini
+/// takes it with the prompt; the OpenAI API edits it.
+pub fn build_reference(
+    prefs: &ImagePrefs,
+    key: &str,
+    prompt: &str,
+    png: &[u8],
+    aspect: Aspect,
+) -> HttpRequest {
+    match prefs.provider {
+        ImageProvider::Gemini => gemini_request(prefs, key, prompt, Some(png), Some(aspect)),
+        ImageProvider::OpenAi => build_edit(prefs, key, prompt, png, false),
+    }
+}
+
+/// The SVG document in a reply: an ```svg block, else the first
+/// `<svg ...>...</svg>`.
+pub fn extract_svg(reply: &str) -> Option<String> {
+    let start = reply.find("<svg")?;
+    let end = reply[start..].rfind("</svg>")? + start + "</svg>".len();
+    let svg = reply.get(start..end)?.trim().to_string();
+    (svg.len() <= 2 * 1024 * 1024).then_some(svg)
+}
+
 /// The request for the service's models.
 pub fn build_models(prefs: &ImagePrefs, key: &str) -> HttpRequest {
     HttpRequest {
@@ -650,6 +769,26 @@ pub struct GenImage {
     pub height: u32,
 }
 
+/// A reference picture: the source of Remix, an example for Create.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceImage {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// The bitmap it came from, for a remix to go over it.
+    pub shape: Option<ShapeId>,
+}
+
+/// How Create vectors makes its curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VectorEngine {
+    /// A flat picture from the image service, traced into curves.
+    #[default]
+    Trace,
+    /// An SVG drawing written by the drawing service.
+    Svg,
+}
+
 /// What the docker makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
@@ -677,7 +816,8 @@ pub enum ImageStatus {
 
 enum Job {
     Generate { vector: bool },
-    Remix { source: ShapeId },
+    Svg,
+    Remix { source: Option<ShapeId> },
     Cutout { shape: ShapeId, chroma: bool },
     Models,
 }
@@ -695,7 +835,17 @@ pub struct ImageSession {
     pub aspect: Aspect,
     pub style: Option<usize>,
     pub palette: Option<usize>,
+    pub vector_style: Option<usize>,
+    pub vector_engine: VectorEngine,
     pub count: u8,
+    /// The reference picture (Remix needs one; Create may use one).
+    pub source: Option<SourceImage>,
+    /// Pictures go into the drawing as they come (else only to Results).
+    pub auto_place: bool,
+    /// The settings are folded away to show the results.
+    pub folded: bool,
+    /// The information page shows instead of the settings.
+    pub info: bool,
     pub key: String,
     pub status: ImageStatus,
     /// Newest first.
@@ -720,7 +870,13 @@ impl Default for ImageSession {
             aspect: Aspect::default(),
             style: None,
             palette: None,
+            vector_style: None,
+            vector_engine: VectorEngine::Trace,
             count: 1,
+            source: None,
+            auto_place: true,
+            folded: false,
+            info: false,
             key: String::new(),
             status: ImageStatus::default(),
             results: Vec::new(),
@@ -815,41 +971,179 @@ impl App {
         }
     }
 
-    /// Create image (or vectors): pictures from the prompt, placed on the
-    /// page.
+    /// The reference picture from the selection: the selected bitmap as
+    /// it is, or the selected objects drawn as a picture.
+    pub fn ai_source_from_selection(&mut self) {
+        if let Some((id, png)) = self.ai_source_bitmap() {
+            if let Some(img) = crate::bitmap_fx::decode(&png) {
+                self.ai_image.source = Some(SourceImage {
+                    png,
+                    width: img.width(),
+                    height: img.height(),
+                    shape: Some(id),
+                });
+                return;
+            }
+        }
+        // Objects of any kind: drawn at a size the services take.
+        let Some(b) = self.selection_bounds() else {
+            self.ai_image.status = ImageStatus::Failed(tr("aiimg.need_selection"));
+            return;
+        };
+        let longer_in = b.width().max(b.height()).max(0.1) / 25.4;
+        let dpi = (1024.0 / longer_in).clamp(10.0, 1200.0);
+        match self.render_selection_png(dpi, false) {
+            Some((png, w, h, _)) => {
+                self.ai_image.source = Some(SourceImage {
+                    png,
+                    width: w,
+                    height: h,
+                    shape: None,
+                })
+            }
+            None => self.ai_image.status = ImageStatus::Failed(tr("aiimg.need_selection")),
+        }
+    }
+
+    /// The reference picture from a file's bytes.
+    pub fn ai_source_from_bytes(&mut self, bytes: &[u8]) {
+        match to_png(bytes) {
+            Some((png, width, height)) => {
+                self.ai_image.source = Some(SourceImage {
+                    png,
+                    width,
+                    height,
+                    shape: None,
+                })
+            }
+            None => self.ai_image.status = ImageStatus::Failed(tr("aiimg.unreadable_image")),
+        }
+    }
+
+    /// Pick a picture file as the reference picture.
+    pub fn ai_source_from_file(&mut self) {
+        crate::files::Dialog::new()
+            .add_filter(
+                tr("aiimg.picture_files"),
+                &["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"],
+            )
+            .pick_file(self, |app, path| match crate::files::read(&path) {
+                Ok(bytes) => app.ai_source_from_bytes(&bytes),
+                Err(e) => app.ai_image.status = ImageStatus::Failed(e.to_string()),
+            });
+    }
+
+    /// The aspect ratio asked for: the reference picture's when matching.
+    fn ai_aspect(&self) -> Aspect {
+        match (self.ai_image.aspect, &self.ai_image.source) {
+            (Aspect::MatchSource, Some(src)) => Aspect::nearest(src.width, src.height),
+            (Aspect::MatchSource, None) => Aspect::Square,
+            (a, _) => a,
+        }
+    }
+
+    /// Create image (or vectors): pictures from the prompt, with the
+    /// reference picture when there is one, placed on the page.
     pub fn ai_create(&mut self, vector: bool) {
         if self.ai_image.busy() {
+            return;
+        }
+        let words = self.ai_image.prompt.trim().to_string();
+        if vector && self.ai_image.vector_engine == VectorEngine::Svg {
+            self.ai_create_svg(words);
             return;
         }
         if let Some(p) = self.ai_image_problem() {
             self.ai_image.status = ImageStatus::Failed(p);
             return;
         }
-        let words = self.ai_image.prompt.trim().to_string();
         if words.is_empty() {
             self.ai_image.status = ImageStatus::Failed(tr("aiimg.need_prompt"));
             return;
         }
         let s = &self.ai_image;
-        let prompt = compose_prompt(&words, s.style, s.palette, vector);
+        let style = if vector { None } else { s.style };
+        let mut prompt = compose_prompt(&words, style, s.palette, vector);
+        if let Some((_, w)) = s
+            .vector_style
+            .filter(|_| vector)
+            .and_then(|i| VECTOR_STYLES.get(i))
+        {
+            prompt.push_str("\n\nStyle: ");
+            prompt.push_str(w);
+        }
+        if s.source.is_some() {
+            prompt = format!("Use the attached picture as the reference.\n\n{prompt}");
+        }
         let count = s.count.clamp(1, MAX_COUNT);
         let prefs = self.settings.ai_image.clone();
         let key = self.ai_image.key.clone();
-        let aspect = self.ai_image.aspect;
-        // Gemini answers one picture a request.
-        let requests = match prefs.provider {
-            ImageProvider::Gemini => count as usize,
-            ImageProvider::OpenAi => 1,
+        let aspect = self.ai_aspect();
+        let reference = self.ai_image.source.as_ref().map(|s| s.png.clone());
+        // Gemini answers one picture a request, and so do edits.
+        let requests = match (prefs.provider, &reference) {
+            (ImageProvider::Gemini, _) | (_, Some(_)) => count as usize,
+            (ImageProvider::OpenAi, None) => 1,
         };
         self.ai_image_begin(requests);
+        self.ai_image.results.clear();
         for _ in 0..requests {
-            let http = build_generate(&prefs, &key, &prompt, aspect, count);
+            let http = match &reference {
+                Some(png) => build_reference(&prefs, &key, &prompt, png, aspect),
+                None => build_generate(&prefs, &key, &prompt, aspect, count),
+            };
             self.ai_image_send(http, Job::Generate { vector });
         }
         self.poll_ai_image();
     }
 
-    /// Remix image: the selected bitmap changed as the prompt says.
+    /// Create vectors with the drawing service: an SVG drawing imported
+    /// as editable shapes.
+    fn ai_create_svg(&mut self, words: String) {
+        let problem = if !self.ai_features_on() {
+            Some(tr("aiimg.off"))
+        } else if !self.ai_drawing_ready() {
+            Some(tr("aiimg.svg_needs_drawing"))
+        } else if !self.has_document() {
+            Some(tr("ai.need_document"))
+        } else if words.is_empty() {
+            Some(tr("aiimg.need_prompt"))
+        } else {
+            None
+        };
+        if let Some(p) = problem {
+            self.ai_image.status = ImageStatus::Failed(p);
+            return;
+        }
+        let mut request = format!("Draw: {words}");
+        if let Some((_, w)) = self
+            .ai_image
+            .vector_style
+            .and_then(|i| VECTOR_STYLES.get(i))
+        {
+            request.push_str("\nStyle: ");
+            request.push_str(w);
+        }
+        if let Some((_, w, _)) = self.ai_image.palette.and_then(|i| PALETTES.get(i)) {
+            request.push_str("\nColours: ");
+            request.push_str(w);
+        }
+        let a = self.ai_aspect();
+        request.push_str(&format!("\nAspect ratio: {}", a.ratio()));
+        let http = crate::ai::build_request_with(
+            &self.settings.ai,
+            &self.ai.key,
+            SVG_PROMPT,
+            &[(crate::ai::Role::User, request)],
+        );
+        self.ai_image_begin(1);
+        self.ai_image.results.clear();
+        self.ai_image_send(http, Job::Svg);
+        self.poll_ai_image();
+    }
+
+    /// Remix image: the reference picture (or the selected bitmap) changed
+    /// as the prompt says; the result goes over the bitmap it came from.
     pub fn ai_remix(&mut self) {
         if self.ai_image.busy() {
             return;
@@ -858,8 +1152,14 @@ impl App {
             self.ai_image.status = ImageStatus::Failed(p);
             return;
         }
-        let Some((source, png)) = self.ai_source_bitmap() else {
-            self.ai_image.status = ImageStatus::Failed(tr("aiimg.need_bitmap"));
+        if self.ai_image.source.is_none() {
+            self.ai_source_from_selection();
+            if self.ai_image.source.is_none() {
+                self.ai_image.status = ImageStatus::Failed(tr("aiimg.need_bitmap"));
+                return;
+            }
+        }
+        let Some(src) = self.ai_image.source.clone() else {
             return;
         };
         let words = self.ai_image.remix_prompt.trim().to_string();
@@ -868,15 +1168,19 @@ impl App {
             return;
         }
         let prompt = compose_prompt(&words, self.ai_image.style, self.ai_image.palette, false);
-        let http = build_edit(
-            &self.settings.ai_image,
-            &self.ai_image.key,
-            &prompt,
-            &png,
-            false,
-        );
-        self.ai_image_begin(1);
-        self.ai_image_send(http, Job::Remix { source });
+        let count = self.ai_image.count.clamp(1, MAX_COUNT) as usize;
+        self.ai_image_begin(count);
+        self.ai_image.results.clear();
+        for _ in 0..count {
+            let http = build_edit(
+                &self.settings.ai_image,
+                &self.ai_image.key,
+                &prompt,
+                &src.png,
+                false,
+            );
+            self.ai_image_send(http, Job::Remix { source: src.shape });
+        }
         self.poll_ai_image();
     }
 
@@ -965,6 +1269,17 @@ impl App {
             }
             return;
         }
+        if let Job::Svg = job {
+            let svg = result
+                .and_then(|r| crate::ai::parse_reply(self.settings.ai.provider, &r))
+                .and_then(|reply| extract_svg(&reply).ok_or_else(|| tr("aiimg.no_svg")));
+            match svg {
+                Ok(svg) => self.ai_place_svg(&svg),
+                Err(e) => self.ai_image.errors.push(e),
+            }
+            self.ai_image_finish(done);
+            return;
+        }
         let images = result
             .and_then(|r| parse_images(provider, &r))
             .and_then(|files| {
@@ -984,13 +1299,21 @@ impl App {
             Ok(images) => match job {
                 Job::Generate { vector } => {
                     for img in images {
-                        self.ai_place_image(&img, None, vector);
+                        if self.ai_image.auto_place || vector {
+                            self.ai_place_image(&img, None, vector);
+                        } else {
+                            self.ai_image.made += 1;
+                        }
                         self.ai_keep_result(img);
                     }
                 }
                 Job::Remix { source } => {
                     if let Some(img) = images.into_iter().next() {
-                        self.ai_place_image(&img, Some(source), false);
+                        if self.ai_image.auto_place {
+                            self.ai_place_image(&img, source, false);
+                        } else {
+                            self.ai_image.made += 1;
+                        }
                         self.ai_keep_result(img);
                     }
                 }
@@ -999,9 +1322,13 @@ impl App {
                         self.ai_apply_cutout(shape, img, chroma);
                     }
                 }
-                Job::Models => {}
+                Job::Models | Job::Svg => {}
             },
         }
+        self.ai_image_finish(done);
+    }
+
+    fn ai_image_finish(&mut self, done: usize) {
         self.ai_image.status = if self.ai_image.busy() {
             ImageStatus::Waiting {
                 done,
@@ -1021,8 +1348,69 @@ impl App {
     }
 
     fn ai_keep_result(&mut self, img: GenImage) {
-        self.ai_image.results.insert(0, img);
+        self.ai_image.results.push(img);
         self.ai_image.results.truncate(MAX_RESULTS);
+    }
+
+    /// An SVG drawing as one group of editable shapes, centred on the page
+    /// within four fifths of it, as one undo step.
+    pub fn ai_place_svg(&mut self, svg: &str) {
+        use tracedraw_core::geometry::Shape as _;
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed =
+            tracedraw_io::svg_import::parse(svg, &mut tracedraw_core::id::IdSource::default());
+        let shapes = match parsed {
+            Ok(p) if !p.shapes.is_empty() => p.shapes,
+            Ok(_) => {
+                self.ai_image.errors.push(tr("aiimg.no_svg"));
+                return;
+            }
+            Err(e) => {
+                self.ai_image
+                    .errors
+                    .push(trf("aiimg.bad_svg", &[("e", &e)]));
+                return;
+            }
+        };
+        let gid = self.engine.new_shape_id();
+        let children: Vec<Shape> = shapes
+            .into_iter()
+            .map(|s| {
+                let id = self.engine.new_shape_id();
+                crate::app::reid_pub(s, id, &mut self.engine)
+            })
+            .collect();
+        let mut group = Shape::new(gid, ShapeKind::Group { children });
+        group.name = Some(tr("aiimg.vector_name"));
+        let b = group.page_path().bounding_box();
+        if b.width() > 1e-9 && b.height() > 1e-9 {
+            let page = self.page_size();
+            let k = (page.width * 0.8 / b.width()).min(page.height * 0.8 / b.height());
+            let c = b.center();
+            group.transform = tracedraw_core::Affine::translate(tracedraw_core::Vec2::new(
+                page.width / 2.0,
+                page.height / 2.0,
+            )) * tracedraw_core::Affine::scale(k)
+                * tracedraw_core::Affine::translate(-c.to_vec2());
+        }
+        if let Err(e) = self.engine.run_batch(
+            LABEL_GENERATE,
+            &[Command::AddShape {
+                layer,
+                shape: group,
+            }],
+        ) {
+            self.ai_image.errors.push(e.to_string());
+            return;
+        }
+        self.ai_image.made += 1;
+        self.select(vec![gid]);
+        self.status = trf(
+            "status.ai_image_placed",
+            &[("n", &self.ai_image.made.to_string())],
+        );
     }
 
     /// Put a picture on the page: over `over` (a remix, same place and
@@ -1082,6 +1470,15 @@ impl App {
                 .settings(crate::trace::Preset::Clipart);
             settings.delete_original = true;
             self.trace_bitmaps(&settings);
+            let traced = self.selection.clone();
+            let mut cmds = Vec::new();
+            for id in traced {
+                cmds.push(Command::SetShapeName {
+                    shape: id,
+                    name: Some(tr("aiimg.vector_name")),
+                });
+            }
+            let _ = self.engine.run_batch(LABEL_GENERATE, &cmds);
         }
         self.status = trf(
             "status.ai_image_placed",
@@ -1489,6 +1886,126 @@ mod tests {
             app.ai_image.status,
             ImageStatus::Failed("network down".into())
         );
+    }
+
+    #[test]
+    fn aspect_ratios_match_the_reference_picture() {
+        assert_eq!(Aspect::nearest(1600, 900), Aspect::Wide169);
+        assert_eq!(Aspect::nearest(1000, 1000), Aspect::Square);
+        assert_eq!(Aspect::nearest(800, 1000), Aspect::Portrait45);
+        assert_eq!(Aspect::nearest(2100, 900), Aspect::Ultrawide219);
+        let mut app = ready_app(ImageProvider::Gemini);
+        app.ai_image.aspect = Aspect::MatchSource;
+        assert_eq!(app.ai_aspect(), Aspect::Square, "no reference: square");
+        app.ai_source_from_bytes(&png(30, 20, |_, _| [1, 2, 3, 255]));
+        assert_eq!(app.ai_aspect(), Aspect::Landscape32);
+        app.ai_source_from_bytes(b"junk");
+        assert!(matches!(app.ai_image.status, ImageStatus::Failed(_)));
+    }
+
+    #[test]
+    fn an_example_image_goes_with_the_prompt() {
+        let mut app = ready_app(ImageProvider::Gemini);
+        app.ai_image.fake = Some(|_| gemini_reply(&png(8, 8, |_, _| [9, 9, 9, 255])));
+        app.ai_source_from_bytes(&png(4, 4, |_, _| [200, 0, 0, 255]));
+        app.ai_image.prompt = "the same in blue".into();
+        app.ai_create(false);
+        let body: Value = serde_json::from_str(&app.ai_image.sent[0].body).expect("json");
+        assert!(body
+            .pointer("/contents/0/parts/0/inline_data/data")
+            .is_some());
+        assert!(body.to_string().contains("reference"));
+        // With the OpenAI API the example is edited.
+        let mut app = ready_app(ImageProvider::OpenAi);
+        app.ai_image.fake = Some(|_| {
+            Ok(HttpResponse {
+                status: 200,
+                body: json!({"data": [{"b64_json": b64(&png(4, 4, |_, _| [1, 1, 1, 255]))}]})
+                    .to_string(),
+            })
+        });
+        app.ai_source_from_bytes(&png(4, 4, |_, _| [200, 0, 0, 255]));
+        app.ai_image.prompt = "x".into();
+        app.ai_image.count = 2;
+        app.ai_create(false);
+        assert_eq!(app.ai_image.sent.len(), 2);
+        assert!(app
+            .ai_image
+            .sent
+            .iter()
+            .all(|r| r.url.ends_with("/images/edits")));
+    }
+
+    #[test]
+    fn results_replace_the_last_ones_and_can_stay_out_of_the_drawing() {
+        let mut app = ready_app(ImageProvider::Gemini);
+        app.ai_image.fake = Some(|_| gemini_reply(&png(8, 8, |_, _| [9, 9, 9, 255])));
+        app.ai_image.prompt = "x".into();
+        app.ai_image.count = 3;
+        app.ai_create(false);
+        assert_eq!(app.ai_image.results.len(), 3);
+        app.ai_image.auto_place = false;
+        app.ai_image.count = 1;
+        app.ai_create(false);
+        assert_eq!(
+            app.ai_image.results.len(),
+            1,
+            "a new Generate replaces them"
+        );
+        assert_eq!(count_bitmaps(&app), 3, "not inserted");
+        assert_eq!(app.ai_image.status, ImageStatus::Done(1));
+    }
+
+    #[test]
+    fn svg_vectors_come_from_the_drawing_service_as_shapes() {
+        assert_eq!(
+            extract_svg(
+                "Here:\n```svg\n<svg viewBox='0 0 10 10'><rect width='5' height='5'/></svg>\n```"
+            ),
+            Some("<svg viewBox='0 0 10 10'><rect width='5' height='5'/></svg>".to_string())
+        );
+        assert_eq!(extract_svg("no drawing"), None);
+        let mut app = ready_app(ImageProvider::Gemini);
+        // Not set up: nothing is sent.
+        app.ai_image.mode = Mode::Vector;
+        app.ai_image.vector_engine = VectorEngine::Svg;
+        app.ai_image.prompt = "a red square and a blue circle".into();
+        app.ai_generate();
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Failed(tr("aiimg.svg_needs_drawing"))
+        );
+        app.ai.key = "k".into();
+        app.ai_image.fake = Some(|_| {
+            Ok(HttpResponse {
+                status: 200,
+                body: json!({
+                    "content": [{"type": "text", "text": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 50'><rect x='0' y='0' width='40' height='40' fill='#ff0000'/><circle cx='75' cy='25' r='20' fill='#0000ff'/></svg>"}],
+                    "stop_reason": "end_turn"
+                })
+                .to_string(),
+            })
+        });
+        app.ai_generate();
+        assert_eq!(app.ai_image.status, ImageStatus::Done(1));
+        let body: Value = serde_json::from_str(&app.ai_image.sent[0].body).expect("json");
+        assert!(body["system"].as_str().is_some_and(|t| t.contains("SVG")));
+        let g = app.selected_shapes().pop().expect("group");
+        let ShapeKind::Group { children } = &g.kind else {
+            panic!("a group");
+        };
+        assert_eq!(children.len(), 2);
+        assert_eq!(g.name.as_deref(), Some(tr("aiimg.vector_name").as_str()));
+        // Fitted to four fifths of the page width.
+        use tracedraw_core::geometry::Shape as _;
+        let b = g.page_path().bounding_box();
+        assert!(
+            (b.width() - app.page_size().width * 0.8).abs() < 0.5,
+            "{}",
+            b.width()
+        );
+        app.undo();
+        assert!(app.doc().all_layers().all(|l| l.shapes.is_empty()));
     }
 
     #[test]

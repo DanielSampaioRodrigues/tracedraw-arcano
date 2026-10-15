@@ -245,7 +245,11 @@ pub fn for_key(key: &str) -> Option<Glyph> {
         "menu.tools.ai_generate"
         | "menu.tools.options_ai"
         | "menu.bitmaps.remove_background"
-        | "context.ai_remix" => Ai,
+        | "context.ai_remix"
+        | "menu.object.ai_generate"
+        | "menu.object.ai_create_image"
+        | "menu.object.ai_remix_image"
+        | "menu.object.ai_create_vector" => Ai,
         "menu.tools.time_tracker" => Clock,
         "menu.tools.scripts_run" | "menu.tools.scripts_docker" => Script,
         "menu.tools.scripts_record" => Record,

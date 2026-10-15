@@ -45,28 +45,65 @@ the user asks. The work is in `apps/tracedraw/src/ai_image.rs`.
 
 ## The docker
 
-Three modes, as buttons at the top:
+At the top, three picture buttons pick the mode (Create image, Remix
+image, Create vectors) and an information button at the right shows a
+page instead of the settings: what each mode does, each service with its
+model and whether it is ready, costs (each picture is one request to the
+user's service, billed by it; local servers cost nothing), what is sent,
+and Set Up AI. The settings and results scroll; the footer stays at the
+bottom: Images (1 to 4), Insert into drawing (on), how many requests go
+to which service, and Generate (a spinner, the progress and Cancel while
+waiting), then the outcome.
 
-- Create image: model, prompt (with Clear and Inspire me, which fills
-  in an idea), aspect ratio (Square 1:1, Landscape 4:3 and 3:2, Wide
-  16:9, Portrait 3:4 and 2:3, Tall 9:16), style (Photorealistic, Line
-  art, Watercolor, Illustration, 3D render, Pop art; a second click turns
-  it off), color palette (Full spectrum, Grayscale, Warm, Cool, Pastel,
-  Neon, Earth, Blues) and the number of images (1 to 4). Each picture is
-  placed centred on the page, as large as four fifths of the page allows,
-  as its own undo step ("AI Generate"), named "AI picture" and selected.
-- Remix image: the selected bitmap (shown as the source), the prompt
-  describing the changes, style and palette. The new picture goes over
-  the source at its place and height, with its own proportions.
-- Create vectors: a prompt (with palette and aspect ratio) asked for as a
-  flat illustration on white, then traced with the Clipart preset into a
-  group of curves that replaces the picture.
+Every mode has:
 
-The style and palette add a sentence to the prompt; prompts are cut at
-4000 characters. While waiting the docker shows a spinner, how many
-answers are in and Cancel (answers that come later are dropped). The
-pictures made this session are listed under Results (newest first, up to
-12); a click places one on the page again.
+- Model: the service's models (the usual ones until Test Connection lists
+  its own) and a ? button with notes on the model.
+- A reference picture: Source image for Remix (needed; the selected
+  bitmap until another is chosen), Example image (optional) for the
+  others. Under its thumbnail, Use Selection (the selected bitmap as it
+  is, or the selected objects drawn at about 1024 px on the longer side)
+  and Import File (PNG, JPEG, WebP, BMP, GIF, TIFF); Reset clears it.
+- Prompt with Reset, its hint listing what to describe (characters and
+  objects, what happens, the scene, important details).
+- Style and Color palette tiles, each section with Reset; a second click
+  on a tile turns it off. A chevron folds both away.
+
+Modes:
+
+- Create image: Inspire me fills in an idea; aspect ratio Square 1:1,
+  Landscape 5:4, 4:3 and 3:2, Wide 16:9, Ultrawide 21:9, Portrait 4:5,
+  3:4 and 2:3, Tall 9:16, and Match reference image while there is one
+  (the nearest of those to its shape). With an example image Gemini gets
+  it with the prompt and the OpenAI API edits it (one request per
+  picture).
+- Remix image: ready-made requests (Mockup, Restore photo, Colorize
+  sketch, Replace background, Change season, Recolor) fill in the prompt.
+  The picture goes over the source bitmap at its place and height, with
+  its own proportions (centred on the page when the source came from a
+  file or from vectors).
+- Create vectors, made with:
+  - Picture + trace: a flat illustration on white from the image
+    service, traced with the Clipart preset into a group of curves that
+    replaces the picture.
+  - SVG drawing: the drawing service (Tools > Options > AI > Drawing
+    service) is asked for one SVG document (`ai_image::SVG_PROMPT`: only
+    shapes and solid colours or gradients, no text, images or scripts),
+    imported as a group of editable shapes centred on the page within
+    four fifths of it.
+  Vector styles: Flat illustration, Line art, Comic book, Icon, Sticker,
+  Silhouette.
+
+Each Generate replaces the Results (up to 12); with Insert into drawing
+on, each picture is also placed centred on the page within four fifths
+of it, as its own undo step ("AI Generate"), and selected. A click on a
+result inserts it. Pictures are named "AI-generated bitmap", vectors
+"AI-generated vector".
+
+Object > AI Generate opens the docker in each mode (Create Image, Remix
+Image, Create Vector Graphic) and has Remove Background; a bitmap's
+context menu has Remove Background and Remix with AI (the bitmap becomes
+the source).
 
 ## Remove Background
 
@@ -110,5 +147,13 @@ text).
   (`ai_image::tests::remix_and_remove_background_work_on_the_selected_bitmap`);
   service and network errors are shown
   (`ai_image::tests::errors_of_the_service_are_shown_and_nothing_is_placed`).
+- Aspect ratios match the reference picture; unreadable files are
+  refused (`ai_image::tests::aspect_ratios_match_the_reference_picture`).
+- An example image goes with the prompt to Gemini and is edited by the
+  OpenAI API (`ai_image::tests::an_example_image_goes_with_the_prompt`).
+- Results replace the last ones and can stay out of the drawing
+  (`ai_image::tests::results_replace_the_last_ones_and_can_stay_out_of_the_drawing`).
+- SVG vectors come from the drawing service as one fitted group of
+  shapes and undo (`ai_image::tests::svg_vectors_come_from_the_drawing_service_as_shapes`).
 - The docker draws in every mode and state
   (`ui::ai_generate_docker::tests::the_docker_draws_in_every_mode_and_state`).

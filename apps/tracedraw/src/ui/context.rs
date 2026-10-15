@@ -143,6 +143,8 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         }
         if ci(ui, close, "context.ai_remix", "", ai) {
             app.ai_image.mode = crate::ai_image::Mode::Remix;
+            app.ai_image.info = false;
+            app.ai_source_from_selection();
             app.open_ai_generate();
         }
         if ci(ui, close, "menu.bitmaps.crop_bitmap", "", true) {

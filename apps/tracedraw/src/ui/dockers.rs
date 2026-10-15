@@ -260,6 +260,11 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
                 crate::ui::hints::hints_docker(app, ui);
                 return;
             }
+            // AI Generate keeps Generate at the bottom, under its own scroll.
+            if app.docker_tab == DockerTab::AiGenerate {
+                crate::ui::ai_generate_docker::ai_generate(app, ui);
+                return;
+            }
             // Objects keeps its New Layer and Delete bar under the tree.
             if app.docker_tab == DockerTab::Objects {
                 crate::ui::objects_docker::objects_docker(app, ui);

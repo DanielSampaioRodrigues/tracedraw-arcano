@@ -22,6 +22,16 @@ by the newest versions opening with their fills and spot colours.
   menu, property bar, context menu) keeps a picture's subject and makes
   the rest transparent. AI commands are greyed out, and the dockers show
   a banner with Set Up AI, while their service is not ready.
+- AI Generate docker, more complete: mode buttons and an information
+  page (services, models, costs, what is sent); a reference picture from
+  the selection or a file (the source of Remix, an example for Create)
+  with "match reference image"; ready-made remix requests (mockup, photo
+  restoration, colorize sketch, replace background, change season,
+  recolor); model notes; Reset per section; more aspect ratios; vector
+  styles; Create vectors also as an SVG drawing from the drawing service,
+  imported as editable shapes; Results replaced by each Generate, with
+  Insert into drawing; Generate kept at the bottom. Object > AI Generate
+  has every mode and Remove Background.
 - AI service presets (Anthropic, OpenAI, Google Gemini, and Ollama, LM
   Studio, llama.cpp and vLLM on the same computer for AI Drawing; LocalAI
   for pictures) fill in the address, which stays editable. A new "AI
