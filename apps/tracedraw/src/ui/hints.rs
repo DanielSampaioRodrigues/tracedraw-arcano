@@ -488,7 +488,12 @@ fn tool_row(ui: &mut Ui, tool: Tool) -> bool {
         ui.painter()
             .rect_filled(rect.expand(2.0), 2.0, Tokens::tool_hover());
     }
-    crate::ui::icons::draw(ui.painter(), icon, tool, Tokens::icon());
+    crate::ui::icons::draw(
+        ui.painter(),
+        icon,
+        tool,
+        crate::ui::icons::tool_color(tool, Tokens::icon()),
+    );
     ui.painter().galley(
         Pos2::new(rect.min.x + 28.0, rect.min.y + 1.0),
         galley,

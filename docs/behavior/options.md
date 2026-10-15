@@ -207,6 +207,16 @@ setting) do not. The button with a moon (light themes) or a sun (dark
 themes) at the right end of the status bar switches to Dark or to
 Light. The choice is kept in the preferences and applies at once.
 
+## Coloured tool icons
+
+Customization > Appearance > Coloured tool icons (off by default): the
+toolbox, its flyouts and the Hints panel draw each tool in its group's
+colour (pick blue, shape editing purple, crop red, zoom teal, curves
+green, drawing orange, shapes light blue, text grey, dimensions slate,
+connectors sea green, effects magenta, transparency indigo, eyedroppers
+ochre, fills orange, outlines navy), 35 % lighter on dark themes. The
+High Contrast theme keeps one icon colour.
+
 ## Desktop accessibility settings
 
 Read once at start-up (`system_prefs.rs`, with the `reg` tool on

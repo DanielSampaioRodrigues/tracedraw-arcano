@@ -1082,6 +1082,8 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
     );
     ui.checkbox(&mut app.settings.ui_shadows, tr("options.ui_shadows"))
         .on_hover_text(tr("options.ui_shadows_tip"));
+    ui.checkbox(&mut app.settings.colored_icons, tr("options.colored_icons"))
+        .on_hover_text(tr("options.colored_icons_tip"));
     crate::ui::chrome::section(ui, &tr("options.ui_size"));
     // The size takes effect when the slider is let go or the field is
     // left, so the page does not grow under the pointer.

@@ -85,6 +85,10 @@ pub struct Settings {
     /// draws less, for slower graphics).
     #[serde(default = "default_true")]
     pub ui_shadows: bool,
+    /// Appearance: tool icons in a colour per group instead of the
+    /// theme's icon colour.
+    #[serde(default)]
+    pub colored_icons: bool,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -986,6 +990,7 @@ impl Default for Settings {
             show_splash: true,
             center_dialogs: true,
             ui_shadows: true,
+            colored_icons: false,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             window_maximized: true,

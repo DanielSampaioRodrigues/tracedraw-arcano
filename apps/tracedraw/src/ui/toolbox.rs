@@ -133,7 +133,12 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
             );
         }
         let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(22.0));
-        icons::draw(ui.painter(), icon_rect, shown, Tokens::icon());
+        icons::draw(
+            ui.painter(),
+            icon_rect,
+            shown,
+            icons::tool_color(shown, Tokens::icon()),
+        );
         if has_flyout {
             // The flyout arrow: a small triangle at the bottom-right.
             let p = rect.right_bottom() - Vec2::new(2.0, 2.0);
@@ -313,7 +318,12 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                             Pos2::new(r.min.x + 30.0, r.center().y),
                             Vec2::splat(18.0),
                         );
-                        icons::draw(ui.painter(), icon, *t, Tokens::icon());
+                        icons::draw(
+                            ui.painter(),
+                            icon,
+                            *t,
+                            icons::tool_color(*t, Tokens::icon()),
+                        );
                         ui.painter().text(
                             Pos2::new(r.min.x + 46.0, r.center().y),
                             egui::Align2::LEFT_CENTER,

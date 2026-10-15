@@ -62,6 +62,8 @@ by the newest versions opening with their fills and spot colours.
   with chalk, charcoal, pastel, ink wash, watercolour, dry brush,
   bristles, fur, spray, speckles, clouds or silk ribbons; still curves
   that the Shape tool reshapes.
+- Appearance > Coloured tool icons: each toolbox group in a colour of
+  its own (#4).
 - The interface follows Windows' text size and high contrast themes: a
   High Contrast theme in the desktop's colours, also selectable by hand
   (#4).

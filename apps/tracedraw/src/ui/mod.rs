@@ -199,6 +199,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
     apply_theme(&ctx, &crate::settings::effective_theme(&app.settings));
     apply_shadows(&ctx, app.settings.ui_shadows);
+    crate::ui::icons::set_colored(app.settings.colored_icons);
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
