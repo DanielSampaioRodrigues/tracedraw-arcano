@@ -98,6 +98,12 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
         ));
         tree.splice(at..at, extra);
     }
+    if !v.redirects() {
+        tree = compress_riff(tree);
+    }
+    if !v.zip() {
+        tree.push(chunk(b"sumi", sumi(v, doc)));
+    }
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
         zip_v16(v, doc, &root, &files, previews)
@@ -380,6 +386,126 @@ fn serialize(nodes: &[Node], out: &mut Vec<u8>) {
             }
         }
     }
+}
+
+/// `nodes` as the inflated stream of a `cmpr` list: each chunk's size field
+/// holds the index of its size in a pool (every chunk and list in order,
+/// lists before their children), padding as in the plain stream.
+fn serialize_indexed(nodes: &[Node], out: &mut Vec<u8>, pool: &mut Vec<u32>) {
+    for n in nodes {
+        let index = pool.len();
+        pool.push(0);
+        let (id, start): (&[u8], usize) = match n {
+            Node::Chunk(id, _) => (id, out.len() + 8),
+            Node::List(..) | Node::RawList(..) => (b"LIST", out.len() + 8),
+        };
+        out.extend_from_slice(id);
+        out.extend_from_slice(&(index as u32).to_le_bytes());
+        match n {
+            Node::Chunk(_, data) => out.extend_from_slice(data),
+            Node::List(kind, children) => {
+                out.extend_from_slice(kind);
+                serialize_indexed(children, out, pool);
+            }
+            Node::RawList(kind, data) => {
+                out.extend_from_slice(kind);
+                out.extend_from_slice(data);
+            }
+        }
+        let size = out.len() - start;
+        pool[index] = size as u32;
+        if size % 2 == 1 {
+            out.push(0);
+        }
+    }
+}
+
+/// A `CPng` block: the tag, `01 00 04 00` and the zlib stream of `data`.
+fn cpng(data: &[u8]) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut b = b"CPng\x01\x00\x04\x00".to_vec();
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    // Writing to memory does not fail.
+    let _ = enc.write_all(data);
+    b.extend_from_slice(&enc.finish().unwrap_or_default());
+    b
+}
+
+/// A `LIST cmpr` holding `nodes` compressed: the two (compressed,
+/// inflated) size pairs, then the chunk stream's `CPng` block and the size
+/// pool's, as RIFF files (and version 14 and 15 RIFF streams) hold them.
+/// With no nodes both streams are empty.
+fn cmpr(nodes: &[Node]) -> Node {
+    let mut stream = Vec::new();
+    let mut pool = Vec::new();
+    serialize_indexed(nodes, &mut stream, &mut pool);
+    let pool: Vec<u8> = pool.iter().flat_map(|s| s.to_le_bytes()).collect();
+    let (a, b) = (cpng(&stream), cpng(&pool));
+    let mut body = Vec::with_capacity(16 + a.len() + b.len());
+    for (c, u) in [(a.len(), stream.len()), (b.len(), pool.len())] {
+        body.extend_from_slice(&(c as u32).to_le_bytes());
+        body.extend_from_slice(&(u as u32).to_le_bytes());
+    }
+    body.extend_from_slice(&a);
+    body.extend_from_slice(&b);
+    Node::RawList(*b"cmpr", body)
+}
+
+/// `sumi`, the last chunk of RIFF files (before version 14): the box of
+/// the first page's drawing (left, top, right, bottom in coordinate units
+/// from the page centre), two u16 1, a flag (0), the time saved (0 here),
+/// two zero words, the version x 100, a build number (0), from version
+/// 10 a zero word, the locale (1033) and a zero word, and from 12 the
+/// version again: 44, 56 or 60 bytes as files of versions 8, 10 and 12 to
+/// 13 hold.
+fn sumi(v: Ver, doc: &Document) -> Vec<u8> {
+    let (bbox, centre) = doc
+        .pages
+        .first()
+        .map(|p| {
+            let b = doc
+                .content_bounds(p.id)
+                .ok()
+                .flatten()
+                .unwrap_or(Rect::ZERO);
+            (b, Point::new(p.size.width / 2.0, p.size.height / 2.0))
+        })
+        .unwrap_or((Rect::ZERO, Point::ZERO));
+    let u = |mm: f64| (mm * UNITS_PER_MM).round() as i32;
+    let mut b = Buf::default();
+    b.i32(u(bbox.x0 - centre.x))
+        .i32(u(bbox.y1 - centre.y))
+        .i32(u(bbox.x1 - centre.x))
+        .i32(u(bbox.y0 - centre.y));
+    b.u16(1).u16(1).u32(0).u32(0).u32(0).u32(0);
+    b.u32(u32::from(v.0) * 100).u32(0);
+    if v.0 >= 10 {
+        b.u32(0).u32(1033).u32(0);
+    }
+    if v.0 >= 12 {
+        b.u32(u32::from(v.0) * 100);
+    }
+    b.done()
+}
+
+/// RIFF streams before version 16 keep their contents in two compressed
+/// lists after the picture and info: the first with the bitmaps (or
+/// nothing), the second with the document tables and the pages.
+fn compress_riff(tree: Vec<Node>) -> Vec<Node> {
+    let mut head = Vec::new();
+    let mut bitmaps = Vec::new();
+    let mut body = Vec::new();
+    for n in tree {
+        match &n {
+            Node::Chunk(id, _) if [b"vrsn", b"DISP"].contains(&id) => head.push(n),
+            Node::List(kind, _) if kind == b"INFO" => head.push(n),
+            Node::List(kind, _) if kind == b"bmpt" => bitmaps.push(n),
+            _ => body.push(n),
+        }
+    }
+    head.push(cmpr(&bitmaps));
+    head.push(cmpr(&body));
+    head
 }
 
 /// A RIFF file of the form type and chunks.

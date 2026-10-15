@@ -1420,3 +1420,71 @@ fn find_chunk(bytes: &[u8], id: &[u8; 4]) -> Option<Vec<u8>> {
     let len = u32::from_le_bytes(bytes.get(at + 4..at + 8)?.try_into().ok()?) as usize;
     bytes.get(at + 8..at + 8 + len).map(<[u8]>::to_vec)
 }
+
+#[test]
+fn riff_streams_are_compressed_and_end_with_a_summary() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 20.0, 30.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    doc.pages[0].layers[0].shapes = vec![r];
+    doc.set_ids(ids);
+    for v in versions().into_iter().filter(|v| *v < 16) {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let top: Vec<String> = tree
+            .root
+            .children
+            .iter()
+            .map(|c| {
+                c.list_type_str()
+                    .unwrap_or_else(|| c.id_str())
+                    .trim()
+                    .to_string()
+            })
+            .collect();
+        let want: Vec<&str> = if v < 14 {
+            vec!["vrsn", "INFO", "cmpr", "cmpr", "sumi"]
+        } else {
+            vec!["vrsn", "cmpr", "cmpr"]
+        };
+        // Without a picture there is no `DISP`.
+        assert_eq!(top, want, "{v}");
+        // The second compressed list holds the document and the pages.
+        let second = &tree.root.children[top.len() - if v < 14 { 2 } else { 1 }];
+        let inner = second.find(b"cmpr").expect("inflated stream");
+        assert!(
+            inner.find(b"doc ").is_some() && inner.find(b"page").is_some(),
+            "{v}"
+        );
+        // It reads back with the rectangle.
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
+        assert_eq!(back.pages[0].layers[0].shapes.len(), 1, "{v}");
+        if v < 14 {
+            let sumi = tree.root.find(b"sumi").expect("sumi");
+            let d = tree.data(&riff, sumi);
+            let len = match v {
+                0..=9 => 44,
+                10 | 11 => 56,
+                _ => 60,
+            };
+            assert_eq!(d.len(), len, "{v}");
+            let word = |i: usize| i32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap());
+            // The rectangle's box from the page centre, in units.
+            let size = doc.pages[0].size;
+            let (cx, cy) = (size.width / 2.0, size.height / 2.0);
+            let u = |mm: f64| (mm * 10_000.0).round() as i32;
+            assert_eq!(word(0), u(10.0 - cx), "{v}");
+            assert_eq!(word(1), u(50.0 - cy), "{v}");
+            assert_eq!(word(2), u(30.0 - cx), "{v}");
+            assert_eq!(word(3), u(20.0 - cy), "{v}");
+            assert_eq!(word(9), i32::from(v) * 100, "{v}");
+        }
+    }
+}
