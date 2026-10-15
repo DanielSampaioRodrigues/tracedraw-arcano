@@ -1513,6 +1513,15 @@ impl<'a> Ctx<'a> {
                 // paragraph sets the object's (one ParagraphStyle per object).
                 if let Some(ls) = base.line_spacing {
                     para_fmt.leading_pct = (ls * 100.0).clamp(10.0, 1000.0);
+                } else if let Some(mm) = base.line_spacing_mm {
+                    // A distance between baselines, as a share of the
+                    // font's line height, which our leading counts in
+                    // (taken as 1.15 times the size, as common text
+                    // faces have it).
+                    let line_mm = base.size_pt.unwrap_or(12.0) * 25.4 / 72.0 * 1.15;
+                    if line_mm > 0.0 {
+                        para_fmt.leading_pct = (mm / line_mm * 100.0).clamp(10.0, 1000.0);
+                    }
                 }
                 if let Some((left, first, right)) = base.indent_pt {
                     const PT_MM: f64 = 25.4 / 72.0;
@@ -1548,9 +1557,11 @@ impl<'a> Ctx<'a> {
             self.report.warn("text object with no content; skipped");
             return None;
         }
+        // 0 none, 1 left, 2 centre, 3 right, 4 full and 5 forced justify
+        // (a centred version 12 paragraph stores 2).
         let align = match align.unwrap_or(0) {
-            2 => TextAlign::Right,
-            3 => TextAlign::Center,
+            2 => TextAlign::Center,
+            3 => TextAlign::Right,
             4 | 5 => TextAlign::Justify,
             _ => TextAlign::Left,
         };
@@ -2257,18 +2268,28 @@ impl<'a> Ctx<'a> {
             .map(|(i, _)| i)
             .collect();
         for (ti, fitted) in texts {
-            let curve = match curves.as_slice() {
-                [only] if group => Some(*only),
-                _ => path_for_text(shapes, &curves, &fitted),
+            let found = match curves.as_slice() {
+                [only] if group => Some((*only, None)),
+                _ => path_for_text(shapes, &curves, &fitted)
+                    .map(|ci| (ci, None))
+                    .or_else(|| {
+                        let cap = shapes.get(ti).map(cap_height_mm).unwrap_or(0.0);
+                        anchored_path_for_text(shapes, &curves, &fitted, cap)
+                    }),
             };
-            let Some(curve) = curve.and_then(|ci| shapes.get(ci)).cloned() else {
+            let Some((curve, anchor)) =
+                found.and_then(|(ci, a)| shapes.get(ci).cloned().map(|c| (c, a)))
+            else {
                 self.report
                     .warn("text fitted to a path whose path was not found; drawn straight");
                 continue;
             };
             let fits = shapes
                 .get_mut(ti)
-                .map(|t| fit_text(t, &curve, &fitted))
+                .map(|t| match anchor {
+                    Some(a) => fit_text_at(t, &curve, a),
+                    None => fit_text(t, &curve, &fitted),
+                })
                 .unwrap_or(false);
             if !fits {
                 self.report
@@ -3011,6 +3032,188 @@ fn path_for_text(shapes: &[Shape], curves: &[usize], fitted: &OnPathText) -> Opt
         }
     }
     best.map(|(ci, _)| ci)
+}
+
+/// Where a fitted text lies along its path when the file's settings do
+/// not say (before version 16): the point of the text's box farthest out
+/// from the path's middle, near which the baseline runs, and the path's
+/// middle, which the letters face away from.
+#[derive(Debug, Clone, Copy)]
+struct Anchor {
+    target: Point,
+    middle: Point,
+}
+
+/// The curve a fitted text follows judged by its box alone: the box sits
+/// on one side of a closed curve (a line of text along the bottom of a
+/// disc label), so the box's edge facing away from the curve's middle lies
+/// on the curve. Returns the curve nearest that edge, within 3 % of the
+/// box's size, and where the text goes on it. The letters hang outwards,
+/// so the baseline runs a capital's height (`cap`, mm) inside that edge.
+/// A box around the whole curve (text all the way round) names no side
+/// and is left to [`path_for_text`].
+fn anchored_path_for_text(
+    shapes: &[Shape],
+    curves: &[usize],
+    fitted: &OnPathText,
+    cap: f64,
+) -> Option<(usize, Option<Anchor>)> {
+    let pb = fitted.page_box?;
+    let centre = pb.center();
+    let size = pb.width().max(pb.height());
+    let tolerance = 1.0 + 0.03 * size;
+    let mut best: Option<(usize, f64, Anchor)> = None;
+    for &ci in curves {
+        let Some(curve) = shapes.get(ci) else {
+            continue;
+        };
+        let path = text_path_of(curve);
+        let cb = {
+            use tracedraw_core::geometry::Shape as _;
+            path.bounding_box()
+        };
+        let middle = cb.center();
+        let (ax, ay) = (centre.x - middle.x, centre.y - middle.y);
+        let len = ax.hypot(ay);
+        if !len.is_finite() || len < 0.1 * cb.width().max(cb.height()) {
+            continue;
+        }
+        let dir = tracedraw_core::geometry::Vec2::new(ax / len, ay / len);
+        // The box's support point in that direction.
+        let target = Point::new(
+            if dir.x >= 0.0 { pb.x1 } else { pb.x0 },
+            if dir.y >= 0.0 { pb.y1 } else { pb.y0 },
+        );
+        let target = Point::new(
+            if dir.x.abs() < 0.3 {
+                centre.x
+            } else {
+                target.x - dir.x.signum() * cap
+            },
+            if dir.y.abs() < 0.3 {
+                centre.y
+            } else {
+                target.y - dir.y.signum() * cap
+            },
+        );
+        let Some(d) = distance_to_path(&path, target) else {
+            continue;
+        };
+        if d > tolerance {
+            continue;
+        }
+        let anchor = Anchor { target, middle };
+        if best.map(|(_, bd, _)| d < bd).unwrap_or(true) {
+            best = Some((ci, d, anchor));
+        }
+    }
+    best.map(|(ci, _, a)| (ci, Some(a)))
+}
+
+/// The height of a capital of the text's largest letters on the page,
+/// mm (seven tenths of the size).
+fn cap_height_mm(t: &Shape) -> f64 {
+    let ShapeKind::Text { spans, .. } = &t.kind else {
+        return 0.0;
+    };
+    let pt = spans.iter().map(|s| s.size_pt).fold(0.0, f64::max);
+    let scale = t.transform.determinant().abs().sqrt();
+    let cap = pt * 25.4 / 72.0 * 0.7 * scale;
+    if cap.is_finite() {
+        cap.min(50.0)
+    } else {
+        0.0
+    }
+}
+
+/// The distance from `p` to the first subpath of `path` (sampled every
+/// half millimetre).
+fn distance_to_path(path: &BezPath, p: Point) -> Option<f64> {
+    let tp = tracedraw_core::TextOnPath {
+        path: path.clone(),
+        offset: 0.0,
+        distance: 0.0,
+        mirror: false,
+    };
+    nearest_on(&tp.baseline(), p).map(|(_, d)| d)
+}
+
+/// The arc length along `b` of the point nearest `p`, and its distance.
+fn nearest_on(b: &tracedraw_core::document::Baseline, p: Point) -> Option<(f64, f64)> {
+    let total = b.length();
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    let steps = ((total / 0.5).ceil() as usize).clamp(8, 20_000);
+    let mut best: Option<(f64, f64)> = None;
+    for i in 0..=steps {
+        let s = total * i as f64 / steps as f64;
+        let Some((q, _)) = b.at(s) else {
+            continue;
+        };
+        let d = (q - p).hypot();
+        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            best = Some((s, d));
+        }
+    }
+    best
+}
+
+/// Place text `t` on `curve` centred at the anchor's target, its letters
+/// standing away from the curve's middle: a version 12 disc label's line
+/// along the bottom of its circle has its box reach a capital's height
+/// below the circle, so the letters hang outwards there.
+fn fit_text_at(t: &mut Shape, curve: &Shape, anchor: Anchor) -> bool {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        para,
+        ..
+    } = t.kind.clone()
+    else {
+        return false;
+    };
+    let det = t.transform.determinant();
+    if !det.is_finite() || det.abs() < 1e-12 {
+        return false;
+    }
+    let to_local = Affine::translate(-origin.to_vec2()) * t.transform.inverse();
+    let path = to_local * text_path_of(curve);
+    let target = to_local * anchor.target;
+    let middle = to_local * anchor.middle;
+    let mut tp = tracedraw_core::TextOnPath {
+        path,
+        offset: 0.0,
+        distance: 0.0,
+        mirror: false,
+    };
+    let Some((at, _)) = nearest_on(&tp.baseline(), target) else {
+        return false;
+    };
+    // The letters' tops point to the left of the way the baseline runs;
+    // follow the path backwards when that is towards the middle.
+    let Some((q, dir)) = tp.baseline().at(at) else {
+        return false;
+    };
+    let left = tracedraw_core::geometry::Vec2::new(-dir.y, dir.x);
+    let (ox, oy) = (q.x - middle.x, q.y - middle.y);
+    if left.x * ox + left.y * oy < 0.0 {
+        tp.mirror = true;
+    }
+    let b = tp.baseline();
+    let Some((at, _)) = nearest_on(&b, target) else {
+        return false;
+    };
+    tp.offset = at - b.length() / 2.0;
+    t.kind = ShapeKind::Text {
+        spans,
+        origin,
+        frame: None,
+        align: TextAlign::Center,
+        para,
+        on_path: Some(tp),
+    };
+    true
 }
 
 /// Place text `t` on `curve` as `fitted` says. The path is taken into the
@@ -5397,6 +5600,76 @@ mod tests {
     }
 
     #[test]
+    fn style_table_alignment_2_centres_and_spacing_can_be_a_distance() {
+        // A version 12 style: alignment code 2 (centred), character
+        // spacing -10 % (a negative i32) and line spacing given as a
+        // distance (unit 1): 36 pt text with baselines 1.5 line heights
+        // apart.
+        let v = 12u16;
+        let mut st = u32s(&[1]);
+        st.extend_from_slice(&u32s(&[0]));
+        st.extend_from_slice(&u32s(&[0]));
+        st.extend_from_slice(&u32s(&[1, 100]));
+        st.extend_from_slice(&[0; 20]);
+        st.extend_from_slice(&u16s(&[3, 0]));
+        st.extend_from_slice(&[0; 8]);
+        st.extend_from_slice(&i32s(&[127_000])); // 36 pt
+        st.extend_from_slice(&[0; 8]);
+        st.extend_from_slice(&u32s(&[0]));
+        st.extend_from_slice(&[0; 8]);
+        st.extend_from_slice(&u32s(&[1, 200, 0, 2])); // centred
+        let line = (127_000.0 * 1.15 * 1.5_f64).round() as i32;
+        st.extend_from_slice(&u32s(&[1, 300, 0, 0]));
+        st.extend_from_slice(&i32s(&[-100_000, 0, 0, line]));
+        st.extend_from_slice(&[0; 20]);
+        st.extend_from_slice(&u32s(&[1])); // unit: a distance
+        for _ in 0..2 {
+            st.extend_from_slice(&u32s(&[0]));
+        }
+        st.extend_from_slice(&u32s(&[0]));
+        st.extend_from_slice(&u32s(&[0]));
+        for _ in 0..3 {
+            st.extend_from_slice(&u32s(&[0]));
+        }
+        st.extend_from_slice(&u32s(&[3, 77, 0, 0, 0, 3]));
+        st.extend_from_slice(&utf16("Std"));
+        st.extend_from_slice(&u32s(&[0, 0]));
+        st.extend_from_slice(&u32s(&[100, 200, 300, 0, 0]));
+        st.extend_from_slice(&u32s(&[0, 0, 0, 0, 0]));
+        let styles = [Style7 {
+            chars: 2,
+            font: None,
+            flags: None,
+            size_units: None,
+            fill: None,
+        }];
+        let tables = [
+            chunk(b"font", &font_chunk(3, "Verdana")),
+            list(b"stlt", &st),
+        ]
+        .concat();
+        let (doc, rep) = text_doc(
+            v,
+            b"CDRC",
+            tables,
+            OBJ_ARTISTIC_TEXT,
+            &[(ARG_COORDS, i32s(&[0, 0])), (ARG_STYLE, u32s(&[77]))],
+            txsm7(v, false, &styles, "Hi"),
+        );
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => {
+                assert_eq!(*align, TextAlign::Center);
+                assert!((spans[0].tracking_pct + 10.0 * SPACE_EM).abs() < 1e-9);
+                assert!((para.leading_pct - 150.0).abs() < 1e-6, "{para:?}");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn style_table_supplies_font_size_face_and_alignment() {
         let v = 13u16;
         let mut st = u32s(&[1]); // one record
@@ -5410,7 +5683,7 @@ mod tests {
         st.extend_from_slice(&[0; 8]);
         st.extend_from_slice(&u32s(&[0x80])); // italic
         st.extend_from_slice(&[0; 8]);
-        st.extend_from_slice(&u32s(&[1, 200, 0, 2])); // one align entry: right
+        st.extend_from_slice(&u32s(&[1, 200, 0, 3])); // one align entry: right
                                                       // One interval entry, id 300: char spacing 5 %, line spacing 150 %.
         st.extend_from_slice(&u32s(&[1, 300, 0, 0, 50_000, 0, 0, 1_500_000]));
         st.extend_from_slice(&[0; 24]);
@@ -6095,6 +6368,126 @@ mod tests {
         narrow.extend_from_slice(b"Next");
         narrow.push(0);
         assert_eq!(read(&narrow, &mut warn).as_deref(), Some("Next"));
+    }
+
+    #[test]
+    fn a_fitted_text_without_settings_follows_the_curve_its_box_rests_on() {
+        use tracedraw_core::document::{ParagraphStyle, TextSpan};
+        use tracedraw_core::ShapeId;
+        let circle = |id: u64, r: f64| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Ellipse {
+                    rect: Rect::new(100.0 - r, 200.0 - r, 100.0 + r, 200.0 + r),
+                    arc: None,
+                },
+            )
+        };
+        let mut text = Shape::new(
+            ShapeId(3),
+            ShapeKind::Text {
+                spans: vec![TextSpan::new("along the bottom", "Arial", 6.0)],
+                origin: Point::ZERO,
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        text.transform = Affine::translate((60.0, 150.0));
+        let shapes = vec![circle(1, 50.0), circle(2, 53.0), text];
+        let curves = [0, 1];
+        let cap = cap_height_mm(&shapes[2]);
+        assert!((cap - 6.0 * 25.4 / 72.0 * 0.7).abs() < 1e-9);
+        // A line along the bottom of the outer circle, its letters hanging
+        // outwards: the box reaches a capital's height below the circle
+        // and stops below the centre.
+        let fitted = OnPathText {
+            settings: None,
+            page_box: Some(Rect::new(52.0, 147.0 - cap, 148.0, 190.0)),
+        };
+        let (ci, anchor) = anchored_path_for_text(&shapes, &curves, &fitted, cap).expect("a curve");
+        assert_eq!(ci, 1, "the outer circle");
+        let anchor = anchor.expect("an anchor");
+        let mut t = shapes[2].clone();
+        assert!(fit_text_at(&mut t, &shapes[1], anchor));
+        let ShapeKind::Text {
+            on_path: Some(tp),
+            align,
+            ..
+        } = &t.kind
+        else {
+            panic!("{:?}", t.kind);
+        };
+        assert_eq!(*align, TextAlign::Center);
+        let b = tp.baseline();
+        let (mid, dir) = b.at(tp.offset + b.length() / 2.0).expect("middle");
+        // In the text's space (moved by its transform): the bottom of the
+        // circle, letters pointing down and out.
+        assert!(
+            (mid.x - 40.0).abs() < 0.6 && (mid.y + 3.0).abs() < 0.6,
+            "{mid:?}"
+        );
+        assert!(dir.x < 0.0, "read right to left along the bottom: {dir:?}");
+        // A box around the whole circle names no side.
+        let ring = OnPathText {
+            settings: None,
+            page_box: Some(Rect::new(45.0, 145.0, 155.0, 255.0)),
+        };
+        assert!(anchored_path_for_text(&shapes, &curves, &ring, cap).is_none());
+        // A box nowhere near a curve.
+        let far = OnPathText {
+            settings: None,
+            page_box: Some(Rect::new(400.0, 400.0, 420.0, 410.0)),
+        };
+        assert!(anchored_path_for_text(&shapes, &curves, &far, cap).is_none());
+    }
+
+    #[test]
+    fn version_12_text_mixes_one_and_two_byte_characters() {
+        let styles = [Style7 {
+            chars: 6,
+            font: None,
+            flags: None,
+            size_units: None,
+            fill: None,
+        }];
+        // As a version 12 file stores "Stećak": the letters in one byte
+        // (Windows-1252) and "ć" as a UTF-16 unit, its record flagged.
+        let wide = txsm7(12, false, &styles, "Stećak");
+        let tail = 6 * 8 + 4 + 12 + 1; // records, count, UTF-16 text, no path
+        let mut d = wide[..wide.len() - tail].to_vec();
+        for i in 0..6 {
+            d.extend_from_slice(&u16s(&[(i == 3) as u16, 0, 0, 0]));
+        }
+        let bytes = [b'S', b't', b'e', 0x07, 0x01, b'a', b'k'];
+        d.extend_from_slice(&u32s(&[bytes.len() as u32]));
+        d.extend_from_slice(&bytes);
+        d.push(0);
+        let mut warnings = Vec::new();
+        let t = text::read_txsm(&d, 12, &mut |w| warnings.push(w)).expect("txsm");
+        let got: String = t.paragraphs[0]
+            .runs
+            .iter()
+            .map(|r| r.text.clone())
+            .collect();
+        assert_eq!(got, "Stećak");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        // Accented Latin-1 letters stay single bytes ("ç" as E7).
+        let wide = txsm7(12, false, &styles, "açaí!");
+        let tail = 5 * 8 + 4 + 10 + 1;
+        let mut d = wide[..wide.len() - tail].to_vec();
+        d.extend_from_slice(&[0; 5 * 8]);
+        d.extend_from_slice(&u32s(&[5]));
+        d.extend_from_slice(&[b'a', 0xe7, b'a', 0xed, b'!']);
+        d.push(0);
+        let t = text::read_txsm(&d, 12, &mut |_| {}).expect("txsm");
+        let got: String = t.paragraphs[0]
+            .runs
+            .iter()
+            .map(|r| r.text.clone())
+            .collect();
+        assert_eq!(got, "açaí!");
     }
 
     /// A version 12 outline: 52 bytes where version 13 has the matrix, and

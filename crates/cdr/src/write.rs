@@ -100,11 +100,12 @@ const GRAPHIC_STYLE_ID: u32 = STYLE_ID + STYLE_ALIGNS.len() as u32;
 
 /// Alignments of the style table, in style id order from `STYLE_ID`:
 /// left, centre, right, justify, as alignment codes (0 none, 1 left,
-/// 2 right, 3 centre, 4 full justify, 5 forced).
+/// 2 centre, 3 right, 4 full justify, 5 forced; the style strings'
+/// numbering too).
 const STYLE_ALIGNS: [(TextAlign, u32); 4] = [
     (TextAlign::Left, 1),
-    (TextAlign::Center, 3),
-    (TextAlign::Right, 2),
+    (TextAlign::Center, 2),
+    (TextAlign::Right, 3),
     (TextAlign::Justify, 4),
 ];
 

@@ -14,3 +14,7 @@ tracedraw-text.workspace = true
 env_logger.workspace = true
 log.workspace = true
 flate2 = "1"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+zip.workspace = true

@@ -11,6 +11,15 @@ full, row-by-row status.
   lined up with the pixel grid, so edges look as they will once exported.
 - Objects panel: double-click the page (or its context menu) to rename
   it.
+- `.cdr` version 12 text: accented and other letters stored as two bytes
+  among one-byte letters are read (such text used to come out as Chinese
+  characters); centred text is centred (it was read as right-aligned);
+  line spacing given as a distance and negative character spacing are
+  read, so multi-line text no longer collapses onto one line; text fitted
+  to a circle without readable settings follows the circle its box rests
+  on instead of running straight.
+- `cdr_preview_check` example: puts a `.cdr` file's own preview picture
+  beside our render of the same area, for checking imports.
 - Window > Panels in groups, in the usual order of a Dockers menu
   (Properties, Objects, Pages, Comments... then Transformations, Guidelines,
   alignment, shaping, text, colour), with the effect panels in an Effects

@@ -198,10 +198,13 @@ pub(crate) struct RunStyle {
     pub italic: Option<bool>,
     pub fill_id: Option<u32>,
     pub outl_id: Option<u32>,
-    /// Alignment code (0 none, 1 left, 2 right, 3 centre, 4 and 5 justify).
+    /// Alignment code (0 none, 1 left, 2 centre, 3 right, 4 and 5 justify).
     pub align: Option<u32>,
     /// Line spacing as a factor of the character height (1.0 = 100 %).
     pub line_spacing: Option<f64>,
+    /// Line spacing as a distance between baselines, mm (set instead of
+    /// `line_spacing`).
+    pub line_spacing_mm: Option<f64>,
     /// Extra character spacing as a fraction of the em (0 = none).
     pub char_spacing: Option<f64>,
     /// Paragraph indents in points: (left, first line, right).
@@ -229,7 +232,17 @@ impl RunStyle {
             fill_id: self.fill_id.or(base.fill_id),
             outl_id: self.outl_id.or(base.outl_id),
             align: self.align.or(base.align),
-            line_spacing: self.line_spacing.or(base.line_spacing),
+            // The two ways of giving the spacing replace each other.
+            line_spacing: if self.line_spacing.is_some() || self.line_spacing_mm.is_some() {
+                self.line_spacing
+            } else {
+                base.line_spacing
+            },
+            line_spacing_mm: if self.line_spacing.is_some() || self.line_spacing_mm.is_some() {
+                self.line_spacing_mm
+            } else {
+                base.line_spacing_mm
+            },
             char_spacing: self.char_spacing.or(base.char_spacing),
             indent_pt: self.indent_pt.or(base.indent_pt),
             fill_color: self.fill_color.or(base.fill_color),
@@ -244,6 +257,13 @@ impl RunStyle {
 pub(crate) struct StyleRec {
     pub parent: u32,
     pub style: RunStyle,
+}
+
+/// A style's line spacing as the interval table gives it.
+#[derive(Debug, Clone, Copy)]
+enum LineSpacing {
+    Factor(f64),
+    Mm(f64),
 }
 
 /// `stlt`: count, mapping tables (fills, outlines, fonts, alignments,
@@ -319,21 +339,36 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
         r.skip(n * size);
         Some(())
     };
-    // Intervals: id, 8 unknown, character spacing u32, 8 unknown, line
-    // spacing u32, 24 unknown; both spacings in millionths.
+    // Intervals: id, 8 unknown, character spacing i32 (millionths), 8
+    // unknown, line spacing, 20 unknown, the line spacing's unit u32: 0
+    // (and 2) millionths of the character height, 1 a distance in
+    // coordinate units (7 pt stored as 24 694 in a version 12 file whose
+    // multi-line text otherwise collapses onto one line).
+    let coord_mm = 25.4 / 72.0 * if v16 { PT_PER_UNIT16 } else { PT_PER_UNIT };
     let Some(ni) = r.u32() else {
         return Vec::new();
     };
     let ni = (ni as usize).min(r.remaining() / 52);
-    let mut intervals: std::collections::HashMap<u32, (f64, f64)> =
+    let mut intervals: std::collections::HashMap<u32, (f64, LineSpacing)> =
         std::collections::HashMap::with_capacity(ni);
     for _ in 0..ni {
-        let (Some(id), _, Some(ch), _, Some(ln), _) =
-            (r.u32(), r.skip(8), r.u32(), r.skip(8), r.u32(), r.skip(24))
-        else {
+        let (Some(id), _, Some(ch), _, Some(ln), _, Some(unit)) = (
+            r.u32(),
+            r.skip(8),
+            r.u32(),
+            r.skip(8),
+            r.u32(),
+            r.skip(20),
+            r.u32(),
+        ) else {
             return Vec::new();
         };
-        intervals.insert(id, (ch as f64 / 1_000_000.0, ln as f64 / 1_000_000.0));
+        let line = if unit == 1 {
+            LineSpacing::Mm(ln as i32 as f64 * coord_mm)
+        } else {
+            LineSpacing::Factor(ln as i32 as f64 / 1_000_000.0)
+        };
+        intervals.insert(id, (ch as i32 as f64 / 1_000_000.0, line));
     }
     if skip_table(&mut r, 152).is_none() || skip_table(&mut r, 784).is_none() {
         return Vec::new();
@@ -431,8 +466,14 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
                 break;
             };
             if let Some((ch, ln)) = intervals.get(&interval_ref) {
-                if *ln > 0.0 && ln.is_finite() {
-                    style.line_spacing = Some(*ln);
+                match *ln {
+                    LineSpacing::Factor(f) if f > 0.0 && f.is_finite() => {
+                        style.line_spacing = Some(f);
+                    }
+                    LineSpacing::Mm(mm) if mm > 0.0 && mm.is_finite() => {
+                        style.line_spacing_mm = Some(mm);
+                    }
+                    _ => {}
                 }
                 if ch.is_finite() && ch.abs() <= 20.0 {
                     style.char_spacing = Some(*ch);
@@ -689,7 +730,21 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         if nc > MAX_CHARS {
             return finish(out, warn, "character count");
         }
-        r.skip(nc.saturating_mul(if v >= 12 { 8 } else { 4 }));
+        // One record a character; from version 12 they are 8 bytes and
+        // bit 0 of the first marks a character stored in two bytes.
+        let mut wide = Vec::new();
+        if v >= 12 {
+            if nc > r.remaining() / 8 {
+                return finish(out, warn, "character count");
+            }
+            wide.reserve(nc);
+            for _ in 0..nc {
+                wide.push(r.u16()? & 1 != 0);
+                r.skip(6);
+            }
+        } else {
+            r.skip(nc.saturating_mul(4));
+        }
         let nbytes = if v >= 12 { r.u32()? as usize } else { nc };
         let text = d.get(r.pos..r.pos.checked_add(nbytes)?)?;
         r.skip(nbytes);
@@ -697,12 +752,22 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        // From version 12 the text is UTF-16, two bytes a character; a
-        // version 12 file with one byte a character (as many bytes as
-        // characters) holds 8-bit text like the versions before.
-        let runs = if v >= 12 && !(nbytes == nc && nc > 0) {
+        // From version 12 a character is one byte (in its font's code
+        // page) unless its record flags it as a UTF-16LE unit of two bytes
+        // ("ć" in a Croatian word stored as 07 01 among single-byte
+        // Portuguese letters). Text with every character in two bytes and
+        // no flags is read as UTF-16.
+        let any_wide = wide.iter().any(|w| *w);
+        let runs = if v < 12 || (nbytes == nc && !any_wide) {
+            split_byte_runs(text, &styles)
+        } else if let Some(s) = decode_mixed_width(text, &wide) {
+            split_runs(&s, &styles)
+        } else if nbytes == nc.saturating_mul(2) {
             split_runs(&decode_utf16le(text), &styles)
         } else {
+            warn(format!(
+                "text of {nc} characters in {nbytes} bytes; read one byte per character"
+            ));
             split_byte_runs(text, &styles)
         };
         out.paragraphs.push(TextParagraph {
@@ -1219,9 +1284,9 @@ fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
             Json::Str(a) if a.trim().parse::<f64>().is_err() => {
                 let a = a.to_ascii_lowercase();
                 s.align = Some(if a.contains("cent") {
-                    3
-                } else if a.contains("right") {
                     2
+                } else if a.contains("right") {
+                    3
                 } else if a.contains("just") || a.contains("full") {
                     4
                 } else {
@@ -1229,18 +1294,14 @@ fn apply_style_key(s: &mut RunStyle, key: &str, value: &Json) {
                 });
             }
             other => {
-                // Style strings number alignments their own way: 2 centres
-                // the lines on one another (seen in version 19 and 21
-                // files). 3 right and 4, 5 justify are assumed; 0 and 1
-                // read as left. Stored in the style table's codes.
+                // The style table's numbering: 2 centres the lines on one
+                // another (seen in version 19 and 21 files); 3 right and
+                // 4, 5 justify are assumed; 0 and 1 read as left.
                 if let Some(n) = other.num() {
                     if (0.0..=5.0).contains(&n) {
                         s.align = Some(match n as u32 {
-                            2 => 3,
-                            3 => 2,
-                            4 => 4,
-                            5 => 5,
-                            _ => 1,
+                            0 => 1,
+                            k => k,
                         });
                     }
                 }
@@ -1644,13 +1705,14 @@ mod tests {
         assert_eq!(s.font_id, Some(7));
         assert!((s.size_pt.unwrap() - 86.4).abs() < 1e-6);
         assert_eq!(s.fill_id, Some(12));
-        // "justify" 2 centres (the style table's code 3).
-        assert_eq!(s.align, Some(3));
+        // "justify" 2 centres, as in the style table.
+        assert_eq!(s.align, Some(2));
         let align =
             |j: &str| parse_style_string(&format!(r#"{{"paragraph":{{"justify":"{j}"}}}}"#)).align;
         assert_eq!(align("0"), Some(1));
         assert_eq!(align("1"), Some(1));
-        assert_eq!(align("3"), Some(2));
+        assert_eq!(align("2"), Some(2));
+        assert_eq!(align("3"), Some(3));
         assert_eq!(align("4"), Some(4));
         assert_eq!(align("9"), None);
         let s = parse_style_string("font-family:Times New Roman;font-size:12;font-weight:bold");

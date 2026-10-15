@@ -918,7 +918,7 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         let n = u();
         assert_eq!(
             entry(n, 0, &mut ids, &mut u),
-            [1, 3, 2, 4],
+            [1, 2, 3, 4],
             "{v}: alignments"
         );
         // One spacing entry: 100 % lines.
