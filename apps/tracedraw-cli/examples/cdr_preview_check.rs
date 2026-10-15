@@ -59,10 +59,12 @@ fn main() {
     let area = if frames_page {
         page_rect
     } else {
-        doc.content_bounds(page.id)
+        let bounds = doc
+            .content_bounds(page.id)
             .ok()
             .flatten()
-            .unwrap_or(page_rect)
+            .unwrap_or(page_rect);
+        visible_area(&doc, page.id, bounds).unwrap_or(bounds)
     };
     let (pw, ph) = (preview.width(), preview.height());
     // Fit the area into the preview, centred, as previews are drawn.
@@ -117,6 +119,59 @@ fn main() {
     if let Err(e) = side.save(output) {
         eprintln!("{output}: {e}");
     }
+}
+
+/// The part of `bounds` where something is drawn: objects without fill
+/// or outline count in the content's bounds but not in a preview.
+fn visible_area(
+    doc: &tracedraw_core::Document,
+    page: tracedraw_core::PageId,
+    bounds: Rect,
+) -> Option<Rect> {
+    const SIDE: f64 = 1024.0;
+    let zoom = SIDE / bounds.width().max(bounds.height()).max(1e-6);
+    let w = (bounds.width() * zoom).ceil().max(1.0) as u32;
+    let h = (bounds.height() * zoom).ceil().max(1.0) as u32;
+    let pm = render_page(
+        doc,
+        page,
+        &RenderOptions {
+            width: w,
+            height: h,
+            view: ViewTransform {
+                zoom,
+                origin_x: -bounds.x0 * zoom,
+                origin_y: bounds.y1 * zoom,
+            },
+            preview: None,
+            wireframe: false,
+            simulate_overprints: false,
+            complex_effects: false,
+            anti_alias: false,
+            draft: true,
+            focus: None,
+        },
+    )?;
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
+    for y in 0..h {
+        for x in 0..w {
+            if pm.pixel(x, y).is_some_and(|p| p.alpha() > 16) {
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x + 1);
+                y1 = y1.max(y + 1);
+            }
+        }
+    }
+    if x0 >= x1 || y0 >= y1 {
+        return None;
+    }
+    Some(Rect::new(
+        bounds.x0 + f64::from(x0) / zoom,
+        bounds.y1 - f64::from(y1) / zoom,
+        bounds.x0 + f64::from(x1) / zoom,
+        bounds.y1 - f64::from(y0) / zoom,
+    ))
 }
 
 /// The preview image and whether it frames the page (ZIP) rather than

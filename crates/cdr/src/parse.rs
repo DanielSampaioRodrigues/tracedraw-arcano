@@ -266,6 +266,9 @@ struct Ctx<'a> {
     guides: Vec<tracedraw_core::document::Guide>,
     /// The last object read was a guideline, not a skipped object.
     last_was_guide: bool,
+    /// The transform of the linked groups (`LIST lnkg`) being read, which
+    /// their objects are drawn through.
+    outer_transform: Affine,
     /// The text object being read is fitted to a path (a sibling supplies
     /// the path).
     pending_on_path: Option<OnPathText>,
@@ -322,6 +325,7 @@ impl<'a> Ctx<'a> {
             pending_crop: None,
             guides: Vec::new(),
             last_was_guide: false,
+            outer_transform: Affine::IDENTITY,
             library_inks: Default::default(),
             pending_on_path: None,
             on_path: HashMap::new(),
@@ -2007,9 +2011,10 @@ impl<'a> Ctx<'a> {
         let loda = loda?;
         self.pending_on_path = None;
         self.pending_text_transform = None;
-        let transform = trfd
-            .map(|t| self.read_transform(t))
-            .unwrap_or(Affine::IDENTITY);
+        let transform = self.outer_transform
+            * trfd
+                .map(|t| self.read_transform(t))
+                .unwrap_or(Affine::IDENTITY);
 
         let d = self.data(loda);
         let l = self.read_loda(d)?;
@@ -2221,6 +2226,30 @@ impl<'a> Ctx<'a> {
                         out.push(g);
                     }
                 }
+            } else if c.is(b"lnkg") {
+                // A linked group (the strokes an artistic brush makes from
+                // a curve, in a version 10 file): its own `lgob` holds the
+                // transform its objects are drawn through (theirs is the
+                // identity there).
+                let own = c
+                    .children
+                    .iter()
+                    .find(|k| k.is(b"lgob"))
+                    .and_then(|lgob| {
+                        let mut t = None;
+                        lgob.walk(&mut |k, _| {
+                            if k.is(b"trfd") && t.is_none() {
+                                t = Some(k);
+                            }
+                        });
+                        t
+                    })
+                    .map(|t| self.read_transform(t))
+                    .unwrap_or(Affine::IDENTITY);
+                let saved = self.outer_transform;
+                self.outer_transform = saved * own;
+                self.collect_objects(c, ids, page_size, depth + 1, out);
+                self.outer_transform = saved;
             } else if c.list_type.is_some() {
                 // Other lists (`lgob`, `spnd`, ...) are not objects, but
                 // older files nest the object lists one level down.
@@ -5010,6 +5039,66 @@ mod tests {
     /// in a version 21 file: two texts on one circle, the upper one
     /// inside it, the lower one mirrored). The circle is found from the
     /// texts' boxes; a larger circle around it is not taken.
+    #[test]
+    fn a_linked_group_draws_its_objects_through_its_own_transform() {
+        // As a version 10 file stores an artistic brush's strokes: a
+        // `LIST lnkg` whose `lgob` holds the transform and whose object's
+        // own is the identity. Placed at the top level with the group's
+        // transform, the same object lands in the same place.
+        let v = 13u16;
+        let ellipse = |m: [f64; 6]| {
+            let mut c = i32s(&[200_000, -100_000, 0, 0]);
+            c.extend_from_slice(&u32s(&[0]));
+            list(
+                b"obj ",
+                &[
+                    chunk(b"loda", &loda(OBJ_ELLIPSE, &[(ARG_COORDS, c)])),
+                    chunk(b"trfd", &trfd(v, m)),
+                ]
+                .concat(),
+            )
+        };
+        let group_m = [0.5, 0.0, 150_000.0, 0.0, 0.5, -20_000.0];
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let linked = list(
+            b"lnkg",
+            &[
+                list(
+                    b"lgob",
+                    &[
+                        chunk(b"loda", &loda(OBJ_ELLIPSE, &[])),
+                        list(b"trfl", &chunk(b"trfd", &trfd(v, group_m))),
+                    ]
+                    .concat(),
+                ),
+                ellipse(identity),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            list(
+                b"page",
+                &list(b"layr", &[linked, ellipse(group_m)].concat()),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), v);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        let (a, b) = (
+            shapes[0].transform.as_coeffs(),
+            shapes[1].transform.as_coeffs(),
+        );
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-9, "{a:?} {b:?}");
+        }
+        assert!(
+            (a[0] - 0.5).abs() < 1e-12,
+            "the group's scale applies: {a:?}"
+        );
+    }
+
     #[test]
     fn texts_fitted_to_a_circle_sit_where_the_file_sets_them() {
         let v = 21u16;
