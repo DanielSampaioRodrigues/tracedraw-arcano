@@ -12,14 +12,18 @@ pub enum Theme {
     MediumLight,
     MediumDark,
     Dark,
+    /// The desktop's high contrast colours (the classic black theme
+    /// where the desktop has none).
+    HighContrast,
 }
 
 impl Theme {
-    pub const ALL: [Theme; 4] = [
+    pub const ALL: [Theme; 5] = [
         Theme::Light,
         Theme::MediumLight,
         Theme::MediumDark,
         Theme::Dark,
+        Theme::HighContrast,
     ];
 
     /// The name kept in the preferences.
@@ -29,6 +33,7 @@ impl Theme {
             Theme::MediumLight => "medium_light",
             Theme::MediumDark => "medium_dark",
             Theme::Dark => "dark",
+            Theme::HighContrast => "high_contrast",
         }
     }
 
@@ -47,12 +52,17 @@ impl Theme {
             Theme::MediumLight => "options.theme_medium_light",
             Theme::MediumDark => "options.theme_medium_dark",
             Theme::Dark => "options.theme_dark",
+            Theme::HighContrast => "options.theme_high_contrast",
         }
     }
 
     /// Light text on dark panels.
     pub fn is_dark(self) -> bool {
-        matches!(self, Theme::MediumDark | Theme::Dark)
+        match self {
+            Theme::MediumDark | Theme::Dark => true,
+            Theme::HighContrast => contrast_colors().is_dark(),
+            _ => false,
+        }
     }
 
     fn palette(self) -> &'static Palette {
@@ -61,8 +71,95 @@ impl Theme {
             Theme::MediumLight => &MEDIUM_LIGHT,
             Theme::MediumDark => &MEDIUM_DARK,
             Theme::Dark => &DARK,
+            Theme::HighContrast => contrast_palette(),
         }
     }
+}
+
+/// The high contrast colours: the desktop's when one of its high
+/// contrast themes is on, else the classic black theme.
+pub fn contrast_colors() -> crate::system_prefs::ContrastColors {
+    crate::system_prefs::get()
+        .high_contrast
+        .unwrap_or(crate::system_prefs::ContrastColors::BLACK)
+}
+
+/// Text drawn on a hovered or picked row's highlight.
+pub fn on_highlight() -> Color32 {
+    if theme() == Theme::HighContrast {
+        let [r, g, b] = contrast_colors().highlight_text;
+        Color32::from_rgb(r, g, b)
+    } else {
+        Tokens::text()
+    }
+}
+
+/// Links in panels (Hints and the like).
+pub fn link_color() -> Color32 {
+    match theme() {
+        Theme::HighContrast => {
+            let [r, g, b] = contrast_colors().hot_light;
+            Color32::from_rgb(r, g, b)
+        }
+        t if t.is_dark() => Color32::from_rgb(0x5C, 0xB2, 0xFF),
+        _ => Tokens::ACCENT,
+    }
+}
+
+static CONTRAST: std::sync::OnceLock<Palette> = std::sync::OnceLock::new();
+
+/// The high contrast theme's palette, made from [`contrast_colors`].
+fn contrast_palette() -> &'static Palette {
+    CONTRAST.get_or_init(|| {
+        let c = contrast_colors();
+        let col = |v: [u8; 3]| Color32::from_rgb(v[0], v[1], v[2]);
+        let (win, text, hi, face, btn_text, gray, hot) = (
+            col(c.window),
+            col(c.window_text),
+            col(c.highlight),
+            col(c.button_face),
+            col(c.button_text),
+            col(c.gray_text),
+            col(c.hot_light),
+        );
+        Palette {
+            panel: face,
+            menu_bar: face,
+            panel_dark: win,
+            border: text,
+            icon_off: gray,
+            text: btn_text,
+            text_dim: gray,
+            page_shadow: gray,
+            page_border: text,
+            ruler_bg: face,
+            tool_active: hi,
+            tool_hover: hi.gamma_multiply(0.6),
+            icon: btn_text,
+            button: face,
+            control_border: text,
+            slider_rail: gray,
+            field: win,
+            menu: win,
+            menu_gutter: win,
+            menu_hover: hi,
+            menu_hover_line: hi,
+            menu_text_off: gray,
+            title_bar: hi,
+            window_border: hi,
+            selected_row: hi,
+            hovered_row: hi.gamma_multiply(0.5),
+            selected_row_line: hot,
+            control_fill: win,
+            tab_strip: face,
+            tab: face,
+            tab_active: win,
+            ruler_tick: text,
+            ruler_label: text,
+            ruler_marker: hot,
+            desktop: win,
+        }
+    })
 }
 
 /// The status bar's light / dark button: a light theme goes to Dark, a
@@ -450,6 +547,22 @@ pub fn visuals() -> Visuals {
     } else {
         Tokens::ACCENT
     };
+    if theme() == Theme::HighContrast {
+        // Text on the highlight in the desktop's highlight text colour,
+        // links and focus in its hot-track colour.
+        let c = contrast_colors();
+        let col = |v: [u8; 3]| Color32::from_rgb(v[0], v[1], v[2]);
+        let on_hi = col(c.highlight_text);
+        v.selection.stroke.color = on_hi;
+        v.widgets.hovered.fg_stroke.color = on_hi;
+        v.widgets.active.fg_stroke.color = on_hi;
+        v.widgets.open.fg_stroke.color = on_hi;
+        v.widgets.hovered.bg_stroke = egui::Stroke::new(2.0, col(c.hot_light));
+        v.widgets.active.bg_stroke = egui::Stroke::new(2.0, col(c.hot_light));
+        v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, col(c.window_text));
+        v.hyperlink_color = col(c.hot_light);
+        v.warn_fg_color = col(c.hot_light);
+    }
     v.widgets.noninteractive.corner_radius = 2.0.into();
     v.widgets.inactive.corner_radius = 2.0.into();
     v.widgets.hovered.corner_radius = 2.0.into();

@@ -379,7 +379,7 @@ fn link(ui: &mut Ui, text: &str) -> egui::Response {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text)
-                .color(Tokens::ACCENT)
+                .color(crate::theme::link_color())
                 .size(TEXT_SIZE),
         )
         .sense(Sense::click()),

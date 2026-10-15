@@ -1131,6 +1131,14 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         }
     }
     ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::text_dim()));
+    let sys = crate::system_prefs::get();
+    ui.checkbox(
+        &mut app.settings.follow_text_size,
+        crate::i18n::trf(
+            "options.follow_text_size",
+            &[("n", &format!("{:.0}", sys.text_scale * 100.0))],
+        ),
+    );
     crate::ui::chrome::section(ui, &tr("options.color_section"));
     grid("appearance_color").show(ui, |ui| {
         row_label(ui, &tr("options.theme"));
@@ -1145,6 +1153,17 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
+        ui.end_row();
+        row_label(ui, "");
+        let on = sys.high_contrast.is_some();
+        ui.checkbox(
+            &mut app.settings.follow_high_contrast,
+            tr(if on {
+                "options.follow_high_contrast_on"
+            } else {
+                "options.follow_high_contrast"
+            }),
+        );
         ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
         ui.horizontal(|ui| {

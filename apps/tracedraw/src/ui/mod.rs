@@ -197,7 +197,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
-    apply_theme(&ctx, &app.settings.theme);
+    apply_theme(&ctx, &crate::settings::effective_theme(&app.settings));
     apply_shadows(&ctx, app.settings.ui_shadows);
     menus::invoke::set_bindings(&app.settings.shortcuts);
     app.keyboard(&ctx);

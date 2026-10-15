@@ -151,6 +151,13 @@ pub struct Settings {
     /// The name comments are signed with (empty: the drawing's author).
     #[serde(default)]
     pub comment_author: String,
+    /// Appearance: the interface grows with the desktop's text size
+    /// (Windows' "Make text bigger").
+    #[serde(default = "default_true")]
+    pub follow_text_size: bool,
+    /// Appearance: the high contrast theme while the desktop has one on.
+    #[serde(default = "default_true")]
+    pub follow_high_contrast: bool,
     /// Options > Tools > Pick: a marquee also takes the objects it only
     /// touches (off by default; Alt does it either way round).
     #[serde(default)]
@@ -356,7 +363,30 @@ pub const TOUCH_SCALE: f32 = 1.4;
 /// The interface size in use: the chosen one, larger in the Touch
 /// workspace (at most 400 %).
 pub fn effective_ui_size(s: &Settings) -> f32 {
-    let base = crate::ui::interface_size(s.ui_size);
+    effective_ui_size_with(s, crate::system_prefs::get())
+}
+
+/// The theme in use: the high contrast one while the desktop has high
+/// contrast on (unless turned off), else the one picked.
+pub fn effective_theme(s: &Settings) -> String {
+    effective_theme_with(s, crate::system_prefs::get())
+}
+
+pub fn effective_theme_with(s: &Settings, sys: crate::system_prefs::SystemPrefs) -> String {
+    if s.follow_high_contrast && sys.high_contrast.is_some() {
+        crate::theme::Theme::HighContrast.id().to_string()
+    } else {
+        s.theme.clone()
+    }
+}
+
+pub fn effective_ui_size_with(s: &Settings, sys: crate::system_prefs::SystemPrefs) -> f32 {
+    let text = if s.follow_text_size {
+        sys.text_scale.clamp(1.0, 2.25)
+    } else {
+        1.0
+    };
+    let base = (crate::ui::interface_size(s.ui_size) * text).min(4.0);
     if s.workspace == "touch" {
         (base * TOUCH_SCALE).min(4.0)
     } else {
@@ -934,6 +964,8 @@ impl Default for Settings {
             focus_visibility: default_focus_visibility(),
             focus_double_click: true,
             comment_author: String::new(),
+            follow_text_size: true,
+            follow_high_contrast: true,
             marquee_touching: false,
             upgrades: UPGRADES,
             crosshair_cursor: false,
@@ -1147,6 +1179,28 @@ fn default_focus_visibility() -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_desktop_text_size_and_high_contrast_are_followed_unless_turned_off() {
+        use crate::system_prefs::{ContrastColors, SystemPrefs};
+        let mut s = Settings::default();
+        s.ui_size = 1.0;
+        let big = SystemPrefs {
+            text_scale: 1.5,
+            high_contrast: Some(ContrastColors::BLACK),
+        };
+        assert!((effective_ui_size_with(&s, big) - 1.5).abs() < 1e-6);
+        assert_eq!(effective_theme_with(&s, big), "high_contrast");
+        s.follow_text_size = false;
+        s.follow_high_contrast = false;
+        assert!((effective_ui_size_with(&s, big) - 1.0).abs() < 1e-6);
+        assert_eq!(effective_theme_with(&s, big), s.theme);
+        // Never past the largest interface size.
+        s.follow_text_size = true;
+        s.ui_size = 3.0;
+        assert!(effective_ui_size_with(&s, big) <= 4.0);
+        assert_eq!(effective_theme_with(&s, SystemPrefs::default()), s.theme);
+    }
+
     #[test]
     fn older_preferences_get_objects_treated_as_filled_once() {
         // Saved by an older version: switched off, no upgrades recorded.

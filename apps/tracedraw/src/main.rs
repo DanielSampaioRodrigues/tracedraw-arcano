@@ -106,6 +106,7 @@ mod spell;
 mod splash;
 mod straighten;
 mod styles;
+mod system_prefs;
 mod table;
 mod templates;
 mod text_editing;

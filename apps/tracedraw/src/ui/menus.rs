@@ -125,7 +125,9 @@ fn menu_row(
     if enabled && resp.hovered() {
         painter.set(slot, highlight(rect));
     }
-    let color = if enabled {
+    let color = if enabled && resp.hovered() {
+        crate::theme::on_highlight()
+    } else if enabled {
         crate::theme::Tokens::text()
     } else {
         crate::theme::Tokens::menu_text_off()
@@ -1345,7 +1347,7 @@ fn menu_bar_style(style: &mut egui::Style) {
         w.bg_stroke = egui::Stroke::new(1.0, crate::theme::Tokens::menu_hover_line());
         w.corner_radius = egui::CornerRadius::ZERO;
         w.expansion = 0.0;
-        w.fg_stroke.color = crate::theme::Tokens::text();
+        w.fg_stroke.color = crate::theme::on_highlight();
     }
     style.visuals.widgets.inactive.fg_stroke.color = crate::theme::Tokens::text();
     style.spacing.button_padding = egui::vec2(10.0, 3.0);

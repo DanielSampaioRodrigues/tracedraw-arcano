@@ -68,6 +68,9 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             galley,
             Tokens::text(),
         );
+        if active && crate::theme::theme() == crate::theme::Theme::HighContrast {
+            ts.override_text_color = Some(crate::theme::on_highlight());
+        }
         ts.angle = std::f32::consts::FRAC_PI_2;
         ui.painter().add(ts);
         if resp.clicked() {

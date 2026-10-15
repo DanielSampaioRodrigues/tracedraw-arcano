@@ -200,12 +200,33 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 ## Theme
 
 Customization > Appearance > Color > Theme: Light (the default), Medium
-Light, Medium Dark or Dark (`theme.rs`, one palette each). Panels, bars,
+Light, Medium Dark, Dark or High Contrast (`theme.rs`, one palette each). Panels, bars,
 menus, dialogs, lists, rulers, tabs and icons take the theme's colours;
 the page, the drawing, the accent blue and the desktop colour (its own
 setting) do not. The button with a moon (light themes) or a sun (dark
 themes) at the right end of the status bar switches to Dark or to
 Light. The choice is kept in the preferences and applies at once.
+
+## Desktop accessibility settings
+
+Read once at start-up (`system_prefs.rs`, with the `reg` tool on
+Windows; elsewhere nothing is read and the defaults apply):
+
+- Text size (Windows Settings > Accessibility > Text size, the
+  `TextScaleFactor` value, 100 to 225 %): with "Grow with the desktop
+  text size" (Appearance, on by default) the interface size is
+  multiplied by it, up to 400 %. The option shows the size read.
+- High contrast (the `Flags` value of the HighContrast key, bit 1):
+  with "Use high contrast while the desktop has a high contrast theme
+  on" (on by default) the High Contrast theme is used whatever theme is
+  picked. Its colours are the desktop's (`Control Panel\Colors`:
+  Window, WindowText, Hilight, HilightText, ButtonFace, ButtonText,
+  GrayText, HotTrackingColor): panels in the button face colour, fields
+  and menus in the window colour, text in the button text colour,
+  disabled text in the grey text colour, hovered and picked rows in the
+  highlight colour with the highlight text colour on them, links and
+  focus frames in the hot-track colour. Picked by hand, or when a colour
+  cannot be read, the classic black theme's colours are used.
 
 ## Where the preferences are kept
 

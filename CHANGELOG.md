@@ -62,6 +62,9 @@ by the newest versions opening with their fills and spot colours.
   with chalk, charcoal, pastel, ink wash, watercolour, dry brush,
   bristles, fur, spray, speckles, clouds or silk ribbons; still curves
   that the Shape tool reshapes.
+- The interface follows Windows' text size and high contrast themes: a
+  High Contrast theme in the desktop's colours, also selectable by hand
+  (#4).
 - Effects > Effect Picker: a floating window with every bitmap effect
   as a picture, searchable, by group or recently used; a click applies
   it (#4).
