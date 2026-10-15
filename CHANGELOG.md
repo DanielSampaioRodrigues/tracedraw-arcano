@@ -6,11 +6,15 @@ full, row-by-row status.
 
 ## 0.7.0 (2026-10-15)
 
-Start faster and bring your own AI: a New From Template dialog with
-designed templates, AI Generate (create, remix and vectorize pictures),
-Remove Background and Tools > Options > AI to connect online or local
-services with your own keys, a darker dark theme, and `.cdr` files saved
-by the newest versions opening with their fills and spot colours.
+Start faster, bring your own AI and draw in new ways: a New From
+Template dialog with designed templates; AI Generate (create, remix and
+vectorize pictures), AI Art Styles and Remove Background through the
+online or local services you connect with your own keys; painterly
+brushes, variable-width outlines and drawing in perspective; focus
+mode, a Multipage View, review comments, an Export panel for many
+assets and a Font Sampler; the desktop's text size and high contrast
+themes followed; a darker dark theme; and `.cdr` files saved by the
+newest versions opening with their fills and spot colours.
 
 - Faster textures and other per-pixel fills on screen (#4): worked out
   on all processor cores, on a coarser grid when they cover much of the
