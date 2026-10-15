@@ -838,6 +838,8 @@ pub struct App {
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
     pub multipage: bool,
+    /// Effects > Effect Picker.
+    pub effect_picker: crate::ui::effect_picker::EffectPicker,
     /// The Comments docker's state.
     pub comments: crate::comments::CommentsState,
     /// The Painterly Brush tool's brush and size.
@@ -1589,6 +1591,7 @@ impl App {
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
+            effect_picker: Default::default(),
             comments: Default::default(),
             painterly: Default::default(),
             vo: Default::default(),

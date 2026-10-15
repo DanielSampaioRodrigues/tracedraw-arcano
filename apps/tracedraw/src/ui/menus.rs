@@ -2404,6 +2404,9 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.effects.flatten", "", has) {
         app.flatten_effects();
     }
+    if check(ui, "menu.effects.picker", "", app.effect_picker.open) {
+        app.effect_picker.open = !app.effect_picker.open;
+    }
     sep(ui);
     // Bitmap effect groups.
     for (key, group) in crate::fx::groups() {

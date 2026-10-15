@@ -415,3 +415,19 @@ effects' code; DXF and PLT draw the object itself.
 
 Checks: `fx::tests::bitmap_effects_on_a_vector_object_draw_its_picture`,
 `fx::tests::the_picture_follows_the_object_and_flattens_to_a_bitmap`.
+
+## Effect Picker
+
+Effects > Effect Picker opens a floating window (it stays open while
+you work) with every bitmap effect as a tile: the effect applied with
+its default settings to a 64-pixel landscape, and its name below.
+
+- Search effects: keeps the tiles whose name or group name contains the
+  text, ignoring case.
+- The list next to it: All effects, Recent (the last eight effects used
+  from the picker, most recent first) or one group.
+- With something selected, a click on a tile applies the effect (or
+  opens its settings first, as the Effects menu does); with nothing
+  selected the tiles are faded and say so above.
+- The pictures are made the first time they show, six per frame, so the
+  window opens at once.

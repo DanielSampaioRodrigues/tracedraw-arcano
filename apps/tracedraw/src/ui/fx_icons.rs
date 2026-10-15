@@ -9,9 +9,16 @@ const SIDE: u32 = 24;
 
 /// The sample: a sky fading to the horizon, a sun, a green hill and a
 /// house with a red roof.
+#[cfg(test)]
 pub fn sample() -> RgbaImage {
-    let s = SIDE as f32;
-    RgbaImage::from_fn(SIDE, SIDE, |x, y| {
+    sample_sized(SIDE)
+}
+
+/// The sample at `side` pixels.
+pub fn sample_sized(side: u32) -> RgbaImage {
+    let side = side.max(4);
+    let s = side as f32;
+    RgbaImage::from_fn(side, side, |x, y| {
         let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
         let hill = s * 0.62 + ((fx / s) * 3.2).sin() * s * 0.06;
         let sun = ((fx - s * 0.72).powi(2) + (fy - s * 0.26).powi(2)).sqrt();
@@ -49,16 +56,23 @@ pub fn sample() -> RgbaImage {
 
 /// The sample with effect `id` applied with its default settings, cut back
 /// to the sample's size when the effect grew it.
+#[cfg(test)]
 pub fn picture(id: &str) -> RgbaImage {
-    let src = sample();
+    picture_sized(id, SIDE)
+}
+
+/// The picture at `side` pixels.
+pub fn picture_sized(id: &str, side: u32) -> RgbaImage {
+    let src = sample_sized(side);
+    let side = src.width();
     let out = crate::fx::apply_effect(&src, &crate::fx::new_effect(id));
-    if out.width() == SIDE && out.height() == SIDE {
+    if out.width() == side && out.height() == side {
         return out;
     }
     // Effects that reach past the edges grow the picture around it.
-    let dx = out.width().saturating_sub(SIDE) / 2;
-    let dy = out.height().saturating_sub(SIDE) / 2;
-    RgbaImage::from_fn(SIDE, SIDE, |x, y| {
+    let dx = out.width().saturating_sub(side) / 2;
+    let dy = out.height().saturating_sub(side) / 2;
+    RgbaImage::from_fn(side, side, |x, y| {
         out.get_pixel_checked(x + dx, y + dy)
             .copied()
             .unwrap_or(Rgba([0, 0, 0, 0]))
@@ -68,16 +82,34 @@ pub fn picture(id: &str) -> RgbaImage {
 /// The texture of effect `id`'s picture, made the first time it is asked
 /// for and kept for the session.
 pub fn texture(ctx: &egui::Context, id: &str) -> Option<egui::TextureId> {
-    let key = egui::Id::new(("fx_icon", id));
+    texture_sized(ctx, id, SIDE, true)
+}
+
+/// The texture of effect `id`'s picture at `side` pixels; made now only
+/// when `make` (a caller drawing many can spread the work over frames).
+pub fn texture_sized(
+    ctx: &egui::Context,
+    id: &str,
+    side: u32,
+    make: bool,
+) -> Option<egui::TextureId> {
+    let key = egui::Id::new(("fx_icon", id, side));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return Some(t.id());
     }
-    let img = picture(id);
+    if !make {
+        return None;
+    }
+    let img = picture_sized(id, side);
     let color = egui::ColorImage::from_rgba_unmultiplied(
         [img.width() as usize, img.height() as usize],
         img.as_raw(),
     );
-    let handle = ctx.load_texture(format!("fx_icon_{id}"), color, egui::TextureOptions::LINEAR);
+    let handle = ctx.load_texture(
+        format!("fx_icon_{id}_{side}"),
+        color,
+        egui::TextureOptions::LINEAR,
+    );
     let tex = handle.id();
     ctx.data_mut(|d| d.insert_temp(key, handle));
     Some(tex)

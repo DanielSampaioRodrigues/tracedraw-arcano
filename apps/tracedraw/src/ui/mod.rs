@@ -34,6 +34,7 @@ pub mod dockers2;
 pub mod drawing_bars;
 pub mod effect_bars;
 pub mod effect_dialog;
+pub mod effect_picker;
 pub mod effects_docker;
 pub mod envelope_ui;
 pub mod export_docker;
@@ -543,6 +544,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.has_document() && !app.show_welcome {
         symmetry_bar::show(app, &ctx);
         focus_bar::show(app, &ctx);
+        effect_picker::show(app, &ctx);
     }
     dialogs::show(app, &ctx);
 }
