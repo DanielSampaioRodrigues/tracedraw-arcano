@@ -54,12 +54,35 @@ pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
 /// Write the whole document as a `.cdr` file of `version` (7 to 22; other
 /// values are brought into that range).
 pub fn document_to_cdr_version(doc: &Document, version: u16) -> Vec<u8> {
+    document_to_cdr_version_with(doc, version, &Previews::default())
+}
+
+/// Pictures of the drawing stored with it from version 16 (PNG files):
+/// the thumbnail and one per page, in page order. Readers show them in
+/// file dialogs; the drawing opens without them.
+#[derive(Debug, Clone, Default)]
+pub struct Previews {
+    pub thumbnail: Option<Png>,
+    pub pages: Vec<Png>,
+}
+
+/// A PNG file and its size in pixels.
+#[derive(Debug, Clone)]
+pub struct Png {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// [`document_to_cdr_version`] with the pictures stored beside the drawing
+/// (version 16 and later).
+pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     let tree = w.document(doc);
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(&root, &files)
+        zip_v16(v, doc, &root, &files, previews)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
@@ -452,11 +475,145 @@ fn zip_v14(riff: &[u8]) -> Vec<u8> {
     }
 }
 
-fn zip_v16(root: &[u8], files: &DataFiles) -> Vec<u8> {
+// ---- version 16+ package ---------------------------------------------
+//
+// Version 16 and later files are a package: a `mimetype` member first and
+// stored (not compressed), the drawing under `content/`, pictures under
+// `previews/`, colour settings under `color/` and a `META-INF/` folder
+// whose `container.xml` names the drawing's root file (the layout of an
+// open container format). The strings below are the ones files of these
+// versions hold; programs reading such a package look for them.
+
+/// The package's media type, the whole of its `mimetype` member.
+const PACKAGE_MEDIA_TYPE: &str = "application/x-vnd.corel.zcf.draw.document+zip";
+/// The media type `container.xml` gives the root file.
+const ROOT_MEDIA_TYPE: &str = "application/x-vnd.corel.cdr.rootdata";
+/// The namespace of the package's own attributes in `container.xml`.
+const CONTAINER_NS: &str = "urn:corel:namespaces:zcf:xmlns:container";
+/// The namespaces of `metadata.xml` and `textinfo.xml`.
+const METADATA_NS: &str = "http://namespace.corel.com/cdr/metadata/1.0/";
+const TEXTINFO_NS: &str = "http://namespace.corel.com/Cdr/metadata";
+
+fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c if (c as u32) < 0x20 && !matches!(c, '\t' | '\n' | '\r') => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// `META-INF/container.xml`: the root file, then the thumbnail and the
+/// page pictures stored.
+fn container_xml(doc: &Document, previews: &Previews) -> String {
+    let mut x = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n");
+    x.push_str(&format!(
+        "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\" xmlns:crl=\"{CONTAINER_NS}\">\n    <rootfiles>\n"
+    ));
+    x.push_str(&format!(
+        "        <rootfile crl:file-kind=\"main\" full-path=\"content/root.dat\" media-type=\"{ROOT_MEDIA_TYPE}\" />\n"
+    ));
+    if let Some(t) = &previews.thumbnail {
+        x.push_str(&format!(
+            "        <rootfile crl:file-kind=\"thumbnail\" crl:image-height=\"{}\" crl:image-width=\"{}\" full-path=\"previews/thumbnail.png\" media-type=\"image/png\" />\n",
+            t.height, t.width
+        ));
+    }
+    for (i, p) in previews.pages.iter().enumerate() {
+        let name = doc
+            .pages
+            .get(i)
+            .map(|pg| pg.name.clone())
+            .unwrap_or_else(|| format!("Page {}", i + 1));
+        let name = xml_escape(&name);
+        x.push_str(&format!(
+            "        <rootfile crl:caption=\":[{name}];\" crl:file-kind=\"page\" crl:image-height=\"{}\" crl:image-width=\"{}\" crl:index=\"{}\" full-path=\"previews/page{}.png\" media-type=\"image/png\" />\n",
+            p.height,
+            p.width,
+            i + 1,
+            i + 1
+        ));
+    }
+    x.push_str("    </rootfiles>\n</container>\n");
+    x
+}
+
+/// `META-INF/metadata.xml`: the format and the version that wrote the
+/// file (`CoreVersion`, in hundreds) and the title.
+fn metadata_xml(v: Ver, doc: &Document) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n    <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n        <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:cdr=\"{METADATA_NS}\">\n            <dc:format>{PACKAGE_MEDIA_TYPE}</dc:format>\n            <cdr:CoreVersion>{}</cdr:CoreVersion>\n            <dc:title>\n                <rdf:Alt>\n                    <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n                </rdf:Alt>\n            </dc:title>\n        </rdf:Description>\n    </rdf:RDF>\n</x:xmpmeta>\n",
+        u32::from(v.0) * 100,
+        xml_escape(&doc.title)
+    )
+}
+
+/// `META-INF/textinfo.xml`: the names of objects and layers (pages keep
+/// theirs in the drawing; their default names are not listed).
+fn textinfo_xml(doc: &Document) -> String {
+    let mut objects: Vec<String> = Vec::new();
+    let mut layers: Vec<String> = Vec::new();
+    fn names(shapes: &[tracedraw_core::Shape], out: &mut Vec<String>) {
+        for s in shapes {
+            if let Some(n) = s.name.as_deref().filter(|n| !n.is_empty()) {
+                out.push(n.to_string());
+            }
+            if let tracedraw_core::ShapeKind::Group { children } = &s.kind {
+                names(children, out);
+            }
+        }
+    }
+    for p in &doc.pages {
+        for l in &p.layers {
+            if !layers.contains(&l.name) {
+                layers.push(l.name.clone());
+            }
+            names(&l.shapes, &mut objects);
+        }
+    }
+    objects.sort();
+    objects.dedup();
+    let bag = |items: &[String]| -> String {
+        if items.is_empty() {
+            "                <rdf:Bag />\n".to_string()
+        } else {
+            let mut b = String::from("                <rdf:Bag>\n");
+            for i in items {
+                b.push_str(&format!(
+                    "                    <rdf:li>{}</rdf:li>\n",
+                    xml_escape(i)
+                ));
+            }
+            b.push_str("                </rdf:Bag>\n");
+            b
+        }
+    };
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n    <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n        <rdf:Description rdf:about=\"\" xmlns=\"{TEXTINFO_NS}\">\n            <ObjectNames>\n{}            </ObjectNames>\n            <LayerNames>\n{}            </LayerNames>\n            <PageNames>\n                <rdf:Bag />\n            </PageNames>\n        </rdf:Description>\n    </rdf:RDF>\n</x:xmpmeta>\n",
+        bag(&objects),
+        bag(&layers)
+    )
+}
+
+/// `color/color.xml`: the colour model of the document and which kinds of
+/// colour its objects use.
+const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
+
+fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Previews) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
-    let mut ok = true;
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut ok = zip.start_file("mimetype", stored).is_ok()
+        && zip.write_all(PACKAGE_MEDIA_TYPE.as_bytes()).is_ok();
     for (name, data) in files.names.iter().zip(&files.data) {
         ok &= zip
             .start_file(format!("content/data/{name}"), deflated)
@@ -466,6 +623,29 @@ fn zip_v16(root: &[u8], files: &DataFiles) -> Vec<u8> {
     ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()
         && zip.write_all(files.names.join("\n").as_bytes()).is_ok();
     ok &= zip.start_file("content/root.dat", deflated).is_ok() && zip.write_all(root).is_ok();
+    if let Some(t) = &previews.thumbnail {
+        ok &= zip.start_file("previews/thumbnail.png", deflated).is_ok()
+            && zip.write_all(&t.data).is_ok();
+    }
+    for (i, p) in previews.pages.iter().enumerate() {
+        ok &= zip
+            .start_file(format!("previews/page{}.png", i + 1), deflated)
+            .is_ok()
+            && zip.write_all(&p.data).is_ok();
+    }
+    let members: [(&str, String); 5] = [
+        ("color/color.xml", COLOR_XML.to_string()),
+        ("META-INF/textinfo.xml", textinfo_xml(doc)),
+        ("META-INF/metadata.xml", metadata_xml(v, doc)),
+        (
+            "META-INF/links.xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<linkInfo />\n".to_string(),
+        ),
+        ("META-INF/container.xml", container_xml(doc, previews)),
+    ];
+    for (name, text) in members {
+        ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
+    }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
         _ => Vec::new(),

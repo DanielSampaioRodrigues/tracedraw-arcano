@@ -1179,3 +1179,84 @@ fn chosen_node_types_round_trip_in_the_continuity_bits() {
     let (back, _) = crate::open_bytes(&document_to_cdr(&plain), "back").expect("reads back");
     assert!(back.pages[0].layers[0].shapes[0].node_types.is_empty());
 }
+
+#[test]
+fn version_16_and_later_files_are_a_complete_package() {
+    use std::io::Read;
+    let mut doc = doc_with(Vec::new());
+    doc.title = "Pack & go".into();
+    let mut ids = doc.ids().clone();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.name = Some("Logo <main>".into());
+    doc.pages[0].layers[0].shapes = vec![r];
+    doc.set_ids(ids);
+    let png = Png {
+        data: vec![0x89, b'P', b'N', b'G'],
+        width: 256,
+        height: 128,
+    };
+    let previews = Previews {
+        thumbnail: Some(png.clone()),
+        pages: vec![png],
+    };
+    for v in [16u16, 17, 21, NEWEST_VERSION] {
+        let bytes = document_to_cdr_version_with(&doc, v, &previews);
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+        // The media type first, stored, as packages of these versions
+        // open with it.
+        {
+            let mut first = z.by_index(0).expect("first member");
+            assert_eq!(first.name(), "mimetype", "{v}");
+            assert_eq!(first.compression(), zip::CompressionMethod::Stored, "{v}");
+            let mut t = String::new();
+            first.read_to_string(&mut t).expect("text");
+            assert_eq!(t, PACKAGE_MEDIA_TYPE);
+        }
+        let mut read = |name: &str| -> String {
+            let mut t = String::new();
+            z.by_name(name)
+                .unwrap_or_else(|_| panic!("{v}: {name}"))
+                .read_to_string(&mut t)
+                .expect("text");
+            t
+        };
+        let container = read("META-INF/container.xml");
+        assert!(container.contains(r#"crl:file-kind="main" full-path="content/root.dat""#));
+        assert!(container.contains(r#"full-path="previews/thumbnail.png""#));
+        assert!(container.contains(r#"crl:image-height="128" crl:image-width="256" crl:index="1" full-path="previews/page1.png""#));
+        let meta = read("META-INF/metadata.xml");
+        assert!(meta.contains(&format!(
+            "<cdr:CoreVersion>{}</cdr:CoreVersion>",
+            u32::from(v) * 100
+        )));
+        assert!(meta.contains("Pack &amp; go"));
+        let names = read("META-INF/textinfo.xml");
+        assert!(
+            names.contains("<rdf:li>Logo &lt;main&gt;</rdf:li>"),
+            "{names}"
+        );
+        assert!(read("color/color.xml").starts_with("<Color>"));
+        assert!(read("META-INF/links.xml").contains("<linkInfo />"));
+        let mut png_bytes = Vec::new();
+        z.by_name("previews/page1.png")
+            .expect("page picture")
+            .read_to_end(&mut png_bytes)
+            .expect("bytes");
+        assert_eq!(png_bytes[1..4], *b"PNG");
+        // The drawing still reads back.
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
+        assert_eq!(back.pages.len(), 1);
+    }
+    // Without pictures: no preview members, and the container names the
+    // root file only.
+    let bytes = document_to_cdr_version(&doc, 17);
+    let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+    assert!(!z.file_names().any(|n| n.starts_with("previews/")));
+}

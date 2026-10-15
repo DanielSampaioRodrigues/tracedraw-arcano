@@ -4137,9 +4137,10 @@ impl App {
         // Time counted for the active task goes into the file too.
         self.flush_tracked_time();
         let bytes = if is_cdr_path(&path) {
-            Ok(tracedraw_cdr::write::document_to_cdr_version(
+            Ok(tracedraw_cdr::write::document_to_cdr_version_with(
                 self.engine.document(),
                 self.cdr_save_version(),
+                &cdr_previews(self.engine.document()),
             ))
         } else {
             // Fonts that came with other drawings go along (text imported
@@ -5257,6 +5258,23 @@ pub(crate) fn carried_cmyk_profile(
     let p = doc.cmyk_profile.as_ref()?;
     let profile = tracedraw_core::icc::Profile::parse(&p.data).ok()?;
     (profile.color_space() == tracedraw_core::icc::ColorSpace::Cmyk).then_some(profile)
+}
+
+/// The pictures a version 16+ `.cdr` file stores with the drawing: a
+/// thumbnail and each page, 256 pixels on the longer side.
+pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::write::Previews {
+    let pages: Vec<tracedraw_cdr::write::Png> = tracedraw_io::page_pictures(doc, 256)
+        .into_iter()
+        .map(|(data, width, height)| tracedraw_cdr::write::Png {
+            data,
+            width,
+            height,
+        })
+        .collect();
+    tracedraw_cdr::write::Previews {
+        thumbnail: pages.first().cloned(),
+        pages,
+    }
 }
 
 #[cfg(test)]

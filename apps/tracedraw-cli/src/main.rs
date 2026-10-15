@@ -592,7 +592,21 @@ fn main() -> ExitCode {
                     .unwrap_or(tracedraw_cdr::write::DEFAULT_VERSION);
                 std::fs::write(
                     output,
-                    tracedraw_cdr::write::document_to_cdr_version(&doc, version),
+                    tracedraw_cdr::write::document_to_cdr_version_with(&doc, version, &{
+                        let pages: Vec<tracedraw_cdr::write::Png> =
+                            tracedraw_io::page_pictures(&doc, 256)
+                                .into_iter()
+                                .map(|(data, width, height)| tracedraw_cdr::write::Png {
+                                    data,
+                                    width,
+                                    height,
+                                })
+                                .collect();
+                        tracedraw_cdr::write::Previews {
+                            thumbnail: pages.first().cloned(),
+                            pages,
+                        }
+                    }),
                 )
                 .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".emf") {

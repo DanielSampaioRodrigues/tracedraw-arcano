@@ -154,6 +154,37 @@ pub fn save_svg(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Re
     Ok(())
 }
 
+/// A PNG picture of each page, its longer side `max_side` pixels on a
+/// white background, as `(png, width, height)` in page order (the
+/// pictures `.cdr` packages store with the drawing). Pages that cannot
+/// be rendered are left out of the list's end.
+pub fn page_pictures(doc: &Document, max_side: u32) -> Vec<(Vec<u8>, u32, u32)> {
+    let mut out = Vec::new();
+    for page in &doc.pages {
+        let longest = page.size.width.max(page.size.height);
+        if !longest.is_finite() || longest <= 0.0 {
+            break;
+        }
+        // Pixels per inch that make the longer side `max_side` pixels.
+        let dpi = f64::from(max_side.max(1)) / (longest / 25.4);
+        let Some(pm) = tracedraw_render::render_page_image(doc, page.id, dpi) else {
+            break;
+        };
+        let (w, h) = (pm.width(), pm.height());
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for p in pm.pixels() {
+            let c = p.demultiply();
+            rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+        }
+        let png = svg::encode_png(w, h, &rgba);
+        if png.is_empty() {
+            break;
+        }
+        out.push((png, w, h));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

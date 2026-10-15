@@ -193,7 +193,11 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
             let r = if is_cdr {
                 std::fs::write(
                     &path,
-                    tracedraw_cdr::write::document_to_cdr_version(app.engine.document(), version),
+                    tracedraw_cdr::write::document_to_cdr_version_with(
+                        app.engine.document(),
+                        version,
+                        &crate::app::cdr_previews(app.engine.document()),
+                    ),
                 )
                 .map_err(|e| e.to_string())
             } else {
