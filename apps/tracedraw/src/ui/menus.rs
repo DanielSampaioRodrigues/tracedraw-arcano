@@ -1745,6 +1745,14 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.view.multipage", "", app.multipage) {
         app.set_multipage(!app.multipage);
     }
+    if check(
+        ui,
+        "menu.view.draw_in_perspective",
+        "",
+        app.perspective.is_some(),
+    ) {
+        app.toggle_perspective_drawing();
+    }
     sep(ui);
     if item(ui, "menu.view.zoom_in", "Ctrl++", true) {
         app.zoom_step(true);

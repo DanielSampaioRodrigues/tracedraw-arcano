@@ -838,6 +838,8 @@ pub struct App {
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
     pub multipage: bool,
+    /// View > Draw in Perspective.
+    pub perspective: Option<crate::perspective_draw::Session>,
     /// Effects > Effect Picker.
     pub effect_picker: crate::ui::effect_picker::EffectPicker,
     /// The Comments docker's state.
@@ -1591,6 +1593,7 @@ impl App {
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
+            perspective: None,
             effect_picker: Default::default(),
             comments: Default::default(),
             painterly: Default::default(),

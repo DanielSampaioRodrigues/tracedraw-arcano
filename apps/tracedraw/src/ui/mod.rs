@@ -546,6 +546,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         symmetry_bar::show(app, &ctx);
         focus_bar::show(app, &ctx);
         effect_picker::show(app, &ctx);
+        crate::perspective_draw::show_bar(app, &ctx);
     }
     dialogs::show(app, &ctx);
 }
@@ -645,9 +646,14 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
             app.multipage_press(s);
         }
     }
-    if two_fingers.is_none() && !rulers::ruler_drag(app, ui) && !app.comments_pointer(&response) {
+    if two_fingers.is_none()
+        && !rulers::ruler_drag(app, ui)
+        && !app.comments_pointer(&response)
+        && !app.perspective_pointer(&response)
+    {
         app.canvas_input(&response, mods);
     }
+    app.perspective_tick();
 
     canvas::draw_canvas(app, &painter, canvas_rect);
     canvas::draw_guides(app, &painter, canvas_rect);

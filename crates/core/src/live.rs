@@ -1052,6 +1052,16 @@ pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> Bez
 }
 
 /// Projective map of the bounding box onto `corners` (BL, BR, TR, TL).
+/// A point through a homography from [`homography`].
+pub fn map_homography(h: &[f64; 8], p: Point) -> Point {
+    let w = h[6] * p.x + h[7] * p.y + 1.0;
+    let w = if w.abs() < 1e-12 { 1e-12 } else { w };
+    Point::new(
+        (h[0] * p.x + h[1] * p.y + h[2]) / w,
+        (h[3] * p.x + h[4] * p.y + h[5]) / w,
+    )
+}
+
 pub fn perspective(path: &BezPath, corners: &[Point; 4]) -> BezPath {
     let b = path.bounding_box();
     if b.width() < 1e-9 || b.height() < 1e-9 {
@@ -1078,7 +1088,7 @@ pub fn perspective(path: &BezPath, corners: &[Point; 4]) -> BezPath {
 }
 
 /// Solve the 8 parameters of a homography from 4 point pairs.
-fn homography(src: &[Point; 4], dst: &[Point; 4]) -> Option<[f64; 8]> {
+pub fn homography(src: &[Point; 4], dst: &[Point; 4]) -> Option<[f64; 8]> {
     let mut m = [[0.0f64; 9]; 8];
     for i in 0..4 {
         let (x, y) = (src[i].x, src[i].y);
