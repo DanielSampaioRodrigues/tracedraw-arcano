@@ -10,6 +10,34 @@ use std::process::ExitCode;
 
 /// Damage a file deterministically: truncate, flip bytes, cut a span, or
 /// overwrite a few 32-bit words.
+/// `println!` that ends the program quietly when the reader of its output
+/// went away (`tracedraw-cli inspect file | head`) instead of panicking.
+macro_rules! outln {
+    () => {
+        outln!("")
+    };
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout(), $($t)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+        }
+    }};
+}
+
+/// `print!` with the same handling as [`outln!`].
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = write!(std::io::stdout(), $($t)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+        }
+    }};
+}
+
 fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
     let mut v = data.to_vec();
     let mut s = seed | 1;
@@ -307,7 +335,7 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            println!(
+            outln!(
                 "container: {:?}, {}",
                 container.kind,
                 container.version.name()
@@ -332,16 +360,16 @@ fn main() -> ExitCode {
                         tree.root.walk(&mut |c, _| {
                             if c.is(&name) {
                                 let d = tree.data(&riff, c);
-                                println!("{} {} bytes", c.id_str(), d.len());
+                                outln!("{} {} bytes", c.id_str(), d.len());
                                 for (i, row) in d.chunks(16).enumerate() {
                                     let hex: Vec<String> =
                                         row.iter().map(|b| format!("{b:02x}")).collect();
-                                    println!("{:6} {}", i * 16, hex.join(" "));
+                                    outln!("{:6} {}", i * 16, hex.join(" "));
                                 }
                             }
                         });
                     }
-                    None => print!("{}", tree.dump()),
+                    None => out!("{}", tree.dump()),
                 },
                 Err(e) => {
                     eprintln!("{path}: {e}");
@@ -356,10 +384,10 @@ fn main() -> ExitCode {
             };
             match load(path) {
                 Ok((doc, report)) => {
-                    println!("title: {}", doc.title);
+                    outln!("title: {}", doc.title);
                     for p in &doc.pages {
                         let n: usize = p.layers.iter().map(|l| l.shapes.len()).sum();
-                        println!(
+                        outln!(
                             "{}: {:.1} x {:.1} mm, {} layer(s), {} object(s)",
                             p.name,
                             p.size.width,
@@ -369,26 +397,26 @@ fn main() -> ExitCode {
                         );
                     }
                     for f in &doc.fonts {
-                        println!("carries font: {} ({} bytes)", f.family, f.data.len());
+                        outln!("carries font: {} ({} bytes)", f.family, f.data.len());
                     }
                     if let Some(p) = &doc.cmyk_profile {
-                        println!("carries CMYK profile: {} ({} bytes)", p.name, p.data.len());
+                        outln!("carries CMYK profile: {} ({} bytes)", p.name, p.data.len());
                     }
                     // TRACEDRAW_OBJECTS=1 lists every object, for checking a
                     // reader against what the file holds.
                     if std::env::var("TRACEDRAW_OBJECTS").is_ok_and(|v| v != "0") {
                         for p in &doc.pages {
-                            println!("{}:", p.name);
+                            outln!("{}:", p.name);
                             for l in &p.layers {
-                                println!("  layer {:?}", l.name);
+                                outln!("  layer {:?}", l.name);
                                 for s in &l.shapes {
-                                    print!("{}", describe_shape(s, 2));
+                                    out!("{}", describe_shape(s, 2));
                                 }
                             }
                         }
                     }
                     if let Some(r) = report {
-                        println!(
+                        outln!(
                             "version: {}",
                             r.version.map(|v| v.name()).unwrap_or_else(|| {
                                 if path.to_ascii_lowercase().ends_with(".cmx") {
@@ -398,9 +426,9 @@ fn main() -> ExitCode {
                                 }
                             })
                         );
-                        println!("skipped objects: {}", r.skipped_objects);
+                        outln!("skipped objects: {}", r.skipped_objects);
                         for w in &r.warnings {
-                            println!("warning: {w}");
+                            outln!("warning: {w}");
                         }
                     }
                     ExitCode::SUCCESS
@@ -431,7 +459,7 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            println!(
+            outln!(
                 "{}: {:?}, {:?} -> {:?}, version {:?}, {} channel(s), device->PCS {}, PCS->device {}",
                 profile.description().unwrap_or("(no description)"),
                 profile.class(),
@@ -459,7 +487,7 @@ fn main() -> ExitCode {
                 };
                 for s in samples {
                     let rgb = t.transform(&s);
-                    println!("  {s:?} -> sRGB {rgb:?}");
+                    outln!("  {s:?} -> sRGB {rgb:?}");
                 }
             }
             ExitCode::SUCCESS
@@ -517,7 +545,7 @@ fn main() -> ExitCode {
                     eprintln!("seed {seed} panicked");
                 }
             }
-            println!("{input}: {iters} mutated copies, {panics} panic(s)");
+            outln!("{input}: {iters} mutated copies, {panics} panic(s)");
             if panics == 0 {
                 ExitCode::SUCCESS
             } else {
