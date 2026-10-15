@@ -366,7 +366,12 @@ impl App {
             };
             let pp = s.page_path();
             let mut out = BezPath::new();
-            for contour in polylines(&pp) {
+            // A variable-width or calligraphic outline becomes its band.
+            let band = tracedraw_core::shaping::outline_band(&pp, st, 1.0);
+            if let Some(b) = &band {
+                out = b.clone();
+            }
+            for contour in polylines(&pp).into_iter().filter(|_| band.is_none()) {
                 let closed = contour.1;
                 let pts = contour.0;
                 let style = StrokeStyle::new(width)

@@ -436,21 +436,9 @@ fn write_unlinked(
 
     // A calligraphic outline has no SVG equivalent: the swept band is
     // written as a filled path after the object.
-    let calligraphic = shape
-        .stroke
-        .as_ref()
-        .filter(|s| s.stretch < 0.999 && s.width > tracedraw_core::Stroke::HAIRLINE + 1e-9)
-        .map(|s| {
-            (
-                tracedraw_core::shaping::calligraphic_band(
-                    &shape.page_path(),
-                    s.width,
-                    s.stretch,
-                    s.nib_angle,
-                ),
-                s.color,
-            )
-        });
+    let calligraphic = shape.stroke.as_ref().and_then(|s| {
+        tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0).map(|b| (b, s.color))
+    });
     let stroke_attr = match &shape.stroke {
         None => "stroke=\"none\"".to_string(),
         Some(_) if calligraphic.is_some() => "stroke=\"none\"".to_string(),
@@ -762,6 +750,41 @@ mod tests {
         let line = svg[..band_start].rsplit('\n').next().unwrap();
         // A real outline of the rectangle: dozens of vertices.
         assert!(line.matches('L').count() > 20, "{line}");
+    }
+
+    #[test]
+    fn variable_outlines_become_a_filled_band_and_survive_the_native_format() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut path = tracedraw_core::geometry::BezPath::new();
+        path.move_to(tracedraw_core::Point::new(10.0, 50.0));
+        path.line_to(tracedraw_core::Point::new(110.0, 50.0));
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        let mut st = Stroke::new(Color::rgb8(255, 0, 0), 1.0);
+        st.widths
+            .push(tracedraw_core::WidthNode::symmetric(0.5, 8.0));
+        s.stroke = Some(st.clone());
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        assert!(svg.contains("fill=\"#ff0000\" stroke=\"none\""), "{svg}");
+        assert!(!svg.contains("stroke-width=\"1\""));
+        // The native format keeps the nodes.
+        let file = std::env::temp_dir().join(format!("vo-{}.tdraw", std::process::id()));
+        crate::save_native(&doc, &file).unwrap();
+        let back = crate::load_native(&file).unwrap();
+        let _ = std::fs::remove_file(&file);
+        let widths = back.pages[0].layers[0].shapes[0]
+            .stroke
+            .as_ref()
+            .map(|s| s.widths.clone());
+        assert_eq!(widths, Some(st.widths));
     }
 
     /// A line from (10, 50) to (60, 50), 2 mm wide, with a custom

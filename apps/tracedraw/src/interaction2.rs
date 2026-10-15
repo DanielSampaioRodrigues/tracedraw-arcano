@@ -100,6 +100,7 @@ impl App {
             Tool::AttractRepel | Tool::Smudge | Tool::Roughen => {
                 self.brush_input(response, p, mods)
             }
+            Tool::VariableOutline => self.variable_outline_input(response, p, mods),
             Tool::SegmentDelete => {
                 if response.clicked_by(PointerButton::Primary) {
                     self.delete_virtual_segment_at(p);

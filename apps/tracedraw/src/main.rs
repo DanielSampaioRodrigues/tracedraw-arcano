@@ -118,6 +118,7 @@ mod tools2;
 mod trace;
 mod ui;
 mod updates;
+mod variable_outline;
 mod vector_mosaic;
 mod view;
 #[cfg(target_arch = "wasm32")]

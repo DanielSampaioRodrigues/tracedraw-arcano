@@ -58,6 +58,9 @@ by the newest versions opening with their fills and spot colours.
 - Grouping objects from several layers keeps their drawing order.
 - View > Multipage View shows every page in a grid; click any page to
   work on it in place.
+- Variable Outline tool (Shape tool flyout): drag across an outline to
+  make it thicker or thinner at that point, one side with Alt; widths on
+  the property bar.
 - The dark theme's picked items show white text on blue.
 - README: new screenshots (templates, AI Generate) and some in the dark
   themes.

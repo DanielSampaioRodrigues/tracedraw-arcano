@@ -605,28 +605,36 @@ impl Renderer<'_> {
         if let Some(stroke) = &shape.stroke {
             let (mut paint, sk_stroke) = self.stroke_paint(stroke, transform);
             paint.blend_mode = self.blend_for(shape.overprint_outline);
-            if stroke.stretch < 0.999 && stroke.width > Stroke::HAIRLINE + 1e-9 {
-                // Calligraphic nib: fill the swept band instead of stroking.
-                let object_scale = if stroke.scale_with_object {
-                    let c = transform.as_coeffs();
-                    ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)
-                } else {
-                    1.0
-                };
-                let band = tracedraw_core::shaping::calligraphic_band(
-                    &page_path,
-                    stroke.width * object_scale,
-                    stroke.stretch,
-                    stroke.nib_angle,
-                );
-                if let Some(bp) = to_sk_path(&(self.screen * band)) {
-                    self.pixmap.fill_path(
-                        &bp,
-                        &paint,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+            let object_scale = if stroke.scale_with_object {
+                let c = transform.as_coeffs();
+                ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)
+            } else {
+                1.0
+            };
+            if let Some(band) =
+                tracedraw_core::shaping::outline_band(&page_path, stroke, object_scale)
+            {
+                // Calligraphic nib or variable width: fill the band instead
+                // of stroking, with the outline's own fill when it has one.
+                if let Some(bp) = to_sk_path(&(self.screen * band.clone())) {
+                    match stroke
+                        .fill
+                        .as_deref()
+                        .filter(|f| !matches!(f, Fill::Solid(_) | Fill::None))
+                    {
+                        Some(fill) => {
+                            use tracedraw_core::geometry::Shape as _;
+                            let b = bbox(&band).to_path(0.01);
+                            self.draw_fill(fill, &b, &bp, FillRule::Winding);
+                        }
+                        None => self.pixmap.fill_path(
+                            &bp,
+                            &paint,
+                            FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        ),
+                    }
                 }
             } else if let Some(fill) = stroke
                 .fill

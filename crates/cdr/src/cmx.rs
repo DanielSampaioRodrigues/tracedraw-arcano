@@ -1019,6 +1019,7 @@ impl Ctx {
             stretch: pen.map_or(1.0, |p| (p.aspect / 100.0).clamp(0.01, 1.0)),
             nib_angle: pen.map_or(0.0, |p| if p.angle.is_finite() { p.angle } else { 0.0 }),
             fill: None,
+            widths: Vec::new(),
         })
     }
 

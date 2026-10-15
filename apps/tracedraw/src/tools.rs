@@ -17,6 +17,7 @@ pub enum Tool {
     AttractRepel,
     Smudge,
     Roughen,
+    VariableOutline,
     // Crop group
     Crop,
     Knife,
@@ -107,6 +108,7 @@ pub const GROUPS: &[ToolGroup] = &[
             Tool::AttractRepel,
             Tool::Smudge,
             Tool::Roughen,
+            Tool::VariableOutline,
         ],
         hidden: false,
     },
@@ -207,7 +209,7 @@ pub const GROUPS: &[ToolGroup] = &[
 ];
 
 impl Tool {
-    pub const ALL: [Tool; 62] = [
+    pub const ALL: [Tool; 63] = [
         Tool::Pick,
         Tool::FreeformPick,
         Tool::FreeTransform,
@@ -218,6 +220,7 @@ impl Tool {
         Tool::AttractRepel,
         Tool::Smudge,
         Tool::Roughen,
+        Tool::VariableOutline,
         Tool::Crop,
         Tool::Knife,
         Tool::SegmentDelete,
@@ -285,6 +288,7 @@ impl Tool {
             Tool::AttractRepel => "attract_repel",
             Tool::Smudge => "smudge",
             Tool::Roughen => "roughen",
+            Tool::VariableOutline => "variable_outline",
             Tool::Crop => "crop",
             Tool::Knife => "knife",
             Tool::SegmentDelete => "segment_delete",

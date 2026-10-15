@@ -693,6 +693,75 @@ pub struct Stroke {
     /// None paints it with `color`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<Box<Fill>>,
+    /// Width nodes of a variable-width outline, in order along the path.
+    /// Empty: the outline has `width` everywhere.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub widths: Vec<WidthNode>,
+}
+
+/// A point of a variable-width outline: where it is along the path and
+/// how far the outline reaches on each side of it there.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WidthNode {
+    /// Place along the path, 0 (start) to 1 (end), by length over all
+    /// subpaths.
+    pub at: f64,
+    /// Reach to the left of the path's direction, in millimetres.
+    pub left: f64,
+    /// Reach to the right, in millimetres.
+    pub right: f64,
+}
+
+impl WidthNode {
+    pub fn symmetric(at: f64, width: f64) -> Self {
+        WidthNode {
+            at,
+            left: width / 2.0,
+            right: width / 2.0,
+        }
+    }
+}
+
+/// The left and right reach of a variable outline at `t` (0 to 1): the
+/// path's ends keep half the base width unless a node sits there, and
+/// the reach eases between neighbouring nodes.
+pub fn width_at(base: f64, nodes: &[WidthNode], t: f64) -> (f64, f64) {
+    let half = (base / 2.0).max(0.0);
+    let t = t.clamp(0.0, 1.0);
+    let mut prev = WidthNode {
+        at: 0.0,
+        left: half,
+        right: half,
+    };
+    let mut next = WidthNode {
+        at: 1.0,
+        left: half,
+        right: half,
+    };
+    let mut found_next = false;
+    for n in nodes {
+        let n = WidthNode {
+            at: n.at.clamp(0.0, 1.0),
+            left: n.left.max(0.0),
+            right: n.right.max(0.0),
+        };
+        if n.at <= t {
+            prev = n;
+        } else if !found_next {
+            next = n;
+            found_next = true;
+        }
+    }
+    let span = next.at - prev.at;
+    if span <= 1e-12 {
+        return (prev.left, prev.right);
+    }
+    let u = ((t - prev.at) / span).clamp(0.0, 1.0);
+    let s = u * u * (3.0 - 2.0 * u);
+    (
+        prev.left + (next.left - prev.left) * s,
+        prev.right + (next.right - prev.right) * s,
+    )
 }
 
 fn one() -> f64 {
@@ -734,6 +803,7 @@ impl Default for Stroke {
             stretch: 1.0,
             nib_angle: 0.0,
             fill: None,
+            widths: Vec::new(),
         }
     }
 }

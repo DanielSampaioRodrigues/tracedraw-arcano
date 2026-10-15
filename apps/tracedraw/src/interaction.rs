@@ -716,6 +716,7 @@ impl App {
             | Tool::AttractRepel
             | Tool::Smudge
             | Tool::Roughen
+            | Tool::VariableOutline
             | Tool::SegmentDelete
             | Tool::ShapeRecognition
             | Tool::Sketch
@@ -2227,6 +2228,8 @@ impl App {
                 self.delete_selected_envelope_node();
             } else if self.tool == Tool::Shape && !self.node_selection.is_empty() {
                 self.delete_selected_nodes();
+            } else if self.tool == Tool::VariableOutline && self.delete_variable_outline_node() {
+                // The width node went, the object stays.
             } else if self.tool == Tool::AnchorEditing && self.delete_selected_anchor() {
                 // The anchor went, the object stays.
             } else if !self.selected_guides.is_empty() {

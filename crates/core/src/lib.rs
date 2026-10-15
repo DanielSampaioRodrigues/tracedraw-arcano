@@ -44,7 +44,7 @@ pub use icc::{Intent as RenderingIntent, Profile as IccProfile, Transform as Icc
 pub use id::{LayerId, PageId, ShapeId};
 pub use style::{
     arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Mesh, MeshNode,
-    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
+    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind, WidthNode,
 };
 
 /// Convenience result type for the core crate.

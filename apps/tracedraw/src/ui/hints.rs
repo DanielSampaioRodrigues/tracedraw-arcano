@@ -155,6 +155,7 @@ impl Topic {
                 Tool::Transparency,
             ],
             Topic::Outline => &[
+                Tool::VariableOutline,
                 Tool::OutlinePen,
                 Tool::OutlineColor,
                 Tool::AttributesEyedropper,
@@ -252,6 +253,7 @@ fn help_page(tool: Tool) -> &'static str {
         | Tool::AttractRepel
         | Tool::Smudge
         | Tool::Roughen => "shape-tool.md",
+        Tool::VariableOutline => "variable-outline.md",
         Tool::Crop | Tool::Knife | Tool::SegmentDelete | Tool::Eraser => "crop-knife-eraser.md",
         Tool::Zoom | Tool::Pan => "zoom-and-pan.md",
         Tool::BrushStrokes => "brush-strokes.md",

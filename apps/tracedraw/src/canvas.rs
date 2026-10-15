@@ -113,6 +113,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         None => draw_selection(app, painter, None),
     }
     draw_table_cells(app, painter);
+    crate::variable_outline::draw_width_nodes(app, painter);
     draw_frame_links(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);

@@ -394,6 +394,30 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
             ic.closed(&pts, s);
         }
 
+        Tool::VariableOutline => {
+            // A curve that swells in the middle, with a width node on it.
+            let top: Vec<(f32, f32)> = (0..=12)
+                .map(|j| {
+                    let u = j as f32 / 12.0;
+                    let x = 1.5 + 13.0 * u;
+                    let y = 11.0 - 6.0 * (u * PI).sin();
+                    let w = 0.4 + 2.4 * (u * PI).sin();
+                    (x, y - w)
+                })
+                .collect();
+            let mut band = top.clone();
+            band.extend((0..=12).rev().map(|j| {
+                let u = j as f32 / 12.0;
+                let x = 1.5 + 13.0 * u;
+                let y = 11.0 - 6.0 * (u * PI).sin();
+                let w = 0.4 + 2.4 * (u * PI).sin();
+                (x, y + w)
+            }));
+            ic.fill(&band, color);
+            ic.painter
+                .circle_stroke(ic.at(8.0, 5.0), 1.6 * k, Stroke::new(1.0 * k, color));
+        }
+
         // Crop group.
         Tool::Crop => {
             // Two crop marks.

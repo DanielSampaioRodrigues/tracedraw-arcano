@@ -875,6 +875,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             | Tool::AttractRepel
             | Tool::Smudge
             | Tool::Roughen => crate::ui::brush_bars::brush_bar(app, ui),
+            Tool::VariableOutline => crate::variable_outline::variable_outline_bar(app, ui),
             Tool::Contour => crate::ui::contour_bar::contour_bar(app, ui),
             Tool::Crop => crate::ui::crop_bar::crop_bar(app, ui),
             Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),

@@ -729,14 +729,8 @@ impl PageWriter<'_> {
                 let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
                 let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
             }
-            if s.stretch < 0.999 && width > 0.0 {
-                // Calligraphic nib: the swept band, filled.
-                let band = tracedraw_core::shaping::calligraphic_band(
-                    &shape.page_path(),
-                    s.width,
-                    s.stretch,
-                    s.nib_angle,
-                );
+            if let Some(band) = tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0) {
+                // Calligraphic nib or variable width: the band, filled.
                 let op = self.color_op(s.color, true);
                 let _ = writeln!(self.content, "{op}");
                 self.path_ops(&(parent * band));
