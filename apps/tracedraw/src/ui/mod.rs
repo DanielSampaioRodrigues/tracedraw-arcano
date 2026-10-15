@@ -17,6 +17,7 @@ pub mod brush_bars;
 pub mod callout_bar;
 pub mod chrome;
 pub mod color_docker;
+pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
 pub mod contour_bar;
@@ -641,7 +642,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
             app.multipage_press(s);
         }
     }
-    if two_fingers.is_none() && !rulers::ruler_drag(app, ui) {
+    if two_fingers.is_none() && !rulers::ruler_drag(app, ui) && !app.comments_pointer(&response) {
         app.canvas_input(&response, mods);
     }
 

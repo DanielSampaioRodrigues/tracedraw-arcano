@@ -838,6 +838,8 @@ pub struct App {
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
     pub multipage: bool,
+    /// The Comments docker's state.
+    pub comments: crate::comments::CommentsState,
     /// The Painterly Brush tool's brush and size.
     pub painterly: crate::painterly_tool::PainterlySettings,
     /// The Variable Outline tool's picked node and drag.
@@ -1262,13 +1264,14 @@ pub enum DockerTab {
     PictureMosaic,
     Shelf,
     Export,
+    Comments,
     AiDrawing,
     AiGenerate,
     Effects,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 40] = [
+    pub const ALL: [DockerTab; 41] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1285,6 +1288,7 @@ impl DockerTab {
         DockerTab::FindReplace,
         DockerTab::AiGenerate,
         DockerTab::Export,
+        DockerTab::Comments,
         DockerTab::Scripts,
         DockerTab::Palettes,
         DockerTab::Lens,
@@ -1351,6 +1355,7 @@ impl DockerTab {
             DockerTab::PictureMosaic => "docker.picture_mosaic",
             DockerTab::Shelf => "docker.shelf",
             DockerTab::Export => "docker.export",
+            DockerTab::Comments => "docker.comments",
             DockerTab::AiDrawing => "docker.ai_drawing",
             DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Effects => "docker.effects",
@@ -1584,6 +1589,7 @@ impl App {
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
+            comments: Default::default(),
             painterly: Default::default(),
             vo: Default::default(),
             page_rasters: Default::default(),

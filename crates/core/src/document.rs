@@ -2440,6 +2440,62 @@ pub struct Document {
     /// printed on a plate of its own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inks: Vec<Ink>,
+    /// Review comments pinned to the pages (never printed or exported).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<Comment>,
+}
+
+/// What a comment points at on its page (page millimetres).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CommentMark {
+    Pin {
+        at: crate::geometry::Point,
+    },
+    Rect {
+        rect: crate::geometry::Rect,
+    },
+    Arrow {
+        from: crate::geometry::Point,
+        to: crate::geometry::Point,
+    },
+}
+
+impl CommentMark {
+    /// Where the comment's number is shown.
+    pub fn anchor(&self) -> crate::geometry::Point {
+        match self {
+            CommentMark::Pin { at } => *at,
+            CommentMark::Rect { rect } => crate::geometry::Point::new(rect.x1, rect.y1),
+            CommentMark::Arrow { from, .. } => *from,
+        }
+    }
+}
+
+/// An answer in a comment's thread.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommentReply {
+    pub author: String,
+    /// Seconds since 1970 (UTC).
+    pub time: i64,
+    pub text: String,
+}
+
+/// A review comment: who wrote what, when, where on which page, its
+/// replies, and whether it has been dealt with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Comment {
+    pub id: u32,
+    pub page: PageId,
+    pub mark: CommentMark,
+    pub author: String,
+    /// Seconds since 1970 (UTC).
+    pub time: i64,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replies: Vec<CommentReply>,
+    #[serde(default)]
+    pub resolved: bool,
 }
 
 /// A spot ink: its number (what `Color::Spot` refers to), its name and
@@ -2637,6 +2693,7 @@ impl Document {
             fonts: Vec::new(),
             cmyk_profile: None,
             inks: Vec::new(),
+            comments: Vec::new(),
         }
     }
 

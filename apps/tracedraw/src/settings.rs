@@ -148,6 +148,9 @@ pub struct Settings {
     /// into focus.
     #[serde(default = "default_true")]
     pub focus_double_click: bool,
+    /// The name comments are signed with (empty: the drawing's author).
+    #[serde(default)]
+    pub comment_author: String,
     /// Options > Tools > Pick: a marquee also takes the objects it only
     /// touches (off by default; Alt does it either way round).
     #[serde(default)]
@@ -930,6 +933,7 @@ impl Default for Settings {
             treat_all_filled: true,
             focus_visibility: default_focus_visibility(),
             focus_double_click: true,
+            comment_author: String::new(),
             marquee_touching: false,
             upgrades: UPGRADES,
             crosshair_cursor: false,

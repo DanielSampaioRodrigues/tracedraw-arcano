@@ -62,6 +62,8 @@ by the newest versions opening with their fills and spot colours.
   with chalk, charcoal, pastel, ink wash, watercolour, dry brush,
   bristles, fur, spray, speckles, clouds or silk ribbons; still curves
   that the Shape tool reshapes.
+- Comments docker: review notes pinned to a point, a box or an arrow on
+  the page, with replies, resolve and reopen; saved with the drawing.
 - Export docker: list pages and selections as assets, each with its
   own name, format and resolution, and export them all at once.
 - Variable Outline tool (Shape tool flyout): drag across an outline to

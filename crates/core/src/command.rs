@@ -75,6 +75,12 @@ pub enum Command {
     SetTimeTracker {
         tracker: crate::document::TimeTracker,
     },
+    /// Replace the review comments. Comments on pages that are gone are
+    /// dropped; ids are kept, and repeated or missing (0) ones get a free
+    /// number.
+    SetComments {
+        comments: Vec<crate::document::Comment>,
+    },
     /// Replace the object styles. Styles without an id get a free one;
     /// objects linked to a style take its parts again, and links to a
     /// style that is gone are dropped.
@@ -326,6 +332,7 @@ impl Command {
             Command::SetPageBackground { .. } => "Page Background",
             Command::SetMetadata { .. } => "Document Properties",
             Command::SetTimeTracker { .. } => "Time Tracker",
+            Command::SetComments { .. } => "Comments",
             Command::SetSelectionGroup { .. } => "Selection Group",
             Command::SetNodeTypes { .. } => "Node Type",
             Command::SetObjectStyles { .. } => "Object Styles",
@@ -416,6 +423,7 @@ impl Command {
                     .position(|p| p.id == *page)
                     .ok_or(Error::PageNotFound(*page))?;
                 doc.pages.remove(i);
+                doc.comments.retain(|c| c.page != *page);
             }
             Command::ResizePage { page, size } => doc.page_mut(*page)?.size = *size,
 
@@ -453,6 +461,24 @@ impl Command {
             }
             Command::SetTimeTracker { tracker } => {
                 doc.time_tracker = tracker.clone();
+            }
+            Command::SetComments { comments } => {
+                let pages: Vec<PageId> = doc.pages.iter().map(|p| p.id).collect();
+                let mut kept: Vec<crate::document::Comment> = comments
+                    .iter()
+                    .filter(|c| pages.contains(&c.page))
+                    .cloned()
+                    .collect();
+                let mut next = kept.iter().map(|c| c.id).max().unwrap_or(0);
+                let mut seen = std::collections::HashSet::new();
+                for c in kept.iter_mut() {
+                    if c.id == 0 || !seen.insert(c.id) {
+                        next += 1;
+                        c.id = next;
+                        seen.insert(next);
+                    }
+                }
+                doc.comments = kept;
             }
             Command::SetObjectStyles { styles } => {
                 let mut styles = styles.clone();
@@ -1078,6 +1104,51 @@ fn restyle(doc: &mut Document) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn comments_get_free_ids_and_go_with_their_page() {
+        use crate::document::{Comment, CommentMark};
+        use crate::geometry::Point;
+        let mut engine = crate::Engine::new(Document::new("t", Size::new(100.0, 100.0)));
+        engine
+            .run(&Command::AddPage {
+                name: None,
+                size: Size::new(100.0, 100.0),
+            })
+            .unwrap();
+        let (p1, p2) = (engine.document().pages[0].id, engine.document().pages[1].id);
+        let note = |id: u32, page: PageId, text: &str| Comment {
+            id,
+            page,
+            mark: CommentMark::Pin {
+                at: Point::new(10.0, 10.0),
+            },
+            author: "Ana".into(),
+            time: 1_700_000_000,
+            text: text.into(),
+            replies: Vec::new(),
+            resolved: false,
+        };
+        engine
+            .run(&Command::SetComments {
+                comments: vec![note(4, p1, "a"), note(4, p2, "b"), note(0, p2, "c")],
+            })
+            .unwrap();
+        let ids: Vec<u32> = engine.document().comments.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![4, 5, 6]);
+        assert_eq!(engine.undo_label(), Some("Comments"));
+        // Deleting a page takes its comments with it; undo brings them back.
+        engine.run(&Command::DeletePage { page: p2 }).unwrap();
+        assert_eq!(engine.document().comments.len(), 1);
+        engine.undo().unwrap();
+        assert_eq!(engine.document().comments.len(), 3);
+        // A comment on a page that does not exist is not kept.
+        engine
+            .run(&Command::SetComments {
+                comments: vec![note(1, PageId(9999), "x")],
+            })
+            .unwrap();
+        assert!(engine.document().comments.is_empty());
+    }
 
     #[test]
     fn chosen_node_types_are_kept_until_the_node_count_changes() {

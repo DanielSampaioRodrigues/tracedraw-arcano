@@ -204,6 +204,7 @@ Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Export SVG, PDF, AI (PDF-compatible), EPS, PostScript and PRN (every page), DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
 | Export dialog with a preview, the size in pixels and an estimated file size (see `behavior/export.md`) | works |
+| Comments docker: pins, boxes and arrows on the page with numbered bubbles, author and date, replies, resolve and reopen, show resolved, hide marks; saved in `.tdraw`, never printed; undoable | works (see `behavior/comments.md`) |
 | Export docker: pages and selections as assets, each with its own name, format and resolution, exported together to one folder (downloads in the browser) | works (see `behavior/export-docker.md`) |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations; protected files of every revision (RC4, AES-128, AES-256), asking for the password when one is needed | works (see `behavior/pdf-import.md`) |

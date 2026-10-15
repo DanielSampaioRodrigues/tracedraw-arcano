@@ -26,6 +26,7 @@ mod canvas;
 mod clipboard;
 mod clone_effect;
 mod color_drop;
+mod comments;
 mod common_shapes;
 mod connectors;
 mod contour_tool;
