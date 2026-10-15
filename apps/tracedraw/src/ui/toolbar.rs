@@ -1584,7 +1584,7 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::StraightenImage(Default::default());
     }
     if ui.button(tr("menu.bitmaps.resample")).clicked() {
-        app.dialog = Dialog::Resample { dpi: 300.0 };
+        app.open_resample();
     }
     // AI: greyed until an image service is set up.
     let ready = app.ai_image_ready() && app.ai_source_bitmap().is_some();

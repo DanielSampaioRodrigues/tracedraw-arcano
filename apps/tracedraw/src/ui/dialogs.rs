@@ -514,9 +514,7 @@ pub enum Dialog {
     Barcode(BarcodeState),
     ConvertToBitmap(crate::bitmap_modes::ConvertOptions),
     StraightenImage(crate::ui::straighten_dialog::StraightenState),
-    Resample {
-        dpi: f64,
-    },
+    Resample(crate::resample::ResampleState),
     InflateBitmap(InflateState),
     Trace(TraceState),
     /// A bitmap effect's settings (Effects menu, FX section).
@@ -1537,20 +1535,130 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::StraightenImage(st) => {
             crate::ui::straighten_dialog::straighten_dialog(app, ctx, st, &mut close)
         }
-        Dialog::Resample { dpi } => {
+        Dialog::Resample(st) => {
+            let mut apply = false;
             window(ctx, tr("dialog.resample")).show(ctx, |ui| {
+                use crate::ui::field::NumField;
+                egui::Grid::new("resample_grid")
+                    .num_columns(3)
+                    .min_col_width(96.0)
+                    .spacing([10.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("");
+                        ui.label(tr("resample.width"));
+                        ui.label(tr("resample.height"));
+                        ui.end_row();
+                        ui.label(tr("resample.pixels_row"));
+                        let (mut w, mut h) = (st.w as f64, st.h as f64);
+                        if ui
+                            .add(
+                                NumField::new(&mut w)
+                                    .range(1.0..=20000.0)
+                                    .fixed_decimals(0)
+                                    .suffix(" px")
+                                    .width(90.0),
+                            )
+                            .changed()
+                        {
+                            st.set_w(w.round() as u32);
+                        }
+                        if ui
+                            .add(
+                                NumField::new(&mut h)
+                                    .range(1.0..=20000.0)
+                                    .fixed_decimals(0)
+                                    .suffix(" px")
+                                    .width(90.0),
+                            )
+                            .changed()
+                        {
+                            st.set_h(h.round() as u32);
+                        }
+                        ui.end_row();
+                        ui.label(tr("resample.percent_row"));
+                        let (mut px, mut py) = st.percent();
+                        let cx = ui
+                            .add(
+                                NumField::new(&mut px)
+                                    .range(0.1..=10000.0)
+                                    .fixed_decimals(1)
+                                    .suffix(" %")
+                                    .width(90.0),
+                            )
+                            .changed();
+                        let cy = ui
+                            .add(
+                                NumField::new(&mut py)
+                                    .range(0.1..=10000.0)
+                                    .fixed_decimals(1)
+                                    .suffix(" %")
+                                    .width(90.0),
+                            )
+                            .changed();
+                        if cx {
+                            st.set_percent(px, if st.keep_aspect { px } else { py });
+                        } else if cy {
+                            if st.keep_aspect {
+                                st.set_percent(py, py);
+                            } else {
+                                st.set_percent(px, py);
+                            }
+                        }
+                        ui.end_row();
+                        ui.label(tr("dialog.resolution"));
+                        let mut dpi = st.dpi();
+                        if ui
+                            .add(
+                                NumField::new(&mut dpi)
+                                    .range(1.0..=4800.0)
+                                    .fixed_decimals(0)
+                                    .suffix(" dpi")
+                                    .width(90.0),
+                            )
+                            .changed()
+                        {
+                            st.set_dpi(dpi);
+                        }
+                        ui.end_row();
+                    });
+                ui.checkbox(&mut st.keep_aspect, tr("resample.keep_aspect"));
                 ui.horizontal(|ui| {
-                    ui.label(tr("dialog.resolution"));
-                    ui.add(
-                        egui::DragValue::new(dpi)
-                            .range(10.0..=2400.0)
-                            .suffix(" dpi"),
-                    );
+                    ui.label(tr("resample.method"));
+                    egui::ComboBox::from_id_salt("resample_method")
+                        .selected_text(tr(st.method.key()))
+                        .width(200.0)
+                        .show_ui(ui, |ui| {
+                            for m in crate::resample::Method::ALL {
+                                ui.selectable_value(&mut st.method, m, tr(m.key()));
+                            }
+                        });
                 });
-                if ok_cancel(ui, &mut close) {
-                    app.resample_bitmap(*dpi);
-                }
+                ui.label(
+                    egui::RichText::new(tr(&format!("{}_tip", st.method.key())))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(trf(
+                        "resample.sizes",
+                        &[
+                            ("ow", &st.orig.0.to_string()),
+                            ("oh", &st.orig.1.to_string()),
+                            ("w", &st.w.to_string()),
+                            ("h", &st.h.to_string()),
+                            ("mb", &format!("{:.1}", st.bytes() as f64 / 1_048_576.0)),
+                        ],
+                    ))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+                );
+                apply = ok_cancel(ui, &mut close);
             });
+            if apply {
+                let st = st.clone();
+                app.resample_bitmaps(&st);
+            }
         }
         Dialog::InflateBitmap(st) => {
             window(ctx, tr("dialog.inflate_bitmap")).show(ctx, |ui| {
@@ -3918,7 +4026,10 @@ mod tests {
                 },
                 ..Default::default()
             }),
-            Dialog::Resample { dpi: 100.0 },
+            Dialog::Resample(crate::resample::ResampleState::new(
+                (400, 300),
+                (100.0, 75.0),
+            )),
             Dialog::InflateBitmap(InflateState {
                 base: (40, 30),
                 pw: 120.0,

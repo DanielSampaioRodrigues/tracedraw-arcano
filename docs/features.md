@@ -166,6 +166,7 @@ Counts: works 193, partial 2 (`.cdr` content coverage; CMX import), missing 1 (s
 | Capability | Status |
 |---|---|
 | Import PNG, JPEG, BMP, GIF, WebP, TIFF; crop, resample | works |
+| Resample: pixels, percent or resolution, aspect ratio kept or not, Smooth, Sharp, Hard pixels and Enlarge with detail methods | works (see `behavior/resample.md`) |
 | Straighten Image: correct lens distortion, rotate -15 to 15 degrees, vertical and horizontal perspective, quarter turns, grid with size and colour, zoom and pan, Crop image, Crop and resample to original size | works (see `behavior/straighten-image.md`) |
 | Convert to bitmap (resolution list and value, colour mode, dithered, always overprint black, anti-aliasing, transparent background, uncompressed size) | works (see `behavior/bitmap-modes.md`) |
 | Colour monochrome bitmaps from the palette (click: background, right-click: foreground) | works (see `behavior/bitmap-modes.md`) |

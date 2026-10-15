@@ -218,7 +218,13 @@ pub fn remove_noise(img: &RgbaImage, p: &P) -> RgbaImage {
 
 /// Sharpen by `k` times the difference from a blur of `sigma`, where the
 /// difference is above `threshold` levels.
-fn unsharp(img: &RgbaImage, sigma: f32, k: f32, threshold: f32, preserve: bool) -> RgbaImage {
+pub(crate) fn unsharp(
+    img: &RgbaImage,
+    sigma: f32,
+    k: f32,
+    threshold: f32,
+    preserve: bool,
+) -> RgbaImage {
     let b = gaussian(img, sigma);
     map_px(img, |x, y, q| {
         let s = b.get_pixel(x, y);

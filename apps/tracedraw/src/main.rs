@@ -91,6 +91,7 @@ mod prefs;
 mod raster;
 mod recognize;
 mod recovery;
+mod resample;
 mod script_debug;
 mod script_filters;
 mod scripting;

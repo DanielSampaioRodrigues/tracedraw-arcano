@@ -4,6 +4,14 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## 0.8.0 (not yet released)
+
+- Bitmaps > Resample: width and height in pixels or percent, the
+  resolution, aspect ratio kept or not, and four methods, among them Hard
+  pixels for pixel art and Enlarge with detail.
+- Draw in Perspective: Put on Plane lays existing objects onto the
+  active plane.
+
 ## 0.7.0 (2026-10-15)
 
 Start faster, bring your own AI and draw in new ways: a New From

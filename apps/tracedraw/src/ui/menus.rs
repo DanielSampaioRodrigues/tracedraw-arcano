@@ -2513,7 +2513,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
         app.set_tool(crate::tools::Tool::Crop);
     }
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
-        app.dialog = Dialog::Resample { dpi: 300.0 };
+        app.open_resample();
     }
     // AI: greyed until an image service is set up (Tools > Options > AI).
     let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();

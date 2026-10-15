@@ -1096,7 +1096,7 @@ impl App {
             .collect()
     }
 
-    fn replace_bitmap(&mut self, id: ShapeId, rect: Rect, img: &image::RgbaImage) {
+    pub(crate) fn replace_bitmap(&mut self, id: ShapeId, rect: Rect, img: &image::RgbaImage) {
         let Some(png) = crate::bitmap_fx::encode(img) else {
             return;
         };
@@ -1171,18 +1171,6 @@ impl App {
         }
         if let Err(e) = self.engine.run_batch("Inflate Bitmap", &cmds) {
             self.status = e.to_string();
-        }
-    }
-
-    pub fn resample_bitmap(&mut self, dpi: f64) {
-        for (id, rect, _, _, png) in self.bitmap_shapes() {
-            let Some(img) = crate::bitmap_fx::decode(&png) else {
-                continue;
-            };
-            let w = (rect.width() / 25.4 * dpi).round().max(1.0) as u32;
-            let h = (rect.height() / 25.4 * dpi).round().max(1.0) as u32;
-            let out = crate::bitmap_fx::resample(&img, w, h);
-            self.replace_bitmap(id, rect, &out);
         }
     }
 
