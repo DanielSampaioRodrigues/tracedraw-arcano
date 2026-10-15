@@ -26,6 +26,8 @@ by the newest versions opening with their fills and spot colours.
   pastels and more) as swatches in the fill editor (#4).
 - Texture and other procedural fills work out only the part in the
   window, so zooming into a cloud-filled shape stays quick (#4).
+- Outlines can be painted with a gradient (Properties docker, outline
+  Paint: Gradient), without converting them to curves first (#4).
 - Options > Customization > Appearance: Shadows under menus and dialogs
   can be turned off (#4).
 - AI Generate docker, more complete: mode buttons and an information

@@ -1275,6 +1275,35 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
     }
     if let Some(s) = stroke {
         changed |= color_row(ui, &tr("docker.colour"), &mut s.color);
+        // The outline painted with a gradient instead of its colour.
+        ui.horizontal(|ui| {
+            ui.label(tr("docker.outline_fill"));
+            let gradient = s.fill.is_some();
+            if ui
+                .selectable_label(!gradient, tr("docker.outline_fill_uniform"))
+                .clicked()
+                && gradient
+            {
+                s.fill = None;
+                changed = true;
+            }
+            if ui
+                .selectable_label(gradient, tr("docker.outline_fill_gradient"))
+                .clicked()
+                && !gradient
+            {
+                s.fill = Some(Box::new(Fill::Fountain(Fountain::two(
+                    FountainKind::Linear,
+                    s.color,
+                    Color::WHITE,
+                    0.0,
+                ))));
+                changed = true;
+            }
+        });
+        if let Some(Fill::Fountain(fo)) = s.fill.as_deref_mut() {
+            changed |= fountain_editor(ui, fo);
+        }
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
         if ui.checkbox(&mut hair, tr("docker.hairline")).changed() {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };

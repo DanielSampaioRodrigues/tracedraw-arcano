@@ -689,6 +689,10 @@ pub struct Stroke {
     pub stretch: f64,
     #[serde(default)]
     pub nib_angle: f64,
+    /// A fill for the outline itself (a gradient, pattern or texture);
+    /// None paints it with `color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<Box<Fill>>,
 }
 
 fn one() -> f64 {
@@ -729,6 +733,7 @@ impl Default for Stroke {
             end_arrow: Arrowhead::None,
             stretch: 1.0,
             nib_angle: 0.0,
+            fill: None,
         }
     }
 }

@@ -41,3 +41,15 @@ Colour (Shift+F12) opens the Colour panel. The model is
 - Given a rectangle with a 3 mm calligraphic outline, the SVG has the
   rectangle without a stroke and a filled band path in the outline
   colour.
+
+## Gradient outlines
+
+The Properties docker's outline section has Paint: Colour (the outline's
+colour, as before) or Gradient. Gradient gives the outline its own
+fountain fill (`Stroke::fill`), edited with the same controls as an
+object's gradient (type, built-in gradients, stops); it spreads over the
+outline's bounds and paints only the outline's area. Hairlines and
+arrowheads keep the outline colour. SVG, PDF and the other exports draw
+the outline in its colour. Checked by
+`tests::outlines_take_a_gradient_fill` in the renderer.
+

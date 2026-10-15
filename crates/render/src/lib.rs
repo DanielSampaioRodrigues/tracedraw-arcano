@@ -596,6 +596,20 @@ impl Renderer<'_> {
                         None,
                     );
                 }
+            } else if let Some(fill) = stroke
+                .fill
+                .as_deref()
+                .filter(|f| !matches!(f, Fill::Solid(_) | Fill::None))
+                .filter(|_| sk_stroke.width > 0.0)
+            {
+                // A filled outline: the stroke's area painted with the fill,
+                // spread over the outline's bounds.
+                if let Some(band) = sk.stroke(&sk_stroke, 1.0) {
+                    use tracedraw_core::geometry::Shape as _;
+                    let pad = (sk_stroke.width as f64 / self.zoom.max(1e-9)) / 2.0;
+                    let b = bbox(&page_path).inflate(pad, pad);
+                    self.draw_fill(fill, &b.to_path(0.01), &band, FillRule::Winding);
+                }
             } else {
                 self.pixmap
                     .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
@@ -2229,6 +2243,41 @@ mod tests {
         assert_eq!(a.data(), b.data());
         let v: std::collections::HashSet<u8> = (0..30).map(|x| px(&a, x, 15).0).collect();
         assert!(v.len() > 3, "texture should vary");
+    }
+
+    #[test]
+    fn outlines_take_a_gradient_fill() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 20.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut path = tracedraw_core::BezPath::new();
+        path.move_to((5.0, 10.0));
+        path.line_to((95.0, 10.0));
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        s.fill = Fill::None;
+        let mut stroke = Stroke::new(Color::rgb8(0, 255, 0), 6.0);
+        stroke.fill = Some(Box::new(Fill::Fountain(tracedraw_core::Fountain::two(
+            tracedraw_core::FountainKind::Linear,
+            Color::rgb8(255, 0, 0),
+            Color::rgb8(0, 0, 255),
+            0.0,
+        ))));
+        s.stroke = Some(stroke);
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let img = render_page_image(&doc, doc.pages[0].id, 25.4).unwrap();
+        let left = img.pixel(8, 10).unwrap();
+        let right = img.pixel(92, 10).unwrap();
+        assert!(left.red() > 200 && left.blue() < 60, "{left:?}");
+        assert!(right.blue() > 200 && right.red() < 60, "{right:?}");
+        assert!(left.green() < 30, "not the outline colour");
+        // Outside the stroke nothing is painted.
+        assert_eq!(img.pixel(50, 2).unwrap().green(), 255);
     }
 
     #[test]
