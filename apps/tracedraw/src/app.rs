@@ -1270,6 +1270,7 @@ impl DockerTab {
         DockerTab::ColorStyles,
         DockerTab::ObjectStyles,
         DockerTab::FindReplace,
+        DockerTab::AiGenerate,
         DockerTab::Scripts,
         DockerTab::Palettes,
         DockerTab::Lens,
@@ -1293,7 +1294,6 @@ impl DockerTab {
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
         DockerTab::AiDrawing,
-        DockerTab::AiGenerate,
         DockerTab::Effects,
     ];
 

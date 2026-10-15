@@ -292,10 +292,13 @@ pub const VECTOR_STYLES: [(&str, &str); 6] = [
         "A simple icon: few shapes, thick strokes, centred.",
     ),
     (
-        "aiimg.vstyle_sticker",
-        "A sticker: bold shapes with a thick white border.",
+        "aiimg.vstyle_hand",
+        "Hand drawn: slightly irregular organic lines and shapes.",
     ),
-    ("aiimg.vstyle_silhouette", "A single-colour silhouette."),
+    (
+        "aiimg.vstyle_kawaii",
+        "Kawaii poster: cute rounded characters, pastel colours, playful shapes.",
+    ),
 ];
 
 /// Ready-made remix requests (the workflows remixing is good at): the

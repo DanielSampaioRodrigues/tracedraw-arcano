@@ -173,10 +173,30 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             .width((ui.available_width() - 34.0).max(80.0))
             .selected_text(current.clone())
             .show_ui(ui, |ui| {
+                // Each model with a line on what it is good at.
+                ui.set_min_width(260.0);
+                ui.set_max_width(280.0);
                 for m in &list {
-                    if ui.selectable_label(*m == current, m).clicked() {
+                    let on = *m == current;
+                    let resp = ui
+                        .vertical(|ui| {
+                            let r = ui.radio(on, RichText::new(m.as_str()).strong());
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(model_note(m))
+                                        .color(Tokens::text_dim())
+                                        .size(11.0),
+                                )
+                                .wrap(),
+                            );
+                            r
+                        })
+                        .inner;
+                    if resp.clicked() {
                         app.settings.ai_image.model = m.clone();
+                        ui.close();
                     }
+                    ui.add_space(3.0);
                 }
             });
         ui.small_button("?").on_hover_text(model_note(&current));
@@ -464,14 +484,21 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
         .size(11.0),
     );
     if app.ai_image.busy() {
+        // The button says it is working, with the progress and Cancel.
+        let label = match app.ai_image.status {
+            ImageStatus::Waiting { done, total } if total > 1 => trf(
+                "aigen.waiting",
+                &[("done", &done.to_string()), ("total", &total.to_string())],
+            ),
+            _ => tr("aigen.in_progress"),
+        };
         ui.horizontal(|ui| {
+            let w = (ui.available_width() - 90.0).max(80.0);
+            ui.add_enabled(
+                false,
+                egui::Button::new(format!("\u{2726} {label}")).min_size(Vec2::new(w, 30.0)),
+            );
             ui.spinner();
-            if let ImageStatus::Waiting { done, total } = app.ai_image.status {
-                ui.label(trf(
-                    "aigen.waiting",
-                    &[("done", &done.to_string()), ("total", &total.to_string())],
-                ));
-            }
             if ui.button(tr("dialog.cancel")).clicked() {
                 app.ai_image_cancel();
             }
@@ -731,14 +758,39 @@ fn style_swatch(p: &egui::Painter, r: egui::Rect, i: usize) {
             );
             p.circle_filled(c, s * 0.35, Color32::from_rgb(0x26, 0x32, 0x38));
         }
+        // Hand drawn: a wobbly pencil line.
         10 => {
-            p.rect_filled(r, 0.0, Color32::from_rgb(0x9C, 0x27, 0xB0));
-            p.circle_filled(c, s * 1.25, Color32::WHITE);
-            p.circle_filled(c, s * 1.0, Color32::from_rgb(0xFF, 0x70, 0x43));
+            p.rect_filled(r, 0.0, Color32::from_rgb(0xFA, 0xF6, 0xEE));
+            let pts: Vec<egui::Pos2> = (0..=20)
+                .map(|k| {
+                    let t = k as f32 / 20.0;
+                    egui::pos2(
+                        r.left() + 6.0 + t * (r.width() - 12.0),
+                        c.y + (t * 9.0).sin() * s * 0.6 + (t * 23.0).sin() * 1.2,
+                    )
+                })
+                .collect();
+            p.add(egui::Shape::line(
+                pts,
+                egui::Stroke::new(1.6, Color32::from_rgb(0x4E, 0x34, 0x2E)),
+            ));
         }
+        // Kawaii poster: a round pastel face.
         11 => {
-            p.rect_filled(r, 0.0, Color32::from_rgb(0xFF, 0xF8, 0xE1));
-            leaf(Color32::from_rgb(0x21, 0x21, 0x21), egui::Stroke::NONE);
+            p.rect_filled(r, 0.0, Color32::from_rgb(0xFF, 0xE4, 0xEC));
+            p.circle_filled(c, s * 1.15, Color32::from_rgb(0xFF, 0xF3, 0xC4));
+            p.circle_filled(c + Vec2::new(-s * 0.4, -s * 0.1), s * 0.12, Color32::BLACK);
+            p.circle_filled(c + Vec2::new(s * 0.4, -s * 0.1), s * 0.12, Color32::BLACK);
+            p.circle_filled(
+                c + Vec2::new(-s * 0.65, s * 0.25),
+                s * 0.18,
+                Color32::from_rgb(0xFF, 0x9E, 0xB5),
+            );
+            p.circle_filled(
+                c + Vec2::new(s * 0.65, s * 0.25),
+                s * 0.18,
+                Color32::from_rgb(0xFF, 0x9E, 0xB5),
+            );
         }
         // Pop art.
         _ => {

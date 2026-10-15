@@ -52,13 +52,14 @@ model and whether it is ready, costs (each picture is one request to the
 user's service, billed by it; local servers cost nothing), what is sent,
 and Set Up AI. The settings and results scroll; the footer stays at the
 bottom: Images (1 to 4), Insert into drawing (on), how many requests go
-to which service, and Generate (a spinner, the progress and Cancel while
-waiting), then the outcome.
+to which service, and Generate (while waiting, a greyed "Generation in progress..." button,
+the progress when several pictures come, a spinner and Cancel), then the outcome.
 
 Every mode has:
 
 - Model: the service's models (the usual ones until Test Connection lists
-  its own) and a ? button with notes on the model.
+  its own), each shown in the list as a radio row with a line on what it
+  is good at; a ? button repeats the note of the model in use.
 - A reference picture: Source image for Remix (needed; the selected
   bitmap until another is chosen), Example image (optional) for the
   others. Under its thumbnail, Use Selection (the selected bitmap as it
@@ -91,8 +92,8 @@ Modes:
     shapes and solid colours or gradients, no text, images or scripts),
     imported as a group of editable shapes centred on the page within
     four fifths of it.
-  Vector styles: Flat illustration, Line art, Comic book, Icon, Sticker,
-  Silhouette.
+  Vector styles: Flat illustration, Line art, Comic book, Icon, Hand
+  drawn, Kawaii poster.
 
 Each Generate replaces the Results (up to 12); with Insert into drawing
 on, each picture is also placed centred on the page within four fifths
@@ -102,8 +103,8 @@ result inserts it. Pictures are named "AI-generated bitmap", vectors
 
 Object > AI Generate opens the docker in each mode (Create Image, Remix
 Image, Create Vector Graphic) and has Remove Background; a bitmap's
-context menu has Remove Background and Remix with AI (the bitmap becomes
-the source).
+context menu starts with Edit Bitmap, Remove Background, Quick Trace,
+Crop Bitmap and Remix with AI (the bitmap becomes the source).
 
 ## Remove Background
 

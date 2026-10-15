@@ -136,22 +136,32 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         sep(ui);
     }
     if is_bitmap {
-        // AI: greyed until an image service is set up.
+        // Edit Bitmap, then Remove Background (greyed until an image
+        // service is set up), then tracing, cropping and remixing.
         let ai = app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();
+        if ci(
+            ui,
+            close,
+            "menu.bitmaps.edit_bitmap",
+            "",
+            app.selected_bitmap().is_some(),
+        ) {
+            app.edit_bitmap_externally();
+        }
         if ci(ui, close, "menu.bitmaps.remove_background", "", ai) {
             app.ai_remove_background();
+        }
+        if ci(ui, close, "menu.bitmaps.quick_trace", "", true) {
+            app.quick_trace();
+        }
+        if ci(ui, close, "menu.bitmaps.crop_bitmap", "", true) {
+            app.set_tool(Tool::Crop);
         }
         if ci(ui, close, "context.ai_remix", "", ai) {
             app.ai_image.mode = crate::ai_image::Mode::Remix;
             app.ai_image.info = false;
             app.ai_source_from_selection();
             app.open_ai_generate();
-        }
-        if ci(ui, close, "menu.bitmaps.crop_bitmap", "", true) {
-            app.set_tool(Tool::Crop);
-        }
-        if ci(ui, close, "menu.bitmaps.quick_trace", "", true) {
-            app.quick_trace();
         }
         sep(ui);
     }
