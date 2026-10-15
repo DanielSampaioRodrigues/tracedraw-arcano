@@ -712,6 +712,13 @@ fn files_are_laid_out_as_the_versions_have_them() {
             "{v}: the text comes first, front to back"
         );
         assert!(ids.iter().any(|i| i.trim() == "txsm"), "{v}");
+        // From 11 the text record is followed by its line breaking tables.
+        let txsm = at("txsm").expect("txsm");
+        assert_eq!(
+            ids.get(txsm + 1).map(|i| i.trim()) == Some("txtj"),
+            v >= 11,
+            "{v}: {ids:?}"
+        );
         let mut flags = Vec::new();
         tree.root.walk(&mut |ch, _| {
             if ch.is(b"flgs") {
@@ -1519,4 +1526,34 @@ fn a_drawings_cmyk_profile_is_stored_and_named() {
     // It comes back with the drawing.
     let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
     assert_eq!(back.cmyk_profile.map(|p| p.data.len()), Some(data.len()));
+}
+
+#[test]
+fn txtj_holds_the_three_line_breaking_tables() {
+    let t = txtj();
+    assert_eq!(t.len(), 528);
+    let hex = |r: std::ops::Range<usize>| -> String {
+        t[r].iter().map(|b| format!("{b:02x}")).collect()
+    };
+    // The table bytes of files of versions 16 to 21.
+    assert_eq!(
+        hex(0..170),
+        concat!(
+            "0e000000510000002100250029002c002e003f005d007d00",
+            "3f003f003f003f003f003f003f003f003f003f003f003f00",
+            "3f003f003f003f003f003f002c002e00b7003a003b003f00",
+            "21003f003f003f003f003f003f003f003f00920094002900",
+            "3f005d007d003e00bb003f003f003f00b000270022003f00",
+            "3f00250089003f003f003f003f003f003f003f003f003f00",
+            "3f003f003f003f003f003f003f003f003f003f003f003f00",
+            "3f00",
+        )
+    );
+    assert_eq!(
+        hex(312..356),
+        "14000000240028005b005c007b003f009100930028003f005b007b003c00ab003f003f003f003f0024003f00"
+    );
+    assert_eq!(hex(420..440), "080000002c002e003f003f003f003f002c002e00");
+    // Everything between the tables is zero.
+    assert!(t[170..312].iter().chain(&t[356..420]).chain(&t[440..]).all(|&b| b == 0));
 }

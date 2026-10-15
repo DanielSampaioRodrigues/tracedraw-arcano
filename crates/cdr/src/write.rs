@@ -1443,6 +1443,37 @@ fn trfd(v: Ver, m: Affine) -> Vec<u8> {
     b.done()
 }
 
+/// `txtj`: the line breaking tables that follow every `txsm` from version
+/// 11. Files store 528 bytes: a word of 14, then three tables, each a
+/// count and that many UTF-16 characters (81 at offset 4, 20 at 312, 8 at
+/// 420). Files of versions 11 to 21 carry the same tables in every text;
+/// the bytes between them differ from file to file and are written as
+/// zeros.
+fn txtj() -> Vec<u8> {
+    // Offset, length, and the characters before the `?` that fill the
+    // rest of the table.
+    const TABLES: [(usize, usize, &str); 3] = [
+        (
+            4,
+            81,
+            "!%),.?]}??????????????????,.\u{b7}:;?!????????\u{92}\u{94})?]}>\u{bb}???\u{b0}'\"??%\u{89}",
+        ),
+        (312, 20, "$([\\{?\u{91}\u{93}(?[{<\u{ab}????$"),
+        (420, 8, ",.????,."),
+    ];
+    let mut b = Buf::default();
+    b.u32(14);
+    for (at, n, chars) in TABLES {
+        b.pad_to(at);
+        b.u32(n as u32);
+        for u in chars.encode_utf16().chain(std::iter::repeat(u16::from(b'?'))).take(n) {
+            b.u16(u);
+        }
+    }
+    b.pad_to(528);
+    b.done()
+}
+
 /// `ftil`: the fill's transform, the identity.
 fn ftil() -> Vec<u8> {
     identity_matrix()
@@ -2601,6 +2632,9 @@ impl<'a> Writer<'a> {
         ));
         if let Some((t, _, _)) = text {
             body.push(chunk(b"txsm", t));
+            if v.0 >= 11 {
+                body.push(chunk(b"txtj", txtj()));
+            }
         }
         Placed {
             nodes: vec![list(b"obj ", body)],

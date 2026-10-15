@@ -4,6 +4,12 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- `.cdr` files of versions 11 and later saved by TraceDraw give every
+  text the line breaking tables files of those versions carry after it
+  (`txtj`), as other programs write them (#98).
+
 ## 0.8.0 (2026-10-15)
 
 `.cdr` files saved by TraceDraw now carry everything files of their
