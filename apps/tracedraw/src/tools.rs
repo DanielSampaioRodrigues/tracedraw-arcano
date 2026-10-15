@@ -36,6 +36,7 @@ pub enum Tool {
     ThreePointCurve,
     // Drawing group
     BrushStrokes,
+    PainterlyBrush,
     ShapeRecognition,
     Sketch,
     // Rectangle group
@@ -133,7 +134,12 @@ pub const GROUPS: &[ToolGroup] = &[
         hidden: false,
     },
     ToolGroup {
-        tools: &[Tool::BrushStrokes, Tool::ShapeRecognition, Tool::Sketch],
+        tools: &[
+            Tool::BrushStrokes,
+            Tool::PainterlyBrush,
+            Tool::ShapeRecognition,
+            Tool::Sketch,
+        ],
         hidden: false,
     },
     ToolGroup {
@@ -209,7 +215,7 @@ pub const GROUPS: &[ToolGroup] = &[
 ];
 
 impl Tool {
-    pub const ALL: [Tool; 63] = [
+    pub const ALL: [Tool; 64] = [
         Tool::Pick,
         Tool::FreeformPick,
         Tool::FreeTransform,
@@ -235,6 +241,7 @@ impl Tool {
         Tool::Polyline,
         Tool::ThreePointCurve,
         Tool::BrushStrokes,
+        Tool::PainterlyBrush,
         Tool::ShapeRecognition,
         Tool::Sketch,
         Tool::Rectangle,
@@ -303,6 +310,7 @@ impl Tool {
             Tool::Polyline => "polyline",
             Tool::ThreePointCurve => "three_point_curve",
             Tool::BrushStrokes => "brush_strokes",
+            Tool::PainterlyBrush => "painterly_brush",
             Tool::ShapeRecognition => "shape_recognition",
             Tool::Sketch => "sketch",
             Tool::Rectangle => "rectangle",

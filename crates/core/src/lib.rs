@@ -24,6 +24,7 @@ pub mod id;
 pub mod join;
 pub mod live;
 pub mod nodes;
+pub mod painterly;
 mod press;
 pub mod shaping;
 pub mod style;

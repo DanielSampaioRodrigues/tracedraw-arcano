@@ -1044,6 +1044,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
             }
+            Tool::PainterlyBrush => crate::painterly_tool::painterly_bar(app, ui),
             Tool::BrushStrokes => {
                 ui.label(
                     egui::RichText::new(tr("media.calligraphic"))

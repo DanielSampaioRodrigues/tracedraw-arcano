@@ -697,6 +697,9 @@ pub struct Stroke {
     /// Empty: the outline has `width` everywhere.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub widths: Vec<WidthNode>,
+    /// Drawn as painterly brush marks along the path instead of a line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub painterly: Option<crate::painterly::Painterly>,
 }
 
 /// A point of a variable-width outline: where it is along the path and
@@ -804,6 +807,7 @@ impl Default for Stroke {
             nib_angle: 0.0,
             fill: None,
             widths: Vec::new(),
+            painterly: None,
         }
     }
 }

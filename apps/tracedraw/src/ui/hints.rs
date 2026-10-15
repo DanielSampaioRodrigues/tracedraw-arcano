@@ -100,6 +100,7 @@ impl Topic {
                 Tool::Polyline,
                 Tool::ThreePointCurve,
                 Tool::BrushStrokes,
+                Tool::PainterlyBrush,
                 Tool::ShapeRecognition,
                 Tool::Sketch,
             ],
@@ -257,6 +258,7 @@ fn help_page(tool: Tool) -> &'static str {
         Tool::Crop | Tool::Knife | Tool::SegmentDelete | Tool::Eraser => "crop-knife-eraser.md",
         Tool::Zoom | Tool::Pan => "zoom-and-pan.md",
         Tool::BrushStrokes => "brush-strokes.md",
+        Tool::PainterlyBrush => "painterly-brushes.md",
         Tool::Freehand
         | Tool::TwoPointLine
         | Tool::Bezier

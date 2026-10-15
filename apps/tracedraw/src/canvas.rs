@@ -818,6 +818,7 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
                 | Tool::ThreePointCurve
                 | Tool::ShapeRecognition
                 | Tool::BrushStrokes
+                | Tool::PainterlyBrush
         )
     {
         return;

@@ -78,6 +78,7 @@ mod new_document;
 mod node_edit;
 mod ops;
 mod ops2;
+mod painterly_tool;
 mod palette;
 #[cfg(test)]
 mod pick_drag_tests;

@@ -1020,6 +1020,7 @@ impl Ctx {
             nib_angle: pen.map_or(0.0, |p| if p.angle.is_finite() { p.angle } else { 0.0 }),
             fill: None,
             widths: Vec::new(),
+            painterly: None,
         })
     }
 

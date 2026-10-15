@@ -583,6 +583,25 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
             }
         }
 
+        Tool::PainterlyBrush => {
+            // A round brush with its handle, and a speckled stroke.
+            ic.painter.line_segment(
+                [ic.at(14.5, 1.5), ic.at(9.0, 7.0)],
+                Stroke::new(ic.u(2.0), color),
+            );
+            ic.fill(&[(9.5, 5.5), (10.5, 6.5), (7.5, 10.0), (6.0, 8.5)], color);
+            for (x, y, r) in [
+                (5.5, 10.5, 1.1),
+                (3.8, 12.0, 0.9),
+                (2.2, 13.6, 0.7),
+                (5.0, 13.2, 0.6),
+                (7.2, 12.4, 0.5),
+                (1.8, 11.4, 0.45),
+            ] {
+                ic.circle_f(x, y, r, color);
+            }
+        }
+
         // Brush strokes: a tapered brush stroke.
         Tool::BrushStrokes => {
             // A brush stroke shaped like an S, thickening towards a heavy,

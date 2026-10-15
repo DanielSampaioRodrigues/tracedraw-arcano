@@ -161,7 +161,15 @@ impl App {
                 self.box_like_input(response, p, mods)
             }
             Tool::Spiral | Tool::CommonShapes => self.box_like_input(response, p, mods),
-            Tool::BrushStrokes => {
+            Tool::BrushStrokes | Tool::PainterlyBrush => {
+                if self.tool == Tool::PainterlyBrush && response.clicked_by(PointerButton::Primary)
+                {
+                    // A click picks the object to paint with the bar.
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.selection.clear(),
+                    }
+                }
                 if response.drag_started_by(PointerButton::Primary) {
                     self.drag = Drag::Freehand { points: vec![p] };
                 }

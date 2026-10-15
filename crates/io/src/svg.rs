@@ -441,7 +441,7 @@ fn write_unlinked(
     });
     let stroke_attr = match &shape.stroke {
         None => "stroke=\"none\"".to_string(),
-        Some(_) if calligraphic.is_some() => "stroke=\"none\"".to_string(),
+        Some(s) if calligraphic.is_some() || s.painterly.is_some() => "stroke=\"none\"".to_string(),
         Some(s) => {
             let cap = match s.cap {
                 LineCap::Butt => "butt",
@@ -490,6 +490,24 @@ fn write_unlinked(
             path_data(&(parent * band)),
             color.to_hex()
         );
+    }
+    // A painterly outline: its marks, one path per opacity step.
+    if let Some((s, brush)) = shape
+        .stroke
+        .as_ref()
+        .and_then(|s| s.painterly.as_ref().map(|b| (s, b)))
+    {
+        for (alpha, marks) in
+            tracedraw_core::painterly::marks_by_opacity(&shape.page_path(), s.width, brush, 12)
+        {
+            let _ = writeln!(
+                out,
+                "{pad}<path d=\"{}\" fill=\"{}\" fill-opacity=\"{}\" stroke=\"none\"/>",
+                path_data(&(parent * marks)),
+                s.color.to_hex(),
+                fmt(alpha)
+            );
+        }
     }
     // Arrowheads (presets and custom) are filled outlines in the stroke
     // colour. They are built in page space, where the curve direction is
@@ -785,6 +803,35 @@ mod tests {
             .as_ref()
             .map(|s| s.widths.clone());
         assert_eq!(widths, Some(st.widths));
+    }
+
+    #[test]
+    fn painterly_outlines_are_written_as_marks_by_opacity() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut path = tracedraw_core::geometry::BezPath::new();
+        path.move_to(tracedraw_core::Point::new(10.0, 50.0));
+        path.line_to(tracedraw_core::Point::new(110.0, 50.0));
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        let mut st = Stroke::new(Color::rgb8(0, 128, 0), 6.0);
+        st.painterly = Some(tracedraw_core::painterly::Painterly::new(
+            tracedraw_core::painterly::PainterlyBrush::Watercolor,
+        ));
+        s.stroke = Some(st);
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        assert!(svg.contains("fill=\"#008000\" fill-opacity=\""), "{svg}");
+        assert!(!svg.contains("stroke-width=\"6\""));
+        let pdf = crate::pdf::document_to_pdf(&doc);
+        let text = String::from_utf8_lossy(&pdf);
+        assert!(text.contains("/ca "));
     }
 
     /// A line from (10, 50) to (60, 50), 2 mm wide, with a custom

@@ -729,7 +729,33 @@ impl PageWriter<'_> {
                 let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
                 let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
             }
-            if let Some(band) = tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0) {
+            if let Some(brush) = &s.painterly {
+                // Painterly brush: the marks, one filled path per opacity.
+                for (alpha, marks) in tracedraw_core::painterly::marks_by_opacity(
+                    &shape.page_path(),
+                    s.width,
+                    brush,
+                    12,
+                ) {
+                    self.content.push_str("q\n");
+                    if self.pdf.allow_alpha {
+                        let name = format!("GS{}", self.gstates.len());
+                        let id = self.pdf.add_str(format!(
+                            "<< /Type /ExtGState /CA {} /ca {} >>",
+                            f(alpha),
+                            f(alpha)
+                        ));
+                        self.gstates.push((name.clone(), id));
+                        let _ = writeln!(self.content, "/{name} gs");
+                    }
+                    let op = self.color_op(s.color, true);
+                    let _ = writeln!(self.content, "{op}");
+                    self.path_ops(&(parent * marks));
+                    self.content.push_str("f\nQ\n");
+                }
+            } else if let Some(band) =
+                tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0)
+            {
                 // Calligraphic nib or variable width: the band, filled.
                 let op = self.color_op(s.color, true);
                 let _ = writeln!(self.content, "{op}");

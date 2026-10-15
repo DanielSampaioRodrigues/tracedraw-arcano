@@ -605,6 +605,32 @@ impl Renderer<'_> {
         if let Some(stroke) = &shape.stroke {
             let (mut paint, sk_stroke) = self.stroke_paint(stroke, transform);
             paint.blend_mode = self.blend_for(shape.overprint_outline);
+            if let Some(brush) = stroke.painterly.as_ref().filter(|_| !self.flags.wireframe) {
+                // Painterly brush: its marks, each with its own opacity.
+                let c = transform.as_coeffs();
+                let scale = if stroke.scale_with_object {
+                    ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)
+                } else {
+                    1.0
+                };
+                let [r, g, b] = stroke.color.to_rgb8();
+                for mark in
+                    tracedraw_core::painterly::marks(&page_path, stroke.width * scale, brush)
+                {
+                    let Some(mp) = to_sk_path(&(self.screen * mark.path)) else {
+                        continue;
+                    };
+                    paint.set_color_rgba8(r, g, b, (mark.alpha * 255.0).round() as u8);
+                    self.pixmap.fill_path(
+                        &mp,
+                        &paint,
+                        FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+                return;
+            }
             let object_scale = if stroke.scale_with_object {
                 let c = transform.as_coeffs();
                 ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)

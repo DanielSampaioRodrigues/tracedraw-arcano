@@ -764,6 +764,7 @@ impl App {
             | Tool::CommonShapes
             | Tool::Table
             | Tool::BrushStrokes
+            | Tool::PainterlyBrush
             | Tool::ParallelDimension
             | Tool::Connector => self.tools2_input(response, p, mods),
             Tool::Blend | Tool::Smooth | Tool::Smear | Tool::Twirl => {
@@ -1625,6 +1626,9 @@ impl App {
                 if points.len() >= 3 {
                     self.select_in_region(crate::select_region::Region::Polygon(&points), touching);
                 }
+            }
+            Drag::Freehand { points } if self.tool == Tool::PainterlyBrush => {
+                self.add_painterly_stroke(&points);
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
                 let shapes = self.media_shapes(&points);

@@ -838,6 +838,8 @@ pub struct App {
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
     pub multipage: bool,
+    /// The Painterly Brush tool's brush and size.
+    pub painterly: crate::painterly_tool::PainterlySettings,
     /// The Variable Outline tool's picked node and drag.
     pub vo: crate::variable_outline::VariableOutlineState,
     /// Textures of the other pages in the Multipage View.
@@ -1582,6 +1584,7 @@ impl App {
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
+            painterly: Default::default(),
             vo: Default::default(),
             page_rasters: Default::default(),
             view_mode: ViewMode::Enhanced,

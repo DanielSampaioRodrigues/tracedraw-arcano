@@ -58,6 +58,10 @@ by the newest versions opening with their fills and spot colours.
 - Grouping objects from several layers keeps their drawing order.
 - View > Multipage View shows every page in a grid; click any page to
   work on it in place.
+- Painterly Brush tool (Brush Strokes flyout): strokes that look painted
+  with chalk, charcoal, pastel, ink wash, watercolour, dry brush,
+  bristles, fur, spray, speckles, clouds or silk ribbons; still curves
+  that the Shape tool reshapes.
 - Export docker: list pages and selections as assets, each with its
   own name, format and resolution, and export them all at once.
 - Variable Outline tool (Shape tool flyout): drag across an outline to
