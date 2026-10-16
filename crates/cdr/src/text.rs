@@ -960,8 +960,9 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         // From version 17 a character is one byte (Windows-1252) unless
         // its record's flag bit 0 is set: then it is a UTF-16LE unit of
         // two bytes (seen in a version 22 file: "č" stored as 0D 01, "ř" as
-        // 59 01, "í" as ED). Version 16 files use UTF-16LE throughout.
-        let text = if v >= 17 {
+        // 59 01, "í" as ED). Version 16 files hold either UTF-16LE (two
+        // bytes a character) or the same one-byte text.
+        let text = if v >= 17 || nbytes != nc.saturating_mul(2) {
             match decode_mixed_width(text, &wide) {
                 Some(s) => s,
                 None if nbytes == nc * 2 => decode_utf16le(text),

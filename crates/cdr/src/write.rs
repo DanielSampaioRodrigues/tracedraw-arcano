@@ -3266,7 +3266,11 @@ impl<'a> Writer<'a> {
             for k in &index {
                 t.u16(0).u8(k.saturating_mul(2)).zeros(5);
             }
-            let bytes = if v.byte_strings() {
+            // The letters are one byte each from version 16 (files saved
+            // for 16 hold them so, while their style strings are UTF-16);
+            // UTF-16 letters in a version 16 file are read as half the
+            // text by the program that opens it.
+            let bytes = if v.0 >= 16 {
                 cp1252(&text).unwrap_or_else(|| text.as_bytes().to_vec())
             } else {
                 utf16(&text)

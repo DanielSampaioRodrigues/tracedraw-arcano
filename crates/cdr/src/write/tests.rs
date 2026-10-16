@@ -1768,3 +1768,39 @@ fn the_version_12_record_keeps_the_page_and_settings_of_version_13() {
     // The ruler origin and grid follow, moved by the two added bytes.
     assert_eq!(&r12[19..696], &r13[25..702]);
 }
+
+#[test]
+fn version_16_text_is_one_byte_a_letter_and_reads_back() {
+    let mut ids = Document::new("w", Size::new(200.0, 100.0)).ids().clone();
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Kombi 2013 é", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    let bytes = document_to_cdr_version(&doc, 16);
+    let (_, tree, riff) = chunk_ids(&bytes);
+    let mut record = Vec::new();
+    tree.root.walk(&mut |ch, _| {
+        if ch.is(b"txsm") {
+            record = tree.data(&riff, ch).to_vec();
+        }
+    });
+    // The letters close the record: a u32 count of 12 bytes, the text in
+    // Windows-1252 and a zero.
+    let tail = &record[record.len() - 17..];
+    assert_eq!(&tail[..4], &12u32.to_le_bytes());
+    assert_eq!(&tail[4..16], b"Kombi 2013 \xe9");
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
+    let text: String = back.pages[0].layers[0]
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.kind {
+            ShapeKind::Text { spans, .. } => {
+                Some(spans.iter().map(|sp| sp.text.clone()).collect::<String>())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "Kombi 2013 é");
+}
