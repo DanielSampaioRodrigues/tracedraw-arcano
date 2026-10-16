@@ -1,11 +1,13 @@
-//! AI images: pictures made, remixed or cut out by an image service the
-//! user sets up with their own key (Tools > Options > AI). TraceDraw has
-//! no AI of its own; nothing is sent until the user asks.
+//! AI images: pictures made, remixed or cut out by the AI service the
+//! user sets up with their own key (Tools > Options > AI > Service), when
+//! that service can make pictures. TraceDraw has no AI of its own;
+//! nothing is sent until the user asks.
 //!
-//! Two kinds of service are spoken to: Google's Gemini API
+//! Two kinds of image API are spoken to: Google's Gemini API
 //! (`generateContent` with an image model) and the OpenAI Images API
 //! (`images/generations` and `images/edits`), which other services and
-//! local servers also offer at an address of the user's. Replies carry
+//! local servers also offer at an address of the user's. Which one, and
+//! where, follows from the one service (`AiPrefs::image_prefs`). Replies carry
 //! the pictures as base64; they become bitmap objects on the page. See
 //! docs/behavior/ai-generate.md.
 
@@ -31,8 +33,6 @@ pub enum ImageProvider {
 }
 
 impl ImageProvider {
-    pub const ALL: [ImageProvider; 2] = [ImageProvider::Gemini, ImageProvider::OpenAi];
-
     pub fn key(self) -> &'static str {
         match self {
             ImageProvider::Gemini => "aiimg.provider_gemini",
@@ -64,28 +64,11 @@ impl ImageProvider {
     }
 }
 
-/// Ready-made image services: the i18n key of the name, the kind of
-/// service and its address (empty: the usual one). The address stays
-/// editable after one is picked.
-pub const PRESETS: [(&str, ImageProvider, &str); 3] = [
-    ("aipreset.gemini", ImageProvider::Gemini, ""),
-    ("aipreset.openai", ImageProvider::OpenAi, ""),
-    (
-        "aipreset.localai",
-        ImageProvider::OpenAi,
-        "http://localhost:8080/v1",
-    ),
-];
-
-/// The preset the image service matches, if any.
-pub fn preset_of(prefs: &ImagePrefs) -> Option<usize> {
-    PRESETS.iter().position(|(_, p, e)| {
-        *p == prefs.provider && prefs.endpoint.trim().trim_end_matches('/') == *e
-    })
-}
-
-/// The image service, kept with the preferences. The key is kept here
-/// only while `remember_key` is on.
+/// An image service: derived from the one AI service
+/// (`AiPrefs::image_prefs`, with no key: the service's key goes with each
+/// request), and the shape of the separate image service older versions
+/// saved (read once and folded into the one service, see
+/// `settings::migrate_ai`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ImagePrefs {
@@ -120,15 +103,6 @@ impl ImagePrefs {
     /// A service at an address of the user's may take no key.
     pub fn needs_key(&self) -> bool {
         self.endpoint.trim().is_empty()
-    }
-}
-
-/// The key a session starts with: the remembered one, if any.
-pub fn remembered_key(prefs: &ImagePrefs) -> String {
-    if prefs.remember_key {
-        prefs.key.clone()
-    } else {
-        String::new()
     }
 }
 
@@ -865,7 +839,6 @@ pub struct ImageSession {
     pub folded: bool,
     /// The information page shows instead of the settings.
     pub info: bool,
-    pub key: String,
     pub status: ImageStatus,
     /// Newest first.
     pub results: Vec<GenImage>,
@@ -896,7 +869,6 @@ impl Default for ImageSession {
             auto_place: true,
             folded: false,
             info: false,
-            key: String::new(),
             status: ImageStatus::default(),
             results: Vec::new(),
             models: Vec::new(),
@@ -922,12 +894,35 @@ impl App {
         self.settings.ai_enabled
     }
 
-    /// The image service is set up and AI features are on.
+    /// The image calls of the AI service, when it can make pictures.
+    pub fn ai_image_prefs(&self) -> Option<ImagePrefs> {
+        self.settings.ai.image_prefs()
+    }
+
+    /// The AI service makes pictures (it can, has a model and its key
+    /// where one is needed) and AI features are on.
     pub fn ai_image_ready(&self) -> bool {
-        let p = &self.settings.ai_image;
+        let Some(p) = self.ai_image_prefs() else {
+            return false;
+        };
         self.ai_features_on()
             && !p.model().is_empty()
-            && (!p.needs_key() || !self.ai_image.key.trim().is_empty())
+            && (!p.needs_key() || !self.ai.key.trim().is_empty())
+    }
+
+    /// Why the picture commands are greyed, for their hover tips: AI
+    /// turned off, a service that makes drawings only, or one not set up.
+    /// None when they can run.
+    pub fn ai_image_tip(&self) -> Option<String> {
+        if !self.ai_features_on() {
+            Some(tr("aiimg.off"))
+        } else if !self.settings.ai.can_make_pictures() {
+            Some(tr("aiui.drawings_only_tip"))
+        } else if !self.ai_image_ready() {
+            Some(tr("aiui.set_up_tip"))
+        } else {
+            None
+        }
     }
 
     /// The drawing service (AI Drawing) is set up and AI features are on.
@@ -950,6 +945,8 @@ impl App {
     fn ai_image_problem(&self) -> Option<String> {
         if !self.ai_features_on() {
             Some(tr("aiimg.off"))
+        } else if !self.settings.ai.can_make_pictures() {
+            Some(tr("aiui.drawings_only_tip"))
         } else if !self.ai_image_ready() {
             Some(tr("aiimg.not_set_up"))
         } else if !self.has_document() {
@@ -1096,8 +1093,10 @@ impl App {
             prompt = format!("Use the attached picture as the reference.\n\n{prompt}");
         }
         let count = s.count.clamp(1, MAX_COUNT);
-        let prefs = self.settings.ai_image.clone();
-        let key = self.ai_image.key.clone();
+        let Some(prefs) = self.ai_image_prefs() else {
+            return;
+        };
+        let key = self.ai.key.clone();
         let aspect = self.ai_aspect();
         let reference = self.ai_image.source.as_ref().map(|s| s.png.clone());
         // Gemini answers one picture a request, and so do edits.
@@ -1189,16 +1188,13 @@ impl App {
         }
         let prompt = compose_prompt(&words, self.ai_image.style, self.ai_image.palette, false);
         let count = self.ai_image.count.clamp(1, MAX_COUNT) as usize;
+        let Some(prefs) = self.ai_image_prefs() else {
+            return;
+        };
         self.ai_image_begin(count);
         self.ai_image.results.clear();
         for _ in 0..count {
-            let http = build_edit(
-                &self.settings.ai_image,
-                &self.ai_image.key,
-                &prompt,
-                &src.png,
-                false,
-            );
+            let http = build_edit(&prefs, &self.ai.key, &prompt, &src.png, false);
             self.ai_image_send(http, Job::Remix { source: src.shape });
         }
         self.poll_ai_image();
@@ -1236,27 +1232,32 @@ impl App {
             self.status = tr("aiimg.need_bitmap");
             return;
         };
-        let prefs = self.settings.ai_image.clone();
+        let Some(prefs) = self.ai_image_prefs() else {
+            return;
+        };
         let chroma = prefs.provider == ImageProvider::Gemini;
         let prompt = if chroma { CHROMA_PROMPT } else { CUTOUT_PROMPT };
-        let http = build_edit(&prefs, &self.ai_image.key, prompt, &png, !chroma);
+        let http = build_edit(&prefs, &self.ai.key, prompt, &png, !chroma);
         self.ai_image_begin(1);
         self.status = tr("aiimg.removing_background");
         self.ai_image_send(http, Job::Cutout { shape, chroma });
         self.poll_ai_image();
     }
 
-    /// Fetch the service's image models.
+    /// Fetch the service's image models (nothing when it makes drawings
+    /// only).
     pub fn ai_image_fetch_models(&mut self) {
         if self.ai_image.busy() {
             return;
         }
-        let prefs = self.settings.ai_image.clone();
-        if prefs.needs_key() && self.ai_image.key.trim().is_empty() {
+        let Some(prefs) = self.ai_image_prefs() else {
+            return;
+        };
+        if prefs.needs_key() && self.ai.key.trim().is_empty() {
             self.ai_image.status = ImageStatus::Failed(tr("ai.need_key"));
             return;
         }
-        let http = build_models(&prefs, &self.ai_image.key);
+        let http = build_models(&prefs, &self.ai.key);
         self.ai_image_begin(1);
         self.ai_image_send(http, Job::Models);
         self.poll_ai_image();
@@ -1294,7 +1295,10 @@ impl App {
     }
 
     fn ai_image_receive(&mut self, result: HttpResult, job: Job) {
-        let provider = self.settings.ai_image.provider;
+        let provider = self
+            .ai_image_prefs()
+            .map(|p| p.provider)
+            .unwrap_or_default();
         let done = self.ai_image.total - self.ai_image.pending.len();
         if let Job::Models = job {
             match result.and_then(|r| parse_models(provider, &r)) {
@@ -1583,12 +1587,90 @@ mod tests {
         })
     }
 
+    /// The one AI service at the preset of `provider` (Gemini or OpenAI),
+    /// with a key.
     fn ready_app(provider: ImageProvider) -> App {
         let mut app = App::headless();
         app.settings.ai_enabled = true;
-        app.settings.ai_image.provider = provider;
-        app.ai_image.key = "k".into();
+        let preset = match provider {
+            ImageProvider::Gemini => "aipreset.gemini",
+            ImageProvider::OpenAi => "aipreset.openai",
+        };
+        let (_, kind, endpoint) = crate::ai::PRESETS
+            .iter()
+            .find(|(k, _, _)| *k == preset)
+            .copied()
+            .expect("preset");
+        app.settings.ai.provider = kind;
+        app.settings.ai.endpoint = endpoint.to_string();
+        app.ai.key = "k".into();
         app
+    }
+
+    #[test]
+    fn pictures_come_from_the_one_service_when_it_can_make_them() {
+        let mut app = ready_app(ImageProvider::Gemini);
+        let p = app.ai_image_prefs().expect("gemini makes pictures");
+        assert_eq!(p.provider, ImageProvider::Gemini);
+        assert_eq!(p.model(), "gemini-2.5-flash-image");
+        // Gemini's chat address is its OpenAI-compatible one; pictures go
+        // to its own API.
+        let r = build_generate(&p, &app.ai.key, "a cat", Aspect::Square, 1);
+        assert!(r.url.starts_with(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image"
+        ));
+        assert!(app.ai_image_ready() && app.ai_image_tip().is_none());
+        let mut app2 = ready_app(ImageProvider::OpenAi);
+        let p = app2.ai_image_prefs().expect("openai makes pictures");
+        assert_eq!(
+            (p.provider, p.model()),
+            (ImageProvider::OpenAi, "gpt-image-1".into())
+        );
+        assert_eq!(p.endpoint(), "https://api.openai.com/v1");
+        app2.settings.ai.image_model = "dall-e-3".into();
+        assert_eq!(
+            app2.ai_image_prefs().map(|p| p.model()),
+            Some("dall-e-3".into())
+        );
+        // Anthropic and the local chat-only servers make drawings only.
+        app.settings.ai = crate::ai::AiPrefs::default();
+        assert!(app.ai_image_prefs().is_none() && !app.ai_image_ready());
+        assert_eq!(app.ai_image_tip(), Some(tr("aiui.drawings_only_tip")));
+        for key in [
+            "aipreset.ollama",
+            "aipreset.lm_studio",
+            "aipreset.llama_cpp",
+            "aipreset.vllm",
+        ] {
+            let (_, kind, endpoint) = crate::ai::PRESETS
+                .iter()
+                .find(|(k, _, _)| *k == key)
+                .copied()
+                .expect("preset");
+            app.settings.ai.provider = kind;
+            app.settings.ai.endpoint = endpoint.to_string();
+            app.settings.ai.image_model = "anything".into();
+            assert!(!app.settings.ai.can_make_pictures(), "{key}");
+            assert!(app.ai_image_prefs().is_none(), "{key}");
+        }
+        // An address of the user's: pictures at the same base when an
+        // image model is given, and no key needed.
+        app.settings.ai.endpoint = "http://my-box:9000/v1/chat/completions".into();
+        app.settings.ai.image_model.clear();
+        assert!(app.settings.ai.can_make_pictures());
+        assert!(
+            app.ai_image_prefs().is_none(),
+            "no image model: no pictures"
+        );
+        assert_eq!(app.ai_image_tip(), Some(tr("aiui.set_up_tip")));
+        app.settings.ai.image_model = "sd-xl".into();
+        app.ai.key.clear();
+        let p = app.ai_image_prefs().expect("custom");
+        assert_eq!(p.endpoint(), "http://my-box:9000/v1");
+        assert!(app.ai_image_ready());
+        // AI turned off greys everything.
+        app.settings.ai_enabled = false;
+        assert_eq!(app.ai_image_tip(), Some(tr("aiimg.off")));
     }
 
     #[test]
@@ -1755,19 +1837,28 @@ mod tests {
         let mut app = App::headless();
         app.ai_image.fake = Some(|_| panic!("nothing may be sent"));
         app.ai_image.prompt = "a cat".into();
+        // The usual service makes drawings only.
+        app.ai.key = "k".into();
+        app.ai_create(false);
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Failed(tr("aiui.drawings_only_tip"))
+        );
+        let mut app = ready_app(ImageProvider::Gemini);
+        app.ai_image.fake = Some(|_| panic!("nothing may be sent"));
+        app.ai_image.prompt = "a cat".into();
         app.settings.ai_enabled = false;
-        app.ai_image.key = "k".into();
         app.ai_create(false);
         assert_eq!(app.ai_image.status, ImageStatus::Failed(tr("aiimg.off")));
         app.settings.ai_enabled = true;
-        app.ai_image.key.clear();
+        app.ai.key.clear();
         assert!(!app.ai_image_ready());
         app.ai_create(false);
         assert_eq!(
             app.ai_image.status,
             ImageStatus::Failed(tr("aiimg.not_set_up"))
         );
-        app.ai_image.key = "k".into();
+        app.ai.key = "k".into();
         app.ai_image.prompt.clear();
         app.ai_create(false);
         assert_eq!(
@@ -2037,8 +2128,9 @@ mod tests {
             Some("<svg viewBox='0 0 10 10'><rect width='5' height='5'/></svg>".to_string())
         );
         assert_eq!(extract_svg("no drawing"), None);
-        let mut app = ready_app(ImageProvider::Gemini);
-        // Not set up: nothing is sent.
+        // The usual service (Messages API), without a key: nothing is sent.
+        let mut app = App::headless();
+        app.settings.ai_enabled = true;
         app.ai_image.mode = Mode::Vector;
         app.ai_image.vector_engine = VectorEngine::Svg;
         app.ai_image.prompt = "a red square and a blue circle".into();
@@ -2078,19 +2170,5 @@ mod tests {
         );
         app.undo();
         assert!(app.doc().all_layers().all(|l| l.shapes.is_empty()));
-    }
-
-    #[test]
-    fn the_key_is_kept_only_when_asked() {
-        let mut prefs = ImagePrefs {
-            key: "secret".into(),
-            ..Default::default()
-        };
-        assert_eq!(remembered_key(&prefs), "");
-        prefs.remember_key = true;
-        assert_eq!(remembered_key(&prefs), "secret");
-        let app = App::headless();
-        let json = serde_json::to_string(&app.settings).expect("settings");
-        assert!(!json.contains("secret"));
     }
 }

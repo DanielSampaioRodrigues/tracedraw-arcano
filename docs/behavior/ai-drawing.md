@@ -30,9 +30,13 @@ model in use is always listed.
 
 ## Connection
 
-The connection is also set in Tools > Options > AI > Drawing service
-(see `ai-options.md`); with AI features turned off there, Draw and the
-prompt bar are off and the panel shows a banner.
+The connection is the one AI service, also set in Tools > Options > AI >
+Service (see `ai-options.md`), whose key also serves pictures when the
+service can make them; with AI features turned off there, Draw and the
+prompt bar are off and the panel shows a banner. For a service that can
+make pictures (OpenAI, Google Gemini, a custom OpenAI-compatible
+address) the connection also has an Image model row; for one that makes
+drawings only, a line says so.
 
 The Connection section is open until a key is entered for a service that
 needs one.

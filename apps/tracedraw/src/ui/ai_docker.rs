@@ -123,7 +123,9 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                         prefs.provider = *provider;
                         prefs.endpoint = endpoint.to_string();
                         prefs.model.clear();
+                        prefs.image_model.clear();
                         app.ai.models.clear();
+                        app.ai_image.models.clear();
                     }
                 }
             })
@@ -144,6 +146,8 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             prefs.provider = provider;
             prefs.endpoint.clear();
             prefs.model.clear();
+            prefs.image_model.clear();
+            app.ai_image.models.clear();
         }
         ui.end_row();
         row_label(ui, &tr("ai.endpoint"));
@@ -174,7 +178,16 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             prefs.key = app.ai.key.clone();
         }
         ui.end_row();
+        // Pictures: only for a service that can make them.
+        if prefs.can_make_pictures() {
+            row_label(ui, &tr("ai.image_model"));
+            image_model_field(prefs, &app.ai_image.models, ui);
+            ui.end_row();
+        }
     });
+    if !prefs.can_make_pictures() {
+        dim(ui, tr("aiui.drawings_only"));
+    }
     ui.checkbox(&mut prefs.show_bar, tr("ai.show_bar"));
     if ui
         .checkbox(&mut prefs.remember_key, tr("ai.remember_key"))
@@ -188,6 +201,49 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
         app.settings.save();
     }
     dim(ui, tr("ai.local_hint"));
+}
+
+/// The Image model field: typed, or picked from the service's image
+/// models (once tested) or the usual ones.
+fn image_model_field(prefs: &mut crate::ai::AiPrefs, listed: &[String], ui: &mut Ui) {
+    use crate::ai::ImageSupport;
+    use crate::ai_image::ImageProvider;
+    let support = prefs.image_support();
+    let (hint, usual): (String, &[&str]) = match support {
+        ImageSupport::OpenAi => (
+            ImageProvider::OpenAi.default_model().to_string(),
+            ImageProvider::OpenAi.preset_models(),
+        ),
+        ImageSupport::Gemini => (
+            ImageProvider::Gemini.default_model().to_string(),
+            ImageProvider::Gemini.preset_models(),
+        ),
+        _ => (tr("ai.image_model_none"), &[]),
+    };
+    let choices: Vec<String> = if listed.is_empty() {
+        usual.iter().map(|m| m.to_string()).collect()
+    } else {
+        listed.to_vec()
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.add(
+            egui::TextEdit::singleline(&mut prefs.image_model)
+                .hint_text(hint)
+                .desired_width(FIELD_W - 26.0),
+        )
+        .on_hover_text(tr("ai.image_model_tip"));
+        ui.add_enabled_ui(!choices.is_empty(), |ui| {
+            ui.menu_button("\u{25BE}", |ui| {
+                for m in &choices {
+                    if ui.selectable_label(prefs.image_model == *m, m).clicked() {
+                        prefs.image_model = m.clone();
+                        ui.close();
+                    }
+                }
+            });
+        });
+    });
 }
 
 #[cfg(test)]

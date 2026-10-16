@@ -2,6 +2,11 @@
 //! object model (`scripting.rs`), written by an AI service the user sets
 //! up with their own key, and run as one undo step.
 //!
+//! There is one AI service (Tools > Options > AI > Service). Its text
+//! model writes drawings; when the service can also make pictures, its
+//! image model serves AI Generate and Remove Background (see
+//! [`AiPrefs::image_prefs`]).
+//!
 //! Two kinds of service are spoken to: the Messages API and the chat
 //! completions API that many services and local model servers offer. The
 //! request carries a description of the object model, the user's words
@@ -114,6 +119,52 @@ pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
     })
 }
 
+/// The presets for model servers on this computer that only write text
+/// (no pictures): Ollama, LM Studio, llama.cpp and vLLM.
+const CHAT_ONLY_PRESETS: [&str; 4] = [
+    "aipreset.ollama",
+    "aipreset.lm_studio",
+    "aipreset.llama_cpp",
+    "aipreset.vllm",
+];
+
+/// Google's API host: chat at its OpenAI-compatible address, pictures
+/// at the Gemini API base (`ImageProvider::Gemini`'s usual address).
+const GEMINI_HOST: &str = "https://generativelanguage.googleapis.com/";
+/// The base address of OpenAI's API.
+pub const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+
+/// What the service offers for pictures, besides drawings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImageSupport {
+    /// Drawings only (the Messages API, local chat-only servers).
+    None,
+    /// The OpenAI Images API at OpenAI's address, with the same key.
+    OpenAi,
+    /// Gemini's image API with the same key.
+    Gemini,
+    /// An OpenAI-compatible address of the user's: images at the same
+    /// base, when an image model is given.
+    Custom { base: String },
+}
+
+/// True for an address that is one of the chat-only local presets.
+fn is_chat_only_preset(prefs: &AiPrefs) -> bool {
+    preset_of(prefs)
+        .and_then(|i| PRESETS.get(i))
+        .is_some_and(|(k, _, _)| CHAT_ONLY_PRESETS.contains(k))
+}
+
+/// The base of an OpenAI-compatible address: without
+/// `/chat/completions` and a trailing slash.
+pub fn api_base(endpoint: &str) -> String {
+    let e = endpoint.trim().trim_end_matches('/');
+    e.strip_suffix("/chat/completions")
+        .unwrap_or(e)
+        .trim_end_matches('/')
+        .to_string()
+}
+
 /// The connection, kept with the preferences. The key is kept here only
 /// while `remember_key` is on; otherwise it lives in the session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -128,6 +179,9 @@ pub struct AiPrefs {
     pub remember_key: bool,
     /// The prompt bar above the palette shows while a service is set up.
     pub show_bar: bool,
+    /// The model that makes pictures, when the service can (empty: the
+    /// service's usual one; at an address of the user's, no pictures).
+    pub image_model: String,
 }
 
 impl Default for AiPrefs {
@@ -139,6 +193,7 @@ impl Default for AiPrefs {
             key: String::new(),
             remember_key: false,
             show_bar: true,
+            image_model: String::new(),
         }
     }
 }
@@ -174,6 +229,55 @@ impl AiPrefs {
             .or_else(|| e.strip_suffix("/messages"))
             .unwrap_or(e);
         format!("{base}/models")
+    }
+
+    /// What the service offers for pictures.
+    pub fn image_support(&self) -> ImageSupport {
+        if self.provider == Provider::Anthropic {
+            return ImageSupport::None;
+        }
+        let base = api_base(&self.endpoint());
+        if base == OPENAI_API_BASE {
+            ImageSupport::OpenAi
+        } else if base.starts_with(GEMINI_HOST) {
+            ImageSupport::Gemini
+        } else if is_chat_only_preset(self) {
+            ImageSupport::None
+        } else {
+            ImageSupport::Custom { base }
+        }
+    }
+
+    /// The service can make pictures (the Image model field shows).
+    pub fn can_make_pictures(&self) -> bool {
+        self.image_support() != ImageSupport::None
+    }
+
+    /// The image calls of this service: kind, address and model (the key
+    /// is the service's, passed with each request). None when the service
+    /// makes drawings only, or is an address of the user's without an
+    /// image model.
+    pub fn image_prefs(&self) -> Option<crate::ai_image::ImagePrefs> {
+        use crate::ai_image::{ImagePrefs, ImageProvider};
+        let model = self.image_model.trim().to_string();
+        let (provider, endpoint) = match self.image_support() {
+            ImageSupport::None => return None,
+            ImageSupport::OpenAi => (ImageProvider::OpenAi, String::new()),
+            ImageSupport::Gemini => (ImageProvider::Gemini, String::new()),
+            ImageSupport::Custom { base } => {
+                if model.is_empty() {
+                    return None;
+                }
+                (ImageProvider::OpenAi, base)
+            }
+        };
+        Some(ImagePrefs {
+            provider,
+            endpoint,
+            model,
+            key: String::new(),
+            remember_key: false,
+        })
     }
 }
 

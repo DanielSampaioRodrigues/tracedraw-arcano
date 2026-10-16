@@ -1,7 +1,10 @@
 # AI Generate and Remove Background
 
-Pictures made, remixed or cut out by an image service the user sets up
-with their own API key (Tools > Options > AI > Image service).
+Pictures made, remixed or cut out by the one AI service the user sets
+up with their own API key (Tools > Options > AI > Service), when that
+service can make pictures: OpenAI, Google Gemini, or a custom
+OpenAI-compatible address with an image model (see `ai-options.md`).
+The Messages API and the local chat-only servers make drawings only.
 TraceDraw has no AI of its own and no account, and nothing is sent until
 the user asks. The work is in `apps/tracedraw/src/ai_image.rs`.
 
@@ -13,13 +16,20 @@ the user asks. The work is in `apps/tracedraw/src/ai_image.rs`.
 - Bitmaps > Remove Background, the Remove Background button on the
   property bar of a selected bitmap, and Remove Background and Remix with
   AI at the top of a bitmap's context menu.
-- Every AI command is greyed out while AI features are off or the image
-  service is not set up, and the docker shows a banner saying so with a
-  Set Up AI button that opens the right options page.
+- Every AI picture command is greyed out while AI features are off, the
+  service makes drawings only, or it is not set up for pictures; the
+  greyed commands' hover tip and the docker's banner say which, and the
+  banner's Set Up AI button opens the right options page.
 
 ## Services
 
-| Service | Address (default) | Model (default) | Key |
+The image calls follow from the one service (`ai::AiPrefs::image_prefs`)
+and use its key: the OpenAI preset calls the OpenAI Images API, the
+Google Gemini preset (whose chat address is Gemini's OpenAI-compatible
+one) calls the Gemini API at its own base, and a custom address calls
+the OpenAI Images API at the same base with the image model entered.
+
+| Image API | Address (default) | Model (default) | Key |
 |---|---|---|---|
 | Google Gemini API | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-flash-image` (also offered: `gemini-3-pro-image-preview`) | `x-goog-api-key` |
 | OpenAI Images API, or a service with the same API | `https://api.openai.com/v1` | `gpt-image-1` (also `gpt-image-1-mini`, `dall-e-3`) | `Authorization: Bearer`; optional at an address of the user's |
@@ -37,7 +47,7 @@ the user asks. The work is in `apps/tracedraw/src/ai_image.rs`.
   `image`; `background transparent` and `output_format png` for Remove
   Background). Pictures come back as `b64_json`; a reply with links only
   asks for another model.
-- Test Connection lists the service's image models (`GET
+- Test Connection (Tools > Options > AI > Service) also lists the service's image models (`GET
   {address}/models`, names with "image" or starting with "dall-e"); they
   then fill the model lists.
 - Replies up to 64 MB are read; PNG, JPEG and WebP pictures are taken
@@ -84,11 +94,11 @@ Modes:
   its own proportions (centred on the page when the source came from a
   file or from vectors).
 - Create vectors, made with:
-  - Picture + trace: a flat illustration on white from the image
-    service, traced with the Clipart preset into a group of curves that
+  - Picture + trace: a flat illustration on white from the service's
+    image model, traced with the Clipart preset into a group of curves that
     replaces the picture.
-  - SVG drawing: the drawing service (Tools > Options > AI > Drawing
-    service) is asked for one SVG document (`ai_image::SVG_PROMPT`: only
+  - SVG drawing: the service's text model (Tools > Options > AI >
+    Service) is asked for one SVG document (`ai_image::SVG_PROMPT`: only
     shapes and solid colours or gradients, no text, images or scripts),
     imported as a group of editable shapes centred on the page within
     four fifths of it.
@@ -121,7 +131,7 @@ step ("Remove Background").
 ## Privacy
 
 Only the prompt, and for Remix and Remove Background the selected
-picture, go to the image service set up, when the user presses Generate
+picture, go to the AI service set up, when the user presses Generate
 or Remove Background. Keys stay in memory unless "Remember the key on
 this computer" is on (then they are in the preferences file in plain
 text).
@@ -154,7 +164,10 @@ text).
   OpenAI API (`ai_image::tests::an_example_image_goes_with_the_prompt`).
 - Results replace the last ones and can stay out of the drawing
   (`ai_image::tests::results_replace_the_last_ones_and_can_stay_out_of_the_drawing`).
-- SVG vectors come from the drawing service as one fitted group of
+- Pictures come from the one service when it can make them, Gemini's
+  at its own API, and the greyed commands say why
+  (`ai_image::tests::pictures_come_from_the_one_service_when_it_can_make_them`).
+- SVG vectors come from the service's text model as one fitted group of
   shapes and undo (`ai_image::tests::svg_vectors_come_from_the_drawing_service_as_shapes`).
 - The docker draws in every mode and state
   (`ui::ai_generate_docker::tests::the_docker_draws_in_every_mode_and_state`).
@@ -168,12 +181,12 @@ Art, Woodcut and Stained Glass. Each is a Remix with a fixed request
 that names the style and asks to keep the picture's subject and
 composition; the AI Generate docker opens in Remix with that request,
 no style or palette preset, and shows the results, which are placed
-like any Remix result. Greyed out until an image service is set up, or
-while a request is under way.
+like any Remix result. Greyed out until the AI service makes pictures
+(the hover tip says why), or while a request is under way.
 
 ## Draw with words
 
 The fourth mode, Draw with words, holds what used to be the separate AI
 Drawing panel: a request in words makes or changes objects of the
-drawing through the drawing service (see `ai-drawing.md`). Drawings
+drawing through the AI service's text model (see `ai-drawing.md`). Drawings
 whose docker column had AI Drawing open show AI Generate instead.

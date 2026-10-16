@@ -38,9 +38,9 @@ PY
     convert "$SHOTS/$name.png" -crop 1600x950+0+0 +repage -quality 90 "$OUT/tracedraw-$name.jpg"
     echo "$OUT/tracedraw-$name.jpg"
 }
-# An image service set up with a placeholder key, for the AI scene (no
-# request is sent).
-AI='{"ai_image": {"provider": "gemini", "key": "readme", "remember_key": true}}'
+# The AI service (Google Gemini, which also makes pictures) set up with
+# a placeholder key, for the AI scene (no request is sent).
+AI='{"ai": {"provider": "open_ai_compatible", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "key": "readme", "remember_key": true}}'
 scene hero "$DRAWINGS/poster.tdraw"
 scene curves "$DRAWINGS/leaf.tdraw"
 scene effects "$DRAWINGS/effects.tdraw" en_US.UTF-8 dark

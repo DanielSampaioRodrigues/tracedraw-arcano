@@ -565,11 +565,13 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
                 ui.close();
             }
             let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some();
+            let tip = app.ai_image_tip().unwrap_or_default();
             if ui
                 .add_enabled(
                     cutout,
                     egui::Button::new(tr("menu.bitmaps.remove_background")),
                 )
+                .on_disabled_hover_text(tip)
                 .clicked()
             {
                 app.ai_remove_background();
@@ -1582,14 +1584,12 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
     if ui.button(tr("menu.bitmaps.resample")).clicked() {
         app.open_resample();
     }
-    // AI: greyed until an image service is set up.
+    // AI: greyed until the AI service makes pictures.
     let ready = app.ai_image_ready() && app.ai_source_bitmap().is_some();
     let busy = app.ai_image.busy();
-    let tip = if app.ai_image_ready() {
-        tr("toolbar.remove_background_tip")
-    } else {
-        tr("aiui.needs_setup_tip")
-    };
+    let tip = app
+        .ai_image_tip()
+        .unwrap_or_else(|| tr("toolbar.remove_background_tip"));
     if ui
         .add_enabled(
             ready && !busy,

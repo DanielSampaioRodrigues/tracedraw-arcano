@@ -23,6 +23,15 @@ full, row-by-row status.
   invert colours and a shaped type that follows the object's outline;
   `.cdr` files get the closest plain gradient (issue #4).
 - Five landscape gradients among the built-in ones (issue #4).
+- Tools > Options > AI has one AI service instead of separate drawing
+  and image services: the Service page sets the preset, address, text
+  model, one API key and, when the service can also make pictures
+  (OpenAI, Google Gemini, or an OpenAI-compatible address of your own),
+  the image model. With a service that makes drawings only (Anthropic,
+  Ollama, LM Studio, llama.cpp, vLLM) AI Generate's pictures, Remove
+  Background and AI Art Styles stay greyed, and their tip says why.
+  Preferences with the old separate services are folded into the one
+  service on start, keeping remembered keys.
 
 ## 0.8.0 (2026-10-15)
 

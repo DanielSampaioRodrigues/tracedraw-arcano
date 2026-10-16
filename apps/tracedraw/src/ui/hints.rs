@@ -441,12 +441,15 @@ fn topic(app: &mut App, ui: &mut Ui, t: Topic) -> Option<HintPage> {
 /// The AI topic: where each service stands, the ways to connect one and
 /// a button to the options.
 fn ai_topic(app: &mut App, ui: &mut Ui) {
-    for (key, ready) in [
-        ("aiui.drawing_service", app.ai_drawing_ready()),
-        ("aiui.image_service", app.ai_image_ready()),
+    let pictures = app.settings.ai.can_make_pictures();
+    for (key, ready, offered) in [
+        ("aiui.drawings", app.ai_drawing_ready(), true),
+        ("aiui.pictures", app.ai_image_ready(), pictures),
     ] {
         bullet_row(ui, |ui| {
-            let state = if ready {
+            let state = if !offered {
+                tr("aiui.drawings_only_state")
+            } else if ready {
                 tr("aiui.ready")
             } else {
                 tr("aiui.not_ready")
@@ -458,7 +461,7 @@ fn ai_topic(app: &mut App, ui: &mut Ui) {
     for key in [
         "hintai.cloud",
         "hintai.local",
-        "hintai.images_local",
+        "hintai.pictures",
         "hintai.web",
         "hintai.privacy",
     ] {

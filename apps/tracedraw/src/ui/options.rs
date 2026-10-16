@@ -63,8 +63,7 @@ pub enum OptionsPage {
     Workspace,
     // Tools > Options > AI.
     AiGeneral,
-    AiDrawing,
-    AiImages,
+    AiService,
     // Layout > Document Options.
     DocumentGeneral,
     PageSize,
@@ -104,7 +103,7 @@ impl OptionsSet {
                 FileLocations,
             ],
             OptionsSet::Workspaces => &[Workspace],
-            OptionsSet::Ai => &[AiGeneral, AiDrawing, AiImages],
+            OptionsSet::Ai => &[AiGeneral, AiService],
             OptionsSet::Document => &[
                 DocumentGeneral,
                 PageSize,
@@ -179,8 +178,7 @@ impl OptionsPage {
             Warnings => "options.warnings",
             Workspace => "options.workspace",
             AiGeneral => "options.general",
-            AiDrawing => "options.ai_drawing_service",
-            AiImages => "options.ai_image_service",
+            AiService => "options.ai_service",
             PageSize => "options.page_size",
             Layout => "options.layout",
             Background => "options.background",
@@ -532,8 +530,7 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         FileLocations => file_locations_page(app, ui),
         Workspace => workspace_page(app, ui),
         AiGeneral => crate::ui::ai_ui::general_page(app, ui),
-        AiDrawing => crate::ui::ai_ui::drawing_page(app, ui),
-        AiImages => crate::ui::ai_ui::images_page(app, ui),
+        AiService => crate::ui::ai_ui::service_page(app, ui),
         DocumentGeneral => document_general_page(app, ui),
         PageSize => crate::ui::dialogs::page_size_page(app, ui),
         Layout => layout_page(app, ui),

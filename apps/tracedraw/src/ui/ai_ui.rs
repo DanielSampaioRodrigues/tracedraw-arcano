@@ -1,17 +1,14 @@
 //! The AI parts shared by the dockers, menus and Tools > Options > AI:
-//! the banner shown while AI features are off or not set up, and the
-//! three pages of the AI options (General, Drawing service, Image
-//! service). See docs/behavior/ai-options.md.
+//! the banner shown while AI features are off or not set up, and the two
+//! pages of the AI options (General and Service: the one AI service).
+//! See docs/behavior/ai-options.md.
 
-use crate::ai_image::ImageProvider;
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::{Dialog, OptionsPage};
-use crate::ui::options::{combo, grid, row_label};
+use crate::ui::options::{grid, row_label};
 use egui::{Color32, RichText, Ui};
-
-const FIELD_W: f32 = 260.0;
 const OK: Color32 = Color32::from_rgb(0x2E, 0x7D, 0x32);
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
 
@@ -20,7 +17,7 @@ const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
 pub enum Need {
     /// AI Drawing (a text service).
     Drawing,
-    /// AI Generate and Remove Background (an image service).
+    /// AI Generate and Remove Background (the service's image model).
     Images,
 }
 
@@ -35,7 +32,8 @@ pub fn banner_text(app: &App, need: Need) -> Option<String> {
     };
     (!ready).then(|| match need {
         Need::Drawing => tr("aiui.banner_drawing"),
-        Need::Images => tr("aiui.banner_images"),
+        Need::Images if !app.settings.ai.can_make_pictures() => tr("aiui.banner_drawings_only"),
+        Need::Images => tr("aiui.banner_pictures"),
     })
 }
 
@@ -76,10 +74,8 @@ pub fn banner(app: &mut App, ui: &mut Ui, need: Need) -> bool {
                     if ui.button(tr("aiui.set_up")).clicked() {
                         let page = if !app.ai_features_on() {
                             OptionsPage::AiGeneral
-                        } else if need == Need::Drawing {
-                            OptionsPage::AiDrawing
                         } else {
-                            OptionsPage::AiImages
+                            OptionsPage::AiService
                         };
                         open_options(app, page);
                     }
@@ -102,20 +98,30 @@ fn state_line(ui: &mut Ui, ready: bool) {
     }
 }
 
+/// Where drawings and pictures stand: Ready, Not set up, or (pictures)
+/// not offered by the chosen service.
+fn service_state(app: &App, ui: &mut Ui) {
+    grid("ai_services").show(ui, |ui| {
+        row_label(ui, &tr("aiui.drawings"));
+        state_line(ui, app.ai_drawing_ready());
+        ui.end_row();
+        row_label(ui, &tr("aiui.pictures"));
+        if app.settings.ai.can_make_pictures() {
+            state_line(ui, app.ai_image_ready());
+        } else {
+            ui.label(RichText::new(tr("aiui.drawings_only_state")).color(Tokens::text_dim()));
+        }
+        ui.end_row();
+    });
+}
+
 /// Tools > Options > AI > General: the switch for all AI features and
-/// where each service stands.
+/// where the service stands.
 pub fn general_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(&mut app.settings.ai_enabled, tr("aiui.enable"));
     dim(ui, "aiui.enable_hint");
     crate::ui::chrome::section(ui, &tr("aiui.services"));
-    grid("ai_services").show(ui, |ui| {
-        row_label(ui, &tr("aiui.drawing_service"));
-        state_line(ui, app.ai_drawing_ready());
-        ui.end_row();
-        row_label(ui, &tr("aiui.image_service"));
-        state_line(ui, app.ai_image_ready());
-        ui.end_row();
-    });
+    service_state(app, ui);
     crate::ui::chrome::section(ui, &tr("aiui.features"));
     for (key, need) in [
         ("aiui.feature_drawing", Need::Drawing),
@@ -135,24 +141,28 @@ pub fn general_page(app: &mut App, ui: &mut Ui) {
     dim(ui, "aiui.privacy");
 }
 
-/// Tools > Options > AI > Drawing service: the text service of AI
-/// Drawing.
-pub fn drawing_page(app: &mut App, ui: &mut Ui) {
+/// Tools > Options > AI > Service: the one AI service. Its text model
+/// writes drawings; its image model, when the service can make pictures,
+/// serves AI Generate and Remove Background.
+pub fn service_page(app: &mut App, ui: &mut Ui) {
     if !app.ai_features_on() {
         banner(app, ui, Need::Drawing);
     }
-    dim(ui, "aiui.drawing_hint");
+    dim(ui, "aiui.service_hint");
     ui.add_space(6.0);
     crate::ui::ai_docker::connection(app, ui);
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        let busy = app.ai.busy();
+        let busy = app.ai.busy() || app.ai_image.busy();
         if ui
             .add_enabled(!busy, egui::Button::new(tr("aiui.test")))
             .on_hover_text(tr("aiui.test_hint"))
             .clicked()
         {
             app.ai_fetch_models();
+            // The image models too, for the Image model list.
+            app.ai_image.models.clear();
+            app.ai_image_fetch_models();
         }
         if busy {
             ui.spinner();
@@ -170,145 +180,12 @@ pub fn drawing_page(app: &mut App, ui: &mut Ui) {
             _ => {}
         }
     });
-    state_line(ui, app.ai_drawing_ready());
-}
-
-/// Tools > Options > AI > Image service: the service of AI Generate and
-/// Remove Background.
-pub fn images_page(app: &mut App, ui: &mut Ui) {
-    if !app.ai_features_on() {
-        banner(app, ui, Need::Images);
+    if app.settings.ai.can_make_pictures() {
+        if let crate::ai_image::ImageStatus::Failed(e) = &app.ai_image.status {
+            ui.label(RichText::new(e.as_str()).color(ERROR));
+        }
     }
-    dim(ui, "aiui.images_hint");
-    ui.add_space(6.0);
-    image_connection(app, ui);
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        let busy = app.ai_image.busy();
-        if ui
-            .add_enabled(!busy, egui::Button::new(tr("aiui.test")))
-            .on_hover_text(tr("aiui.test_hint"))
-            .clicked()
-        {
-            app.ai_image_fetch_models();
-        }
-        if busy {
-            ui.spinner();
-        }
-        match &app.ai_image.status {
-            crate::ai_image::ImageStatus::Listed(n) => {
-                ui.label(
-                    RichText::new(crate::i18n::trf("aiui.test_ok", &[("n", &n.to_string())]))
-                        .color(OK),
-                );
-            }
-            crate::ai_image::ImageStatus::Failed(e) => {
-                ui.label(RichText::new(e.as_str()).color(ERROR));
-            }
-            _ => {}
-        }
-    });
-    state_line(ui, app.ai_image_ready());
-}
-
-/// Service, address, model and key of the image service.
-pub fn image_connection(app: &mut App, ui: &mut Ui) {
-    let prefs = &mut app.settings.ai_image;
-    grid("ai_image_grid").show(ui, |ui| {
-        row_label(ui, &tr("aipreset.label"));
-        let current = crate::ai_image::preset_of(&*prefs);
-        let shown = current
-            .and_then(|i| crate::ai_image::PRESETS.get(i))
-            .map(|(k, _, _)| tr(k))
-            .unwrap_or_else(|| tr("aipreset.custom"));
-        egui::ComboBox::from_id_salt("ai_image_preset")
-            .width(FIELD_W)
-            .selected_text(shown)
-            .show_ui(ui, |ui| {
-                for (i, (key, provider, endpoint)) in crate::ai_image::PRESETS.iter().enumerate() {
-                    if ui.selectable_label(current == Some(i), tr(key)).clicked() {
-                        prefs.provider = *provider;
-                        prefs.endpoint = endpoint.to_string();
-                        prefs.model.clear();
-                        app.ai_image.models.clear();
-                    }
-                }
-            })
-            .response
-            .on_hover_text(tr("aipreset.tip"));
-        ui.end_row();
-        row_label(ui, &tr("ai.provider"));
-        let mut provider = prefs.provider;
-        if combo(
-            ui,
-            "ai_image_provider",
-            &mut provider,
-            &ImageProvider::ALL,
-            |p| tr(p.key()),
-            FIELD_W,
-        ) {
-            prefs.provider = provider;
-            prefs.endpoint.clear();
-            prefs.model.clear();
-            app.ai_image.models.clear();
-        }
-        ui.end_row();
-        row_label(ui, &tr("ai.endpoint"));
-        ui.add(
-            egui::TextEdit::singleline(&mut prefs.endpoint)
-                .hint_text(prefs.provider.default_endpoint())
-                .desired_width(FIELD_W),
-        );
-        ui.end_row();
-        row_label(ui, &tr("ai.model"));
-        let mut choices: Vec<String> = if app.ai_image.models.is_empty() {
-            prefs
-                .provider
-                .preset_models()
-                .iter()
-                .map(|m| m.to_string())
-                .collect()
-        } else {
-            app.ai_image.models.clone()
-        };
-        let current = prefs.model();
-        if !choices.contains(&current) {
-            choices.insert(0, current.clone());
-        }
-        egui::ComboBox::from_id_salt("ai_image_model")
-            .width(FIELD_W)
-            .selected_text(current.clone())
-            .show_ui(ui, |ui| {
-                for m in &choices {
-                    if ui.selectable_label(*m == current, m).clicked() {
-                        prefs.model = m.clone();
-                    }
-                }
-            });
-        ui.end_row();
-        row_label(ui, &tr("ai.key"));
-        let key = ui.add(
-            egui::TextEdit::singleline(&mut app.ai_image.key)
-                .password(true)
-                .desired_width(FIELD_W),
-        );
-        if key.changed() && prefs.remember_key {
-            prefs.key = app.ai_image.key.clone();
-        }
-        ui.end_row();
-    });
-    if ui
-        .checkbox(&mut prefs.remember_key, tr("ai.remember_key"))
-        .changed()
-    {
-        prefs.key = if prefs.remember_key {
-            app.ai_image.key.clone()
-        } else {
-            String::new()
-        };
-        app.settings.save();
-    }
-    dim(ui, "aiui.image_key_hint");
+    service_state(app, ui);
 }
 
 #[cfg(test)]
@@ -327,24 +204,44 @@ mod tests {
         out.textures_delta.clear();
     }
 
+    /// The one service at preset `key`.
+    fn use_preset(app: &mut App, key: &str) {
+        let (_, provider, endpoint) = crate::ai::PRESETS
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .copied()
+            .expect("preset");
+        app.settings.ai.provider = provider;
+        app.settings.ai.endpoint = endpoint.to_string();
+    }
+
     #[test]
     fn the_banner_shows_until_the_service_is_set_up() {
         let mut app = App::headless();
         app.settings.ai_enabled = false;
         assert_eq!(banner_text(&app, Need::Images), Some(tr("aiui.banner_off")));
         app.settings.ai_enabled = true;
+        // The usual service makes drawings only.
         assert_eq!(
             banner_text(&app, Need::Images),
-            Some(tr("aiui.banner_images"))
+            Some(tr("aiui.banner_drawings_only"))
         );
         assert_eq!(
             banner_text(&app, Need::Drawing),
             Some(tr("aiui.banner_drawing"))
         );
-        app.ai_image.key = "k".into();
-        assert_eq!(banner_text(&app, Need::Images), None);
         app.ai.key = "k".into();
         assert_eq!(banner_text(&app, Need::Drawing), None);
+        assert!(banner_text(&app, Need::Images).is_some());
+        // OpenAI makes pictures with the same key.
+        use_preset(&mut app, "aipreset.openai");
+        app.ai.key.clear();
+        assert_eq!(
+            banner_text(&app, Need::Images),
+            Some(tr("aiui.banner_pictures"))
+        );
+        app.ai.key = "k".into();
+        assert_eq!(banner_text(&app, Need::Images), None);
         // Turning AI off hides every feature again.
         app.settings.ai_enabled = false;
         assert!(!app.ai_image_ready() && !app.ai_drawing_ready());
@@ -356,18 +253,59 @@ mod tests {
         let mut app = App::headless();
         for on in [false, true] {
             app.settings.ai_enabled = on;
-            for p in ImageProvider::ALL {
-                app.settings.ai_image.provider = p;
+            for (key, _, _) in crate::ai::PRESETS {
+                use_preset(&mut app, key);
                 frame(&ctx, &mut app, general_page);
-                frame(&ctx, &mut app, drawing_page);
-                frame(&ctx, &mut app, images_page);
+                frame(&ctx, &mut app, service_page);
                 frame(&ctx, &mut app, |a, ui| {
                     banner(a, ui, Need::Images);
                 });
             }
+            app.settings.ai.endpoint = "http://my-box:9000/v1/chat/completions".into();
+            frame(&ctx, &mut app, service_page);
         }
         app.ai_image.status = crate::ai_image::ImageStatus::Failed("bad key".into());
-        frame(&ctx, &mut app, images_page);
+        frame(&ctx, &mut app, service_page);
+    }
+
+    #[test]
+    fn test_connection_asks_for_the_models_and_the_image_models() {
+        let mut app = App::headless();
+        use_preset(&mut app, "aipreset.gemini");
+        app.ai.key = "k".into();
+        app.ai.fake = Some(|_| {
+            Ok(crate::ai::HttpResponse {
+                status: 200,
+                body: r#"{"data":[{"id":"gemini-2.5-flash"}]}"#.into(),
+            })
+        });
+        app.ai_image.fake = Some(|_| {
+            Ok(crate::ai::HttpResponse {
+                status: 200,
+                body: r#"{"models":[{"name":"models/gemini-2.5-flash-image"}]}"#.into(),
+            })
+        });
+        app.ai_fetch_models();
+        app.ai_image_fetch_models();
+        assert_eq!(app.ai.models, vec!["gemini-2.5-flash".to_string()]);
+        assert_eq!(
+            app.ai_image.models,
+            vec!["gemini-2.5-flash-image".to_string()]
+        );
+        // Both with the one key, the images at Gemini's own API.
+        let img = app.ai_image.sent.last().expect("sent");
+        assert!(img
+            .url
+            .starts_with("https://generativelanguage.googleapis.com/v1beta/models"));
+        assert!(img
+            .headers
+            .iter()
+            .any(|(h, v)| h == "x-goog-api-key" && v == "k"));
+        // A service that makes drawings only asks for no image models.
+        use_preset(&mut app, "aipreset.ollama");
+        let n = app.ai_image.sent.len();
+        app.ai_image_fetch_models();
+        assert_eq!(app.ai_image.sent.len(), n);
     }
 
     #[test]
@@ -386,28 +324,6 @@ mod tests {
         assert!(app.ai_drawing_ready());
         d.endpoint = "http://my-box:9000/v1/chat/completions".into();
         assert_eq!(crate::ai::preset_of(&d), None);
-        let mut i = crate::ai_image::ImagePrefs::default();
-        assert_eq!(crate::ai_image::preset_of(&i), Some(0));
-        i.provider = ImageProvider::OpenAi;
-        i.endpoint = "http://localhost:8080/v1/".into();
-        assert_eq!(crate::ai_image::preset_of(&i), Some(2));
-        assert!(!i.needs_key());
-    }
-
-    #[test]
-    fn the_image_key_is_kept_only_when_asked() {
-        let mut app = App::headless();
-        app.ai_image.key = "img-secret".into();
-        let json = serde_json::to_string(&app.settings).expect("settings");
-        assert!(!json.contains("img-secret"));
-        app.settings.ai_image.remember_key = true;
-        app.settings.ai_image.key = app.ai_image.key.clone();
-        let json = serde_json::to_string(&app.settings).expect("settings");
-        let back: crate::settings::Settings = serde_json::from_str(&json).expect("read");
-        assert_eq!(
-            crate::ai_image::remembered_key(&back.ai_image),
-            "img-secret"
-        );
         // Older preference files turn AI features on.
         let old: crate::settings::Settings = serde_json::from_str("{}").expect("read");
         assert!(old.ai_enabled);

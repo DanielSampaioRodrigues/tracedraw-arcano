@@ -241,6 +241,18 @@ pub(crate) fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> boo
     item_text(ui, &tr(key), shortcut, enabled, menu_icon(key), key)
 }
 
+/// A menu item with a hover tip shown while it is greyed (why it cannot
+/// run, such as an AI service that makes drawings only).
+pub(crate) fn item_tip(
+    ui: &mut Ui,
+    key: &str,
+    shortcut: &str,
+    enabled: bool,
+    tip: Option<&str>,
+) -> bool {
+    item_text_tip(ui, &tr(key), shortcut, enabled, menu_icon(key), key, tip)
+}
+
 /// A menu item with a ready label (a style name, a file).
 pub(crate) fn item_label(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
     item_text(ui, label, shortcut, enabled, None, label)
@@ -297,11 +309,28 @@ fn item_text(
     icon: Option<crate::ui::icons::Action>,
     id: &str,
 ) -> bool {
+    item_text_tip(ui, label, shortcut, enabled, icon, id, None)
+}
+
+/// [`item_text`] with a hover tip for the greyed row.
+fn item_text_tip(
+    ui: &mut Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    icon: Option<crate::ui::icons::Action>,
+    id: &str,
+    tip: Option<&str>,
+) -> bool {
     if invoke::active() {
         return invoke::hit(id, shortcut, enabled);
     }
     let shortcut = invoke::shown_shortcut(id, shortcut);
     let (r, _) = menu_row(ui, label, &shortcut, enabled, Mark::None);
+    let r = match tip {
+        Some(t) if !enabled => r.on_hover_text(t),
+        _ => r,
+    };
     if marked_new(id) {
         paint_new_mark(ui, r.rect);
     }
@@ -1986,7 +2015,14 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
         let cutout =
             app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();
-        if item(ui, "menu.bitmaps.remove_background", "", cutout) {
+        let tip = app.ai_image_tip();
+        if item_tip(
+            ui,
+            "menu.bitmaps.remove_background",
+            "",
+            cutout,
+            tip.as_deref(),
+        ) {
             app.ai_remove_background();
         }
     });
@@ -2530,15 +2566,23 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
         app.open_resample();
     }
-    // AI: greyed until an image service is set up (Tools > Options > AI).
+    // AI: greyed until the AI service makes pictures (Tools > Options >
+    // AI > Service); the tip says why.
     let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();
-    if item(ui, "menu.bitmaps.remove_background", "", cutout) {
+    let tip = app.ai_image_tip();
+    if item_tip(
+        ui,
+        "menu.bitmaps.remove_background",
+        "",
+        cutout,
+        tip.as_deref(),
+    ) {
         app.ai_remove_background();
     }
     let styled = app.ai_image_ready() && !app.selection.is_empty() && !app.ai_image.busy();
     sub(ui, "menu.bitmaps.ai_art_styles", |ui| {
         for (i, (key, _)) in crate::ai_image::ART_STYLES.iter().enumerate() {
-            if item(ui, key, "", styled) {
+            if item_tip(ui, key, "", styled, tip.as_deref()) {
                 app.ai_art_style(i);
             }
         }

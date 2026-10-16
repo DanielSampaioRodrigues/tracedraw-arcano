@@ -173,10 +173,14 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             ui.label(RichText::new(app.settings.ai.model()).strong());
             return;
         }
-        let current = app.settings.ai_image.model();
+        let Some(prefs) = app.ai_image_prefs() else {
+            // The service makes drawings only (or has no image model).
+            ui.label(RichText::new(tr("aiui.not_ready")).color(Tokens::text_dim()));
+            return;
+        };
+        let current = prefs.model();
         let mut list: Vec<String> = if app.ai_image.models.is_empty() {
-            app.settings
-                .ai_image
+            prefs
                 .provider
                 .preset_models()
                 .iter()
@@ -212,7 +216,7 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                         })
                         .inner;
                     if resp.clicked() {
-                        app.settings.ai_image.model = m.clone();
+                        app.settings.ai.image_model = m.clone();
                         ui.close();
                     }
                     ui.add_space(3.0);
@@ -484,10 +488,9 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
                 .on_hover_text(tr("aigen.auto_place_tip"));
         });
     });
-    let service = if svg {
-        tr(app.settings.ai.provider.key())
-    } else {
-        tr(app.settings.ai_image.provider.key())
+    let service = match app.ai_image_prefs() {
+        Some(p) if !svg => tr(p.provider.key()),
+        _ => tr(app.settings.ai.provider.key()),
     };
     let requests = if svg {
         1
@@ -564,32 +567,40 @@ fn info_page(app: &mut App, ui: &mut Ui) {
     }
     ui.add_space(4.0);
     ui.label(RichText::new(tr("aiui.services")).strong());
-    for (key, provider, model, ready) in [
+    let pictures = app.ai_image_prefs();
+    let offered = app.settings.ai.can_make_pictures();
+    for (key, provider, model, ready, offered) in [
         (
-            "aiui.image_service",
-            tr(app.settings.ai_image.provider.key()),
-            app.settings.ai_image.model(),
+            "aiui.pictures",
+            pictures
+                .as_ref()
+                .map(|p| tr(p.provider.key()))
+                .unwrap_or_else(|| tr(app.settings.ai.provider.key())),
+            pictures.as_ref().map(|p| p.model()).unwrap_or_default(),
             app.ai_image_ready(),
+            offered,
         ),
         (
-            "aiui.drawing_service",
+            "aiui.drawings",
             tr(app.settings.ai.provider.key()),
             app.settings.ai.model(),
             app.ai_drawing_ready(),
+            true,
         ),
     ] {
-        let state = if ready {
+        let state = if !offered {
+            tr("aiui.drawings_only_state")
+        } else if ready {
             tr("aiui.ready")
         } else {
             tr("aiui.not_ready")
         };
-        ui.add(
-            egui::Label::new(format!(
-                "{} {provider} \u{2022} {model} \u{2022} {state}",
-                tr(key)
-            ))
-            .wrap(),
-        );
+        let line = if model.is_empty() {
+            format!("{} {state}", tr(key))
+        } else {
+            format!("{} {provider} \u{2022} {model} \u{2022} {state}", tr(key))
+        };
+        ui.add(egui::Label::new(line).wrap());
     }
     ui.add_space(4.0);
     ui.label(RichText::new(tr("aigen.info_costs_title")).strong());
@@ -599,7 +610,7 @@ fn info_page(app: &mut App, ui: &mut Ui) {
     ui.label(RichText::new(tr("aiui.privacy")).color(Tokens::text_dim()));
     ui.add_space(6.0);
     if ui.button(tr("aiui.set_up")).clicked() {
-        crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiGeneral);
+        crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiService);
     }
 }
 
@@ -849,9 +860,21 @@ mod tests {
     fn the_docker_draws_in_every_mode_and_state() {
         let ctx = crate::theme::ui_context();
         let mut app = App::headless();
-        // Not set up: the banner, controls greyed.
+        // Not set up: the banner, controls greyed; also with a service
+        // that makes drawings only, and its information page.
         frame(&ctx, &mut app);
-        app.ai_image.key = "k".into();
+        app.ai.key = "k".into();
+        frame(&ctx, &mut app);
+        app.ai_image.info = true;
+        frame(&ctx, &mut app);
+        app.ai_image.info = false;
+        // Google Gemini: pictures too.
+        app.settings.ai.provider = crate::ai::Provider::OpenAiCompatible;
+        app.settings.ai.endpoint = crate::ai::PRESETS[2].2.to_string();
+        assert!(app.ai_image_ready());
+        app.ai_image.info = true;
+        frame(&ctx, &mut app);
+        app.ai_image.info = false;
         for mode in [Mode::Create, Mode::Remix, Mode::Vector] {
             app.ai_image.mode = mode;
             for status in [
