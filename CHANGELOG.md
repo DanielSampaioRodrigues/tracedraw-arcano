@@ -4,8 +4,24 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.9.0 (2026-10-16)
 
+`.cdr` files of versions 16 and later saved by TraceDraw with text and
+curves now open in other programs: a drawing saved as version 21, with
+text, text on a circle and curves, opens complete and as drawn. Version
+7 to 13 files are compressed and summarised as those versions write
+them, and a drawing's CMYK profile is stored in its package. Also:
+outlines take every fill kind as their paint, gradients repeat, mirror,
+invert and follow a shape's outline, five landscape gradients, and AI
+options with one service for drawings and pictures.
+
+- `.cdr` files of versions 7 to 13 saved by TraceDraw are compressed
+  (`cmpr`) and end with the summary (`sumi`), as files of those versions
+  are (#98).
+- `.cdr` files of versions 16 and later store the drawing's CMYK colour
+  profile in the package and name it (#98).
+- `tracedraw-cli` ends quietly when the program reading its output stops
+  reading (a pipe into `head`, say).
 - `.cdr` files of versions 16 and later saved by TraceDraw open in other
   programs again: text frames are numbered as their objects, text
   carries its complete default style and run records with their letter
