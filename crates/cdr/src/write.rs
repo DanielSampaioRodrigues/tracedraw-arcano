@@ -2146,7 +2146,7 @@ fn curve_coords_typed(
 }
 
 /// The node marks files of every version (8 to 21 seen) carry in a
-/// curve's node bytes: bit 2 on every node but the control points and the node that
+/// curve's node bytes (written from version 16): bit 2 on every node but the control points and the node that
 /// closes a subpath, and bit 3 also on the start of a closed subpath.
 /// Curves without them are drawn without their fill and can make the
 /// program that opens the file hang.
@@ -3047,7 +3047,12 @@ impl<'a> Writer<'a> {
                 let Some(mut coords) = coords else {
                     return none();
                 };
-                mark_nodes(&mut coords);
+                // Only where files written with the marks were seen to
+                // open: version 13 and 14 files with them closed the
+                // program that read them.
+                if v.0 >= 16 {
+                    mark_nodes(&mut coords);
+                }
                 self.place(
                     s,
                     OBJ_CURVE,

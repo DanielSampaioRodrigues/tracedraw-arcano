@@ -10,8 +10,9 @@ full, row-by-row status.
   document configuration record those versions write (it held only the
   page size, and other programs refused the file), version 12 files the
   8152-byte record of that version, and version 16 text has the record
-  header that version writes; curve nodes carry their marks in every
-  version, not only from 16 (#98).
+  header that version writes (#98). Files of versions 17 to 21 open in
+  the program that wrote the samples; version 16 opens with parts of its
+  text missing, and versions 12 to 15 do not open yet.
 
 ## 0.9.0 (2026-10-16)
 
