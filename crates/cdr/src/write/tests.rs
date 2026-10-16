@@ -1736,3 +1736,23 @@ fn gradient_options_are_written_as_the_closest_plain_gradient() {
         assert!(fills.iter().all(|f| f.runs_once()), "{v}");
     }
 }
+
+#[test]
+fn records_of_versions_13_to_20_are_the_version_21_one_with_two_blocks() {
+    let r21 = mcfg(Ver(21), 500.0, 500.0);
+    for v in 13u16..=20 {
+        let r = mcfg(Ver(v), 500.0, 500.0);
+        assert_eq!(r.len(), 8323, "{v}");
+        assert_eq!(
+            &r[0..8],
+            &[0x14, 0x05, 0, 0, 0x7b, 0x20, 0, 0],
+            "{v}: tag and size"
+        );
+        // The page size and every field up to the first block.
+        assert_eq!(&r[8..869], &r21[8..869], "{v}");
+        // A scale of 1000 twice, for a metric drawing.
+        assert_eq!(&r[869..877], &[0xe8, 3, 0, 0, 0xe8, 3, 0, 0], "{v}");
+        assert_eq!(&r[877..890], &r21[869..882], "{v}");
+        assert_eq!(&r[1261..], &r21[882..], "{v}");
+    }
+}

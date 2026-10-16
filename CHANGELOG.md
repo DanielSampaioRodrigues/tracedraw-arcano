@@ -4,6 +4,13 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- `.cdr` files of versions 13 to 20 saved by TraceDraw carry the whole
+  document configuration record those versions write (it held only the
+  page size, and other programs refused the file), and version 16 text
+  has the record header that version writes (#98).
+
 ## 0.9.0 (2026-10-16)
 
 `.cdr` files of versions 16 and later saved by TraceDraw with text and

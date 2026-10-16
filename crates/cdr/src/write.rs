@@ -1513,6 +1513,9 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 >= 21 {
         return mcfg_21(w_mm, h_mm);
     }
+    if v.tagged() {
+        return mcfg_13(w_mm, h_mm);
+    }
     let mut b = Buf::default();
     let size: usize = if v.0 >= 15 {
         8323
@@ -1532,6 +1535,66 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
         .u32(1)
         .pad_to(size);
     b.done()
+}
+
+/// The configuration record of versions 13 to 20 (8323 bytes, tag 1300):
+/// files of those versions store the version 21 record with two more
+/// blocks, 8 bytes at 869 (a scale of 1000 twice for a metric drawing,
+/// 2540 for one in inches) and 371 bytes at 890 (three default text
+/// settings and a few flags, the same in every file seen; their name
+/// fields are left empty). A record that held only the page size made
+/// the program that opens the file refuse it.
+fn mcfg_13(w_mm: f64, h_mm: f64) -> Vec<u8> {
+    let r21 = mcfg_21(w_mm, h_mm);
+    let mut block = [0u8; 371];
+    for (at, x) in [
+        (3, 1u8),
+        (19, 1),
+        (20, 12),
+        (24, 5),
+        (26, 5),
+        (32, 196),
+        (36, 7),
+        (37, 16),
+        (62, 1),
+        (63, 12),
+        (67, 5),
+        (69, 5),
+        (75, 32),
+        (77, 196),
+        (79, 7),
+        (80, 16),
+        (105, 1),
+        (106, 12),
+        (110, 5),
+        (112, 5),
+        (118, 196),
+        (120, 196),
+        (122, 7),
+        (123, 16),
+        (302, 3),
+        (306, 1),
+        (310, 1),
+        (314, 1),
+        (322, 1),
+        (346, 2),
+        (354, 4),
+        (358, 100),
+        (370, 1),
+    ] {
+        block[at] = x;
+    }
+    let mut r = Vec::with_capacity(8323);
+    r.extend_from_slice(r21.get(..869).unwrap_or_default());
+    r.extend_from_slice(&1000u32.to_le_bytes());
+    r.extend_from_slice(&1000u32.to_le_bytes());
+    r.extend_from_slice(r21.get(869..882).unwrap_or_default());
+    r.extend_from_slice(&block);
+    r.extend_from_slice(r21.get(882..).unwrap_or_default());
+    r.resize(8323, 0);
+    put(&mut r, 0, &SINCE_13.to_le_bytes());
+    put(&mut r, 4, &(8323u32 - 8).to_le_bytes());
+    r
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size
@@ -3029,7 +3092,7 @@ impl<'a> Writer<'a> {
     }
 
     /// `txsm` of version 16 and later, as files of versions 17 to 21 store
-    /// artistic text: the frame flag set, layout 1700 (1600 in version
+    /// artistic text: the frame flag set, layout 1700 (also in version
     /// 16), one frame with the text's matrix, then a paragraph per line
     /// with the default style string (the first run's style and the
     /// alignment) and one record per run whose style string the letters
@@ -3043,11 +3106,15 @@ impl<'a> Writer<'a> {
             .u32(0)
             .u32(u32::MAX)
             .u32(8)
-            .u32(13)
+            // 12 in version 16, 13 from 17; the layout is 1700 in both,
+            // as files saved for those versions have them (a version 16
+            // file with 13 and 1600 was refused as holding an invalid
+            // object).
+            .u32(if v.0 >= 17 { 13 } else { 12 })
             .u32(0)
             .u32(3)
             .u32(0)
-            .u16(if v.0 >= 17 { 1700 } else { 1600 })
+            .u16(1700)
             .zeros(3);
         // One frame, numbered as the text object (its `spnd`), the text's
         // matrix, not on a path, 8 unknown. A frame number other than the
