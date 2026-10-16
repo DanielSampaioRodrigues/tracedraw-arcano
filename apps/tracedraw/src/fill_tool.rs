@@ -33,6 +33,8 @@ pub fn fountain_handles(f: &Fountain, b: Rect) -> Vec<(FountainHandle, Point)> {
             let d = Vec2::new(ca, sa) * h;
             vec![(FountainHandle::Start, c - d), (FountainHandle::End, c + d)]
         }
+        // A shaped fountain follows the outline: nothing to drag.
+        FountainKind::Shaped => Vec::new(),
         _ => {
             let p = Point::new(
                 c.x + f.offset.x * b.width() / 2.0,
@@ -138,6 +140,12 @@ mod tests {
             Some(FountainHandle::End)
         );
         assert_eq!(app.fountain_handle_at(Point::new(5.0, 5.0)), None);
+    }
+
+    #[test]
+    fn shaped_fountains_have_no_handles() {
+        let f = Fountain::two(FountainKind::Shaped, Color::BLACK, Color::WHITE, 0.0);
+        assert!(fountain_handles(&f, Rect::new(0.0, 0.0, 40.0, 20.0)).is_empty());
     }
 
     #[test]

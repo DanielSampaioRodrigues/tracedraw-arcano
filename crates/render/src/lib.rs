@@ -656,15 +656,11 @@ impl Renderer<'_> {
                 // Calligraphic nib or variable width: fill the band instead
                 // of stroking, with the outline's own fill when it has one.
                 if let Some(bp) = to_sk_path(&(self.screen * band.clone())) {
-                    match stroke
-                        .fill
-                        .as_deref()
-                        .filter(|f| !matches!(f, Fill::Solid(_) | Fill::None))
-                    {
+                    match outline_paint(stroke, transform) {
                         Some(fill) => {
                             use tracedraw_core::geometry::Shape as _;
                             let b = bbox(&band).to_path(0.01);
-                            self.draw_fill(fill, &b, &bp, FillRule::Winding);
+                            self.draw_fill(&fill, &b, &bp, FillRule::Winding);
                         }
                         None => self.pixmap.fill_path(
                             &bp,
@@ -675,11 +671,8 @@ impl Renderer<'_> {
                         ),
                     }
                 }
-            } else if let Some(fill) = stroke
-                .fill
-                .as_deref()
-                .filter(|f| !matches!(f, Fill::Solid(_) | Fill::None))
-                .filter(|_| sk_stroke.width > 0.0)
+            } else if let Some(fill) =
+                outline_paint(stroke, transform).filter(|_| sk_stroke.width > 0.0)
             {
                 // A filled outline: the stroke's area painted with the fill,
                 // spread over the outline's bounds.
@@ -687,7 +680,7 @@ impl Renderer<'_> {
                     use tracedraw_core::geometry::Shape as _;
                     let pad = (sk_stroke.width as f64 / self.zoom.max(1e-9)) / 2.0;
                     let b = bbox(&page_path).inflate(pad, pad);
-                    self.draw_fill(fill, &b.to_path(0.01), &band, FillRule::Winding);
+                    self.draw_fill(&fill, &b.to_path(0.01), &band, FillRule::Winding);
                 }
             } else {
                 self.pixmap
@@ -885,7 +878,15 @@ impl Renderer<'_> {
         if let Some(sk) = to_sk_path(&(self.screen * rect_path.clone())) {
             let mut sub = self.sub(&mut mask_pm);
             sub.flags.wireframe = false;
-            sub.draw_fill(mask_fill, &rect_path, &sk, FillRule::Winding);
+            match mask_fill {
+                // A shaped mask follows the object, over its whole bounds.
+                Fill::Fountain(f) if f.kind == tracedraw_core::FountainKind::Shaped => {
+                    if let Some(shape_sk) = to_sk_path(&(self.screen * page_path.clone())) {
+                        sub.fill_shaped(f, &shape_sk, &sk, FillRule::EvenOdd);
+                    }
+                }
+                _ => sub.draw_fill(mask_fill, &rect_path, &sk, FillRule::Winding),
+            }
         }
         let mdata: Vec<u8> = mask_pm
             .pixels()
@@ -980,11 +981,17 @@ impl Renderer<'_> {
             }
             Fill::Fountain(f) => {
                 let b = bbox(page_path);
-                let stops: Vec<GradientStop> = sorted_stops(f)
+                // The edge pad, repeats, mirror and inversion are worked
+                // into one run of stops the shader pads beyond.
+                let stops: Vec<GradientStop> = f
+                    .resolved_stops()
                     .iter()
-                    .map(|s| GradientStop::new(pad_pos(f, s.pos) as f32, sk_color(s.color)))
+                    .map(|s| GradientStop::new(s.pos as f32, sk_color(s.color)))
                     .collect();
                 match f.kind {
+                    tracedraw_core::FountainKind::Shaped => {
+                        self.fill_shaped(f, sk, sk, rule);
+                    }
                     tracedraw_core::FountainKind::Linear => {
                         let a = f.angle.to_radians();
                         let (cx, cy) = (b.center().x, b.center().y);
@@ -1027,6 +1034,7 @@ impl Renderer<'_> {
                     tracedraw_core::FountainKind::Conical
                     | tracedraw_core::FountainKind::Square => {
                         let f2 = f.clone();
+                        let base = f.sorted_stops();
                         let key = format!("{f:?}");
                         self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let dx = u - 0.5 - f2.offset.x / 2.0;
@@ -1044,7 +1052,7 @@ impl Renderer<'_> {
                                 }
                                 _ => (dx.abs().max(dy.abs()) * 2.0).min(1.0),
                             };
-                            f2.color_at(t)
+                            tracedraw_core::style::sample_stops(&base, f2.stop_param(t))
                         });
                     }
                 }
@@ -1215,6 +1223,83 @@ impl Renderer<'_> {
     /// smooth) and on several threads, and the last results are kept, so
     /// a drawing redrawn with the object in the same place (another object
     /// dragged, the selection changed) does not compute it again.
+    /// Shaped fountain: the colour follows the distance from the edge of
+    /// `mask` (screen space) towards its inside, 0 on the edge and 1 at
+    /// the deepest point; `area` is painted with it. The distances are
+    /// worked out on a grid of at most `SHAPED_GRID` pixels across the
+    /// whole mask, so zooming and panning keep the colours in place.
+    fn fill_shaped(
+        &mut self,
+        f: &tracedraw_core::Fountain,
+        mask: &SkPath,
+        area: &SkPath,
+        rule: FillRule,
+    ) {
+        let b = mask.bounds();
+        let (bw, bh) = (b.width(), b.height());
+        if !(bw > 0.0 && bh > 0.0 && bw.is_finite() && bh.is_finite()) {
+            return;
+        }
+        let scale = (SHAPED_GRID / bw.max(bh)).min(1.0);
+        let gw = (bw * scale).ceil() as u32 + 2;
+        let gh = (bh * scale).ceil() as u32 + 2;
+        // Grid pixel (1, 1) is the mask's top-left corner.
+        let to_grid = Transform::from_translate(1.0, 1.0)
+            .pre_scale(scale, scale)
+            .pre_translate(-b.left(), -b.top());
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for p in mask.points() {
+                (((p.x - b.left()) * scale * 64.0).round() as i64).hash(&mut h);
+                (((p.y - b.top()) * scale * 64.0).round() as i64).hash(&mut h);
+            }
+            mask.verbs().len().hash(&mut h);
+            matches!(rule, FillRule::EvenOdd).hash(&mut h);
+            format!("shaped|{f:?}|{:x}|{gw}x{gh}", h.finish())
+        };
+        let pm = match procedural_cache_get(&key) {
+            Some(pm) => pm,
+            None => {
+                let Some(mut m) = Pixmap::new(gw, gh) else {
+                    return;
+                };
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(0, 0, 0, 255);
+                paint.anti_alias = false;
+                m.fill_path(mask, &paint, rule, to_grid, None);
+                let inside: Vec<bool> = m.pixels().iter().map(|p| p.alpha() >= 128).collect();
+                let dist = edge_distance(&inside, gw as usize, gh as usize);
+                let deepest = dist.iter().cloned().fold(0.0f64, f64::max).max(1e-9);
+                let base = f.sorted_stops();
+                let Some(mut pm) = Pixmap::new(gw, gh) else {
+                    return;
+                };
+                for (px, d) in pm.pixels_mut().iter_mut().zip(&dist) {
+                    let c = tracedraw_core::style::sample_stops(&base, f.stop_param(d / deepest));
+                    let [r, g, bb] = c.to_rgb8();
+                    *px = tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+                }
+                procedural_cache_put(key, pm.clone());
+                pm
+            }
+        };
+        let Some(to_screen) = to_grid.invert() else {
+            return;
+        };
+        let mut paint = Paint::default();
+        paint.anti_alias = self.flags.anti_alias;
+        paint.shader = tiny_skia::Pattern::new(
+            pm.as_ref(),
+            SpreadMode::Pad,
+            tiny_skia::FilterQuality::Bilinear,
+            1.0,
+            to_screen,
+        );
+        self.pixmap
+            .fill_path(area, &paint, rule, Transform::identity(), None);
+    }
+
     fn fill_procedural(
         &mut self,
         page_path: &BezPath,
@@ -1515,25 +1600,97 @@ fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizonta
     }
 }
 
-fn sorted_stops(f: &tracedraw_core::Fountain) -> Vec<tracedraw_core::Stop> {
-    let mut v = f.stops.clone();
-    v.sort_by(|a, b| {
-        a.pos
-            .partial_cmp(&b.pos)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    if v.len() < 2 {
-        let c = v.first().map(|s| s.color).unwrap_or(Color::BLACK);
-        v = vec![
-            tracedraw_core::Stop { pos: 0.0, color: c },
-            tracedraw_core::Stop { pos: 1.0, color: c },
-        ];
+/// An outline's own paint when it has one other than a plain colour (a
+/// gradient, pattern, texture or mesh), ready to draw in page space: a
+/// mesh's nodes are local to the object and go through `transform`.
+fn outline_paint(stroke: &Stroke, transform: Affine) -> Option<Fill> {
+    match stroke.fill.as_deref()? {
+        Fill::None | Fill::Solid(_) => None,
+        Fill::Mesh(m) => {
+            let mut m = m.clone();
+            for n in m.nodes.iter_mut() {
+                n.pos = transform * n.pos;
+            }
+            Some(Fill::Mesh(m))
+        }
+        other => Some(other.clone()),
     }
-    v
 }
 
-fn pad_pos(f: &tracedraw_core::Fountain, pos: f64) -> f64 {
-    (f.edge_pad + pos * (1.0 - 2.0 * f.edge_pad)).clamp(0.0, 1.0)
+/// Largest side, in pixels, of the grid a shaped fountain measures its
+/// distances on.
+const SHAPED_GRID: f32 = 384.0;
+
+/// For each pixel of a `w` by `h` grid, the distance in pixels from its
+/// centre to the edge of the region `inside` marks (0 outside): exact
+/// Euclidean distance to the nearest outside pixel, less the half pixel
+/// to the edge between them.
+fn edge_distance(inside: &[bool], w: usize, h: usize) -> Vec<f64> {
+    const INF: f64 = 1e20;
+    let mut g: Vec<f64> = inside.iter().map(|&i| if i { INF } else { 0.0 }).collect();
+    if g.len() != w * h || w == 0 || h == 0 {
+        return vec![0.0; inside.len()];
+    }
+    let n = w.max(h);
+    let (mut f, mut d) = (vec![0.0; n], vec![0.0; n]);
+    let (mut v, mut z) = (vec![0usize; n], vec![0.0; n + 1]);
+    for x in 0..w {
+        for y in 0..h {
+            f[y] = g[y * w + x];
+        }
+        distance_1d(&f[..h], &mut d[..h], &mut v, &mut z);
+        for y in 0..h {
+            g[y * w + x] = d[y];
+        }
+    }
+    for y in 0..h {
+        f[..w].copy_from_slice(&g[y * w..(y + 1) * w]);
+        distance_1d(&f[..w], &mut d[..w], &mut v, &mut z);
+        g[y * w..(y + 1) * w].copy_from_slice(&d[..w]);
+    }
+    g.iter()
+        .zip(inside)
+        .map(|(s, &i)| if i { (s.sqrt() - 0.5).max(0.0) } else { 0.0 })
+        .collect()
+}
+
+/// One pass of the squared distance transform: `d[q] = min over p of
+/// (q - p)^2 + f[p]`, by the lower envelope of the parabolas.
+fn distance_1d(f: &[f64], d: &mut [f64], v: &mut [usize], z: &mut [f64]) {
+    let n = f.len();
+    if n == 0 {
+        return;
+    }
+    let sq = |i: usize| (i * i) as f64;
+    let mut k = 0usize;
+    v[0] = 0;
+    z[0] = f64::NEG_INFINITY;
+    z[1] = f64::INFINITY;
+    for q in 1..n {
+        loop {
+            let p = v[k];
+            let s = ((f[q] + sq(q)) - (f[p] + sq(p))) / (2.0 * (q as f64 - p as f64));
+            // z[0] is minus infinity, so this stops at the first parabola.
+            if k > 0 && s <= z[k] {
+                k -= 1;
+                continue;
+            }
+            k += 1;
+            v[k] = q;
+            z[k] = s;
+            z[k + 1] = f64::INFINITY;
+            break;
+        }
+    }
+    let mut k = 0usize;
+    for (q, out) in d.iter_mut().enumerate() {
+        while z[k + 1] < q as f64 {
+            k += 1;
+        }
+        let p = v[k];
+        let dq = q as f64 - p as f64;
+        *out = dq * dq + f[p];
+    }
 }
 
 /// Cheap value noise in 0..1 for texture fills.
@@ -1724,6 +1881,46 @@ pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> 
         preview: None,
     };
     r.draw_fill(fill, &page_path, &sk, FillRule::Winding);
+    Some(pixmap)
+}
+
+/// [`render_fill_image`] over the bounds of `path` (page space, mm) for
+/// a fill that depends on the object's outline: a shaped fountain
+/// measures its distances from the edge of `path` (even-odd) and covers
+/// the whole rectangle, so an exporter can clip it with the path. Other
+/// fills render as [`render_fill_image`] does.
+pub fn render_fill_image_in(fill: &Fill, path: &BezPath, dpi: f64) -> Option<Pixmap> {
+    let bounds = bbox(path);
+    let Fill::Fountain(f) = fill else {
+        return render_fill_image(fill, bounds, dpi);
+    };
+    if f.kind != tracedraw_core::FountainKind::Shaped {
+        return render_fill_image(fill, bounds, dpi);
+    }
+    let zoom = dpi / 25.4;
+    let w = (bounds.width() * zoom).ceil().max(1.0) as u32;
+    let h = (bounds.height() * zoom).ceil().max(1.0) as u32;
+    if w > 8192 || h > 8192 {
+        return None;
+    }
+    let mut pixmap = Pixmap::new(w, h)?;
+    let screen = ViewTransform {
+        zoom,
+        origin_x: -bounds.x0 * zoom,
+        origin_y: bounds.y1 * zoom,
+    }
+    .affine();
+    let rect = to_sk_path(&(screen * tracedraw_core::geometry::rect_path(bounds, 0.0)))?;
+    let mask = to_sk_path(&(screen * path.clone()))?;
+    let mut r = Renderer {
+        pixmap: &mut pixmap,
+        screen,
+        zoom,
+        flags: Flags::default(),
+        symbols: &[],
+        preview: None,
+    };
+    r.fill_shaped(f, &mask, &rect, FillRule::EvenOdd);
     Some(pixmap)
 }
 
@@ -2297,6 +2494,40 @@ mod tests {
     }
 
     #[test]
+    fn shaped_transparency_follows_the_object() {
+        // White at the edge (opaque), black inside (clear): a black disc
+        // fades towards its middle, the same all round.
+        let id = tracedraw_core::ShapeId(1);
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 60.0, 60.0),
+                arc: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::BLACK);
+        s.stroke = None;
+        s.effects.push(tracedraw_core::live::Effect::Transparency {
+            mask: Fill::Fountain(Fountain::two(
+                FountainKind::Shaped,
+                Color::WHITE,
+                Color::BLACK,
+                0.0,
+            )),
+            merge: tracedraw_core::live::MergeMode::Normal,
+            target: 2,
+        });
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        let (centre, east, north) = (px(&pm, 30, 70).0, px(&pm, 52, 70).0, px(&pm, 30, 48).0);
+        assert!(centre > 215, "the middle is clear: {centre}");
+        assert!(
+            east < 120 && (east as i32 - north as i32).abs() < 12,
+            "{east} {north}"
+        );
+    }
+
+    #[test]
     fn contour_effect_draws_outside_steps() {
         let mut s = rect(1, Rect::new(40.0, 40.0, 60.0, 60.0), Color::rgb8(255, 0, 0));
         s.effects.push(tracedraw_core::live::Effect::Contour {
@@ -2386,6 +2617,7 @@ mod tests {
             angle: 0.0,
             offset: Point::ZERO,
             edge_pad: 0.0,
+            ..Default::default()
         });
         let pm = render_fill_image(&fill, Rect::new(0.0, 0.0, 100.0, 10.0), 25.4).unwrap();
         assert_eq!(pm.width(), 100);
@@ -2602,6 +2834,182 @@ mod tests {
         assert!(left.green() < 30, "not the outline colour");
         // Outside the stroke nothing is painted.
         assert_eq!(img.pixel(50, 2).unwrap().green(), 255);
+    }
+
+    /// A 100 x 10 mm rectangle filled with `fill`, drawn at 1 px/mm.
+    fn strip(fill: Fill) -> Pixmap {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 10.0));
+        let page = doc.pages[0].id;
+        let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 10.0), Color::WHITE);
+        s.fill = fill;
+        s.stroke = None;
+        doc.layer_mut(doc.pages[0].layers[0].id)
+            .unwrap()
+            .shapes
+            .push(s);
+        render_page_image(&doc, page, 25.4).unwrap()
+    }
+
+    #[test]
+    fn linear_fountains_repeat_mirror_and_invert() {
+        let bw = || Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let red_at = |img: &Pixmap, x: u32| img.pixel(x, 5).unwrap().red();
+        // Sawtooth twice: light just before the middle, dark just after.
+        let mut f = bw();
+        f.repeat = tracedraw_core::FountainRepeat::Repeat;
+        f.repeats = 2;
+        let img = strip(Fill::Fountain(f));
+        assert!(red_at(&img, 48) > 220, "{}", red_at(&img, 48));
+        assert!(red_at(&img, 51) < 35, "{}", red_at(&img, 51));
+        assert!((red_at(&img, 25) as i32 - 128).abs() < 20);
+        // Triangular twice: white in the middle, black at both ends.
+        let mut m = bw();
+        m.repeat = tracedraw_core::FountainRepeat::Mirror;
+        m.repeats = 2;
+        let img = strip(Fill::Fountain(m));
+        assert!(red_at(&img, 50) > 240 && red_at(&img, 1) < 15 && red_at(&img, 98) < 15);
+        // Bilinear gives the same run.
+        let mut b = bw();
+        b.bilinear = true;
+        let bimg = strip(Fill::Fountain(b));
+        for x in [1, 25, 50, 75, 98] {
+            assert!((red_at(&img, x) as i32 - red_at(&bimg, x) as i32).abs() <= 3);
+        }
+        // Inverted: white on the left.
+        let mut i = bw();
+        i.invert = true;
+        let img = strip(Fill::Fountain(i));
+        assert!(red_at(&img, 1) > 240 && red_at(&img, 98) < 15);
+        // Conical and square fountains take the options too.
+        let mut sq = Fountain::two(FountainKind::Square, Color::BLACK, Color::WHITE, 0.0);
+        sq.invert = true;
+        let img = strip(Fill::Fountain(sq));
+        assert!(red_at(&img, 50) > 200, "{}", red_at(&img, 50));
+        assert!(red_at(&img, 1) < 30, "{}", red_at(&img, 1));
+    }
+
+    #[test]
+    fn shaped_fountains_follow_the_outline() {
+        // Black on the edge, white deepest inside.
+        let f = Fountain::two(FountainKind::Shaped, Color::BLACK, Color::WHITE, 0.0);
+        let img = strip(Fill::Fountain(f.clone()));
+        let at = |img: &Pixmap, x: u32, y: u32| img.pixel(x, y).unwrap().red() as i32;
+        assert!(at(&img, 50, 0) < 40, "edge {}", at(&img, 50, 0));
+        assert!(at(&img, 50, 5) > 200, "middle {}", at(&img, 50, 5));
+        // Along a long strip the colour depends on the distance to the
+        // nearest edge, not on the distance to the centre.
+        assert!((at(&img, 20, 5) - at(&img, 80, 5)).abs() <= 6);
+        assert!((at(&img, 20, 5) - at(&img, 50, 5)).abs() <= 6);
+        assert!(at(&img, 2, 5) < at(&img, 20, 5));
+        // A circle: rings of equal colour.
+        let (mut doc, page) = doc_with(vec![]);
+        let id = doc.ids_mut().shape();
+        let mut c = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 60.0, 60.0),
+                arc: None,
+            },
+        );
+        c.fill = Fill::Fountain(f);
+        c.stroke = None;
+        doc.layer_mut(doc.pages[0].layers[0].id)
+            .unwrap()
+            .shapes
+            .push(c);
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        // Page y is up: the circle's centre is at (30, page height - 30).
+        let cy = img.height() - 30;
+        let (e, w, n) = (at(&img, 45, cy), at(&img, 15, cy), at(&img, 30, cy - 15));
+        assert!((e - w).abs() <= 8 && (e - n).abs() <= 8, "{e} {w} {n}");
+        assert!(at(&img, 30, cy) > 230, "{}", at(&img, 30, cy));
+        assert!(at(&img, 2, cy) < at(&img, 15, cy));
+    }
+
+    #[test]
+    fn edge_distance_measures_to_the_nearest_outside_pixel() {
+        // A 7 x 5 grid with a 5 x 3 block inside.
+        let (w, h) = (7usize, 5usize);
+        let inside: Vec<bool> = (0..w * h)
+            .map(|i| (1..6).contains(&(i % w)) && (1..4).contains(&(i / w)))
+            .collect();
+        let d = edge_distance(&inside, w, h);
+        assert_eq!(d[0], 0.0);
+        assert!((d[w + 1] - 0.5).abs() < 1e-9);
+        assert!((d[2 * w + 3] - 1.5).abs() < 1e-9);
+        assert!(edge_distance(&[], 0, 0).is_empty());
+    }
+
+    #[test]
+    fn outlines_take_pattern_texture_mesh_and_shaped_paints() {
+        let line = |paint: Fill| {
+            let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 20.0));
+            let layer = doc.pages[0].layers[0].id;
+            let id = doc.ids_mut().shape();
+            let mut path = tracedraw_core::BezPath::new();
+            path.move_to((5.0, 10.0));
+            path.line_to((95.0, 10.0));
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Path {
+                    path,
+                    closed: false,
+                },
+            );
+            s.fill = Fill::None;
+            let mut stroke = Stroke::new(Color::rgb8(0, 255, 0), 6.0);
+            stroke.fill = Some(Box::new(paint));
+            s.stroke = Some(stroke);
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            render_page_image(&doc, doc.pages[0].id, 25.4).unwrap()
+        };
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        // A two-colour pattern: both colours along the outline, never the
+        // outline colour, nothing beside it.
+        let img = line(Fill::Pattern(Pattern::TwoColor {
+            tile: tracedraw_core::PatternTile::Stripes,
+            front: red,
+            back: blue,
+            size_mm: 4.0,
+        }));
+        let row: Vec<_> = (6..94).map(|x| img.pixel(x, 10).unwrap()).collect();
+        assert!(row.iter().all(|p| p.green() < 30));
+        assert_eq!(img.pixel(50, 2).unwrap().green(), 255);
+        let col: Vec<_> = (7..13).map(|y| img.pixel(50, y).unwrap()).collect();
+        assert!(col.iter().any(|p| p.red() > 200) && col.iter().any(|p| p.blue() > 200));
+        // A texture.
+        let img = line(Fill::Texture(Texture {
+            kind: tracedraw_core::TextureKind::Noise,
+            color_a: red,
+            color_b: blue,
+            scale: 2.0,
+            seed: 3,
+        }));
+        let p = img.pixel(50, 10).unwrap();
+        assert!(p.green() < 30 && p.red() + p.blue() > 150, "{p:?}");
+        // A mesh: its nodes are local to the object, red on the left and
+        // blue on the right.
+        let mut m = tracedraw_core::Mesh::new(Rect::new(5.0, 7.0, 95.0, 13.0), 1, 1, red);
+        for (i, n) in m.nodes.iter_mut().enumerate() {
+            if i % 2 == 1 {
+                n.color = blue;
+            }
+        }
+        let img = line(Fill::Mesh(m));
+        let (l, r) = (img.pixel(8, 10).unwrap(), img.pixel(92, 10).unwrap());
+        assert!(l.red() > 200 && l.blue() < 60, "{l:?}");
+        assert!(r.blue() > 200 && r.red() < 60, "{r:?}");
+        // A shaped gradient follows the outline's own area: its edge
+        // dark, its middle light.
+        let img = line(Fill::Fountain(Fountain::two(
+            FountainKind::Shaped,
+            Color::BLACK,
+            Color::WHITE,
+            0.0,
+        )));
+        let (edge, mid) = (img.pixel(50, 7).unwrap(), img.pixel(50, 10).unwrap());
+        assert!(mid.red() > edge.red() + 60, "{edge:?} {mid:?}");
     }
 
     #[test]

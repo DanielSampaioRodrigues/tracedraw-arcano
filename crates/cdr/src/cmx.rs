@@ -954,6 +954,7 @@ impl Ctx {
                 (f64::from(y) / 100.0).clamp(-1.0, 1.0),
             ),
             edge_pad: (f64::from(pad) / 100.0).clamp(0.0, 0.49),
+            ..Default::default()
         }))
     }
 

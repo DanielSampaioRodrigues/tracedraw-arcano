@@ -5,8 +5,8 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use egui::Ui;
 use tracedraw_core::{
-    document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, Pattern,
-    PatternTile, Stop, Stroke, Texture, TextureKind,
+    document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, FountainRepeat,
+    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
 };
 
 /// The vertical strip of docker tabs on the right edge of the window.
@@ -950,22 +950,62 @@ fn gradient_swatch(p: &egui::Painter, r: egui::Rect, stops: &[tracedraw_core::St
     p.add(egui::Shape::mesh(mesh));
 }
 
+/// Stops drawn bottom to top as one mesh.
+fn gradient_swatch_up(p: &egui::Painter, r: egui::Rect, stops: &[tracedraw_core::Stop]) {
+    let mut mesh = egui::Mesh::default();
+    for (i, st) in stops.iter().enumerate() {
+        let [cr, cg, cb] = st.color.to_rgb8();
+        let c = egui::Color32::from_rgb(cr, cg, cb);
+        let y = r.bottom() - r.height() * st.pos.clamp(0.0, 1.0) as f32;
+        mesh.colored_vertex(egui::pos2(r.left(), y), c);
+        mesh.colored_vertex(egui::pos2(r.right(), y), c);
+        if i > 0 {
+            let a = (i as u32 - 1) * 2;
+            mesh.add_triangle(a, a + 1, a + 2);
+            mesh.add_triangle(a + 1, a + 3, a + 2);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+}
+
+/// The i18n key of a fountain kind's short name.
+pub fn fountain_kind_key(k: FountainKind) -> &'static str {
+    match k {
+        FountainKind::Linear => "fill.linear",
+        FountainKind::Radial => "fill.radial",
+        FountainKind::Conical => "fill.conical",
+        FountainKind::Square => "fill.square",
+        FountainKind::Shaped => "fill.shaped",
+    }
+}
+
 fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     let mut changed = false;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(tr("docker.type"));
-        for (k, n) in [
-            (FountainKind::Linear, "fill.linear"),
-            (FountainKind::Radial, "fill.radial"),
-            (FountainKind::Conical, "fill.conical"),
-            (FountainKind::Square, "fill.square"),
-        ] {
-            if ui.selectable_label(f.kind == k, tr(n)).clicked() && f.kind != k {
+        for k in FountainKind::ALL {
+            if ui
+                .selectable_label(f.kind == k, tr(fountain_kind_key(k)))
+                .clicked()
+                && f.kind != k
+            {
                 f.kind = k;
                 changed = true;
             }
         }
     });
+    // The whole run as it is drawn: repeats, mirror and inversion in.
+    let (r, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().min(240.0), 14.0),
+        egui::Sense::hover(),
+    );
+    gradient_swatch(ui.painter(), r, &f.resolved_stops());
+    ui.painter().rect_stroke(
+        r,
+        2.0,
+        egui::Stroke::new(1.0, crate::theme::Tokens::border()),
+        egui::StrokeKind::Inside,
+    );
     // Built-in gradients: a click replaces the stops.
     egui::CollapsingHeader::new(tr("docker.gradient_presets"))
         .id_salt("fountain_presets")
@@ -977,7 +1017,13 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                     let (r, resp) =
                         ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
                     if let Some(stops) = crate::gradient_presets::stops(i) {
-                        gradient_swatch(ui.painter(), r, &stops);
+                        let angle = crate::gradient_presets::angle(i);
+                        if angle.is_some() {
+                            // Landscapes show ground at the bottom, sky on top.
+                            gradient_swatch_up(ui.painter(), r, &stops);
+                        } else {
+                            gradient_swatch(ui.painter(), r, &stops);
+                        }
                         let line = if resp.hovered() {
                             crate::theme::Tokens::ACCENT
                         } else {
@@ -991,6 +1037,9 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                         );
                         if resp.on_hover_text(tr(key)).clicked() {
                             f.stops = stops;
+                            if let Some(a) = angle.filter(|_| f.kind == FountainKind::Linear) {
+                                f.angle = a;
+                            }
                             changed = true;
                         }
                     }
@@ -1040,7 +1089,9 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             }
         });
     }
-    // A `.ggr` gradient file replaces the stops.
+    // A `.ggr` gradient file replaces the stops (of this editor: the fill
+    // and the outline each have one).
+    let ggr_key = format!("fountain_ggr{:?}", ui.id());
     if ui
         .button(tr("docker.import_gradient"))
         .on_hover_text(tr("docker.import_gradient_tip"))
@@ -1048,9 +1099,9 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     {
         crate::files::Dialog::new()
             .add_filter("GIMP gradient", &["ggr"])
-            .pick_into("fountain_ggr");
+            .pick_into(&ggr_key);
     }
-    if let Some(path) = crate::files::take_picked("fountain_ggr") {
+    if let Some(path) = crate::files::take_picked(&ggr_key) {
         match crate::files::read_to_string(&path)
             .map_err(|e| e.to_string())
             .and_then(|text| tracedraw_io::ggr::read(&text))
@@ -1065,7 +1116,8 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     if let Some(i) = insert {
         let next = f.stops.get(i + 1).map(|s| s.pos).unwrap_or(1.0);
         let pos = (f.stops[i].pos + next) / 2.0;
-        let color = f.color_at(pos);
+        // The stops' own colour there (not the repeats or the inversion).
+        let color = tracedraw_core::style::sample_stops(&f.sorted_stops(), pos);
         f.stops.insert(i + 1, Stop { pos, color });
         changed = true;
     }
@@ -1085,7 +1137,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             ))
             .drag_stopped();
     }
-    if !matches!(f.kind, FountainKind::Linear) {
+    if !matches!(f.kind, FountainKind::Linear | FountainKind::Shaped) {
         ui.horizontal(|ui| {
             ui.label(tr("docker.centre_offset"));
             changed |= ui
@@ -1116,6 +1168,47 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         f.edge_pad = pad / 100.0;
         changed = true;
     }
+    changed |= fountain_spread_editor(ui, f);
+    changed
+}
+
+/// The repeat mode and count, the bilinear mirror and the inversion.
+fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("docker.repeat"));
+        for (m, key) in [
+            (FountainRepeat::None, "docker.repeat_none"),
+            (FountainRepeat::Repeat, "docker.repeat_sawtooth"),
+            (FountainRepeat::Mirror, "docker.repeat_mirror"),
+        ] {
+            if ui.selectable_label(f.repeat == m, tr(key)).clicked() && f.repeat != m {
+                f.repeat = m;
+                if m != FountainRepeat::None && f.repeats < 2 {
+                    f.repeats = 2;
+                }
+                changed = true;
+            }
+        }
+    });
+    if f.repeat != FountainRepeat::None {
+        ui.horizontal(|ui| {
+            ui.label(tr("docker.repeat_count"));
+            changed |= ui
+                .add(egui::DragValue::new(&mut f.repeats).range(1..=Fountain::MAX_REPEATS))
+                .changed();
+        });
+    }
+    ui.horizontal_wrapped(|ui| {
+        changed |= ui
+            .checkbox(&mut f.bilinear, tr("docker.bilinear"))
+            .on_hover_text(tr("docker.bilinear_tip"))
+            .changed();
+        changed |= ui
+            .checkbox(&mut f.invert, tr("docker.invert_colours"))
+            .on_hover_text(tr("docker.invert_colours_tip"))
+            .changed();
+    });
     changed
 }
 
@@ -1269,6 +1362,33 @@ fn arrow_combo(
     changed
 }
 
+/// An outline's paint as a fill: its own fill, or its colour as a
+/// uniform fill.
+fn outline_paint_of(s: &Stroke) -> Fill {
+    match s.fill.as_deref() {
+        Some(f) if !matches!(f, Fill::None | Fill::Solid(_)) => f.clone(),
+        _ => Fill::Solid(s.color),
+    }
+}
+
+/// Give an outline the paint chosen in its fill editor: a uniform paint
+/// becomes its colour, the other kinds its own fill. True when the
+/// paint is none (the outline goes).
+fn set_outline_paint(s: &mut Stroke, paint: Fill) -> bool {
+    match paint {
+        Fill::None => true,
+        Fill::Solid(c) => {
+            s.color = c;
+            s.fill = None;
+            false
+        }
+        other => {
+            s.fill = Some(Box::new(other));
+            false
+        }
+    }
+}
+
 fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]) -> bool {
     let mut changed = false;
     let mut has = stroke.is_some();
@@ -1276,37 +1396,25 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
         *stroke = if has { Some(Stroke::default()) } else { None };
         changed = true;
     }
-    if let Some(s) = stroke {
-        changed |= color_row(ui, &tr("docker.colour"), &mut s.color);
-        // The outline painted with a gradient instead of its colour.
-        ui.horizontal(|ui| {
-            ui.label(tr("docker.outline_fill"));
-            let gradient = s.fill.is_some();
-            if ui
-                .selectable_label(!gradient, tr("docker.outline_fill_uniform"))
-                .clicked()
-                && gradient
-            {
-                s.fill = None;
-                changed = true;
-            }
-            if ui
-                .selectable_label(gradient, tr("docker.outline_fill_gradient"))
-                .clicked()
-                && !gradient
-            {
-                s.fill = Some(Box::new(Fill::Fountain(Fountain::two(
-                    FountainKind::Linear,
-                    s.color,
-                    Color::WHITE,
-                    0.0,
-                ))));
-                changed = true;
-            }
-        });
-        if let Some(Fill::Fountain(fo)) = s.fill.as_deref_mut() {
-            changed |= fountain_editor(ui, fo);
+    let mut remove = false;
+    if let Some(s) = stroke.as_mut() {
+        // The outline's paint offers every kind a fill does, with the
+        // same editors: none takes the outline away, uniform is its
+        // colour, the others its own fill.
+        ui.label(tr("docker.outline_fill"));
+        let mut paint = outline_paint_of(s);
+        let edited = ui
+            .push_id("outline_paint", |ui| fill_editor(ui, &mut paint))
+            .inner;
+        if edited {
+            changed = true;
+            remove = set_outline_paint(s, paint);
         }
+    }
+    if remove {
+        *stroke = None;
+    }
+    if let Some(s) = stroke {
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
         if ui.checkbox(&mut hair, tr("docker.hairline")).changed() {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };
@@ -1533,6 +1641,51 @@ mod tests {
         out.textures_delta.clear();
     }
 
+    /// The outline's paint editor works on the outline: uniform is its
+    /// colour, the other kinds its own fill, none takes it away.
+    #[test]
+    fn outline_paint_offers_every_fill_kind() {
+        let red = tracedraw_core::Color::rgb8(255, 0, 0);
+        let mut s = tracedraw_core::Stroke::new(red, 1.0);
+        assert_eq!(outline_paint_of(&s), Fill::Solid(red));
+        let texture = Fill::Texture(Texture {
+            kind: TextureKind::Wood,
+            color_a: red,
+            color_b: tracedraw_core::Color::WHITE,
+            scale: 5.0,
+            seed: 1,
+        });
+        for paint in [
+            Fill::linear(red, tracedraw_core::Color::WHITE, 0.0),
+            Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Dots,
+                front: red,
+                back: tracedraw_core::Color::WHITE,
+                size_mm: 4.0,
+            }),
+            texture,
+            Fill::Mesh(tracedraw_core::Mesh::new(
+                tracedraw_core::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                1,
+                1,
+                red,
+            )),
+        ] {
+            assert!(!set_outline_paint(&mut s, paint.clone()));
+            assert_eq!(s.fill.as_deref(), Some(&paint));
+            assert_eq!(outline_paint_of(&s), paint);
+        }
+        let blue = tracedraw_core::Color::rgb8(0, 0, 255);
+        assert!(!set_outline_paint(&mut s, Fill::Solid(blue)));
+        assert_eq!((s.color, s.fill.is_none()), (blue, true));
+        assert!(set_outline_paint(&mut s, Fill::None));
+        // A plain colour kept as the outline's fill reads as uniform.
+        s.fill = Some(Box::new(Fill::Solid(red)));
+        assert_eq!(outline_paint_of(&s), Fill::Solid(blue));
+        assert_eq!(fountain_kind_key(FountainKind::Shaped), "fill.shaped");
+        assert_ne!(tr("fill.shaped"), "fill.shaped");
+    }
+
     /// The Properties sections come open; a button or a header closes and
     /// opens one (kept in the preferences), and a jump to the fill or the
     /// outline opens it again.
@@ -1582,5 +1735,43 @@ mod tests {
             .expect("shape")
             .extra_fills
             .is_empty());
+        // Every outline paint and the gradient options draw in the docker.
+        let mut fountain = Fountain::two(
+            FountainKind::Shaped,
+            tracedraw_core::Color::BLACK,
+            tracedraw_core::Color::WHITE,
+            0.0,
+        );
+        fountain.repeat = FountainRepeat::Mirror;
+        fountain.repeats = 3;
+        fountain.bilinear = true;
+        fountain.invert = true;
+        app.apply_fill(Fill::Fountain(fountain.clone()));
+        for paint in [
+            Fill::Fountain(fountain),
+            Fill::Texture(Texture {
+                kind: TextureKind::Marble,
+                color_a: tracedraw_core::Color::BLACK,
+                color_b: tracedraw_core::Color::WHITE,
+                scale: 5.0,
+                seed: 1,
+            }),
+            Fill::Mesh(tracedraw_core::Mesh::new(
+                tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                2,
+                2,
+                tracedraw_core::Color::BLACK,
+            )),
+        ] {
+            let mut stroke = tracedraw_core::Stroke::new(tracedraw_core::Color::BLACK, 2.0);
+            stroke.fill = Some(Box::new(paint));
+            app.run(Command::SetStroke {
+                shapes: vec![id],
+                stroke: Some(stroke),
+            });
+            draw(&ctx, &mut app);
+            let s = app.doc().find_shape(id).expect("shape");
+            assert!(s.stroke.as_ref().and_then(|st| st.fill.as_ref()).is_some());
+        }
     }
 }

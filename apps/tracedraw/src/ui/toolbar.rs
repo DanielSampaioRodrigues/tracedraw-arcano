@@ -1794,12 +1794,8 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
                 f.angle = angle;
                 changed = true;
             }
-            let kinds = [
-                (tracedraw_core::style::FountainKind::Linear, "fill.linear"),
-                (tracedraw_core::style::FountainKind::Radial, "fill.radial"),
-                (tracedraw_core::style::FountainKind::Conical, "fill.conical"),
-                (tracedraw_core::style::FountainKind::Square, "fill.square"),
-            ];
+            let kinds = tracedraw_core::style::FountainKind::ALL
+                .map(|k| (k, crate::ui::dockers::fountain_kind_key(k)));
             let name = kinds
                 .iter()
                 .find(|(k, _)| *k == f.kind)
@@ -2330,12 +2326,8 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
             changed |= color_button(ui, c);
         }
         Fill::Fountain(f) => {
-            for (k, key) in [
-                (FountainKind::Linear, "fill.linear"),
-                (FountainKind::Radial, "fill.radial"),
-                (FountainKind::Conical, "fill.conical"),
-                (FountainKind::Square, "fill.square"),
-            ] {
+            for k in FountainKind::ALL {
+                let key = crate::ui::dockers::fountain_kind_key(k);
                 if ui.selectable_label(f.kind == k, tr(key)).clicked() && f.kind != k {
                     f.kind = k;
                     changed = true;

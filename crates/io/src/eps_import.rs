@@ -3643,6 +3643,7 @@ impl<'a> Interp<'a> {
             angle,
             offset: Point::ZERO,
             edge_pad: 0.0,
+            ..Default::default()
         })
     }
 

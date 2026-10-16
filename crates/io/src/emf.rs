@@ -2471,6 +2471,8 @@ impl EmfWriter<'_> {
     /// Linear and radial fountains as 64 clipped bands; the others as
     /// their average colour.
     fn fountain(&mut self, path: &BezPath, f: &tracedraw_core::Fountain) {
+        // A shaped gradient as the closest square one (from the centre out).
+        let f = &f.to_plain(256);
         let b = path.bounding_box();
         if b.width() <= 0.0 || b.height() <= 0.0 {
             return;

@@ -114,12 +114,13 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Capability | Status |
 |---|---|
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
-| Gradient fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
+| Gradient fill: linear, radial, conical, square, shaped (follows the object's outline); multi-stop; angle, offset, edge pad; repeat (sawtooth, mirror) with a cycle count, bilinear, invert colours; 29 built-in gradients (five landscapes); interactive drag | works (see `behavior/gradient-fill.md`; `.cdr` gets the closest plain gradient) |
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill: Mesh Fill tool and bar (rows and columns keeping colours, Smooth colour, node transparency, Clear Mesh), nodes dragged and coloured from the palette, grid lines added and removed (see `behavior/mesh-fill.md`) | works |
 | Area Fill (enclosed region; fill and outline: default, own or none) (see `behavior/area-fill.md`) | works |
 | Interactive Fill tool: property bar with fill type and gradient fields, axis and centre handles on the canvas | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
+| Outline paint: every fill kind (none, uniform, gradient, pattern, texture, mesh) with the fill editors, on screen, in SVG (gradient and pattern strokes) and PDF (the outline's area shaded or rasterised) | works (see `behavior/outline-pen.md`, Outline paint; other exports use the outline colour) |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
 

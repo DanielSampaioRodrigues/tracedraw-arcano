@@ -16,6 +16,13 @@ full, row-by-row status.
   (`txtj`), as other programs write them (#98).
 - `.cdr` files of versions 18 to 22 saved by TraceDraw give every
   object's transform the tag files of those versions carry (#98).
+- Outlines take every fill kind as their paint (none, uniform, gradient,
+  pattern, texture, mesh) with the fill editors; SVG and PDF export them
+  (issue #4).
+- Gradients: repeat (sawtooth or mirror, with a cycle count), bilinear,
+  invert colours and a shaped type that follows the object's outline;
+  `.cdr` files get the closest plain gradient (issue #4).
+- Five landscape gradients among the built-in ones (issue #4).
 
 ## 0.8.0 (2026-10-15)
 

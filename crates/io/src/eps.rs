@@ -320,8 +320,11 @@ impl Writer<'_> {
                 let _ = writeln!(self.out, "{}", if even_odd { "eofill" } else { "fill" });
             }
             Fill::Fountain(ft) => {
+                // Repeats, mirror and inversion worked into the stops; a
+                // shaped gradient as the closest square one.
+                let ft = &ft.to_plain(256);
                 let stops = {
-                    let mut s = ft.stops.clone();
+                    let mut s = ft.resolved_stops();
                     s.sort_by(|a, b| {
                         a.pos
                             .partial_cmp(&b.pos)
@@ -351,7 +354,13 @@ impl Writer<'_> {
                     let mut enc = String::new();
                     let first = stops[0].pos;
                     let span = (stops[stops.len() - 1].pos - first).max(1e-6);
-                    for w in stops.windows(2) {
+                    // Hard edges (segments of no width) are left out so
+                    // the bounds rise strictly.
+                    let segments: Vec<_> = stops
+                        .windows(2)
+                        .filter(|w| w[1].pos - w[0].pos > 1e-9)
+                        .collect();
+                    for (i, w) in segments.iter().enumerate() {
                         let _ = write!(
                             funcs,
                             "<< /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >> ",
@@ -359,9 +368,9 @@ impl Writer<'_> {
                             rgb_array(w[1].color)
                         );
                         enc.push_str("0 1 ");
-                    }
-                    for s in &stops[1..stops.len() - 1] {
-                        let _ = write!(bounds_s, "{} ", f((s.pos - first) / span));
+                        if i + 1 < segments.len() {
+                            let _ = write!(bounds_s, "{} ", f((w[1].pos - first) / span));
+                        }
                     }
                     format!("<< /FunctionType 3 /Domain [0 1] /Functions [{}] /Bounds [{}] /Encode [{}] >>", funcs.trim_end(), bounds_s.trim_end(), enc.trim_end())
                 };

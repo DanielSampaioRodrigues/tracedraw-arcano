@@ -431,6 +431,107 @@ impl PageWriter<'_> {
         }
     }
 
+    /// Paint `path` (page space, mm) with `fill` spread over `bounds`:
+    /// a colour, a shading for a gradient, or the renderer's pixels
+    /// clipped by the path for the rest. `nonzero` fills and clips with
+    /// the non-zero rule (text, outline areas), otherwise even-odd.
+    fn paint_area(
+        &mut self,
+        fill: &Fill,
+        path: &tracedraw_core::BezPath,
+        bounds: tracedraw_core::geometry::Rect,
+        nonzero: bool,
+    ) {
+        let (fill_op, clip) = if nonzero { ("f", "W") } else { ("f*", "W*") };
+        match fill {
+            Fill::None => {}
+            Fill::Solid(c) => {
+                let op = self.color_op(*c, true);
+                let _ = writeln!(self.content, "{op}");
+                self.path_ops(path);
+                let _ = writeln!(self.content, "{fill_op}");
+            }
+            Fill::Fountain(ft) if ft.kind != FountainKind::Shaped => {
+                let func = stitching_function_in(ft, self.pdf.cmyk_only);
+                let shading = match ft.kind {
+                    FountainKind::Radial => {
+                        let c = bounds.center();
+                        let cx = (c.x + ft.offset.x * bounds.width() / 2.0) * MM_PT;
+                        let cy = (c.y + ft.offset.y * bounds.height() / 2.0) * MM_PT;
+                        let r = bounds.width().max(bounds.height()) / 2.0
+                            * std::f64::consts::SQRT_2
+                            * MM_PT;
+                        format!(
+                            "<< /ShadingType 3 /ColorSpace {} /Coords [{} {} 0 {} {} {}] /Function {} /Extend [true true] >>",
+                            self.pdf.color_space(), f(cx), f(cy), f(cx), f(cy), f(r), func
+                        )
+                    }
+                    // Conical and square fountains have no PDF shading type;
+                    // they are approximated by a linear axis at the same angle.
+                    _ => {
+                        let a = ft.angle.to_radians();
+                        let c = bounds.center();
+                        let half = (bounds.width() * a.cos().abs()
+                            + bounds.height() * a.sin().abs())
+                            / 2.0;
+                        let (x0, y0) = (
+                            (c.x - half * a.cos()) * MM_PT,
+                            (c.y - half * a.sin()) * MM_PT,
+                        );
+                        let (x1, y1) = (
+                            (c.x + half * a.cos()) * MM_PT,
+                            (c.y + half * a.sin()) * MM_PT,
+                        );
+                        format!(
+                            "<< /ShadingType 2 /ColorSpace {} /Coords [{} {} {} {}] /Function {} /Extend [true true] >>",
+                            self.pdf.color_space(), f(x0), f(y0), f(x1), f(y1), func
+                        )
+                    }
+                };
+                let name = format!("Sh{}", self.shadings.len());
+                let id = self.pdf.add_str(shading);
+                self.shadings.push((name.clone(), id));
+                self.content.push_str("q\n");
+                self.path_ops(path);
+                let _ = writeln!(self.content, "{clip} n /{name} sh\nQ");
+            }
+            // Patterns, textures, meshes and shaped gradients are
+            // rasterised into an image clipped by the path; the renderer
+            // produces the same pixels as the screen.
+            Fill::Fountain(_) | Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_) => {
+                // A shaped gradient covers the bounds of the path it follows.
+                let bounds = if matches!(fill, Fill::Fountain(_)) {
+                    use tracedraw_core::geometry::Shape as _;
+                    path.bounding_box()
+                } else {
+                    bounds
+                };
+                if let Some((png, w, h)) = rasterise_fill(fill, path, bounds) {
+                    if let Some(rgb) = decode_png_rgb(&png) {
+                        let name = format!("Im{}", self.images.len());
+                        let id = self.pdf.add_image(w, h, &rgb);
+                        self.images.push((name.clone(), id));
+                        self.content.push_str("q\n");
+                        self.path_ops(path);
+                        let _ = writeln!(
+                            self.content,
+                            "{clip} n {} 0 0 {} {} {} cm /{name} Do\nQ",
+                            f(bounds.width() * MM_PT),
+                            f(bounds.height() * MM_PT),
+                            f(bounds.x0 * MM_PT),
+                            f(bounds.y0 * MM_PT)
+                        );
+                    }
+                } else {
+                    let op = self.color_op(fill.preview_color().unwrap_or(Color::BLACK), true);
+                    let _ = writeln!(self.content, "{op}");
+                    self.path_ops(path);
+                    let _ = writeln!(self.content, "{fill_op}");
+                }
+            }
+        }
+    }
+
     fn shape(&mut self, shape: &Shape, parent: Affine) {
         // Bitmap effects on a vector object: its picture in its place.
         if let Some(pic) = shape.drawn_as() {
@@ -614,91 +715,8 @@ impl PageWriter<'_> {
         }
 
         // Fill.
-        match &shape.fill {
-            Fill::None => {}
-            Fill::Solid(c) => {
-                let op = self.color_op(*c, true);
-                let _ = writeln!(self.content, "{op}");
-                self.path_ops(&path);
-                self.content
-                    .push_str(if matches!(shape.kind, ShapeKind::Text { .. }) {
-                        "f\n"
-                    } else {
-                        "f*\n"
-                    });
-            }
-            Fill::Fountain(ft) => {
-                let func = stitching_function_in(ft, self.pdf.cmyk_only);
-                let shading = match ft.kind {
-                    FountainKind::Radial => {
-                        let c = bounds.center();
-                        let cx = (c.x + ft.offset.x * bounds.width() / 2.0) * MM_PT;
-                        let cy = (c.y + ft.offset.y * bounds.height() / 2.0) * MM_PT;
-                        let r = bounds.width().max(bounds.height()) / 2.0
-                            * std::f64::consts::SQRT_2
-                            * MM_PT;
-                        format!(
-                            "<< /ShadingType 3 /ColorSpace {} /Coords [{} {} 0 {} {} {}] /Function {} /Extend [true true] >>",
-                            self.pdf.color_space(), f(cx), f(cy), f(cx), f(cy), f(r), func
-                        )
-                    }
-                    // Conical and square fountains have no PDF shading type;
-                    // they are approximated by a linear axis at the same angle.
-                    _ => {
-                        let a = ft.angle.to_radians();
-                        let c = bounds.center();
-                        let half = (bounds.width() * a.cos().abs()
-                            + bounds.height() * a.sin().abs())
-                            / 2.0;
-                        let (x0, y0) = (
-                            (c.x - half * a.cos()) * MM_PT,
-                            (c.y - half * a.sin()) * MM_PT,
-                        );
-                        let (x1, y1) = (
-                            (c.x + half * a.cos()) * MM_PT,
-                            (c.y + half * a.sin()) * MM_PT,
-                        );
-                        format!(
-                            "<< /ShadingType 2 /ColorSpace {} /Coords [{} {} {} {}] /Function {} /Extend [true true] >>",
-                            self.pdf.color_space(), f(x0), f(y0), f(x1), f(y1), func
-                        )
-                    }
-                };
-                let name = format!("Sh{}", self.shadings.len());
-                let id = self.pdf.add_str(shading);
-                self.shadings.push((name.clone(), id));
-                self.content.push_str("q\n");
-                self.path_ops(&path);
-                let _ = writeln!(self.content, "W* n /{name} sh\nQ");
-            }
-            // Patterns and textures are rasterised into an image clipped by
-            // the path; the renderer produces the same pixels as the screen.
-            Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_) => {
-                if let Some((png, w, h)) = rasterise_fill(shape, bounds) {
-                    if let Some(rgb) = decode_png_rgb(&png) {
-                        let name = format!("Im{}", self.images.len());
-                        let id = self.pdf.add_image(w, h, &rgb);
-                        self.images.push((name.clone(), id));
-                        self.content.push_str("q\n");
-                        self.path_ops(&path);
-                        let _ = writeln!(
-                            self.content,
-                            "W* n {} 0 0 {} {} {} cm /{name} Do\nQ",
-                            f(bounds.width() * MM_PT),
-                            f(bounds.height() * MM_PT),
-                            f(bounds.x0 * MM_PT),
-                            f(bounds.y0 * MM_PT)
-                        );
-                    }
-                } else {
-                    let op =
-                        self.color_op(shape.fill.preview_color().unwrap_or(Color::BLACK), true);
-                    let _ = writeln!(self.content, "{op}");
-                    self.path_ops(&path);
-                    self.content.push_str("f*\n");
-                }
-            }
-        }
+        let text = matches!(shape.kind, ShapeKind::Text { .. });
+        self.paint_area(&shape.fill, &path, bounds, text);
 
         // Outline.
         if let Some(s) = &shape.stroke {
@@ -757,10 +775,24 @@ impl PageWriter<'_> {
                 tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0)
             {
                 // Calligraphic nib or variable width: the band, filled.
-                let op = self.color_op(s.color, true);
-                let _ = writeln!(self.content, "{op}");
-                self.path_ops(&(parent * band));
-                self.content.push_str("f\n");
+                let band = parent * band;
+                if let Some(paint) = outline_paint(s, transform) {
+                    let b = band.bounding_box();
+                    self.paint_area(&paint, &band, b, true);
+                } else {
+                    let op = self.color_op(s.color, true);
+                    let _ = writeln!(self.content, "{op}");
+                    self.path_ops(&band);
+                    self.content.push_str("f\n");
+                }
+            } else if let Some((paint, area)) = outline_paint(s, transform)
+                .map(|p| (p, tracedraw_core::shaping::stroke_area(&path, s)))
+                .filter(|(_, a)| !a.elements().is_empty())
+            {
+                // The outline's own paint: the area it covers, painted
+                // like a fill spread over the outline's bounds.
+                let half = s.width / 2.0;
+                self.paint_area(&paint, &area, bounds.inflate(half, half), true);
             } else {
                 self.path_ops(&path);
                 self.content.push_str("S\n");
@@ -783,8 +815,10 @@ impl PageWriter<'_> {
 /// segments), or a single type 2 function for two stops.
 fn stitching_function_in(ft: &tracedraw_core::Fountain, cmyk_only: bool) -> String {
     let rgb_array = |c: Color| color_array(c, cmyk_only);
+    // One run of stops with the edge pad, repeats, mirror and inversion
+    // worked in.
     let mut stops: Vec<(f64, Color)> = ft
-        .stops
+        .resolved_stops()
         .iter()
         .map(|s| (s.pos.clamp(0.0, 1.0), s.color))
         .collect();
@@ -809,7 +843,21 @@ fn stitching_function_in(ft: &tracedraw_core::Fountain, cmyk_only: bool) -> Stri
     let mut funcs = String::new();
     let mut bounds = String::new();
     let mut encode = String::new();
-    for w in stops.windows(2) {
+    // Segments of no width (a hard edge between two colours) are left
+    // out, so the bounds rise strictly; the next segment starts with the
+    // new colour.
+    let segments: Vec<_> = stops
+        .windows(2)
+        .filter(|w| w[1].0 - w[0].0 > 1e-9)
+        .collect();
+    if segments.is_empty() {
+        return format!(
+            "<< /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >>",
+            rgb_array(stops[0].1),
+            rgb_array(stops[stops.len() - 1].1)
+        );
+    }
+    for (i, w) in segments.iter().enumerate() {
         let _ = write!(
             funcs,
             "<< /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >> ",
@@ -817,9 +865,9 @@ fn stitching_function_in(ft: &tracedraw_core::Fountain, cmyk_only: bool) -> Stri
             rgb_array(w[1].1)
         );
         encode.push_str("0 1 ");
-    }
-    for s in &stops[1..stops.len() - 1] {
-        let _ = write!(bounds, "{} ", f((s.0 - first) / span));
+        if i + 1 < segments.len() {
+            let _ = write!(bounds, "{} ", f((w[1].0 - first) / span));
+        }
     }
     format!(
         "<< /FunctionType 3 /Domain [0 1] /Functions [{}] /Bounds [{}] /Encode [{}] >>",
@@ -829,12 +877,33 @@ fn stitching_function_in(ft: &tracedraw_core::Fountain, cmyk_only: bool) -> Stri
     )
 }
 
-/// Rasterise a pattern or texture fill over the shape bounds at 150 dpi.
+/// An outline's own paint other than a plain colour, ready for page
+/// space: a mesh's nodes go through the object's `transform`.
+fn outline_paint(s: &tracedraw_core::Stroke, transform: Affine) -> Option<Fill> {
+    match s.fill.as_deref()? {
+        Fill::None | Fill::Solid(_) => None,
+        Fill::Mesh(m) => {
+            let mut m = m.clone();
+            for n in m.nodes.iter_mut() {
+                n.pos = transform * n.pos;
+            }
+            Some(Fill::Mesh(m))
+        }
+        other => Some(other.clone()),
+    }
+}
+
+/// Rasterise a pattern, texture, mesh or shaped gradient fill over
+/// `bounds` at 150 dpi (a shaped gradient follows `path`).
 fn rasterise_fill(
-    shape: &Shape,
+    fill: &Fill,
+    path: &tracedraw_core::BezPath,
     bounds: tracedraw_core::geometry::Rect,
 ) -> Option<(Vec<u8>, u32, u32)> {
-    let pm = tracedraw_render::render_fill_image(&shape.fill, bounds, 150.0)?;
+    let pm = match fill {
+        Fill::Fountain(_) => tracedraw_render::render_fill_image_in(fill, path, 150.0)?,
+        _ => tracedraw_render::render_fill_image(fill, bounds, 150.0)?,
+    };
     let (w, h) = (pm.width(), pm.height());
     Some((pm.encode_png().ok()?, w, h))
 }
@@ -1535,11 +1604,87 @@ mod tests {
             angle: 90.0,
             offset: tracedraw_core::geometry::Point::ZERO,
             edge_pad: 0.0,
+            ..Default::default()
         });
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
         assert!(text.contains("/FunctionType 3"));
         assert!(text.contains("/Bounds [0.3]"));
+    }
+
+    fn one_rect_pdf(fill: Fill, stroke: Option<tracedraw_core::Stroke>) -> String {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = fill;
+        s.stroke = stroke;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        // The file as text, then every zlib stream inflated.
+        let bytes = document_to_pdf(&doc);
+        let mut text = String::from_utf8_lossy(&bytes).to_string();
+        let mut rest: &[u8] = &bytes;
+        while let Some(i) = rest.windows(7).position(|w| w == b"stream\n") {
+            let data = &rest[i + 7..];
+            use std::io::Read;
+            let mut out = Vec::new();
+            if flate2::read::ZlibDecoder::new(data)
+                .read_to_end(&mut out)
+                .is_ok()
+            {
+                text.push_str(&String::from_utf8_lossy(&out));
+            }
+            rest = data;
+        }
+        text
+    }
+
+    #[test]
+    fn gradient_options_and_outline_paints_reach_the_pdf() {
+        use tracedraw_core::{Fountain, FountainRepeat};
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        // A sawtooth: hard edges are left out of the stitching, so the
+        // bounds rise strictly (0.5 once, between two runs).
+        let mut saw = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        saw.repeat = FountainRepeat::Repeat;
+        saw.repeats = 2;
+        let text = one_rect_pdf(Fill::Fountain(saw), None);
+        assert!(text.contains("/Bounds [0.5]"), "{text}");
+        // A shaped gradient is the renderer's picture clipped by the path.
+        let shaped = Fountain::two(FountainKind::Shaped, red, blue, 0.0);
+        let text = one_rect_pdf(Fill::Fountain(shaped), None);
+        assert!(text.contains("/Subtype /Image"), "{text}");
+        assert!(!text.contains("/ShadingType"), "{text}");
+        // A gradient outline: its area clipped and shaded, not a stroke
+        // in the outline colour.
+        let mut st = tracedraw_core::Stroke::new(Color::rgb8(0, 255, 0), 2.0);
+        st.fill = Some(Box::new(Fill::linear(red, blue, 0.0)));
+        let text = one_rect_pdf(Fill::None, Some(st.clone()));
+        assert!(text.contains("/ShadingType 2"), "{text}");
+        assert!(text.contains("W n /Sh0 sh"), "{text}");
+        assert!(!text.contains("\nS\n"), "{text}");
+        // A texture outline: the renderer's pixels in the outline's area.
+        st.fill = Some(Box::new(Fill::Texture(tracedraw_core::Texture {
+            kind: tracedraw_core::TextureKind::Wood,
+            color_a: red,
+            color_b: blue,
+            scale: 4.0,
+            seed: 2,
+        })));
+        let text = one_rect_pdf(Fill::None, Some(st.clone()));
+        assert!(text.contains("/Subtype /Image"), "{text}");
+        // A hairline keeps its plain stroke.
+        st.width = tracedraw_core::Stroke::HAIRLINE;
+        let text = one_rect_pdf(Fill::None, Some(st));
+        assert!(text.contains("\nS\n"), "{text}");
     }
 
     #[test]

@@ -533,6 +533,44 @@ pub fn outline_band(path: &BezPath, stroke: &crate::style::Stroke, scale: f64) -
     None
 }
 
+/// The area a plain outline covers along `path` (page space), as a path
+/// to fill with the non-zero rule: its width, caps, joins (miter limit
+/// 4) and dashes. A hairline covers no area: the result is empty.
+pub fn stroke_area(path: &BezPath, stroke: &crate::style::Stroke) -> BezPath {
+    use kurbo::{Cap, Join};
+    if !stroke.width.is_finite() || stroke.width <= crate::style::Stroke::HAIRLINE + 1e-9 {
+        return BezPath::new();
+    }
+    let cap = match stroke.cap {
+        crate::style::LineCap::Butt => Cap::Butt,
+        crate::style::LineCap::Round => Cap::Round,
+        crate::style::LineCap::Square => Cap::Square,
+    };
+    let join = match stroke.join {
+        crate::style::LineJoin::Miter => Join::Miter,
+        crate::style::LineJoin::Round => Join::Round,
+        crate::style::LineJoin::Bevel => Join::Bevel,
+    };
+    let mut style = kurbo::Stroke::new(stroke.width)
+        .with_caps(cap)
+        .with_join(join)
+        .with_miter_limit(4.0);
+    let dashes: Vec<f64> = stroke
+        .dash
+        .iter()
+        .map(|d| (d * stroke.width).max(0.0))
+        .collect();
+    if !dashes.is_empty() && dashes.iter().sum::<f64>() > 1e-9 {
+        style = style.with_dashes(0.0, dashes);
+    }
+    kurbo::stroke(
+        path.iter(),
+        &style,
+        &kurbo::StrokeOpts::default(),
+        (stroke.width / 100.0).max(1e-3),
+    )
+}
+
 /// Union of one path with itself: removes self-overlaps (Simplify).
 pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);
@@ -624,6 +662,32 @@ mod tests {
 
     fn square(x: f64) -> BezPath {
         Rect::new(x, 0.0, x + 10.0, 10.0).to_path(0.01)
+    }
+
+    #[test]
+    fn stroke_area_covers_the_outline_and_hairlines_cover_nothing() {
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        let s = crate::style::Stroke::new(crate::Color::BLACK, 2.0);
+        let a = stroke_area(&line, &s);
+        let b = a.bounding_box();
+        assert!(
+            (b.width() - 50.0).abs() < 0.01 && (b.height() - 2.0).abs() < 0.01,
+            "{b:?}"
+        );
+        assert!((a.area().abs() - 100.0).abs() < 0.5, "{}", a.area());
+        // Round caps reach half the width past the ends.
+        let mut round = s.clone();
+        round.cap = crate::style::LineCap::Round;
+        assert!((stroke_area(&line, &round).bounding_box().width() - 52.0).abs() < 0.05);
+        // Dashes leave gaps: half on, half off.
+        let mut dashed = s.clone();
+        dashed.dash = vec![2.5, 2.5];
+        let d = stroke_area(&line, &dashed).area().abs();
+        assert!((d - 50.0).abs() < 2.0, "{d}");
+        let hair = crate::style::Stroke::hairline(crate::Color::BLACK);
+        assert!(stroke_area(&line, &hair).elements().is_empty());
     }
 
     #[test]

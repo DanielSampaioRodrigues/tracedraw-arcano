@@ -13,6 +13,33 @@ pub enum FountainKind {
     Radial,
     Conical,
     Square,
+    /// Follows the object's outline: 0 on its edge, 1 at the point
+    /// deepest inside it.
+    Shaped,
+}
+
+impl FountainKind {
+    /// Every kind, in the order the fill editor lists them.
+    pub const ALL: [FountainKind; 5] = [
+        FountainKind::Linear,
+        FountainKind::Radial,
+        FountainKind::Conical,
+        FountainKind::Square,
+        FountainKind::Shaped,
+    ];
+}
+
+/// How a fountain runs its colours over its span.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FountainRepeat {
+    /// Once; the end colours hold beyond the span.
+    #[default]
+    None,
+    /// Sawtooth: each cycle starts again at the first colour.
+    Repeat,
+    /// Triangular: cycles run there and back.
+    Mirror,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -33,9 +60,44 @@ pub struct Fountain {
     pub offset: Point,
     /// Edge padding in 0..0.49: fraction of the span held at the end colours.
     pub edge_pad: f64,
+    /// Repeat mode over the span.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub repeat: FountainRepeat,
+    /// Cycles across the span when `repeat` is not None (1 to
+    /// [`Fountain::MAX_REPEATS`]).
+    #[serde(default = "one_u32", skip_serializing_if = "is_one_u32")]
+    pub repeats: u32,
+    /// Mirrored about the centre: the colours run first to last and back.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub bilinear: bool,
+    /// Colours in reverse order.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub invert: bool,
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
+fn one_u32() -> u32 {
+    1
+}
+
+fn is_one_u32(v: &u32) -> bool {
+    *v == 1
+}
+
+impl Default for Fountain {
+    /// Black to white, left to right, running once.
+    fn default() -> Self {
+        Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0)
+    }
 }
 
 impl Fountain {
+    /// Most cycles a repeating fountain runs across its span.
+    pub const MAX_REPEATS: u32 = 50;
+
     pub fn two(kind: FountainKind, from: Color, to: Color, angle: f64) -> Self {
         Fountain {
             kind,
@@ -52,6 +114,10 @@ impl Fountain {
             angle,
             offset: Point::ZERO,
             edge_pad: 0.0,
+            repeat: FountainRepeat::None,
+            repeats: 1,
+            bilinear: false,
+            invert: false,
         }
     }
 
@@ -63,34 +129,214 @@ impl Fountain {
         self.stops.last().map(|s| s.color).unwrap_or(Color::WHITE)
     }
 
-    /// Colour at `t` in 0..1 (sRGB interpolation).
-    pub fn color_at(&self, t: f64) -> Color {
-        let t = if self.edge_pad > 0.0 {
-            ((t - self.edge_pad) / (1.0 - 2.0 * self.edge_pad)).clamp(0.0, 1.0)
-        } else {
-            t.clamp(0.0, 1.0)
-        };
-        let mut stops: Vec<&Stop> = self.stops.iter().collect();
-        stops.sort_by(|a, b| {
+    /// Cycles across the span (1 unless the fountain repeats).
+    pub fn cycles(&self) -> u32 {
+        match self.repeat {
+            FountainRepeat::None => 1,
+            _ => self.repeats.clamp(1, Self::MAX_REPEATS),
+        }
+    }
+
+    /// No repeat, bilinear or invert: the stops run once over the span.
+    pub fn runs_once(&self) -> bool {
+        self.cycles() == 1 && !self.bilinear && !self.invert
+    }
+
+    /// The stops sorted by position, at least two.
+    pub fn sorted_stops(&self) -> Vec<Stop> {
+        let mut v = self.stops.clone();
+        v.sort_by(|a, b| {
             a.pos
                 .partial_cmp(&b.pos)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        if stops.is_empty() {
-            return Color::BLACK;
+        if v.len() < 2 {
+            let c = v.first().map(|s| s.color).unwrap_or(Color::BLACK);
+            v = vec![Stop { pos: 0.0, color: c }, Stop { pos: 1.0, color: c }];
         }
-        if t <= stops[0].pos {
-            return stops[0].color;
+        v
+    }
+
+    /// Where in the stops the colour at `t` (0..1 across the span) is
+    /// taken: the bilinear mirror, then the repeat cycles, the edge pad
+    /// and the inversion.
+    pub fn stop_param(&self, t: f64) -> f64 {
+        let mut u = if t.is_finite() {
+            t.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if self.bilinear {
+            u = 1.0 - (2.0 * u - 1.0).abs();
         }
-        for w in stops.windows(2) {
-            if t <= w[1].pos {
-                let span = (w[1].pos - w[0].pos).max(1e-9);
-                let k = ((t - w[0].pos) / span) as f32;
-                return lerp_color(w[0].color, w[1].color, k);
+        let n = self.cycles() as f64;
+        if n > 1.0 {
+            let x = u * n;
+            let k = x.floor();
+            let fr = x - k;
+            u = match self.repeat {
+                FountainRepeat::Mirror if (k as i64) % 2 == 1 => 1.0 - fr,
+                FountainRepeat::Mirror => fr,
+                _ if x >= n => 1.0,
+                _ => fr,
+            };
+        }
+        let e = self.edge_pad.clamp(0.0, 0.49);
+        if e > 0.0 {
+            u = ((u - e) / (1.0 - 2.0 * e)).clamp(0.0, 1.0);
+        }
+        if self.invert {
+            u = 1.0 - u;
+        }
+        u
+    }
+
+    /// Colour at `t` in 0..1 (sRGB interpolation).
+    pub fn color_at(&self, t: f64) -> Color {
+        sample_stops(&self.sorted_stops(), self.stop_param(t))
+    }
+
+    /// The fountain as plain stops over 0..1 that give the same colours
+    /// in one run, with the edge pad, repeat cycles, bilinear mirror and
+    /// inversion worked in (for gradient shaders and exports that only
+    /// know a single run of stops). Equal positions are hard edges.
+    pub fn resolved_stops(&self) -> Vec<Stop> {
+        let base = self.sorted_stops();
+        let cycles = self.cycles();
+        let n = cycles as f64;
+        let e = self.edge_pad.clamp(0.0, 0.49);
+        // Where the mapping from t to the stop parameter bends.
+        let mut us = Vec::new();
+        for k in 0..=cycles {
+            let k = k as f64;
+            us.push(k / n);
+            if e > 0.0 && k < n {
+                us.push((k + e) / n);
+                us.push((k + 1.0 - e) / n);
             }
         }
-        stops[stops.len() - 1].color
+        let mut ts: Vec<f64> = Vec::new();
+        for u in us {
+            if self.bilinear {
+                ts.push(u / 2.0);
+                ts.push(1.0 - u / 2.0);
+            } else {
+                ts.push(u);
+            }
+        }
+        ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        ts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+        let mut out: Vec<Stop> = Vec::new();
+        let mut push = |pos: f64, color: Color| {
+            if let Some(l) = out.last() {
+                if (l.pos - pos).abs() < 1e-12 && l.color == color {
+                    return;
+                }
+            }
+            out.push(Stop { pos, color });
+        };
+        for w in ts.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if b - a < 1e-12 {
+                continue;
+            }
+            // The mapping is straight between bends: its ends from two
+            // samples inside, so a sawtooth's jump lands on the right side.
+            let (q1, q3) = (a + (b - a) * 0.25, a + (b - a) * 0.75);
+            let (p1, p3) = (self.stop_param(q1), self.stop_param(q3));
+            let slope = (p3 - p1) / (q3 - q1);
+            let pa = (p1 - slope * (q1 - a)).clamp(0.0, 1.0);
+            let pb = (p3 + slope * (b - q3)).clamp(0.0, 1.0);
+            push(a, sample_stops(&base, pa));
+            if (pb - pa).abs() > 1e-12 {
+                let (lo, hi) = (pa.min(pb), pa.max(pb));
+                let mut inner: Vec<Stop> = base
+                    .iter()
+                    .filter(|s| s.pos > lo + 1e-9 && s.pos < hi - 1e-9)
+                    .map(|s| Stop {
+                        pos: a + (s.pos - pa) / (pb - pa) * (b - a),
+                        color: s.color,
+                    })
+                    .collect();
+                if pb < pa {
+                    inner.reverse();
+                }
+                for s in inner {
+                    push(s.pos, s.color);
+                }
+            }
+            push(b, sample_stops(&base, pb));
+        }
+        if out.len() < 2 {
+            return base;
+        }
+        out
     }
+
+    /// The closest fountain that runs once with no edge pad and one of
+    /// the four geometric kinds, for formats that know nothing more: the
+    /// options are worked into the stops (at most `max_stops`), and a
+    /// shaped fountain becomes a square one running from the centre out.
+    /// A fountain with none of the options comes back unchanged.
+    pub fn to_plain(&self, max_stops: usize) -> Fountain {
+        if self.runs_once() && self.kind != FountainKind::Shaped {
+            return self.clone();
+        }
+        let mut stops = self.resolved_stops();
+        if self.kind == FountainKind::Shaped {
+            // Shaped: 0 at the edge; square: 0 at the centre.
+            stops.reverse();
+            for s in &mut stops {
+                s.pos = 1.0 - s.pos;
+            }
+        }
+        let max_stops = max_stops.max(2);
+        if stops.len() > max_stops {
+            let k = (max_stops - 1) as f64;
+            stops = (0..max_stops)
+                .map(|i| {
+                    let pos = i as f64 / k;
+                    Stop {
+                        pos,
+                        color: sample_stops(&stops, pos),
+                    }
+                })
+                .collect();
+        }
+        Fountain {
+            kind: match self.kind {
+                FountainKind::Shaped => FountainKind::Square,
+                k => k,
+            },
+            stops,
+            angle: self.angle,
+            offset: self.offset,
+            edge_pad: 0.0,
+            repeat: FountainRepeat::None,
+            repeats: 1,
+            bilinear: false,
+            invert: false,
+        }
+    }
+}
+
+/// Colour at `t` along `stops` (sorted by position): the two around it
+/// mixed in sRGB, the end colours beyond them.
+pub fn sample_stops(stops: &[Stop], t: f64) -> Color {
+    let Some(first) = stops.first() else {
+        return Color::BLACK;
+    };
+    if t <= first.pos {
+        return first.color;
+    }
+    for w in stops.windows(2) {
+        if t <= w[1].pos {
+            let span = (w[1].pos - w[0].pos).max(1e-9);
+            let k = ((t - w[0].pos) / span).clamp(0.0, 1.0) as f32;
+            return lerp_color(w[0].color, w[1].color, k);
+        }
+    }
+    stops.last().map(|s| s.color).unwrap_or(first.color)
 }
 
 pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
@@ -873,10 +1119,177 @@ mod tests {
             angle: 0.0,
             offset: Point::ZERO,
             edge_pad: 0.0,
+            ..Default::default()
         };
         assert_eq!(f.color_at(0.25).to_rgb8(), [128, 0, 0]);
         assert_eq!(f.color_at(0.5).to_rgb8(), [255, 0, 0]);
         assert_eq!(f.color_at(1.5).to_rgb8(), [255, 255, 255]);
+    }
+
+    fn black_white() -> Fountain {
+        Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0)
+    }
+
+    fn grey(c: Color) -> u8 {
+        c.to_rgb8()[0]
+    }
+
+    #[test]
+    fn fountain_repeats_mirrors_and_inverts() {
+        // Sawtooth, three cycles: dark again at the start of each.
+        let mut f = black_white();
+        f.repeat = FountainRepeat::Repeat;
+        f.repeats = 3;
+        assert_eq!(grey(f.color_at(0.0)), 0);
+        assert!(grey(f.color_at(0.33)) > 240);
+        assert!(grey(f.color_at(0.34)) < 15);
+        assert_eq!(grey(f.color_at(1.0)), 255);
+        // Triangular: there and back.
+        f.repeat = FountainRepeat::Mirror;
+        f.repeats = 2;
+        assert_eq!(grey(f.color_at(0.5)), 255);
+        assert_eq!(grey(f.color_at(1.0)), 0);
+        assert_eq!(grey(f.color_at(0.25)), grey(f.color_at(0.75)));
+        // No repeat: the count is ignored.
+        f.repeat = FountainRepeat::None;
+        assert_eq!(f.cycles(), 1);
+        assert_eq!(grey(f.color_at(0.5)), 128);
+        // Bilinear: first colour at both ends, last in the middle.
+        let mut b = black_white();
+        b.bilinear = true;
+        assert_eq!(grey(b.color_at(0.0)), 0);
+        assert_eq!(grey(b.color_at(0.5)), 255);
+        assert_eq!(grey(b.color_at(1.0)), 0);
+        // Inverted: the order reversed.
+        let mut i = black_white();
+        i.invert = true;
+        assert_eq!(grey(i.color_at(0.0)), 255);
+        assert_eq!(grey(i.color_at(1.0)), 0);
+        // Out of range and not a number stay inside the stops.
+        assert_eq!(grey(i.color_at(f64::NAN)), 255);
+        let mut huge = black_white();
+        huge.repeat = FountainRepeat::Repeat;
+        huge.repeats = u32::MAX;
+        assert_eq!(huge.cycles(), Fountain::MAX_REPEATS);
+    }
+
+    #[test]
+    fn resolved_stops_draw_the_same_colours_in_one_run() {
+        let three = Fountain {
+            stops: vec![
+                Stop {
+                    pos: 0.0,
+                    color: Color::rgb8(255, 0, 0),
+                },
+                Stop {
+                    pos: 0.4,
+                    color: Color::rgb8(0, 255, 0),
+                },
+                Stop {
+                    pos: 1.0,
+                    color: Color::rgb8(0, 0, 255),
+                },
+            ],
+            ..Default::default()
+        };
+        for repeat in [
+            FountainRepeat::None,
+            FountainRepeat::Repeat,
+            FountainRepeat::Mirror,
+        ] {
+            for repeats in [1, 2, 3] {
+                for bilinear in [false, true] {
+                    for invert in [false, true] {
+                        for edge_pad in [0.0, 0.2] {
+                            let f = Fountain {
+                                repeat,
+                                repeats,
+                                bilinear,
+                                invert,
+                                edge_pad,
+                                ..three.clone()
+                            };
+                            let r = f.resolved_stops();
+                            assert_eq!(r[0].pos, 0.0);
+                            assert!((r[r.len() - 1].pos - 1.0).abs() < 1e-12);
+                            assert!(r.windows(2).all(|w| w[0].pos <= w[1].pos));
+                            for k in 0..=200 {
+                                // Away from the sawtooth's jumps.
+                                let t = (k as f64 + 0.37) / 201.0;
+                                let a = f.color_at(t).to_rgb8();
+                                let b = sample_stops(&r, t).to_rgb8();
+                                for c in 0..3 {
+                                    assert!(
+                                        (a[c] as i32 - b[c] as i32).abs() <= 2,
+                                        "{f:?} at {t}: {a:?} {b:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // A sawtooth's jump is a hard edge: two stops at one place.
+        let mut saw = black_white();
+        saw.repeat = FountainRepeat::Repeat;
+        saw.repeats = 2;
+        let r = saw.resolved_stops();
+        assert_eq!(r.len(), 4);
+        assert!((r[1].pos - 0.5).abs() < 1e-12 && (r[2].pos - 0.5).abs() < 1e-12);
+        assert_eq!((grey(r[1].color), grey(r[2].color)), (255, 0));
+        // A plain fountain keeps its stops.
+        assert_eq!(three.resolved_stops(), three.stops);
+    }
+
+    #[test]
+    fn plain_versions_carry_the_options_in_their_stops() {
+        let f = black_white();
+        assert_eq!(f.to_plain(64), f);
+        let mut i = black_white();
+        i.invert = true;
+        i.edge_pad = 0.1;
+        let p = i.to_plain(64);
+        assert!(p.runs_once() && p.edge_pad == 0.0);
+        assert_eq!(grey(p.first_color()), 255);
+        // Shaped becomes square, the inside (1) at the centre (0).
+        let s = Fountain::two(FountainKind::Shaped, Color::BLACK, Color::WHITE, 0.0).to_plain(64);
+        assert_eq!(s.kind, FountainKind::Square);
+        assert_eq!(grey(s.first_color()), 255);
+        assert_eq!(grey(s.last_color()), 0);
+        // Too many stops: sampled down evenly.
+        let mut many = black_white();
+        many.repeat = FountainRepeat::Repeat;
+        many.repeats = 50;
+        assert_eq!(many.to_plain(16).stops.len(), 16);
+    }
+
+    #[test]
+    fn fountains_without_the_options_read_and_write_as_before() {
+        // As files written before the options had it.
+        let old = r#"{"kind":"radial","stops":[{"pos":0.0,"color":{"model":"rgb","r":0.0,"g":0.0,"b":0.0}},{"pos":1.0,"color":{"model":"gray","v":1.0}}],"angle":0.0,"offset":{"x":0.0,"y":0.0},"edge_pad":0.1}"#;
+        let f: Fountain = serde_json::from_str(old).expect("old fountain reads");
+        assert_eq!(f.kind, FountainKind::Radial);
+        assert!(f.runs_once());
+        assert_eq!((f.repeat, f.repeats), (FountainRepeat::None, 1));
+        // Defaults are not written, so files stay as they were.
+        let json = serde_json::to_string(&black_white()).expect("json");
+        for field in ["repeat", "bilinear", "invert"] {
+            assert!(!json.contains(field), "{json}");
+        }
+        let mut g = black_white();
+        g.kind = FountainKind::Shaped;
+        g.repeat = FountainRepeat::Mirror;
+        g.repeats = 4;
+        g.bilinear = true;
+        g.invert = true;
+        let json = serde_json::to_string(&g).expect("json");
+        assert!(
+            json.contains("\"shaped\"") && json.contains("\"mirror\""),
+            "{json}"
+        );
+        let back: Fountain = serde_json::from_str(&json).expect("reads");
+        assert_eq!(back, g);
     }
 
     #[test]

@@ -42,14 +42,37 @@ Colour (Shift+F12) opens the Colour panel. The model is
   rectangle without a stroke and a filled band path in the outline
   colour.
 
-## Gradient outlines
+## Outline paint
 
-The Properties docker's outline section has Paint: Colour (the outline's
-colour, as before) or Gradient. Gradient gives the outline its own
-fountain fill (`Stroke::fill`), edited with the same controls as an
-object's gradient (type, built-in gradients, stops); it spreads over the
-outline's bounds and paints only the outline's area. Hairlines and
-arrowheads keep the outline colour. SVG, PDF and the other exports draw
-the outline in its colour. Checked by
-`tests::outlines_take_a_gradient_fill` in the renderer.
+The Properties docker's outline section has Paint with every kind a fill
+has, as the same row of pictures and the same editors: None, Uniform,
+Gradient, Pattern, Texture and Mesh.
+
+- None takes the outline away (as clearing the Outline box does).
+- Uniform is the outline's colour (`Stroke::color`).
+- The other kinds give the outline its own fill (`Stroke::fill`), edited
+  as an object's fill is (for a gradient: type, built-in gradients,
+  stops, repeat, bilinear, invert). It spreads over the outline's bounds
+  (the path's bounds grown by half the width) and paints only the
+  outline's area: the stroke, or the band of a calligraphic or variable
+  outline. A mesh's nodes are local to the object, as a mesh fill's are;
+  a shaped gradient follows the outline's own area (dark at its edges
+  when the first colour is dark).
+- Hairlines, arrowheads and painterly marks keep the outline colour.
+
+Exports:
+
+| Format | Outline with its own paint |
+|---|---|
+| SVG | `stroke` refers to the gradient or pattern (linear, radial; conical and square as linear, shaped as radial); a texture or mesh strokes with a representative colour (the mean of its colours). A calligraphic band is filled with the paint. |
+| PDF | the outline's area (`shaping::stroke_area`: width, caps, joins, miter limit 4, dashes) clipped with the non-zero rule and shaded (gradients) or painted with the renderer's pixels at 150 dpi (patterns, textures, meshes, shaped gradients). |
+| EPS, EMF and the rest | the outline colour. |
+| `.cdr` | the outline colour (outline fills are not written). |
+
+Checked by `tests::outlines_take_a_gradient_fill` and
+`tests::outlines_take_pattern_texture_mesh_and_shaped_paints` in the
+renderer, `svg::tests::outline_paints_are_written_as_the_stroke_paint`,
+`pdf::tests::gradient_options_and_outline_paints_reach_the_pdf`,
+`shaping::tests::stroke_area_covers_the_outline_and_hairlines_cover_nothing`
+and `ui::dockers::tests::outline_paint_offers_every_fill_kind`.
 

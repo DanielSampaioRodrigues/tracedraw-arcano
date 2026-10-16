@@ -913,6 +913,7 @@ impl<'a> Ctx<'a> {
             angle,
             offset,
             edge_pad,
+            ..Default::default()
         };
         crate::mirror_centred_stops(&mut fountain);
         Some(Fill::Fountain(fountain))

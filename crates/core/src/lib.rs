@@ -44,8 +44,8 @@ pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
 pub use icc::{Intent as RenderingIntent, Profile as IccProfile, Transform as IccTransform};
 pub use id::{LayerId, PageId, ShapeId};
 pub use style::{
-    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Mesh, MeshNode,
-    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind, WidthNode,
+    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, FountainRepeat, LineCap, LineJoin,
+    Mesh, MeshNode, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind, WidthNode,
 };
 
 /// Convenience result type for the core crate.

@@ -1188,7 +1188,8 @@ fn fountain_type(kind: FountainKind) -> u8 {
         FountainKind::Linear => 1,
         FountainKind::Radial => 2,
         FountainKind::Conical => 3,
-        FountainKind::Square => 4,
+        // A shaped gradient is written as a square one (`Fountain::to_plain`).
+        FountainKind::Square | FountainKind::Shaped => 4,
     }
 }
 
@@ -1196,7 +1197,9 @@ fn fountain_type(kind: FountainKind) -> u8 {
 fn fild(v: Ver, id: u32, fill: &Fill) -> Vec<u8> {
     let fill = match fill {
         Fill::Fountain(f) => {
-            let mut f = f.clone();
+            // Repeats, mirror, inversion and the shaped kind have no field
+            // here: the closest plain gradient carries them in its stops.
+            let mut f = f.to_plain(64);
             crate::mirror_centred_stops(&mut f);
             Fill::Fountain(f)
         }

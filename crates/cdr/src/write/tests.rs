@@ -1308,6 +1308,7 @@ fn centred_gradients_are_written_from_their_edge_and_read_back() {
             angle: 0.0,
             offset: tracedraw_core::geometry::Point::ZERO,
             edge_pad: 0.0,
+            ..Default::default()
         };
         let mut mirrored = f.clone();
         crate::mirror_centred_stops(&mut mirrored);
@@ -1669,4 +1670,69 @@ fn version_21_text_records_are_numbered_and_complete() {
         assert!(s.contains(r#"{"character":{}}"#), "empty run style");
     }
     assert_ne!(numbers[0], numbers[1]);
+}
+
+#[test]
+fn gradient_options_are_written_as_the_closest_plain_gradient() {
+    use tracedraw_core::{Fountain, FountainKind, FountainRepeat};
+    let red = Color::rgb8(255, 0, 0);
+    let blue = Color::rgb8(0, 0, 255);
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut shape_with = |f: Fountain| {
+        let mut s = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Fountain(f);
+        s.stroke = None;
+        s
+    };
+    let mut inverted = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+    inverted.invert = true;
+    let mut mirrored = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+    mirrored.repeat = FountainRepeat::Mirror;
+    mirrored.repeats = 2;
+    let shaped = Fountain::two(FountainKind::Shaped, red, blue, 0.0);
+    let plain = Fountain::two(FountainKind::Radial, red, blue, 0.0);
+    let shapes = vec![
+        shape_with(inverted),
+        shape_with(mirrored),
+        shape_with(shaped),
+        shape_with(plain.clone()),
+    ];
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    for v in [7u16, 13, 17] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let fills: Vec<Fountain> = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.fill {
+                Fill::Fountain(f) => Some(f.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fills.len(), 4, "{v}");
+        // Inverted: blue first.
+        assert_eq!(fills[0].first_color(), blue, "{v}");
+        assert_eq!(fills[0].last_color(), red, "{v}");
+        // Mirrored twice: red, blue, red.
+        assert_eq!(fills[1].stops.len(), 3, "{v}");
+        assert_eq!(fills[1].stops[1].color, blue, "{v}");
+        assert!((fills[1].stops[1].pos - 0.5).abs() < 0.01, "{v}");
+        assert_eq!(fills[1].last_color(), red, "{v}");
+        // Shaped: a square gradient, blue (the inside) at the centre.
+        assert_eq!(fills[2].kind, FountainKind::Square, "{v}");
+        assert_eq!(fills[2].first_color(), blue, "{v}");
+        // A plain gradient comes back as it was written.
+        assert_eq!(fills[3].kind, plain.kind, "{v}");
+        assert_eq!(fills[3].first_color(), red, "{v}");
+        assert!(fills.iter().all(|f| f.runs_once()), "{v}");
+    }
 }

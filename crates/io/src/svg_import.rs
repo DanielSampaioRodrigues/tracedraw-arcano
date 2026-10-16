@@ -218,6 +218,7 @@ fn convert_paint(paint: &usvg::Paint, opacity: f64, bounds: Rect, to_page: Affin
                 angle,
                 offset: Point::ZERO,
                 edge_pad: 0.0,
+                ..Default::default()
             })
         }
         usvg::Paint::RadialGradient(g) => {
@@ -239,6 +240,7 @@ fn convert_paint(paint: &usvg::Paint, opacity: f64, bounds: Rect, to_page: Affin
                 angle: 0.0,
                 offset: off,
                 edge_pad: 0.0,
+                ..Default::default()
             })
         }
         usvg::Paint::Pattern(_) => Fill::Solid(Color::rgb8(128, 128, 128)),

@@ -5174,6 +5174,7 @@ pub fn fill_description(fill: &Fill) -> String {
             tracedraw_core::FountainKind::Radial => tr("fill.radial_fountain"),
             tracedraw_core::FountainKind::Conical => tr("fill.conical_fountain"),
             tracedraw_core::FountainKind::Square => tr("fill.square_fountain"),
+            tracedraw_core::FountainKind::Shaped => tr("fill.shaped_fountain"),
         },
         Fill::Pattern(tracedraw_core::Pattern::TwoColor { tile, .. }) => {
             trf("fill.two_color_pattern", &[("t", tile.name())])

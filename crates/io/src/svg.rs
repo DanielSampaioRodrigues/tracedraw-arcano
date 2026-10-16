@@ -298,146 +298,19 @@ fn write_unlinked(
     let d = path_data(&path);
     let bounds = path.bounding_box();
 
-    let fill_attr = match &shape.fill {
-        Fill::None => "fill=\"none\"".to_string(),
-        Fill::Solid(c) => format!("fill=\"{}\"", c.to_hex()),
-        Fill::Fountain(f) => {
-            *next_grad += 1;
-            let id = format!("grad{}", *next_grad);
-            let mut stops = f.stops.clone();
-            stops.sort_by(|a, b| {
-                a.pos
-                    .partial_cmp(&b.pos)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let stop_xml: String = stops
-                .iter()
-                .map(|st| {
-                    format!(
-                        "      <stop offset=\"{}\" stop-color=\"{}\"/>\n",
-                        fmt(st.pos),
-                        st.color.to_hex()
-                    )
-                })
-                .collect();
-            match f.kind {
-                tracedraw_core::FountainKind::Linear
-                | tracedraw_core::FountainKind::Conical
-                | tracedraw_core::FountainKind::Square => {
-                    // SVG has no conical/square gradients; they become linear.
-                    let a = f.angle.to_radians();
-                    let (x1, y1, x2, y2) = (
-                        bounds.x0 + bounds.width() * (0.5 - a.cos() / 2.0),
-                        bounds.y0 + bounds.height() * (0.5 + a.sin() / 2.0),
-                        bounds.x0 + bounds.width() * (0.5 + a.cos() / 2.0),
-                        bounds.y0 + bounds.height() * (0.5 - a.sin() / 2.0),
-                    );
-                    let _ = writeln!(defs, "    <linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\">\n{stop_xml}    </linearGradient>");
-                }
-                tracedraw_core::FountainKind::Radial => {
-                    let cx = bounds.center().x + f.offset.x * bounds.width() / 2.0;
-                    let cy = bounds.center().y - f.offset.y * bounds.height() / 2.0;
-                    let r = bounds.width().max(bounds.height()) / 2.0 * std::f64::consts::SQRT_2;
-                    let _ = writeln!(defs, "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\">\n{stop_xml}    </radialGradient>");
-                }
-            }
-            format!("fill=\"url(#{id})\"")
-        }
-        Fill::Pattern(tracedraw_core::Pattern::TwoColor {
-            tile,
-            front,
-            back,
-            size_mm,
-        }) => {
-            *next_grad += 1;
-            let id = format!("pat{}", *next_grad);
-            // Rasterize the tile at 32 px into a data URI.
-            let n = 32u32;
-            let mut rgba = Vec::with_capacity((n * n * 4) as usize);
-            for y in 0..n {
-                for x in 0..n {
-                    let u = (x as f64 + 0.5) / n as f64;
-                    let v = 1.0 - (y as f64 + 0.5) / n as f64;
-                    let c = if tile.front(u, v) { *front } else { *back };
-                    let [r, g, b] = c.to_rgb8();
-                    rgba.extend_from_slice(&[r, g, b, 255]);
-                }
-            }
-            let png = encode_png(n, n, &rgba);
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
-            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{s}\" height=\"{s}\"><image width=\"{s}\" height=\"{s}\" href=\"data:image/png;base64,{b64}\"/></pattern>", s = fmt(*size_mm));
-            format!("fill=\"url(#{id})\"")
-        }
-        Fill::Pattern(tracedraw_core::Pattern::Bitmap {
-            png,
-            width_px,
-            height_px,
-            size_mm,
-        }) => {
-            *next_grad += 1;
-            let id = format!("pat{}", *next_grad);
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
-            let h = size_mm * *height_px as f64 / (*width_px).max(1) as f64;
-            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\"><image width=\"{}\" height=\"{}\" href=\"data:image/png;base64,{b64}\"/></pattern>", fmt(*size_mm), fmt(h), fmt(*size_mm), fmt(h));
-            format!("fill=\"url(#{id})\"")
-        }
-        Fill::Pattern(tracedraw_core::Pattern::Vector {
-            shapes: tile_shapes,
-            tile,
-        }) => {
-            *next_grad += 1;
-            let id = format!("pat{}", *next_grad);
-            // The tile's content stays vector: its shapes are written into
-            // the pattern with the tile's own Y flip (tile space is Y up,
-            // origin bottom-left). Gradients they use land in `defs` too.
-            let tile_flip = Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, tile.height]);
-            let mut inner = String::new();
-            for s in tile_shapes {
-                write_shape(s, symbols, tile_flip, &mut inner, defs, next_grad, 3);
-            }
-            let _ = writeln!(
-                defs,
-                "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\">\n{inner}    </pattern>",
-                fmt(tile.width),
-                fmt(tile.height)
-            );
-            format!("fill=\"url(#{id})\"")
-        }
-        Fill::Texture(t) => {
-            // Approximate with the average of the two colours.
-            format!(
-                "fill=\"{}\"",
-                tracedraw_core::style::lerp_color(t.color_a, t.color_b, 0.5).to_hex()
-            )
-        }
-        Fill::Mesh(m) => {
-            // Average of the node colours; the renderer image path is exact.
-            let n = m.nodes.len().max(1) as f32;
-            let mut acc = [0.0f32; 3];
-            for node in &m.nodes {
-                let [r, g, b] = node.color.to_rgb_f32();
-                acc[0] += r;
-                acc[1] += g;
-                acc[2] += b;
-            }
-            format!(
-                "fill=\"{}\"",
-                Color::Rgb {
-                    r: acc[0] / n,
-                    g: acc[1] / n,
-                    b: acc[2] / n
-                }
-                .to_hex()
-            )
-        }
-    };
+    let fill_attr = format!(
+        "fill=\"{}\"",
+        paint_value(&shape.fill, bounds, symbols, defs, next_grad)
+    );
 
     // A calligraphic outline has no SVG equivalent: the swept band is
     // written as a filled path after the object.
     let calligraphic = shape.stroke.as_ref().and_then(|s| {
-        tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0).map(|b| (b, s.color))
+        tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0).map(|b| {
+            let band = parent * b;
+            let paint = outline_paint_value(s, band.bounding_box(), symbols, defs, next_grad);
+            (band, paint)
+        })
     });
     let stroke_attr = match &shape.stroke {
         None => "stroke=\"none\"".to_string(),
@@ -453,9 +326,13 @@ fn write_unlinked(
                 LineJoin::Round => "round",
                 LineJoin::Bevel => "bevel",
             };
+            // The outline's own paint spreads over the outline's bounds,
+            // as on screen.
+            let half = s.width / 2.0;
+            let paint =
+                outline_paint_value(s, bounds.inflate(half, half), symbols, defs, next_grad);
             let mut a = format!(
-                "stroke=\"{}\" stroke-width=\"{}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\"",
-                s.color.to_hex(),
+                "stroke=\"{paint}\" stroke-width=\"{}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\"",
                 s.width
             );
             if !s.dash.is_empty() {
@@ -483,12 +360,11 @@ fn write_unlinked(
         "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr}{rule} {stroke_attr}/>",
         shape.id.raw()
     );
-    if let Some((band, color)) = calligraphic {
+    if let Some((band, paint)) = calligraphic {
         let _ = writeln!(
             out,
-            "{pad}<path d=\"{}\" fill=\"{}\" stroke=\"none\"/>",
-            path_data(&(parent * band)),
-            color.to_hex()
+            "{pad}<path d=\"{}\" fill=\"{paint}\" stroke=\"none\"/>",
+            path_data(&band)
         );
     }
     // A painterly outline: its marks, one path per opacity step.
@@ -520,6 +396,175 @@ fn write_unlinked(
                 path_data(&(parent * head)),
                 s.color.to_hex()
             );
+        }
+    }
+}
+
+/// The SVG paint of an outline: its own paint (a gradient, pattern,
+/// texture or mesh) over `bounds`, or its colour.
+fn outline_paint_value(
+    s: &tracedraw_core::Stroke,
+    bounds: tracedraw_core::Rect,
+    symbols: &[tracedraw_core::Symbol],
+    defs: &mut String,
+    next_grad: &mut usize,
+) -> String {
+    match s.fill.as_deref() {
+        Some(fill) if !matches!(fill, Fill::None | Fill::Solid(_)) => {
+            paint_value(fill, bounds, symbols, defs, next_grad)
+        }
+        _ => s.color.to_hex(),
+    }
+}
+
+/// The SVG paint of `fill` over `bounds` (output space): `none`, a
+/// colour, or a reference to a gradient or pattern written into `defs`.
+/// Fills SVG cannot draw (textures, meshes) give a representative colour.
+fn paint_value(
+    fill: &Fill,
+    bounds: tracedraw_core::Rect,
+    symbols: &[tracedraw_core::Symbol],
+    defs: &mut String,
+    next_grad: &mut usize,
+) -> String {
+    match fill {
+        Fill::None => "none".to_string(),
+        Fill::Solid(c) => c.to_hex(),
+        Fill::Fountain(f) => {
+            *next_grad += 1;
+            let id = format!("grad{}", *next_grad);
+            // The edge pad, repeats, mirror and inversion as one run of
+            // stops; a shaped fountain (0 on the edge) runs from the
+            // centre out as a radial one.
+            let mut stops = f.resolved_stops();
+            if f.kind == tracedraw_core::FountainKind::Shaped {
+                stops.reverse();
+                for s in &mut stops {
+                    s.pos = 1.0 - s.pos;
+                }
+            }
+            let stop_xml: String = stops
+                .iter()
+                .map(|st| {
+                    format!(
+                        "      <stop offset=\"{}\" stop-color=\"{}\"/>\n",
+                        fmt(st.pos),
+                        st.color.to_hex()
+                    )
+                })
+                .collect();
+            match f.kind {
+                tracedraw_core::FountainKind::Linear
+                | tracedraw_core::FountainKind::Conical
+                | tracedraw_core::FountainKind::Square => {
+                    // SVG has no conical/square gradients; they become linear.
+                    let a = f.angle.to_radians();
+                    let (x1, y1, x2, y2) = (
+                        bounds.x0 + bounds.width() * (0.5 - a.cos() / 2.0),
+                        bounds.y0 + bounds.height() * (0.5 + a.sin() / 2.0),
+                        bounds.x0 + bounds.width() * (0.5 + a.cos() / 2.0),
+                        bounds.y0 + bounds.height() * (0.5 - a.sin() / 2.0),
+                    );
+                    let _ = writeln!(defs, "    <linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\">\n{stop_xml}    </linearGradient>");
+                }
+                tracedraw_core::FountainKind::Radial => {
+                    let cx = bounds.center().x + f.offset.x * bounds.width() / 2.0;
+                    let cy = bounds.center().y - f.offset.y * bounds.height() / 2.0;
+                    let r = bounds.width().max(bounds.height()) / 2.0 * std::f64::consts::SQRT_2;
+                    let _ = writeln!(defs, "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\">\n{stop_xml}    </radialGradient>");
+                }
+                tracedraw_core::FountainKind::Shaped => {
+                    // SVG has no gradient that follows an outline: a radial
+                    // one reaching the nearer sides stands in for it.
+                    let c = bounds.center();
+                    let r = bounds.width().min(bounds.height()).max(1e-6) / 2.0;
+                    let _ = writeln!(defs, "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{}\" cy=\"{}\" r=\"{}\">\n{stop_xml}    </radialGradient>", c.x, c.y, r);
+                }
+            }
+            format!("url(#{id})")
+        }
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+            tile,
+            front,
+            back,
+            size_mm,
+        }) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            // Rasterize the tile at 32 px into a data URI.
+            let n = 32u32;
+            let mut rgba = Vec::with_capacity((n * n * 4) as usize);
+            for y in 0..n {
+                for x in 0..n {
+                    let u = (x as f64 + 0.5) / n as f64;
+                    let v = 1.0 - (y as f64 + 0.5) / n as f64;
+                    let c = if tile.front(u, v) { *front } else { *back };
+                    let [r, g, b] = c.to_rgb8();
+                    rgba.extend_from_slice(&[r, g, b, 255]);
+                }
+            }
+            let png = encode_png(n, n, &rgba);
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{s}\" height=\"{s}\"><image width=\"{s}\" height=\"{s}\" href=\"data:image/png;base64,{b64}\"/></pattern>", s = fmt(*size_mm));
+            format!("url(#{id})")
+        }
+        Fill::Pattern(tracedraw_core::Pattern::Bitmap {
+            png,
+            width_px,
+            height_px,
+            size_mm,
+        }) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+            let h = size_mm * *height_px as f64 / (*width_px).max(1) as f64;
+            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\"><image width=\"{}\" height=\"{}\" href=\"data:image/png;base64,{b64}\"/></pattern>", fmt(*size_mm), fmt(h), fmt(*size_mm), fmt(h));
+            format!("url(#{id})")
+        }
+        Fill::Pattern(tracedraw_core::Pattern::Vector {
+            shapes: tile_shapes,
+            tile,
+        }) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            // The tile's content stays vector: its shapes are written into
+            // the pattern with the tile's own Y flip (tile space is Y up,
+            // origin bottom-left). Gradients they use land in `defs` too.
+            let tile_flip = Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, tile.height]);
+            let mut inner = String::new();
+            for s in tile_shapes {
+                write_shape(s, symbols, tile_flip, &mut inner, defs, next_grad, 3);
+            }
+            let _ = writeln!(
+            defs,
+            "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\">\n{inner}    </pattern>",
+            fmt(tile.width),
+            fmt(tile.height)
+        );
+            format!("url(#{id})")
+        }
+        Fill::Texture(t) => {
+            // Approximate with the average of the two colours.
+            tracedraw_core::style::lerp_color(t.color_a, t.color_b, 0.5).to_hex()
+        }
+        Fill::Mesh(m) => {
+            // Average of the node colours; the renderer image path is exact.
+            let n = m.nodes.len().max(1) as f32;
+            let mut acc = [0.0f32; 3];
+            for node in &m.nodes {
+                let [r, g, b] = node.color.to_rgb_f32();
+                acc[0] += r;
+                acc[1] += g;
+                acc[2] += b;
+            }
+            Color::Rgb {
+                r: acc[0] / n,
+                g: acc[1] / n,
+                b: acc[2] / n,
+            }
+            .to_hex()
         }
     }
 }
@@ -934,5 +979,84 @@ mod tests {
         assert!(pattern.contains("M0 10L5 10L5 5L0 5Z"), "{pattern}");
         assert!(!pattern.contains("<image"));
         assert!(svg.contains("fill=\"url(#pat1)\""));
+    }
+
+    fn one_shape_svg(fill: Fill, stroke: Option<Stroke>) -> String {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = fill;
+        s.stroke = stroke;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        page_to_svg(&doc, 0)
+    }
+
+    #[test]
+    fn outline_paints_are_written_as_the_stroke_paint() {
+        use tracedraw_core::{Fountain, FountainKind};
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        // A gradient outline strokes with the gradient.
+        let mut st = Stroke::new(Color::rgb8(0, 255, 0), 2.0);
+        st.fill = Some(Box::new(Fill::linear(red, blue, 0.0)));
+        let svg = one_shape_svg(Fill::None, Some(st.clone()));
+        assert!(svg.contains("stroke=\"url(#grad1)\""), "{svg}");
+        assert!(svg.contains("<linearGradient id=\"grad1\""), "{svg}");
+        assert!(!svg.contains("#00ff00"), "{svg}");
+        // A pattern outline strokes with the pattern.
+        st.fill = Some(Box::new(Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+            tile: tracedraw_core::PatternTile::Checker,
+            front: red,
+            back: blue,
+            size_mm: 5.0,
+        })));
+        let svg = one_shape_svg(Fill::None, Some(st.clone()));
+        assert!(svg.contains("stroke=\"url(#pat1)\""), "{svg}");
+        // A texture outline: a colour between its two, still an outline.
+        st.fill = Some(Box::new(Fill::Texture(tracedraw_core::Texture {
+            kind: tracedraw_core::TextureKind::Clouds,
+            color_a: red,
+            color_b: blue,
+            scale: 5.0,
+            seed: 1,
+        })));
+        let svg = one_shape_svg(Fill::None, Some(st.clone()));
+        assert!(
+            svg.contains("stroke=\"#800080\" stroke-width=\"2\""),
+            "{svg}"
+        );
+        // A calligraphic band takes the paint as its fill.
+        st.stretch = 0.3;
+        st.fill = Some(Box::new(Fill::radial(red, blue)));
+        let svg = one_shape_svg(Fill::None, Some(st));
+        assert!(svg.contains("stroke=\"none\"/>\n"), "{svg}");
+        assert!(
+            svg.contains("fill=\"url(#grad1)\" stroke=\"none\""),
+            "{svg}"
+        );
+        // Gradient options are worked into the stops; a shaped gradient
+        // is written as a radial one, its inside colour at the centre.
+        let mut f = Fountain::two(FountainKind::Shaped, red, blue, 0.0);
+        f.invert = true;
+        let svg = one_shape_svg(Fill::Fountain(f), None);
+        assert!(svg.contains("<radialGradient id=\"grad1\""), "{svg}");
+        let first = svg.find("<stop offset=\"0\" stop-color=\"").expect("stop");
+        assert!(
+            svg[first..].starts_with("<stop offset=\"0\" stop-color=\"#ff0000\""),
+            "{svg}"
+        );
+        let mut saw = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        saw.repeat = tracedraw_core::FountainRepeat::Repeat;
+        saw.repeats = 3;
+        let svg = one_shape_svg(Fill::Fountain(saw), None);
+        assert_eq!(svg.matches("<stop ").count(), 6, "{svg}");
     }
 }
