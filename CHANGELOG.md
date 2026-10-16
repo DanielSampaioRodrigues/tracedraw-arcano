@@ -8,8 +8,10 @@ full, row-by-row status.
 
 - `.cdr` files of versions 13 to 20 saved by TraceDraw carry the whole
   document configuration record those versions write (it held only the
-  page size, and other programs refused the file), and version 16 text
-  has the record header that version writes (#98).
+  page size, and other programs refused the file), version 12 files the
+  8152-byte record of that version, and version 16 text has the record
+  header that version writes; curve nodes carry their marks in every
+  version, not only from 16 (#98).
 
 ## 0.9.0 (2026-10-16)
 

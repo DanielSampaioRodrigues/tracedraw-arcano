@@ -1516,6 +1516,9 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.tagged() {
         return mcfg_13(w_mm, h_mm);
     }
+    if v.0 == 12 {
+        return mcfg_12(w_mm, h_mm);
+    }
     let mut b = Buf::default();
     let size: usize = if v.0 >= 15 {
         8323
@@ -1595,6 +1598,79 @@ fn mcfg_13(w_mm: f64, h_mm: f64) -> Vec<u8> {
     put(&mut r, 0, &SINCE_13.to_le_bytes());
     put(&mut r, 4, &(8323u32 - 8).to_le_bytes());
     r
+}
+
+/// The configuration record of version 12 (8152 bytes, no tag): files
+/// saved for version 12 hold the version 13 record without the fields
+/// that version added (its tag and size, smaller text settings, a few
+/// flags) and with a few more zero fields. The steps go through the
+/// version 13 record: keep, skip or add zeros.
+fn mcfg_12(w_mm: f64, h_mm: f64) -> Vec<u8> {
+    enum Step {
+        Keep(usize),
+        Skip(usize),
+        Zeros(usize),
+    }
+    use Step::{Keep, Skip, Zeros};
+    const STEPS: [Step; 42] = [
+        Skip(8),
+        Keep(17),
+        Zeros(2),
+        Keep(677),
+        Zeros(6),
+        Keep(58),
+        Skip(5),
+        Keep(3),
+        Skip(26),
+        Keep(67),
+        Zeros(2),
+        Keep(6),
+        Skip(8),
+        Keep(34),
+        Skip(5),
+        Keep(9),
+        Skip(31),
+        Keep(15),
+        Skip(31),
+        Keep(11),
+        Skip(26),
+        Keep(155),
+        Zeros(2),
+        Keep(72),
+        Skip(2),
+        Zeros(1),
+        Keep(15),
+        Skip(31),
+        Keep(10),
+        Skip(26),
+        Keep(56),
+        Zeros(4),
+        Keep(30),
+        Zeros(4),
+        Keep(9),
+        Zeros(4),
+        Keep(20),
+        Zeros(3),
+        Keep(6296),
+        Zeros(4),
+        Keep(560),
+        Skip(4),
+    ];
+    let r13 = mcfg_13(w_mm, h_mm);
+    let mut out = Vec::with_capacity(8152);
+    let mut at = 0usize;
+    for step in STEPS {
+        match step {
+            Keep(n) => {
+                out.extend_from_slice(r13.get(at..at + n).unwrap_or_default());
+                at += n;
+            }
+            Skip(n) => at += n,
+            Zeros(n) => out.resize(out.len() + n, 0),
+        }
+    }
+    out.resize(8152, 0);
+    out
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size
@@ -2069,8 +2145,8 @@ fn curve_coords_typed(
     Some(out.done())
 }
 
-/// The node marks files of versions 16 and later carry in a curve's node
-/// bytes: bit 2 on every node but the control points and the node that
+/// The node marks files of every version (8 to 21 seen) carry in a
+/// curve's node bytes: bit 2 on every node but the control points and the node that
 /// closes a subpath, and bit 3 also on the start of a closed subpath.
 /// Curves without them are drawn without their fill and can make the
 /// program that opens the file hang.
@@ -2971,9 +3047,7 @@ impl<'a> Writer<'a> {
                 let Some(mut coords) = coords else {
                     return none();
                 };
-                if v.0 >= 16 {
-                    mark_nodes(&mut coords);
-                }
+                mark_nodes(&mut coords);
                 self.place(
                     s,
                     OBJ_CURVE,

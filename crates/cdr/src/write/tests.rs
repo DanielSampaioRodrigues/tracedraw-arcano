@@ -1756,3 +1756,15 @@ fn records_of_versions_13_to_20_are_the_version_21_one_with_two_blocks() {
         assert_eq!(&r[1261..], &r21[882..], "{v}");
     }
 }
+
+#[test]
+fn the_version_12_record_keeps_the_page_and_settings_of_version_13() {
+    let r12 = mcfg(Ver(12), 500.0, 500.0);
+    let r13 = mcfg(Ver(13), 500.0, 500.0);
+    assert_eq!(r12.len(), 8152);
+    // No tag: the record opens with 4 zero bytes and the page size.
+    assert_eq!(&r12[0..4], &[0, 0, 0, 0]);
+    assert_eq!(&r12[4..12], &r13[12..20]);
+    // The ruler origin and grid follow, moved by the two added bytes.
+    assert_eq!(&r12[19..696], &r13[25..702]);
+}
