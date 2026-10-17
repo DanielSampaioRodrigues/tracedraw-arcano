@@ -4,7 +4,7 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.9.3 (2026-10-17)
 
 - Wireframe view draws every object as a hairline: no outline widths,
   fills, opacity or effects, bitmaps as grey boxes (#122).
