@@ -6,8 +6,15 @@ Alt+F9 and Alt+F10 open the panel on Position, Rotate, Scale and Mirror
 and Size (pressed again on the page shown, they close the docker
 column); Object > Transformations opens any of the five.
 
-Each page shows its fields at the left and the 3 x 3 reference point at
-the right, then Copies and Apply. Distances are in the ruler unit
+Each page is laid out as in the reference program: a line under the
+picture buttons, the page's name with a colon (Rotate shows a turning
+arrow before its angle instead), the fields as spin boxes (up and down
+arrows at their right, a click steps by a whole millimetre, pixel,
+degree or percent, or a tenth of an inch) with the unit after them,
+some room, the check box, the 3 x 3 reference point under it (for a
+relative position also the direction picture, a small grid with four
+arrows, beside it), a line, Copies in a spin box and Apply across the
+panel. Distances are in the ruler unit
 (through the drawing scale), angles in degrees (counter-clockwise
 positive), scales in percent.
 

@@ -22,6 +22,10 @@ full, row-by-row status.
 - Tracing a black and white logo keeps white shapes white: the colour
   quantising no longer averages black and white to grey.
 
+- The Transformations panel is laid out as in the reference program:
+  spin boxes with the unit after them, the reference point under the
+  check box with the direction picture beside it, a line before Copies.
+
 ## 0.9.2 (2026-10-17)
 
 - `.cdr` files: graded transparency (version 16+ files) is read as a

@@ -21,7 +21,6 @@
 use crate::app::{App, TransformTab, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
-use crate::ui::field::NumField;
 use crate::ui::propbar::{origin_point, pic_button, Pic};
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Point, Rect as PageRect, Vec2 as PageVec};
@@ -296,50 +295,71 @@ pub fn open(app: &mut App, tab: TransformTab, toggle: bool) {
     }
 }
 
-/// A distance field in the ruler unit (through the drawing scale), 110
-/// points wide. True when the value changed.
-fn length(ui: &mut Ui, units: Units, decimals: usize, mm: &mut f64) -> bool {
+/// A distance in a spin box (up and down arrows at its right), the
+/// unit's name after it, as the reference program lays these out.
+fn length(ui: &mut Ui, id: &str, units: Units, decimals: usize, mm: &mut f64) -> bool {
     let unit = units.world_mm();
     let unit = if unit.is_finite() && unit > 0.0 {
         unit
     } else {
         1.0
     };
-    let mut v = *mm / unit;
-    let r = ui.add_sized(
-        [110.0, 22.0],
-        NumField::new(&mut v)
-            .fixed_decimals(decimals.min(3))
-            .max_decimals(decimals)
-            .suffix(format!(" {}", units.short()))
-            .unit_mm(units.mm()),
-    );
-    if r.changed() && (v * unit - *mm).abs() > 1e-12 {
-        *mm = v * unit;
-        true
-    } else {
-        false
+    // A tenth of an inch or a whole millimetre (or pixel) per click.
+    let step = if units.mm() >= 10.0 { 0.1 } else { 1.0 };
+    let v = *mm / unit;
+    let got = spin_with_unit(ui, id, v, decimals.min(3), step, units.short());
+    match got {
+        Some(n) if (n * unit - *mm).abs() > 1e-12 => {
+            *mm = n * unit;
+            true
+        }
+        _ => false,
     }
 }
 
-/// A number field with `suffix` (degrees, percent), 110 points wide.
-fn number(ui: &mut Ui, value: &mut f64, suffix: &str) -> bool {
-    let before = *value;
-    ui.add_sized(
-        [110.0, 22.0],
-        NumField::new(value)
-            .fixed_decimals(1)
-            .max_decimals(3)
-            .suffix(suffix),
-    );
-    (*value - before).abs() > 1e-12
+/// A number in a spin box with `suffix` (degrees, percent) after it.
+fn number(ui: &mut Ui, id: &str, value: &mut f64, suffix: &str, step: f64) -> bool {
+    let got = spin_with_unit(ui, id, *value, 1, step, suffix.trim());
+    match got {
+        Some(n) if (n - *value).abs() > 1e-12 => {
+            *value = n;
+            true
+        }
+        _ => false,
+    }
 }
+
+/// A spin box and, right after it, the unit's name.
+fn spin_with_unit(
+    ui: &mut Ui,
+    id: &str,
+    value: f64,
+    decimals: usize,
+    step: f64,
+    unit: &str,
+) -> Option<f64> {
+    let (cell, _) = ui.allocate_exact_size(Vec2::new(FIELD_W + 34.0, 22.0), Sense::hover());
+    let rect = Rect::from_min_size(cell.min, Vec2::new(FIELD_W, 22.0));
+    let got =
+        crate::ui::chrome::spin_field(ui, id, rect, value, decimals, "", step, -1.0e6..=1.0e6);
+    ui.painter().text(
+        egui::pos2(rect.right() + 6.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        unit,
+        egui::TextStyle::Body.resolve(ui.style()),
+        ui.visuals().text_color(),
+    );
+    got
+}
+
+/// Width of the docker's spin boxes.
+const FIELD_W: f32 = 96.0;
 
 /// The 3 x 3 reference point: nine boxes on a frame, the chosen one
 /// filled. True when another one was chosen.
 fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8), direction: bool) -> bool {
-    let cell = 9.0;
-    let step = 17.0;
+    let cell = 12.0;
+    let step = 22.0;
     let size = Vec2::splat(step * 2.0 + cell + 2.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let resp = resp.on_hover_text(tr(if direction {
@@ -394,6 +414,70 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8), direction: bool) -> bool {
     changed
 }
 
+/// The turning arrow before the angle box (Rotate).
+fn rotate_pic(ui: &mut Ui) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::hover());
+    let p = ui.painter();
+    let c = r.center();
+    let rad = 6.0;
+    let pts: Vec<egui::Pos2> = (0..=20)
+        .map(|k| {
+            let a = (40.0 + k as f32 * 13.5_f32).to_radians();
+            c + Vec2::new(a.cos() * rad, -a.sin() * rad)
+        })
+        .collect();
+    let end = *pts.last().unwrap_or(&c);
+    p.add(egui::Shape::line(pts, Stroke::new(1.4, Tokens::icon())));
+    p.add(egui::epaint::PathShape::convex_polygon(
+        vec![
+            end + Vec2::new(-3.0, -3.0),
+            end + Vec2::new(3.5, -1.0),
+            end + Vec2::new(0.0, 3.5),
+        ],
+        Tokens::icon(),
+        Stroke::NONE,
+    ));
+}
+
+/// The direction picture beside the reference point when the offset is
+/// relative: a small grid with arrows out to the four sides.
+fn direction_pic(ui: &mut Ui) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(56.0, 56.0), Sense::hover());
+    let p = ui.painter();
+    let c = r.center();
+    let inner = Rect::from_center_size(c, Vec2::splat(28.0));
+    p.rect_filled(inner, 0.0, Color32::from_rgb(0xB8, 0xB4, 0xE0));
+    let grid = Stroke::new(1.0, Color32::from_rgb(0x8C, 0x86, 0xC8));
+    for k in 1..4 {
+        let t = k as f32 * 7.0;
+        p.line_segment(
+            [
+                inner.left_top() + Vec2::new(t, 0.0),
+                inner.left_bottom() + Vec2::new(t, 0.0),
+            ],
+            grid,
+        );
+        p.line_segment(
+            [
+                inner.left_top() + Vec2::new(0.0, t),
+                inner.right_top() + Vec2::new(0.0, t),
+            ],
+            grid,
+        );
+    }
+    let ink = Stroke::new(1.4, Tokens::icon());
+    for d in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
+        let tip = c + d * 27.0;
+        p.line_segment([c, tip], ink);
+        let side = Vec2::new(-d.y, d.x) * 3.0;
+        p.add(egui::epaint::PathShape::convex_polygon(
+            vec![tip, tip - d * 4.0 + side, tip - d * 4.0 - side],
+            Tokens::icon(),
+            Stroke::NONE,
+        ));
+    }
+}
+
 /// A label for a field, in the first column of the grid.
 fn label(ui: &mut Ui, key: &str) {
     ui.label(tr(key));
@@ -416,8 +500,11 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.add_space(4.0);
+    ui.separator();
     let (_, key, _) = tab_info(app.transform.tab);
-    ui.label(egui::RichText::new(tr(key)).font(crate::theme::bold(13.0)));
+    if app.transform.tab != TransformTab::Rotate {
+        ui.label(format!("{}:", tr(key)));
+    }
     ui.add_space(4.0);
     if !has {
         // Nothing to fill the fields from or to apply to: all pale, as
@@ -428,44 +515,49 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
     let decimals = app.settings.precision.min(6) as usize;
     let form = &mut app.transform;
     let mut resync = false;
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+    {
+        {
             egui::Grid::new("transform_fields")
                 .num_columns(2)
-                .spacing([6.0, 4.0])
+                .spacing([4.0, 6.0])
                 .show(ui, |ui| match form.tab {
                     TransformTab::Position => {
                         label(ui, "docker.x");
-                        let mut typed = length(ui, units, decimals, &mut form.position[0]);
+                        let mut typed =
+                            length(ui, "tf_pos_x", units, decimals, &mut form.position[0]);
                         ui.end_row();
                         label(ui, "docker.y");
-                        typed |= length(ui, units, decimals, &mut form.position[1]);
+                        typed |= length(ui, "tf_pos_y", units, decimals, &mut form.position[1]);
                         ui.end_row();
                         if typed {
                             form.typed_position();
                         }
                     }
                     TransformTab::Rotate => {
-                        label(ui, "docker.angle_colon");
-                        number(ui, &mut form.angle, "°");
+                        rotate_pic(ui);
+                        number(ui, "tf_angle", &mut form.angle, "°", 1.0);
                         ui.end_row();
                         ui.label(tr("docker.center_colon"));
                         ui.end_row();
                         label(ui, "docker.x");
-                        length(ui, units, decimals, &mut form.center[0]);
+                        length(ui, "tf_cx", units, decimals, &mut form.center[0]);
                         ui.end_row();
                         label(ui, "docker.y");
-                        length(ui, units, decimals, &mut form.center[1]);
+                        length(ui, "tf_cy", units, decimals, &mut form.center[1]);
                         ui.end_row();
                     }
                     TransformTab::Scale => {
                         label(ui, "docker.x");
-                        if number(ui, &mut form.scale[0], " %") && form.scale_proportional {
+                        if number(ui, "tf_sx", &mut form.scale[0], "%", 1.0)
+                            && form.scale_proportional
+                        {
                             form.scale[1] = form.scale[0];
                         }
                         ui.end_row();
                         label(ui, "docker.y");
-                        if number(ui, &mut form.scale[1], " %") && form.scale_proportional {
+                        if number(ui, "tf_sy", &mut form.scale[1], "%", 1.0)
+                            && form.scale_proportional
+                        {
                             form.scale[0] = form.scale[1];
                         }
                         ui.end_row();
@@ -475,7 +567,8 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                             .filter(|b| b.width() > 1e-9 && b.height() > 1e-9)
                             .map(|b| b.height() / b.width());
                         label(ui, "docker.w");
-                        if length(ui, units, decimals, &mut form.size[0]) && form.size_proportional
+                        if length(ui, "tf_w", units, decimals, &mut form.size[0])
+                            && form.size_proportional
                         {
                             if let Some(r) = ratio {
                                 form.size[1] = form.size[0] * r;
@@ -483,7 +576,8 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                         }
                         ui.end_row();
                         label(ui, "docker.h");
-                        if length(ui, units, decimals, &mut form.size[1]) && form.size_proportional
+                        if length(ui, "tf_h", units, decimals, &mut form.size[1])
+                            && form.size_proportional
                         {
                             if let Some(r) = ratio {
                                 form.size[0] = form.size[1] / r;
@@ -493,14 +587,14 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                     }
                     TransformTab::Skew => {
                         label(ui, "docker.x");
-                        number(ui, &mut form.skew[0], "°");
+                        number(ui, "tf_kx", &mut form.skew[0], "°", 1.0);
                         ui.end_row();
                         label(ui, "docker.y");
-                        number(ui, &mut form.skew[1], "°");
+                        number(ui, "tf_ky", &mut form.skew[1], "°", 1.0);
                         ui.end_row();
                     }
                 });
-            ui.add_space(2.0);
+            ui.add_space(18.0);
             match form.tab {
                 TransformTab::Position => {
                     resync |= ui
@@ -546,29 +640,51 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut form.use_anchor, tr("docker.use_anchor_point"));
                 }
             }
-        });
-        ui.add_space(8.0);
+        }
+        // The reference point under the check box, indented as the
+        // reference program does; for an offset, the direction picture
+        // beside it.
+        ui.add_space(4.0);
         let anchor_matters = !matches!(form.tab, TransformTab::Skew) || form.use_anchor;
         let direction = form.picks_direction();
-        ui.add_enabled_ui(anchor_matters, |ui| {
-            if anchor_grid(ui, &mut form.anchor, direction) {
-                resync = true;
-                form.pick_anchor(bounds);
+        ui.horizontal(|ui| {
+            ui.add_space(14.0);
+            ui.add_enabled_ui(anchor_matters, |ui| {
+                if anchor_grid(ui, &mut form.anchor, direction) {
+                    resync = true;
+                    form.pick_anchor(bounds);
+                }
+            });
+            if direction {
+                ui.add_space(22.0);
+                direction_pic(ui);
             }
         });
-    });
+    }
     if resync {
         form.resync();
     }
-    ui.add_space(6.0);
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(2.0);
     ui.horizontal(|ui| {
         ui.label(tr("dialog.copies"));
-        ui.add_sized(
-            [64.0, 22.0],
-            NumField::new(&mut form.copies).range(0..=MAX_COPIES),
-        );
+        ui.add_space(6.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(FIELD_W, 22.0), Sense::hover());
+        if let Some(n) = crate::ui::chrome::spin_field(
+            ui,
+            "tf_copies",
+            rect,
+            form.copies as f64,
+            0,
+            "",
+            1.0,
+            0.0..=MAX_COPIES as f64,
+        ) {
+            form.copies = n.round().clamp(0.0, MAX_COPIES as f64) as u32;
+        }
     });
-    ui.add_space(6.0);
+    ui.add_space(8.0);
     let width = ui.available_width();
     let clicked = ui
         .add_enabled_ui(has, |ui| {
