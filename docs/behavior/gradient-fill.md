@@ -131,7 +131,11 @@ in the file is not kept (fountain stops are opaque).
 
 ## Built-in gradients
 
-The fill editor's Gradients section shows 29 swatches (Black to white,
+The fill editor's Gradients section starts with Current colours: the
+last fill colour picked to the last outline colour picked (the palette's
+left and right clicks, black and white until then; `App::current_colors`,
+checked by `app::tests::palette_picks_set_the_current_colours`). Then
+come 29 swatches (Black to white,
 Sunset, Ocean, Rainbow, Gold, Silver, Copper, Chrome, Fire, Ice, Forest,
 Sky, Dusk, Aurora, Pastel, Neon, Peach, Mint, Berry, Lavender, Desert,
 Steel, Sepia, Charcoal, then five landscapes: Dawn over the sea, Desert

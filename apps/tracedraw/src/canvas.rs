@@ -804,6 +804,11 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         draw_nodes(app, painter);
         return;
     }
+    // While text is typed or edited only the text and its cursor show;
+    // the handles come back when editing ends.
+    if app.text_edit.is_some() {
+        return;
+    }
     // The Envelope tool shows the frames instead (`ui::envelope_ui`), the
     // Mesh Fill tool the grids.
     if matches!(app.tool, Tool::Envelope | Tool::MeshFill) {

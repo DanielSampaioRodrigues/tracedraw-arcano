@@ -1719,42 +1719,144 @@ pub fn outline_text(app: &App, width: Option<f64>) -> String {
     }
 }
 
+/// What an outline width box's text asks for: no outline (`Some(None)`),
+/// a width in millimetres, or nothing readable. Words are "none" and
+/// "hairline" (in English or the interface language); numbers are in
+/// `units` unless a unit is typed after them.
+pub(crate) fn parse_outline_width(text: &str, units: Units) -> Option<Option<f64>> {
+    let t = text.trim();
+    let is = |key: &str, en: &str| t.eq_ignore_ascii_case(en) || t.eq_ignore_ascii_case(&tr(key));
+    if t.is_empty() || is("toolbar.none", "none") {
+        return Some(None);
+    }
+    if is("toolbar.hairline", "hairline") {
+        return Some(Some(tracedraw_core::Stroke::HAIRLINE));
+    }
+    let v = crate::ui::field::parse(t, Some(units.mm()))?;
+    let mm = units.to_mm(v);
+    (mm.is_finite() && mm >= 0.0).then(|| {
+        if mm <= tracedraw_core::Stroke::HAIRLINE {
+            Some(tracedraw_core::Stroke::HAIRLINE)
+        } else {
+            Some(mm.min(1000.0))
+        }
+    })
+}
+
+/// Take the outline off the selection, or off new objects when nothing is
+/// selected.
+fn set_no_outline(app: &mut App) {
+    if app.selection.is_empty() {
+        app.request_default_change(crate::defaults::DefaultChange::Outline(None));
+    } else {
+        let shapes = app.selection.clone();
+        app.run(Command::SetStroke {
+            shapes,
+            stroke: None,
+        });
+    }
+}
+
+/// The outline width: a box typed into (Enter or leaving it applies, Esc
+/// puts it back) and an arrow dropping the usual widths. Returns the
+/// width picked or typed.
+fn outline_width_box(app: &mut App, ui: &mut Ui, width: Option<f64>) -> Option<Option<f64>> {
+    let ctx = ui.ctx().clone();
+    let popup_id = ui.make_persistent_id("outline_width_list");
+    let id = ui.make_persistent_id("outline_width_box");
+    let shown = outline_text(app, width);
+    let mut picked: Option<Option<f64>> = None;
+    let inner = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let stored = ui.data(|d| d.get_temp::<String>(id));
+        let mut buf = stored.clone().unwrap_or_else(|| shown.clone());
+        let resp = ui
+            .add(
+                egui::TextEdit::singleline(&mut buf)
+                    .id(id)
+                    .margin(egui::Margin::symmetric(4, 0))
+                    .vertical_align(egui::Align::Center)
+                    .desired_width(72.0),
+            )
+            .on_hover_text(tr("toolbar.outline_width"));
+        if resp.has_focus() {
+            ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+        } else if stored.is_some() || resp.lost_focus() {
+            ui.data_mut(|d| d.remove::<String>(id));
+            let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if !escaped && buf != shown {
+                picked = parse_outline_width(&buf, app.units);
+            }
+        }
+        let (arrow_rect, arrow) =
+            ui.allocate_exact_size(egui::vec2(16.0, resp.rect.height()), egui::Sense::click());
+        if arrow.hovered() {
+            ui.painter().rect_filled(
+                arrow_rect.shrink(1.0),
+                1.0,
+                crate::theme::Tokens::tool_hover(),
+            );
+        }
+        let c = arrow_rect.center();
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            vec![
+                c + egui::vec2(-4.0, -2.0),
+                c + egui::vec2(4.0, -2.0),
+                c + egui::vec2(0.0, 3.0),
+            ],
+            crate::theme::Tokens::icon(),
+            egui::Stroke::NONE,
+        ));
+        if arrow.clicked() {
+            egui::Popup::toggle_id(&ctx, popup_id);
+        }
+        resp.rect.union(arrow_rect)
+    });
+    let anchor = inner.inner;
+    egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
+        .open_memory(None)
+        .width(anchor.width())
+        .show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .show(ui, |ui| {
+                    if ui
+                        .selectable_label(width.is_none(), tr("toolbar.none"))
+                        .clicked()
+                    {
+                        picked = Some(None);
+                    }
+                    if ui.selectable_label(false, tr("toolbar.hairline")).clicked() {
+                        picked = Some(Some(tracedraw_core::Stroke::HAIRLINE));
+                    }
+                    for w in OUTLINE_WIDTHS_MM {
+                        if ui
+                            .selectable_label(false, outline_text(app, Some(w)))
+                            .clicked()
+                        {
+                            picked = Some(Some(w));
+                        }
+                    }
+                });
+        });
+    if picked.is_some() {
+        egui::Popup::close_id(&ctx, popup_id);
+    }
+    picked
+}
+
 /// Outline width and the line style and arrowheads of the selection's
 /// outline.
 pub fn outline_part(app: &mut App, ui: &mut Ui) {
     let first = app.selected_shapes().into_iter().next();
     let stroke = first.as_ref().and_then(|s| s.stroke.clone());
     label_pic(ui, Pic::Pen, &tr("toolbar.outline_width"));
-    egui::ComboBox::from_id_salt("outline_width_bar")
-        .selected_text(outline_text(app, stroke.as_ref().map(|s| s.width)))
-        .width(88.0)
-        .height(400.0)
-        .show_ui(ui, |ui| {
-            if ui
-                .selectable_label(stroke.is_none(), tr("toolbar.none"))
-                .clicked()
-            {
-                if app.selection.is_empty() {
-                    // Nothing selected: new objects get no outline.
-                    app.request_default_change(crate::defaults::DefaultChange::Outline(None));
-                } else {
-                    let shapes = app.selection.clone();
-                    app.run(Command::SetStroke {
-                        shapes,
-                        stroke: None,
-                    });
-                }
-            }
-            if ui.selectable_label(false, tr("toolbar.hairline")).clicked() {
-                app.apply_outline_width(tracedraw_core::Stroke::HAIRLINE);
-            }
-            for w in OUTLINE_WIDTHS_MM {
-                let text = outline_text(app, Some(w));
-                if ui.selectable_label(false, text).clicked() {
-                    app.apply_outline_width(w);
-                }
-            }
-        });
+    let width = stroke.as_ref().map(|s| s.width);
+    match outline_width_box(app, ui, width) {
+        Some(None) => set_no_outline(app),
+        Some(Some(w)) => app.apply_outline_width(w),
+        None => {}
+    }
     // Line style: solid or one of the dash presets.
     let dash = stroke.as_ref().map(|s| s.dash.clone()).unwrap_or_default();
     egui::ComboBox::from_id_salt("line_style_bar")
@@ -2678,6 +2780,22 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn outline_widths_can_be_typed() {
+        let mm = Units::Millimeters;
+        assert_eq!(parse_outline_width("0.35", mm), Some(Some(0.35)));
+        assert_eq!(parse_outline_width("0,8 mm", mm), Some(Some(0.8)));
+        assert_eq!(parse_outline_width("1 in", mm), Some(Some(25.4)));
+        assert_eq!(parse_outline_width("2", Units::Inches), Some(Some(50.8)));
+        assert_eq!(parse_outline_width("None", mm), Some(None));
+        assert_eq!(
+            parse_outline_width("hairline", mm),
+            Some(Some(tracedraw_core::Stroke::HAIRLINE))
+        );
+        assert_eq!(parse_outline_width("thick", mm), None);
+        assert_eq!(parse_outline_width("-1", mm), None);
     }
 
     #[test]

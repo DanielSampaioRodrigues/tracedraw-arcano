@@ -3599,6 +3599,7 @@ aigen.model_other = "A model of your service; see its documentation for what it 
 docker.gradient_presets = "Gradients"
 options.ui_shadows = "Shadows under menus and dialogs"
 options.ui_shadows_tip = "Off draws less, which helps slower graphics"
+grad.current_colors = "Colori correnti (riempimento al contorno)"
 grad.black_white = "Black to white"
 grad.sunset = "Sunset"
 grad.ocean = "Ocean"

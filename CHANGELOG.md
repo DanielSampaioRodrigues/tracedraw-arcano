@@ -4,6 +4,19 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- Wireframe view draws every object as a hairline: no outline widths,
+  fills, opacity or effects, bitmaps as grey boxes (#122).
+- A fill or outline colour given to a group reaches the objects in it,
+  so a traced bitmap takes a palette colour with one click (#123).
+- Outline widths can be typed: the property bar's width is a box with
+  the usual widths in its list, and the Properties width box applies
+  what is typed (#124).
+- Selection handles hide while text is typed or edited (#125).
+- The first built-in gradient runs between the current colours, the
+  last fill and outline colours picked (#4).
+
 ## 0.9.2 (2026-10-17)
 
 - `.cdr` files: graded transparency (version 16+ files) is read as a

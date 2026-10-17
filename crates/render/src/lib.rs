@@ -295,7 +295,7 @@ impl Renderer<'_> {
 
     fn draw_shape(&mut self, shape: &Shape, parent: Affine) {
         // Bitmap effects on a vector object: its picture in its place.
-        if let Some(pic) = shape.drawn_as() {
+        if let Some(pic) = shape.drawn_as().filter(|_| !self.flags.wireframe) {
             return self.draw_shape(&pic, parent);
         }
         if !shape.visible {
@@ -322,7 +322,7 @@ impl Renderer<'_> {
             });
             let mut main = ev.main.clone();
             main.effects.clear();
-            if !self.flags.complex_effects {
+            if !self.flags.complex_effects || self.flags.wireframe {
                 // Complex effects off: the object is drawn as it is, with
                 // no pixel work for lenses or transparency masks.
                 self.draw_shape(&main, parent);
@@ -354,6 +354,17 @@ impl Renderer<'_> {
         ) {
             for c in shape.expand(self.symbols) {
                 self.draw_shape(&c, transform);
+            }
+            return;
+        }
+        if let (true, ShapeKind::ClipFrame { frame, contents }) =
+            (self.flags.wireframe, &shape.kind)
+        {
+            // Wireframe: the frame and everything inside it, unclipped.
+            self.draw_shape(frame, transform);
+            for c in contents {
+                let t = self.child_transform(c, transform);
+                self.draw_shape(c, t);
             }
             return;
         }
@@ -467,6 +478,19 @@ impl Renderer<'_> {
         let Some(sk) = to_sk_path(&(self.screen * page_path.clone())) else {
             return;
         };
+        if self.flags.wireframe {
+            // Wireframe: every object as its bare path, a hairline whatever
+            // its outline, fill, opacity or effects; bitmaps as grey boxes.
+            if matches!(shape.kind, ShapeKind::Bitmap { .. }) {
+                let mut paint = Paint::default();
+                paint.anti_alias = self.flags.anti_alias;
+                paint.set_color_rgba8(208, 208, 208, 255);
+                self.pixmap
+                    .fill_path(&sk, &paint, FillRule::Winding, Transform::identity(), None);
+            }
+            self.hairline(&sk);
+            return;
+        }
         let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
         if opacity <= 0.0 {
             return;
@@ -708,6 +732,19 @@ impl Renderer<'_> {
             self.pixmap
                 .stroke_path(&sk, &paint, &s, Transform::identity(), None);
         }
+    }
+
+    /// A one pixel black line along `sk` (the Wireframe view).
+    fn hairline(&mut self, sk: &tiny_skia::Path) {
+        let mut paint = Paint::default();
+        paint.set_color_rgba8(0, 0, 0, 255);
+        paint.anti_alias = self.flags.anti_alias;
+        let s = SkStroke {
+            width: 0.0,
+            ..Default::default()
+        };
+        self.pixmap
+            .stroke_path(sk, &paint, &s, Transform::identity(), None);
     }
 
     /// Lens: transform the pixels already drawn beneath the shape's area.
@@ -2372,6 +2409,25 @@ mod tests {
         let pm = render_page_image(&doc, page, 25.4).unwrap();
         let darkest = (0..100).map(|y| px(&pm, 50, y).0).min().unwrap_or(255);
         assert!(darkest < 64, "darkest {darkest}");
+    }
+
+    #[test]
+    fn wireframe_draws_hairlines_whatever_the_outline() {
+        // A red square with a 10 mm outline at half opacity.
+        let mut s = rect(1, Rect::new(20.0, 20.0, 80.0, 80.0), Color::rgb8(255, 0, 0));
+        s.stroke = Some(Stroke::new(Color::BLACK, 10.0));
+        s.opacity = 0.5;
+        let (doc, page) = doc_with(vec![s]);
+        let opts = RenderOptions {
+            wireframe: true,
+            ..RenderOptions::default()
+        };
+        let pm = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        assert_eq!(px(&pm, 50, 50), (255, 255, 255), "no fill");
+        assert_eq!(px(&pm, 24, 50), (255, 255, 255), "no outline width");
+        assert_eq!(px(&pm, 16, 50), (255, 255, 255), "no outline width outside");
+        let edge = (18..23).map(|x| px(&pm, x, 50).0).min().unwrap();
+        assert!(edge < 200, "a dark hairline on the edge, darkest {edge}");
     }
 
     #[test]

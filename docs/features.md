@@ -27,7 +27,7 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
 | Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
 | Snapping modes (node, intersection, midpoint, quadrant, tangent, perpendicular, edge, center, text baseline) with snap location marks and screen tips; moves carry the grabbed point (Options > Snapping) | works (see `behavior/snapping.md`) |
-| View modes: Wireframe, Normal, Enhanced, Pixels (document pixels shown as blocks when zoomed in, see `behavior/rulers-grid-guidelines.md`); full-screen preview (F9); preview selected only | works |
+| View modes: Wireframe (every object a hairline, no fills, outline widths, opacity or effects, bitmaps grey boxes, clip frame contents unclipped), Normal, Enhanced, Pixels (document pixels shown as blocks when zoomed in, see `behavior/rulers-grid-guidelines.md`); full-screen preview (F9); preview selected only | works |
 | Page sorter view | works |
 | Navigator and page tabs | works |
 
@@ -114,7 +114,7 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Capability | Status |
 |---|---|
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
-| Gradient fill: linear, radial, conical, square, shaped (follows the object's outline); multi-stop; angle, offset, edge pad; repeat (sawtooth, mirror) with a cycle count, bilinear, invert colours; 29 built-in gradients (five landscapes); interactive drag | works (see `behavior/gradient-fill.md`; `.cdr` gets the closest plain gradient) |
+| Gradient fill: linear, radial, conical, square, shaped (follows the object's outline); multi-stop; angle, offset, edge pad; repeat (sawtooth, mirror) with a cycle count, bilinear, invert colours; the current colours (last fill to last outline colour) and 29 built-in gradients (five landscapes); interactive drag | works (see `behavior/gradient-fill.md`; `.cdr` gets the closest plain gradient) |
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill: Mesh Fill tool and bar (rows and columns keeping colours, Smooth colour, node transparency, Clear Mesh), nodes dragged and coloured from the palette, grid lines added and removed (see `behavior/mesh-fill.md`) | works |
 | Area Fill (enclosed region; fill and outline: default, own or none) (see `behavior/area-fill.md`) | works |

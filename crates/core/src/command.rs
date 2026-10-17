@@ -601,7 +601,8 @@ impl Command {
                     any(doc, *id)?;
                 }
                 for id in shapes {
-                    any_mut(doc, *id)?.fill = fill.clone();
+                    // A group passes the fill on to everything in it.
+                    for_group_deep(any_mut(doc, *id)?, &mut |s| s.fill = fill.clone());
                 }
             }
             Command::SetStroke { shapes, stroke } => {
@@ -609,7 +610,7 @@ impl Command {
                     any(doc, *id)?;
                 }
                 for id in shapes {
-                    any_mut(doc, *id)?.stroke = stroke.clone();
+                    for_group_deep(any_mut(doc, *id)?, &mut |s| s.stroke = stroke.clone());
                 }
             }
             Command::SetShapeKind { shape, kind } => {
@@ -1102,6 +1103,18 @@ fn restyle(doc: &mut Document) {
     }
 }
 
+/// Run `f` on `shape` and, when it is a group, on everything inside it
+/// (groups within groups too), as a fill or outline given to a group
+/// reaches its objects.
+fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
+    f(shape);
+    if let ShapeKind::Group { children } = &mut shape.kind {
+        for c in children {
+            for_group_deep(c, f);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1364,6 +1377,44 @@ mod tests {
 
     /// Objects inside a group take page-space transforms, fills and
     /// outlines, and can be deleted; a group left empty goes too.
+    #[test]
+    fn fills_and_outlines_given_to_a_group_reach_its_objects() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 20.0);
+        let (ia, ib) = (a.id, b.id);
+        for shape in [a, b] {
+            Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
+        }
+        Command::Group { shapes: vec![ia] }.apply(&mut doc).unwrap();
+        let inner = doc.top_level_of(ia).unwrap();
+        Command::Group {
+            shapes: vec![inner, ib],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let outer = doc.top_level_of(ib).unwrap();
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        Command::SetFill {
+            shapes: vec![outer],
+            fill: red.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        Command::SetStroke {
+            shapes: vec![outer],
+            stroke: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        for id in [ia, ib] {
+            let s = doc.find_shape(id).unwrap();
+            assert_eq!(s.fill, red);
+            assert!(s.stroke.is_none());
+        }
+    }
+
     #[test]
     fn objects_inside_groups_can_be_changed_and_deleted() {
         let mut doc = Document::default();

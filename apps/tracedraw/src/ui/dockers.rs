@@ -405,7 +405,15 @@ fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
     }
 }
 
+/// Where the fill editors find the current colours (see
+/// `App::current_colors`).
+fn current_colors_id() -> egui::Id {
+    egui::Id::new("fill_editor_current_colors")
+}
+
 fn properties(app: &mut App, ui: &mut Ui) {
+    let cc = app.current_colors;
+    ui.data_mut(|d| d.insert_temp(current_colors_id(), cc));
     let shapes = app.selected_shapes();
     if shapes.is_empty() {
         ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::text_dim()));
@@ -1013,6 +1021,30 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
+                // First, the current colours: the last fill colour picked
+                // to the last outline colour picked.
+                let (a, b) = ui
+                    .data(|d| d.get_temp::<(Color, Color)>(current_colors_id()))
+                    .unwrap_or((Color::BLACK, Color::WHITE));
+                let current = vec![Stop { pos: 0.0, color: a }, Stop { pos: 1.0, color: b }];
+                let (r, resp) =
+                    ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
+                gradient_swatch(ui.painter(), r, &current);
+                let line = if resp.hovered() {
+                    crate::theme::Tokens::ACCENT
+                } else {
+                    crate::theme::Tokens::border()
+                };
+                ui.painter().rect_stroke(
+                    r,
+                    2.0,
+                    egui::Stroke::new(1.0, line),
+                    egui::StrokeKind::Inside,
+                );
+                if resp.on_hover_text(tr("grad.current_colors")).clicked() {
+                    f.stops = current;
+                    changed = true;
+                }
                 for (i, (key, _)) in crate::gradient_presets::PRESETS.iter().enumerate() {
                     let (r, resp) =
                         ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
@@ -1421,13 +1453,26 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
             changed = true;
         }
         if !hair {
-            changed |= ui
-                .add(crate::ui::Rail(
+            // The slider applies when let go; the box takes any width
+            // typed (Enter or leaving it applies).
+            ui.horizontal(|ui| {
+                let r = ui.add(crate::ui::Rail(
                     egui::Slider::new(&mut s.width, 0.1..=25.0)
-                        .text(tr("docker.width_mm"))
-                        .logarithmic(true),
-                ))
-                .drag_stopped();
+                        .logarithmic(true)
+                        .show_value(false),
+                ));
+                changed |= r.drag_stopped() || (r.changed() && !r.dragged());
+                changed |= ui
+                    .add(
+                        crate::ui::field::NumField::new(&mut s.width)
+                            .range(0.001..=1000.0)
+                            .unit_mm(1.0)
+                            .max_decimals(3)
+                            .width(56.0),
+                    )
+                    .changed();
+                ui.label(tr("docker.width_mm"));
+            });
         }
         ui.horizontal(|ui| {
             ui.label(tr("docker.caps"));

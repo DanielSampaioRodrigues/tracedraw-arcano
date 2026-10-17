@@ -652,6 +652,10 @@ pub struct App {
     pub drag_copy: bool,
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
+    /// The last colours picked for a fill and for an outline (the
+    /// palette's left and right clicks): the "current colours" the first
+    /// built-in gradient runs between.
+    pub current_colors: (Color, Color),
     pub file: Option<PathBuf>,
     /// The drawing's file in a GitHub repository, when it came from one.
     pub remote: Option<crate::github::Remote>,
@@ -1539,6 +1543,7 @@ impl App {
             drag_copy: false,
             curve: None,
             text_edit: None,
+            current_colors: (Color::BLACK, Color::WHITE),
             file: None,
             remote: None,
             vector_fx_base: Default::default(),
@@ -3431,6 +3436,9 @@ impl App {
     }
 
     pub fn apply_fill(&mut self, fill: Fill) {
+        if let Fill::Solid(c) = &fill {
+            self.current_colors.0 = *c;
+        }
         // With the Mesh Fill or Shape tool, a colour goes to the selected
         // mesh node.
         if let Fill::Solid(c) = &fill {
@@ -3522,6 +3530,9 @@ impl App {
     }
 
     pub fn apply_outline_color(&mut self, color: Option<Color>) {
+        if let Some(c) = color {
+            self.current_colors.1 = c;
+        }
         // Monochrome bitmaps take the colour as their foreground.
         if let Some(c) = color {
             if self.recolor_mono_bitmaps(true, c) {
@@ -5281,6 +5292,19 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palette_picks_set_the_current_colours() {
+        let mut app = App::headless();
+        assert_eq!(app.current_colors, (Color::BLACK, Color::WHITE));
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        app.apply_fill(Fill::Solid(red));
+        app.apply_outline_color(Some(blue));
+        app.apply_outline_color(None);
+        app.apply_fill(Fill::None);
+        assert_eq!(app.current_colors, (red, blue));
+    }
 
     #[test]
     fn a_drawing_shows_through_the_cmyk_profile_it_carries() {
