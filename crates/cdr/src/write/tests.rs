@@ -1806,7 +1806,7 @@ fn version_16_text_is_one_byte_a_letter_and_reads_back() {
 }
 
 #[test]
-fn graded_transparency_is_written_as_its_mean_opacity() {
+fn graded_transparency_is_written_as_a_gradient_from_16() {
     let mut doc = Document::new("w", Size::new(200.0, 100.0));
     let mut ids = doc.ids().clone();
     let mut r = Shape::new(
@@ -1825,10 +1825,34 @@ fn graded_transparency_is_written_as_its_mean_opacity() {
     });
     doc.pages[0].layers[0].shapes = vec![r];
     doc.set_ids(ids);
-    for v in [15u16, 21] {
+    // Before version 16 the mean opacity; from 16 the gradient itself.
+    let bytes = document_to_cdr_version(&doc, 15);
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+    let s = &back.pages[0].layers[0].shapes[0];
+    assert!((s.opacity - 0.75).abs() < 0.01, "15: {}", s.opacity);
+    for v in [16u16, 21] {
         let bytes = document_to_cdr_version(&doc, v);
         let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
         let s = &back.pages[0].layers[0].shapes[0];
-        assert!((s.opacity - 0.75).abs() < 0.01, "{v}: {}", s.opacity);
+        let mask = s.effects.iter().find_map(|e| match e {
+            tracedraw_core::live::Effect::Transparency {
+                mask: Fill::Fountain(f),
+                target,
+                ..
+            } => Some((f.clone(), *target)),
+            _ => None,
+        });
+        let (f, target) = mask.unwrap_or_else(|| panic!("{v}: no mask, opacity {}", s.opacity));
+        assert_eq!(target, 2, "{v}");
+        let ends: Vec<f32> = f.stops.iter().map(|st| st.color.luminance()).collect();
+        assert!(
+            (ends[0] - 1.0).abs() < 0.01 && (ends[1] - 0.5).abs() < 0.01,
+            "{v}: {ends:?}"
+        );
+        assert!(
+            s.opacity > 0.99,
+            "{v}: mask and opacity both applied ({})",
+            s.opacity
+        );
     }
 }

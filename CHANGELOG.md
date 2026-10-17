@@ -4,6 +4,16 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- `.cdr` files of versions 5 and 6 show their text (it was skipped), and
+  version 5 bitmaps their picture; version 3 files open (assumed layout).
+- Graded transparency is saved as a gradient in `.cdr` versions 16 and
+  later (it was saved as a uniform one).
+- `.cdr` reading caps what a file may inflate to (512 MB a member, 1 GB of
+  compressed blocks in all), so a decompression bomb cannot exhaust
+  memory; the reader forbids unsafe code.
+
 ## 0.9.3 (2026-10-17)
 
 - Wireframe view draws every object as a hairline: no outline widths,

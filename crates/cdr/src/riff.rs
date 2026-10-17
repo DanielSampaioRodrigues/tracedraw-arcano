@@ -84,7 +84,14 @@ struct Ctx {
     redirects: bool,
     /// Major format version; 0 when unknown (treated as recent).
     version: u16,
+    /// Bytes inflated from compressed blocks so far, against
+    /// [`MAX_INFLATED_TOTAL`].
+    inflated: std::cell::Cell<u64>,
 }
+
+/// The most all the compressed blocks of one file may inflate to
+/// together; blocks past it are skipped with a warning.
+const MAX_INFLATED_TOTAL: u64 = 1 << 30;
 
 /// Size of a redirect record (version 16+).
 const REDIRECT_LEN: usize = 16;
@@ -148,6 +155,7 @@ pub fn parse_with_externals(main: &[u8], externals: Vec<Vec<u8>>, version: u16) 
         externals: externals.len(),
         redirects: version >= 16,
         version,
+        inflated: std::cell::Cell::new(0),
     };
     let mut streams = externals;
     // The header size is advisory: truncated or padded files are common
@@ -292,10 +300,17 @@ fn inflate_cmpr(
     };
     let first = pos + 16;
     let second = first.saturating_add(c0 as usize);
+    if ctx.inflated.get() >= MAX_INFLATED_TOTAL {
+        log::warn!(
+            "cmpr block at {first} skipped: the file has inflated past {MAX_INFLATED_TOTAL} bytes"
+        );
+        return Vec::new();
+    }
     let Some(chunks) = inflate_cpng(buf, first, second.min(end)) else {
         log::warn!("cmpr block at {first} could not be inflated");
         return Vec::new();
     };
+    ctx.inflated.set(ctx.inflated.get() + chunks.len() as u64);
     // Version 12 files start with a `cmpr` holding two empty streams.
     if chunks.is_empty() {
         return Vec::new();
@@ -327,13 +342,21 @@ fn inflate_cmpr(
 
 /// Inflate one `CPng` block in `buf[start..end]`.
 fn inflate_cpng(buf: &[u8], start: usize, end: usize) -> Option<Vec<u8>> {
+    inflate_cpng_max(buf, start, end, crate::container::MAX_STREAM)
+}
+
+/// [`inflate_cpng`] cut off at `max` bytes.
+fn inflate_cpng_max(buf: &[u8], start: usize, end: usize, max: u64) -> Option<Vec<u8>> {
     let block = buf.get(start..end)?;
     if block.len() < 9 || &block[0..4] != b"CPng" {
         return None;
     }
     let mut inflated = Vec::new();
-    let mut dec = flate2::read::ZlibDecoder::new(&block[8..]);
-    std::io::Read::read_to_end(&mut dec, &mut inflated).ok()?;
+    let dec = flate2::read::ZlibDecoder::new(&block[8..]);
+    std::io::Read::read_to_end(&mut std::io::Read::take(dec, max), &mut inflated).ok()?;
+    if inflated.len() as u64 >= max {
+        log::warn!("compressed block at {start} inflates past {max} bytes; cut off there");
+    }
     Some(inflated)
 }
 
@@ -355,6 +378,23 @@ mod tests {
         let mut payload = lt.to_vec();
         payload.extend_from_slice(body);
         chunk(b"LIST", &payload)
+    }
+
+    #[test]
+    fn compressed_blocks_stop_at_the_limit() {
+        use std::io::Write;
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+        z.write_all(&vec![0u8; 100_000]).unwrap();
+        let mut block = b"CPng\x01\x00\x04\x00".to_vec();
+        block.extend(z.finish().unwrap());
+        assert_eq!(
+            inflate_cpng(&block, 0, block.len()).map(|v| v.len()),
+            Some(100_000)
+        );
+        assert_eq!(
+            inflate_cpng_max(&block, 0, block.len(), 1000).map(|v| v.len()),
+            Some(1000)
+        );
     }
 
     #[test]

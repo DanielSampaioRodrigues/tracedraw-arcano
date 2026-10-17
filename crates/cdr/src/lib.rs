@@ -17,6 +17,7 @@
 //!
 //! Anything we do not understand is skipped with a logged warning, never a
 //! failure: opening a file must always yield a document.
+#![forbid(unsafe_code)]
 
 pub mod cmx;
 pub mod container;

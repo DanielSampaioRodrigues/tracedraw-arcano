@@ -2733,6 +2733,29 @@ impl<'a> Ctx<'a> {
             // dependent gap, then the crop outline as a point list. When the
             // outline is not the full rectangle the object is cropped
             // (confirmed with a version 21 file: a patch cut from a larger image).
+            OBJ_BITMAP if v < 6 => {
+                // Before version 6 (seen in version 5): the corner
+                // opposite the origin, then the image id (u16); the
+                // picture spans from (0, 0) to that corner and the
+                // object's transform places it.
+                let x1 = r.coord()?;
+                let y1 = r.coord()?;
+                let image_id = r.u16()? as u32;
+                let rect = Rect::new(x1.min(0.0), y1.min(0.0), x1.max(0.0), y1.max(0.0));
+                self.pending_crop = None;
+                let Some(bm) = self.bitmaps.get(&image_id) else {
+                    self.report
+                        .warn(format!("bitmap object refers to unknown image {image_id}"));
+                    return None;
+                };
+                Some(ShapeKind::Bitmap {
+                    rect,
+                    width_px: bm.width_px,
+                    height_px: bm.height_px,
+                    png: bm.png.clone(),
+                    fx: None,
+                })
+            }
             OBJ_BITMAP => {
                 let x1 = r.coord()?;
                 let y1 = r.coord()?;
@@ -4357,6 +4380,37 @@ mod tests {
             ShapeKind::Rect { rect, .. } => {
                 assert!((rect.width() - 25.4).abs() < 1e-9);
                 assert!((rect.height() - 12.7).abs() < 1e-9);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn version_5_bitmaps_span_from_the_origin_to_their_corner() {
+        // A 2 x 1 pixel 24-bit picture, id 2, and an object whose corner
+        // is (1000, -500) thousandths of an inch.
+        let mut bmp = u16s(&[2]);
+        bmp.extend_from_slice(&[0; 14]);
+        bmp.extend_from_slice(&u32s(&[5, 1, 2, 1, 1, 24, 8, 8]));
+        bmp.extend_from_slice(&[0; 32]);
+        bmp.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0]);
+        let mut c = i16s(&[1000, -500]);
+        c.extend_from_slice(&u16s(&[2]));
+        c.extend_from_slice(&[0; 40]);
+        let args = [(ARG_COORDS as u16, c)];
+        let obj = list(b"obj ", &chunk(b"loda", &loda16(OBJ_BITMAP as u16, &args)));
+        let body = [
+            chunk(b"mcfg", &i16s(&[8500, 11000])),
+            list(b"bmpt", &chunk(b"bmp ", &bmp)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR5", &body), 5);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Bitmap { rect, width_px, .. } => {
+                assert_eq!(*width_px, 2);
+                assert!((rect.width() - 25.4).abs() < 1e-9 && (rect.height() - 12.7).abs() < 1e-9);
             }
             other => panic!("{other:?}"),
         }

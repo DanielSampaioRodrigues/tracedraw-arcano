@@ -575,17 +575,94 @@ impl PathSettings {
 /// `txsm`: two layouts, versions 7 to version 15 and version 16+. Versions before 7 are
 /// not described and yield `None`.
 pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
-    if v < 7 {
-        warn(format!(
-            "txsm layout of version {v} is not described; text skipped"
-        ));
-        return None;
+    if v == 6 {
+        return read_txsm_6(d);
+    }
+    if v < 6 {
+        return read_txsm_5(d, v, warn);
     }
     if v >= 16 {
         read_txsm_16(d, v, warn)
     } else {
         read_txsm_7(d, v, warn)
     }
+}
+
+/// Paragraphs of single-byte characters split at carriage returns, all
+/// at `size_pt`.
+fn early_paragraphs(chars: &[u8], size_pt: Option<f64>) -> Txsm {
+    let style = RunStyle {
+        size_pt: size_pt.filter(|p| *p > 0.0 && p.is_finite()),
+        ..RunStyle::default()
+    };
+    let paragraphs = chars
+        .split(|c| *c == b'\r')
+        .map(|line| TextParagraph {
+            style_id: 0,
+            base: RunStyle::default(),
+            runs: split_byte_runs(line, &[(line.len(), style.clone())]),
+        })
+        .collect();
+    Txsm {
+        on_path: false,
+        path_settings: None,
+        paragraphs,
+    }
+}
+
+/// Version 5 text (one file): the font size at byte 40 (u16, thousandths
+/// of an inch), the character count at 50 (u16), then a record of 8 bytes
+/// a character: advance, an unknown word, the character (u16, its code
+/// page) and the style. Version 4 is read the same way (assumed).
+fn read_txsm_5(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
+    let word =
+        |at: usize| -> Option<u16> { Some(u16::from_le_bytes([*d.get(at)?, *d.get(at + 1)?])) };
+    if v < 4 {
+        warn(format!(
+            "txsm layout of version {v} is not described; text skipped"
+        ));
+        return None;
+    }
+    let size = word(40)? as f64 * PT_PER_UNIT16;
+    let n = word(50)? as usize;
+    if 52 + n * 8 > d.len() {
+        warn("version 5 text: character count past the record; text skipped".into());
+        return None;
+    }
+    let chars: Vec<u8> = (0..n)
+        .filter_map(|k| word(52 + k * 8 + 4).map(|c| c as u8))
+        .collect();
+    Some(early_paragraphs(&chars, Some(size)))
+}
+
+/// Version 6 text (one file, four texts): the number of 60-byte style
+/// blocks at byte 96 (u32), the blocks from 100 (the first holding the
+/// font size at 36, u32 in coordinate units), then the character count
+/// (u32) and a record of 12 bytes a character: advance, the character
+/// (u32, its code page) and flags.
+fn read_txsm_6(d: &[u8]) -> Option<Txsm> {
+    let dword = |at: usize| -> Option<u32> {
+        Some(u32::from_le_bytes([
+            *d.get(at)?,
+            *d.get(at + 1)?,
+            *d.get(at + 2)?,
+            *d.get(at + 3)?,
+        ]))
+    };
+    let blocks = dword(96)? as usize;
+    if blocks == 0 || blocks > 1024 {
+        return None;
+    }
+    let size = coord_pt(dword(100 + 36)? as i32);
+    let at = 100 + 60 * blocks;
+    let n = dword(at)? as usize;
+    if n > MAX_CHARS || at + 4 + n * 12 > d.len() {
+        return None;
+    }
+    let chars: Vec<u8> = (0..n)
+        .filter_map(|k| dword(at + 4 + k * 12 + 4).map(|c| c as u8))
+        .collect();
+    Some(early_paragraphs(&chars, Some(size)))
 }
 
 fn coord_pt(raw: i32) -> f64 {
@@ -1657,6 +1734,49 @@ pub(crate) fn parse_style_string(s: &str) -> RunStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_5_and_6_texts_are_read() {
+        let texts = |t: &Txsm| -> Vec<String> {
+            t.paragraphs
+                .iter()
+                .map(|p| p.runs.iter().map(|r| r.text.as_str()).collect())
+                .collect()
+        };
+        // Version 5: size 500 thousandths of an inch (36 pt), "Hi".
+        let mut v5 = vec![0u8; 52];
+        v5[40..42].copy_from_slice(&500u16.to_le_bytes());
+        v5[50..52].copy_from_slice(&2u16.to_le_bytes());
+        for c in [b'H', b'i'] {
+            v5.extend_from_slice(&[0x10, 0x01, 0, 0, c, 0, 9, 0]);
+        }
+        let t = read_txsm(&v5, 5, &mut |_| {}).expect("text");
+        assert_eq!(texts(&t), ["Hi"]);
+        let size = t.paragraphs[0].runs[0].style.size_pt.unwrap();
+        assert!((size - 36.0).abs() < 1e-9);
+        // Version 6: one style block with a 10 mm size, "A\rB" as two
+        // paragraphs.
+        let mut v6 = vec![0u8; 160];
+        v6[96..100].copy_from_slice(&1u32.to_le_bytes());
+        v6[136..140].copy_from_slice(&100_000u32.to_le_bytes());
+        v6.extend_from_slice(&3u32.to_le_bytes());
+        for c in [b'A', b'\r', b'B'] {
+            v6.extend_from_slice(&50_000u32.to_le_bytes());
+            v6.extend_from_slice(&(c as u32).to_le_bytes());
+            v6.extend_from_slice(&0x1000_0000u32.to_le_bytes());
+        }
+        let t = read_txsm(&v6, 6, &mut |_| {}).expect("text");
+        assert_eq!(texts(&t), ["A", "B"]);
+        let size = t.paragraphs[0].runs[0].style.size_pt.unwrap();
+        assert!((size - 100_000.0 * 72.0 / 254000.0).abs() < 1e-9);
+        // Cut anywhere: nothing panics.
+        for cut in 0..v6.len() {
+            let _ = read_txsm(&v6[..cut], 6, &mut |_| {});
+        }
+        for cut in 0..v5.len() {
+            let _ = read_txsm(&v5[..cut], 5, &mut |_| {});
+        }
+    }
 
     #[test]
     fn cp1252_maps_the_high_half() {

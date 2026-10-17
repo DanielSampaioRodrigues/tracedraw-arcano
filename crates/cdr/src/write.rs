@@ -2218,9 +2218,45 @@ fn obbx_bytes(r: Rect, outline: f64) -> Vec<u8> {
     b
 }
 
+/// A graded transparency as the `transparency` section of a version 16+
+/// style string: a fountain `fill` (`type` 2) of two greys, 255 opaque,
+/// with its kind, angle, centre offsets (percent) and scale, and the part
+/// it applies to (the layout read in `text::object_transparency_mask`).
+/// `None` when the mask's ends are not plain colours.
+fn graded_transparency_json(g: (&tracedraw_core::Fountain, u8)) -> Option<String> {
+    use tracedraw_core::FountainKind;
+    let (f, target) = g;
+    let mut f = f.clone();
+    crate::mirror_centred_stops(&mut f);
+    let (first, last) = (f.stops.first()?, f.stops.last()?);
+    let grey = |c: &tracedraw_core::Color| (c.luminance().clamp(0.0, 1.0) * 255.0).round() as u32;
+    let kind = match f.kind {
+        FountainKind::Radial => 2,
+        FountainKind::Conical => 3,
+        FountainKind::Square => 4,
+        _ => 1,
+    };
+    let scale = 1.0 - 2.0 * f.edge_pad.clamp(0.0, 0.49);
+    let nil = "00000000-0000-0000-0000-000000000000";
+    Some(format!(
+        r#"{{"mode":"0","fill":{{"type":"2","fountainType":"{kind}","angle":"{}","xCenterOffset":"{}","yCenterOffset":"{}","xScale":"{scale}","yScale":"{scale}","primaryColor":"GRAY255,USER,{},100,{nil}","secondaryColor":"GRAY255,USER,{},100,{nil}","primaryAlpha":"255","secondaryAlpha":"255","spreadMethod":"0","numSteps":"0","mergeMode":"0"}},"appliesTo":"{}","startTransparency":"0","endTransparency":"1"}}"#,
+        f.angle,
+        f.offset.x * 100.0,
+        f.offset.y * 100.0,
+        grey(&first.color),
+        grey(&last.color),
+        target.min(2),
+    ))
+}
+
 /// The style string of an object (versions 16+): its fill, outline and
 /// transparency.
-fn object_style_json(fill: &Fill, stroke: Option<&Stroke>, opacity: f64) -> String {
+fn object_style_json(
+    fill: &Fill,
+    stroke: Option<&Stroke>,
+    opacity: f64,
+    graded: Option<(&tracedraw_core::Fountain, u8)>,
+) -> String {
     let fill_part = match fill_colour(fill) {
         Some(c) if !matches!(fill, Fill::None) => {
             format!(r#"{{"type":"1","primaryColor":"{}"}}"#, colour_spec(c))
@@ -2239,7 +2275,9 @@ fn object_style_json(fill: &Fill, stroke: Option<&Stroke>, opacity: f64) -> Stri
         ),
         None => r#"{"type":"1","width":"0"}"#.to_string(),
     };
-    let transparency = if opacity < 0.999 {
+    let transparency = if let Some(g) = graded.and_then(graded_transparency_json) {
+        g
+    } else if opacity < 0.999 {
         format!(
             r#"{{"type":"1","uniformTransparency":"{}"}}"#,
             ((1.0 - opacity.clamp(0.0, 1.0)) * 1000.0).round() / 1000.0
@@ -2366,6 +2404,9 @@ struct Writer<'a> {
     /// and bitmap ids.
     next_usdn: u32,
     next_object: u32,
+    /// Graded transparencies (mask, target) of the objects being written,
+    /// by shape: version 16+ style strings carry them.
+    graded: std::collections::HashMap<tracedraw_core::ShapeId, (tracedraw_core::Fountain, u8)>,
     next_fill: u32,
     next_outline: u32,
     next_bitmap: u32,
@@ -2436,6 +2477,7 @@ impl<'a> Writer<'a> {
             bitmaps: Vec::new(),
             next_usdn: 1,
             next_object: 1,
+            graded: std::collections::HashMap::new(),
             next_fill: 1,
             next_outline: 1,
             next_bitmap: 1,
@@ -2842,7 +2884,8 @@ impl<'a> Writer<'a> {
             (ARG_ID, id.to_le_bytes().to_vec()),
         ];
         if v.style_strings() {
-            let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity);
+            let graded = self.graded.get(&s.id).map(|(f, t)| (f, *t));
+            let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity, graded);
             if let Some((_, character, _)) = &text {
                 // Text objects keep their character settings there too.
                 json.pop();
@@ -2920,8 +2963,24 @@ impl<'a> Writer<'a> {
             let mut main = ev.main.clone();
             // A graded transparency is written as a uniform one: the mean
             // opacity of its mask (as files read before masks were).
-            if let Some(o) = s.effects.iter().find_map(mask_mean_opacity) {
-                main.opacity *= o;
+            // Version 16+ style strings keep the gradient itself.
+            let graded = s.effects.iter().find_map(|e| match e {
+                tracedraw_core::live::Effect::Transparency {
+                    mask: Fill::Fountain(f),
+                    target,
+                    ..
+                } => Some((f.clone(), *target)),
+                _ => None,
+            });
+            match graded {
+                Some(g) if self.v.style_strings() => {
+                    self.graded.insert(main.id, g);
+                }
+                _ => {
+                    if let Some(o) = s.effects.iter().find_map(mask_mean_opacity) {
+                        main.opacity *= o;
+                    }
+                }
             }
             all.push(main);
             all.extend(ev.above.iter().cloned());

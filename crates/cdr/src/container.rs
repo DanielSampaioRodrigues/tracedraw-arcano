@@ -17,8 +17,10 @@ impl Version {
         }
         let c = form[3];
         // Digits are versions 1 to 9; letters continue from `A` = 10, but
-        // `I` is skipped: `H` = 17, `J` = 18, `K` = 19.
+        // `I` is skipped: `H` = 17, `J` = 18, `K` = 19. Version 3 files
+        // carry a space.
         match c {
+            b' ' => Some(Version(3)),
             b'1'..=b'9' => Some(Version((c - b'0') as u16)),
             b'A'..=b'H' => Some(Version(10 + (c - b'A') as u16)),
             b'J'..=b'Z' => Some(Version(9 + (c - b'A') as u16)),
@@ -129,9 +131,14 @@ pub fn riff_stream(bytes: &[u8], container: &Container) -> Result<Vec<u8>> {
         ContainerKind::Zip { riff_member, .. } => {
             let cursor = std::io::Cursor::new(bytes);
             let mut archive = zip::ZipArchive::new(cursor)?;
-            let mut f = archive.by_name(riff_member)?;
-            let mut out = Vec::with_capacity(f.size() as usize);
-            f.read_to_end(&mut out)?;
+            let f = archive.by_name(riff_member)?;
+            // The size the archive claims is not trusted for the
+            // allocation, and what inflates past the limit is cut off.
+            let mut out = Vec::with_capacity(f.size().min(MAX_STREAM) as usize);
+            f.take(MAX_STREAM).read_to_end(&mut out)?;
+            if out.len() as u64 >= MAX_STREAM {
+                log::warn!("{riff_member} inflates past {MAX_STREAM} bytes; cut off there");
+            }
             Ok(out)
         }
     }
@@ -168,9 +175,12 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
         name.to_string(),
     ];
     for c in candidates {
-        if let Ok(mut f) = archive.by_name(&c) {
+        if let Ok(f) = archive.by_name(&c) {
             let mut out = Vec::new();
-            if f.read_to_end(&mut out).is_ok() {
+            if f.take(MAX_STREAM).read_to_end(&mut out).is_ok() {
+                if out.len() as u64 >= MAX_STREAM {
+                    log::warn!("{c} inflates past {MAX_STREAM} bytes; cut off there");
+                }
                 return Some(out);
             }
         }
@@ -181,6 +191,11 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
 /// Embedded members larger than this are skipped (fonts are far smaller;
 /// this keeps a damaged size from taking all memory).
 const MAX_EMBEDDED: u64 = 64 << 20;
+
+/// The most a member of the package (the RIFF stream, a data stream) or
+/// one compressed block may inflate to: a file that claims more is a
+/// decompression bomb or damaged, and is read only up to here.
+pub(crate) const MAX_STREAM: u64 = 512 << 20;
 
 /// The CMYK colour profile a version 14+ ZIP file carries (a member
 /// under `color/profiles/cmyk/`, seen in version 17 to 21 files next to
@@ -336,9 +351,9 @@ pub fn document_palette(bytes: &[u8], container: &Container) -> Vec<(String, Col
     };
     let mut xml = String::new();
     for name in ["color/docPalette.xml", "color/DocumentPalette.xml"] {
-        if let Ok(mut f) = archive.by_name(name) {
+        if let Ok(f) = archive.by_name(name) {
             let mut raw = Vec::new();
-            if f.read_to_end(&mut raw).is_ok() {
+            if f.take(MAX_PROFILE).read_to_end(&mut raw).is_ok() {
                 xml = String::from_utf8_lossy(&raw).into_owned();
                 break;
             }
@@ -523,6 +538,7 @@ mod tests {
     #[test]
     fn version_letters() {
         assert_eq!(Version::from_form_type(b"CDR9"), Some(Version(9)));
+        assert_eq!(Version::from_form_type(b"CDR "), Some(Version(3)));
         assert_eq!(Version::from_form_type(b"CDRD"), Some(Version(13)));
         assert_eq!(Version::from_form_type(b"CDRH"), Some(Version(17)));
         // `I` is not used; `J` is version 18 and `K` is 19.
