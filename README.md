@@ -54,7 +54,7 @@
   <tr>
     <td width="25%" valign="top">
       <h3>A full desktop workspace</h3>
-      Menu bar, context-sensitive property bar, toolbox with flyouts, 36 dockable panels, colour palette, rulers, guides and a page navigator, all set out for long working sessions.
+      Menu bar, context-sensitive property bar, toolbox with flyouts, 41 dockable panels, colour palette, rulers, guides and a page navigator, all set out for long working sessions.
     </td>
     <td width="25%" valign="top">
       <h3>Native and light</h3>
@@ -237,20 +237,25 @@ programs or other implementations. `CLEANROOM.md` records where each piece
 of format knowledge comes from and when; `docs/cdr-format.md` records what
 is confirmed and what is still assumed.
 
-- **Containers of every generation:** RIFF files with compressed chunk
-  streams (versions 7 to 13), ZIP packages (14 and 15) and the split
-  streams of 16 and later.
-- **What comes across:** pages, layers, master layers, rectangles,
-  ellipses, polygons and stars, curves, artistic and paragraph text,
-  groups, bitmaps, uniform and gradient fills, outlines and more; what
-  the reader cannot map yet is counted and reported, never silently
-  dropped.
+- **Containers of every generation:** RIFF files (versions 3 to 13, with
+  compressed chunk streams from 7), ZIP packages (14 and 15) and the
+  split streams of 16 and later. CMX exchange files open too.
+- **What comes across:** pages, layers, master layers, guidelines,
+  rectangles, ellipses, polygons and stars, curves with their node types,
+  artistic and paragraph text (from version 5; bold, italic
+  and text on a path from 7), groups, clip containers, bitmaps (CMYK and cut-out), uniform,
+  gradient, pattern, texture and vector pattern fills, outlines with
+  arrowheads, uniform and graded transparency, embedded fonts and the
+  document palette; what the reader cannot map yet is counted and
+  reported, never silently dropped.
 - **Writing back, in the version you need:** drawings save as `.cdr` in
-  any version from 7 to 22 (old programs open old versions), as well as
-  in TraceDraw's own JSON format. A drawing opened from a `.cdr` saves in
-  its own version unless you pick another.
+  any version from 7 to 22, as well as in TraceDraw's own JSON format. A
+  drawing opened from a `.cdr` saves in its own version unless you pick
+  another. Versions 16 to 22 are checked to open in the program that
+  wrote the samples; 7 to 15 are offered as experimental until they are.
 - **Never crashes on a file:** `tracedraw-cli stress` runs mutation tests
-  against the reader, and opening any file always yields a document.
+  against the reader, opening any file always yields a document, and
+  what a file may decompress to is capped.
 
 ## Made to be automated
 
@@ -353,6 +358,13 @@ Anyone who wants to help is welcome, with or without writing code:
 - **Try it on your own files.** A `.cdr` that does not open right, sent
   in [an issue](https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml),
   improves the reader more than anything else (only files you may share).
+  Files from CorelDRAW 1 to 3, with a picture of how they look, are the
+  most wanted: those versions are not read yet or not yet confirmed.
+- **Open our test files in your copy of the reference program.** The
+  [`interop` branch](https://github.com/igtoth/tracedraw/tree/interop/bundles)
+  holds small `.cdr` files saved by TraceDraw in versions 7 to 15; telling
+  us which ones open (and which do not) is what moves those versions out
+  of experimental.
 - **Report bugs** with the steps and a screenshot
   ([bug report](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml)).
 - **Review a translation** in your language (`apps/tracedraw/lang/`):
