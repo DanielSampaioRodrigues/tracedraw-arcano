@@ -1291,7 +1291,7 @@ fn layer_name(f: &[(u8, &[u8])]) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn chunk(tag: &[u8; 4], data: &[u8]) -> Vec<u8> {
@@ -1330,7 +1330,7 @@ mod tests {
         chunk(b"cont", &c)
     }
 
-    fn fld(tag: u8, data: &[u8]) -> Vec<u8> {
+    pub(crate) fn fld(tag: u8, data: &[u8]) -> Vec<u8> {
         let mut f = vec![tag];
         f.extend_from_slice(&((data.len() + 3) as u16).to_le_bytes());
         f.extend_from_slice(data);
@@ -1344,7 +1344,7 @@ mod tests {
         l
     }
 
-    fn instr(code: i16, fields: &[Vec<u8>]) -> Vec<u8> {
+    pub(crate) fn instr(code: i16, fields: &[Vec<u8>]) -> Vec<u8> {
         let body = flist(fields);
         let mut i = ((body.len() + 4) as u16).to_le_bytes().to_vec();
         i.extend_from_slice(&code.to_le_bytes());
@@ -1455,7 +1455,7 @@ mod tests {
 
     /// Rendering attributes: a uniform fill of colour `fill` and outline
     /// `outline` (0 for none of either).
-    fn attrs(fill: u16, outline: u16) -> Vec<u8> {
+    pub(crate) fn attrs(fill: u16, outline: u16) -> Vec<u8> {
         let mut a = vec![u8::from(fill > 0) | (u8::from(outline > 0) << 1)];
         if fill > 0 {
             let mut f = 1u16.to_le_bytes().to_vec();
@@ -1472,7 +1472,7 @@ mod tests {
         a
     }
 
-    fn begin_page(w: i32, h: i32) -> Vec<u8> {
+    pub(crate) fn begin_page(w: i32, h: i32) -> Vec<u8> {
         let mut f1 = u16s(&[1]);
         f1.extend_from_slice(&[0; 4]);
         f1.extend_from_slice(&le(&[-10, 10, 10, -10, 0]));
@@ -1489,7 +1489,7 @@ mod tests {
         )
     }
 
-    fn begin_layer(name8: &str, name16: Option<&str>) -> Vec<u8> {
+    pub(crate) fn begin_layer(name8: &str, name16: Option<&str>) -> Vec<u8> {
         let mut f1 = u16s(&[1, 1]);
         f1.extend_from_slice(&[0; 8]);
         f1.extend_from_slice(&(name8.len() as u16).to_le_bytes());
@@ -1504,7 +1504,15 @@ mod tests {
         instr(11, &fields)
     }
 
-    fn rect(attrs: &[u8], cx: i32, cy: i32, w: i32, h: i32, radius: i32, angle: i32) -> Vec<u8> {
+    pub(crate) fn rect(
+        attrs: &[u8],
+        cx: i32,
+        cy: i32,
+        w: i32,
+        h: i32,
+        radius: i32,
+        angle: i32,
+    ) -> Vec<u8> {
         let mut g = le(&[cx, cy, w, h, radius, angle]);
         g.extend_from_slice(&le(&[0, 0, 0, 0]));
         instr(68, &[fld(1, attrs), fld(2, &g)])
@@ -1527,11 +1535,11 @@ mod tests {
         )
     }
 
-    fn page(instructions: &[Vec<u8>]) -> Vec<u8> {
+    pub(crate) fn page(instructions: &[Vec<u8>]) -> Vec<u8> {
         chunk(b"page", &instructions.concat())
     }
 
-    fn file(pages: &[Vec<u8>]) -> Vec<u8> {
+    pub(crate) fn file(pages: &[Vec<u8>]) -> Vec<u8> {
         riff(&[cont(b'4'), pages.concat(), tables()].concat())
     }
 

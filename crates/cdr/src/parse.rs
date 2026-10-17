@@ -66,6 +66,9 @@ pub(crate) const ARG_STYLE_STRING: u32 = 201;
 pub(crate) const ARG_NAME: u32 = 1000;
 pub(crate) const ARG_OPACITY: u32 = 8000;
 const ARG_POLYGON: u32 = 11000;
+/// The contents of a clip container (version 12): the `spnd` number of a
+/// group in the document's `LIST clpt`, then three u32 (1, 0, 1 seen).
+const ARG_CLIP_CONTENTS: u32 = 8005;
 const ARG_PAGE_SIZE: u32 = 19130;
 
 /// Family and size used when neither the run nor its style names one.
@@ -252,6 +255,8 @@ struct Ctx<'a> {
     embedded: HashMap<String, crate::ole::Picture>,
     /// Two-colour pattern tiles (`bmpf`), 1 bit per pixel: true = front.
     pattern_tiles: HashMap<u32, PatternBits>,
+    /// Vector pattern drawings (`vpat`): an id, then a CMX file.
+    vector_patterns: HashMap<u32, &'a [u8]>,
     /// `font` chunks by font id: family name and character set.
     fonts: HashMap<u16, text::FontRec>,
     /// Character set of names (layers, objects) before version 12: the
@@ -263,6 +268,11 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
+    /// Groups of `LIST clpt` by their `spnd` number: the contents of clip
+    /// containers.
+    clip_groups: HashMap<u32, &'a Chunk>,
+    /// The `clpt` group the object being read holds clipped inside it.
+    pending_clip: Option<u32>,
     /// Colours of spot colour libraries met: (library, number).
     library_inks: std::collections::BTreeSet<(u16, u16)>,
     /// Guidelines of the page being read (objects of type 0x16).
@@ -321,11 +331,14 @@ impl<'a> Ctx<'a> {
             bitmaps: HashMap::new(),
             embedded: HashMap::new(),
             pattern_tiles: HashMap::new(),
+            vector_patterns: HashMap::new(),
             fonts: HashMap::new(),
             name_charset: 0,
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
+            clip_groups: HashMap::new(),
+            pending_clip: None,
             guides: Vec::new(),
             last_was_guide: false,
             outer_transform: Affine::IDENTITY,
@@ -393,6 +406,11 @@ pub fn parse_document_with(
             bitmaps.push(c);
         } else if c.is(b"bmpf") {
             ctx.read_pattern_tile(c);
+        } else if c.is(b"vpat") {
+            let d = ctx.data(c);
+            if let (Some(id), Some(cmx)) = (ctx.reader(d).u32(), d.get(4..)) {
+                ctx.vector_patterns.insert(id, cmx);
+            }
         } else if c.is(b"arrw") {
             ctx.read_arrowhead(c);
         } else if c.is(b"arrx") {
@@ -405,6 +423,7 @@ pub fn parse_document_with(
         }
     });
     ctx.read_bitmaps(&bitmaps);
+    ctx.index_clip_groups();
     ctx.name_charset = ctx.common_charset();
     tree.root.walk(&mut |c, _| {
         if c.is(b"fild") || c.is(b"fill") {
@@ -716,8 +735,9 @@ impl<'a> Ctx<'a> {
 
     /// `fild` (`fill` before version 7): fill definition. We model solid
     /// fills, fountain fills with all their stops, two-colour patterns,
-    /// colour bitmap fills and textures (from their stored bitmap); vector
-    /// pattern and PostScript fills become "no fill" with a warning.
+    /// colour bitmap fills, textures (from their stored bitmap) and vector
+    /// patterns (from their CMX drawing); PostScript fills become "no
+    /// fill" with a warning.
     fn read_fill(&mut self, c: &Chunk) {
         let d = self.data(c);
         let mut r = self.reader(d);
@@ -767,12 +787,12 @@ impl<'a> Ctx<'a> {
                     .warn(format!("image fill {id} (type {ftype}) is unreadable"));
                 Fill::None
             }),
-            10 => {
+            10 => self.read_vector_pattern_fill(body).unwrap_or_else(|| {
                 self.report.warn(format!(
-                    "vector pattern fill {id} not modelled yet; no fill"
+                    "vector pattern fill {id} not readable yet; no fill"
                 ));
                 Fill::None
-            }
+            }),
             other => {
                 self.report
                     .warn(format!("fill type {other} not modelled yet (fill id {id})"));
@@ -780,6 +800,67 @@ impl<'a> Ctx<'a> {
             }
         };
         self.fills.insert(id, FillDef { fill });
+    }
+
+    /// Vector pattern fill body (type 10; seen in version 18): tagged
+    /// records, 1600 holding the part of the pattern's drawing that makes
+    /// one tile (four i32: left, top, right, bottom, from the centre of
+    /// its page) and 1300 holding the tile's width and height (u32 each),
+    /// 8 bytes, that box again and the id of the `vpat` that holds the
+    /// drawing as a CMX file. The tile is that part of the drawing
+    /// stretched to the tile's size.
+    fn read_vector_pattern_fill(&mut self, body: &'a [u8]) -> Option<Fill> {
+        let mut r = self.reader(body);
+        let mut part: Option<[i32; 4]> = None;
+        let mut tile: Option<(u32, u32, u32)> = None;
+        while r.remaining() >= 8 {
+            let tag = r.u32()?;
+            let len = r.u32()? as usize;
+            let start = r.pos;
+            match tag {
+                1600 if len >= 16 => part = Some([r.i32()?, r.i32()?, r.i32()?, r.i32()?]),
+                1300 if len >= 36 => {
+                    let w = r.u32()?;
+                    let h = r.u32()?;
+                    let id = self.reader_at(body, start + 32).u32()?;
+                    tile = Some((w, h, id));
+                }
+                _ => {}
+            }
+            r.pos = start.checked_add(len)?;
+        }
+        let ([x0, top, x1, bottom], (w, h, id)) = (part?, tile?);
+        let cmx = *self.vector_patterns.get(&id)?;
+        let (drawing, _) = crate::cmx::open_bytes(cmx, "pattern").ok()?;
+        let page = drawing.pages.first()?;
+        let centre = Point::new(page.size.width / 2.0, page.size.height / 2.0);
+        let left = centre.x + x0 as f64 * UNIT_MM;
+        let right = centre.x + x1 as f64 * UNIT_MM;
+        let low = centre.y + bottom as f64 * UNIT_MM;
+        let high = centre.y + top as f64 * UNIT_MM;
+        let tile = Size::new(w as f64 * UNIT_MM, h as f64 * UNIT_MM);
+        if !(right - left > 1e-6 && high - low > 1e-6 && tile.width > 1e-6 && tile.height > 1e-6) {
+            return None;
+        }
+        let to_tile =
+            Affine::scale_non_uniform(tile.width / (right - left), tile.height / (high - low))
+                * Affine::translate((-left, -low));
+        let shapes: Vec<Shape> = page
+            .layers
+            .iter()
+            .flat_map(|l| l.shapes.iter().cloned())
+            .map(|mut s| {
+                s.transform = to_tile * s.transform;
+                s
+            })
+            .collect();
+        if shapes.is_empty() {
+            return None;
+        }
+        Some(Fill::Pattern(tracedraw_core::style::Pattern::Vector {
+            shapes,
+            tile,
+        }))
     }
 
     /// Solid fill body. Before version 13: 2 unknown bytes then a colour. From version 13:
@@ -2021,6 +2102,7 @@ impl<'a> Ctx<'a> {
             }
         });
         let loda = loda?;
+        self.pending_clip = None;
         self.pending_on_path = None;
         self.pending_text_transform = None;
         let transform = self.outer_transform
@@ -2101,6 +2183,7 @@ impl<'a> Ctx<'a> {
                     }
                 }
                 ARG_POLYGON => polygon = self.read_polygon_info(d, *arg),
+                ARG_CLIP_CONTENTS => self.pending_clip = self.reader_at(d, arg.off).u32(),
                 _ => {}
             }
         }
@@ -2192,6 +2275,64 @@ impl<'a> Ctx<'a> {
         Some(shape)
     }
 
+    /// Index the groups of `LIST clpt` by the number in their `spnd`.
+    fn index_clip_groups(&mut self) {
+        let tree = self.tree;
+        let mut found = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"clpt") {
+                found.extend(c.children.iter().filter(|g| g.is(b"grp ")));
+            }
+        });
+        for g in found {
+            let Some(sp) = g.children.iter().find(|c| c.is(b"spnd")) else {
+                continue;
+            };
+            if let Some(n) = self.reader(self.data(sp)).u32() {
+                self.clip_groups.insert(n, g);
+            }
+        }
+    }
+
+    /// A clip container: `shape` with the objects of the `clpt` group
+    /// numbered `clip` drawn inside it (the container's fill under them,
+    /// its outline over them). A number naming no group leaves the shape.
+    fn with_clip_contents(
+        &mut self,
+        shape: Shape,
+        clip: u32,
+        ids: &mut tracedraw_core::id::IdSource,
+        page_size: Size,
+        depth: usize,
+    ) -> Shape {
+        // Taken out while read, so a group naming itself ends there.
+        let Some(group) = self.clip_groups.remove(&clip) else {
+            self.report.warn(format!(
+                "clip container names contents {clip:#x} the file lacks"
+            ));
+            return shape;
+        };
+        let contents = self.read_objects(group, ids, page_size, depth + 1);
+        self.clip_groups.insert(clip, group);
+        if contents.is_empty() {
+            return shape;
+        }
+        let mut outer = Shape::new(
+            ids.shape(),
+            ShapeKind::Group {
+                children: Vec::new(),
+            },
+        );
+        outer.name = shape.name.clone();
+        outer.fill = Fill::None;
+        outer.stroke = None;
+        outer.kind = ShapeKind::ClipFrame {
+            frame: Box::new(shape),
+            contents,
+        };
+        outer
+    }
+
     /// The objects of a layer or group list, bottom to top. Files store
     /// them front to back (confirmed with a version 21 file: text, then a patch,
     /// then the full-page picture underneath). `grp ` lists become groups.
@@ -2233,6 +2374,9 @@ impl<'a> Ctx<'a> {
                     Some(mut shape) => {
                         if let Some(crop) = self.pending_crop.take() {
                             shape = crop_to_clip_frame(shape, crop, ids);
+                        }
+                        if let Some(clip) = self.pending_clip.take() {
+                            shape = self.with_clip_contents(shape, clip, ids, page_size, depth);
                         }
                         out.push(shape);
                     }
@@ -3898,6 +4042,60 @@ mod tests {
         let c = tree.root.find(b"fild").unwrap();
         ctx.read_fill(c);
         assert_eq!(ctx.fills[&3].fill, Fill::Solid(Color::rgb8(10, 20, 30)));
+    }
+
+    #[test]
+    fn vector_pattern_fills_tile_a_part_of_their_cmx_drawing() {
+        use crate::cmx::tests as cmx;
+        // A 100 mm square CMX page with a 20 x 10 mm rectangle at its
+        // centre; the tile is the 40 mm square around the centre, drawn
+        // 20 mm wide and 10 mm high.
+        let drawing = cmx::file(&[cmx::page(&[
+            cmx::begin_page(1_000_000, 1_000_000),
+            cmx::begin_layer("L", None),
+            cmx::rect(&cmx::attrs(1, 0), 0, 0, 200_000, 100_000, 0, 0),
+            cmx::instr(14, &[]),
+            cmx::instr(12, &[]),
+            cmx::instr(10, &[]),
+        ])]);
+        let mut fild = u32s(&[5, 1300, 2 + 8 + 16 + 8 + 36]);
+        fild.extend_from_slice(&u16s(&[10]));
+        fild.extend_from_slice(&u32s(&[1600, 16]));
+        fild.extend_from_slice(&i32s(&[-200_000, 200_000, 200_000, -200_000]));
+        fild.extend_from_slice(&u32s(&[1300, 36, 200_000, 100_000, 0, 0]));
+        fild.extend_from_slice(&i32s(&[-200_000, 200_000, 200_000, -200_000]));
+        fild.extend_from_slice(&u32s(&[12]));
+        let main = riff(b"CDRK", &chunk(b"fild", &fild));
+        let tree = crate::riff::parse(&main).unwrap();
+        let mut ctx = Ctx::new(&main, &tree, 18);
+        ctx.vector_patterns.insert(12, &drawing);
+        ctx.read_fill(tree.root.find(b"fild").unwrap());
+        let Fill::Pattern(tracedraw_core::style::Pattern::Vector { shapes, tile }) =
+            &ctx.fills[&5].fill
+        else {
+            panic!("{:?}", ctx.fills[&5].fill)
+        };
+        assert!((tile.width - 20.0).abs() < 1e-6 && (tile.height - 10.0).abs() < 1e-6);
+        // The rectangle, half the tile's width and a quarter of its height
+        // after the stretch, sits at the tile's centre.
+        let b = shapes[0].bounds();
+        assert!(
+            (b.width() - 10.0).abs() < 1e-6 && (b.height() - 2.5).abs() < 1e-6,
+            "{b:?}"
+        );
+        assert!(
+            (b.center().x - 10.0).abs() < 1e-6 && (b.center().y - 5.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // No drawing for the id: no fill, with a warning.
+        let mut ctx = Ctx::new(&main, &tree, 18);
+        ctx.read_fill(tree.root.find(b"fild").unwrap());
+        assert_eq!(ctx.fills[&5].fill, Fill::None);
+        assert!(ctx
+            .report
+            .warnings
+            .iter()
+            .any(|w| w.contains("vector pattern")));
     }
 
     #[test]
@@ -6603,6 +6801,81 @@ mod tests {
             page_box: Some(Rect::new(400.0, 400.0, 420.0, 410.0)),
         };
         assert!(anchored_path_for_text(&shapes, &curves, &far, cap).is_none());
+    }
+
+    #[test]
+    fn clip_containers_draw_their_clpt_group_inside() {
+        // A version 12 container (a 30 mm square) naming group 0x55 of the
+        // document's LIST clpt, which holds a 10 mm square.
+        let square = |side: i32| {
+            list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(
+                        OBJ_RECT,
+                        &[(ARG_COORDS, i32s(&[side * 10_000, side * 10_000, 0]))],
+                    ),
+                ),
+            )
+        };
+        let group = list(
+            b"grp ",
+            &[chunk(b"spnd", &u32s(&[0x55])), square(10)].concat(),
+        );
+        let container = |id: u32| {
+            list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(
+                        OBJ_RECT,
+                        &[
+                            (ARG_CLIP_CONTENTS, u32s(&[id, 1, 0, 1])),
+                            (ARG_COORDS, i32s(&[300_000, 300_000, 0])),
+                        ],
+                    ),
+                ),
+            )
+        };
+        let read = |id: u32| {
+            let body = [
+                chunk(b"mcfg", &mcfg(12, 2_540_000, 2_540_000)),
+                list(b"clpt", &group),
+                list(b"page", &list(b"layr", &container(id))),
+            ]
+            .concat();
+            parse(&riff(b"CDRC", &body), 12)
+        };
+        let (doc, rep) = read(0x55);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::ClipFrame { frame, contents } => {
+                assert!((frame.bounds().width() - 30.0).abs() < 1e-6);
+                assert_eq!(contents.len(), 1);
+                assert!((contents[0].bounds().width() - 10.0).abs() < 1e-6);
+            }
+            other => panic!("{other:?}"),
+        }
+        // The group is not drawn on its own anywhere else.
+        assert_eq!(
+            doc.pages
+                .iter()
+                .map(|p| p.layers.iter().map(|l| l.shapes.len()).sum::<usize>())
+                .sum::<usize>(),
+            1
+        );
+        // A number naming no group: the container alone, with a warning.
+        let (doc, rep) = read(0x99);
+        assert!(matches!(
+            first_shape(&doc).kind,
+            ShapeKind::Rect { .. } | ShapeKind::Path { .. }
+        ));
+        assert!(
+            rep.warnings.iter().any(|w| w.contains("clip container")),
+            "{:?}",
+            rep.warnings
+        );
     }
 
     #[test]
