@@ -3835,7 +3835,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tracedraw"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cdr"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "encoding_rs",
  "flate2",
@@ -3888,7 +3888,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cli"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "env_logger",
  "flate2",
@@ -3904,7 +3904,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64 0.22.1",
  "i_overlay",
@@ -3916,7 +3916,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-io"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -3939,7 +3939,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-render"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "log",
  "tiny-skia",
@@ -3948,7 +3948,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-text"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "fontdb",
  "kurbo",

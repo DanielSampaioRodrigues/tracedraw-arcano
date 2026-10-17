@@ -4,14 +4,20 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.9.1 (2026-10-17)
+
+Version 15 `.cdr` files read their text in full, `.cdr` files saved for
+versions 12 to 20 carry the configuration record those versions write
+(text saved in versions 16 to 22 now opens in other programs), and the
+Transformations panel's Position page picks a direction for copies.
 
 - `.cdr` files of versions 13 to 20 saved by TraceDraw carry the whole
   document configuration record those versions write (it held only the
   page size, and other programs refused the file), version 12 files the
   8152-byte record of that version, and version 16 text has the record
-  header that version writes (#98). Files of versions 17 to 21 open in
-  the program that wrote the samples; versions 12 to 15 do not open yet.
+  header that version writes (#98). Text saved in versions 16 to 22 and
+  groups in 17 to 22 open in the program that wrote the samples;
+  versions 7 to 15 do not open yet.
 - Version 15 `.cdr` text reads in full: style records with the 0x20 flag
   byte no longer cut the text off (55 text objects of one file were
   dropped), each letter takes the style its record names (sizes and
