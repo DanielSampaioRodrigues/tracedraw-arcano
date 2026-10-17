@@ -12,6 +12,11 @@ full, row-by-row status.
   8152-byte record of that version, and version 16 text has the record
   header that version writes (#98). Files of versions 17 to 21 open in
   the program that wrote the samples; versions 12 to 15 do not open yet.
+- Version 15 `.cdr` text reads in full: style records with the 0x20 flag
+  byte no longer cut the text off (55 text objects of one file were
+  dropped), each letter takes the style its record names (sizes and
+  fonts of mixed runs) and artistic text whose coordinates hold an id
+  is no longer placed 41 m away (#116).
 - Transformations panel, Position page: with Relative position on, the
   3 x 3 boxes pick a direction and fill X and Y with the selection's
   width or height that way, so Apply with copies lays them side by side;

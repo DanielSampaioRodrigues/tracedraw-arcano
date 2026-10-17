@@ -45,6 +45,9 @@ impl ParseReport {
     }
 }
 
+/// Farther than this from (0, 0), the coordinates of artistic text are
+/// not a place (see `build_text`).
+const MAX_TEXT_ORIGIN_MM: f64 = 10_000.0;
 /// CDR coordinate unit (version 6 and later) to millimetres.
 const UNIT_MM: f64 = 25.4 / 254000.0;
 /// Coordinate unit of versions before 6 (1/1000 inch) to millimetres.
@@ -1434,7 +1437,13 @@ impl<'a> Ctx<'a> {
                     origin = Point::new(0.0, -h.abs());
                 }
             } else if self.v >= 13 {
-                origin = Point::new(r.coord()?, r.coord()?);
+                let o = Point::new(r.coord()?, r.coord()?);
+                // A version 15 file holds (0, a record id) there, read as
+                // a point some 40 m away: take the origin then, as before
+                // version 13, and let the transform place the text.
+                if o.x.abs() <= MAX_TEXT_ORIGIN_MM && o.y.abs() <= MAX_TEXT_ORIGIN_MM {
+                    origin = o;
+                }
             }
             // Before version 13 the argument holds record ids, not a
             // place (files of versions 7 to 12): the text starts at the
@@ -6570,6 +6579,48 @@ mod tests {
             page_box: Some(Rect::new(400.0, 400.0, 420.0, 410.0)),
         };
         assert!(anchored_path_for_text(&shapes, &curves, &far, cap).is_none());
+    }
+
+    #[test]
+    fn version_15_artistic_text_coordinates_holding_an_id_are_no_place() {
+        let styles = [Style7 {
+            chars: 2,
+            font: None,
+            flags: None,
+            size_units: None,
+            fill: None,
+        }];
+        let t = txsm7(15, true, &styles, "Hi");
+        let read = |coords: Vec<u8>| {
+            let obj = list(
+                b"obj ",
+                &[
+                    chunk(b"loda", &loda(OBJ_ARTISTIC_TEXT, &[(ARG_COORDS, coords)])),
+                    chunk(b"txsm", &t),
+                ]
+                .concat(),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(15, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDRF", &body), 15);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            match &first_shape(&doc).kind {
+                ShapeKind::Text { origin, .. } => *origin,
+                other => panic!("{other:?}"),
+            }
+        };
+        // As a version 15 file holds it: 0 and a record id (some 41 m).
+        let o = read(u32s(&[0, 0x1887_1a00]));
+        assert!(o.x.abs() < 1e-9 && o.y.abs() < 1e-9, "{o:?}");
+        // A real place is kept.
+        let o = read(i32s(&[100_000, -50_000]));
+        assert!(
+            (o.x - 10.0).abs() < 1e-9 && (o.y + 5.0).abs() < 1e-9,
+            "{o:?}"
+        );
     }
 
     #[test]

@@ -717,11 +717,15 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
                 }
             }
             if fl3 & 0x20 != 0 {
-                // A flag byte is peeked; when set, a block (including the
-                // byte) follows.
+                // A flag byte. Version 15 reads it and, when it is set,
+                // a 52-byte block follows it (a version 15 file: the
+                // character count comes 1 and 53 bytes after it). Before,
+                // the byte is peeked and starts a 4-byte block when set.
                 let flag = *d.get(r.pos)?;
-                if flag != 0 {
-                    r.skip(if v >= 15 { 52 } else { 4 });
+                if v >= 15 {
+                    r.skip(if flag != 0 { 53 } else { 1 });
+                } else if flag != 0 {
+                    r.skip(4);
                 }
             }
             styles.push((n, s));
@@ -733,14 +737,20 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         // One record a character; from version 12 they are 8 bytes and
         // bit 0 of the first marks a character stored in two bytes.
         let mut wide = Vec::new();
+        let mut style_of = Vec::new();
         if v >= 12 {
             if nc > r.remaining() / 8 {
                 return finish(out, warn, "character count");
             }
             wide.reserve(nc);
+            style_of.reserve(nc);
             for _ in 0..nc {
-                wide.push(r.u16()? & 1 != 0);
-                r.skip(6);
+                let first = r.u8()?;
+                r.skip(1);
+                let style = r.u8()?;
+                wide.push(first & 1 != 0);
+                style_of.push((style >> 1) as usize);
+                r.skip(5);
             }
         } else {
             r.skip(nc.saturating_mul(4));
@@ -757,6 +767,14 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         // ("ć" in a Croatian word stored as 07 01 among single-byte
         // Portuguese letters). Text with every character in two bytes and
         // no flags is read as UTF-16.
+        // Bits 1 to 7 of the third byte of a character's record number its
+        // style in the
+        // list above (a version 15 file: "MASS IN RUNNING ORDER 941 kg",
+        // the figures 2, the rest 0 and 1). When they do, they decide the
+        // runs; the lengths in the style list do not add up to the text.
+        if style_of.iter().any(|i| *i != 0) && style_of.iter().all(|i| *i < styles.len()) {
+            styles = runs_by_index(&style_of, &styles);
+        }
         let any_wide = wide.iter().any(|w| *w);
         let runs = if v < 12 || (nbytes == nc && !any_wide) {
             split_byte_runs(text, &styles)
@@ -777,6 +795,21 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         });
     }
     Some(out)
+}
+
+/// Runs of consecutive characters sharing a style index, each with the
+/// style it names.
+fn runs_by_index(style_of: &[usize], styles: &[(usize, RunStyle)]) -> Vec<(usize, RunStyle)> {
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for &i in style_of {
+        match runs.last_mut() {
+            Some((n, last)) if *last == i => *n += 1,
+            _ => runs.push((1, i)),
+        }
+    }
+    runs.into_iter()
+        .filter_map(|(n, i)| styles.get(i).map(|(_, s)| (n, s.clone())))
+        .collect()
 }
 
 /// Return what was read so far when a count is implausible.
@@ -1741,5 +1774,77 @@ mod tests {
         assert_eq!(runs[0].text, "ab");
         assert_eq!(runs[1].text, "cd");
         assert_eq!(split_runs("xyz", &[]).len(), 1);
+    }
+
+    /// A version 15 artistic text record (frame layout, one frame, one
+    /// paragraph) with three styles: a locale only, 8 pt, and 8 pt with
+    /// the flag byte of fl3 0x20 (`block` set or not); `index` numbers
+    /// each letter's style in its record.
+    fn txsm15(text: &str, index: &[u8], block: bool) -> Vec<u8> {
+        let mut d = vec![0xff; 4];
+        d.extend_from_slice(&[0; 33]);
+        d.extend_from_slice(&1u32.to_le_bytes()); // frames
+        d.extend_from_slice(&7u32.to_le_bytes()); // frame id
+        d.extend_from_slice(&[0; 48]); // matrix
+        d.extend_from_slice(&0u32.to_le_bytes()); // not on a path
+        d.extend_from_slice(&[0; 8 + 4]);
+        d.extend_from_slice(&1u32.to_le_bytes()); // paragraphs
+        d.extend_from_slice(&9u32.to_le_bytes()); // style id
+        d.extend_from_slice(&[0, 0]);
+        d.extend_from_slice(&3u32.to_le_bytes()); // styles
+                                                  // Lengths that do not add up to the text, as in the file.
+        d.extend_from_slice(&[0x21, 0, 0, 0x08]);
+        d.extend_from_slice(&3u32.to_le_bytes());
+        d.extend_from_slice(&[b'C', 0, b'S', 0, b'Y', 0]);
+        let size = 28222i32.to_le_bytes(); // 8 pt
+        d.extend_from_slice(&[0x21, 0, 0x04, 0]);
+        d.extend_from_slice(&size);
+        d.extend_from_slice(&[3, 0, 0x04, 0x20]);
+        d.extend_from_slice(&size);
+        if block {
+            d.push(1);
+            d.extend_from_slice(&[0xab; 52]);
+        } else {
+            d.push(0);
+        }
+        d.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        for i in index {
+            d.extend_from_slice(&[0, 0, i << 1, 0, 0, 0, 0, 0]);
+        }
+        d.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        d.extend_from_slice(text.as_bytes());
+        d.push(0); // no path
+        d
+    }
+
+    #[test]
+    fn version_15_letters_take_the_style_their_records_number() {
+        let index = [0, 0, 0, 0, 2, 2, 2, 1, 1, 1];
+        for block in [false, true] {
+            let mut warnings = Vec::new();
+            let t = read_txsm(&txsm15("MASS 941kg", &index, block), 15, &mut |w| {
+                warnings.push(w)
+            })
+            .expect("txsm");
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let runs: Vec<(&str, Option<f64>)> = t.paragraphs[0]
+                .runs
+                .iter()
+                .map(|r| {
+                    (
+                        r.text.as_str(),
+                        r.style.size_pt.map(|p| (p * 10.0).round() / 10.0),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                runs,
+                [("MASS", None), (" 94", Some(8.0)), ("1kg", Some(8.0))],
+                "block {block}"
+            );
+        }
+        // With every record naming style 0 the lengths still cut the runs.
+        let t = read_txsm(&txsm15("MASS 941kg", &[0; 10], false), 15, &mut |_| {}).expect("txsm");
+        assert_eq!(t.paragraphs[0].runs[0].text.len(), 10);
     }
 }
