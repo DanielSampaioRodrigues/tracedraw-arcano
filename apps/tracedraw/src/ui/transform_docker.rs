@@ -11,6 +11,12 @@
 //! The absolute fields (the position with Relative Position off, the
 //! centre with Relative Center off, the size) follow the selection: they
 //! show where it is and how large it is whenever it changes.
+//!
+//! On the Position page with Relative Position on, the 3 x 3 boxes pick a
+//! direction instead of a point: a side or a corner fills X and Y with the
+//! selection's width and height that way, so Apply puts the selection (or
+//! each copy) right next to the last one; the centre fills 0. The offset
+//! follows the selection until a field is typed into.
 
 use crate::app::{App, TransformTab, Units};
 use crate::i18n::tr;
@@ -47,6 +53,10 @@ pub struct TransformForm {
     /// (column, row) of the 3 x 3 reference point, (1, 1) the centre.
     pub anchor: (u8, u8),
     pub copies: u32,
+    /// The position fields hold the direction offset of the reference
+    /// point (Position page, Relative Position on) and follow the
+    /// selection's size; typing into them clears it.
+    direction: bool,
     /// The selection and its bounds the absolute fields were last filled
     /// from.
     synced: Option<(Vec<ShapeId>, PageRect)>,
@@ -70,6 +80,7 @@ impl Default for TransformForm {
             use_anchor: false,
             anchor: (1, 1),
             copies: 0,
+            direction: false,
             synced: None,
         }
     }
@@ -80,7 +91,41 @@ fn about(p: Point, m: Affine) -> Affine {
     Affine::translate(p.to_vec2()) * m * Affine::translate(-p.to_vec2())
 }
 
+/// The offset of a side or corner of `b` from its centre, picked by the
+/// reference point `(column, row)`; the top row is the top of `b`.
+pub fn direction_offset(b: PageRect, anchor: (u8, u8)) -> [f64; 2] {
+    let step = |k: u8| k.min(2) as f64 - 1.0;
+    // `+ 0.0` turns a negative zero into 0, so the field never shows -0.
+    [
+        step(anchor.0) * b.width() + 0.0,
+        -step(anchor.1) * b.height() + 0.0,
+    ]
+}
+
 impl TransformForm {
+    /// Whether the 3 x 3 boxes pick a direction (Position page, Relative
+    /// Position on) rather than a point.
+    pub fn picks_direction(&self) -> bool {
+        self.tab == TransformTab::Position && self.relative_position
+    }
+
+    /// The reference point was clicked: on the Position page with
+    /// Relative Position on, fill X and Y with the offset that way.
+    pub fn pick_anchor(&mut self, bounds: Option<PageRect>) {
+        if self.picks_direction() {
+            self.direction = true;
+            if let Some(b) = bounds {
+                self.position = direction_offset(b, self.anchor);
+            }
+        }
+    }
+
+    /// A position field was typed into: it no longer follows the
+    /// selection's size.
+    pub fn typed_position(&mut self) {
+        self.direction = false;
+    }
+
     /// Fill the absolute fields from the selection when it or its bounds
     /// changed since the last time.
     pub fn sync(&mut self, selection: &[ShapeId], bounds: Option<PageRect>, origin: Point) {
@@ -99,6 +144,8 @@ impl TransformForm {
         let a = origin_point(b, self.anchor);
         if !self.relative_position {
             self.position = [a.x - origin.x, a.y - origin.y];
+        } else if self.direction {
+            self.position = direction_offset(b, self.anchor);
         }
         if !self.relative_center {
             self.center = [a.x - origin.x, a.y - origin.y];
@@ -290,12 +337,16 @@ fn number(ui: &mut Ui, value: &mut f64, suffix: &str) -> bool {
 
 /// The 3 x 3 reference point: nine boxes on a frame, the chosen one
 /// filled. True when another one was chosen.
-fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8)) -> bool {
+fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8), direction: bool) -> bool {
     let cell = 9.0;
     let step = 17.0;
     let size = Vec2::splat(step * 2.0 + cell + 2.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let resp = resp.on_hover_text(tr("docker.reference_point"));
+    let resp = resp.on_hover_text(tr(if direction {
+        "docker.direction"
+    } else {
+        "docker.reference_point"
+    }));
     let o = rect.min + Vec2::splat(1.0 + cell / 2.0);
     let centre = |i: u8, j: u8| o + Vec2::new(i as f32 * step, j as f32 * step);
     let p = ui.painter();
@@ -309,7 +360,16 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8)) -> bool {
     for j in 0..3u8 {
         for i in 0..3u8 {
             let r = Rect::from_center_size(centre(i, j), Vec2::splat(cell));
-            if *anchor == (i, j) {
+            if direction && (i, j) == (1, 1) {
+                // No direction: a ring, filled when chosen.
+                let rad = cell / 2.0;
+                if *anchor == (i, j) {
+                    p.circle_filled(r.center(), rad, Tokens::icon());
+                } else {
+                    p.circle_filled(r.center(), rad, Color32::WHITE);
+                    p.circle_stroke(r.center(), rad - 0.5, Stroke::new(1.0, Tokens::icon()));
+                }
+            } else if *anchor == (i, j) {
                 p.rect_filled(r, 1.0, Tokens::icon());
             } else {
                 p.rect_filled(r, 1.0, Color32::WHITE);
@@ -322,7 +382,8 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8)) -> bool {
             }
             if resp.clicked() {
                 if let Some(q) = resp.interact_pointer_pos() {
-                    if r.expand((step - cell) / 2.0).contains(q) && *anchor != (i, j) {
+                    if r.expand((step - cell) / 2.0).contains(q) && (direction || *anchor != (i, j))
+                    {
                         *anchor = (i, j);
                         changed = true;
                     }
@@ -358,6 +419,11 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
     let (_, key, _) = tab_info(app.transform.tab);
     ui.label(egui::RichText::new(tr(key)).font(crate::theme::bold(13.0)));
     ui.add_space(4.0);
+    if !has {
+        // Nothing to fill the fields from or to apply to: all pale, as
+        // the page buttons above stay usable.
+        ui.disable();
+    }
     let units = app.units;
     let decimals = app.settings.precision.min(6) as usize;
     let form = &mut app.transform;
@@ -370,11 +436,14 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 .show(ui, |ui| match form.tab {
                     TransformTab::Position => {
                         label(ui, "docker.x");
-                        length(ui, units, decimals, &mut form.position[0]);
+                        let mut typed = length(ui, units, decimals, &mut form.position[0]);
                         ui.end_row();
                         label(ui, "docker.y");
-                        length(ui, units, decimals, &mut form.position[1]);
+                        typed |= length(ui, units, decimals, &mut form.position[1]);
                         ui.end_row();
+                        if typed {
+                            form.typed_position();
+                        }
                     }
                     TransformTab::Rotate => {
                         label(ui, "docker.angle_colon");
@@ -439,6 +508,7 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                         .changed();
                     if resync && form.relative_position {
                         form.position = [0.0; 2];
+                        form.typed_position();
                     }
                 }
                 TransformTab::Rotate => {
@@ -479,8 +549,12 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
         });
         ui.add_space(8.0);
         let anchor_matters = !matches!(form.tab, TransformTab::Skew) || form.use_anchor;
+        let direction = form.picks_direction();
         ui.add_enabled_ui(anchor_matters, |ui| {
-            resync |= anchor_grid(ui, &mut form.anchor);
+            if anchor_grid(ui, &mut form.anchor, direction) {
+                resync = true;
+                form.pick_anchor(bounds);
+            }
         });
     });
     if resync {
@@ -630,6 +704,74 @@ mod tests {
         form.resync();
         form.sync(&app.selection, app.selection_bounds(), origin);
         assert_eq!(form.position, [10.0 - origin.x, 20.0 - origin.y]);
+    }
+
+    #[test]
+    fn relative_position_boxes_pick_a_direction_the_size_of_the_selection() {
+        let mut app = App::headless();
+        square(&mut app); // 20 x 10 at (10, 10)
+        let origin = app.ruler_origin();
+        assert!(app.transform.picks_direction());
+        // The right middle box: one width to the right.
+        app.transform.anchor = (2, 1);
+        app.transform.pick_anchor(app.selection_bounds());
+        assert_eq!(app.transform.position, [20.0, 0.0]);
+        // Two copies side by side, as the boxes said.
+        app.transform.copies = 2;
+        apply(&mut app);
+        close(bounds(&app), (50.0, 10.0, 70.0, 20.0));
+        // The bottom left box: one width left and one height down.
+        app.transform.anchor = (0, 2);
+        app.transform.pick_anchor(app.selection_bounds());
+        assert_eq!(app.transform.position, [-20.0, -10.0]);
+        app.transform.anchor = (1, 1);
+        app.transform.pick_anchor(app.selection_bounds());
+        assert_eq!(app.transform.position, [0.0, 0.0]);
+        // The offset follows another selection's size...
+        app.transform.anchor = (1, 0);
+        app.transform.pick_anchor(app.selection_bounds());
+        let tall = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 5.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.select(vec![tall]);
+        let selection = app.selection.clone();
+        app.transform
+            .sync(&selection, app.selection_bounds(), origin);
+        assert_eq!(app.transform.position, [0.0, 40.0]);
+        // ...until a value is typed.
+        app.transform.position = [3.0, 3.0];
+        app.transform.typed_position();
+        square(&mut app);
+        let selection = app.selection.clone();
+        app.transform
+            .sync(&selection, app.selection_bounds(), origin);
+        assert_eq!(app.transform.position, [3.0, 3.0]);
+        // With Relative position off the boxes are points again.
+        app.transform.relative_position = false;
+        assert!(!app.transform.picks_direction());
+        app.transform.anchor = (2, 1);
+        app.transform.pick_anchor(app.selection_bounds());
+        assert_eq!(app.transform.position, [3.0, 3.0]);
+    }
+
+    #[test]
+    fn the_docker_draws_with_nothing_selected() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.select(vec![]);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(400.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| transformations(&mut app, ui));
+        out.textures_delta.clear();
     }
 
     #[test]

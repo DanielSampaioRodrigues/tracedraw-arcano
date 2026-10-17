@@ -12,6 +12,11 @@ full, row-by-row status.
   8152-byte record of that version, and version 16 text has the record
   header that version writes (#98). Files of versions 17 to 21 open in
   the program that wrote the samples; versions 12 to 15 do not open yet.
+- Transformations panel, Position page: with Relative position on, the
+  3 x 3 boxes pick a direction and fill X and Y with the selection's
+  width or height that way, so Apply with copies lays them side by side;
+  the values follow the selected object. With nothing selected the whole
+  page is pale (#115).
 - Version 16 `.cdr` text is written one byte a letter, as files saved for
   that version hold it (UTF-16 letters were read as half the text), and
   such files are read correctly (#98).

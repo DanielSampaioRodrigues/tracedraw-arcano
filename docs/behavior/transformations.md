@@ -21,6 +21,14 @@ positive), scales in percent.
 
 - The reference point defaults to the centre. Corners and edge middles
   pick the point of `b`; the top row is the top of the selection.
+- On the Position page with Relative position on, the 3 x 3 boxes pick a
+  direction, not a point (the centre shows as a ring): a side or a
+  corner sets X to `-width(b)`, 0 or `width(b)` and Y to `height(b)`, 0
+  or `-height(b)` that way, so Apply moves the selection, or puts each
+  copy, right next to the last one; the centre sets (0, 0). The offset
+  follows the selection's size (a new or another selected object, after
+  Apply) until X or Y is typed into or Relative position is turned off
+  and on again.
 - The absolute fields follow the selection: Position with Relative
   position off shows where `a` is, Rotate with Relative center off shows
   `a`, and Size shows the selection's width and height, each time the
@@ -32,7 +40,8 @@ positive), scales in percent.
   the active layer, copy k transformed k times; the last copies become
   the selection, so another Apply goes on from there. The copies are one
   undo step named after the page.
-- Apply is pale with nothing selected.
+- With nothing selected the fields, the boxes, Copies and Apply are pale;
+  the page buttons stay usable.
 
 ## Checks
 
@@ -40,5 +49,7 @@ positive), scales in percent.
 - `ui::transform_docker::tests::rotate_scale_size_and_skew_keep_the_reference_point_still`
 - `ui::transform_docker::tests::copies_repeat_the_transformation_in_one_step`
 - `ui::transform_docker::tests::absolute_fields_follow_the_selection`
+- `ui::transform_docker::tests::relative_position_boxes_pick_a_direction_the_size_of_the_selection`
+- `ui::transform_docker::tests::the_docker_draws_with_nothing_selected`
 - `ui::transform_docker::tests::the_shortcuts_open_a_page_and_close_it_again`
 - `ui::transform_docker::tests::the_docker_draws_every_page`
