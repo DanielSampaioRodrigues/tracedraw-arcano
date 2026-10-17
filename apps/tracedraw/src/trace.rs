@@ -253,7 +253,7 @@ pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
         let step = pixels.len() / 200_000 + 1;
         pixels = pixels.into_iter().step_by(step).collect();
     }
-    let mut buckets: Vec<Vec<[u8; 3]>> = vec![pixels];
+    let mut buckets: Vec<Vec<[u8; 3]>> = vec![pixels.clone()];
     while buckets.len() < n {
         // Split the bucket with the largest range.
         let mut best: Option<(usize, usize, i32)> = None; // (bucket, channel, range)
@@ -277,12 +277,19 @@ pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
         }
         let mut b = buckets.remove(bi);
         b.sort_by_key(|p| p[ch]);
-        let mid = b.len() / 2;
+        // Cut at the median, but never through a run of equal values: a
+        // picture of mostly black and white would otherwise put both in
+        // one bucket and average them to grey.
+        let v = b[b.len() / 2][ch];
+        let mut mid = b.partition_point(|p| p[ch] < v);
+        if mid == 0 {
+            mid = b.partition_point(|p| p[ch] <= v);
+        }
         let hi = b.split_off(mid);
         buckets.push(b);
         buckets.push(hi);
     }
-    buckets
+    let start: Vec<[u8; 3]> = buckets
         .iter()
         .filter(|b| !b.is_empty())
         .map(|b| {
@@ -296,7 +303,42 @@ pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
             });
             [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
         })
-        .collect()
+        .collect();
+    refine(&pixels, start)
+}
+
+/// A few rounds of k-means from the median cut's colours: each colour
+/// moves to the mean of the pixels nearest it, so the palette lands on
+/// the colours the picture really has.
+fn refine(pixels: &[[u8; 3]], mut palette: Vec<[u8; 3]>) -> Vec<[u8; 3]> {
+    for _ in 0..6 {
+        let mut sums = vec![[0u64; 4]; palette.len()];
+        for p in pixels {
+            let i = nearest(&palette, *p);
+            for k in 0..3 {
+                sums[i][k] += p[k] as u64;
+            }
+            sums[i][3] += 1;
+        }
+        let mut moved = false;
+        for (c, s) in palette.iter_mut().zip(&sums) {
+            if s[3] == 0 {
+                continue;
+            }
+            let m = [
+                (s[0] / s[3]) as u8,
+                (s[1] / s[3]) as u8,
+                (s[2] / s[3]) as u8,
+            ];
+            moved |= m != *c;
+            *c = m;
+        }
+        if !moved {
+            break;
+        }
+    }
+    palette.dedup();
+    palette
 }
 
 /// Boundary rings of a binary mask (pixel-edge following). Outer rings are
@@ -636,6 +678,42 @@ mod tests {
                 Rgba([255, 255, 255, 255])
             }
         })
+    }
+
+    #[test]
+    fn black_and_white_logos_keep_their_colours() {
+        // A white disc on black with a black square inside and a soft
+        // edge, mostly black pixels: the disc stays white, not grey.
+        let img: RgbaImage = ImageBuffer::from_fn(120, 120, |x, y| {
+            let d = ((x as f32 - 60.0).powi(2) + (y as f32 - 60.0).powi(2)).sqrt();
+            let inner = (45..75).contains(&x) && (45..75).contains(&y);
+            let v = if inner {
+                0.0
+            } else {
+                (255.0 * (40.0 - d).clamp(0.0, 1.0)).round()
+            };
+            let v = v as u8;
+            Rgba([v, v, v, 255])
+        });
+        for colors in [2, 8] {
+            let mut s = Preset::Logo.settings();
+            s.colors = colors;
+            let t = trace(&img, &s);
+            let biggest = t
+                .iter()
+                .max_by(|a, b| a.path.area().abs().total_cmp(&b.path.area().abs()))
+                .expect("a region");
+            let [r, g, b] = biggest.color.to_rgb8();
+            assert!(
+                r > 240 && g > 240 && b > 240,
+                "{colors} colours: {r},{g},{b}"
+            );
+        }
+        let pal = median_cut(&img, 2);
+        assert!(
+            pal.contains(&[0, 0, 0]) && pal.iter().any(|c| c[0] > 245),
+            "{pal:?}"
+        );
     }
 
     #[test]

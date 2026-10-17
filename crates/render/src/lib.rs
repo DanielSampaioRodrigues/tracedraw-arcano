@@ -479,8 +479,9 @@ impl Renderer<'_> {
             return;
         };
         if self.flags.wireframe {
-            // Wireframe: every object as its bare path, a hairline whatever
-            // its outline, fill, opacity or effects; bitmaps as grey boxes.
+            // Wireframe: every object as its bare path, a hairline in its
+            // outline's colour (black without one) whatever its width,
+            // fill, opacity or effects; bitmaps as grey boxes.
             if matches!(shape.kind, ShapeKind::Bitmap { .. }) {
                 let mut paint = Paint::default();
                 paint.anti_alias = self.flags.anti_alias;
@@ -488,7 +489,12 @@ impl Renderer<'_> {
                 self.pixmap
                     .fill_path(&sk, &paint, FillRule::Winding, Transform::identity(), None);
             }
-            self.hairline(&sk);
+            let color = shape
+                .stroke
+                .as_ref()
+                .map(|s| s.color)
+                .unwrap_or(tracedraw_core::Color::BLACK);
+            self.hairline(&sk, color);
             return;
         }
         let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
@@ -734,10 +740,11 @@ impl Renderer<'_> {
         }
     }
 
-    /// A one pixel black line along `sk` (the Wireframe view).
-    fn hairline(&mut self, sk: &tiny_skia::Path) {
+    /// A one pixel line along `sk` (the Wireframe view).
+    fn hairline(&mut self, sk: &tiny_skia::Path, color: tracedraw_core::Color) {
         let mut paint = Paint::default();
-        paint.set_color_rgba8(0, 0, 0, 255);
+        let [r, g, b] = color.to_rgb8();
+        paint.set_color_rgba8(r, g, b, 255);
         paint.anti_alias = self.flags.anti_alias;
         let s = SkStroke {
             width: 0.0,
@@ -2428,6 +2435,15 @@ mod tests {
         assert_eq!(px(&pm, 16, 50), (255, 255, 255), "no outline width outside");
         let edge = (18..23).map(|x| px(&pm, x, 50).0).min().unwrap();
         assert!(edge < 200, "a dark hairline on the edge, darkest {edge}");
+        // The hairline takes the outline's colour.
+        let mut s = rect(1, Rect::new(20.0, 20.0, 80.0, 80.0), Color::WHITE);
+        s.stroke = Some(Stroke::new(Color::rgb8(0, 0, 255), 10.0));
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        let blue = (18..23)
+            .map(|x| px(&pm, x, 50))
+            .find(|p| p.2 > 200 && p.0 < 160);
+        assert!(blue.is_some(), "a blue hairline");
     }
 
     #[test]

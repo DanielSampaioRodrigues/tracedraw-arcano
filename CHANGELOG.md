@@ -17,6 +17,11 @@ full, row-by-row status.
 - The first built-in gradient runs between the current colours, the
   last fill and outline colours picked (#4).
 
+- Wireframe hairlines take each object's outline colour (black without
+  one), as in the reference screenshot of #122.
+- Tracing a black and white logo keeps white shapes white: the colour
+  quantising no longer averages black and white to grey.
+
 ## 0.9.2 (2026-10-17)
 
 - `.cdr` files: graded transparency (version 16+ files) is read as a
