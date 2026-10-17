@@ -4,6 +4,14 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
+## Unreleased
+
+- `.cdr` files: graded transparency (version 16+ files) is read as a
+  transparency mask, so highlights fade as drawn, and colours of model 25
+  (library colours) take their look from the file's preview instead of
+  black. Save As marks the `.cdr` versions before 16 experimental: their
+  files may not open in other programs yet.
+
 ## 0.9.1 (2026-10-17)
 
 Version 15 `.cdr` files read their text in full, `.cdr` files saved for

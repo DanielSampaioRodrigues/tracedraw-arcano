@@ -1444,6 +1444,90 @@ pub(crate) fn object_opacity(style: &str) -> Option<f64> {
     Some((1.0 - amount).clamp(0.0, 1.0))
 }
 
+/// A graded transparency from an object's version 16+ style string: its
+/// `transparency` section with a fountain `fill` (`type` 2) becomes a
+/// mask whose lightness is the opacity, with the target it applies to
+/// (`appliesTo`: 0 fill, 1 outline, 2 both). The mask's colours are the
+/// fill's `primaryColor` (first) and `secondaryColor` (last) greys:
+/// `GRAY255,USER,<0..255>,...`, 255 opaque (version 18 and 20 tutorial
+/// files: the start and end amounts read 0 and 1 whichever grey comes
+/// first, so the greys tell the direction). `fountainType` 1 to 4 is
+/// linear, radial, conical and square as in fill records; `angle` is in
+/// degrees, the centre offsets in percent of the object and a `xScale` or
+/// `yScale` under 1 a padded edge, as the doubles of version 16+ fill
+/// records. `None` for other transparencies.
+pub(crate) fn object_transparency_mask(style: &str) -> Option<(tracedraw_core::Fill, u8)> {
+    use tracedraw_core::{Color, Fill, Fountain, FountainKind, Stop};
+    let t = style.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+    let Json::Obj(items) = parse_json(t)? else {
+        return None;
+    };
+    let field = |obj: &[(String, Json)], key: &str| -> Option<Json> {
+        obj.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    };
+    let Json::Obj(tr) = field(&items, "transparency")? else {
+        return None;
+    };
+    let Json::Obj(fill) = field(&tr, "fill")? else {
+        return None;
+    };
+    let num = |obj: &[(String, Json)], key: &str| {
+        field(obj, key)
+            .and_then(|v| v.num())
+            .filter(|n| n.is_finite())
+    };
+    if num(&fill, "type")? as i64 != 2 {
+        return None;
+    }
+    let grey = |key: &str| -> Option<f32> {
+        let Json::Str(s) = field(&fill, key)? else {
+            return None;
+        };
+        let mut parts = s.split(',');
+        if !parts.next()?.starts_with("GRAY") {
+            return None;
+        }
+        let v: f32 = parts.nth(1)?.trim().parse().ok()?;
+        Some((v / 255.0).clamp(0.0, 1.0))
+    };
+    let (first, last) = (grey("primaryColor")?, grey("secondaryColor")?);
+    let kind = match num(&fill, "fountainType").unwrap_or(1.0) as i64 {
+        2 => FountainKind::Radial,
+        3 => FountainKind::Conical,
+        4 => FountainKind::Square,
+        _ => FountainKind::Linear,
+    };
+    let pct = |key: &str| (num(&fill, key).unwrap_or(0.0) / 100.0).clamp(-1.0, 1.0);
+    let extent = num(&fill, "xScale")
+        .unwrap_or(1.0)
+        .min(num(&fill, "yScale").unwrap_or(1.0));
+    let edge_pad = if extent > 0.0 && extent < 1.0 {
+        ((1.0 - extent) / 2.0).clamp(0.0, 0.49)
+    } else {
+        0.0
+    };
+    let mut fountain = Fountain {
+        kind,
+        stops: vec![
+            Stop {
+                pos: 0.0,
+                color: Color::Gray { v: first },
+            },
+            Stop {
+                pos: 1.0,
+                color: Color::Gray { v: last },
+            },
+        ],
+        angle: num(&fill, "angle").unwrap_or(0.0).rem_euclid(360.0),
+        offset: tracedraw_core::geometry::Point::new(pct("xCenterOffset"), pct("yCenterOffset")),
+        edge_pad,
+        ..Default::default()
+    };
+    crate::mirror_centred_stops(&mut fountain);
+    let target = num(&tr, "appliesTo").unwrap_or(2.0).clamp(0.0, 2.0) as u8;
+    Some((Fill::Fountain(fountain), target))
+}
+
 /// The width of a paragraph frame from an object's version 16+ style
 /// string, in file units: its `frame` section's `columns` lists each
 /// column's width and the gutter after it (`"623721,0"`: one column); the
@@ -1692,6 +1776,33 @@ mod tests {
         assert!((o.unwrap() - 0.5).abs() < 1e-9);
         assert_eq!(object_opacity(r#"{"transparency":{},"fill":{}}"#), None);
         assert_eq!(object_opacity(r#"{"fill":{}}"#), None);
+    }
+
+    #[test]
+    fn graded_transparency_becomes_a_mask() {
+        use tracedraw_core::{Color, Fill, FountainKind};
+        let style = r#"{"fill":{},"transparency":{"mode":"0","fill":{"type":"2","fountainType":"1","angle":"-90","xCenterOffset":"10","yCenterOffset":"-5","xScale":"0.8","yScale":"1","primaryColor":"GRAY255,USER,255,100,0","secondaryColor":"GRAY255,USER,0,100,0"},"appliesTo":"0","startTransparency":"0","endTransparency":"1"}}"#;
+        let (mask, target) = object_transparency_mask(style).expect("mask");
+        assert_eq!(target, 0);
+        let Fill::Fountain(f) = mask else {
+            panic!("{mask:?}")
+        };
+        assert_eq!(f.kind, FountainKind::Linear);
+        assert!((f.angle - 270.0).abs() < 1e-9);
+        assert!((f.offset.x - 0.1).abs() < 1e-9 && (f.offset.y + 0.05).abs() < 1e-9);
+        assert!((f.edge_pad - 0.1).abs() < 1e-9);
+        assert_eq!(f.stops[0].color, Color::Gray { v: 1.0 });
+        assert_eq!(f.stops[1].color, Color::Gray { v: 0.0 });
+        // A uniform transparency, a pattern one or none: no mask.
+        for other in [
+            r#"{"transparency":{"fill":{"type":"0"},"uniformTransparency":"0.4"}}"#,
+            r#"{"transparency":{"fill":{"type":"10"},"startTransparency":"0","endTransparency":"1"}}"#,
+            r#"{"transparency":{}}"#,
+            r#"{"fill":{}}"#,
+            r#"{"transparency":{"fill":{"type":"2","primaryColor":"CMYK,USER,0,0,0,0"}}}"#,
+        ] {
+            assert!(object_transparency_mask(other).is_none(), "{other}");
+        }
         assert_eq!(object_opacity("not json"), None);
         let o = object_opacity(r#"{"transparency":{"uniformTransparency":"7"}}"#);
         assert_eq!(o, Some(0.0));

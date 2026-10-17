@@ -34,6 +34,10 @@ use tracedraw_core::{
     Color, Document, Fill, Stroke, TextAlign,
 };
 
+/// The oldest version whose files written here are known to open in the
+/// program that wrote the samples (text from 16, by a user's test of
+/// files of versions 7 to 22); older ones are offered as experimental.
+pub const CHECKED_SINCE: u16 = 16;
 /// The oldest version the writer produces.
 pub const OLDEST_VERSION: u16 = 7;
 /// The newest version the writer produces.
@@ -2053,6 +2057,22 @@ fn loda(kind: u32, mut args: Vec<(u32, Vec<u8>)>) -> Vec<u8> {
     out.done()
 }
 
+/// The mean opacity of a transparency effect's mask: the lightness of
+/// its colours, averaged over a fountain's stops.
+fn mask_mean_opacity(e: &tracedraw_core::live::Effect) -> Option<f64> {
+    let tracedraw_core::live::Effect::Transparency { mask, .. } = e else {
+        return None;
+    };
+    let level = |c: &tracedraw_core::Color| c.luminance().clamp(0.0, 1.0) as f64;
+    match mask {
+        tracedraw_core::Fill::Solid(c) => Some(level(c)),
+        tracedraw_core::Fill::Fountain(f) if !f.stops.is_empty() => {
+            Some(f.stops.iter().map(|st| level(&st.color)).sum::<f64>() / f.stops.len() as f64)
+        }
+        _ => None,
+    }
+}
+
 /// Opacity argument: 10 unknown bytes (14 from version 13), then the
 /// transparency in thousandths.
 fn opacity_arg(v: Ver, opacity: f64) -> Vec<u8> {
@@ -2897,7 +2917,13 @@ impl<'a> Writer<'a> {
         if !s.effects.is_empty() {
             let ev = tracedraw_core::live::evaluate(s);
             let mut all: Vec<Shape> = ev.below.clone();
-            all.push(ev.main.clone());
+            let mut main = ev.main.clone();
+            // A graded transparency is written as a uniform one: the mean
+            // opacity of its mask (as files read before masks were).
+            if let Some(o) = s.effects.iter().find_map(mask_mean_opacity) {
+                main.opacity *= o;
+            }
+            all.push(main);
             all.extend(ev.above.iter().cloned());
             for x in all.iter_mut() {
                 x.effects.clear();

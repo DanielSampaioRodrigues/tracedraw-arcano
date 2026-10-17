@@ -1804,3 +1804,31 @@ fn version_16_text_is_one_byte_a_letter_and_reads_back() {
         .collect();
     assert_eq!(text, "Kombi 2013 é");
 }
+
+#[test]
+fn graded_transparency_is_written_as_its_mean_opacity() {
+    let mut doc = Document::new("w", Size::new(200.0, 100.0));
+    let mut ids = doc.ids().clone();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 20.0, 60.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    r.effects.push(tracedraw_core::live::Effect::Transparency {
+        mask: Fill::linear(Color::WHITE, Color::Gray { v: 0.5 }, 0.0),
+        merge: tracedraw_core::live::MergeMode::Normal,
+        target: 2,
+    });
+    doc.pages[0].layers[0].shapes = vec![r];
+    doc.set_ids(ids);
+    for v in [15u16, 21] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let s = &back.pages[0].layers[0].shapes[0];
+        assert!((s.opacity - 0.75).abs() < 0.01, "{v}: {}", s.opacity);
+    }
+}

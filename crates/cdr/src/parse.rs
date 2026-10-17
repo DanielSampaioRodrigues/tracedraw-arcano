@@ -697,7 +697,7 @@ impl<'a> Ctx<'a> {
         // field naming the library. The colour itself is not in the file:
         // it becomes a spot ink, black until the file's preview tells
         // (`spot::colours_from_preview`).
-        if model == 0x01 || model == 0x0e {
+        if model == 0x01 || model == 0x0e || model == 0x19 {
             let number = u16::from_le_bytes([b[0], b[1]]);
             let tint = u16::from_le_bytes([b[2], b[3]]);
             self.library_inks.insert((palette, number));
@@ -2147,8 +2147,12 @@ impl<'a> Ctx<'a> {
             }
         };
 
-        // Version 16+: the transparency of the object's style string.
-        if opacity >= 1.0 {
+        // Version 16+: a graded transparency in the object's style string
+        // becomes a mask; otherwise its uniform transparency an opacity.
+        let mask = style_string
+            .as_deref()
+            .and_then(text::object_transparency_mask);
+        if opacity >= 1.0 && mask.is_none() {
             if let Some(o) = style_string.as_deref().and_then(text::object_opacity) {
                 opacity = o;
             }
@@ -2166,6 +2170,15 @@ impl<'a> Ctx<'a> {
         shape.stroke = stroke;
         shape.name = name;
         shape.opacity = opacity;
+        if let Some((mask, target)) = mask {
+            shape
+                .effects
+                .push(tracedraw_core::live::Effect::Transparency {
+                    mask,
+                    merge: tracedraw_core::live::MergeMode::Normal,
+                    target,
+                });
+        }
         if let Some(l) = lens {
             shape.effects.push(tracedraw_core::live::Effect::Lens(l));
         }
@@ -3797,6 +3810,17 @@ mod tests {
             ctx.read_color(&mut Reader::new(&c21, false)),
             Some(Color::rgb8(200, 0, 0))
         );
+        // Model 0x19 is a library colour like models 1 and 0x0e: its
+        // number and tint, the ink taking its look from the preview.
+        let mut c19 = u16s(&[0x19, 7]);
+        c19.extend_from_slice(&[0; 4]);
+        c19.extend_from_slice(&[0x1b, 0, 100, 0]);
+        assert_eq!(
+            ctx.read_color(&mut Reader::new(&c19, false)),
+            Some(crate::spot::library_color(7, 27, 100))
+        );
+        assert!(ctx.library_inks.contains(&(7, 27)));
+        assert!(ctx.report.warnings.is_empty(), "{:?}", ctx.report.warnings);
     }
 
     #[test]

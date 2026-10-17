@@ -161,9 +161,15 @@ impl SaveAsState {
     }
 }
 
-/// "Version 22" for the version lists.
+/// "Version 22" for the version lists; versions whose files are not yet
+/// known to open in other programs say they are experimental.
 pub fn version_label(version: u16) -> String {
-    trf("dialog.cdr_version_item", &[("v", &version.to_string())])
+    let key = if version < tracedraw_cdr::write::CHECKED_SINCE {
+        "dialog.cdr_version_item_experimental"
+    } else {
+        "dialog.cdr_version_item"
+    };
+    trf(key, &[("v", &version.to_string())])
 }
 
 /// The versions offered, newest first.
@@ -803,6 +809,8 @@ mod tests {
         assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::NEWEST_VERSION);
         assert_eq!(version_choices().first(), Some(&22));
         assert!(version_label(15).contains("15"));
+        assert_ne!(version_label(15), version_label(21).replace("21", "15"));
+        assert_eq!(version_label(16), version_label(21).replace("21", "16"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
