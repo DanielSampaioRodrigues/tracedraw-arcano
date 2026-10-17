@@ -4,7 +4,7 @@ Versions follow the tags of this repository; every push to `main` also
 publishes a nightly build. [`docs/features.md`](docs/features.md) has the
 full, row-by-row status.
 
-## Unreleased
+## 0.9.2 (2026-10-17)
 
 - `.cdr` files: graded transparency (version 16+ files) is read as a
   transparency mask, so highlights fade as drawn, and colours of model 25
