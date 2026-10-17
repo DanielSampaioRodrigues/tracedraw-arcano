@@ -583,15 +583,38 @@ pub struct CurveInProgress {
     pub smooth: bool,
     /// Pointer is being dragged to set the handle of the last node.
     pub dragging_handle: bool,
+    /// B-Spline tool: the nodes are control points the curve runs near.
+    pub bspline: bool,
 }
 
 impl CurveInProgress {
     /// Path through the nodes, optionally extended to a preview point.
     pub fn path(&self, preview: Option<Point>) -> tracedraw_core::BezPath {
+        self.path_closed(preview, false)
+    }
+
+    /// [`Self::path`], closed onto the first node when `closed`.
+    pub fn path_closed(&self, preview: Option<Point>, closed: bool) -> tracedraw_core::BezPath {
+        if closed && self.bspline {
+            let pts: Vec<Point> = self.nodes.iter().map(|n| n.0).collect();
+            return tracedraw_core::geometry::bspline_path(&pts, true);
+        }
+        let mut path = self.open_path(preview);
+        if closed {
+            path.close_path();
+        }
+        path
+    }
+
+    fn open_path(&self, preview: Option<Point>) -> tracedraw_core::BezPath {
         let mut path = tracedraw_core::BezPath::new();
         let mut nodes: Vec<(Point, Option<Point>)> = self.nodes.clone();
         if let Some(p) = preview {
             nodes.push((p, None));
+        }
+        if self.bspline {
+            let pts: Vec<Point> = nodes.iter().map(|n| n.0).collect();
+            return tracedraw_core::geometry::bspline_path(&pts, false);
         }
         for (i, (p, _)) in nodes.iter().enumerate() {
             if i == 0 {

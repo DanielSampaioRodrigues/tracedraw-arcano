@@ -1374,6 +1374,7 @@ impl App {
                 nodes: Vec::new(),
                 smooth: false,
                 dragging_handle: false,
+                bspline: false,
             });
             c.nodes.push((p, None));
             if c.nodes.len() >= 2 {
@@ -1415,7 +1416,10 @@ impl App {
             Some(_) => p,
             None => self.curve_point(p, mods.ctrl),
         };
-        let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen | Tool::BSpline);
+        // B-Spline: each click (or the start of a drag) places a control
+        // point; there are no handles to pull.
+        let bspline = self.tool == Tool::BSpline;
+        let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen);
         if response.double_clicked_by(PointerButton::Primary) {
             self.finish_curve();
             return;
@@ -1439,8 +1443,7 @@ impl App {
             if start_close {
                 // Close the curve onto its start node.
                 if let Some(c) = self.curve.take() {
-                    let mut path = c.path(None);
-                    path.close_path();
+                    let path = c.path_closed(None, true);
                     if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
                         self.select(vec![id]);
                     }
@@ -1451,8 +1454,10 @@ impl App {
                 nodes: Vec::new(),
                 smooth,
                 dragging_handle: false,
+                bspline,
             });
             c.smooth = smooth;
+            c.bspline = bspline;
             if response.drag_started_by(PointerButton::Primary) {
                 c.nodes.push((p, None));
                 c.dragging_handle = true;

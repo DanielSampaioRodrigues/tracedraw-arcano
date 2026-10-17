@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The B-Spline tool places control points: the curve runs smooth near
+  them, with the dashed control polygon shown while drawing (it drew
+  straight segments through the points).
+
 - `.cdr` files of versions 5 and 6 show their text (it was skipped), and
   version 5 bitmaps their picture; version 3 files open (assumed layout).
 - Graded transparency is saved as a gradient in `.cdr` versions 16 and

@@ -17,7 +17,7 @@ meets the start) `Path` objects with the toolbox defaults.
   constrain angle (15 degrees by default); Esc drops the first click; a
   drag in between draws freehand instead.
 
-## Bezier, Pen and B-spline
+## Bezier and Pen
 
 - Click places a cusp node; click-drag places a smooth node and pulls
   its handle out symmetrically (the handle follows the pointer while the
@@ -29,6 +29,21 @@ meets the start) `Path` objects with the toolbox defaults.
 - Ctrl: the next node goes in steps of the constrain angle from the last
   one (keeping how far the pointer reaches along that direction), and a
   dragged handle in such steps around its node; the preview follows.
+
+## B-spline
+
+- Each click (or the start of a drag) places a control point; there are
+  no handles. The curve is the cubic B-spline of the control points: it
+  starts at the first and ends at the last, tangent there to the control
+  polygon, and stays inside the points' hull (quadratic with three
+  points, a line with two). While drawing, the control polygon shows
+  dashed with the curve over it, both following the pointer.
+- Double-click or Enter finishes, Esc discards; clicking the first
+  point (once there are three) closes it into the periodic spline,
+  smooth all round. The result is a curve object (its nodes are the
+  Bezier segments, one a knot span); the control points are not kept.
+- Checked by `geometry::tests::bsplines_start_and_end_on_their_ends_and_stay_inside`
+  and `pick_drag_tests::bspline_clicks_place_control_points_of_a_smooth_curve`.
 
 ## Polyline and 2-point line
 

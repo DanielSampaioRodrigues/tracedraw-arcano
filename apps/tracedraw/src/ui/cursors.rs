@@ -750,6 +750,7 @@ mod tests {
             ],
             smooth: true,
             dragging_handle: false,
+            bspline: false,
         });
         let first = app
             .view

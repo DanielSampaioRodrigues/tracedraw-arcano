@@ -599,6 +599,7 @@ mod tests {
             nodes: vec![(Point::new(125.0, 60.0), None)],
             smooth: false,
             dragging_handle: false,
+            bspline: false,
         });
         let p = app.snap_point(Point::new(125.8, 99.5));
         assert_eq!(p, Point::new(125.0, 100.0));

@@ -290,6 +290,99 @@ pub fn transformed_bounds(path: &BezPath, transform: Affine) -> Rect {
     (transform * path.clone()).bounding_box()
 }
 
+/// A cubic B-spline over the control points `points` as Bezier
+/// segments (quadratic with three points, a line with two). Open: the
+/// clamped uniform spline, which starts at the first point and ends at
+/// the last, its ends tangent to the control polygon. Closed: the
+/// periodic spline, smooth all round. Each knot span becomes one segment,
+/// its control points the blossoms of the span's ends.
+pub fn bspline_path(points: &[Point], closed: bool) -> BezPath {
+    let mut path = BezPath::new();
+    let n = points.len();
+    if n == 0 {
+        return path;
+    }
+    if n == 1 {
+        path.move_to(points[0]);
+        return path;
+    }
+    let deg = if closed { 3.min(n) } else { 3.min(n - 1) };
+    if deg <= 1 {
+        path.move_to(points[0]);
+        for p in &points[1..] {
+            path.line_to(*p);
+        }
+        if closed {
+            path.close_path();
+        }
+        return path;
+    }
+    // Control points and knots.
+    let (ctrl, knots): (Vec<Point>, Vec<f64>) = if closed {
+        let mut c = points.to_vec();
+        c.extend_from_slice(&points[..deg]);
+        let k = (0..c.len() + deg + 1).map(|i| i as f64).collect();
+        (c, k)
+    } else {
+        let mut k = vec![0.0; deg + 1];
+        k.extend((1..n - deg).map(|i| i as f64));
+        k.extend(std::iter::repeat_n((n - deg) as f64, deg + 1));
+        (points.to_vec(), k)
+    };
+    let spans: Vec<usize> = if closed {
+        (deg..deg + n).collect()
+    } else {
+        (deg..n).collect()
+    };
+    // The blossom f(us) on span `k` (de Boor with one parameter a level).
+    let blossom = |k: usize, us: &[f64]| -> Point {
+        let mut d: Vec<Point> = (0..=deg).map(|j| ctrl[j + k - deg]).collect();
+        for r in 1..=deg {
+            for j in (r..=deg).rev() {
+                let lo = knots[j + k - deg];
+                let hi = knots[j + 1 + k - r];
+                let a = if hi > lo {
+                    (us[r - 1] - lo) / (hi - lo)
+                } else {
+                    0.0
+                };
+                d[j] = d[j - 1].lerp(d[j], a);
+            }
+        }
+        d[deg]
+    };
+    let mut first = true;
+    for k in spans {
+        let (a, b) = (knots[k], knots[k + 1]);
+        if b <= a {
+            continue;
+        }
+        if deg == 3 {
+            let p0 = blossom(k, &[a, a, a]);
+            if first {
+                path.move_to(p0);
+                first = false;
+            }
+            path.curve_to(
+                blossom(k, &[a, a, b]),
+                blossom(k, &[a, b, b]),
+                blossom(k, &[b, b, b]),
+            );
+        } else {
+            let p0 = blossom(k, &[a, a]);
+            if first {
+                path.move_to(p0);
+                first = false;
+            }
+            path.quad_to(blossom(k, &[a, b]), blossom(k, &[b, b]));
+        }
+    }
+    if closed {
+        path.close_path();
+    }
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +396,53 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn bsplines_start_and_end_on_their_ends_and_stay_inside() {
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 20.0),
+            Point::new(30.0, 20.0),
+            Point::new(40.0, 0.0),
+            Point::new(60.0, 10.0),
+        ];
+        let p = bspline_path(&pts, false);
+        let segs: Vec<_> = p.segments().collect();
+        assert_eq!(segs.len(), 2, "one cubic a knot span");
+        assert!((segs[0].start() - pts[0]).hypot() < 1e-9);
+        assert!((segs[1].end() - pts[4]).hypot() < 1e-9);
+        // Smooth where the segments meet, and inside the control points' box.
+        let b = p.bounding_box();
+        assert!(b.x0 >= -1e-9 && b.x1 <= 60.0 + 1e-9 && b.y0 >= -1e-9 && b.y1 <= 20.0 + 1e-9);
+        if let (PathSeg::Cubic(c0), PathSeg::Cubic(c1)) = (segs[0], segs[1]) {
+            let t0 = c0.p3 - c0.p2;
+            let t1 = c1.p1 - c1.p0;
+            assert!(
+                (t0.x * t1.y - t0.y * t1.x).abs() < 1e-6,
+                "tangent continuity"
+            );
+        } else {
+            panic!("cubic segments");
+        }
+        // Four points: one cubic with those control points.
+        let p = bspline_path(&pts[..4], false);
+        let segs: Vec<_> = p.segments().collect();
+        assert_eq!(segs.len(), 1);
+        if let PathSeg::Cubic(c) = segs[0] {
+            assert!((c.p1 - pts[1]).hypot() < 1e-9 && (c.p2 - pts[2]).hypot() < 1e-9);
+        }
+        // Closed: one segment a point, ending where it began.
+        let p = bspline_path(&pts, true);
+        let segs: Vec<_> = p.segments().collect();
+        assert_eq!(segs.len(), 5);
+        assert!((segs[4].end() - segs[0].start()).hypot() < 1e-9);
+        // Two points: a line; three: a quadratic.
+        assert_eq!(bspline_path(&pts[..2], false).segments().count(), 1);
+        assert!(matches!(
+            bspline_path(&pts[..3], false).segments().next(),
+            Some(PathSeg::Quad(_))
+        ));
     }
 
     #[test]

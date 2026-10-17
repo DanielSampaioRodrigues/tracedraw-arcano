@@ -1816,3 +1816,32 @@ fn node_tracking_drags_a_curves_node_with_the_pick_tool() {
     app.undo();
     assert!(close(bounds(&app, id).x1, before.x1));
 }
+
+#[test]
+fn bspline_clicks_place_control_points_of_a_smooth_curve() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::BSpline);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(130.0, 190.0),
+        Point::new(180.0, 180.0),
+        Point::new(190.0, 140.0),
+    ];
+    for p in pts {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    app.finish_curve();
+    let path = last_path(&app);
+    let segs: Vec<_> = path.segments().collect();
+    // Four control points: one cubic from the first to the last point,
+    // the middle two as its handles (not four corners joined by lines).
+    assert_eq!(segs.len(), 1, "{segs:?}");
+    let tracedraw_core::geometry::PathSeg::Cubic(c) = segs[0] else {
+        panic!("a cubic: {segs:?}");
+    };
+    let near = |a: Point, b: Point| (a - b).hypot() < 0.5;
+    assert!(near(c.p0, pts[0]) && near(c.p3, pts[3]), "{c:?}");
+    assert!(near(c.p1, pts[1]) && near(c.p2, pts[2]), "{c:?}");
+}

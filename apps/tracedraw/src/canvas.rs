@@ -247,6 +247,21 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 .map(|p| app.curve_point(app.snap_point(p), ctrl))
         };
         let path = c.path(preview);
+        if c.bspline {
+            // The control polygon, dashed, as the curve is drawn.
+            let mut poly: Vec<egui::Pos2> = c.nodes.iter().map(|n| view.to_screen(n.0)).collect();
+            if let Some(p) = preview {
+                poly.push(view.to_screen(p));
+            }
+            for w in poly.windows(2) {
+                painter.extend(egui::Shape::dashed_line(
+                    &[w[0], w[1]],
+                    EStroke::new(1.0, Tokens::SELECTION),
+                    4.0,
+                    3.0,
+                ));
+            }
+        }
         for (pts, _) in flatten(&path, view) {
             if pts.len() > 1 {
                 painter.add(epaint::PathShape::line(
