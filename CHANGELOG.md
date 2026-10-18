@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- CMX files whose chunk sizes run short (pattern files of version 7)
+  open; they came up empty.
+
 - The Print dialog has tabs: General (destination: system printer, PDF
   or PostScript file; orientation; current document, page, page list or
   selection; copies with collate; print as bitmap), Color (separations,

@@ -12,6 +12,11 @@ that tests it.
   with a message). Confirmed.
 - Chunks in file order; `LIST` chunks hold more chunks. Confirmed.
 
+A chunk can declare a size short of its contents: pattern files written
+by version 7 leave 16 bytes after `ccmm` before `page`. The reader skips
+to the next bytes that read as a chunk tag (within 64 bytes) instead of
+stopping there. Confirmed on ten such files.
+
 ## `cont`: the file header
 
 - A header string, the operating system, the byte order, then at byte 52

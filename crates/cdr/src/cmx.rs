@@ -180,6 +180,26 @@ fn walk_chunks<'a>(
         else {
             break;
         };
+        // A chunk whose size runs short leaves bytes before the next one
+        // (16 after `ccmm` in pattern files of version 7): skip to the next
+        // tag that reads as one, within a few dozen bytes.
+        if !tag.iter().all(|c| c.is_ascii_alphanumeric() || *c == b' ') {
+            let next = (pos + 2..(pos + 64).min(end.saturating_sub(8)))
+                .step_by(2)
+                .find(|&p| {
+                    b.get(p..p + 4).is_some_and(|t| {
+                        t.iter()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_uppercase())
+                    })
+                });
+            match next {
+                Some(p) => {
+                    pos = p;
+                    continue;
+                }
+                None => break,
+            }
+        }
         let Some(size) = Cur::at(b, pos + 4).u32().map(|s| s as usize) else {
             break;
         };
@@ -1603,6 +1623,24 @@ pub(crate) mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn stray_bytes_between_chunks_are_skipped() {
+        // Pattern files of version 7 leave 16 bytes after a chunk whose
+        // size runs short; the page after them is still found.
+        let page_chunk = page(&[
+            begin_page(2_100_000, 2_970_000),
+            begin_layer("Layer 1", None),
+            rect(&attrs(1, 1), 0, 0, 200_000, 100_000, 0, 0),
+            instr(12, &[]),
+            instr(10, &[]),
+        ]);
+        let mut stray = vec![0x10, 0x00, 0x16, 0x00, 0x01, 0x0b, 0x00, 0x01];
+        stray.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0xff]);
+        let f = riff(&[cont(b'4'), stray, page_chunk, tables()].concat());
+        let (_, rep) = open_bytes(&f, "t").expect("read");
+        assert_eq!((rep.pages, rep.shapes), (1, 1), "{:?}", rep.warnings);
     }
 
     #[test]
