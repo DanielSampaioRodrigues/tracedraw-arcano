@@ -904,7 +904,7 @@ impl Default for PanelPrefs {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ColorPrefs {
     pub rgb_profile: String,
