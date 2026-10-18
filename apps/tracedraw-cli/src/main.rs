@@ -638,9 +638,24 @@ fn main() -> ExitCode {
                                     height,
                                 })
                                 .collect();
+                        // The text's faces go in the font table (from 16);
+                        // TRACEDRAW_CDR_EMBED_FONTS=1 embeds them.
+                        let fonts = tracedraw_text::fonts();
                         tracedraw_cdr::write::Previews {
                             thumbnail: pages.first().cloned(),
                             pages,
+                            fonts: doc
+                                .font_faces_used()
+                                .into_iter()
+                                .map(|(family, bold, italic)| tracedraw_cdr::write::FontFace {
+                                    data: fonts.face_file(&family, bold, italic),
+                                    family,
+                                    bold,
+                                    italic,
+                                })
+                                .collect(),
+                            embed_fonts: std::env::var("TRACEDRAW_CDR_EMBED_FONTS")
+                                .is_ok_and(|v| v.trim() == "1"),
                         }
                     }),
                 )

@@ -1103,6 +1103,38 @@ impl FontSystem {
             .any(|f| f == family)
     }
 
+    /// The font file of `family`'s face in that weight and slant, for
+    /// embedding in a saved drawing: `None` when the family lacks that
+    /// face (bold or italic drawn from another) or the face sits in a
+    /// collection file.
+    pub fn face_file(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<Vec<u8>>> {
+        let db = self.db();
+        let id = db.query(&fontdb::Query {
+            families: &[fontdb::Family::Name(family)],
+            weight: if bold {
+                fontdb::Weight::BOLD
+            } else {
+                fontdb::Weight::NORMAL
+            },
+            stretch: fontdb::Stretch::Normal,
+            style: if italic {
+                fontdb::Style::Italic
+            } else {
+                fontdb::Style::Normal
+            },
+        })?;
+        let face = db.face(id)?;
+        let is_bold = face.weight.0 >= 600;
+        let is_italic = face.style != fontdb::Style::Normal;
+        if is_bold != bold || is_italic != italic {
+            return None;
+        }
+        db.with_face_data(id, |d, i| {
+            (i == 0 && ttf_parser::fonts_in_collection(d).is_none()).then(|| Arc::new(d.to_vec()))
+        })
+        .flatten()
+    }
+
     /// Raw file data and face index of the first installed family in
     /// `candidates`, for registering UI fallback fonts (scripts the bundled
     /// UI font lacks: CJK, Arabic, Devanagari, Bengali...).

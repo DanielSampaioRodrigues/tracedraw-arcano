@@ -139,7 +139,10 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
         tr("options.import_view_center"),
     );
     chrome::section(ui, &tr("options.cdr_save_section"));
-    f.cdr_version = crate::app::writable_cdr_version(f.cdr_version);
+    f.cdr_version = f.cdr_version.clamp(
+        tracedraw_cdr::write::CHECKED_SINCE,
+        tracedraw_cdr::write::NEWEST_VERSION,
+    );
     grid("formats_cdr").show(ui, |ui| {
         row_label(ui, &tr("dialog.cdr_version"));
         combo(

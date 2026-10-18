@@ -112,6 +112,72 @@ fn utf16le(b: &[u8]) -> String {
         .to_string()
 }
 
+/// The fields of an EOT header taken from the font itself.
+#[derive(Debug, Clone, Default)]
+pub struct EotNames {
+    pub panose: [u8; 10],
+    pub italic: bool,
+    pub weight: u32,
+    pub fs_type: u16,
+    pub unicode_ranges: [u32; 4],
+    pub code_page_ranges: [u32; 2],
+    pub checksum_adjustment: u32,
+    pub family: String,
+    pub style: String,
+    pub version: String,
+    pub full: String,
+}
+
+fn utf16(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+}
+
+/// An EOT structure (version 2.2) around `font` as files embed fonts:
+/// the data XOR-ed (flag 0x10000000), not compressed, the header filled
+/// from `names`.
+pub fn encode(font: &[u8], names: &EotNames) -> Vec<u8> {
+    let data: Vec<u8> = font.iter().map(|b| b ^ XOR_KEY).collect();
+    let mut h = Vec::new();
+    h.extend_from_slice(&0u32.to_le_bytes()); // EOTSize, set below
+    h.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    h.extend_from_slice(&0x0002_0002u32.to_le_bytes());
+    h.extend_from_slice(&FLAG_XOR.to_le_bytes());
+    h.extend_from_slice(&names.panose);
+    h.push(1); // DEFAULT_CHARSET
+    h.push(u8::from(names.italic));
+    h.extend_from_slice(&names.weight.to_le_bytes());
+    h.extend_from_slice(&names.fs_type.to_le_bytes());
+    h.extend_from_slice(&MAGIC.to_le_bytes());
+    for r in names.unicode_ranges {
+        h.extend_from_slice(&r.to_le_bytes());
+    }
+    for r in names.code_page_ranges {
+        h.extend_from_slice(&r.to_le_bytes());
+    }
+    h.extend_from_slice(&names.checksum_adjustment.to_le_bytes());
+    h.extend_from_slice(&[0; 16]); // reserved
+    h.extend_from_slice(&[0; 2]); // padding
+    debug_assert_eq!(h.len(), FAMILY_AT);
+    for (i, name) in [&names.family, &names.style, &names.version, &names.full]
+        .into_iter()
+        .enumerate()
+    {
+        if i > 0 {
+            h.extend_from_slice(&[0; 2]); // padding
+        }
+        let b = utf16(name);
+        h.extend_from_slice(&(b.len() as u16).to_le_bytes());
+        h.extend_from_slice(&b);
+    }
+    // Padding, an empty root string, its checksum, the EUDC code page,
+    // padding, an empty signature, EUDC flags and an empty EUDC font.
+    h.extend_from_slice(&[0; 2 + 2 + 4 + 4 + 2 + 2 + 4 + 4]);
+    h.extend_from_slice(&data);
+    let size = h.len() as u32;
+    h[0..4].copy_from_slice(&size.to_le_bytes());
+    h
+}
+
 /// An EOT structure (version 2.2) around `font`, for tests: `flags` as
 /// given, the data XOR-ed when the flags say so.
 #[cfg(test)]

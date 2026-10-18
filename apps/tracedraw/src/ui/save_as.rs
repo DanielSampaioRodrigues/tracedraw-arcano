@@ -46,6 +46,10 @@ pub struct SaveAsState {
     pub profile: Option<(String, usize)>,
     /// The profile goes into the file (`.cdr` from version 16).
     pub embed_profile: bool,
+    /// What embedding the text's fonts adds, in bytes (0: none may be).
+    pub fonts_size: u64,
+    /// The fonts go into the file (`.cdr` from version 16).
+    pub embed_fonts: bool,
     pub title: String,
     pub subject: String,
     pub rating: u8,
@@ -103,6 +107,8 @@ impl SaveAsState {
                 .as_ref()
                 .map(|p| (p.name.clone(), p.data.len())),
             embed_profile: app.cdr_embed_profile,
+            fonts_size: tracedraw_cdr::write::embedded_size(&crate::app::cdr_font_faces(doc)),
+            embed_fonts: app.cdr_embed_fonts,
             title: doc.title.clone(),
             subject: doc.metadata.subject.clone(),
             rating: doc.metadata.rating,
@@ -241,8 +247,14 @@ pub fn tdraw_version_label(version: u32) -> String {
     format!("v{version} (TraceDraw {release})")
 }
 
+/// The `.cdr` versions offered, newest first: from the oldest checked to
+/// open in other programs (14; the other program's own list stops at 15).
+/// Older versions are still written by the command line and the MCP
+/// server, and Save keeps the version of a drawing opened from one.
 pub fn version_choices() -> Vec<u16> {
-    tracedraw_cdr::write::versions().rev().collect()
+    (tracedraw_cdr::write::CHECKED_SINCE..=tracedraw_cdr::write::NEWEST_VERSION)
+        .rev()
+        .collect()
 }
 
 impl App {
@@ -290,6 +302,7 @@ impl App {
         }
         if st.cdr {
             self.cdr_embed_profile = st.embed_profile;
+            self.cdr_embed_fonts = st.embed_fonts;
             self.save_cdr_to(path, st.version);
         } else {
             self.tdraw_version = Some(st.tdraw_version);
@@ -663,11 +676,25 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                         .color(Tokens::text_dim()),
                 );
                 ui.add_space(16.0);
-                // Fonts are not stored in written files yet.
-                ui.add_enabled_ui(false, |ui| {
-                    let mut off = false;
-                    ui.checkbox(&mut off, tr("dialog.embed_fonts"))
-                        .on_disabled_hover_text(tr("dialog.embed_fonts_later"));
+                // Fonts are stored in the package of version 16 and later.
+                let can = st.version >= 16 && st.fonts_size > 0;
+                ui.add_enabled_ui(can, |ui| {
+                    let text = if st.fonts_size > 0 {
+                        trf(
+                            "dialog.embed_fonts_size",
+                            &[("size", &size_text(st.fonts_size))],
+                        )
+                    } else {
+                        tr("dialog.embed_fonts")
+                    };
+                    let mut on = st.embed_fonts && can;
+                    if ui
+                        .checkbox(&mut on, text)
+                        .on_disabled_hover_text(tr("dialog.embed_fonts_later"))
+                        .changed()
+                    {
+                        st.embed_fonts = on;
+                    }
                 });
             });
             ui.end_row();
@@ -917,6 +944,7 @@ mod tests {
         app.cdr_version = Some(99);
         assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::NEWEST_VERSION);
         assert_eq!(version_choices().first(), Some(&27));
+        assert_eq!(version_choices().last(), Some(&14));
         assert!(version_label(15).contains("15"));
         assert!(version_label(13).contains("X3"));
         assert!(version_label(27).contains("2026"));

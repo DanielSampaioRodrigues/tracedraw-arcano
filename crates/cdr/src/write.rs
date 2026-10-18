@@ -73,6 +73,11 @@ pub fn document_to_cdr_version(doc: &Document, version: u16) -> Vec<u8> {
 pub struct Previews {
     pub thumbnail: Option<Png>,
     pub pages: Vec<Png>,
+    /// The faces the text uses, with their font files where found: listed
+    /// in the font table (version 16 and later).
+    pub fonts: Vec<FontFace>,
+    /// Embed the faces whose licence allows it.
+    pub embed_fonts: bool,
 }
 
 /// A PNG file and its size in pixels.
@@ -1073,6 +1078,9 @@ fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Pr
             .start_file(format!("content/data/{name}"), deflated)
             .is_ok()
             && zip.write_all(data).is_ok();
+    }
+    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts) {
+        ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(&data).is_ok();
     }
     ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()
         && zip.write_all(files.names.join("\n").as_bytes()).is_ok();
@@ -3777,6 +3785,9 @@ impl<'a> Writer<'a> {
         t.done()
     }
 }
+
+mod fonts;
+pub use fonts::{embedded_size, FontFace};
 
 #[cfg(test)]
 mod tests;
