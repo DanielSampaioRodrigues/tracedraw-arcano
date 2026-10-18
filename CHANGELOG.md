@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- An outline set behind the fill is drawn under it also when it is the
+  object's only outline (it was drawn over the fill, so thick white
+  outlines thinned or hid letters).
+
 - CorelDRAW templates (`.cdt`, `.cdrt`) open as untitled drawings and can
   be imported.
 - Save As says that programs from 2021 on open `.cdr` version 15 and newer

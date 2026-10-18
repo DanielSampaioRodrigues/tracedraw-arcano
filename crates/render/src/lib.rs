@@ -619,6 +619,25 @@ impl Renderer<'_> {
             return;
         }
 
+        // An outline set behind the fill: the outline first, then the
+        // fill over it (half the outline's width shows outside).
+        if shape.stroke.as_ref().is_some_and(|st| st.behind_fill)
+            && !matches!(shape.fill, Fill::None)
+        {
+            let mut outline = shape.clone();
+            outline.fill = Fill::None;
+            if let Some(st) = outline.stroke.as_mut() {
+                st.behind_fill = false;
+            }
+            let mut fill = shape.clone();
+            fill.stroke = None;
+            fill.shadow = None;
+            outline.shadow = None;
+            self.draw_shape(&outline, parent);
+            self.draw_shape(&fill, parent);
+            return;
+        }
+
         if !self.flags.wireframe {
             let rule = match &shape.kind {
                 ShapeKind::Text { .. } => FillRule::Winding,
@@ -2416,6 +2435,20 @@ mod tests {
         let pm = render_page_image(&doc, page, 25.4).unwrap();
         let darkest = (0..100).map(|y| px(&pm, 50, y).0).min().unwrap_or(255);
         assert!(darkest < 64, "darkest {darkest}");
+    }
+
+    #[test]
+    fn outlines_behind_the_fill_show_only_outside_it() {
+        // A red square with a 10 mm white outline behind its fill: inside
+        // the square stays red, the outline shows only outside.
+        let mut s = rect(1, Rect::new(20.0, 20.0, 80.0, 80.0), Color::rgb8(255, 0, 0));
+        let mut st = Stroke::new(Color::rgb8(0, 0, 255), 10.0);
+        st.behind_fill = true;
+        s.stroke = Some(st);
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        assert_eq!(px(&pm, 22, 50), (255, 0, 0), "fill over the inner half");
+        assert_eq!(px(&pm, 17, 50), (0, 0, 255), "outline outside");
     }
 
     #[test]
