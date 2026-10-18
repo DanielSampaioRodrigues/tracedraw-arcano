@@ -248,10 +248,13 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
         &tr("color_mgmt.title"),
         size,
         |ui| {
-            let inner = egui::Rect::from_min_size(
-                ui.min_rect().min + egui::vec2(15.0, 40.0),
-                egui::vec2(body.x, body.y + 34.0),
+            let area = ui.max_rect();
+            let inner = egui::Rect::from_min_max(
+                area.min + egui::vec2(15.0, 12.0),
+                egui::pos2(area.max.x - 15.0, area.max.y - 56.0),
             );
+            // The white page under the tabs fills what the tabs leave.
+            let page_h = inner.height() - 26.0 - 24.0;
             ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
                 tab_header(
                     ui,
@@ -263,19 +266,20 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
                     .inner_margin(egui::Margin::symmetric(40, 12))
                     .show(ui, |ui| {
-                        ui.set_min_size(body - egui::vec2(80.0, 24.0));
+                        ui.set_min_size(egui::vec2(inner.width() - 82.0, page_h));
+                        ui.set_max_height(page_h);
                         if st.tab == 0 {
                             document_tab(app, ui, st, &mut load);
                         } else {
                             egui::ScrollArea::vertical()
-                                .max_height(body.y - 24.0)
+                                .max_height(page_h)
                                 .show(ui, |ui| default_tab(ui, st, &mut load));
                         }
                     });
             });
             let buttons = egui::Rect::from_min_size(
-                ui.min_rect().min + egui::vec2(15.0, size.y - 45.0),
-                egui::vec2(body.x, 27.0),
+                egui::pos2(area.min.x + 15.0, area.max.y - 42.0),
+                egui::vec2(area.width() - 30.0, 27.0),
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(buttons), |ui| {
                 ui.horizontal(|ui| {
