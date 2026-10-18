@@ -209,8 +209,9 @@ fn groups_bitmaps_and_several_pages_round_trip() {
         let mut pm = tiny_skia::Pixmap::new(2, 2).expect("pixmap");
         let px = pm.pixels_mut();
         px[0] = tiny_skia::ColorU8::from_rgba(255, 0, 0, 255).premultiply();
-        px[1] = tiny_skia::ColorU8::from_rgba(0, 255, 0, 255).premultiply();
-        px[2] = tiny_skia::ColorU8::from_rgba(0, 0, 255, 255).premultiply();
+        // See-through pixels keep their transparency.
+        px[1] = tiny_skia::ColorU8::from_rgba(0, 255, 0, 128).premultiply();
+        px[2] = tiny_skia::ColorU8::from_rgba(0, 0, 255, 0).premultiply();
         px[3] = tiny_skia::ColorU8::from_rgba(255, 255, 255, 255).premultiply();
         pm.encode_png().expect("png")
     };
@@ -283,6 +284,9 @@ fn groups_bitmaps_and_pages(doc: &Document, v: u16) {
             let p = pm.pixels();
             assert_eq!((p[0].red(), p[0].green(), p[0].blue()), (255, 0, 0));
             assert_eq!((p[3].red(), p[3].green(), p[3].blue()), (255, 255, 255));
+            let alpha: Vec<u8> = p.iter().map(|p| p.alpha()).collect();
+            assert_eq!(alpha, [255, 128, 0, 255], "{v}");
+            assert!(p[1].demultiply().green() > 250, "{v}");
         }
         k => panic!("{k:?}"),
     }

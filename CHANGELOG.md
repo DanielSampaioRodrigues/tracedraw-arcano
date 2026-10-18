@@ -11,6 +11,8 @@ full, row-by-row status.
 - `.cdr` saving: paragraph text is written as one artistic text per line
   in its place, so it no longer runs together on one line; the frame
   itself is not written yet.
+- `.cdr` saving: images keep their see-through pixels (they were put over
+  white).
 - The Print dialog has tabs: General (destination: system printer, PDF
   or PostScript file; orientation; current document, page, page list or
   selection; copies with collate; print as bitmap), Color (separations,

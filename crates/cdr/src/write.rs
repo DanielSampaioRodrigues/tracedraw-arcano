@@ -1956,7 +1956,11 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
 /// `bmp `: a 24-bit image: id, a file-like header ("UI" block size, the
 /// "RI" block with its size and pixel offset), colour model 1, size,
 /// bits, row stride, pixel bytes, resolution, then rows bottom-up in
-/// B G R order padded to 4 bytes. Transparent pixels are put over white.
+/// B G R order padded to 4 bytes. An image with see-through pixels adds
+/// the transparency block files carry (byte 24 gives its place from byte
+/// 8): "RI", its length, 0, a 78-byte header (model 99, 1, size, 1 plane,
+/// 8 bits, stride, bytes, 64 at 62) and one byte per pixel, 255 opaque,
+/// rows bottom-up padded to 4 bytes.
 fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
     let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
     let (w, h) = (pm.width(), pm.height());
@@ -1966,18 +1970,28 @@ fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
     let stride = (w as usize * 24).div_ceil(32) * 4;
     let mut pixels = vec![0u8; stride * h as usize];
     let src = pm.pixels();
+    let mask_stride = (w as usize).div_ceil(4) * 4;
+    let see_through = src.iter().any(|p| p.alpha() < 255);
+    let mut mask = vec![
+        0u8;
+        if see_through {
+            mask_stride * h as usize
+        } else {
+            0
+        }
+    ];
     for row in 0..h as usize {
-        let Some(dst) = pixels.get_mut((h as usize - 1 - row) * stride..) else {
-            continue;
-        };
+        let at = (h as usize - 1 - row) * stride;
+        let mask_at = (h as usize - 1 - row) * mask_stride;
         for x in 0..w as usize {
             let Some(p) = src.get(row * w as usize + x).map(|p| p.demultiply()) else {
                 continue;
             };
-            let a = p.alpha() as u32;
-            let blend = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
-            if let Some(px) = dst.get_mut(x * 3..x * 3 + 3) {
-                px.copy_from_slice(&[blend(p.blue()), blend(p.green()), blend(p.red())]);
+            if let Some(m) = mask.get_mut(mask_at + x) {
+                *m = p.alpha();
+            }
+            if let Some(px) = pixels.get_mut(at + x * 3..at + x * 3 + 3) {
+                px.copy_from_slice(&[p.blue(), p.green(), p.red()]);
             }
         }
     }
@@ -1990,7 +2004,10 @@ fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
             2_834_646
         }
     };
-    let len = 4 + 50 + 32 + 32 + pixels.len();
+    let image_len = 4 + 50 + 32 + 32 + pixels.len();
+    let mask_len = if see_through { 78 + mask.len() } else { 0 };
+    let len = image_len + mask_len;
+    let mask_place = if see_through { image_len as u32 - 8 } else { 0 };
     let mut b = Buf::default();
     b.u32(id)
         .u32(1)
@@ -1998,13 +2015,14 @@ fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
         .u32((len - 8) as u32)
         .u32(0)
         .u32(32)
-        .zeros(8)
+        .u32(mask_place)
+        .zeros(4)
         .u32(2)
         .u32(255)
         .u16(0x4952)
-        .u32((len - 40) as u32)
+        .u32((image_len - 40) as u32)
         .u32(0)
-        .u32((len - pixels.len() - 40) as u32);
+        .u32((image_len - pixels.len() - 40) as u32);
     b.u32(1)
         .u32(1)
         .u32(w)
@@ -2020,6 +2038,24 @@ fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
         .u32(64)
         .zeros(12);
     b.bytes(&pixels);
+    if see_through {
+        b.u16(0x4952)
+            .u32(mask_len as u32)
+            .u32(0)
+            .u32(78)
+            .u32(99)
+            .u32(1)
+            .u32(w)
+            .u32(h)
+            .u32(1)
+            .u32(8)
+            .u32(mask_stride as u32)
+            .u32(mask.len() as u32)
+            .zeros(16)
+            .u32(64)
+            .zeros(12);
+        b.bytes(&mask);
+    }
     Some(b.done())
 }
 
