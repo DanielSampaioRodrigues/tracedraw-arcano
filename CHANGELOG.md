@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Border and Grommet: a preview of the final page, Source (page or
+  selection), Add border with type and size, Add grommets with Use
+  border area, size and margin, placement on the corners and each edge,
+  number or spacing, and Reset and help buttons.
 - Dialogs are modal: while one is open, clicks, menus, dockers, the
   drawing and canvas typing wait until it closes.
 - Create New Table asks for the number of rows and columns, height and
