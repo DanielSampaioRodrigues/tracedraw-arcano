@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn cmyk_converts_between_profiles_and_pure_black_can_stay() {
-        let p = Profile::parse(&tp::lut16_cmyk_profile()).expect("profile");
+        let p = Profile::parse(&tp::mba_cmyk_profile()).expect("profile");
         let f = cmyk_converter(&p, &p, Intent::RelativeColorimetric, true).expect("transform");
         // Black ink only stays as it is.
         let k = Color::Cmyk {
