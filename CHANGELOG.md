@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` saving: images show in other programs (bitmap objects now carry
+  their pixel size and image box; files opened without their images).
 - `.cdr` versions 23 to 27: files open (version 23 files were refused),
   and saving offers them too (experimental: written with the records of
   version 22, which those versions share; not yet checked to open in

@@ -2945,17 +2945,53 @@ impl<'a> Writer<'a> {
             };
         };
         let v = self.v;
+        let (width_px, height_px) = match &s.kind {
+            ShapeKind::Bitmap {
+                width_px,
+                height_px,
+                ..
+            } => (*width_px, *height_px),
+            _ => (0, 0),
+        };
+        // As files of versions 7 to 27 hold it: the top-left and the
+        // bottom-right corner, the image's own box the same way, 2 and
+        // the bits per pixel (u16 each), the size in pixels, 4 bytes the
+        // program fills with anything, the image id, then 0, 0, -1, 0, 0.
+        // The program that wrote the samples shows no image when the
+        // pixel size is left at zero.
+        let corners = |c: &mut Buf| {
+            c.i32(units(rect.x0))
+                .i32(units(rect.y1))
+                .i32(units(rect.x1))
+                .i32(units(rect.y0));
+        };
         let mut c = Buf::default();
-        c.i32(units(rect.x0))
-            .i32(units(rect.y0))
-            .i32(units(rect.x1))
-            .i32(units(rect.y1))
-            .zeros(32)
+        corners(&mut c);
+        corners(&mut c);
+        c.u16(2)
+            .u16(24)
+            .u32(width_px)
+            .u32(height_px)
+            .u32(0)
             .u32(image)
-            .zeros(if v.0 == 8 { 12 } else { 20 });
+            .u32(0)
+            .u32(0)
+            .u32(u32::MAX);
+        if v.0 != 8 {
+            c.zeros(8);
+        }
+        let outline = {
+            let mut p = BezPath::new();
+            p.move_to((rect.x0, rect.y1));
+            p.line_to((rect.x1, rect.y1));
+            p.line_to((rect.x1, rect.y0));
+            p.line_to((rect.x0, rect.y0));
+            p.close_path();
+            p
+        };
         let path_bytes = match crop {
             Some(p) => curve_coords(p),
-            None => curve_coords(&rect.to_path(0.01)),
+            None => curve_coords(&outline),
         };
         c.bytes(&path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec()));
         let page_box = match crop {

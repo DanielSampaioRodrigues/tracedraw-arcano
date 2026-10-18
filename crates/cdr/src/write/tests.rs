@@ -2095,3 +2095,52 @@ fn versions_23_to_27_carry_their_own_letters() {
         );
     }
 }
+
+#[test]
+fn bitmap_objects_carry_their_pixel_size() {
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(3, 2).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+            width_px: 3,
+            height_px: 2,
+            png,
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    let doc = doc_with(vec![bm]);
+    for v in versions() {
+        let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, v));
+        let mut coords = None;
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"loda") {
+                let d = tree.data(&riff, c);
+                if d.get(16..20) == Some(&5u32.to_le_bytes()[..]) {
+                    coords = loda_args(d)
+                        .into_iter()
+                        .find(|(t, _)| *t == 30)
+                        .map(|(_, b)| b);
+                }
+            }
+        });
+        let b = coords.expect("a bitmap object");
+        let i = |at: usize| i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"));
+        // Top-left, then bottom-right; the image box again.
+        assert_eq!([i(0), i(4), i(8), i(12)], [0, 200_000, 300_000, 0], "{v}");
+        assert_eq!(
+            [i(16), i(20), i(24), i(28)],
+            [0, 200_000, 300_000, 0],
+            "{v}"
+        );
+        assert_eq!([i(32), i(36), i(40)], [24 << 16 | 2, 3, 2], "{v}");
+        assert_eq!(i(60), -1, "{v}");
+    }
+}
