@@ -138,6 +138,8 @@ const ARG_PROPS: u32 = 12000;
 const ARG_GUID: u32 = 40050;
 /// On text objects of version 16 and later: 1.
 const ARG_TEXT_LINK: u32 = 16015;
+/// Version 21: 1 hides the object (it is kept but not drawn).
+const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
 /// Layer kinds stored as the `loda` object type of a layer.
@@ -1131,6 +1133,27 @@ fn colour_props(v: Ver, c: Color) -> Vec<u8> {
     }
     b.u8(0).u32(0);
     b.done()
+}
+
+/// The master page's `loda` arguments for a solid page background, as
+/// version 21 files hold them: 17000, a record tagged 1300 of 651 bytes (1
+/// at its start and at byte 12, the colour's property list at byte 568);
+/// 12000, zero; and an empty style string.
+fn page_background_args(v: Ver, c: Color) -> Vec<(u32, Vec<u8>)> {
+    let mut body = vec![0u8; 651];
+    body[0] = 1;
+    body[12] = 1;
+    let props = colour_props(v, c);
+    body[568..568 + props.len()].copy_from_slice(&props);
+    let mut rec = Buf::default();
+    rec.u32(0x514).u32(body.len() as u32).bytes(&body);
+    let mut style = Buf::default();
+    style.u32(1).u32(2).bytes(b"{}");
+    vec![
+        (17000, rec.done()),
+        (12000, vec![0; 4]),
+        (201, style.done()),
+    ]
 }
 
 /// A colour as style strings write it.
@@ -2691,7 +2714,11 @@ impl<'a> Writer<'a> {
             docl.push(list(b"uil ", Vec::new()));
         }
         out.push(list(b"doc ", docl));
-        out.push(self.master_page());
+        let background = match doc.pages.first().and_then(|p| p.background.as_ref()) {
+            Some(Fill::Solid(c)) => Some(*c),
+            _ => None,
+        };
+        out.push(self.master_page(background));
         out.extend(pages);
         out
     }
@@ -2753,8 +2780,9 @@ impl<'a> Writer<'a> {
         self.layer_entry(which.flags(), which.kind(), name, guid, Vec::new())
     }
 
-    /// The master page: guides, desktop and grid layers, no objects.
-    fn master_page(&mut self) -> Node {
+    /// The master page: guides, desktop and grid layers, no objects; from
+    /// version 21 the page background colour in its `loda`.
+    fn master_page(&mut self, background: Option<Color>) -> Node {
         let v = self.v;
         let mut children = vec![chunk(
             b"flgs",
@@ -2774,8 +2802,17 @@ impl<'a> Writer<'a> {
             self.master_layer(MasterLayer::Grid, false),
         ];
         children.push(list(b"gobj", layers));
-        if v.redirects() {
-            children.push(list(b"lgob", vec![chunk(b"loda", loda(0, Vec::new()))]));
+        match background {
+            Some(c) if v.0 >= 21 => {
+                children.push(list(
+                    b"lgob",
+                    vec![chunk(b"loda", loda(0, page_background_args(v, c)))],
+                ));
+            }
+            _ if v.redirects() => {
+                children.push(list(b"lgob", vec![chunk(b"loda", loda(0, Vec::new()))]));
+            }
+            _ => {}
         }
         list(b"page", children)
     }
@@ -2953,6 +2990,9 @@ impl<'a> Writer<'a> {
             (ARG_OUTLINE, outline_id.to_le_bytes().to_vec()),
             (ARG_ID, id.to_le_bytes().to_vec()),
         ];
+        if !s.visible && v.0 >= 21 {
+            args.push((ARG_HIDDEN, 1u32.to_le_bytes().to_vec()));
+        }
         if v.style_strings() {
             let graded = self.graded.get(&s.id).map(|(f, t)| (f, *t));
             let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity, graded);
@@ -3024,7 +3064,17 @@ impl<'a> Writer<'a> {
             nodes: Vec::new(),
             bounds: None,
         };
-        if !s.visible {
+        // Hidden objects are kept from version 21 (a flag); before, and
+        // for containers, they are left out.
+        let keeps_hidden = self.v.0 >= 21
+            && !matches!(
+                s.kind,
+                ShapeKind::Group { .. }
+                    | ShapeKind::ClipFrame { .. }
+                    | ShapeKind::Table(_)
+                    | ShapeKind::SymbolInstance { .. }
+            );
+        if !s.visible && !keeps_hidden {
             return none();
         }
         // Paragraph text goes out as a group of artistic texts, one a line

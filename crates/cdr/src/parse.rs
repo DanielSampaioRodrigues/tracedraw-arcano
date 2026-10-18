@@ -72,6 +72,10 @@ const ARG_POLYGON: u32 = 11000;
 /// group in the document's `LIST clpt`, then three u32 (1, 0, 1 seen).
 const ARG_CLIP_CONTENTS: u32 = 8005;
 const ARG_PAGE_SIZE: u32 = 19130;
+/// Master page `loda` argument holding the document's page background.
+const ARG_PAGE_BACKGROUND: u32 = 17000;
+/// Object argument 16016: 1 hides the object (version 21).
+const ARG_HIDDEN: u32 = 16016;
 
 /// Family and size used when neither the run nor its style names one.
 const DEFAULT_FAMILY: &str = "Arial";
@@ -297,6 +301,10 @@ struct Ctx<'a> {
     /// The transform of the paragraph text being read when its frame took
     /// the object's scale (see [`unscaled_frame`]).
     pending_text_transform: Option<Affine>,
+    /// Facing pages (version 21 `mcfg` byte 26): objects are placed from
+    /// the spine of the spread, not the page centre.
+    facing_pages: bool,
+
     /// The node types a curve's node bytes give where its handles read
     /// otherwise, for the shape being read.
     pending_node_types: std::collections::BTreeMap<usize, tracedraw_core::nodes::NodeType>,
@@ -355,6 +363,8 @@ impl<'a> Ctx<'a> {
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
+            facing_pages: false,
+
             pending_node_types: Default::default(),
             cmyk_profile: None,
             cmyk_lut: None,
@@ -458,6 +468,9 @@ pub fn parse_document_with(
             if let Some(s) = ctx.read_page_size(c) {
                 page_size = s;
                 found_mcfg = true;
+                // Version 21: byte 26 is 1 for facing pages (multi-page
+                // files whose objects otherwise land half a page across).
+                ctx.facing_pages = ctx.v >= 21 && ctx.data(c).get(26) == Some(&1);
             }
         }
     });
@@ -482,10 +495,14 @@ pub fn parse_document_with(
     }
 
     let mut master_flags: Vec<bool> = Vec::new();
+    let mut master_background: Option<Fill> = None;
     for (i, pc) in pages.iter().enumerate() {
         let page_id = doc.ids_mut().page();
         let is_master = ctx.page_is_master(pc);
         master_flags.push(is_master);
+        if is_master {
+            master_background = ctx.page_background(pc);
+        }
         // A page may carry its own size in its `loda` (argument 19130).
         let size = ctx.page_own_size(pc).unwrap_or(page_size);
         let mut page = Page {
@@ -525,6 +542,14 @@ pub fn parse_document_with(
             }
             page.layers.push(layer);
         }
+        // Facing pages measure objects from the spine of the spread, half
+        // a page to the left or right of the page's centre; which way is
+        // not worked out yet, so the side holding more of the page's
+        // objects wins (version 21 files: the first page's objects lie
+        // right of the spine, later pages' mostly left of it).
+        if ctx.facing_pages && !is_master {
+            shift_onto_page(&mut page.layers, size.width);
+        }
         // Files list a page's layers front to back, as they list objects
         // (a version 21 file: the layer of the lettering first, then the
         // layer whose full-page background its preview shows under it).
@@ -534,6 +559,8 @@ pub fn parse_document_with(
                 .push(Layer::new(doc.ids_mut().layer(), "Layer 1"));
         }
         page.guides = std::mem::take(&mut ctx.guides);
+        // The master page's background shows on every page.
+        page.background = master_background.clone();
         doc.pages.push(page);
     }
 
@@ -661,6 +688,29 @@ impl<'a> Ctx<'a> {
         } else {
             None
         }
+    }
+
+    /// The page background in a master page's `loda` (argument 17000,
+    /// version 21): a record tagged 1300 with its length, 1 for a solid
+    /// colour, and the colour's property list (id 1, length 12, the
+    /// colour record) 576 bytes into the argument. Other kinds are not
+    /// read.
+    fn page_background(&mut self, pc: &Chunk) -> Option<Fill> {
+        let loda = self.own_loda(pc)?;
+        let d = self.data(loda);
+        let l = self.read_loda(d)?;
+        let arg = l.args.iter().find(|a| a.ty == ARG_PAGE_BACKGROUND)?;
+        let body = d.get(arg.off..arg.end)?;
+        let mut r = self.reader_at(body, 0);
+        let (tag, _len, kind) = (r.u32()?, r.u32()?, r.u32()?);
+        if tag != 0x514 || kind != 1 {
+            return None;
+        }
+        let mut r = self.reader_at(body, 576);
+        if r.u8()? != 1 || r.u32()? != 12 {
+            return None;
+        }
+        self.read_color(&mut r).map(Fill::Solid)
     }
 
     /// `mcfg`: page width and height. Leading unknown bytes depend on the
@@ -2552,6 +2602,7 @@ impl<'a> Ctx<'a> {
         let mut fill = Fill::None;
         let mut stroke: Option<Stroke> = None;
         let mut name: Option<String> = None;
+        let mut hidden = false;
         let mut coords: Option<Arg> = None;
         let mut polygon: Option<PolygonInfo> = None;
         let mut style_id: Option<u32> = None;
@@ -2605,6 +2656,7 @@ impl<'a> Ctx<'a> {
                 }
                 ARG_POLYGON => polygon = self.read_polygon_info(d, *arg),
                 ARG_CLIP_CONTENTS => self.pending_clip = self.reader_at(d, arg.off).u32(),
+                ARG_HIDDEN => hidden = self.reader_at(d, arg.off).u32().is_some_and(|h| h != 0),
                 _ => {}
             }
         }
@@ -2696,6 +2748,10 @@ impl<'a> Ctx<'a> {
             shape.node_types = std::mem::take(&mut self.pending_node_types);
         }
         shape.transform = recenter * transform;
+        // A hidden object (a version 21 template: the white page-sized
+        // rectangle its preview leaves out, over the page's dark
+        // background) is kept but not drawn.
+        shape.visible = !hidden;
         shape.fill = fill;
         shape.stroke = stroke;
         shape.name = name;
@@ -4321,6 +4377,33 @@ fn file_corners(radii: &[f64], w: f64, h: f64) -> Corners {
     c
 }
 
+/// Move a facing page's objects half a page left or right, whichever puts
+/// more of their centres on the page (`width` across).
+fn shift_onto_page(layers: &mut [Layer], width: f64) {
+    let centres: Vec<f64> = layers
+        .iter()
+        .flat_map(|l| l.shapes.iter())
+        .map(|s| s.bounds())
+        .filter(|b| b.x0.is_finite() && b.x1.is_finite())
+        .map(|b| (b.x0 + b.x1) / 2.0)
+        .collect();
+    let on_page = |dx: f64| {
+        centres
+            .iter()
+            .filter(|c| (0.0..=width).contains(&(**c + dx)))
+            .count()
+    };
+    let half = width / 2.0;
+    let dx = if on_page(half) > on_page(-half) {
+        half
+    } else {
+        -half
+    };
+    for s in layers.iter_mut().flat_map(|l| l.shapes.iter_mut()) {
+        s.transform = Affine::translate((dx, 0.0)) * s.transform;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5496,6 +5579,36 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn facing_page_objects_move_to_the_side_holding_most_of_them() {
+        let rect = |x: f64| {
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Rect {
+                    rect: Rect::new(x, 10.0, x + 20.0, 30.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.transform = Affine::IDENTITY;
+            s
+        };
+        let centre_x = |l: &[Layer]| {
+            let b = l[0].shapes[0].bounds();
+            (b.x0 + b.x1) / 2.0
+        };
+        // Measured from the spine with the page to its right: half a page
+        // too far right when placed from the page centre.
+        let mut layers = vec![Layer::new(tracedraw_core::LayerId(1), "L")];
+        layers[0].shapes = vec![rect(150.0), rect(250.0), rect(280.0)];
+        shift_onto_page(&mut layers, 210.0);
+        assert!((centre_x(&layers) - 55.0).abs() < 1e-9);
+        // To its left: half a page too far left.
+        layers[0].shapes = vec![rect(-100.0), rect(-60.0), rect(150.0)];
+        shift_onto_page(&mut layers, 210.0);
+        assert!((centre_x(&layers) - 15.0).abs() < 1e-9);
     }
 
     #[test]

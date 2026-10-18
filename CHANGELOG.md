@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` version 21: the page background colour, hidden objects (kept,
+  not drawn) and facing pages (objects were half a page off) are read;
+  saving in version 21 or 22 keeps the background and hidden objects.
 - `.cdr`: a page's layers come in the right order (the top layer was
   drawn at the bottom, under a full-page background).
 - `.cdr`: arcs of ellipses drawn downwards turn the right way (smiles

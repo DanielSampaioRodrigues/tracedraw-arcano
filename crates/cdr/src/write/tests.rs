@@ -2021,3 +2021,51 @@ fn fills_not_written_yet_go_out_as_their_mean_colour() {
         }
     }
 }
+
+#[test]
+fn a_page_background_colour_round_trips_from_version_21() {
+    let mut doc = doc_with(Vec::new());
+    doc.pages[0].background = Some(Fill::Solid(Color::rgb8(45, 78, 92)));
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let bg = back.pages[0].background.clone();
+        if v >= 21 {
+            assert_eq!(
+                bg,
+                Some(Fill::Solid(Color::rgb8(45, 78, 92))),
+                "{v}: {:?}",
+                rep.warnings
+            );
+        } else {
+            assert_eq!(bg, None, "{v}");
+        }
+    }
+}
+
+#[test]
+fn hidden_objects_are_kept_hidden_from_version_21() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.fill = Fill::Solid(Color::rgb8(255, 255, 255));
+    r.visible = false;
+    let doc = doc_with(vec![r]);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let shapes = &back.pages[0].layers[0].shapes;
+        if v >= 21 {
+            assert_eq!(shapes.len(), 1, "{v}: {:?}", rep.warnings);
+            assert!(!shapes[0].visible, "{v}");
+        } else {
+            assert!(shapes.is_empty(), "{v}");
+        }
+    }
+}
