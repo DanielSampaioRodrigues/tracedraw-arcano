@@ -1230,6 +1230,7 @@ fn version_16_and_later_files_are_a_complete_package() {
     let previews = Previews {
         thumbnail: Some(png.clone()),
         pages: vec![png],
+        ..Default::default()
     };
     for v in [16u16, 17, 21, NEWEST_VERSION] {
         let bytes = document_to_cdr_version_with(&doc, v, &previews);
@@ -1362,6 +1363,7 @@ fn every_version_writes_what_files_of_that_version_hold() {
     let previews = Previews {
         thumbnail: Some(png.clone()),
         pages: vec![png],
+        ..Default::default()
     };
     for v in versions() {
         let bytes = document_to_cdr_version_with(&doc, v, &previews);
@@ -2395,4 +2397,83 @@ fn the_font_table_lists_every_face_the_text_styles_use() {
             "{v}: {faces:x?}"
         );
     }
+}
+
+#[test]
+fn the_package_lists_the_text_faces_and_embeds_those_allowed() {
+    const FONT: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    let faces = vec![
+        FontFace {
+            family: "Selawik".into(),
+            bold: false,
+            italic: false,
+            data: Some(std::sync::Arc::new(FONT.to_vec())),
+        },
+        FontFace {
+            family: "Missing Sans".into(),
+            bold: true,
+            italic: false,
+            data: None,
+        },
+    ];
+    assert_eq!(embedded_size(&faces), FONT.len() as u64);
+    let doc = doc_with(Vec::new());
+    for embed in [true, false] {
+        let previews = Previews {
+            fonts: faces.clone(),
+            embed_fonts: embed,
+            ..Default::default()
+        };
+        let bytes = document_to_cdr_version_with(&doc, NEWEST_VERSION, &previews);
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+        let mut table = Vec::new();
+        std::io::Read::read_to_end(
+            &mut z.by_name("font/fontTable.dat").expect("table"),
+            &mut table,
+        )
+        .expect("read");
+        let u32_at =
+            |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().expect("u32"));
+        // Size after the first 8 bytes, two entries; the first entry's
+        // size counts what follows it, and its family follows the PANOSE.
+        assert_eq!(u32_at(&table, 4) as usize, table.len() - 8);
+        assert_eq!(u32_at(&table, 8), 2);
+        assert_eq!(u32_at(&table, 24), 0x40);
+        let family_len = u32_at(&table, 38) as usize;
+        let family: String = char::decode_utf16(
+            table[42..42 + 2 * (family_len - 1)]
+                .chunks(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]])),
+        )
+        .map(|c| c.unwrap_or('?'))
+        .collect();
+        assert_eq!(family, "Selawik");
+        let embedded = z.file_names().any(|n| n == "embed/embedding0");
+        assert_eq!(embedded, embed);
+        assert!(!z.file_names().any(|n| n == "embed/embedding1"));
+        let (back, rep) = crate::open_bytes(&bytes, "fonts").expect("reads back");
+        if embed {
+            let mut m = Vec::new();
+            std::io::Read::read_to_end(&mut z.by_name("embed/embedding0").expect("member"), &mut m)
+                .expect("read");
+            assert_eq!(&m[..8], &[1, 0, 0, 0, 3, 8, 0, 0]);
+            assert_eq!(back.fonts.len(), 1, "{:?}", rep.warnings);
+            assert_eq!(back.fonts[0].family, "Selawik");
+            assert_eq!(back.fonts[0].data.as_slice(), FONT);
+        } else {
+            assert!(back.fonts.is_empty());
+        }
+    }
+    // Files before version 16 keep fonts in their own tables.
+    let previews = Previews {
+        fonts: faces,
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let bytes = document_to_cdr_version_with(&doc, 15, &previews);
+    let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+    assert!(!z
+        .file_names()
+        .any(|n| n.starts_with("font/") || n.starts_with("embed/")));
 }

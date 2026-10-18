@@ -2826,16 +2826,27 @@ impl Document {
     /// The font families the drawing's text uses, sorted: text on layers,
     /// inside groups and clip frames, in table cells and in symbols.
     pub fn font_families_used(&self) -> Vec<String> {
-        fn walk(s: &Shape, out: &mut std::collections::BTreeSet<String>) {
+        let mut out: Vec<String> = self.font_faces_used().into_iter().map(|f| f.0).collect();
+        out.dedup();
+        out
+    }
+
+    /// The faces the drawing's text uses: family, bold, italic, sorted,
+    /// each once (empty family names left out).
+    pub fn font_faces_used(&self) -> Vec<(String, bool, bool)> {
+        type Faces = std::collections::BTreeSet<(String, bool, bool)>;
+        fn add(spans: &[TextSpan], out: &mut Faces) {
+            out.extend(
+                spans
+                    .iter()
+                    .filter(|sp| !sp.font_family.is_empty())
+                    .map(|sp| (sp.font_family.clone(), sp.bold, sp.italic)),
+            );
+        }
+        fn walk(s: &Shape, out: &mut Faces) {
             match &s.kind {
-                ShapeKind::Text { spans, .. } => {
-                    out.extend(spans.iter().map(|sp| sp.font_family.clone()));
-                }
-                ShapeKind::Table(t) => {
-                    for c in &t.cells {
-                        out.extend(c.text.iter().map(|sp| sp.font_family.clone()));
-                    }
-                }
+                ShapeKind::Text { spans, .. } => add(spans, out),
+                ShapeKind::Table(t) => t.cells.iter().for_each(|c| add(&c.text, out)),
                 ShapeKind::Group { children } => children.iter().for_each(|c| walk(c, out)),
                 ShapeKind::ClipFrame { frame, contents } => {
                     walk(frame, out);
@@ -2844,14 +2855,13 @@ impl Document {
                 _ => {}
             }
         }
-        let mut out = std::collections::BTreeSet::new();
+        let mut out = Faces::new();
         for s in self.all_layers().flat_map(|l| &l.shapes) {
             walk(s, &mut out);
         }
         for sym in &self.symbols {
             walk(&sym.shape, &mut out);
         }
-        out.remove("");
         out.into_iter().collect()
     }
 

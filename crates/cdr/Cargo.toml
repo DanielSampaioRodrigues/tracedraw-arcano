@@ -12,6 +12,7 @@ log.workspace = true
 zip.workspace = true
 encoding_rs.workspace = true
 flate2 = "1"
+ttf-parser.workspace = true
 tiny-skia.workspace = true
 
 [dev-dependencies]

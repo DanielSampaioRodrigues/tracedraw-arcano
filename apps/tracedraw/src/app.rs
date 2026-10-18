@@ -699,6 +699,9 @@ pub struct App {
     pub tdraw_version: Option<u32>,
     /// Save As's choice: the CMYK profile goes into `.cdr` files.
     pub cdr_embed_profile: bool,
+    /// Save As's choice: the fonts the text uses go into `.cdr` files
+    /// (version 16 and later, faces whose licence allows it).
+    pub cdr_embed_fonts: bool,
     pub status: String,
     pub fit_pending: bool,
     pub units: Units,
@@ -1582,6 +1585,7 @@ impl App {
             cdr_version: None,
             tdraw_version: None,
             cdr_embed_profile: true,
+            cdr_embed_fonts: false,
             status: String::new(),
             fit_pending: true,
             units: Units::Millimeters,
@@ -4204,10 +4208,12 @@ impl App {
                 without = d;
                 &without
             };
+            let mut previews = cdr_previews(doc);
+            previews.embed_fonts = self.cdr_embed_fonts;
             Ok(tracedraw_cdr::write::document_to_cdr_version_with(
                 doc,
                 self.cdr_save_version(),
-                &cdr_previews(doc),
+                &previews,
             ))
         } else {
             // Fonts that came with other drawings go along (text imported
@@ -5358,7 +5364,26 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
     tracedraw_cdr::write::Previews {
         thumbnail: pages.first().cloned(),
         pages,
+        fonts: cdr_font_faces(doc),
+        embed_fonts: false,
     }
+}
+
+/// The faces the drawing's text uses, with their font files where
+/// installed or carried, for the `.cdr` font table and embedding.
+pub(crate) fn cdr_font_faces(
+    doc: &tracedraw_core::Document,
+) -> Vec<tracedraw_cdr::write::FontFace> {
+    let fonts = tracedraw_text::fonts();
+    doc.font_faces_used()
+        .into_iter()
+        .map(|(family, bold, italic)| tracedraw_cdr::write::FontFace {
+            data: fonts.face_file(&family, bold, italic),
+            family,
+            bold,
+            italic,
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` saving from version 16: the font table lists every face the
+  text uses, and Save As has an "Embed fonts" box that stores the faces
+  whose licence allows it (the command line with
+  `TRACEDRAW_CDR_EMBED_FONTS=1`). Save As lists versions 27 down to 14.
 - `.cdr` saving: version 14 is no longer marked experimental, and
   version 13 files carry the zero argument 12000 on layers, groups and
   objects, flag 0x40 on pages and an object box on the master page, as

@@ -28,16 +28,20 @@ One window, 760 px wide, the same on every system:
   drawing that came from or was saved to a `.cdr` file.
 - **Version**: for TraceDraw files the `.tdraw` format version, newest
   first, with the release that first wrote it ("v1 (TraceDraw 0.5)",
-  `docs/tdraw-format.md`); for `.cdr` 27 down to 7, each with its release name
-  ("v13 (X3)", "v27 (2026)"); versions not yet checked in other programs
-  say "experimental" (versions 7 to 13).
+  `docs/tdraw-format.md`); for `.cdr` 27 down to 14, each with its
+  release name ("v14 (X4)", "v27 (2026)").
 - **Embed colour profile (size)** with "Colour profile: name" (`.cdr`
   only): on, the drawing's CMYK profile is stored in the file; off, it
   is left out. Only version 16 and later store one, so the box is off
   and greyed for older versions and for a drawing without a profile
-  ("Colour profile: none"). **Embed fonts** sits beside it, greyed:
-  fonts are not stored in written files yet. The choice stays for the
-  next Save As and for Save.
+  ("Colour profile: none"). **Embed fonts (size)** sits beside it: on,
+  the faces the text uses go into the file when their licence allows
+  it; every face is listed in the file's font table either way. It is
+  greyed below version 16 and when no face may be embedded. Both
+  choices stay for the next Save As and for Save.
+- Only the versions checked in other programs are offered (14 to 27); a
+  drawing opened from an older file is still saved in its version by
+  Save, and the command line writes 7 to 27.
 - **Title**, **Subject** and **Rating** (five stars; clicking the lit
   last star takes it off): the document's properties, also in File >
   Document Properties; changed ones are set (one undo step each) before
