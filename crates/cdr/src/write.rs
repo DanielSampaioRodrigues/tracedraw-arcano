@@ -1,4 +1,4 @@
-//! `.cdr` writer for every version from 7 to 22.
+//! `.cdr` writer for every version from 7 to 27.
 //!
 //! The chunk tree follows the layout of real files of each version, record
 //! by record (`docs/cdr-format.md`, Writing, lists each record and its
@@ -38,10 +38,14 @@ use tracedraw_core::{
 /// program that wrote the samples (text from 16, by a user's test of
 /// files of versions 7 to 22); older ones are offered as experimental.
 pub const CHECKED_SINCE: u16 = 16;
+/// The newest version known to open there; newer ones (written with the
+/// records of version 22, which files of versions 23 to 27 share) are
+/// offered as experimental.
+pub const CHECKED_UNTIL: u16 = 22;
 /// The oldest version the writer produces.
 pub const OLDEST_VERSION: u16 = 7;
 /// The newest version the writer produces.
-pub const NEWEST_VERSION: u16 = 22;
+pub const NEWEST_VERSION: u16 = 27;
 /// The version [`document_to_cdr`] writes.
 pub const DEFAULT_VERSION: u16 = 12;
 
@@ -55,7 +59,7 @@ pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
     document_to_cdr_version(doc, DEFAULT_VERSION)
 }
 
-/// Write the whole document as a `.cdr` file of `version` (7 to 22; other
+/// Write the whole document as a `.cdr` file of `version` (7 to 27; other
 /// values are brought into that range).
 pub fn document_to_cdr_version(doc: &Document, version: u16) -> Vec<u8> {
     document_to_cdr_version_with(doc, version, &Previews::default())
@@ -178,12 +182,18 @@ struct Ver(u16);
 
 impl Ver {
     /// `CDR` and the version letter: digits up to 9, then `A` (10) to `H`
-    /// (17) and `J` (18) on; `I` is not used.
+    /// (17), `J` (18) to `O` (23); `I` is not used. Then `P` (24), `R`
+    /// (25), `T` (26) and `U` (27), as files saved in each have them (the
+    /// letters between belong to updates).
     fn form(self) -> [u8; 4] {
         let c = match self.0 {
             v @ 0..=9 => b'0' + v as u8,
             v @ 10..=17 => b'A' + (v - 10) as u8,
-            v => b'J' + (v.min(34) - 18) as u8,
+            v @ 18..=23 => b'J' + (v - 18) as u8,
+            24 => b'P',
+            25 => b'R',
+            26 => b'T',
+            _ => b'U',
         };
         [b'C', b'D', b'R', c]
     }

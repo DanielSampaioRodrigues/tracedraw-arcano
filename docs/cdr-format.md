@@ -19,7 +19,7 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 
 | Item | Status | Note |
 |---|---|---|
-| `RIFF <size> CDR<v>`; `v` is a version char: `1`..`9` = 1..9, `A` = 10 ... `H` = 17, `J` = 18 ... `N` = 22, `P` = 23, `Q` = 24, `R` = 25; `I` and `O` are not used | confirmed (public spec for `I`; for `O`, a public tutorial file of 2026-10-18: form type `CDRR` with `vrsn` 2500, `fver` major 25 and `AppVersion` 2500 in its metadata) | We used to map `J` to 19, and `R` to 26. |
+| `RIFF <size> CDR<v>`; `v` is a version char: `1`..`9` = 1..9, `A` = 10 ... `H` = 17, `J` = 18 ... `N` = 22, `O` = 23, `P` = 24, `Q` = 24 (a later update), `R` = 25, `S` = 25 (update), `T` = 26, `U` = 27; `I` is not used | confirmed (public spec for `I`; a public tutorial file: form type `CDRR` with `vrsn` 2500; one drawing a user saved in versions 23, 24.0, 24.3, 25.1, 26 and 27, 2026-10-18: `CDRO`, `CDRP`, `CDRQ`, `CDRS`, `CDRT`, `CDRU` with `vrsn` and `CoreVersion` 2300, 2400, 2430, 2510, 2600, 2700) | We used to map `J` to 19, `R` to 26, and to think `O` unused. |
 | Form type `CDR ` (a space) is version 3 | assumed (no version 3 file seen; a version 5 file relabelled reads the same) | Read with the rules of the versions before 6 (16-bit coordinates); a `vrsn` chunk overrides it. |
 | Package members and compressed blocks inflate to at most 512 MB each and the compressed blocks of one file to 1 GB together | our limit | Past it the stream is cut off (or the block skipped) with a warning, so a decompression bomb cannot exhaust memory; the archive's own size claims are not trusted for allocations. |
 | Lowercase form type `cdr` with `8` is a CDR 8 variant (spec: 801) | confirmed (public spec) | Treated as version 8. |
@@ -292,7 +292,7 @@ show. Values are little-endian; lengths in thousandths of an inch.
 
 Which programs open which versions (from a public page about the format, 2026-10-18, not checked here): releases up to the 2019 one open version 7 and newer, the 2020 one (version 22) version 11 and newer, and 2021 to 2026 (versions 23 to 27) version 15 and newer. Files TraceDraw writes in versions 7 to 14 therefore cannot open in current releases whatever their content; testing those versions needs an older release. A user's test with release 25.2 (issue #98) is consistent with this.
 
-`crates/cdr/src/write.rs` writes versions 7 to 22
+`crates/cdr/src/write.rs` writes versions 7 to 27 (23 to 27 with the records of 22: one drawing saved by a user in each of versions 23 to 27 has the same records in all, only the form letter, `fver`, `vrsn`, `CoreVersion` and the style sheet's version differing; not yet checked to open)
 (`document_to_cdr_version`; `document_to_cdr` writes version 12). The
 app asks for the version when saving a `.cdr` file
 (`docs/behavior/files.md`); `tracedraw-cli` reads it from

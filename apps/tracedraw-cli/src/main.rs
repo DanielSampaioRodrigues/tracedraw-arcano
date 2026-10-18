@@ -621,7 +621,7 @@ fn main() -> ExitCode {
                 std::fs::write(output, tracedraw_io::eps::document_to_ps(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".cdr") {
-                // TRACEDRAW_CDR_VERSION picks the version written (7 to 22).
+                // TRACEDRAW_CDR_VERSION picks the version written (7 to 27).
                 let version = std::env::var("TRACEDRAW_CDR_VERSION")
                     .ok()
                     .and_then(|v| v.trim().parse().ok())

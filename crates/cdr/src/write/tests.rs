@@ -2069,3 +2069,29 @@ fn hidden_objects_are_kept_hidden_from_version_21() {
         }
     }
 }
+
+#[test]
+fn versions_23_to_27_carry_their_own_letters() {
+    let doc = doc_with(Vec::new());
+    for (v, letter) in [
+        (22, b'N'),
+        (23, b'O'),
+        (24, b'P'),
+        (25, b'R'),
+        (26, b'T'),
+        (27, b'U'),
+    ] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let c = crate::container::detect(&bytes).expect("container");
+        assert_eq!(c.version.0, v);
+        let riff = crate::container::riff_stream(&bytes, &c).expect("riff");
+        assert_eq!(&riff[8..12], &[b'C', b'D', b'R', letter], "{v}");
+        let (_, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(rep.version.map(|x| x.0), Some(v));
+        assert!(
+            rep.warnings.iter().all(|w| !w.contains("vrsn")),
+            "{v}: {:?}",
+            rep.warnings
+        );
+    }
+}

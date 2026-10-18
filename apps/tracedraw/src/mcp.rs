@@ -106,7 +106,7 @@ pub fn tool_list() -> Vec<Value> {
         ),
         tool(
             "save",
-            "Save the document to a path: .tdraw (native) or .cdr. For .cdr, version picks the file version (7 to 22; default: the version of the .cdr file the document came from, else the one set in the options).",
+            "Save the document to a path: .tdraw (native) or .cdr. For .cdr, version picks the file version (7 to 27; default: the version of the .cdr file the document came from, else the one set in the options).",
             json!({"path": {"type": "string"}, "version": {"type": "integer"}}),
             &["path"],
         ),
@@ -430,7 +430,7 @@ mod tests {
         let (_, report) = tracedraw_cdr::open_bytes(&bytes, "v21").expect("opens");
         assert_eq!(report.version.map(|v| v.0), Some(21));
         assert_eq!(app.cdr_save_version(), 21);
-        for bad in [json!(3), json!(23), json!("x"), json!(-1)] {
+        for bad in [json!(3), json!(28), json!("x"), json!(-1)] {
             let r = call(
                 &mut app,
                 5,

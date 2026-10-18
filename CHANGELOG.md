@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` versions 23 to 27: files open (version 23 files were refused),
+  and saving offers them too (experimental: written with the records of
+  version 22, which those versions share; not yet checked to open in
+  other programs).
 - `.cdr` version 21: the page background colour, hidden objects (kept,
   not drawn) and facing pages (objects were half a page off) are read;
   saving in version 21 or 22 keeps the background and hidden objects.

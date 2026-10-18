@@ -25,15 +25,19 @@ impl Version {
         if &form[..3] != b"CDR" && &form[..3] != b"cdr" {
             return None;
         }
-        // Digits are versions 1 to 9; letters continue from `A` = 10, but
-        // `I` and `O` are skipped: `H` = 17, `J` = 18, `N` = 22, `P` = 23,
-        // `R` = 25. Version 3 files carry a space.
+        // Digits are versions 1 to 9; letters continue from `A` = 10 with
+        // `I` skipped: `H` = 17, `J` = 18, `N` = 22, `O` = 23. From there
+        // some updates took a letter of their own: `P` = 24, `Q` = 24 (its
+        // later update), `R` = 25, `S` = 25 (update), `T` = 26, `U` = 27.
+        // Version 3 files carry a space. The `vrsn` chunk has the last word.
         match c {
             b' ' => Some(Version(3)),
             b'1'..=b'9' => Some(Version((c - b'0') as u16)),
             b'A'..=b'H' => Some(Version(10 + (c - b'A') as u16)),
-            b'J'..=b'N' => Some(Version(9 + (c - b'A') as u16)),
-            b'P'..=b'Z' => Some(Version(8 + (c - b'A') as u16)),
+            b'J'..=b'O' => Some(Version(9 + (c - b'A') as u16)),
+            b'P' | b'Q' => Some(Version(24)),
+            b'R' | b'S' => Some(Version(25)),
+            b'T'..=b'Z' => Some(Version(26 + (c - b'T') as u16)),
             _ => None,
         }
     }
@@ -555,9 +559,14 @@ mod tests {
         assert_eq!(Version::from_form_type(b"CDRI"), None);
         assert_eq!(Version::from_form_type(b"CDRJ"), Some(Version(18)));
         assert_eq!(Version::from_form_type(b"CDRN"), Some(Version(22)));
-        assert_eq!(Version::from_form_type(b"CDRO"), None);
-        assert_eq!(Version::from_form_type(b"CDRP"), Some(Version(23)));
+        // Files saved in each version from 23 to 27 (and two updates).
+        assert_eq!(Version::from_form_type(b"CDRO"), Some(Version(23)));
+        assert_eq!(Version::from_form_type(b"CDRP"), Some(Version(24)));
+        assert_eq!(Version::from_form_type(b"CDRQ"), Some(Version(24)));
         assert_eq!(Version::from_form_type(b"CDRR"), Some(Version(25)));
+        assert_eq!(Version::from_form_type(b"CDRS"), Some(Version(25)));
+        assert_eq!(Version::from_form_type(b"CDRT"), Some(Version(26)));
+        assert_eq!(Version::from_form_type(b"CDRU"), Some(Version(27)));
         assert_eq!(
             Version::from_form_type(b"CDRK").map(|v| v.name()),
             Some("CDR version 19".to_string())
