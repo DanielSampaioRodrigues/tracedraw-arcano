@@ -36,9 +36,9 @@ use tracedraw_core::{
 
 /// The oldest version whose files written here are known to open in the
 /// program that wrote the samples (by a user's tests: text from 16 in
-/// files of versions 7 to 22, and every object and text look of a
-/// version 15 file); older ones are offered as experimental.
-pub const CHECKED_SINCE: u16 = 15;
+/// files of versions 7 to 22, and every object and text look of files
+/// of versions 14 and 15); older ones are offered as experimental.
+pub const CHECKED_SINCE: u16 = 14;
 /// The newest version known to open there (versions 23 to 27, written
 /// with the records of version 22, opened with their images in that
 /// program's 2026 release, a user's test of 2026-10-18).
@@ -200,6 +200,13 @@ impl Ver {
     }
     /// Tagged fill, outline, transform and configuration records.
     fn tagged(self) -> bool {
+        self.0 >= 13
+    }
+    /// The zero 12000 on layers, groups and objects, flag 0x40 on pages
+    /// and a master page with an object box, as files from version 13 on
+    /// have them (a version 13 file without them closed the program that
+    /// wrote the samples).
+    fn props(self) -> bool {
         self.0 >= 13
     }
     /// A ZIP archive around the RIFF stream.
@@ -2841,9 +2848,9 @@ impl<'a> Writer<'a> {
         } else {
             args.push((ARG_LAYER_COLOR, colour(colour_bytes).to_vec()));
         }
-        // A zero 12000 from version 14, as layers of files of versions 14
+        // A zero 12000 from version 13, as layers of files of versions 13
         // to 27 have it (it was written from 17 only).
-        if v.zip() {
+        if v.props() {
             args.push((ARG_PROPS, vec![0; 4]));
         }
         if v.0 >= 17 && kind == LAYER_GUIDES {
@@ -2880,11 +2887,11 @@ impl<'a> Writer<'a> {
         let v = self.v;
         let mut children = vec![chunk(
             b"flgs",
-            vec![if v.zip() { 0x40 } else { 0 }, 0, 1, 0x90],
+            vec![if v.props() { 0x40 } else { 0 }, 0, 1, 0x90],
         )];
         let unit = 1.0 / UNITS_PER_MM;
         let tiny = Rect::new(-2.0 * unit, -2.0 * unit, 2.0 * unit, 2.0 * unit);
-        if v.zip() {
+        if v.props() {
             children.push(chunk(b"bbox", box_bytes(tiny)));
             children.push(chunk(b"obbx", obbx_bytes(tiny, 0.0)));
         } else {
@@ -2942,7 +2949,7 @@ impl<'a> Writer<'a> {
         let page_box = content.map(|c| c - centre.to_vec2()).unwrap_or(Rect::ZERO);
         let mut children = vec![chunk(
             b"flgs",
-            vec![if v.zip() { 0x40 } else { 0 }, 0, 0, 0x90],
+            vec![if v.props() { 0x40 } else { 0 }, 0, 0, 0x90],
         )];
         children.push(chunk(b"bbox", box_bytes(page_box)));
         children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
@@ -2996,9 +3003,9 @@ impl<'a> Writer<'a> {
             b"lgob",
             vec![
                 chunk(b"loda", {
-                    // Groups carry a zero 12000 from version 14 as well.
+                    // Groups carry a zero 12000 from version 13 as well.
                     let mut args = vec![(ARG_ID, id.to_le_bytes().to_vec())];
-                    if self.v.zip() {
+                    if self.v.props() {
                         args.push((ARG_PROPS, vec![0; 4]));
                     }
                     loda(0, args)
@@ -3157,7 +3164,7 @@ impl<'a> Writer<'a> {
                 .map_or(GRAPHIC_STYLE_ID, |(_, _, style)| *style);
             args.push((ARG_STYLE, style.to_le_bytes().to_vec()));
         }
-        if v.zip() {
+        if v.props() {
             args.push((ARG_PROPS, vec![0; 4]));
         }
         if let Some(n) = &s.name {

@@ -26,13 +26,17 @@ One window, 760 px wide, the same on every system:
 - **Save as type**: TraceDraw (`*.tdraw`, the native JSON format, which
   keeps everything) or CDR files (`*.cdr`). It starts at `.cdr` for a
   drawing that came from or was saved to a `.cdr` file.
-- **Version** (`.cdr` only): 27 down to 7, each with its release name
+- **Version**: for TraceDraw files the `.tdraw` format version, newest
+  first, with the release that first wrote it ("v1 (TraceDraw 0.5)",
+  `docs/tdraw-format.md`); for `.cdr` 27 down to 7, each with its release name
   ("v13 (X3)", "v27 (2026)"); versions not yet checked in other programs
-  say "experimental" (versions 7 to 14).
-- **Embed colour profile (size)** with "Colour profile: name", shown when
-  the drawing carries a CMYK profile: on, the profile is stored in the
-  file; off, it is left out. Only version 16 and later store one, so the
-  box is off and greyed for older versions. The choice stays for the
+  say "experimental" (versions 7 to 13).
+- **Embed colour profile (size)** with "Colour profile: name" (`.cdr`
+  only): on, the drawing's CMYK profile is stored in the file; off, it
+  is left out. Only version 16 and later store one, so the box is off
+  and greyed for older versions and for a drawing without a profile
+  ("Colour profile: none"). **Embed fonts** sits beside it, greyed:
+  fonts are not stored in written files yet. The choice stays for the
   next Save As and for Save.
 - **Title**, **Subject** and **Rating** (five stars; clicking the lit
   last star takes it off): the document's properties, also in File >
@@ -73,7 +77,8 @@ What each version's file holds is in `docs/cdr-format.md`, Writing.
   and rating writes `poster.cdr` there (version 15), sets the properties
   and remembers the folder; the next Save As starts there as `.cdr`
   version 27; an existing name asks first and Replace overwrites it; a
-  TraceDraw file is written with its own extension
+  TraceDraw file is written with its own extension, in the format version
+  chosen (0), which Ctrl+S keeps and opening the file brings back
   (`ui::save_as::tests::save_as_chooses_folder_name_type_version_and_properties`).
 - An empty name, a bare extension and a missing folder save nothing and
   say why; typed extensions become the type's

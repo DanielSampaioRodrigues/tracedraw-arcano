@@ -47,6 +47,7 @@ pub struct DocSlot {
     pub file: Option<PathBuf>,
     pub remote: Option<crate::github::Remote>,
     pub cdr_version: Option<u16>,
+    pub tdraw_version: Option<u32>,
     pub fit_pending: bool,
     pub page_numbers: PageNumberSettings,
     pub missing_fonts: Vec<String>,
@@ -78,6 +79,7 @@ impl Default for DocSlot {
             file: None,
             remote: None,
             cdr_version: None,
+            tdraw_version: None,
             fit_pending: false,
             page_numbers: PageNumberSettings::default(),
             missing_fonts: Vec::new(),
@@ -123,6 +125,7 @@ impl App {
         std::mem::swap(&mut self.file, &mut slot.file);
         std::mem::swap(&mut self.remote, &mut slot.remote);
         std::mem::swap(&mut self.cdr_version, &mut slot.cdr_version);
+        std::mem::swap(&mut self.tdraw_version, &mut slot.tdraw_version);
         std::mem::swap(&mut self.page_numbers, &mut slot.page_numbers);
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
         std::mem::swap(&mut self.units, &mut slot.units);
@@ -274,6 +277,7 @@ impl App {
         self.file = file;
         self.remote = None;
         self.cdr_version = None;
+        self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
         self.page_numbers = PageNumberSettings::default();
@@ -410,6 +414,7 @@ impl App {
         self.selection.clear();
         self.file = None;
         self.cdr_version = None;
+        self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
         self.page_numbers = PageNumberSettings::default();

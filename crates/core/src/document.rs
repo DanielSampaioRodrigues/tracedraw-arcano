@@ -3145,12 +3145,22 @@ impl Document {
     /// Serialize to the native `.tdraw` JSON format: the document's
     /// fields and `format_version` ([`TDRAW_FORMAT_VERSION`]).
     pub fn to_json(&self) -> Result<String> {
+        self.to_json_version(TDRAW_FORMAT_VERSION)
+    }
+
+    /// Serialize as a `.tdraw` file of format `version` (the current one
+    /// for a newer number), for an older TraceDraw: the current layout is
+    /// taken down one step at a time ([`DOWN_STEPS`]).
+    pub fn to_json_version(&self, version: u32) -> Result<String> {
         let mut v = serde_json::to_value(self)?;
         if let serde_json::Value::Object(m) = &mut v {
             m.insert(
                 FORMAT_VERSION_KEY.into(),
                 serde_json::Value::from(TDRAW_FORMAT_VERSION),
             );
+        }
+        for step in DOWN_STEPS.iter().skip(version as usize).rev() {
+            step(&mut v);
         }
         Ok(serde_json::to_string_pretty(&v)?)
     }
@@ -3201,6 +3211,21 @@ const STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [
     // 0 to 1: versions start being recorded; the layout is the same.
     |_| {},
 ];
+
+/// `DOWN_STEPS[i]` takes a file from version `i + 1` back to `i`, for
+/// saving in an older version.
+const DOWN_STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [
+    // 1 to 0: no recorded version.
+    |v| {
+        if let serde_json::Value::Object(m) = v {
+            m.remove(FORMAT_VERSION_KEY);
+        }
+    },
+];
+
+/// The TraceDraw release that first wrote each `.tdraw` format version
+/// (`TDRAW_RELEASES[v]`), for Save As.
+pub const TDRAW_RELEASES: [&str; TDRAW_FORMAT_VERSION as usize + 1] = ["0.4", "0.5"];
 
 /// Bring a `.tdraw` file's JSON from version `from` up to
 /// [`TDRAW_FORMAT_VERSION`], one step at a time.
@@ -3390,6 +3415,20 @@ mod tests {
         }
         p.close_path();
         p
+    }
+
+    #[test]
+    fn tdraw_files_can_be_written_in_an_older_format_version() {
+        let mut doc = Document::default();
+        doc.title = "Older".into();
+        for version in 0..=TDRAW_FORMAT_VERSION {
+            let json = doc.to_json_version(version).expect("json");
+            assert_eq!(tdraw_text_version(&json), version);
+            assert_eq!(Document::from_json(&json).expect("reads").title, "Older");
+        }
+        let newer = doc.to_json_version(TDRAW_FORMAT_VERSION + 5).expect("json");
+        assert_eq!(tdraw_text_version(&newer), TDRAW_FORMAT_VERSION);
+        assert_eq!(TDRAW_RELEASES.len(), TDRAW_FORMAT_VERSION as usize + 1);
     }
 
     #[test]

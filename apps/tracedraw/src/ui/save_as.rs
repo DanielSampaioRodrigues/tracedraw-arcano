@@ -1,7 +1,7 @@
 //! File > Save As (and Save of a drawing without a file): the Save
 //! Drawing dialog. One window chooses the folder (path bar, Up, New folder,
 //! shortcuts and the folder's contents), the file name, the type
-//! (TraceDraw or `.cdr`), the `.cdr` version (the newest first), whether
+//! (TraceDraw or `.cdr`), the version of either (the newest first), whether
 //! the CMYK profile goes along, and the document's title,
 //! subject and rating, and asks before replacing a file. In a browser,
 //! where every save is a download, it keeps the name, type, version and
@@ -15,6 +15,7 @@ use crate::ui::dialogs::{enter_pressed, window};
 use crate::ui::options::{combo, grid, row_label};
 use egui::{Context, RichText, Ui};
 use std::path::{Path, PathBuf};
+use tracedraw_core::document::{TDRAW_FORMAT_VERSION, TDRAW_RELEASES};
 use tracedraw_core::Command;
 
 const ERROR: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -39,6 +40,8 @@ pub struct SaveAsState {
     /// `.cdr` rather than TraceDraw.
     pub cdr: bool,
     pub version: u16,
+    /// The `.tdraw` format version.
+    pub tdraw_version: u32,
     /// The drawing's CMYK profile (name, size in bytes), when it has one.
     pub profile: Option<(String, usize)>,
     /// The profile goes into the file (`.cdr` from version 16).
@@ -94,6 +97,7 @@ impl SaveAsState {
             name: String::new(),
             cdr,
             version: tracedraw_cdr::write::NEWEST_VERSION,
+            tdraw_version: TDRAW_FORMAT_VERSION,
             profile: doc
                 .cmyk_profile
                 .as_ref()
@@ -225,6 +229,18 @@ pub fn release_name(version: u16) -> &'static str {
 }
 
 /// The versions offered, newest first.
+/// The `.tdraw` versions offered, newest first.
+pub fn tdraw_version_choices() -> Vec<u32> {
+    (0..=TDRAW_FORMAT_VERSION).rev().collect()
+}
+
+/// "v1 (TraceDraw 0.5)": the format version and the release that first
+/// wrote it.
+pub fn tdraw_version_label(version: u32) -> String {
+    let release = TDRAW_RELEASES.get(version as usize).copied().unwrap_or("?");
+    format!("v{version} (TraceDraw {release})")
+}
+
 pub fn version_choices() -> Vec<u16> {
     tracedraw_cdr::write::versions().rev().collect()
 }
@@ -276,6 +292,7 @@ impl App {
             self.cdr_embed_profile = st.embed_profile;
             self.save_cdr_to(path, st.version);
         } else {
+            self.tdraw_version = Some(st.tdraw_version);
             self.save_to(path);
         }
         true
@@ -597,7 +614,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
         ui.end_row();
         row_label(ui, &tr("dialog.cdr_version"));
         ui.horizontal(|ui| {
-            ui.add_enabled_ui(st.cdr, |ui| {
+            if st.cdr {
                 combo(
                     ui,
                     "save_as_version",
@@ -606,53 +623,55 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                     version_label,
                     260.0,
                 );
-            });
+            } else {
+                combo(
+                    ui,
+                    "save_as_tdraw_version",
+                    &mut st.tdraw_version,
+                    &tdraw_version_choices(),
+                    tdraw_version_label,
+                    260.0,
+                );
+            }
         });
         ui.end_row();
-        if let Some((name, size)) = &st.profile {
+        if st.cdr {
             // Profiles are stored in the package of version 16 and later.
-            let can = st.cdr && st.version >= 16;
+            let can = st.version >= 16 && st.profile.is_some();
             ui.label("");
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(can, |ui| {
-                    let text = trf(
-                        "dialog.embed_color_profile",
-                        &[("size", &size_text(*size as u64))],
-                    );
+                    let text = match &st.profile {
+                        Some((_, size)) => trf(
+                            "dialog.embed_color_profile",
+                            &[("size", &size_text(*size as u64))],
+                        ),
+                        None => tr("dialog.embed_color_profile_none"),
+                    };
                     let mut on = st.embed_profile && can;
                     if ui.checkbox(&mut on, text).changed() {
                         st.embed_profile = on;
                     }
                 });
+                let name = st
+                    .profile
+                    .as_ref()
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| tr("dialog.color_profile_missing"));
                 ui.label(
-                    RichText::new(trf("dialog.color_profile", &[("name", name)]))
+                    RichText::new(trf("dialog.color_profile", &[("name", &name)]))
                         .color(Tokens::text_dim()),
                 );
+                ui.add_space(16.0);
+                // Fonts are not stored in written files yet.
+                ui.add_enabled_ui(false, |ui| {
+                    let mut off = false;
+                    ui.checkbox(&mut off, tr("dialog.embed_fonts"))
+                        .on_disabled_hover_text(tr("dialog.embed_fonts_later"));
+                });
             });
             ui.end_row();
         }
-        row_label(ui, &tr("dialog.title"));
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut st.title).desired_width(220.0));
-            ui.label(tr("dialog.subject"));
-            ui.add(egui::TextEdit::singleline(&mut st.subject).desired_width(200.0));
-            ui.label(tr("dialog.rating"));
-            for i in 1..=5u8 {
-                let colour = if st.rating >= i {
-                    egui::Color32::from_rgb(0xE8, 0xA3, 0x17)
-                } else {
-                    egui::Color32::from_gray(0xC0)
-                };
-                let star = egui::RichText::new("\u{2605}").color(colour).size(15.0);
-                if ui
-                    .add(egui::Label::new(star).sense(egui::Sense::click()))
-                    .clicked()
-                {
-                    st.rating = if st.rating == i { i - 1 } else { i };
-                }
-            }
-        });
-        ui.end_row();
     });
 }
 
@@ -784,9 +803,22 @@ mod tests {
         st.set_cdr(false);
         st.name = "native.cdr".into();
         assert_eq!(st.file_name(), "native.tdraw");
+        assert_eq!(st.tdraw_version, TDRAW_FORMAT_VERSION);
+        assert_eq!(tdraw_version_choices()[0], TDRAW_FORMAT_VERSION);
+        assert_eq!(tdraw_version_label(1), "v1 (TraceDraw 0.5)");
+        st.tdraw_version = 0;
         let mut st = st.clone();
         assert!(app.finish_save_as(&mut st));
-        assert!(dir.join("native.tdraw").exists());
+        let text = std::fs::read_to_string(dir.join("native.tdraw")).unwrap_or_default();
+        assert_eq!(tracedraw_core::document::tdraw_text_version(&text), 0);
+        // Ctrl+S keeps the version; opening the file brings it back.
+        app.engine.mark_saved();
+        app.save(false);
+        let text = std::fs::read_to_string(dir.join("native.tdraw")).unwrap_or_default();
+        assert_eq!(tracedraw_core::document::tdraw_text_version(&text), 0);
+        let mut other = App::headless();
+        other.open_path(dir.join("native.tdraw"));
+        assert_eq!(other.tdraw_version, Some(0));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -897,7 +929,8 @@ mod tests {
         assert_eq!(version_label(27), plain(27));
         assert_eq!(version_label(16), plain(16));
         assert_eq!(version_label(15), plain(15));
-        assert_ne!(version_label(14), plain(14));
+        assert_eq!(version_label(14), plain(14));
+        assert_ne!(version_label(13), plain(13));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

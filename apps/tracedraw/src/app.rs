@@ -693,6 +693,10 @@ pub struct App {
     /// the `.cdr` file it came from, or the one last chosen when saving
     /// it. `None`: the version of Options > Global > File Formats.
     pub cdr_version: Option<u16>,
+    /// The `.tdraw` format version the active drawing is saved in: the
+    /// version of the file it came from, or the one chosen in Save As.
+    /// `None`: the current one.
+    pub tdraw_version: Option<u32>,
     /// Save As's choice: the CMYK profile goes into `.cdr` files.
     pub cdr_embed_profile: bool,
     pub status: String,
@@ -1576,6 +1580,7 @@ impl App {
             vector_fx_base: Default::default(),
             github: Default::default(),
             cdr_version: None,
+            tdraw_version: None,
             cdr_embed_profile: true,
             status: String::new(),
             fit_pending: true,
@@ -3761,6 +3766,8 @@ impl App {
         let mut unread = 0usize;
         // The version of an opened `.cdr` file: saving keeps it.
         let mut cdr_version = None;
+        // The format version of an opened `.tdraw` file: saving keeps it.
+        let mut tdraw_version = None;
         let result = if ext == "svg" || ext == "svgz" {
             Self::read_svg_text(&path)
                 .and_then(|text| {
@@ -4086,6 +4093,10 @@ impl App {
             crate::files::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|json| {
+                    tdraw_version = Some(
+                        tracedraw_core::document::tdraw_text_version(&json)
+                            .min(tracedraw_core::document::TDRAW_FORMAT_VERSION),
+                    );
                     tracedraw_core::Document::from_json(&json).map_err(|e| e.to_string())
                 })
                 .map(|d| (d, crate::i18n::tr("status.opened")))
@@ -4094,6 +4105,7 @@ impl App {
             Ok((doc, msg)) => {
                 self.open_document(doc, None);
                 self.cdr_version = cdr_version;
+                self.tdraw_version = tdraw_version;
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"
@@ -4200,9 +4212,12 @@ impl App {
         } else {
             // Fonts that came with other drawings go along (text imported
             // or pasted from them).
+            let version = self
+                .tdraw_version
+                .unwrap_or(tracedraw_core::document::TDRAW_FORMAT_VERSION);
             tracedraw_text::fonts()
                 .with_carried_fonts(self.engine.document())
-                .to_json()
+                .to_json_version(version)
                 .map(String::into_bytes)
                 .map_err(|e| e.to_string())
         };

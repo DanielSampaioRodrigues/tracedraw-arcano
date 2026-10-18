@@ -6,10 +6,16 @@ level. Fonts the drawing carries are embedded in it.
 
 ## Versions
 
-| Version | Change |
-|---|---|
-| 0 | Files written before versions were recorded (no `format_version`). |
-| 1 | `format_version` recorded; the layout is the same as 0. |
+| Version | First written by | Change |
+|---|---|---|
+| 0 | TraceDraw 0.4 | Files written before versions were recorded (no `format_version`). |
+| 1 | TraceDraw 0.5 | `format_version` recorded; the layout is the same as 0. |
+
+Save As offers every version, newest first ("v1 (TraceDraw 0.5)", from
+`TDRAW_RELEASES`). An older one is written by taking the current layout
+down one step at a time (`Document::to_json_version`; `DOWN_STEPS[i]`
+takes version `i + 1` to `i`). A drawing keeps the version it was opened
+in or last saved as, so Save writes the same version again.
 
 ## The promise
 
@@ -27,3 +33,4 @@ level. Fonts the drawing carries are embedded in it.
 ## Checks
 
 - `document::tests::tdraw_files_carry_their_format_version_and_older_ones_open`
+- `document::tests::tdraw_files_can_be_written_in_an_older_format_version`
