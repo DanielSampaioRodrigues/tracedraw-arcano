@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` files of versions 3 and 4 open properly (they opened blank or
+  out of shape): version 3 objects with their own matrices, fills,
+  fountains, outlines with caps and arrowheads, groups and artistic text;
+  version 4 matrices and colours; arrowheads of both; curves of glyph
+  outlines. Numbered library colours become spot inks coloured from the
+  file's thumbnail.
+
 - File > Print Preview shows the sheets as they print: imposition,
   marks, mirror, invert and each separation plate, with the print options
   beside them and zoom (it showed the page full screen).

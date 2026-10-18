@@ -9,6 +9,9 @@ use tracedraw_core::document::{Ink, Shape, ShapeKind};
 use tracedraw_core::geometry::{Point, Shape as _};
 use tracedraw_core::{Color, Document, Fill};
 
+/// The library of the numbered palette colours of versions 3 and 4.
+pub(crate) const V3_PALETTE: u16 = 0x0300;
+
 /// Ink numbers of library colours: the library (palette) in the upper
 /// bits, the colour's number in the lower 16.
 const LIBRARY_INK: u32 = 0x4000_0000;
@@ -46,6 +49,10 @@ pub struct Preview {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    /// The picture shows the drawing's extent stretched to its size (the
+    /// thumbnails of version 3 files, 16 dithered colours) rather than the
+    /// page; colours are then averaged, not picked by median.
+    pub covers_drawing: bool,
 }
 
 impl Preview {
@@ -66,17 +73,19 @@ impl Preview {
             width: pm.width(),
             height: pm.height(),
             rgba,
+            covers_drawing: false,
         })
     }
 
-    /// The colour (0 to 1) at page point `p` of a `w` by `h` mm page
-    /// (origin bottom left).
-    fn at(&self, p: Point, w: f64, h: f64) -> Option<[f64; 3]> {
+    /// The colour (0 to 1) at page point `p` of the area `frame` (in page
+    /// mm, origin bottom left) the picture covers.
+    fn at(&self, p: Point, frame: tracedraw_core::geometry::Rect) -> Option<[f64; 3]> {
+        let (w, h) = (frame.width(), frame.height());
         if w <= 0.0 || h <= 0.0 {
             return None;
         }
-        let x = (p.x / w * self.width as f64).floor();
-        let y = ((1.0 - p.y / h) * self.height as f64).floor();
+        let x = ((p.x - frame.x0) / w * self.width as f64).floor();
+        let y = ((1.0 - (p.y - frame.y0) / h) * self.height as f64).floor();
         if x < 0.0 || y < 0.0 || x >= self.width as f64 || y >= self.height as f64 {
             return None;
         }
@@ -152,6 +161,19 @@ pub fn colours_from_preview(doc: &mut Document, preview: &Preview) -> usize {
     let fill_open = doc.metadata.fill_open_curves;
     let shapes = shapes_bottom_up(doc);
     let paths: Vec<_> = shapes.iter().map(|s| s.page_path()).collect();
+    let frame = if preview.covers_drawing {
+        match paths
+            .iter()
+            .map(|p| p.bounding_box())
+            .filter(|b| b.width().is_finite() && b.height().is_finite())
+            .reduce(|a, b| a.union(b))
+        {
+            Some(b) => b,
+            None => return 0,
+        }
+    } else {
+        tracedraw_core::geometry::Rect::new(0.0, 0.0, w, h)
+    };
     let mut samples: std::collections::BTreeMap<u32, Vec<[f64; 3]>> = Default::default();
     for (i, s) in shapes.iter().enumerate() {
         let Some((ink, tint)) = fill_ink(&s.fill) else {
@@ -181,7 +203,7 @@ pub fn colours_from_preview(doc: &mut Document, preview: &Preview) -> usize {
                 if covered {
                     continue;
                 }
-                let Some(rgb) = preview.at(p, w, h) else {
+                let Some(rgb) = preview.at(p, frame) else {
                     continue;
                 };
                 // A tint lightens the ink towards white.
@@ -198,8 +220,13 @@ pub fn colours_from_preview(doc: &mut Document, preview: &Preview) -> usize {
         }
         let mut median = [0.0; 3];
         for (ch, m) in median.iter_mut().enumerate() {
-            list.sort_by(|a, b| a[ch].total_cmp(&b[ch]));
-            *m = list[list.len() / 2][ch];
+            if preview.covers_drawing {
+                // A dithered thumbnail mixes a few colours: their mean.
+                *m = list.iter().map(|c| c[ch]).sum::<f64>() / list.len() as f64;
+            } else {
+                list.sort_by(|a, b| a[ch].total_cmp(&b[ch]));
+                *m = list[list.len() / 2][ch];
+            }
         }
         let rgb = Color::Rgb {
             r: median[0] as f32,
@@ -309,6 +336,7 @@ mod tests {
             width: 10,
             height: 10,
             rgba,
+            covers_drawing: false,
         };
         assert_eq!(colours_from_preview(&mut doc, &preview), 1);
         let fill = &doc.pages[0].layers[0].shapes[0].fill;

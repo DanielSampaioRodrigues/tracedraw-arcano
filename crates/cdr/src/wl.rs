@@ -191,7 +191,7 @@ fn font_table(d: &[u8], at: usize) -> Vec<(u16, String)> {
 
 /// A current family for one of the fonts shipped with versions 1 and 2, by
 /// the name of its file; others keep the file's name.
-fn family_of(wfn: &str) -> String {
+pub(crate) fn family_of(wfn: &str) -> String {
     let stem = wfn
         .trim()
         .to_ascii_lowercase()
@@ -199,6 +199,10 @@ fn family_of(wfn: &str) -> String {
         .to_string();
     let known = [
         ("swz", "Arial"),
+        ("switzerland", "Arial"),
+        ("switzerlandnarrow", "Arial Narrow"),
+        ("switzerlandblack", "Arial Black"),
+        ("swzn", "Arial Narrow"),
         ("swzblack", "Arial Black"),
         ("avalon", "URW Gothic"),
         ("toronto", "Times New Roman"),

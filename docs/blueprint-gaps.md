@@ -30,10 +30,8 @@ exceptions, shown disabled so the layout stays complete:
 - `.cdr` generations: `WL` binary (v1, v2), RIFF (v3 to 13), ZIP with
   `content/riffData.cdr` (14, 15), ZIP with `content/root.dat` and
   `content/data/*.dat` ordered by `content/dataFileList.dat` (16 and
-  later). TraceDraw reads all three container layouts (RIFF, the 14/15
-  ZIP and the 16+ ZIP with redirected chunks);
-  the `WL` binary of v1 and v2 is not read. Writing `.cdr` produces the
-  version 12 RIFF layout (see `cdr-format.md`, "Writing").
+  later). TraceDraw reads all of them, the `WL` binary included, and
+  writes versions 7 to 22 (see `cdr-format.md`, "Writing").
 - Coordinates: 1/1000 inch (16-bit versions, `V < 600`), 1/254000 inch
   otherwise.
 - Compressed lists: two zlib parts; the second is a size table that the
@@ -54,8 +52,8 @@ exceptions, shown disabled so the layout stays complete:
   version 12, and the `arrx` arrowheads of newer files (one version 21
   sample).
 - Still open in the reader: splines (0x26 seen only as connector lines, which
-  are read), vector
-  pattern (10) and PostScript (6) fills, text before version 7, tabs,
+  are read), PostScript (6) fills, perspective and envelopes of version
+  3 objects, version 3 fill types 6, 7 and 10, text of version 4, tabs,
   bullets and drop caps from `stlt` (tables skipped by size), the `ftil`
   fill transform, lenses and other effects, fonts embedded with
   MicroType Express compression. Layouts marked "assumed" in

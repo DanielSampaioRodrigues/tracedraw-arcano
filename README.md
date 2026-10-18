@@ -62,7 +62,7 @@
     </td>
     <td width="25%" valign="top">
       <h3>Opens your files</h3>
-      A clean-room <code>.cdr</code> reader for format versions 1 to 25 (text in 1, 2 and from 5) and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
+      A clean-room <code>.cdr</code> reader for format versions 1 to 25 and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
     </td>
     <td width="25%" valign="top">
       <h3>Ready for scripts and agents</h3>
@@ -243,7 +243,7 @@ is confirmed and what is still assumed.
   split streams of 16 and later. CMX exchange files open too.
 - **What comes across:** pages, layers, master layers, guidelines,
   rectangles, ellipses, polygons and stars, curves with their node types,
-  artistic and paragraph text (from version 5; bold, italic
+  artistic and paragraph text (versions 1 to 3 and from 5; bold, italic
   and text on a path from 7), groups, clip containers, bitmaps (CMYK and cut-out), uniform,
   gradient, pattern, texture and vector pattern fills, outlines with
   arrowheads, uniform and graded transparency, embedded fonts and the
@@ -359,8 +359,9 @@ Anyone who wants to help is welcome, with or without writing code:
 - **Try it on your own files.** A `.cdr` that does not open right, sent
   in [an issue](https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml),
   improves the reader more than anything else (only files you may share).
-  Files from CorelDRAW 1 to 3, with a picture of how they look, are the
-  most wanted: those versions are not read yet or not yet confirmed.
+  Files of versions 4 and 6, and old files that use perspective,
+  pattern or PostScript fills, with a picture of how they look, are the
+  most wanted: those are the parts still read from few samples.
 - **Open our test files in your copy of the reference program.** The
   [`interop` branch](https://github.com/igtoth/tracedraw/tree/interop/bundles)
   holds small `.cdr` files saved by TraceDraw in versions 7 to 15; telling

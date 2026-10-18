@@ -38,6 +38,32 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 | Stream `0xFFFFFFFF` means the payload (at most 8 bytes) is stored inline right after the length field | confirmed (public spec) | |
 | A redirected `LIST` body starts with its form type in the external stream | confirmed (public spec) | |
 
+### Versions 3 and 4
+
+Version 3 files (form type `CDR `, `vrsn` 300) and version 4 files use
+the RIFF layout with 16-bit fields. Sources: four version 3 drawings and
+six version 4 drawings a user sent, five of them also in version 5, and a
+large set of version 3 clipart files a user sent (none committed); every
+file opens, and renders were compared across the versions of each
+drawing.
+
+| Item | Status | Note |
+|---|---|---|
+| Version 3 object types count from 0: rectangle 0, ellipse 1, curve 2, text 3, bitmap 4 | confirmed (file) | Read as the later codes plus one. |
+| Version 3 object (`lobj`) arguments: 100 transformations, 30 coordinates, 20 fill, 10 outline, all inline | confirmed (file) | |
+| Argument 100: u16, count (u16), then 10-byte entries (type u16, data offset u16 at 6); type 0x8c is a matrix of six i32 (a, c, e, b, d, f; factors 16.16, offsets 1/1000 inch); matrices apply in file order | confirmed (file) | A type 0x14 entry (between two matrices, in perspective drawings) is not applied, with a warning. |
+| Version 3 group (`grp `) `lobj`: argument 100 places all the group's objects | confirmed (file) | Without it, grouped objects come out small and out of place. Version 4 groups have a `trfd` too, but their objects already carry their whole transform. |
+| Version 4 `trfd`: the same fixed-point matrix after the record type 8 | confirmed (file) | Several matrices compose. |
+| Inline fill (version 3): type u8 (0 none, 1 uniform, 2 linear fountain, 4 radial fountain), then a colour, or the angle (i16, tenths of a degree) and two colours | confirmed (file) for 0, 1 and 2; 4 assumed | Types 6, 7 and 10 are reported and left unfilled. |
+| Inline outline (version 3): flags u8 (bit 0 = outlined), width u16 (1/1000 inch), stretch u16, angle u16 (tenths), colour, caps at 32, joins at 33, start and end arrowhead ids (u32 at 34 and 38) | confirmed (file) for flags, width, colour, caps, arrowheads; joins and angle assumed | |
+| Colour, version 3: model u8, four bytes. Model 1: CMYK in percent. Model 0: u16 index, u16 tint; 0 black at the tint, 1 white, other indexes colours of a numbered ink library | confirmed (file) | Library colours become spot inks named by number; their look comes from the file's thumbnail. |
+| Colour, version 4: model u16 then four u16 (model 1: CMYK in percent; model 0: index and tint) | confirmed (file) | Model 1 was read as a library colour before. |
+| Curve coordinates before version 6: u16 count, a u16 (1 in glyph outlines of versions 3 and 4), then the points | confirmed (file) | The two were read as one u32, which broke such curves. |
+| `arrw`, versions 3 and 4: id (u32; version 4 a u16 and the u16 10), u16, point count (u16 at 6), points offset (u16 at 8, from byte 6), node types at 10 (12 when the u16 at 10 is 1), points as i16 pairs | confirmed (file) | Version 4 outlines name them by the low 16 bits. |
+| Version 3 artistic text (coordinates argument): count u16 at 11, font u16 at 15, character spacing, size (1/1000 inch), word and line spacing at 17, 19, 21, 23, alignment at 25, tab stops from 32, 3-byte character records from 132 (the character in the middle) | confirmed (file) for count, size, characters; spacing and alignment assumed | The family is the first name of the `ftbl` table; how the font number picks among several names is not known. |
+| `imhd` (version 3): a `.bmp` thumbnail of the drawing's extent, 16 colours, dithered | confirmed (file) | Used to colour library inks (mean of the samples). |
+| `mcfg`, version 3: two unknown bytes, then the page corners, y down | confirmed (file) | |
+
 ### Versions 1 and 2 (`WL`)
 
 Files of the first two versions are not RIFF. Everything here comes from

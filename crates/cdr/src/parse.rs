@@ -60,6 +60,8 @@ pub(crate) const ARG_OUTLINE: u32 = 0x0a;
 pub(crate) const ARG_FILL: u32 = 0x14;
 pub(crate) const ARG_COORDS: u32 = 0x1e;
 pub(crate) const ARG_STYLE: u32 = 200;
+/// The object's matrix inside its `lobj` (version 3).
+const ARG_LEGACY_TRANSFORM: u32 = 100;
 /// The object's style as a string (version 16 and later): fill, outline,
 /// character, frame and paragraph settings (seen in a version 21 file).
 pub(crate) const ARG_STYLE_STRING: u32 = 201;
@@ -132,7 +134,7 @@ impl<'a> Reader<'a> {
         self.pos += 2;
         Some(u16::from_le_bytes([s[0], s[1]]))
     }
-    fn i16(&mut self) -> Option<i16> {
+    pub(crate) fn i16(&mut self) -> Option<i16> {
         self.u16().map(|v| v as i16)
     }
     pub(crate) fn u32(&mut self) -> Option<u32> {
@@ -275,6 +277,9 @@ struct Ctx<'a> {
     pending_clip: Option<u32>,
     /// Colours of spot colour libraries met: (library, number).
     library_inks: std::collections::BTreeSet<(u16, u16)>,
+    /// The font names of a version 3 `ftbl`, in file order.
+    v3_fonts: Vec<String>,
+    v3_effect_warned: bool,
     /// Guidelines of the page being read (objects of type 0x16).
     guides: Vec<tracedraw_core::document::Guide>,
     /// The last object read was a guideline, not a skipped object.
@@ -343,6 +348,8 @@ impl<'a> Ctx<'a> {
             last_was_guide: false,
             outer_transform: Affine::IDENTITY,
             library_inks: Default::default(),
+            v3_fonts: Vec::new(),
+            v3_effect_warned: false,
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
@@ -417,6 +424,11 @@ pub fn parse_document_with(
             ctx.read_arrowhead_x(c);
         } else if c.is(b"font") {
             ctx.read_font(c);
+        } else if c.is(b"ftbl") {
+            // Version 3 font table: the font file names, NUL-terminated
+            // runs of lowercase letters among other fields (assumed).
+            let names = v3_font_names(ctx.data(c));
+            ctx.v3_fonts = names;
         } else if c.is(b"ole2") {
             let pictures = crate::ole::embedded_pictures(ctx.data(c));
             ctx.embedded.extend(pictures);
@@ -666,7 +678,9 @@ impl<'a> Ctx<'a> {
             let y0 = r.coord()?;
             let x1 = r.coord()?;
             let y1 = r.coord()?;
-            (x1 - x0, y1 - y0)
+            // The corners run top-left to bottom-right (y down) in the
+            // version 3 files seen.
+            ((x1 - x0).abs(), (y1 - y0).abs())
         } else {
             (r.coord()?, r.coord()?)
         };
@@ -704,6 +718,38 @@ impl<'a> Ctx<'a> {
             let raw = r.u32()?;
             (model, raw.to_le_bytes())
         };
+        // Before version 5, model 1 is CMYK in percent (version 4 as u16s,
+        // version 3 as bytes), and model 0 (version 3) a palette entry: a
+        // u16 index and a u16 tint, index 0 black at the tint, 1 white (as in
+        // the files of versions 1 and 2). Seen in the same drawings saved in
+        // versions 3, 4 and 5. A version 4 index above 255 is not kept.
+        if self.v < 5 && model == 1 {
+            let p = |x: u8| (x as f32).min(100.0);
+            return Some(Color::cmyk_pct(p(b[0]), p(b[1]), p(b[2]), p(b[3])));
+        }
+        if self.v < 5 && model == 0 {
+            // Version 4 keeps the index and tint as its first two u16s.
+            let (index, tint) = if self.v >= 4 {
+                (b[0] as u16, b[1] as u16)
+            } else {
+                (
+                    u16::from_le_bytes([b[0], b[1]]),
+                    u16::from_le_bytes([b[2], b[3]]),
+                )
+            };
+            return Some(match index {
+                1 => Color::cmyk_pct(0.0, 0.0, 0.0, 0.0),
+                0 => Color::cmyk_pct(0.0, 0.0, 0.0, (tint as f32).min(100.0)),
+                // Other entries are colours of a spot colour library, by
+                // number (the numbers seen match a printing ink guide's;
+                // the file does not hold the colours): spot inks, coloured
+                // from the drawing's thumbnail when it has one.
+                number => {
+                    self.library_inks.insert((crate::spot::V3_PALETTE, number));
+                    crate::spot::library_color(crate::spot::V3_PALETTE, number, tint)
+                }
+            });
+        }
         // Model 0 with a zero value is the empty colour some records keep
         // in place of one (seen in version 15 and 22 files, where nothing
         // shows it): black, as before, but without a warning.
@@ -1257,6 +1303,9 @@ impl<'a> Ctx<'a> {
     /// The outline is classified into one of our presets by its shape.
     fn read_arrowhead(&mut self, c: &Chunk) {
         let d = self.data(c);
+        if self.v < 5 {
+            return self.read_arrowhead_v3(d);
+        }
         let mut r = self.reader(d);
         let Some(id) = r.u32() else { return };
         let n = self.reader_at(d, 8).u16().map_or(0, usize::from);
@@ -1273,6 +1322,45 @@ impl<'a> Ctx<'a> {
         let mut pts = Vec::with_capacity(n);
         for _ in 0..n {
             let (Some(x), Some(y)) = (r.i32(), r.i32()) else {
+                return;
+            };
+            pts.push(Point::new(f64::from(x), f64::from(y)));
+        }
+        self.add_arrowhead(id, &pts, &types);
+    }
+
+    /// `arrw` of versions 3 and 4: the id (u32; version 4 a u16 and the
+    /// u16 10), a u16, the point count (u16 at 6), where the points start
+    /// (u16 at 8, counted from byte 6), the node types at 10 (at 12 when
+    /// the u16 at 10 is 1) and the points as i16 pairs. Seen in one drawing
+    /// saved in both versions; the outlines refer to these ids.
+    fn read_arrowhead_v3(&mut self, d: &'a [u8]) {
+        let id = if self.v >= 4 {
+            self.reader_at(d, 0).u16().map(u32::from)
+        } else {
+            self.reader_at(d, 0).u32()
+        };
+        let Some(id) = id else { return };
+        let n = self.reader_at(d, 6).u16().map_or(0, usize::from);
+        let points_at = 6 + self.reader_at(d, 8).u16().map_or(0, usize::from);
+        let types_at = if self.reader_at(d, 10).u16() == Some(1) {
+            12
+        } else {
+            10
+        };
+        if n == 0 || types_at + n > points_at || points_at + 4 * n > d.len() {
+            self.report.warn(format!(
+                "arrowhead {id}: unreadable outline; drawn without arrowhead"
+            ));
+            return;
+        }
+        let Some(types) = d.get(types_at..types_at + n).map(<[u8]>::to_vec) else {
+            return;
+        };
+        let mut r = self.reader_at(d, points_at);
+        let mut pts = Vec::with_capacity(n);
+        for _ in 0..n {
+            let (Some(x), Some(y)) = (r.i16(), r.i16()) else {
                 return;
             };
             pts.push(Point::new(f64::from(x), f64::from(y)));
@@ -1738,7 +1826,12 @@ impl<'a> Ctx<'a> {
             // of versions 11 and 12), 20 in the tagged ones (version 21).
             let mut m = self.reader_at(d, dashes_at + if (6..13).contains(&v) { 22 } else { 20 });
             if let (Some(s), Some(e)) = (m.u32(), m.u32()) {
-                markers = (s, e);
+                // Version 4 keeps a u16 id and the u16 10, as its `arrw`.
+                markers = if v == 4 {
+                    (s & 0xffff, e & 0xffff)
+                } else {
+                    (s, e)
+                };
             }
         }
         // A dash pattern needs an even number of on/off entries.
@@ -1826,6 +1919,16 @@ impl<'a> Ctx<'a> {
             }
             if v >= 6 {
                 tr.skip(6);
+            }
+            // Before version 5 the matrix is six i32: the four factors in
+            // 16.16 fixed point, the offsets in coordinate units.
+            if v < 5 {
+                // Several matrices apply one after the other.
+                match fixed_matrix(&mut tr) {
+                    Some(m) => result = Some(m * result.unwrap_or(Affine::IDENTITY)),
+                    None => self.report.warn("trfd too short; identity used"),
+                }
+                continue;
             }
             let (Some(a), Some(c_), Some(e), Some(b), Some(d_), Some(f)) = (
                 tr.f64(),
@@ -2024,13 +2127,194 @@ impl<'a> Ctx<'a> {
         ok.then(|| (Point::new(local.x0, local.y0), size))
     }
 
+    /// The transformations of a version 3 object (argument 100): a u16, the
+    /// count (u16 at 2), then 10 bytes each: the type (u16; 0x8c a matrix)
+    /// and where its data starts (u16 at 6, from the argument's start).
+    /// Matrices apply in file order; others (perspective, envelope, seen
+    /// between two matrices) are not applied yet.
+    fn read_transform_list_v3(&mut self, d: &'a [u8], arg: Arg) -> Option<Affine> {
+        let g = d.get(arg.off..arg.end)?;
+        let u = |k: usize| g.get(k..k + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+        let n = (u(2)? as usize).min(32);
+        let mut result: Option<Affine> = None;
+        for i in 0..n {
+            let (Some(kind), Some(at)) = (u(4 + 10 * i), u(4 + 10 * i + 6)) else {
+                break;
+            };
+            if kind == 0x8c {
+                let mut r = self.reader_at(g, at as usize);
+                if let Some(m) = fixed_matrix(&mut r) {
+                    result = Some(m * result.unwrap_or(Affine::IDENTITY));
+                }
+            } else if !self.v3_effect_warned {
+                self.v3_effect_warned = true;
+                self.report.warn(format!(
+                    "a transformation of type 0x{kind:02x} (perspective or envelope) of a version 3 object is not applied"
+                ));
+            }
+        }
+        result
+    }
+
+    /// Version 3 artistic text, in its coordinates argument: the character
+    /// count (u16 at 11), the font (u16 at 15), character spacing, size in
+    /// 1/1000 inch, word and line spacing (u16 at 17, 19, 21, 23; spacing
+    /// in percent), the alignment (25: 1 left, 2 centre, 3 right), tab
+    /// stops from 32, and from 132 one 3-byte record a character (a byte,
+    /// the character in Windows-1252, a byte). The family comes from the
+    /// file's font table; the font number is not matched to it yet.
+    fn read_text_v3(&mut self, d: &'a [u8], arg: Arg) -> Option<ShapeKind> {
+        let g = d.get(arg.off..arg.end)?;
+        let u = |k: usize| g.get(k..k + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+        let n = u(11)? as usize;
+        let size_in = u(19).unwrap_or(0) as f64 / 1000.0;
+        let pct = |k: usize, lo: f64, hi: f64, def: f64| {
+            u(k).map(|v| v as i16 as f64)
+                .filter(|v| (lo..=hi).contains(v))
+                .unwrap_or(def)
+        };
+        let raw: Vec<u8> = (0..n.min(32_000))
+            .filter_map(|i| g.get(132 + 3 * i + 1).copied())
+            .collect();
+        let text = crate::text::decode_cp1252(&raw)
+            .replace("\r\n", "\n")
+            .replace('\r', "\n");
+        if text.trim().is_empty() {
+            return None;
+        }
+        let family = self
+            .v3_fonts
+            .first()
+            .map(|f| crate::wl::family_of(f))
+            .unwrap_or_else(|| "Arial".into());
+        let size_pt = if size_in > 0.0 { size_in * 72.0 } else { 24.0 };
+        let para = ParagraphStyle {
+            char_spacing_pct: pct(17, -100.0, 2000.0, 0.0),
+            word_spacing_pct: pct(21, 0.0, 2000.0, 100.0),
+            leading_pct: pct(23, 0.0, 2000.0, 100.0),
+            ..Default::default()
+        };
+        let align = match g.get(25) {
+            Some(2) => TextAlign::Center,
+            Some(3) => TextAlign::Right,
+            _ => TextAlign::Left,
+        };
+        Some(ShapeKind::Text {
+            spans: vec![TextSpan::new(text, family, size_pt)],
+            origin: Point::ZERO,
+            frame: None,
+            align,
+            para,
+            on_path: None,
+        })
+    }
+
+    /// Version 3 fill, inline in the object: the type (u8: 0 none,
+    /// 1 uniform, 2 linear and 4 radial fountain) and its colour records.
+    fn read_inline_fill(&mut self, d: &'a [u8], arg: Arg) -> Fill {
+        let mut r = self.reader_at(d, arg.off);
+        match r.u8() {
+            Some(1) => self
+                .read_color(&mut r)
+                .map(Fill::Solid)
+                .unwrap_or(Fill::None),
+            Some(0) | None => Fill::None,
+            // Fountain, linear (2) or radial (4): the angle (i16, tenths of
+            // a degree), the start colour and the end colour.
+            Some(t @ (2 | 4)) => {
+                let angle = r.i16().map_or(0.0, |a| a as f64 / 10.0);
+                let (Some(from), Some(to)) = (self.read_color(&mut r), self.read_color(&mut r))
+                else {
+                    return Fill::None;
+                };
+                Fill::Fountain(Fountain {
+                    kind: if t == 4 {
+                        FountainKind::Radial
+                    } else {
+                        FountainKind::Linear
+                    },
+                    stops: vec![
+                        Stop {
+                            pos: 0.0,
+                            color: from,
+                        },
+                        Stop {
+                            pos: 1.0,
+                            color: to,
+                        },
+                    ],
+                    angle,
+                    ..Default::default()
+                })
+            }
+            Some(other) => {
+                self.report.warn(format!(
+                    "fill type {other} of a version 3 drawing not modelled yet"
+                ));
+                Fill::None
+            }
+        }
+    }
+
+    /// Version 3 outline, inline in the object: flags (u8, bit 0 set when
+    /// the object has an outline), width (u16, 1/1000 inch), stretch (u16,
+    /// percent), nib angle (u16, tenths of a degree), a colour record.
+    fn read_inline_outline(&mut self, d: &'a [u8], arg: Arg) -> Option<Stroke> {
+        let mut r = self.reader_at(d, arg.off);
+        let flags = r.u8()?;
+        let width = r.u16()? as f64 * UNIT16_MM;
+        let stretch = r.u16()?;
+        let angle = r.i16()? as f64 / 10.0;
+        let color = self.read_color(&mut r)?;
+        if flags & 1 == 0 {
+            return None;
+        }
+        let mut s = if width > 0.0 {
+            Stroke::new(color, width)
+        } else {
+            Stroke::hairline(color)
+        };
+        s.stretch = (stretch as f64 / 100.0).clamp(0.01, 1.0);
+        s.nib_angle = angle;
+        // Line caps at 32 and joins at 33 (0 butt or mitre, 1 round,
+        // 2 square or bevel), then the start and end arrowhead ids (u32 at
+        // 34 and 38, ids of the file's `arrw` chunks).
+        let byte = |k: usize| {
+            d.get(arg.off + k)
+                .copied()
+                .filter(|_| arg.off + k < arg.end)
+        };
+        s.cap = match byte(32) {
+            Some(1) => LineCap::Round,
+            Some(2) => LineCap::Square,
+            _ => LineCap::Butt,
+        };
+        s.join = match byte(33) {
+            Some(1) => LineJoin::Round,
+            Some(2) => LineJoin::Bevel,
+            _ => LineJoin::Miter,
+        };
+        if arg.end >= arg.off + 42 {
+            let start = self.reader_at(d, arg.off + 34).u32().unwrap_or(0);
+            let end = self.reader_at(d, arg.off + 38).u32().unwrap_or(0);
+            s.start_arrow = self.marker_preset(start, 0);
+            s.end_arrow = self.marker_preset(end, 0);
+        }
+        Some(s)
+    }
+
     fn read_loda(&mut self, d: &'a [u8]) -> Option<Loda> {
         let mut r = self.reader(d);
         let _len = r.uint()?;
         let num_args = r.uint()? as usize;
         let start_args = r.uint()? as usize;
         let start_types = r.uint()? as usize;
-        let kind = r.uint()?;
+        let mut kind = r.uint()?;
+        // Version 3 numbers the object types from 0 (rectangle, ellipse,
+        // curve, text, bitmap), one below the later codes.
+        if self.v < 4 && kind <= 4 {
+            kind += 1;
+        }
         let step = if self.v16() { 2 } else { 4 };
         let n = num_args.min(64);
         let mut offsets = Vec::with_capacity(n + 1);
@@ -2105,7 +2389,7 @@ impl<'a> Ctx<'a> {
         self.pending_clip = None;
         self.pending_on_path = None;
         self.pending_text_transform = None;
-        let transform = self.outer_transform
+        let mut transform = self.outer_transform
             * trfd
                 .map(|t| self.read_transform(t))
                 .unwrap_or(Affine::IDENTITY);
@@ -2158,7 +2442,15 @@ impl<'a> Ctx<'a> {
                         opacity = o;
                     }
                 }
-                // Before version 4 the fill and outline are stored inline.
+                // Before version 4 the fill, the outline and the matrix are
+                // stored inline.
+                ARG_FILL if self.v < 4 => fill = self.read_inline_fill(d, *arg),
+                ARG_OUTLINE if self.v < 4 => stroke = self.read_inline_outline(d, *arg),
+                ARG_LEGACY_TRANSFORM if self.v < 4 => {
+                    if let Some(m) = self.read_transform_list_v3(d, *arg) {
+                        transform = self.outer_transform * m;
+                    }
+                }
                 ARG_FILL if self.v >= 4 => {
                     if let Some(fid) = self.reader_at(d, arg.off).u32() {
                         if let Some(f) = self.fills.get(&fid) {
@@ -2205,6 +2497,7 @@ impl<'a> Ctx<'a> {
             }
         }
         let kind = match kind_code {
+            OBJ_ARTISTIC_TEXT if self.v < 4 => coords.and_then(|a| self.read_text_v3(d, a)),
             OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT => {
                 let frame = FrameHints {
                     style: style_string.as_deref(),
@@ -2384,7 +2677,25 @@ impl<'a> Ctx<'a> {
                     None => self.report.skipped_objects += 1,
                 }
             } else if c.is(b"grp ") {
+                // Version 3: the group's own `lobj` holds a matrix that
+                // places all its objects; later versions store whole
+                // transforms.
+                let own = if self.v < 4 {
+                    c.children.iter().find(|k| k.is(b"lobj")).and_then(|k| {
+                        let d = self.data(k);
+                        let l = self.read_loda(d)?;
+                        let arg = *l.args.iter().find(|a| a.ty == ARG_LEGACY_TRANSFORM)?;
+                        self.read_transform_list_v3(d, arg)
+                    })
+                } else {
+                    None
+                };
+                let saved = self.outer_transform;
+                if let Some(m) = own {
+                    self.outer_transform = saved * m;
+                }
                 let children = self.read_objects(c, ids, page_size, depth + 1);
+                self.outer_transform = saved;
                 match children.len() {
                     0 => {}
                     1 => out.extend(children),
@@ -2661,7 +2972,16 @@ impl<'a> Ctx<'a> {
             }
             // Curve: u32 count, points, one type byte per point.
             OBJ_CURVE => {
-                let n = r.u32()? as usize;
+                // Before version 6 the count is a u16 followed by a u16 that
+                // is 1 in some curves of versions 3 and 4 (glyph outlines),
+                // not part of the count.
+                let n = if self.v16() {
+                    let n = r.u16()? as usize;
+                    r.skip(2);
+                    n
+                } else {
+                    r.u32()? as usize
+                };
                 let (pts, types) = self.read_points(&mut r, n)?;
                 let (path, closed) = build_path(&pts, &types);
                 if path.elements().is_empty() {
@@ -3577,6 +3897,41 @@ pub(crate) fn color_from_model(model: u16, b: [u8; 4]) -> Option<Color> {
     })
 }
 
+/// The font names a version 3 `ftbl` holds: NUL-terminated runs of at
+/// least three lowercase letters, first appearance first.
+fn v3_font_names(d: &[u8]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for part in d.split(|b| *b == 0) {
+        let tail: Vec<u8> = part
+            .iter()
+            .rev()
+            .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            .copied()
+            .collect();
+        if tail.len() >= 3 {
+            let name: String = tail.iter().rev().map(|c| *c as char).collect();
+            if !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+/// A matrix of versions 3 and 4: a, c, e, b, d, f as i32, the factors in
+/// 16.16 fixed point and the offsets in 1/1000 inch, so that
+/// x' = a x + c y + e and y' = b x + d y + f.
+fn fixed_matrix(r: &mut Reader) -> Option<Affine> {
+    let k = |v: i32| v as f64 / 65536.0;
+    let a = k(r.i32()?);
+    let c = k(r.i32()?);
+    let e = r.i32()? as f64 * UNIT16_MM;
+    let b = k(r.i32()?);
+    let d = k(r.i32()?);
+    let f = r.i32()? as f64 * UNIT16_MM;
+    Some(Affine::new([a, b, c, d, e, f]))
+}
+
 /// A path from points and their node bytes: bits 7-6 are the node kind
 /// (00 move, 01 line, 10 curve end, 11 control point) and bit 3 closes the
 /// subpath after the node.
@@ -4383,6 +4738,238 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    /// A version 3 transformation list (argument 100) of one matrix:
+    /// factors in 16.16, offsets in thousandths of an inch.
+    fn v3_transform(m: [i32; 6]) -> Vec<u8> {
+        let mut t = u16s(&[3, 1, 0x8c, 0, 0, 34, 0]);
+        t.resize(34, 0);
+        for v in m {
+            t.extend_from_slice(&v.to_le_bytes());
+        }
+        t
+    }
+
+    /// A version 3 inline outline: flags, width, stretch, angle, colour
+    /// (model 1, CMYK bytes), caps at 32, join at 33, arrowheads at 34, 38.
+    fn v3_outline(on: bool, width: u16, cap: u8, start_arrow: u32) -> Vec<u8> {
+        let mut o = vec![u8::from(on)];
+        o.extend_from_slice(&u16s(&[width, 100, 0]));
+        o.extend_from_slice(&[1, 0, 0, 0, 100]);
+        o.resize(32, 0);
+        o.extend_from_slice(&[cap, cap]);
+        o.extend_from_slice(&start_arrow.to_le_bytes());
+        o.extend_from_slice(&0u32.to_le_bytes());
+        o
+    }
+
+    fn v3_file(objects: &[u8], extra: &[u8]) -> Vec<u8> {
+        let mut cfg = u16s(&[0]);
+        cfg.extend_from_slice(&i16s(&[-4250, 5500, 4250, -5500]));
+        let body = [
+            chunk(b"mcfg", &cfg),
+            extra.to_vec(),
+            list(b"page", &list(b"layr", objects)),
+        ]
+        .concat();
+        riff(b"CDR ", &body)
+    }
+
+    #[test]
+    fn version_3_objects_carry_their_matrix_fill_and_outline_inline() {
+        // A curve (type 2 in version 3) from (0,0) to (1000,0), moved one
+        // inch right and scaled twice, filled 100 % cyan, outlined 0.1 inch
+        // with round caps; and a rectangle (type 0) in palette black at
+        // 60 % (model 0: index 0, tint 60).
+        let mut coords = u16s(&[2, 0]);
+        coords.extend_from_slice(&i16s(&[0, 0, 1000, 0]));
+        coords.extend_from_slice(&[0x00, 0x48]);
+        let curve = loda16(
+            2,
+            &[
+                (100, v3_transform([2 << 16, 0, 1000, 0, 2 << 16, 0])),
+                (ARG_COORDS as u16, coords),
+                (ARG_FILL as u16, vec![1, 1, 100, 0, 0, 0]),
+                (ARG_OUTLINE as u16, v3_outline(true, 100, 1, 0)),
+            ],
+        );
+        let rect = loda16(
+            0,
+            &[
+                (100, v3_transform([1 << 16, 0, 0, 0, 1 << 16, 0])),
+                (ARG_COORDS as u16, i16s(&[500, 500, 0])),
+                (ARG_FILL as u16, vec![1, 0, 0, 0, 60, 0]),
+                (ARG_OUTLINE as u16, v3_outline(false, 14, 0, 0)),
+            ],
+        );
+        let objects = [
+            list(b"obj ", &chunk(b"lobj", &curve)),
+            list(b"obj ", &chunk(b"lobj", &rect)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&v3_file(&objects, &[]), 3);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        assert!((doc.pages[0].size.width - 215.9).abs() < 1e-9);
+        assert!((doc.pages[0].size.height - 279.4).abs() < 1e-9);
+        let shapes: Vec<&Shape> = doc.pages[0].layers.iter().flat_map(|l| &l.shapes).collect();
+        let curve = shapes
+            .iter()
+            .find(|s| matches!(s.kind, ShapeKind::Path { .. }))
+            .expect("curve");
+        let b = curve.page_path().bounding_box();
+        assert!((b.width() - 50.8).abs() < 1e-6, "{b:?}");
+        // Coordinates run from the page's centre.
+        assert!((b.x0 - (215.9 / 2.0 + 25.4)).abs() < 1e-6, "{b:?}");
+        assert_eq!(
+            curve.fill,
+            Fill::Solid(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0))
+        );
+        let st = curve.stroke.as_ref().expect("outline");
+        assert!((st.width - 2.54).abs() < 1e-9);
+        assert_eq!(st.cap, LineCap::Round);
+        let rect = shapes
+            .iter()
+            .find(|s| matches!(s.kind, ShapeKind::Rect { .. }))
+            .expect("rect");
+        assert_eq!(rect.fill, Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 60.0)));
+        assert!(rect.stroke.is_none());
+    }
+
+    #[test]
+    fn version_3_groups_place_their_objects_and_text_is_read() {
+        // A group scaling its text twice; the text "Hi" in 0.5 inch (36 pt)
+        // centred, in the file's only font.
+        let mut t = vec![0u8; 132];
+        t[11..13].copy_from_slice(&2u16.to_le_bytes());
+        t[19..21].copy_from_slice(&500u16.to_le_bytes());
+        t[21..23].copy_from_slice(&100u16.to_le_bytes());
+        t[23..25].copy_from_slice(&120u16.to_le_bytes());
+        t[25] = 2;
+        t.extend_from_slice(&[0, b'H', 0, 0, b'i', 0]);
+        let text = loda16(
+            3,
+            &[
+                (100, v3_transform([1 << 16, 0, 0, 0, 1 << 16, 0])),
+                (ARG_COORDS as u16, t),
+            ],
+        );
+        let group = loda16(0, &[(100, v3_transform([2 << 16, 0, 0, 0, 2 << 16, 0]))]);
+        let objects = list(
+            b"grp ",
+            &[
+                chunk(b"lobj", &group),
+                list(b"obj ", &chunk(b"lobj", &text)),
+            ]
+            .concat(),
+        );
+        let mut ftbl = u16s(&[1]);
+        ftbl.extend_from_slice(&[b' '; 32]);
+        ftbl.extend_from_slice(&u16s(&[1, 2]));
+        ftbl.extend_from_slice(b"toronto\0");
+        let (doc, rep) = parse(&v3_file(&objects, &chunk(b"ftbl", &ftbl)), 3);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let s = first_shape(&doc);
+        let ShapeKind::Text {
+            spans, align, para, ..
+        } = &s.kind
+        else {
+            panic!("{:?}", s.kind);
+        };
+        assert_eq!(spans[0].text, "Hi");
+        assert_eq!(spans[0].font_family, "Times New Roman");
+        assert!((spans[0].size_pt - 36.0).abs() < 1e-9);
+        assert_eq!(*align, TextAlign::Center);
+        assert!((para.leading_pct - 120.0).abs() < 1e-9);
+        assert!((s.transform.as_coeffs()[0] - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn version_3_fountains_and_palette_colours() {
+        // A linear fountain at 90 degrees from white to black, and a
+        // numbered palette colour that becomes a spot ink.
+        let rect = |fill: Vec<u8>| {
+            list(
+                b"obj ",
+                &chunk(
+                    b"lobj",
+                    &loda16(
+                        0,
+                        &[
+                            (100, v3_transform([1 << 16, 0, 0, 0, 1 << 16, 0])),
+                            (ARG_COORDS as u16, i16s(&[500, 500, 0])),
+                            (ARG_FILL as u16, fill),
+                        ],
+                    ),
+                ),
+            )
+        };
+        let mut fountain = vec![2];
+        fountain.extend_from_slice(&900i16.to_le_bytes());
+        fountain.extend_from_slice(&[0, 1, 0, 0, 0]);
+        fountain.extend_from_slice(&[0, 0, 0, 100, 0]);
+        let objects = [rect(fountain), rect(vec![1, 0, 7, 0, 100, 0])].concat();
+        let (doc, rep) = parse(&v3_file(&objects, &[]), 3);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        let fills: Vec<&Fill> = doc.pages[0]
+            .layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .map(|s| &s.fill)
+            .collect();
+        assert!(fills.iter().any(|f| matches!(f, Fill::Fountain(g) if (g.angle - 90.0).abs() < 1e-9 && g.stops.len() == 2)));
+        assert!(fills
+            .iter()
+            .any(|f| matches!(f, Fill::Solid(Color::Spot { .. }))));
+        assert_eq!(doc.inks.len(), 1);
+        assert_eq!(doc.inks[0].name, "Spot 7");
+    }
+
+    #[test]
+    fn version_4_matrices_colours_and_glyph_curves() {
+        // trfd with a 16.16 matrix (scale 2, offset one inch); a fill in
+        // model 1 (CMYK as u16 percents); a curve whose count is followed by
+        // the u16 1.
+        let mut tr = u16s(&[0x2a, 1, 10, 0xffff, 0, 16, 0x2a, 0, 8]);
+        for v in [2i32 << 16, 0, 1000, 0, 2 << 16, 0] {
+            tr.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut coords = u16s(&[2, 1]);
+        coords.extend_from_slice(&i16s(&[0, 0, 1000, 0]));
+        coords.extend_from_slice(&[0x00, 0x48]);
+        let mut fill = u32s(&[1]);
+        fill.extend_from_slice(&u16s(&[1, 0, 1, 0, 100, 0, 0, 0]));
+        let obj = list(
+            b"obj ",
+            &[
+                list(
+                    b"lgob",
+                    &chunk(
+                        b"loda",
+                        &loda16(
+                            OBJ_CURVE as u16,
+                            &[(ARG_COORDS as u16, coords), (ARG_FILL as u16, u32s(&[1]))],
+                        ),
+                    ),
+                ),
+                list(b"trfl", &chunk(b"trfd", &tr)),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &i16s(&[8500, 11000])),
+            list(b"filt", &chunk(b"fill", &fill)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR4", &body), 4);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let s = first_shape(&doc);
+        let b = s.page_path().bounding_box();
+        assert!((b.width() - 50.8).abs() < 1e-6, "{b:?}");
+        // Coordinates run from the page's centre.
+        assert!((b.x0 - (215.9 / 2.0 + 25.4)).abs() < 1e-6, "{b:?}");
+        assert_eq!(s.fill, Fill::Solid(Color::cmyk_pct(0.0, 100.0, 0.0, 0.0)));
     }
 
     #[test]
