@@ -1160,6 +1160,37 @@ fn fill_colour(fill: &Fill) -> Option<Color> {
         Fill::None => None,
         Fill::Solid(c) => Some(*c),
         Fill::Fountain(f) => f.stops.first().map(|s| s.color),
+        other => stand_in_colour(other),
+    }
+}
+
+/// The one colour written for a fill these files cannot hold yet: the
+/// mean colour of a bitmap pattern's tile, the middle of a texture's or a
+/// two-colour pattern's colours, else its preview colour.
+fn stand_in_colour(fill: &Fill) -> Option<Color> {
+    use tracedraw_core::style::{lerp_color, Pattern};
+    match fill {
+        Fill::Pattern(Pattern::Bitmap { png, .. }) => {
+            let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
+            let (mut sum, mut weight) = ([0.0f64; 3], 0.0f64);
+            for p in pm.pixels() {
+                let p = p.demultiply();
+                let a = p.alpha() as f64 / 255.0;
+                sum[0] += p.red() as f64 * a;
+                sum[1] += p.green() as f64 * a;
+                sum[2] += p.blue() as f64 * a;
+                weight += a;
+            }
+            if weight <= 0.0 {
+                return fill.preview_color();
+            }
+            let c = |v: f64| (v / weight).round().clamp(0.0, 255.0) as u8;
+            Some(Color::rgb8(c(sum[0]), c(sum[1]), c(sum[2])))
+        }
+        Fill::Pattern(Pattern::TwoColor { front, back, .. }) => {
+            Some(lerp_color(*front, *back, 0.5))
+        }
+        Fill::Texture(t) => Some(lerp_color(t.color_a, t.color_b, 0.5)),
         other => other.preview_color(),
     }
 }
@@ -1208,7 +1239,9 @@ fn fild(v: Ver, id: u32, fill: &Fill) -> Vec<u8> {
             Fill::Fountain(f)
         }
         Fill::None | Fill::Solid(_) => fill.clone(),
-        other => other.preview_color().map(Fill::Solid).unwrap_or(Fill::None),
+        other => stand_in_colour(other)
+            .map(Fill::Solid)
+            .unwrap_or(Fill::None),
     };
     let mut b = Buf::default();
     if !v.tagged() {
@@ -2761,7 +2794,8 @@ impl<'a> Writer<'a> {
             layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", Vec::new()));
         }
         let mut content: Option<Rect> = None;
-        for layer in &page.layers {
+        // Front to back, as files list them.
+        for layer in page.layers.iter().rev() {
             let objects = if layer.visible {
                 let placed = self.objects(&layer.shapes, centre, 0);
                 if let Some(b) = placed.bounds {

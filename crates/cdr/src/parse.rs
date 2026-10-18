@@ -402,6 +402,7 @@ pub fn parse_document_with(
                 ctx.v
             ));
             ctx.v = nv;
+            ctx.report.version = Some(crate::container::Version(nv));
         }
     }
 
@@ -524,6 +525,10 @@ pub fn parse_document_with(
             }
             page.layers.push(layer);
         }
+        // Files list a page's layers front to back, as they list objects
+        // (a version 21 file: the layer of the lettering first, then the
+        // layer whose full-page background its preview shows under it).
+        page.layers.reverse();
         if page.layers.is_empty() {
             page.layers
                 .push(Layer::new(doc.ids_mut().layer(), "Layer 1"));
@@ -3108,6 +3113,21 @@ impl<'a> Ctx<'a> {
                     0.0_f64.max(w),
                     0.0_f64.max(h),
                 );
+                // The angles turn from the ellipse's own axes: with a
+                // negative height (drawn downwards, as files store most
+                // ellipses) its y axis points down and an arc from 0 to
+                // 180 degrees is the lower half (a version 20 file: the
+                // smiles of its faces, as its preview shows them); a
+                // negative width mirrors it left to right.
+                let (mut a1, mut a2) = (a1, a2);
+                if h < 0.0 {
+                    (a1, a2) = (-a2, -a1);
+                }
+                if w < 0.0 {
+                    (a1, a2) = (180.0 - a2, 180.0 - a1);
+                }
+                let norm = |a: f64| a.rem_euclid(360.0);
+                let (a1, a2) = (norm(a1), norm(a2));
                 let arc = if (a1 - a2).abs() > 1e-9 {
                     Some(EllipseArc {
                         start_deg: a1,
@@ -5476,6 +5496,45 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn arcs_of_ellipses_drawn_downwards_turn_the_other_way() {
+        // An open arc from 0 to 180 degrees on a 20 mm circle stored with a
+        // negative height, then with a negative width too.
+        let read = |w: i32, h: i32| {
+            let mut c = i32s(&[w, h]);
+            c.extend_from_slice(&i32s(&[0, 180_000_000]));
+            c.extend_from_slice(&u32s(&[0]));
+            let obj = list(
+                b"obj ",
+                &chunk(b"loda", &loda(OBJ_ELLIPSE, &[(ARG_COORDS, c)])),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(20, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDRL", &body), 20);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            let s = first_shape(&doc);
+            let ShapeKind::Ellipse { rect, .. } = &s.kind else {
+                panic!("{:?}", s.kind);
+            };
+            // Where the arc lies against the ellipse's centre (y up).
+            let local = s.kind.clone();
+            let centre = rect.center();
+            let b = Shape::new(s.id, local).local_path().bounding_box();
+            (b.center().y - centre.y, b.height())
+        };
+        // Upright: the upper half.
+        let (dy, h) = read(200_000, 200_000);
+        assert!(dy > 4.0 && (h - 10.0).abs() < 0.1, "{dy} {h}");
+        // Drawn downwards: the lower half (a smile).
+        let (dy, h) = read(200_000, -200_000);
+        assert!(dy < -4.0 && (h - 10.0).abs() < 0.1, "{dy} {h}");
+        let (dy, _) = read(-200_000, -200_000);
+        assert!(dy < -4.0, "{dy}");
     }
 
     #[test]

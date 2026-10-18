@@ -1906,3 +1906,118 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
         assert_eq!(children[0].fill, Fill::Solid(Color::rgb8(0, 120, 0)), "{v}");
     }
 }
+
+#[test]
+fn layers_go_out_front_to_back_and_come_back_bottom_to_top() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut top = Layer::new(ids.layer(), "Front");
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    top.shapes.push(r.clone());
+    r.id = ids.shape();
+    doc.pages[0].layers[0].shapes.push(r);
+    doc.pages[0].layers.push(top);
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let names: Vec<&str> = back.pages[0]
+            .layers
+            .iter()
+            .filter(|l| !l.shapes.is_empty())
+            .map(|l| l.name.as_str())
+            .collect();
+        assert_eq!(names, ["Ink", "Front"], "{v}: {:?}", rep.warnings);
+    }
+    // In the file the front layer is listed first.
+    let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, 12));
+    let mut names = Vec::new();
+    tree.root.walk(&mut |c, _| {
+        if c.list_type_str().as_deref() == Some("layr") {
+            let (_, args) = layer_args(&tree, &riff, c);
+            if let Some((_, name)) = args.iter().find(|(t, _)| *t == 1000) {
+                let text = String::from_utf8_lossy(name).replace('\0', "");
+                if text == "Front" || text == "Ink" {
+                    names.push(text);
+                }
+            }
+        }
+    });
+    assert_eq!(names, ["Front", "Ink"]);
+}
+
+#[test]
+fn fills_not_written_yet_go_out_as_their_mean_colour() {
+    use tracedraw_core::style::{Pattern, PatternTile, Texture, TextureKind};
+    let tile = {
+        let mut pm = tiny_skia::Pixmap::new(2, 1).expect("pixmap");
+        pm.pixels_mut()[0] = tiny_skia::ColorU8::from_rgba(200, 0, 0, 255).premultiply();
+        pm.pixels_mut()[1] = tiny_skia::ColorU8::from_rgba(0, 0, 100, 255).premultiply();
+        pm.encode_png().expect("png")
+    };
+    let fills = [
+        (
+            Fill::Texture(Texture {
+                kind: TextureKind::Clouds,
+                color_a: Color::rgb8(40, 40, 40),
+                color_b: Color::rgb8(120, 120, 120),
+                scale: 5.0,
+                seed: 1,
+            }),
+            [80, 80, 80],
+        ),
+        (
+            Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Checker,
+                front: Color::rgb8(0, 0, 0),
+                back: Color::rgb8(200, 100, 50),
+                size_mm: 5.0,
+            }),
+            [100, 50, 25],
+        ),
+        (
+            Fill::Pattern(Pattern::Bitmap {
+                png: tile,
+                width_px: 2,
+                height_px: 1,
+                size_mm: 5.0,
+            }),
+            [100, 0, 50],
+        ),
+    ];
+    for (fill, want) in fills {
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let mut r = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        r.fill = fill.clone();
+        let doc = doc_with(vec![r]);
+        for v in versions() {
+            let bytes = document_to_cdr_version(&doc, v);
+            let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+            let got = back.pages[0].layers[0].shapes[0]
+                .fill
+                .preview_color()
+                .expect("fill");
+            let rgb = got.to_rgb8();
+            let near = rgb
+                .iter()
+                .zip(want)
+                .all(|(a, b)| (*a as i32 - b as i32).abs() <= 3);
+            assert!(near, "{v}: {fill:?} gave {rgb:?}, want {want:?}");
+        }
+    }
+}

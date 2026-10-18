@@ -12,10 +12,19 @@ pub struct Version(pub u16);
 
 impl Version {
     pub fn from_form_type(form: &[u8; 4]) -> Option<Version> {
+        let c = form[3];
+        // Templates carry `CDT` and their own letters: `CDTQ` holds a
+        // version 21 template (its `vrsn` 2100). The `vrsn` chunk, read
+        // later, has the last word.
+        if &form[..3] == b"CDT" {
+            return match c {
+                b'A'..=b'Z' => Some(Version(5 + (c - b'A') as u16)),
+                _ => None,
+            };
+        }
         if &form[..3] != b"CDR" && &form[..3] != b"cdr" {
             return None;
         }
-        let c = form[3];
         // Digits are versions 1 to 9; letters continue from `A` = 10, but
         // `I` and `O` are skipped: `H` = 17, `J` = 18, `N` = 22, `P` = 23,
         // `R` = 25. Version 3 files carry a space.
@@ -556,6 +565,9 @@ mod tests {
         assert_eq!(Version::from_form_type(b"cdr8"), Some(Version(8)));
         assert_eq!(Version(13).name(), "CDR version 13");
         assert_eq!(Version::from_form_type(b"WAVE"), None);
+        // Templates.
+        assert_eq!(Version::from_form_type(b"CDTQ"), Some(Version(21)));
+        assert_eq!(Version::from_form_type(b"CDT1"), None);
     }
 
     #[test]

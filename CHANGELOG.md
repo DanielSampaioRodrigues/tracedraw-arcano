@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr`: a page's layers come in the right order (the top layer was
+  drawn at the bottom, under a full-page background).
+- `.cdr`: arcs of ellipses drawn downwards turn the right way (smiles
+  came out as frowns).
+- `.cdrt` templates of version 21 open (form type `CDT`).
+- `.cdr` saving: the layers are written top first, and textures and
+  pattern fills, not written yet, go out as their mean colour instead of
+  their first one.
 - `.cdr` versions 13 to 15: artistic text no longer lands metres off the
   page when its record holds a number where later versions keep a place.
 - `.cdr` versions 7 to 11: letters take the style their character
