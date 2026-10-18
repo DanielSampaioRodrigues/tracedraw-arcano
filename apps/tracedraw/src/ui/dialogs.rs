@@ -646,7 +646,7 @@ pub enum Dialog {
     Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
-    ColorManagement(crate::ui::color_management::ColorManagementState),
+    ColorManagement(Box<crate::ui::color_management::ColorManagementState>),
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),

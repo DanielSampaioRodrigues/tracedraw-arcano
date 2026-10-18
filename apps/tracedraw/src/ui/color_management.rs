@@ -766,10 +766,10 @@ mod tests {
         );
         // Both tabs draw, and Enter is OK.
         for tab in [0, 1] {
-            app.dialog = Dialog::ColorManagement(ColorManagementState {
+            app.dialog = Dialog::ColorManagement(Box::new(ColorManagementState {
                 tab,
                 ..Default::default()
-            });
+            }));
             let ctx = crate::theme::ui_context();
             frame(&ctx, &mut app, false);
             frame(&ctx, &mut app, true);
