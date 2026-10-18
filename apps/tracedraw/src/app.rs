@@ -3701,8 +3701,9 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
                 &[
-                    "cdr", "cmx", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf",
-                    "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
+                    "cdr", "cdt", "cdrt", "cmx", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps",
+                    "prn", "dxf", "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf",
+                    "docx",
                 ],
             )
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
@@ -3713,7 +3714,7 @@ impl App {
             .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter("Windows Metafile (*.emf, *.wmf)", &["emf", "wmf"])
             .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
-            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr", "cdt", "cdrt"])
             .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file(self, |app, p| app.open_path(p));
@@ -3738,6 +3739,11 @@ impl App {
         // Print files: PostScript, often after a printer job header.
         if ext == "prn" {
             return "ps".into();
+        }
+        // Templates (`.cdt`, and `.cdrt` from recent versions) are
+        // drawings of the same format; opened, they are untitled.
+        if ext == "cdt" || ext == "cdrt" {
+            return "cdr".into();
         }
         ext
     }
@@ -4508,9 +4514,9 @@ impl App {
 
     pub fn import(&mut self) {
         let mut all: Vec<String> = [
-            "cdr", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd", "psb",
-            "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg", "bmp",
-            "gif", "webp", "tif", "tiff",
+            "cdr", "cdt", "cdrt", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf",
+            "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg",
+            "jpeg", "bmp", "gif", "webp", "tif", "tiff",
         ]
         .map(String::from)
         .to_vec();
@@ -4534,7 +4540,7 @@ impl App {
         dialog
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
             .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
-            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr", "cdt", "cdrt"])
             .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
@@ -5315,6 +5321,14 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn templates_open_as_drawings() {
+        use std::path::Path;
+        assert_eq!(App::file_kind(Path::new("a/Logo.CDT")), "cdr");
+        assert_eq!(App::file_kind(Path::new("menu.cdrt")), "cdr");
+        assert_eq!(App::file_kind(Path::new("x.cdr")), "cdr");
+    }
 
     #[test]
     fn palette_picks_set_the_current_colours() {

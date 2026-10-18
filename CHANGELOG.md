@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- CorelDRAW templates (`.cdt`, `.cdrt`) open as untitled drawings and can
+  be imported.
+- Save As says that programs from 2021 on open `.cdr` version 15 and newer
+  only.
+
 - `.cdr` form-type letters skip `O` too: a `CDRR` file is version 25 (it
   was labelled 26).
 

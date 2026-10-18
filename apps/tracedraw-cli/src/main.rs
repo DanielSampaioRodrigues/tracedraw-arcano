@@ -157,7 +157,11 @@ fn read_document(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
     let lower = path.to_ascii_lowercase();
-    if lower.ends_with(".cdr") || lower.ends_with(".cmx") {
+    if lower.ends_with(".cdr")
+        || lower.ends_with(".cdt")
+        || lower.ends_with(".cdrt")
+        || lower.ends_with(".cmx")
+    {
         tracedraw_cdr::open(path)
             .map(|(d, r)| (d, Some(r)))
             .map_err(|e| e.to_string())
@@ -514,7 +518,11 @@ fn main() -> ExitCode {
                 let lower = lower.clone();
                 let ok = std::panic::catch_unwind(move || {
                     let mut ids = tracedraw_core::id::IdSource::default();
-                    if lower.ends_with(".cdr") || lower.ends_with(".cmx") {
+                    if lower.ends_with(".cdr")
+                        || lower.ends_with(".cdt")
+                        || lower.ends_with(".cdrt")
+                        || lower.ends_with(".cmx")
+                    {
                         let _ = tracedraw_cdr::open_bytes(&m, "stress");
                     } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
                         let _ = tracedraw_io::pdf_import::parse(&m, &mut ids);
