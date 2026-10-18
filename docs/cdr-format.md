@@ -292,7 +292,7 @@ show. Values are little-endian; lengths in thousandths of an inch.
 
 Which programs open which versions (from a public page about the format, 2026-10-18, not checked here): releases up to the 2019 one open version 7 and newer, the 2020 one (version 22) version 11 and newer, and 2021 to 2026 (versions 23 to 27) version 15 and newer. Files TraceDraw writes in versions 7 to 14 therefore cannot open in current releases whatever their content; testing those versions needs an older release. A user's test with release 25.2 (issue #98) is consistent with this.
 
-`crates/cdr/src/write.rs` writes versions 7 to 27 (23 to 27 with the records of 22: one drawing saved by a user in each of versions 23 to 27 has the same records in all, only the form letter, `fver`, `vrsn`, `CoreVersion` and the style sheet's version differing; not yet checked to open)
+`crates/cdr/src/write.rs` writes versions 7 to 27 (23 to 27 with the records of 22: one drawing saved by a user in each of versions 23 to 27 has the same records in all, only the form letter, `fver`, `vrsn`, `CoreVersion` and the style sheet's version differing; files written here in versions 24 and 27 opened with their images in that program's 2026 release, a user's test of 2026-10-18)
 (`document_to_cdr_version`; `document_to_cdr` writes version 12). The
 app asks for the version when saving a `.cdr` file
 (`docs/behavior/files.md`); `tracedraw-cli` reads it from

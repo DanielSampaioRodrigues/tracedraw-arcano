@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save As lists each `.cdr` version with the release that writes it
+  ("v13 (X3)", "v27 (2026)"); versions 23 to 27 are no longer marked
+  experimental (files written here open in the 2026 release).
 - `.cdr` saving: images show in other programs (bitmap objects now carry
   their pixel size and image box; files opened without their images).
 - `.cdr` versions 23 to 27: files open (version 23 files were refused),

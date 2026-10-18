@@ -161,8 +161,9 @@ impl SaveAsState {
     }
 }
 
-/// "Version 22" for the version lists; versions whose files are not yet
-/// known to open in other programs say they are experimental.
+/// "v22 (2020)" for the version lists: the file version and the release
+/// that writes it; versions whose files are not yet known to open in other
+/// programs say they are experimental.
 pub fn version_label(version: u16) -> String {
     let checked = tracedraw_cdr::write::CHECKED_SINCE..=tracedraw_cdr::write::CHECKED_UNTIL;
     let key = if !checked.contains(&version) {
@@ -170,7 +171,46 @@ pub fn version_label(version: u16) -> String {
     } else {
         "dialog.cdr_version_item"
     };
-    trf(key, &[("v", &version.to_string())])
+    trf(
+        key,
+        &[("v", &version.to_string()), ("name", release_name(version))],
+    )
+}
+
+/// The release that saves files of `version` by default: numbers up to
+/// 12, X3 to X8 for 13 to 18, then years (version 24 was saved by two
+/// yearly releases).
+pub fn release_name(version: u16) -> &'static str {
+    match version {
+        1 => "1",
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        6 => "6",
+        7 => "7",
+        8 => "8",
+        9 => "9",
+        10 => "10",
+        11 => "11",
+        12 => "12",
+        13 => "X3",
+        14 => "X4",
+        15 => "X5",
+        16 => "X6",
+        17 => "X7",
+        18 => "X8",
+        19 => "2017",
+        20 => "2018",
+        21 => "2019",
+        22 => "2020",
+        23 => "2021",
+        24 => "2022/2023",
+        25 => "2024",
+        26 => "2025",
+        27 => "2026",
+        _ => "?",
+    }
 }
 
 /// The versions offered, newest first.
@@ -810,11 +850,17 @@ mod tests {
         assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::NEWEST_VERSION);
         assert_eq!(version_choices().first(), Some(&27));
         assert!(version_label(15).contains("15"));
+        assert!(version_label(13).contains("X3"));
+        assert!(version_label(27).contains("2026"));
         // Versions not yet checked in other programs say so.
-        assert_ne!(version_label(23), version_label(21).replace("21", "23"));
-        assert_eq!(version_label(22), version_label(21).replace("21", "22"));
-        assert_ne!(version_label(15), version_label(21).replace("21", "15"));
-        assert_eq!(version_label(16), version_label(21).replace("21", "16"));
+        let plain = |v: u16| {
+            version_label(21)
+                .replace("21", &v.to_string())
+                .replace("2019", release_name(v))
+        };
+        assert_eq!(version_label(27), plain(27));
+        assert_eq!(version_label(16), plain(16));
+        assert_ne!(version_label(15), plain(15));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

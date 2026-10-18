@@ -38,10 +38,10 @@ use tracedraw_core::{
 /// program that wrote the samples (text from 16, by a user's test of
 /// files of versions 7 to 22); older ones are offered as experimental.
 pub const CHECKED_SINCE: u16 = 16;
-/// The newest version known to open there; newer ones (written with the
-/// records of version 22, which files of versions 23 to 27 share) are
-/// offered as experimental.
-pub const CHECKED_UNTIL: u16 = 22;
+/// The newest version known to open there (versions 23 to 27, written
+/// with the records of version 22, opened with their images in that
+/// program's 2026 release, a user's test of 2026-10-18).
+pub const CHECKED_UNTIL: u16 = 27;
 /// The oldest version the writer produces.
 pub const OLDEST_VERSION: u16 = 7;
 /// The newest version the writer produces.
