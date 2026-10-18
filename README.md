@@ -62,7 +62,7 @@
     </td>
     <td width="25%" valign="top">
       <h3>Opens your files</h3>
-      A clean-room <code>.cdr</code> reader for format versions 3 to 22 (text from 5) and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
+      A clean-room <code>.cdr</code> reader for format versions 1 to 25 (text in 1, 2 and from 5) and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
     </td>
     <td width="25%" valign="top">
       <h3>Ready for scripts and agents</h3>
@@ -216,7 +216,7 @@ or the moon button at the right of the status bar).
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
-      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 3 to 25) and its templates, CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
+      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 1 to 25) and its templates, CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
       <br><br>
       Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code> (versions 7 to 22), SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
     </td>
@@ -237,7 +237,8 @@ programs or other implementations. `CLEANROOM.md` records where each piece
 of format knowledge comes from and when; `docs/cdr-format.md` records what
 is confirmed and what is still assumed.
 
-- **Containers of every generation:** RIFF files (versions 3 to 13, with
+- **Containers of every generation:** the `WL` files of versions 1 and 2,
+  RIFF files (versions 3 to 13, with
   compressed chunk streams from 7), ZIP packages (14 and 15) and the
   split streams of 16 and later. CMX exchange files open too.
 - **What comes across:** pages, layers, master layers, guidelines,

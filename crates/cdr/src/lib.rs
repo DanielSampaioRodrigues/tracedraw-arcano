@@ -27,6 +27,7 @@ pub mod parse;
 pub mod riff;
 pub mod spot;
 mod text;
+pub mod wl;
 pub mod write;
 
 use std::path::Path;
@@ -83,6 +84,9 @@ pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseRe
 pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document, ParseReport)> {
     if cmx::is_cmx(bytes) {
         return cmx::open_bytes(bytes, title);
+    }
+    if wl::is_wl(bytes) {
+        return wl::open_bytes(bytes, title);
     }
     let container = container::detect(bytes)?;
     let riff = container::riff_stream(bytes, &container)?;

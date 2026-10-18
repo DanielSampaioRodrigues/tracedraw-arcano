@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` files of versions 1 and 2 (the `WL` files before RIFF) open:
+  rectangles, ellipses, curves, text with its font, size, alignment and
+  line spacing, uniform fills and outlines in the stacking order of the
+  file (they were refused).
+
 - An outline set behind the fill is drawn under it also when it is the
   object's only outline (it was drawn over the fill, so thick white
   outlines thinned or hid letters).

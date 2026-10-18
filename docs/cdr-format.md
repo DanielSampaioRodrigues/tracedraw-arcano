@@ -38,6 +38,28 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 | Stream `0xFFFFFFFF` means the payload (at most 8 bytes) is stored inline right after the length field | confirmed (public spec) | |
 | A redirected `LIST` body starts with its form type in the external stream | confirmed (public spec) | |
 
+### Versions 1 and 2 (`WL`)
+
+Files of the first two versions are not RIFF. Everything here comes from
+18 files a user sent (not committed), one of which was also sent saved in
+version 5; renders of all 18 were compared with what the drawings plainly
+show. Values are little-endian; lengths in thousandths of an inch.
+
+| Item | Status | Note |
+|---|---|---|
+| `WL`, a marker byte (`d`, `e` seen), a zero, then five u32: settings start (28), records start, records end, trailer start and that minus two | confirmed (file) | `wl.rs` |
+| Page box: four i16 at byte 30 (left, top, right, bottom) around the page centre | confirmed (file) | Letter portrait in every file seen. |
+| Font table at the records' end: u16 count, then 84 bytes a font (u16 id, u16, the `.wfn` file name) | confirmed (file) | The shipped font files are mapped to current families by name (assumed). |
+| Group and layer records: 28 bytes, flags at 26 low byte other than `0x40` | confirmed (file) | Groups are flattened. |
+| Drawn object: flags `0x40` at 26, u16 body size at 28, record length = size + 32 | confirmed (file) | The walk ends exactly at the records' end in all 18 files. |
+| Object fields: point i16 x2 at 32, matrix 6 x i32 16.16 at 36 (a, b, tx, c, d, ty; `x' = a x + b y + tx + point`), type at 60 (0 rectangle, 1 ellipse, 2 curve, 3 text) | confirmed (file) | |
+| Outline: flag at 67, u16 width at 68, colour at 74; fill: type at 94 (0 none, 1 uniform), colour at 95 | confirmed (file) for uniform; other fill types assumed none | Texture fills of one file are not read. |
+| Colour: model byte, then four bytes. Model 1: C, M, Y, K in percent. Model 0: u16 index, u16 tint; 0 black, 1 white | confirmed (file) for models 1 and 0 with indexes 0 and 1 | Other indexes read as black with a warning. |
+| Rectangle: i16 width and height from byte 114, corner radius at 120; ellipse: width, height and two angles at 118 and 120 | confirmed (file) for sizes; radius and angles assumed | Arcs and pies are drawn whole, with a warning. |
+| Curve: u16 count at 114, points from 118, node types after them as in later versions | confirmed (file) | |
+| Text: spacing of characters, words and lines in percent at 116, 118, 120; font id at 122; size u16 at 125; alignment at 127 (1 left, 2 centre); count at 128; characters from 140, CR LF between lines | confirmed (file) for font, size, count, characters, centre alignment and line spacing; character and word spacing assumed | The byte at 124 (1, 2, 4) is probably the weight or slant; not read. |
+| Records run from front to back | confirmed (file) | Backgrounds come last in the files. |
+
 ## Units and coordinates
 
 | Item | Status | Note |
