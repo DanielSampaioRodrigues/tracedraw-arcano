@@ -702,6 +702,28 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
             });
             ui.end_row();
         }
+        row_label(ui, &tr("dialog.title"));
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut st.title).desired_width(220.0));
+            ui.label(tr("dialog.subject"));
+            ui.add(egui::TextEdit::singleline(&mut st.subject).desired_width(200.0));
+            ui.label(tr("dialog.rating"));
+            for i in 1..=5u8 {
+                let colour = if st.rating >= i {
+                    egui::Color32::from_rgb(0xE8, 0xA3, 0x17)
+                } else {
+                    egui::Color32::from_gray(0xC0)
+                };
+                let star = egui::RichText::new("\u{2605}").color(colour).size(15.0);
+                if ui
+                    .add(egui::Label::new(star).sense(egui::Sense::click()))
+                    .clicked()
+                {
+                    st.rating = if st.rating == i { i - 1 } else { i };
+                }
+            }
+        });
+        ui.end_row();
     });
 }
 
