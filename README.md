@@ -216,7 +216,7 @@ or the moon button at the right of the status bar).
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
-      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 3 to 22), CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
+      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 3 to 25) and its templates, CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
       <br><br>
       Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code> (versions 7 to 22), SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
     </td>
@@ -364,7 +364,8 @@ Anyone who wants to help is welcome, with or without writing code:
   [`interop` branch](https://github.com/igtoth/tracedraw/tree/interop/bundles)
   holds small `.cdr` files saved by TraceDraw in versions 7 to 15; telling
   us which ones open (and which do not) is what moves those versions out
-  of experimental.
+  of experimental. Releases from 2021 on open version 15 and newer only,
+  so versions 7 to 14 need CorelDRAW 2020 or older.
 - **Report bugs** with the steps and a screenshot
   ([bug report](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml)).
 - **Review a translation** in your language (`apps/tracedraw/lang/`):
