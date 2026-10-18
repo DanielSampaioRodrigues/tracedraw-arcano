@@ -2117,11 +2117,17 @@ impl App {
         // A drawing that carries its CMYK profile (a `.cdr` file's) shows
         // its CMYK colours through it; others through the settings' one.
         let carried = self.doc().cmyk_profile.clone();
-        let cmyk = carried_cmyk_profile(self.doc()).or_else(|| load(&c.cmyk_profile_path));
+        // The open policy "assign the default profile" ignores the
+        // drawing's own one.
+        let cmyk = carried_cmyk_profile(self.doc())
+            .filter(|_| c.open_cmyk == 0)
+            .or_else(|| load(&c.cmyk_profile_path));
         let intent = Intent::from_name(&c.intent).unwrap_or_default();
         let bpc = c.black_point_compensation;
         self.color_profile_key = carried.map(|p| std::sync::Arc::as_ptr(&p.data) as usize);
-        if rgb.is_none() && cmyk.is_none() {
+        tracedraw_core::color::engine::set_map_gray_to_black(c.map_gray_to_black);
+        // The built-in formulas, when chosen as the colour engine.
+        if c.builtin_engine || (rgb.is_none() && cmyk.is_none()) {
             engine::clear();
             self.raster.borrow_mut().invalidate();
             return;
@@ -2143,6 +2149,47 @@ impl App {
         if key != self.color_profile_key {
             self.apply_color_settings();
         }
+    }
+
+    /// The CMYK profile Colour Management loaded from a file, as a
+    /// drawing would carry it (`None` for the built-in model).
+    pub fn settings_cmyk_profile(&self) -> Option<tracedraw_core::DocumentProfile> {
+        let c = &self.settings.color;
+        if c.cmyk_profile_path.is_empty() {
+            return None;
+        }
+        let data = crate::files::read(std::path::Path::new(&c.cmyk_profile_path)).ok()?;
+        tracedraw_core::icc::Profile::parse(&data).ok()?;
+        Some(tracedraw_core::DocumentProfile::new(
+            c.cmyk_profile.clone(),
+            data,
+        ))
+    }
+
+    /// Pick an `.icc`/`.icm` file for the default grayscale profile.
+    pub fn load_gray_profile(&mut self) {
+        crate::files::Dialog::new()
+            .add_filter("ICC", &["icc", "icm"])
+            .pick_file(self, move |app, path| {
+                let path = crate::files::keep(&path);
+                match crate::files::read(&path)
+                    .ok()
+                    .and_then(|b| tracedraw_core::icc::Profile::parse(&b).ok())
+                {
+                    Some(p) => {
+                        let name = p
+                            .description()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| path.display().to_string());
+                        app.settings.color.gray_profile = name.clone();
+                        app.settings.color.gray_profile_path = path.display().to_string();
+                        app.status = crate::i18n::trf("status.icc_loaded", &[("name", &name)]);
+                    }
+                    None => {
+                        app.status = crate::i18n::trf("status.icc_failed", &[("e", "ICC")]);
+                    }
+                }
+            });
     }
 
     /// Pick an `.icc`/`.icm` file for the RGB or CMYK slot.
@@ -4113,6 +4160,9 @@ impl App {
                 self.open_document(doc, None);
                 self.cdr_version = cdr_version;
                 self.tdraw_version = tdraw_version;
+                if cdr_version.is_some() {
+                    self.apply_open_policy();
+                }
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"
@@ -4202,14 +4252,26 @@ impl App {
         self.flush_tracked_time();
         let bytes = if is_cdr_path(&path) {
             let doc = self.engine.document();
-            let without;
-            let doc = if self.cdr_embed_profile || doc.cmyk_profile.is_none() {
-                doc
-            } else {
+            let changed;
+            let doc = if !self.cdr_embed_profile && doc.cmyk_profile.is_some() {
                 let mut d = doc.clone();
                 d.cmyk_profile = None;
-                without = d;
-                &without
+                changed = d;
+                &changed
+            } else if self.cdr_embed_profile && doc.cmyk_profile.is_none() {
+                // A drawing without its own profile takes the one Colour
+                // Management loaded, when there is one.
+                match self.settings_cmyk_profile() {
+                    Some(p) => {
+                        let mut d = doc.clone();
+                        d.cmyk_profile = Some(p);
+                        changed = d;
+                        &changed
+                    }
+                    None => doc,
+                }
+            } else {
+                doc
             };
             let mut previews = cdr_previews(doc);
             previews.embed_fonts = self.cdr_embed_fonts;
@@ -4704,7 +4766,11 @@ impl App {
                     .flat_map(|l| &l.shapes)
                 {
                     let id = self.engine.new_shape_id();
-                    let shape = reid(s.clone(), id, &mut self.engine);
+                    let mut shape = reid(s.clone(), id, &mut self.engine);
+                    self.apply_import_policy(
+                        std::slice::from_mut(&mut shape),
+                        doc.cmyk_profile.as_ref(),
+                    );
                     ids.push(id);
                     cmds.push(Command::AddShape { layer, shape });
                 }

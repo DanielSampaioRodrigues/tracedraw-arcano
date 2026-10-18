@@ -6,6 +6,15 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color Management Settings: Document and Default tabs, the drawing's
+  current profiles, assign or convert new RGB, CMYK and grayscale
+  profiles chosen from the profiles found on the computer, primary mode
+  and intent; presets, colour engine, preserve pure black, map gray to
+  CMYK black, open and import policies with warnings, spot colour
+  definition.
+- The standard bar's Options button opens the list of option pages; its
+  buttons show their title, shortcut and what they do; two buttons open
+  from and save to the drawing's Git repository.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

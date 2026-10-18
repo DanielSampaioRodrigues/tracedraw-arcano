@@ -102,10 +102,13 @@ impl SaveAsState {
             cdr,
             version: tracedraw_cdr::write::NEWEST_VERSION,
             tdraw_version: TDRAW_FORMAT_VERSION,
+            // The drawing's CMYK profile, else the one Colour Management
+            // loaded (it goes into the file when the drawing has none).
             profile: doc
                 .cmyk_profile
                 .as_ref()
-                .map(|p| (p.name.clone(), p.data.len())),
+                .map(|p| (p.name.clone(), p.data.len()))
+                .or_else(|| app.settings_cmyk_profile().map(|p| (p.name, p.data.len()))),
             embed_profile: app.cdr_embed_profile,
             fonts_size: tracedraw_cdr::write::embedded_size(&crate::app::cdr_font_faces(doc)),
             embed_fonts: app.cdr_embed_fonts,
@@ -650,7 +653,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
         ui.end_row();
         if st.cdr {
             // Profiles are stored in the package of version 16 and later.
-            let can = st.version >= 16 && st.profile.is_some();
+            let can = st.version >= 16;
             ui.label("");
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(can, |ui| {
@@ -677,7 +680,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                 );
                 ui.add_space(16.0);
                 // Fonts are stored in the package of version 16 and later.
-                let can = st.version >= 16 && st.fonts_size > 0;
+                let can = st.version >= 16;
                 ui.add_enabled_ui(can, |ui| {
                     let text = if st.fonts_size > 0 {
                         trf(

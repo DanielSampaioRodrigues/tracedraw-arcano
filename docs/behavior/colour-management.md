@@ -7,8 +7,43 @@
 | Grayscale | Dot gain 20% |
 | Rendering intent | Relative colorimetric |
 | Black point compensation | on |
-| Policy for embedded profiles | use embedded, warn on mismatch |
+| Policy for embedded profiles | use embedded, no warnings |
 | Soft proof | off; profile = CMYK working profile |
+
+## The Color Management Settings dialog
+
+Tools > Color Management (and the Launch list) opens a dialog with two
+tabs; nothing changes until OK. "?" opens the help.
+
+**Document**: Current Profiles (the drawing's RGB, CMYK and grayscale
+profiles: its own CMYK profile when it carries one, else the names it
+stores, else the defaults). Then Assign new (preserve colour appearance)
+or Convert (preserve colour values), and an RGB, a CMYK and a Grayscale
+list: "(Default) name" under Default profiles, then Load color
+profiles... and every RGB, CMYK or grayscale ICC profile found in the
+system folders (`/usr/share/color/icc`, `~/.local/share/color/icc`, the
+ColorSync folders, the Windows colour folder) under Other profiles, by
+their descriptions. Primary color mode (CMYK, RGB) and Rendering intent.
+OK assigns the chosen profiles to the drawing (one undo step; the CMYK
+profile's file goes with the drawing and into `.cdr` files from version
+16); with Convert the drawing's CMYK colours are first converted from its
+old CMYK profile to the new one through the ICC engine, so they look the
+same.
+
+**Default**: Preset (North America, Europe, Japan general purpose, Web
+and screen, and presets the user saves with the disk button and deletes
+with the bin), the default RGB, CMYK and grayscale profiles, primary
+colour mode and rendering intent of new drawings; Color conversion:
+Color engine (the ICC engine or the built-in formulas), Preserve pure
+black (CMYK colours of black ink only stay so when converted between
+profiles), Map gray to CMYK black (neutral greys converted to CMYK use
+black ink only; on at first), Black point compensation; Open policy for
+RGB, CMYK and grayscale (use the embedded profile, assign the default
+one, convert to the default one) with warnings on a different or missing
+profile (shown in the status bar when a `.cdr` file opens); Import and
+Paste policy (convert to the drawing's profile, or assign it: CMYK
+colours of shapes imported from a `.cdr` file that carries a profile are
+converted with Convert); Spot color definition (Lab, CMYK or RGB values).
 
 ## Conversions without a loaded profile
 
@@ -135,3 +170,11 @@ width.
   `press::tests::bad_numbers_do_not_break_it`.
 - `color::tests::screen_red_is_outside_the_press_gamut`,
   `color::tests::converting_to_the_same_model_keeps_the_colour`.
+- OK in the dialog stores the defaults and gives the drawing the chosen
+  grayscale profile, primary mode and intent; both tabs draw and Enter is
+  OK (`ui::color_management::tests::ok_sets_the_defaults_and_the_drawings_profiles_and_mode`).
+- Presets fill the three default profiles
+  (`ui::color_management::tests::presets_fill_the_three_default_profiles`).
+- Converting between CMYK profiles keeps pure black when asked, leaves
+  other models alone, and recolours shapes inside groups
+  (`color_policy::tests`).

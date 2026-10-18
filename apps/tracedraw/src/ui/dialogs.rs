@@ -646,7 +646,7 @@ pub enum Dialog {
     Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
-    ColorManagement,
+    ColorManagement(crate::ui::color_management::ColorManagementState),
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
@@ -1927,7 +1927,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
         Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
-        Dialog::ColorManagement => color_management_dialog(app, ctx, &mut close),
+        Dialog::ColorManagement(st) => {
+            crate::ui::color_management::dialog(app, ctx, st, &mut close)
+        }
         Dialog::FontManager(st) => font_manager_dialog(app, ctx, st, &mut close),
         Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
         Dialog::NewDocument(st) => {
@@ -4602,126 +4604,6 @@ fn border_grommet_preview(
     );
 }
 
-fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
-    let mut load_rgb = false;
-    let mut load_cmyk = false;
-    window(ctx, tr("menu.tools.color_management")).show(ctx, |ui| {
-        let c = &mut app.settings.color;
-        egui::Grid::new("cm").num_columns(2).show(ui, |ui| {
-            ui.label(tr("dialog.rgb_profile"));
-            egui::ComboBox::from_id_salt("rgbp")
-                .selected_text(c.rgb_profile.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "sRGB IEC61966-2.1",
-                        "Adobe RGB (1998)",
-                        "Display P3",
-                        "ProPhoto RGB",
-                    ] {
-                        if ui.selectable_label(c.rgb_profile == p, p).clicked() {
-                            c.rgb_profile = p.into();
-                            c.rgb_profile_path.clear();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label("");
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.load_icc")).clicked() {
-                    load_rgb = true;
-                }
-                ui.label(
-                    egui::RichText::new(if c.rgb_profile_path.is_empty() {
-                        tr("dialog.builtin_profile")
-                    } else {
-                        c.rgb_profile_path.clone()
-                    })
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-                );
-            });
-            ui.end_row();
-            ui.label(tr("dialog.cmyk_profile"));
-            egui::ComboBox::from_id_salt("cmykp")
-                .selected_text(c.cmyk_profile.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "Generic CMYK (open)",
-                        "Coated FOGRA39 (user)",
-                        "US Web Coated SWOP (user)",
-                        "Japan Color 2001 Coated (user)",
-                    ] {
-                        if ui.selectable_label(c.cmyk_profile == p, p).clicked() {
-                            c.cmyk_profile = p.into();
-                            c.cmyk_profile_path.clear();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label("");
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.load_icc")).clicked() {
-                    load_cmyk = true;
-                }
-                ui.label(
-                    egui::RichText::new(if c.cmyk_profile_path.is_empty() {
-                        tr("dialog.builtin_profile")
-                    } else {
-                        c.cmyk_profile_path.clone()
-                    })
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-                );
-            });
-            ui.end_row();
-            ui.label(tr("dialog.rendering_intent"));
-            egui::ComboBox::from_id_salt("intent")
-                .selected_text(c.intent.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "Relative colorimetric",
-                        "Absolute colorimetric",
-                        "Perceptual",
-                        "Saturation",
-                    ] {
-                        if ui.selectable_label(c.intent == p, p).clicked() {
-                            c.intent = p.into();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label(tr("dialog.black_point"));
-            ui.checkbox(&mut c.black_point_compensation, "");
-            ui.end_row();
-            ui.label(tr("dialog.proof_profile"));
-            ui.text_edit_singleline(&mut c.proof_profile);
-            ui.end_row();
-        });
-        ui.label(
-            egui::RichText::new(tr("dialog.color_management_hint"))
-                .color(Tokens::text_dim())
-                .size(11.0),
-        );
-        ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
-        ui.horizontal(|ui| {
-            if ui.button(tr("dialog.ok")).clicked() || enter_pressed(ui) {
-                app.apply_color_settings();
-                app.save_settings();
-                *close = true;
-            }
-            if ui.button(tr("dialog.cancel")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if load_rgb {
-        app.load_icc_profile(false);
-    }
-    if load_cmyk {
-        app.load_icc_profile(true);
-    }
-}
-
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {
     egui::Window::new(tr("menu.tools.font_manager"))
         .order(egui::Order::Foreground)
@@ -5028,7 +4910,7 @@ mod tests {
             Dialog::Grammar(GrammarState::default()),
             Dialog::Autocorrect(AutocorrectState::default()),
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
-            Dialog::ColorManagement,
+            Dialog::ColorManagement(Default::default()),
             Dialog::FontManager(FontManagerState::default()),
             Dialog::PaletteEditor(PaletteEditorState::default()),
             Dialog::NewDocument(crate::new_document::NewDocState::from_settings(

@@ -2942,38 +2942,13 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
 }
 
 fn tools_menu(app: &mut App, ui: &mut Ui) {
-    sub(ui, "menu.tools.options", |ui| {
-        if item(ui, "menu.tools.options_app", "Ctrl+J", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::General;
-        }
-        if item(ui, "menu.tools.options_customization", "", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Appearance;
-        }
-        if item(ui, "menu.tools.options_tools", "", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Pick;
-        }
-        if item(ui, "menu.tools.options_global", "", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::GlobalGeneral;
-        }
-        if item(ui, "menu.tools.options_workspaces", "", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Workspace;
-        }
-        if item(ui, "menu.tools.options_ai", "", true) {
-            app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::AiGeneral;
-        }
-    });
+    sub(ui, "menu.tools.options", |ui| options_items(app, ui));
     if item(ui, "menu.tools.save_settings_as_default", "", true) {
         app.save_defaults();
     }
     sep(ui);
     if item(ui, "menu.tools.color_management", "", true) {
-        app.dialog = Dialog::ColorManagement;
+        app.dialog = Dialog::ColorManagement(Default::default());
     }
     sep(ui);
     sub(ui, "menu.tools.scripts", |ui| {
@@ -3298,5 +3273,34 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     if item(ui, "menu.help.about", "", true) {
         app.dialog = Dialog::About;
+    }
+}
+
+/// Tools > Options and the standard bar's Options button: the option
+/// pages to open.
+pub(crate) fn options_items(app: &mut App, ui: &mut Ui) {
+    if item(ui, "menu.tools.options_app", "Ctrl+J", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::General;
+    }
+    if item(ui, "menu.tools.options_customization", "", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::Appearance;
+    }
+    if item(ui, "menu.tools.options_tools", "", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::Pick;
+    }
+    if item(ui, "menu.tools.options_global", "", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::GlobalGeneral;
+    }
+    if item(ui, "menu.tools.options_workspaces", "", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::Workspace;
+    }
+    if item(ui, "menu.tools.options_ai", "", true) {
+        app.dialog = Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::AiGeneral;
     }
 }

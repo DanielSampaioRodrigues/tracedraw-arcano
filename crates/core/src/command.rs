@@ -58,6 +58,10 @@ pub enum Command {
     SetMetadata {
         metadata: Metadata,
     },
+    /// The CMYK profile the drawing carries (`None`: the default one).
+    SetCmykProfile {
+        profile: Option<crate::document::DocumentProfile>,
+    },
     /// The node types chosen for curve `shape` (node element index to
     /// type), replacing the ones it had.
     SetNodeTypes {
@@ -331,6 +335,7 @@ impl Command {
             Command::SetLayerPrintable { .. } => "Layer Printable",
             Command::SetPageBackground { .. } => "Page Background",
             Command::SetMetadata { .. } => "Document Properties",
+            Command::SetCmykProfile { .. } => "Color Management",
             Command::SetTimeTracker { .. } => "Time Tracker",
             Command::SetComments { .. } => "Comments",
             Command::SetSelectionGroup { .. } => "Selection Group",
@@ -448,6 +453,9 @@ impl Command {
             }
             Command::SetMetadata { metadata } => {
                 doc.metadata = metadata.clone();
+            }
+            Command::SetCmykProfile { profile } => {
+                doc.cmyk_profile = profile.clone();
             }
             Command::SetSelectionGroup { number, shapes } => {
                 if *number > 9 {
