@@ -19,7 +19,7 @@ up), as the RIFF form type encodes them (`CDR7` to `CDR9`, then `CDRA` =
 
 | Item | Status | Note |
 |---|---|---|
-| `RIFF <size> CDR<v>`; `v` is a version char: `1`..`9` = 1..9, `A` = 10 ... `H` = 17, `J` = 18, `K` = 19; `I` is not used | confirmed (public spec) | We used to map `J` to 19. |
+| `RIFF <size> CDR<v>`; `v` is a version char: `1`..`9` = 1..9, `A` = 10 ... `H` = 17, `J` = 18 ... `N` = 22, `P` = 23, `Q` = 24, `R` = 25; `I` and `O` are not used | confirmed (public spec for `I`; for `O`, a public tutorial file of 2026-10-18: form type `CDRR` with `vrsn` 2500, `fver` major 25 and `AppVersion` 2500 in its metadata) | We used to map `J` to 19, and `R` to 26. |
 | Form type `CDR ` (a space) is version 3 | assumed (no version 3 file seen; a version 5 file relabelled reads the same) | Read with the rules of the versions before 6 (16-bit coordinates); a `vrsn` chunk overrides it. |
 | Package members and compressed blocks inflate to at most 512 MB each and the compressed blocks of one file to 1 GB together | our limit | Past it the stream is cut off (or the block skipped) with a warning, so a decompression bomb cannot exhaust memory; the archive's own size claims are not trusted for allocations. |
 | Lowercase form type `cdr` with `8` is a CDR 8 variant (spec: 801) | confirmed (public spec) | Treated as version 8. |

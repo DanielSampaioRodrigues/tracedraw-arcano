@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` form-type letters skip `O` too: a `CDRR` file is version 25 (it
+  was labelled 26).
+
 - The B-Spline tool places control points: the curve runs smooth near
   them, with the dashed control polygon shown while drawing (it drew
   straight segments through the points).
