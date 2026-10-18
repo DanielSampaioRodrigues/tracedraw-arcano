@@ -740,6 +740,8 @@ pub struct App {
     pub common_shape: crate::tools2::CommonShape,
     pub table_rows: u32,
     pub table_cols: u32,
+    /// Create New Table's width and height in millimetres.
+    pub table_size: (f64, f64),
     /// Cell fill and border of the next table drawn.
     pub table_fill: Fill,
     /// Block shadow colour and gap for the next drag.
@@ -1615,6 +1617,7 @@ impl App {
             common_shape: crate::tools2::CommonShape::RightArrow,
             table_rows: 3,
             table_cols: 4,
+            table_size: (75.0, 100.0),
             table_fill: Fill::None,
             block_shadow_color: Color::cmyk_pct(0.0, 0.0, 0.0, 60.0),
             block_shadow_gap: 0.0,

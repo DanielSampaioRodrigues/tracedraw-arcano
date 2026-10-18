@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dialogs are modal: while one is open, clicks, menus, dockers, the
+  drawing and canvas typing wait until it closes.
+- Create New Table asks for the number of rows and columns, height and
+  width (in the document's units), with a help button.
 - `.cdr` saving from version 16: the font table lists every face the
   text uses, and Save As has an "Embed fonts" box that stores the faces
   whose licence allows it (the command line with

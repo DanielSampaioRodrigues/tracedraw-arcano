@@ -72,7 +72,13 @@ Media; the Bezier, Pen, Crop and Knife tools have no key.
 ## Modal dialogs
 
 - Esc closes any dialog without applying; while a dialog is open the
-  shortcuts above are not interpreted.
+  shortcuts above are not interpreted, and typing does not reach text
+  or a table cell being edited on the canvas.
+- Dialogs are modal: while one is open, a transparent layer under it
+  takes every click, drag and scroll aimed at the menus, toolbars,
+  dockers, tabs and the drawing; only the dialog (and the lists it
+  opens) can be used until it closes
+  (`ui::dialogs::tests::an_open_dialog_takes_the_clicks_outside_it`).
 - Esc with a menu or a drop-down list open closes it and changes
   nothing else (the selection stays).
 - Tools keep their own keys (see `pick-tool.md`, `shape-tool.md` and

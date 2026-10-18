@@ -619,6 +619,9 @@ pub enum Dialog {
     CreateTable {
         rows: u32,
         cols: u32,
+        /// The table's size in millimetres.
+        width: f64,
+        height: f64,
     },
     QrCode(QrState),
     PasteSpecial(PasteSpecialState),
@@ -881,6 +884,26 @@ pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     ok
 }
 
+/// Where a dialog's "?" button leads.
+pub(crate) const HELP_URL: &str =
+    "https://github.com/igtoth/tracedraw/blob/main/docs/behavior/README.md";
+
+/// "?" on the left, OK and Cancel on the right, as dialogs with help
+/// have them. Returns (OK pressed, "?" pressed).
+pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
+    let mut help = false;
+    let mut ok = false;
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        help = ui
+            .add_sized([27.0, 27.0], egui::Button::new("?"))
+            .on_hover_text(tr("dialog.help"))
+            .clicked();
+        ok = ok_cancel(ui, close);
+    });
+    (ok, help)
+}
+
 /// Names of the dialogs' multi-line fields, where Enter inserts a line.
 const MULTILINE_NAMES: [&str; 2] = ["dialog_multiline_qr", "dialog_multiline_notes"];
 
@@ -924,6 +947,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         app.shortcut_editor.capture = None;
     }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
+    if !matches!(dialog, Dialog::None) {
+        crate::ui::chrome::modal_blocker(ctx);
+    }
     let mut close = false;
     match &mut dialog {
         Dialog::None => {}
@@ -1389,20 +1415,63 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::GithubOpen(f) => crate::ui::github_dialogs::open_dialog(app, ctx, f, &mut close),
         Dialog::GithubSave(f) => crate::ui::github_dialogs::save_dialog(app, ctx, f, &mut close),
         Dialog::GithubHistory => crate::ui::github_dialogs::history_dialog(app, ctx, &mut close),
-        Dialog::CreateTable { rows, cols } => {
+        Dialog::CreateTable {
+            rows,
+            cols,
+            width,
+            height,
+        } => {
+            let units = app.units;
+            let mut help = false;
             window(ctx, tr("dialog.create_table")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.rows"));
-                    ui.add(egui::DragValue::new(rows).range(1..=200));
-                    ui.label(tr("dialog.columns"));
-                    ui.add(egui::DragValue::new(cols).range(1..=200));
-                });
-                if ok_cancel(ui, &mut close) {
+                egui::Grid::new("create_table")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        let label = |ui: &mut Ui, key: &str| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(tr(key));
+                                },
+                            );
+                        };
+                        label(ui, "dialog.table_rows");
+                        ui.add_sized([120.0, 22.0], egui::DragValue::new(rows).range(1..=200));
+                        ui.end_row();
+                        label(ui, "dialog.table_columns");
+                        ui.add_sized([120.0, 22.0], egui::DragValue::new(cols).range(1..=200));
+                        ui.end_row();
+                        for (key, mm) in [
+                            ("dialog.height", &mut *height),
+                            ("dialog.width", &mut *width),
+                        ] {
+                            label(ui, key);
+                            let mut v = units.from_mm(*mm);
+                            if ui
+                                .add_sized(
+                                    [120.0, 22.0],
+                                    egui::DragValue::new(&mut v)
+                                        .speed(0.1)
+                                        .max_decimals(3)
+                                        .range(units.from_mm(1.0)..=units.from_mm(5000.0))
+                                        .suffix(format!(" {}", units.short())),
+                                )
+                                .changed()
+                            {
+                                *mm = units.to_mm(v);
+                            }
+                            ui.end_row();
+                        }
+                    });
+                let (ok, h) = help_ok_cancel(ui, &mut close);
+                help = h;
+                if ok {
                     app.table_rows = *rows;
                     app.table_cols = *cols;
+                    app.table_size = (*width, *height);
                     let page = app.page_rect();
-                    let w = (page.width() * 0.6).max(10.0);
-                    let h = (*rows as f64 * 10.0).min(page.height() * 0.6);
+                    let (w, h) = (*width, *height);
                     let c = page.center();
                     let rect =
                         Rect::new(c.x - w / 2.0, c.y - h / 2.0, c.x + w / 2.0, c.y + h / 2.0);
@@ -1417,6 +1486,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                     }
                 }
             });
+            if help {
+                app.open_url(HELP_URL);
+            }
         }
         Dialog::PasteSpecial(st) => {
             if !st.loaded {
@@ -4426,6 +4498,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
 
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {
     egui::Window::new(tr("menu.tools.font_manager"))
+        .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(true)
         .default_width(560.0)
@@ -4676,7 +4749,12 @@ mod tests {
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),
-            Dialog::CreateTable { rows: 3, cols: 4 },
+            Dialog::CreateTable {
+                rows: 3,
+                cols: 4,
+                width: 75.0,
+                height: 100.0,
+            },
             Dialog::QrCode(QrState::default()),
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),
@@ -4757,6 +4835,61 @@ mod tests {
         }
         let mut out = ctx.run_ui(input, |ui| show(app, &ui.ctx().clone()));
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn create_new_table_takes_rows_columns_and_size() {
+        let mut app = App::headless();
+        app.dialog = Dialog::CreateTable {
+            rows: 5,
+            cols: 2,
+            width: 80.0,
+            height: 50.0,
+        };
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert!(matches!(app.dialog, Dialog::None));
+        let table = app
+            .selection
+            .first()
+            .and_then(|id| app.doc().find_shape(*id))
+            .and_then(|s| match &s.kind {
+                ShapeKind::Table(t) => Some(t.clone()),
+                _ => None,
+            })
+            .expect("a table");
+        assert_eq!((table.row_heights.len(), table.col_widths.len()), (5, 2));
+        let r = table.rect;
+        assert!(
+            (r.width() - 80.0).abs() < 1e-6 && (r.height() - 50.0).abs() < 1e-6,
+            "{r:?}"
+        );
+        assert_eq!(app.table_size, (80.0, 50.0));
+    }
+
+    #[test]
+    fn an_open_dialog_takes_the_clicks_outside_it() {
+        let mut app = App::headless();
+        app.dialog = Dialog::CreateTable {
+            rows: 3,
+            cols: 4,
+            width: 75.0,
+            height: 100.0,
+        };
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, false);
+        let blocker = egui::LayerId::new(egui::Order::Middle, egui::Id::new("modal_blocker"));
+        assert_eq!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
+        assert_eq!(ctx.layer_id_at(egui::pos2(1390.0, 890.0)), Some(blocker));
+        // The dialog itself is above it.
+        let centre = ctx.layer_id_at(egui::pos2(700.0, 450.0)).expect("a layer");
+        assert_eq!(centre.order, egui::Order::Foreground);
+        app.dialog = Dialog::None;
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, false);
+        assert_ne!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
     }
 
     /// Every dialog can be drawn with a rectangle, text and a bitmap in the

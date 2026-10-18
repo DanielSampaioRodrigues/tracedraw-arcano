@@ -2,6 +2,11 @@
 
 ## Drawing
 
+- Table > Create New Table (and Object > Create > New Table): Number of
+  Rows, Number of Columns, Height and Width in the document's units
+  (100 x 75 mm at first; the last values are offered again), "?", OK
+  and Cancel. OK places the table at the page centre and selects it
+  (`ui::dialogs::tests::create_new_table_takes_rows_columns_and_size`).
 - Property bar: rows (default 3), columns (default 4), cell fill (off by
   default; a colour when on), border width (hairline by default) and
   border colour, then the hint. With a table selected, the fill and

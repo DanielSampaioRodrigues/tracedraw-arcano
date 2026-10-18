@@ -34,6 +34,7 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
     let mut closed = false;
     egui::Window::new(id)
         .id(egui::Id::new(id))
+        .order(egui::Order::Foreground)
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
@@ -115,6 +116,7 @@ impl Window {
         let mut closed = false;
         let window = egui::Window::new(&self.title)
             .id(self.id)
+            .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -165,6 +167,24 @@ impl Window {
         }
         out
     }
+}
+
+/// Dialogs are modal: while one is open, a transparent layer over the
+/// whole window, under the dialogs (which sit in the foreground order),
+/// takes every click, drag and scroll meant for the menus, toolbars,
+/// dockers and the drawing.
+pub fn modal_blocker(ctx: &Context) {
+    let id = egui::Id::new("modal_blocker");
+    let screen = ctx.content_rect();
+    egui::Area::new(id)
+        .order(egui::Order::Middle)
+        .fixed_pos(screen.min)
+        .interactable(true)
+        .show(ctx, |ui| {
+            ui.set_min_size(screen.size());
+            ui.interact(screen, id.with("cover"), Sense::click_and_drag());
+        });
+    ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
 }
 
 /// The frame of every dialog window: white, a grey border and a shadow.

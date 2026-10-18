@@ -2031,6 +2031,8 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::CreateTable {
                 rows: app.table_rows,
                 cols: app.table_cols,
+                width: app.table_size.0,
+                height: app.table_size.1,
             };
         }
         if item(
@@ -2837,6 +2839,8 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::CreateTable {
             rows: app.table_rows,
             cols: app.table_cols,
+            width: app.table_size.0,
+            height: app.table_size.1,
         };
     }
     if item(
