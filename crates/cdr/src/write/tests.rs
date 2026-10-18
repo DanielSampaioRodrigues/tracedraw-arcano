@@ -1860,3 +1860,49 @@ fn graded_transparency_is_written_as_a_gradient_from_16() {
         );
     }
 }
+
+#[test]
+fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let rect = |ids: &mut tracedraw_core::id::IdSource, x: f64| {
+        Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(x, 10.0, x + 30.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        )
+    };
+    let mut frame = rect(&mut ids, 10.0);
+    frame.fill = Fill::Solid(Color::rgb8(0, 120, 0));
+    frame.stroke = Some(Stroke::hairline(Color::BLACK));
+    let mut inside = rect(&mut ids, 20.0);
+    inside.fill = Fill::Solid(Color::rgb8(200, 230, 150));
+    inside.stroke = None;
+    let pc = Shape::new(
+        ids.shape(),
+        ShapeKind::ClipFrame {
+            frame: Box::new(frame),
+            contents: vec![inside],
+        },
+    );
+    doc.pages[0].layers[0].shapes = vec![pc];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let l = &back.pages[0].layers[0];
+        let ShapeKind::Group { children } = &l.shapes[0].kind else {
+            panic!("{v}: {:?} {:?}", l.shapes[0].kind, rep.warnings);
+        };
+        let looks: Vec<(bool, bool)> = children
+            .iter()
+            .map(|c| (!matches!(c.fill, Fill::None), c.stroke.is_some()))
+            .collect();
+        // Bottom to top: the frame's fill, the contents, its outline.
+        assert_eq!(looks, [(true, false), (true, false), (false, true)], "{v}");
+        assert_eq!(children[0].fill, Fill::Solid(Color::rgb8(0, 120, 0)), "{v}");
+    }
+}

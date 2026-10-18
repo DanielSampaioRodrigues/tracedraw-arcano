@@ -3082,16 +3082,25 @@ impl<'a> Writer<'a> {
                 return self.bitmap_object(&b, centre, Some(&clip));
             }
             ShapeKind::ClipFrame { frame, contents } => {
+                // Not yet written as a clip container: the frame's fill
+                // under the contents and its outline over them, unclipped.
+                let mut f = (**frame).clone();
+                f.absorb(s.transform);
                 let mut kids = Vec::new();
+                if !matches!(f.fill, Fill::None) {
+                    let mut under = f.clone();
+                    under.stroke = None;
+                    kids.push(under);
+                }
                 for c in contents {
                     let mut c = c.clone();
                     c.absorb(s.transform);
                     kids.push(c);
                 }
-                let mut f = (**frame).clone();
-                f.absorb(s.transform);
-                f.fill = Fill::None;
-                kids.push(f);
+                if f.stroke.is_some() {
+                    f.fill = Fill::None;
+                    kids.push(f);
+                }
                 return self.group(&kids, centre, depth);
             }
             ShapeKind::Bitmap { .. } => return self.bitmap_object(s, centre, None),

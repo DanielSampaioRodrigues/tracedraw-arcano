@@ -1615,18 +1615,16 @@ impl<'a> Ctx<'a> {
                     frame = Some(Size::new(w.abs(), h.abs()));
                     origin = Point::new(0.0, -h.abs());
                 }
-            } else if self.v >= 13 {
+            } else if self.v >= 16 {
                 let o = Point::new(r.coord()?, r.coord()?);
-                // A version 15 file holds (0, a record id) there, read as
-                // a point some 40 m away: take the origin then, as before
-                // version 13, and let the transform place the text.
                 if o.x.abs() <= MAX_TEXT_ORIGIN_MM && o.y.abs() <= MAX_TEXT_ORIGIN_MM {
                     origin = o;
                 }
             }
-            // Before version 13 the argument holds record ids, not a
-            // place (files of versions 7 to 12): the text starts at the
-            // origin and the transform places it.
+            // Before version 16 the argument holds record ids, not a
+            // place (files of versions 7 to 12; in 13 to 15 (0, 0) or
+            // (0, a record id), read as a point 9 to 40 m away): the text
+            // starts at the origin and the transform places it.
         }
         let mut txsm = None;
         oc.walk(&mut |c, _| {
@@ -7916,15 +7914,13 @@ mod tests {
                 other => panic!("{other:?}"),
             }
         };
-        // As a version 15 file holds it: 0 and a record id (some 41 m).
-        let o = read(u32s(&[0, 0x1887_1a00]));
-        assert!(o.x.abs() < 1e-9 && o.y.abs() < 1e-9, "{o:?}");
-        // A real place is kept.
-        let o = read(i32s(&[100_000, -50_000]));
-        assert!(
-            (o.x - 10.0).abs() < 1e-9 && (o.y + 5.0).abs() < 1e-9,
-            "{o:?}"
-        );
+        // As version 15 files hold it: 0 and a record id (some 41 m, or
+        // 9.2 m, which once passed for a place and put the text off the
+        // page). The transform places the text.
+        for id in [0x1887_1a00, 91_956_000] {
+            let o = read(u32s(&[0, id]));
+            assert!(o.x.abs() < 1e-9 && o.y.abs() < 1e-9, "{o:?}");
+        }
     }
 
     #[test]

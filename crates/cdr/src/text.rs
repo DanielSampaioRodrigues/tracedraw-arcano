@@ -832,7 +832,18 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
                 r.skip(5);
             }
         } else {
-            r.skip(nc.saturating_mul(4));
+            // Four bytes a character; the third numbers its style as from
+            // version 12 (a version 8 file: "x\u{c4}y" in one font with
+            // the middle letter, style 1, in a symbol font).
+            if nc > r.remaining() / 4 {
+                return finish(out, warn, "character count");
+            }
+            style_of.reserve(nc);
+            for _ in 0..nc {
+                r.skip(2);
+                style_of.push((r.u8()? >> 1) as usize);
+                r.skip(1);
+            }
         }
         let nbytes = if v >= 12 { r.u32()? as usize } else { nc };
         let text = d.get(r.pos..r.pos.checked_add(nbytes)?)?;
@@ -846,9 +857,8 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         // ("ć" in a Croatian word stored as 07 01 among single-byte
         // Portuguese letters). Text with every character in two bytes and
         // no flags is read as UTF-16.
-        // Bits 1 to 7 of the third byte of a character's record number its
-        // style in the
-        // list above (a version 15 file: "MASS IN RUNNING ORDER 941 kg",
+        // Bits 1 to 7 of the third byte of a character's record (in
+        // versions 8 to 11 too) number its style in the list above (a version 15 file: "MASS IN RUNNING ORDER 941 kg",
         // the figures 2, the rest 0 and 1). When they do, they decide the
         // runs; the lengths in the style list do not add up to the text.
         if style_of.iter().any(|i| *i != 0) && style_of.iter().all(|i| *i < styles.len()) {
@@ -2090,5 +2100,45 @@ mod tests {
         // With every record naming style 0 the lengths still cut the runs.
         let t = read_txsm(&txsm15("MASS 941kg", &[0; 10], false), 15, &mut |_| {}).expect("txsm");
         assert_eq!(t.paragraphs[0].runs[0].text.len(), 10);
+    }
+
+    /// A version 8 text record (frame layout, one frame, one paragraph)
+    /// with a base style over every letter and a second style naming font
+    /// 7 in character set 2; `index` numbers each letter's style.
+    fn txsm8(text: &[u8], index: &[u8]) -> Vec<u8> {
+        let mut d = vec![0xff; 4];
+        d.extend_from_slice(&[0; 32]);
+        d.extend_from_slice(&1u32.to_le_bytes()); // frames
+        d.extend_from_slice(&7u32.to_le_bytes()); // frame id
+        d.extend_from_slice(&[0; 48]); // matrix
+        d.extend_from_slice(&0u32.to_le_bytes()); // not on a path
+        d.extend_from_slice(&1u32.to_le_bytes()); // paragraphs
+        d.extend_from_slice(&9u32.to_le_bytes()); // style id
+        d.push(0);
+        d.extend_from_slice(&2u32.to_le_bytes()); // styles
+        d.extend_from_slice(&[text.len() as u8, 0, 0, 0]);
+        d.extend_from_slice(&[1, 0, 0x05, 0, 7, 0, 2, 0]);
+        d.extend_from_slice(&28222i32.to_le_bytes()); // 8 pt
+        d.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        for i in index {
+            d.extend_from_slice(&[0, 0, i << 1, 0]);
+        }
+        d.extend_from_slice(text);
+        d.push(0); // no path
+        d
+    }
+
+    #[test]
+    fn version_8_letters_take_the_style_their_records_number() {
+        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 1, 0]), 8, &mut |w| panic!("{w}")).expect("txsm");
+        let runs: Vec<(&str, Option<u16>)> = t.paragraphs[0]
+            .runs
+            .iter()
+            .map(|r| (r.text.as_str(), r.style.font_id))
+            .collect();
+        assert_eq!(runs, [("x", None), ("\u{c4}", Some(7)), ("y", None)]);
+        // Records that all name style 0 leave the lengths to cut the runs.
+        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 0, 0]), 8, &mut |_| {}).expect("txsm");
+        assert_eq!(t.paragraphs[0].runs[0].text, "x\u{c4}y");
     }
 }

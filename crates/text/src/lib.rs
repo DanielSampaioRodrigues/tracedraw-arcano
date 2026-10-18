@@ -421,6 +421,66 @@ fn set_axes(
     (weight, slanted)
 }
 
+/// Letters 0x20 to 0xFF of the symbol encoding of the Symbol family as
+/// Unicode, from the public table that maps that encoding to Unicode
+/// (0 where it has no character). Glyphs that are parts of larger signs
+/// (brace and bracket pieces) take their Unicode piece characters.
+const SYMBOL_ENCODING: [u16; 224] = [
+    // 0x20
+    0x0020, 0x0021, 0x2200, 0x0023, 0x2203, 0x0025, 0x0026, 0x220B, 0x0028, 0x0029, 0x2217, 0x002B,
+    0x002C, 0x2212, 0x002E, 0x002F, // 0x30
+    0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037, 0x0038, 0x0039, 0x003A, 0x003B,
+    0x003C, 0x003D, 0x003E, 0x003F, // 0x40
+    0x2245, 0x0391, 0x0392, 0x03A7, 0x0394, 0x0395, 0x03A6, 0x0393, 0x0397, 0x0399, 0x03D1, 0x039A,
+    0x039B, 0x039C, 0x039D, 0x039F, // 0x50
+    0x03A0, 0x0398, 0x03A1, 0x03A3, 0x03A4, 0x03A5, 0x03C2, 0x03A9, 0x039E, 0x03A8, 0x0396, 0x005B,
+    0x2234, 0x005D, 0x22A5, 0x005F, // 0x60
+    0x203E, 0x03B1, 0x03B2, 0x03C7, 0x03B4, 0x03B5, 0x03C6, 0x03B3, 0x03B7, 0x03B9, 0x03D5, 0x03BA,
+    0x03BB, 0x03BC, 0x03BD, 0x03BF, // 0x70
+    0x03C0, 0x03B8, 0x03C1, 0x03C3, 0x03C4, 0x03C5, 0x03D6, 0x03C9, 0x03BE, 0x03C8, 0x03B6, 0x007B,
+    0x007C, 0x007D, 0x223C, 0, // 0x80 to 0x9F: none
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // 0xA0
+    0x20AC, 0x03D2, 0x2032, 0x2264, 0x2044, 0x221E, 0x0192, 0x2663, 0x2666, 0x2665, 0x2660, 0x2194,
+    0x2190, 0x2191, 0x2192, 0x2193, // 0xB0
+    0x00B0, 0x00B1, 0x2033, 0x2265, 0x00D7, 0x221D, 0x2202, 0x2022, 0x00F7, 0x2260, 0x2261, 0x2248,
+    0x2026, 0x23D0, 0x23AF, 0x21B5, // 0xC0
+    0x2135, 0x2111, 0x211C, 0x2118, 0x2297, 0x2295, 0x2205, 0x2229, 0x222A, 0x2283, 0x2287, 0x2284,
+    0x2282, 0x2286, 0x2208, 0x2209, // 0xD0
+    0x2220, 0x2207, 0x00AE, 0x00A9, 0x2122, 0x220F, 0x221A, 0x22C5, 0x00AC, 0x2227, 0x2228, 0x21D4,
+    0x21D0, 0x21D1, 0x21D2, 0x21D3, // 0xE0
+    0x25CA, 0x27E8, 0x00AE, 0x00A9, 0x2122, 0x2211, 0x239B, 0x239C, 0x239D, 0x23A1, 0x23A2, 0x23A3,
+    0x23A7, 0x23A8, 0x23A9, 0x23AA, // 0xF0
+    0, 0x27E9, 0x222B, 0x2320, 0x23AE, 0x2321, 0x239E, 0x239F, 0x23A0, 0x23A4, 0x23A5, 0x23A6,
+    0x23AB, 0x23AC, 0x23AD, 0,
+];
+
+/// The family sets its letters in the symbol encoding (its text holds the
+/// codes 0x20 to 0xFF, or the same in the private area at 0xF020, rather
+/// than the characters they draw).
+fn symbol_encoded(family: &str) -> bool {
+    let key: String = family
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    matches!(key.as_str(), "symbol" | "symbolmt")
+}
+
+/// A letter of a symbol-encoded family as the character it draws; others
+/// unchanged.
+pub fn symbol_to_unicode(c: char) -> char {
+    let code = match c as u32 {
+        n @ 0x20..=0xFF => n,
+        n @ 0xF020..=0xF0FF => n - 0xF000,
+        _ => return c,
+    };
+    match SYMBOL_ENCODING.get(code as usize - 0x20) {
+        Some(&u) if u != 0 => char::from_u32(u as u32).unwrap_or(c),
+        _ => c,
+    }
+}
+
 /// Characters drawn with the face of the letter before them: spaces,
 /// controls, joiners, variation selectors and combining marks.
 fn inherits_face(c: char) -> bool {
@@ -1388,6 +1448,15 @@ impl FontSystem {
         let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
             return out;
         };
+        // Text in the symbol encoding drawn without that font: the
+        // characters its codes stand for, one for one.
+        let mapped: String;
+        let text = if symbol_encoded(&span.font_family) && !self.has_symbol_cmap(id) {
+            mapped = text.chars().map(symbol_to_unicode).collect();
+            mapped.as_str()
+        } else {
+            text
+        };
         for (range, face) in self.coverage_runs(id, text, span.bold, span.italic) {
             let before = text[..range.start].chars().count();
             out.extend(self.shape_with(
@@ -1401,6 +1470,21 @@ impl FontSystem {
             ));
         }
         out
+    }
+
+    /// The face maps codes through a symbol character map (Windows
+    /// platform, encoding 0), as fonts made for the symbol encoding do.
+    fn has_symbol_cmap(&self, id: fontdb::ID) -> bool {
+        let Some((data, index)) = self.face_data(id) else {
+            return false;
+        };
+        ttf_parser::Face::parse(&data, index).is_ok_and(|f| {
+            f.tables().cmap.is_some_and(|c| {
+                c.subtables
+                    .into_iter()
+                    .any(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+            })
+        })
     }
 
     /// `text` cut into runs that one face draws: `primary` where it has
@@ -2128,8 +2212,14 @@ impl FontSystem {
     }
 }
 
+/// The tallest metrics among a line's glyphs; `fallback` for a line with
+/// none (a larger first span elsewhere in the paragraph, such as a big
+/// first letter, does not open up the other lines).
 fn line_metrics(glyphs: &[Glyph], metrics: &[Metrics], fallback: Metrics) -> Metrics {
-    let mut m = fallback;
+    let Some(first) = glyphs.first() else {
+        return fallback;
+    };
+    let mut m = metrics[first.span];
     for g in glyphs {
         let gm = metrics[g.span];
         m.ascent = m.ascent.max(gm.ascent);
@@ -3389,5 +3479,62 @@ mod tests {
             on_path: None,
         };
         assert!(tracedraw_core::document::paragraph_lines(&artistic).is_none());
+    }
+
+    #[test]
+    fn symbol_encoded_text_reads_as_the_characters_it_draws() {
+        assert!(symbol_encoded("Symbol") && symbol_encoded("SymbolMT"));
+        assert!(!symbol_encoded("Times New Roman"));
+        assert_eq!(symbol_to_unicode('\u{c4}'), '\u{2297}');
+        assert_eq!(symbol_to_unicode('\u{f0ac}'), '\u{2190}');
+        assert_eq!(symbol_to_unicode('a'), '\u{3b1}');
+        assert_eq!(symbol_to_unicode('1'), '1');
+        // No character there, or outside the encoding: unchanged.
+        assert_eq!(symbol_to_unicode('\u{80}'), '\u{80}');
+        assert_eq!(symbol_to_unicode('\u{2295}'), '\u{2295}');
+        // Without a symbol font installed the codes draw as those signs.
+        let f = fonts();
+        if f.has_family("Symbol") || !has_fonts() {
+            return;
+        }
+        let mut code = span("\u{c4}");
+        code.font_family = "Symbol".into();
+        let mut sign = span("\u{2297}");
+        sign.font_family = "Symbol".into();
+        let a = f.outline(&[code]);
+        let b = f.outline(&[sign]);
+        assert_eq!(a.path.elements().len(), b.path.elements().len());
+    }
+
+    #[test]
+    fn a_big_first_letter_opens_up_only_its_own_line() {
+        if !has_fonts() {
+            return;
+        }
+        let mut cap = span("L");
+        cap.size_pt = 48.0;
+        let body = span(&"word ".repeat(60));
+        let para = ParagraphStyle::default();
+        let layout = fonts().layout(&TextRequest {
+            spans: &[cap, body.clone()],
+            frame: Some(Size::new(40.0, 400.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        let plain = fonts().layout(&TextRequest {
+            spans: &[body],
+            frame: Some(Size::new(40.0, 400.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        let gap = |l: &TextLayout, i: usize| l.lines[i].baseline - l.lines[i + 1].baseline;
+        assert!(layout.lines.len() > 3);
+        // The first line drops by the big letter's height; the others keep
+        // the spacing of the body text.
+        assert!(layout.lines[0].baseline < plain.lines[0].baseline * 2.0);
+        assert!((gap(&layout, 1) - gap(&plain, 1)).abs() < 1e-6);
+        assert!((gap(&layout, 2) - gap(&plain, 2)).abs() < 1e-6);
     }
 }

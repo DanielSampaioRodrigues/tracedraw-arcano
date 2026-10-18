@@ -218,6 +218,14 @@ text everywhere in the drawing: on layers, in groups and clip frames,
 in table cells and in symbols; a family is missing when it is neither
 installed nor carried.
 
+Text set in the Symbol family keeps the codes of that font's symbol
+encoding (as drawings store it: "a" for alpha, 0xC5 for a circled
+plus). When no installed face of that name maps those codes (a font
+with a symbol character map), the codes draw as the characters they
+stand for, from the public table of that encoding (Greek letters,
+arrows, set and logic signs, bracket pieces), each through a face that
+has it.
+
 ## Family names
 
 A font is found by the family name its file lists (the typographic
@@ -284,7 +292,9 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Formulas
 
-- Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
+- Line height `= size * leading / 100 * (asc - desc + gap) / upm`, each
+  line from the tallest letters in it (a big first letter drops the
+  first line only).
 - Justify: extra space `= (frame_width - line_width) / n_spaces`.
 - Text on path: the baseline is the path's first subpath (followed from
   its end back to its start when mirrored), moved `distance` to its left,

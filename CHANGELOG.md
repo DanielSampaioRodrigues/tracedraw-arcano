@@ -6,6 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` versions 13 to 15: artistic text no longer lands metres off the
+  page when its record holds a number where later versions keep a place.
+- `.cdr` versions 7 to 11: letters take the style their character
+  record numbers, so a word with one letter in another font or a big
+  first letter of a paragraph comes out right (it went to the end or
+  vanished).
+- Text in the Symbol font draws its Greek letters, arrows and math signs
+  when that font is not installed (it showed accented Latin letters).
+- A big first letter no longer opens up the spacing of every line of
+  its paragraph.
+- `.cdr` saving: a clip frame keeps the fill of its frame (it was lost).
 - CMX files whose chunk sizes run short (pattern files of version 7)
   open; they came up empty.
 - `.cdr` saving: paragraph text is written as one artistic text per line
