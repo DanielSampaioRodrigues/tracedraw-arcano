@@ -35,6 +35,87 @@ pub mod text_outline {
     pub fn outline(req: &TextRequest) -> Option<BezPath> {
         OUTLINER.get().map(|f| f(req))
     }
+
+    /// One laid-out line: the characters it holds (indexes in the
+    /// concatenated span text, the newline ending a paragraph left out)
+    /// and where it starts (x and baseline, mm, frame top at y = 0, y up).
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Line {
+        pub start_char: usize,
+        pub end_char: usize,
+        pub x: f64,
+        pub baseline: f64,
+    }
+
+    type Liner = fn(&TextRequest) -> Vec<Line>;
+    static LINER: OnceLock<Liner> = OnceLock::new();
+
+    /// Register the text engine's line breaking.
+    pub fn set_lines(f: Liner) {
+        let _ = LINER.set(f);
+    }
+
+    /// The lines of a text object, when a text engine is registered.
+    pub fn lines(req: &TextRequest) -> Option<Vec<Line>> {
+        LINER.get().map(|f| f(req))
+    }
+}
+
+/// Paragraph text as one artistic text a laid-out line, each placed where
+/// its frame put it (alignment and justification spacing aside), the lines
+/// that overflow the frame left out. `None` for other shapes or without a
+/// text engine. Formats that hold no frames use it to keep the look.
+pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        frame: Some(frame),
+        align,
+        para,
+        on_path: None,
+    } = kind
+    else {
+        return None;
+    };
+    let lines = text_outline::lines(&text_outline::TextRequest {
+        spans,
+        frame: Some(*frame),
+        align: *align,
+        para,
+        on_path: None,
+    })?;
+    let top = origin.y + frame.height;
+    let mut out = Vec::new();
+    for line in &lines {
+        // Below the frame: overflow, shown in the next linked frame or not
+        // at all.
+        if line.baseline < -frame.height - 1e-6 {
+            break;
+        }
+        let (_, tail) = split_spans_at(spans, line.start_char);
+        let (mut piece, _) = split_spans_at(&tail, line.end_char.saturating_sub(line.start_char));
+        for sp in piece.iter_mut() {
+            sp.text = sp.text.replace('\n', "");
+        }
+        piece.retain(|sp| !sp.text.is_empty());
+        if piece.iter().all(|sp| sp.text.trim().is_empty()) {
+            continue;
+        }
+        out.push(ShapeKind::Text {
+            spans: piece,
+            origin: Point::new(origin.x + line.x, top + line.baseline),
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle {
+                first_line_indent: 0.0,
+                left_indent: 0.0,
+                right_indent: 0.0,
+                ..para.clone()
+            },
+            on_path: None,
+        });
+    }
+    Some(out)
 }
 
 /// Paper sizes in millimetres.

@@ -2957,6 +2957,26 @@ impl<'a> Writer<'a> {
         if !s.visible {
             return none();
         }
+        // Paragraph text goes out as a group of artistic texts, one a line
+        // placed where its frame put it (frames are not written yet), so it
+        // keeps its look.
+        if let Some(kinds) = tracedraw_core::document::paragraph_lines(&s.kind) {
+            let children: Vec<Shape> = kinds
+                .into_iter()
+                .map(|kind| Shape { kind, ..s.clone() })
+                .collect();
+            let group = match children.len() {
+                0 => return none(),
+                1 => children.into_iter().next().unwrap_or_else(|| s.clone()),
+                _ => Shape {
+                    kind: ShapeKind::Group { children },
+                    transform: Affine::IDENTITY,
+                    effects: Vec::new(),
+                    ..s.clone()
+                },
+            };
+            return self.object(&group, centre, depth);
+        }
         if !s.effects.is_empty() {
             let ev = tracedraw_core::live::evaluate(s);
             let mut all: Vec<Shape> = ev.below.clone();

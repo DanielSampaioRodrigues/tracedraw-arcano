@@ -8,7 +8,9 @@ full, row-by-row status.
 
 - CMX files whose chunk sizes run short (pattern files of version 7)
   open; they came up empty.
-
+- `.cdr` saving: paragraph text is written as one artistic text per line
+  in its place, so it no longer runs together on one line; the frame
+  itself is not written yet.
 - The Print dialog has tabs: General (destination: system printer, PDF
   or PostScript file; orientation; current document, page, page list or
   selection; copies with collate; print as bitmap), Color (separations,

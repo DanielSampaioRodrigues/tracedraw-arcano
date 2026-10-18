@@ -59,6 +59,22 @@ pub struct FontSystem {
 /// Register this engine as the core's text outliner (call once at startup).
 pub fn install() {
     tracedraw_core::document::text_outline::set(|req| fonts().outline_cached(req).as_ref().clone());
+    tracedraw_core::document::text_outline::set_lines(|req| {
+        let layout = fonts().layout(req);
+        // Lines past what fits the frame flow on (to a linked frame);
+        // only those inside it are reported.
+        layout
+            .lines
+            .iter()
+            .filter(|l| l.start_char < layout.fitted_chars || layout.fitted_chars == 0)
+            .map(|l| tracedraw_core::document::text_outline::Line {
+                start_char: l.start_char,
+                end_char: l.end_char,
+                x: l.edges.first().copied().unwrap_or(0.0),
+                baseline: l.baseline,
+            })
+            .collect()
+    });
 }
 
 static SYSTEM: OnceLock<FontSystem> = OnceLock::new();
@@ -3318,5 +3334,60 @@ mod tests {
         let junk = DocumentFont::new("Junk", vec![1, 2, 3]);
         assert!(f.add_document_fonts(&[restricted, junk]).is_empty());
         assert!(!f.has_family("Junk"));
+    }
+
+    #[test]
+    fn paragraph_text_splits_into_one_artistic_text_per_line() {
+        if !has_fonts() {
+            return;
+        }
+        install();
+        let kind = tracedraw_core::ShapeKind::Text {
+            spans: vec![span("one two three four five six seven eight nine ten")],
+            origin: Point::ZERO,
+            frame: Some(Size::new(20.0, 200.0)),
+            align: TextAlign::Center,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        let lines = tracedraw_core::document::paragraph_lines(&kind).expect("lines");
+        assert!(lines.len() > 1);
+        let mut joined = String::new();
+        let mut last_y = f64::INFINITY;
+        for line in &lines {
+            let tracedraw_core::ShapeKind::Text {
+                spans,
+                origin,
+                frame,
+                align,
+                ..
+            } = line
+            else {
+                panic!("not text");
+            };
+            assert!(frame.is_none());
+            assert!(matches!(align, TextAlign::Left));
+            // Lines run downwards from the top of the frame.
+            assert!(origin.y < last_y && origin.y <= 200.0);
+            last_y = origin.y;
+            for sp in spans {
+                joined.push_str(&sp.text);
+            }
+        }
+        let words: Vec<&str> = joined.split_whitespace().collect();
+        assert_eq!(
+            words.join(" "),
+            "one two three four five six seven eight nine ten"
+        );
+        // Artistic text has no lines to split.
+        let artistic = tracedraw_core::ShapeKind::Text {
+            spans: vec![span("x")],
+            origin: Point::ZERO,
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        assert!(tracedraw_core::document::paragraph_lines(&artistic).is_none());
     }
 }
