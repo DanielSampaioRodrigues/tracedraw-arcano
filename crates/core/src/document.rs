@@ -1210,7 +1210,11 @@ pub struct Shape {
     /// where its handles alone would read otherwise: a cusp node with
     /// aligned handles, a smooth one with handles of equal length.
     /// Cleared when the curve gains or loses nodes.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty",
+        deserialize_with = "index_keys::deserialize"
+    )]
     pub node_types: std::collections::BTreeMap<usize, crate::nodes::NodeType>,
     /// The object's identity across saves, undo and moves between
     /// drawings (see [`Uid`]); the engine gives one to every object.
@@ -3206,8 +3210,104 @@ pub fn migrate(v: &mut serde_json::Value, from: u32) {
     }
 }
 
+/// Maps keyed by an index, read whether the keys come as numbers or as
+/// the strings JSON object keys are (inside a shape nested in a tagged
+/// kind, such as a group's child, they arrive as strings and a plain
+/// number key refused them, so such drawings did not open again).
+mod index_keys {
+    use serde::de::{Deserializer, MapAccess, Visitor};
+    use std::collections::BTreeMap;
+    use std::fmt;
+    use std::marker::PhantomData;
+
+    struct Key(usize);
+
+    impl<'de> serde::Deserialize<'de> for Key {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct K;
+            impl<'de> Visitor<'de> for K {
+                type Value = Key;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("an index as a number or a string")
+                }
+                fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Key, E> {
+                    usize::try_from(v).map(Key).map_err(E::custom)
+                }
+                fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Key, E> {
+                    usize::try_from(v).map(Key).map_err(E::custom)
+                }
+                fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Key, E> {
+                    v.trim().parse().map(Key).map_err(E::custom)
+                }
+            }
+            d.deserialize_any(K)
+        }
+    }
+
+    pub fn deserialize<'de, D, V>(d: D) -> Result<BTreeMap<usize, V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: serde::Deserialize<'de>,
+    {
+        struct M<V>(PhantomData<V>);
+        impl<'de, V: serde::Deserialize<'de>> Visitor<'de> for M<V> {
+            type Value = BTreeMap<usize, V>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map keyed by index")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut out = BTreeMap::new();
+                while let Some((Key(k), v)) = m.next_entry::<Key, V>()? {
+                    out.insert(k, v);
+                }
+                Ok(out)
+            }
+        }
+        d.deserialize_map(M(PhantomData))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn node_types_of_curves_inside_groups_survive_the_native_format() {
+        use crate::geometry::BezPath;
+        let mut path = BezPath::new();
+        path.move_to((0.0, 0.0));
+        path.curve_to((1.0, 2.0), (3.0, 2.0), (4.0, 0.0));
+        path.curve_to((5.0, -2.0), (7.0, -2.0), (8.0, 0.0));
+        let mut curve = Shape::new(
+            ShapeId(2),
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        curve.node_types.insert(3, crate::nodes::NodeType::Smooth);
+        let group = Shape::new(
+            ShapeId(1),
+            ShapeKind::Group {
+                children: vec![curve.clone()],
+            },
+        );
+        let mut doc = Document::default();
+        doc.pages[0].layers[0].shapes = vec![curve, group];
+        let json = doc.to_json().expect("json");
+        let back = Document::from_json(&json).expect("opens again");
+        let shapes = &back.pages[0].layers[0].shapes;
+        assert_eq!(
+            shapes[0].node_types.get(&3),
+            Some(&crate::nodes::NodeType::Smooth)
+        );
+        let ShapeKind::Group { children } = &shapes[1].kind else {
+            panic!("a group");
+        };
+        assert_eq!(
+            children[0].node_types.get(&3),
+            Some(&crate::nodes::NodeType::Smooth)
+        );
+    }
+
     use super::*;
 
     #[test]

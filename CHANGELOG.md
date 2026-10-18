@@ -6,9 +6,32 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` version 15 is no longer marked experimental: files written in
+  it open with every object and their text looks.
+- Save As offers the newest `.cdr` version (27) first, drops the long
+  version hint, and has an "Embed colour profile" box with the
+  profile's name and size (version 16 and later).
+- `.cdr` saving before version 16: the font table lists each bold or
+  italic face the text uses, so bold text no longer opens in a
+  stand-in font.
+- `.cdr` saving in versions 7 to 15: text records are laid out as files
+  of those versions hold them, one byte a letter from version 12 (text
+  was dropped as an invalid object, or the other program closed), each
+  text's frame numbered as its object, and curves end with the 8 bytes
+  those versions keep after the nodes (rectangles, written as curves,
+  were lost); layers and groups carry the zero argument 12000 from
+  version 14, as files of versions 14 to 27 do; text before 16 takes its font, size,
+  weight, colour and alignment from a style of its own (it all came out
+  in the default style); curve nodes carry the marks of every version's
+  files (filled curves before 16 were dropped).
+- `.tdraw`: drawings whose grouped curves keep node types open again
+  (they were refused with "expected usize").
 - Save As lists each `.cdr` version with the release that writes it
   ("v13 (X3)", "v27 (2026)"); versions 23 to 27 are no longer marked
   experimental (files written here open in the 2026 release).
+- `.cdr` saving in versions 13 to 15: no invalid object when a shape is
+  partly transparent (the transparency is not kept in those versions
+  yet); version 15 text carries the argument its files have.
 - `.cdr` saving: images show in other programs (bitmap objects now carry
   their pixel size and image box; files opened without their images).
 - `.cdr` versions 23 to 27: files open (version 23 files were refused),

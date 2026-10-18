@@ -191,7 +191,7 @@ impl Default for FormatPrefs {
             pdf_bleed_mm: st.bleed_mm,
             remember_last: false,
             import_place: ImportPlace::AsInFile,
-            cdr_version: tracedraw_cdr::write::DEFAULT_VERSION,
+            cdr_version: tracedraw_cdr::write::NEWEST_VERSION,
         }
     }
 }

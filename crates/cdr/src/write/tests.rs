@@ -128,7 +128,9 @@ fn shapes_round_trip(doc: &Document, v: u16) {
     assert_eq!(s0.dash, vec![3.0, 1.0]);
     assert!(s0.scale_with_object, "{v}");
     assert_eq!(shapes[0].name.as_deref(), Some("box"), "{v}");
-    assert!((shapes[0].opacity - 0.5).abs() < 0.01, "{v}");
+    // Versions 13 to 15 do not keep the transparency yet.
+    let want = if (13..=15).contains(&v) { 1.0 } else { 0.5 };
+    assert!((shapes[0].opacity - want).abs() < 0.01, "{v}");
     let eb = shapes[1].bounds();
     assert!(
         (eb.x0 - 100.0).abs() < 0.01 && (eb.y0 - 10.0).abs() < 0.01,
@@ -893,9 +895,10 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         graphic_fill: 8,
         outline: 9,
         font: 3,
+        formats: Vec::new(),
     };
     for v in versions() {
-        let d = stlt(Ver(v), uses);
+        let d = stlt(Ver(v), uses.clone());
         let at = std::cell::Cell::new(0usize);
         let mut u = || {
             let x = d
@@ -1099,7 +1102,7 @@ fn records_have_the_sizes_of_the_versions_files() {
         );
         assert_eq!(fild(Ver(v), 1, &Fill::None).len(), none, "{v}");
         assert_eq!(
-            font_record(Ver(v), 1, "Arial").len(),
+            font_record(Ver(v), 1, "Arial", 0x40).len(),
             if v >= 12 { 296 } else { 92 },
             "{v}"
         );
@@ -1829,11 +1832,11 @@ fn graded_transparency_is_written_as_a_gradient_from_16() {
     });
     doc.pages[0].layers[0].shapes = vec![r];
     doc.set_ids(ids);
-    // Before version 16 the mean opacity; from 16 the gradient itself.
-    let bytes = document_to_cdr_version(&doc, 15);
+    // Before version 13 the mean opacity; from 16 the gradient itself.
+    let bytes = document_to_cdr_version(&doc, 12);
     let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
     let s = &back.pages[0].layers[0].shapes[0];
-    assert!((s.opacity - 0.75).abs() < 0.01, "15: {}", s.opacity);
+    assert!((s.opacity - 0.75).abs() < 0.01, "12: {}", s.opacity);
     for v in [16u16, 21] {
         let bytes = document_to_cdr_version(&doc, v);
         let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
@@ -2142,5 +2145,254 @@ fn bitmap_objects_carry_their_pixel_size() {
         );
         assert_eq!([i(32), i(36), i(40)], [24 << 16 | 2, 3, 2], "{v}");
         assert_eq!(i(60), -1, "{v}");
+    }
+}
+
+#[test]
+fn version_15_objects_carry_the_arguments_its_files_have() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.fill = Fill::Solid(Color::BLACK);
+    r.opacity = 0.5;
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Hi", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![r, t]);
+    for v in versions() {
+        let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, v));
+        let mut seen: Vec<(u32, Vec<u32>)> = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"loda") {
+                let d = tree.data(&riff, c);
+                let kind = d
+                    .get(16..20)
+                    .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap_or([0; 4])));
+                seen.push((kind, loda_args(d).iter().map(|(t, _)| *t).collect()));
+            }
+        });
+        let has = |kind: u32, arg: u32| seen.iter().any(|(k, a)| *k == kind && a.contains(&arg));
+        // No bare transparency value where these versions keep a record.
+        assert_eq!(has(3, 8000) || has(1, 8000), v < 13, "{v}");
+        // Text: 16015 from version 15.
+        assert_eq!(has(4, 16015), v >= 15, "{v}");
+    }
+}
+
+#[test]
+fn artistic_text_records_before_16_open_as_files_have_them() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Hi", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    for (v, layout) in [
+        (7u16, 2u32),
+        (8, 3),
+        (10, 5),
+        (11, 5),
+        (12, 6),
+        (13, 8),
+        (14, 9),
+        (15, 11),
+    ] {
+        let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, v));
+        let mut rec = None;
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") && rec.is_none() {
+                rec = Some(tree.data(&riff, c).to_vec());
+            }
+        });
+        let d = rec.expect("a text record");
+        let u = |at: usize| u32::from_le_bytes(d[at..at + 4].try_into().expect("4 bytes"));
+        assert_eq!(
+            (0..9).map(|i| u(i * 4)).collect::<Vec<_>>(),
+            [u32::MAX, u32::MAX, 0, u32::MAX, 8, layout, 0, 3, 0],
+            "{v}"
+        );
+        // The frame's matrix is the identity, not zeros.
+        let at = 36 + usize::from(v >= 15) + if v < 8 { 4 } else { 0 } + 8;
+        let f = |i: usize| f64::from_le_bytes(d[at + i * 8..at + i * 8 + 8].try_into().expect("8"));
+        assert_eq!((f(0), f(4)), (1.0, 1.0), "{v}");
+    }
+}
+
+#[test]
+fn text_from_version_12_goes_out_one_byte_a_letter_with_wide_letters_marked() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Steć", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    for v in 12u16..=15 {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut rec = None;
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") && rec.is_none() {
+                rec = Some(tree.data(&riff, c).to_vec());
+            }
+        });
+        let d = rec.expect("a text record");
+        // The letters end the record, before the path flag: three single
+        // bytes and the UTF-16 unit of the letter Windows-1252 lacks.
+        let tail = &d[d.len() - 1 - 5 - 4..d.len() - 1];
+        assert_eq!(tail, &[5, 0, 0, 0, b'S', b't', b'e', 0x07, 0x01], "{v}");
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("text");
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, "Steć", "{v}");
+    }
+}
+
+#[test]
+fn before_16_text_frames_take_their_objects_numbers_and_curves_end_padded() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let a = text_shape(
+        &mut ids,
+        vec![TextSpan::new("A", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let b = text_shape(
+        &mut ids,
+        vec![TextSpan::new("B", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let mut c = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    c.fill = Fill::Solid(Color::BLACK);
+    let doc = doc_with(vec![a, b, c]);
+    for v in [12u16, 13, 14, 15, 16, 21] {
+        let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, v));
+        let mut pairs = Vec::new();
+        let mut curve_tail = None;
+        tree.root.walk(&mut |ch, _| {
+            if ch.list_type_str().as_deref() == Some("obj ") {
+                let spnd = ch.find(b"spnd").map(|x| tree.data(&riff, x).to_vec());
+                let mut frame = None;
+                ch.walk(&mut |x, _| {
+                    if x.is(b"txsm") {
+                        let d = tree.data(&riff, x);
+                        let at = 36 + usize::from(v >= 15) + 4;
+                        frame = d.get(at..at + 4).map(|b| b.to_vec());
+                    }
+                    if x.is(b"loda") {
+                        let d = tree.data(&riff, x);
+                        if d.get(16..20) == Some(&3u32.to_le_bytes()[..]) {
+                            if let Some((_, b)) = loda_args(d).into_iter().find(|(t, _)| *t == 30) {
+                                let n = u32::from_le_bytes(b[0..4].try_into().unwrap_or([0; 4]))
+                                    as usize;
+                                curve_tail = Some(b.len() - (4 + 9 * n));
+                            }
+                        }
+                    }
+                });
+                if let (Some(s), Some(f)) = (spnd, frame) {
+                    pairs.push((s, f));
+                }
+            }
+        });
+        if v < 16 {
+            assert_eq!(pairs.len(), 2, "{v}");
+            for (s, f) in &pairs {
+                assert_eq!(s, f, "{v}: frame number is the object's spnd");
+            }
+        }
+        let want = if v < 16 { 8 } else { 0 };
+        if v >= 15 {
+            assert_eq!(curve_tail, Some(want), "{v}");
+        }
+    }
+}
+
+#[test]
+fn before_16_text_takes_its_look_from_a_style_of_its_own() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut big = TextSpan::new("TRAVEL", "Arial", 40.0);
+    big.bold = true;
+    let small = TextSpan::new("note", "Times New Roman", 9.0);
+    let a = text_shape(&mut ids, vec![big], TextAlign::Center);
+    let b = text_shape(&mut ids, vec![small], TextAlign::Left);
+    let doc = doc_with(vec![a, b]);
+    for v in 7u16..=15 {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let looks: Vec<(String, f64, bool, TextAlign)> = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, align, .. } => spans.first().map(|sp| {
+                    (
+                        sp.font_family.clone(),
+                        (sp.size_pt * 10.0).round() / 10.0,
+                        sp.bold,
+                        *align,
+                    )
+                }),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            looks.contains(&("Arial".into(), 40.0, true, TextAlign::Center)),
+            "{v}: {looks:?} {:?}",
+            rep.warnings
+        );
+        assert!(
+            looks.contains(&("Times New Roman".into(), 9.0, false, TextAlign::Left)),
+            "{v}: {looks:?}"
+        );
+    }
+}
+
+#[test]
+fn the_font_table_lists_every_face_the_text_styles_use() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bold = TextSpan::new("Heading", "Arial", 20.0);
+    bold.bold = true;
+    let plain = TextSpan::new("body", "Arial", 10.0);
+    let a = text_shape(&mut ids, vec![bold], TextAlign::Left);
+    let b = text_shape(&mut ids, vec![plain], TextAlign::Left);
+    let doc = doc_with(vec![a, b]);
+    for v in 7u16..=15 {
+        let bytes = document_to_cdr_version(&doc, v);
+        // Every font record: its id and the face flags after the charset.
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut faces = Vec::new();
+        tree.root.walk(&mut |ch, _| {
+            if ch.id_str() == "font" {
+                let d = tree.data(&riff, ch);
+                let id = u16::from_le_bytes([d[0], d[1]]);
+                faces.push((id, u32::from_le_bytes(d[4..8].try_into().expect("u32"))));
+            }
+        });
+        let arial: Vec<u32> = faces
+            .iter()
+            .filter(|(id, _)| faces.iter().any(|(j, f)| j == id && *f == 0x1000))
+            .map(|(_, f)| *f)
+            .collect();
+        assert!(
+            arial.contains(&0x40) && arial.contains(&0x1000),
+            "{v}: {faces:x?}"
+        );
     }
 }

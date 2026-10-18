@@ -1,7 +1,8 @@
 //! File > Save As (and Save of a drawing without a file): the Save
 //! Drawing dialog. One window chooses the folder (path bar, Up, New folder,
 //! shortcuts and the folder's contents), the file name, the type
-//! (TraceDraw or `.cdr`), the `.cdr` version and the document's title,
+//! (TraceDraw or `.cdr`), the `.cdr` version (the newest first), whether
+//! the CMYK profile goes along, and the document's title,
 //! subject and rating, and asks before replacing a file. In a browser,
 //! where every save is a download, it keeps the name, type, version and
 //! properties. See docs/behavior/files.md.
@@ -38,6 +39,10 @@ pub struct SaveAsState {
     /// `.cdr` rather than TraceDraw.
     pub cdr: bool,
     pub version: u16,
+    /// The drawing's CMYK profile (name, size in bytes), when it has one.
+    pub profile: Option<(String, usize)>,
+    /// The profile goes into the file (`.cdr` from version 16).
+    pub embed_profile: bool,
     pub title: String,
     pub subject: String,
     pub rating: u8,
@@ -52,7 +57,8 @@ pub struct SaveAsState {
 impl SaveAsState {
     /// Start in the drawing's folder (else the last one used, else the
     /// documents folder) with its name, its type (`.cdr` for a drawing
-    /// that came from or went to one), its version and properties.
+    /// that came from or went to one), the newest version and its
+    /// properties.
     pub fn new(app: &App) -> Self {
         let doc = app.doc();
         let file = app.file.as_ref();
@@ -87,7 +93,12 @@ impl SaveAsState {
             dir: dir.clone(),
             name: String::new(),
             cdr,
-            version: app.cdr_save_version(),
+            version: tracedraw_cdr::write::NEWEST_VERSION,
+            profile: doc
+                .cmyk_profile
+                .as_ref()
+                .map(|p| (p.name.clone(), p.data.len())),
+            embed_profile: app.cdr_embed_profile,
             title: doc.title.clone(),
             subject: doc.metadata.subject.clone(),
             rating: doc.metadata.rating,
@@ -262,6 +273,7 @@ impl App {
             self.settings.last_dir = Some(st.dir.clone());
         }
         if st.cdr {
+            self.cdr_embed_profile = st.embed_profile;
             self.save_cdr_to(path, st.version);
         } else {
             self.save_to(path);
@@ -595,15 +607,30 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                     260.0,
                 );
             });
-            if st.cdr {
-                ui.label(
-                    RichText::new(tr("dialog.cdr_version_hint"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-            }
         });
         ui.end_row();
+        if let Some((name, size)) = &st.profile {
+            // Profiles are stored in the package of version 16 and later.
+            let can = st.cdr && st.version >= 16;
+            ui.label("");
+            ui.horizontal(|ui| {
+                ui.add_enabled_ui(can, |ui| {
+                    let text = trf(
+                        "dialog.embed_color_profile",
+                        &[("size", &size_text(*size as u64))],
+                    );
+                    let mut on = st.embed_profile && can;
+                    if ui.checkbox(&mut on, text).changed() {
+                        st.embed_profile = on;
+                    }
+                });
+                ui.label(
+                    RichText::new(trf("dialog.color_profile", &[("name", name)]))
+                        .color(Tokens::text_dim()),
+                );
+            });
+            ui.end_row();
+        }
         row_label(ui, &tr("dialog.title"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut st.title).desired_width(220.0));
@@ -728,13 +755,20 @@ mod tests {
         );
         assert_eq!(app.file.as_deref(), Some(path.as_path()));
         assert_eq!(app.settings.last_dir.as_deref(), Some(dir.as_path()));
-        // The next Save As starts there, as .cdr, version 15.
+        // The next Save As starts there, as .cdr, offering the newest
+        // version again.
         app.save_as_dialog();
         let st = state(&mut app);
         assert_eq!(
             (st.dir.as_path(), st.name.as_str(), st.cdr, st.version),
-            (dir.as_path(), "poster.cdr", true, 15)
+            (
+                dir.as_path(),
+                "poster.cdr",
+                true,
+                tracedraw_cdr::write::NEWEST_VERSION
+            )
         );
+        st.version = 15;
         // An existing file asks first; Replace writes it.
         st.name = "old".into();
         frame(&ctx, &mut app, true);
@@ -821,17 +855,19 @@ mod tests {
         app.settings.formats.cdr_version = 21;
         app.open_path(old.clone());
         assert_eq!(app.cdr_version, Some(9));
+        // Save As offers the newest version, as .cdr.
         app.save_as_dialog();
         let st = state(&mut app);
-        assert!(st.cdr && st.version == 9, "{st:?}");
-        // Each tab keeps its own: a new drawing offers the option's.
+        let newest = tracedraw_cdr::write::NEWEST_VERSION;
+        assert!(st.cdr && st.version == newest, "{st:?}");
         app.new_document();
         app.save_as_dialog();
         let st = state(&mut app);
-        assert!(!st.cdr && st.version == 21);
+        assert!(!st.cdr && st.version == newest);
         app.switch_document(app.docs.len() - 2);
         app.save_as_dialog();
         let st = state(&mut app);
+        st.version = 9;
         st.open_dir(dir.clone());
         st.name = "copy".into();
         let mut st = st.clone();
@@ -860,7 +896,8 @@ mod tests {
         };
         assert_eq!(version_label(27), plain(27));
         assert_eq!(version_label(16), plain(16));
-        assert_ne!(version_label(15), plain(15));
+        assert_eq!(version_label(15), plain(15));
+        assert_ne!(version_label(14), plain(14));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -878,5 +915,51 @@ mod tests {
                 ("XDG_DOWNLOAD_DIR".to_string(), PathBuf::from("/data/dl")),
             ]
         );
+    }
+
+    #[test]
+    fn the_cmyk_profile_goes_along_unless_left_out() {
+        let dir = temp_dir("save-as-profile");
+        let mut doc = drawing().engine.document().clone();
+        doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new(
+            "Synthetic CMYK",
+            tracedraw_core::icc::test_profiles::lut16_cmyk_profile(),
+        ));
+        let src = dir.join("src.cdr");
+        std::fs::write(
+            &src,
+            tracedraw_cdr::write::document_to_cdr_version(&doc, 27),
+        )
+        .expect("written");
+        let mut app = App::headless();
+        app.open_path(src);
+        let has_profile = |path: &Path| {
+            let bytes = std::fs::read(path).unwrap_or_default();
+            bytes
+                .windows(b"color/profiles/cmyk/".len())
+                .any(|w| w == b"color/profiles/cmyk/")
+        };
+        for (embed, name) in [(true, "with"), (false, "without")] {
+            app.save_as_dialog();
+            let st = state(&mut app);
+            let (shown, size) = st.profile.clone().expect("the profile is offered");
+            assert_eq!(shown, "Synthetic CMYK");
+            assert!(size > 0);
+            st.embed_profile = embed;
+            st.open_dir(dir.clone());
+            st.name = name.into();
+            let mut st = st.clone();
+            assert!(app.finish_save_as(&mut st));
+            app.dialog = Dialog::None;
+            assert_eq!(
+                has_profile(&dir.join(format!("{name}.cdr"))),
+                embed,
+                "{name}"
+            );
+        }
+        // The choice stays for the next Save As.
+        app.save_as_dialog();
+        assert!(!state(&mut app).embed_profile);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

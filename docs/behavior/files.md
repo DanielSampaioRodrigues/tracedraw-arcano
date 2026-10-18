@@ -26,8 +26,14 @@ One window, 760 px wide, the same on every system:
 - **Save as type**: TraceDraw (`*.tdraw`, the native JSON format, which
   keeps everything) or CDR files (`*.cdr`). It starts at `.cdr` for a
   drawing that came from or was saved to a `.cdr` file.
-- **Version** (`.cdr` only): 22 down to 7, with the hint to choose the
-  version of the program that will open the file, or an older one.
+- **Version** (`.cdr` only): 27 down to 7, each with its release name
+  ("v13 (X3)", "v27 (2026)"); versions not yet checked in other programs
+  say "experimental" (versions 7 to 14).
+- **Embed colour profile (size)** with "Colour profile: name", shown when
+  the drawing carries a CMYK profile: on, the profile is stored in the
+  file; off, it is left out. Only version 16 and later store one, so the
+  box is off and greyed for older versions. The choice stays for the
+  next Save As and for Save.
 - **Title**, **Subject** and **Rating** (five stars; clicking the lit
   last star takes it off): the document's properties, also in File >
   Document Properties; changed ones are set (one undo step each) before
@@ -45,15 +51,14 @@ One window, 760 px wide, the same on every system:
 A program opens `.cdr` files of its own version and older ones, so the
 version decides who can open a file:
 
-- The list starts at the drawing's version: the version of the `.cdr`
-  file it was opened from or last saved as, else the one in Options >
-  Global > File Formats. Every `.cdr` save also sets that option, so new
-  drawings start with the version chosen last (version 12 at first,
-  which most programs open).
+- Save As starts at the newest version, 27, whatever the drawing came
+  from.
 - The version chosen stays with the drawing: Save writes the same
   version again without asking. Each open drawing keeps its own.
 - A drawing opened from a file older than version 7 is saved as version
-  7 (the oldest written), one newer than 22 as version 22.
+  7 (the oldest written), one newer than 27 as version 27. Options >
+  Global > File Formats (version 27 at first) is used for a drawing
+  saved to a `.cdr` file without a version of its own.
 - `tracedraw-cli convert in.svg out.cdr` writes version 12, or the
   version in `TRACEDRAW_CDR_VERSION`; the MCP `save` tool takes an
   optional `version` (`mcp.md`).
@@ -67,17 +72,21 @@ What each version's file holds is in `docs/cdr-format.md`, Writing.
   `.cdr` file; saving "poster" as CDR version 15 with a title, subject
   and rating writes `poster.cdr` there (version 15), sets the properties
   and remembers the folder; the next Save As starts there as `.cdr`
-  version 15; an existing name asks first and Replace overwrites it; a
+  version 27; an existing name asks first and Replace overwrites it; a
   TraceDraw file is written with its own extension
   (`ui::save_as::tests::save_as_chooses_folder_name_type_version_and_properties`).
 - An empty name, a bare extension and a missing folder save nothing and
   say why; typed extensions become the type's
   (`ui::save_as::tests::names_and_folders_are_checked`).
-- A version 9 file opened while Options says 21 offers CDR version 9; a
-  new drawing offers TraceDraw and 21; the copy saved is version 9 and
-  Ctrl+S writes version 9 again without asking; versions 3 and 99 are
-  saved as 7 and 22
+- A version 9 file opened offers CDR version 27; a new drawing offers
+  TraceDraw and 27; a copy saved as version 9 is version 9 and Ctrl+S
+  writes version 9 again without asking; versions 3 and 99 are saved as
+  7 and 27
   (`ui::save_as::tests::a_drawing_opened_from_a_cdr_file_keeps_its_version`).
+- A drawing with a CMYK profile offers it by name and size; saved with
+  the box on, the version 27 file holds the profile, with the box off it
+  does not, and the next Save As keeps the box off
+  (`ui::save_as::tests::the_cmyk_profile_goes_along_unless_left_out`).
 - The dialog draws, folders open (`ui::save_as::tests::the_dialog_draws_and_opens_folders`),
   and the Linux folder names are read from the user's settings
   (`ui::save_as::tests::linux_folder_names_come_from_the_users_settings`).

@@ -35,9 +35,10 @@ use tracedraw_core::{
 };
 
 /// The oldest version whose files written here are known to open in the
-/// program that wrote the samples (text from 16, by a user's test of
-/// files of versions 7 to 22); older ones are offered as experimental.
-pub const CHECKED_SINCE: u16 = 16;
+/// program that wrote the samples (by a user's tests: text from 16 in
+/// files of versions 7 to 22, and every object and text look of a
+/// version 15 file); older ones are offered as experimental.
+pub const CHECKED_SINCE: u16 = 15;
 /// The newest version known to open there (versions 23 to 27, written
 /// with the records of version 22, opened with their images in that
 /// program's 2026 release, a user's test of 2026-10-18).
@@ -1866,9 +1867,14 @@ fn mcfg_21(w_mm: f64, h_mm: f64) -> Vec<u8> {
 /// `font`: id, character set, style flags, 10 bytes of classification,
 /// the family name: 8-bit in a 74-byte field before version 12, UTF-16 in
 /// a 296-byte record after (with the technology value 2 at 160).
-fn font_record(v: Ver, id: u16, family: &str) -> Vec<u8> {
+/// A font table record: id, character set, the face's style flags (0x40
+/// regular, 0x1000 bold, 0x80 italic, 0x2000 bold italic), 10 bytes,
+/// then the name. Files list a record for each face their styles use
+/// (two for Arial when text is set in Arial and Arial bold); a style
+/// naming a face without its record was drawn in a stand-in font.
+fn font_record(v: Ver, id: u16, family: &str, flags: u32) -> Vec<u8> {
     let mut b = Buf::default();
-    b.u16(id).u16(0).u32(0x40).zeros(10);
+    b.u16(id).u16(0).u32(flags).zeros(10);
     if v.unicode() {
         let name: Vec<u16> = family.encode_utf16().take(31).collect();
         for u in &name {
@@ -1886,12 +1892,27 @@ fn font_record(v: Ver, id: u16, family: &str) -> Vec<u8> {
 
 /// What the style table's styles use: the fill records of text (black) and
 /// of graphics (none), the outline record (none) and the font.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct StyleUses {
     text_fill: u32,
     graphic_fill: u32,
     outline: u32,
     font: u16,
+    /// Text formats of versions 7 to 15, one style each after the
+    /// graphic style (ids from `GRAPHIC_STYLE_ID + 1`).
+    formats: Vec<TextFormat>,
+}
+
+/// The look a paragraph of text takes from its style before version 16,
+/// as files of versions 13 to 15 keep it: the font, size and style flags
+/// in a font entry, the fill and the alignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TextFormat {
+    font: u16,
+    size: i32,
+    flags: u32,
+    fill: u32,
+    align: usize,
 }
 
 /// Decoration lines of the character settings (`set5`), as files of every
@@ -1928,20 +1949,34 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         next += 1;
         next
     };
+    // Entries are numbered in the order the tables list them: fills (with
+    // one for each text format), the outline, fonts (one for each text
+    // format), alignments, spacing, decoration lines and set11.
     let (text_fill, graphic_fill) = (id(), id());
+    let format_fills: Vec<u32> = uses.formats.iter().map(|_| id()).collect();
     let outline = id();
     let font = id();
+    let format_fonts: Vec<u32> = uses.formats.iter().map(|_| id()).collect();
     let aligns: Vec<u32> = STYLE_ALIGNS.iter().map(|_| id()).collect();
     let (interval, set5) = (id(), id());
     let set11 = id();
+    let format_entries: Vec<(u32, u32)> = format_fills.into_iter().zip(format_fonts).collect();
     let mut t = Buf::default();
-    t.u32(STYLE_ALIGNS.len() as u32 + 1); // records
-                                          // Fills: id, 4 unknown, the fill record, from 13 the fill's matrix.
-    t.u32(2);
-    for (entry, record) in [
+    t.u32(STYLE_ALIGNS.len() as u32 + 1 + uses.formats.len() as u32); // records
+                                                                      // Fills: id, 4 unknown, the fill record, from 13 the fill's matrix.
+    t.u32(2 + uses.formats.len() as u32);
+    let fills = [
         (text_fill, uses.text_fill),
         (graphic_fill, uses.graphic_fill),
-    ] {
+    ]
+    .into_iter()
+    .chain(
+        uses.formats
+            .iter()
+            .zip(&format_entries)
+            .map(|(f, (fill, _))| (*fill, f.fill)),
+    );
+    for (entry, record) in fills {
         t.u32(entry).u32(0).u32(record);
         if v.tagged() {
             t.bytes(&identity_matrix());
@@ -1953,17 +1988,29 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     // size and style of the three scripts (Latin, Asian, other), all in
     // the one font: font id u16 and character set u16, two more font
     // references, sizes, style flags (one before 10).
-    let size = (12.0 * 254000.0 / 72.0) as i32;
-    let script_font = u32::from(uses.font);
     let mask = if v.redirects() { 0xff } else { 0xffff };
-    t.u32(1).u32(font).u32(0).u32(mask).u32(mask);
-    if n >= 10 {
-        t.u32(mask).u32(if v.redirects() { u32::MAX } else { 1 });
-    }
-    t.u16(uses.font).u16(0).u32(script_font).u32(script_font);
-    t.i32(size).i32(size).i32(size).u32(0x40);
-    if n >= 10 {
-        t.u32(0x40).u32(0x40);
+    let font_entry = |t: &mut Buf, entry: u32, face: u16, size: i32, flags: u32| {
+        let script_font = u32::from(face);
+        t.u32(entry).u32(0).u32(mask).u32(mask);
+        if n >= 10 {
+            t.u32(mask).u32(if v.redirects() { u32::MAX } else { 1 });
+        }
+        t.u16(face).u16(0).u32(script_font).u32(script_font);
+        t.i32(size).i32(size).i32(size).u32(flags);
+        if n >= 10 {
+            t.u32(flags).u32(flags);
+        }
+    };
+    t.u32(1 + uses.formats.len() as u32);
+    font_entry(
+        &mut t,
+        font,
+        uses.font,
+        (12.0 * 254000.0 / 72.0) as i32,
+        0x40,
+    );
+    for (f, (_, entry)) in uses.formats.iter().zip(&format_entries) {
+        font_entry(&mut t, *entry, f.font, f.size, f.flags);
     }
     // Alignments: id, 4 unknown, value.
     t.u32(STYLE_ALIGNS.len() as u32);
@@ -2016,6 +2063,20 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     t.u32(1).u32(GRAPHIC_STYLE_ID).u32(0).zeros(8);
     name(&mut t, "Default Graphic");
     t.u32(graphic_fill).u32(outline);
+    for (i, (f, (fill, font))) in uses.formats.iter().zip(&format_entries).enumerate() {
+        let label = format!("Text {}", i + 1);
+        t.u32(2)
+            .u32(GRAPHIC_STYLE_ID + 1 + i as u32)
+            .u32(0)
+            .zeros(8);
+        name(&mut t, &label);
+        t.u32(*fill).u32(outline);
+        let align = aligns.get(f.align).copied().unwrap_or(aligns[0]);
+        t.u32(*font).u32(align).u32(interval).u32(set5);
+        if n >= 9 {
+            t.u32(set11);
+        }
+    }
     t.done()
 }
 
@@ -2267,8 +2328,8 @@ fn curve_coords_typed(
     Some(out.done())
 }
 
-/// The node marks files of every version (8 to 21 seen) carry in a
-/// curve's node bytes (written from version 16): bit 2 on every node but the control points and the node that
+/// The node marks files of every version (7 to 27 seen) carry in a
+/// curve's node bytes: bit 2 on every node but the control points and the node that
 /// closes a subpath, and bit 3 also on the start of a closed subpath.
 /// Curves without them are drawn without their fill and can make the
 /// program that opens the file hang.
@@ -2514,6 +2575,8 @@ struct Writer<'a> {
     next_bitmap: u32,
     /// The next text object's `spnd` number.
     next_spnd: u32,
+    /// Text formats met so far (versions 7 to 15), see [`TextFormat`].
+    text_formats: Vec<TextFormat>,
     guid_seed: u64,
     guids: u64,
     /// The GUIDs of the master page's guides, desktop and grid layers,
@@ -2584,6 +2647,7 @@ impl<'a> Writer<'a> {
             next_outline: 1,
             next_bitmap: 1,
             next_spnd: 1,
+            text_formats: Vec::new(),
             guid_seed: seed,
             guids: master_guids.len() as u64,
             master_guids,
@@ -2656,6 +2720,13 @@ impl<'a> Writer<'a> {
             pages.push(node);
         }
         let v = self.v;
+        // The faces the text styles use, for the font table: the face bits
+        // of their style flags (lines left out).
+        let format_faces: Vec<(u16, u32)> = self
+            .text_formats
+            .iter()
+            .map(|f| (f.font, f.flags & 0x3_ffff))
+            .collect();
         let mut out = Vec::new();
         if v.redirects() {
             let mut fver = Buf::default();
@@ -2686,11 +2757,20 @@ impl<'a> Writer<'a> {
             self.font_id("Arial");
         }
         if !self.fonts.is_empty() {
-            let fonts = self
-                .fonts
-                .iter()
-                .map(|(id, f)| chunk(b"font", font_record(v, *id, f)))
-                .collect();
+            let mut fonts = Vec::new();
+            for (id, f) in &self.fonts {
+                fonts.push(chunk(b"font", font_record(v, *id, f, 0x40)));
+                let mut faces: Vec<u32> = format_faces
+                    .iter()
+                    .filter(|(fid, flags)| fid == id && *flags != 0x40)
+                    .map(|(_, flags)| *flags)
+                    .collect();
+                faces.sort_unstable();
+                faces.dedup();
+                for flags in faces {
+                    fonts.push(chunk(b"font", font_record(v, *id, f, flags)));
+                }
+            }
             docl.push(list(b"fntt", fonts));
         }
         // Every object refers to a fill and an outline, and the styles to
@@ -2700,7 +2780,9 @@ impl<'a> Writer<'a> {
             graphic_fill: self.fill_id(&Fill::None),
             outline: self.outline_id(None),
             font: self.fonts.first().map(|(id, _)| *id).unwrap_or(1),
+            formats: std::mem::take(&mut self.text_formats),
         };
+
         let fills = std::mem::take(&mut self.fills)
             .into_iter()
             .map(|f| list(b"filc", vec![chunk(b"fild", f)]))
@@ -2759,11 +2841,13 @@ impl<'a> Writer<'a> {
         } else {
             args.push((ARG_LAYER_COLOR, colour(colour_bytes).to_vec()));
         }
-        if v.0 >= 17 {
+        // A zero 12000 from version 14, as layers of files of versions 14
+        // to 27 have it (it was written from 17 only).
+        if v.zip() {
             args.push((ARG_PROPS, vec![0; 4]));
-            if kind == LAYER_GUIDES {
-                args.push((ARG_GUIDES_MODE, 2u32.to_le_bytes().to_vec()));
-            }
+        }
+        if v.0 >= 17 && kind == LAYER_GUIDES {
+            args.push((ARG_GUIDES_MODE, 2u32.to_le_bytes().to_vec()));
         }
         if v.zip() {
             args.push((ARG_GUID, guid.to_vec()));
@@ -2911,7 +2995,14 @@ impl<'a> Writer<'a> {
         body.push(list(
             b"lgob",
             vec![
-                chunk(b"loda", loda(0, vec![(ARG_ID, id.to_le_bytes().to_vec())])),
+                chunk(b"loda", {
+                    // Groups carry a zero 12000 from version 14 as well.
+                    let mut args = vec![(ARG_ID, id.to_le_bytes().to_vec())];
+                    if self.v.zip() {
+                        args.push((ARG_PROPS, vec![0; 4]));
+                    }
+                    loda(0, args)
+                }),
                 list(
                     b"trfl",
                     vec![chunk(b"trfd", trfd(self.v, Affine::IDENTITY))],
@@ -3054,6 +3145,11 @@ impl<'a> Writer<'a> {
             a.u32(1).bytes(&style_string(v, &json));
             args.push((ARG_STYLE_STRING, a.done()));
         } else {
+            // Version 15 text carries 1 in argument 16015 as from 16 (every
+            // text object of the version 15 files seen).
+            if text.is_some() && v.0 == 15 {
+                args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
+            }
             // Text refers to the style of its alignment, as its paragraphs;
             // graphics to the graphic style.
             let style = text
@@ -3067,7 +3163,12 @@ impl<'a> Writer<'a> {
         if let Some(n) = &s.name {
             args.push((ARG_NAME, name_bytes(v, n)));
         }
-        if s.opacity < 0.999 {
+        // From version 13 the argument holds a tagged record (lenses and
+        // transparencies) whose transparency layout is not known yet; the
+        // older bare value made a version 15 file "contain an invalid
+        // object" in the program that wrote the samples. Style strings
+        // carry the transparency from 16.
+        if s.opacity < 0.999 && !v.tagged() {
             args.push((ARG_OPACITY, opacity_arg(v, s.opacity)));
         }
         let outline = s.stroke.as_ref().map(|st| st.width / 2.0).unwrap_or(0.0);
@@ -3327,11 +3428,19 @@ impl<'a> Writer<'a> {
                 let Some(mut coords) = coords else {
                     return none();
                 };
-                // Only where files written with the marks were seen to
-                // open: version 13 and 14 files with them closed the
-                // program that read them.
-                if v.0 >= 16 {
-                    mark_nodes(&mut coords);
+                // The node marks of every version's files. (Version 13 and
+                // 14 files written with them once closed the program that
+                // read them, but those curves also lacked the 8 bytes below;
+                // without the marks a version 15 file lost its filled
+                // curves.)
+                mark_nodes(&mut coords);
+                if v.0 < 16 {
+                    // Before 16 the record ends with 8 more bytes after the
+                    // node bytes (zeros, or leftovers, in files of versions
+                    // 11, 12 and 15). Without them the program that wrote
+                    // the samples took the fill and outline ids after the
+                    // record for those bytes and dropped the curve.
+                    coords.extend_from_slice(&[0; 8]);
                 }
                 self.place(
                     s,
@@ -3373,58 +3482,131 @@ impl<'a> Writer<'a> {
     /// style per run (font, encoding, style flags, size and, when it
     /// differs from the object's, the fill), the text in UTF-16 from
     /// version 12 and in Windows-1252 before.
+    /// The style id of a text format (versions 7 to 15), adding it to
+    /// the style table when new.
+    fn text_style(&mut self, f: TextFormat) -> u32 {
+        let i = match self.text_formats.iter().position(|x| *x == f) {
+            Some(i) => i,
+            None => {
+                self.text_formats.push(f);
+                self.text_formats.len() - 1
+            }
+        };
+        GRAPHIC_STYLE_ID + 1 + i as u32
+    }
+
     fn txsm7(&mut self, spans: &[TextSpan], align: TextAlign, fill: &Fill) -> Vec<u8> {
         let v = self.v;
         let n = v.0;
+        // As files of versions 7 to 15 hold artistic text: -1, -1, 0, -1,
+        // 8, a number growing with the version (2 in 7, 3 in 8, 5 in 10
+        // and 11, 6 in 12, 8 in 13, 9 in 14, 11 in 15), 0, 3, 0; one frame
+        // with an identity matrix (six f64). A header of zeros and a zero
+        // matrix made the program that wrote the samples drop the text of
+        // a version 15 file as an invalid object.
+        let layout = match n {
+            0..=7 => 2,
+            8 => 3,
+            9 => 4,
+            10 | 11 => 5,
+            12 => 6,
+            13 => 8,
+            14 => 9,
+            _ => 11,
+        };
         let mut t = Buf::default();
-        t.u32(0).zeros(32); // artistic text (no frame flag)
+        t.u32(u32::MAX)
+            .u32(u32::MAX)
+            .u32(0)
+            .u32(u32::MAX)
+            .u32(8)
+            .u32(layout)
+            .u32(0)
+            .u32(3)
+            .u32(0);
         if n >= 15 {
             t.zeros(1);
         }
         if n < 8 {
             t.u32(0); // not on a path
         }
-        t.u32(1).u32(1).zeros(48); // one frame, its id and matrix
+        // One frame, numbered as the text object (its `spnd`), as files of
+        // versions 12 to 15 number it (it was 1 for every text).
+        t.u32(1).u32(self.next_spnd);
+        for m in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            t.bytes(&m.to_le_bytes());
+        }
         if n >= 8 {
             t.u32(0); // not on a path
             if n >= 15 {
-                t.zeros(8);
+                t.zeros(8 + 4);
             }
         }
-        t.zeros(if n >= 15 {
-            40
-        } else if n >= 14 {
-            36
-        } else if n > 8 {
-            34
-        } else if n == 8 {
-            32
-        } else {
-            36
-        });
         let paragraphs = Self::paragraphs(spans);
         t.u32(paragraphs.len() as u32);
+        let align_index = STYLE_ALIGNS
+            .iter()
+            .position(|(a, _)| *a == align)
+            .unwrap_or(0);
         for runs in &paragraphs {
-            t.u32(style_for(align)).zeros(1);
+            // The paragraph's look lives in a style of its own (font, size,
+            // weight, colour, alignment), as files of versions 13 to 15
+            // keep it; the run records then only override what differs.
+            // Overrides of the font in those records were not shown by the
+            // program that wrote the samples.
+            let format_of = |w: &mut Self, sp: &TextSpan| TextFormat {
+                font: w.font_id(&sp.font_family),
+                size: (sp.size_pt * 254000.0 / 72.0).round() as i32,
+                flags: style_flags(sp),
+                fill: w.fill_id(sp.fill.as_ref().unwrap_or(fill)),
+                align: align_index,
+            };
+            let base = match runs.first() {
+                Some(sp) => format_of(self, sp),
+                None => format_of(self, &TextSpan::new("", "Arial", 12.0)),
+            };
+            let style_id = self.text_style(base);
+            t.u32(style_id).zeros(1);
+            if n >= 13 {
+                t.zeros(1);
+            }
             t.u32(runs.len() as u32);
             let mut text = String::new();
-            for sp in runs {
-                let font = self.font_id(&sp.font_family);
-                let chars = sp.text.chars().count().min(65535) as u16;
-                let span_fill = sp.fill.as_ref().filter(|f| *f != fill);
-                let mut flags = 0x01u8 | 0x02 | 0x04;
-                if span_fill.is_some() {
+            let last_run = runs.len().saturating_sub(1);
+            for (ri, sp) in runs.iter().enumerate() {
+                let look = format_of(self, sp);
+                // The last run counts the paragraph's end too, as files
+                // count it.
+                let chars =
+                    (sp.text.chars().count() + usize::from(ri == last_run)).min(65535) as u16;
+                let mut flags = 0u8;
+                if look.font != base.font && n < 13 {
+                    flags |= 0x01;
+                }
+                if look.flags != base.flags && n < 13 {
+                    flags |= 0x02;
+                }
+                if look.size != base.size {
+                    flags |= 0x04;
+                }
+                if look.fill != base.fill {
                     flags |= 0x40;
                 }
                 t.u16(chars).u8(flags);
                 if n >= 8 {
                     t.u8(0);
                 }
-                t.u16(font).u16(0).u32(style_flags(sp));
-                t.i32((sp.size_pt * 254000.0 / 72.0).round() as i32);
-                if let Some(f) = span_fill {
-                    let id = self.fill_id(f);
-                    t.u32(id);
+                if flags & 0x01 != 0 {
+                    t.u16(look.font).u16(0);
+                }
+                if flags & 0x02 != 0 {
+                    t.u32(look.flags);
+                }
+                if flags & 0x04 != 0 {
+                    t.i32(look.size);
+                }
+                if flags & 0x40 != 0 {
+                    t.u32(look.fill);
                     if v.tagged() {
                         t.zeros(48);
                     }
@@ -3432,12 +3614,40 @@ impl<'a> Writer<'a> {
                 text.push_str(&sp.text);
             }
             let chars = text.chars().count();
-            t.u32(chars as u32)
-                .zeros(chars * if v.unicode() { 8 } else { 4 });
             if v.unicode() {
-                let bytes = utf16(&text);
+                // From version 12 a letter is one byte in Windows-1252
+                // unless bit 0 of the first byte of its 8-byte record marks
+                // it as a UTF-16 unit in two bytes; the third byte numbers
+                // its run, times 2. Text all in UTF-16 with no letter
+                // marked made the program that wrote the samples crash.
+                let mut records = Buf::default();
+                let mut bytes = Vec::new();
+                let mut run_of = Vec::with_capacity(chars);
+                for (ri, sp) in runs.iter().enumerate() {
+                    run_of.extend(std::iter::repeat_n(ri, sp.text.chars().count()));
+                }
+                for (i, c) in text.chars().enumerate() {
+                    let run = run_of.get(i).copied().unwrap_or(0).min(127) as u8;
+                    match cp1252(&c.to_string()) {
+                        Some(b) => {
+                            records.u8(0).u8(0).u8(run << 1).zeros(5);
+                            bytes.extend_from_slice(&b);
+                        }
+                        None => {
+                            let unit = if (c as u32) <= 0xffff {
+                                c as u16
+                            } else {
+                                b'?' as u16
+                            };
+                            records.u8(1).u8(0).u8(run << 1).zeros(5);
+                            bytes.extend_from_slice(&unit.to_le_bytes());
+                        }
+                    }
+                }
+                t.u32(chars as u32).bytes(&records.done());
                 t.u32(bytes.len() as u32).bytes(&bytes);
             } else {
+                t.u32(chars as u32).zeros(chars * 4);
                 let bytes = cp1252(&text).unwrap_or_else(|| {
                     text.chars()
                         .map(|c| if c.is_ascii() { c as u8 } else { b'?' })

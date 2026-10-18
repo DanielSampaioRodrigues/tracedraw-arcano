@@ -693,6 +693,8 @@ pub struct App {
     /// the `.cdr` file it came from, or the one last chosen when saving
     /// it. `None`: the version of Options > Global > File Formats.
     pub cdr_version: Option<u16>,
+    /// Save As's choice: the CMYK profile goes into `.cdr` files.
+    pub cdr_embed_profile: bool,
     pub status: String,
     pub fit_pending: bool,
     pub units: Units,
@@ -1574,6 +1576,7 @@ impl App {
             vector_fx_base: Default::default(),
             github: Default::default(),
             cdr_version: None,
+            cdr_embed_profile: true,
             status: String::new(),
             fit_pending: true,
             units: Units::Millimeters,
@@ -4168,11 +4171,10 @@ impl App {
     }
 
     /// Save to the `.cdr` file `path` in `version`, which the drawing then
-    /// keeps (Save writes it again) and new drawings start with.
+    /// keeps (Save writes it again).
     pub(crate) fn save_cdr_to(&mut self, path: PathBuf, version: u16) {
         let version = writable_cdr_version(version);
         self.cdr_version = Some(version);
-        self.settings.formats.cdr_version = version;
         self.save_to(path);
     }
 
@@ -4180,10 +4182,20 @@ impl App {
         // Time counted for the active task goes into the file too.
         self.flush_tracked_time();
         let bytes = if is_cdr_path(&path) {
+            let doc = self.engine.document();
+            let without;
+            let doc = if self.cdr_embed_profile || doc.cmyk_profile.is_none() {
+                doc
+            } else {
+                let mut d = doc.clone();
+                d.cmyk_profile = None;
+                without = d;
+                &without
+            };
             Ok(tracedraw_cdr::write::document_to_cdr_version_with(
-                self.engine.document(),
+                doc,
                 self.cdr_save_version(),
-                &cdr_previews(self.engine.document()),
+                &cdr_previews(doc),
             ))
         } else {
             // Fonts that came with other drawings go along (text imported
