@@ -278,6 +278,8 @@ pub struct PrintMergeState {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
     pub path: Option<std::path::PathBuf>,
+    /// What each field holds, by field; missing ones are text.
+    pub kinds: Vec<crate::print_merge::FieldKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -1867,7 +1869,7 @@ pub fn paper_presets() -> Vec<(&'static str, Size)> {
 }
 
 /// A QR code as one even-odd path of module squares.
-fn qr_path(text: &str, size_mm: f64) -> Result<tracedraw_core::BezPath, String> {
+pub(crate) fn qr_path(text: &str, size_mm: f64) -> Result<tracedraw_core::BezPath, String> {
     use tracedraw_core::geometry::Shape as _;
     if text.trim().is_empty() {
         return Err(tr("dialog.qr_empty"));
@@ -2618,7 +2620,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
 
 /// Print > Layout: the imposition, the sheet and the gap between pages,
 /// with a sketch of the first sheet.
-fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
+pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
     ui.strong(tr("print.layout"));
     ui.vertical(|ui| {
         ui.vertical(|ui| {
@@ -2825,7 +2827,7 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
                 *close = true;
             }
             if ui.button(tr("menu.file.print_preview")).clicked() {
-                app.fullscreen_preview = true;
+                app.print_preview(Some(st.clone()));
                 *close = true;
             }
             if ui.button(tr("dialog.cancel")).clicked() {
@@ -2836,6 +2838,7 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
 }
 
 fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, close: &mut bool) {
+    use crate::print_merge::{self as pm, FieldKind};
     window(ctx, tr("dialog.print_merge")).show(ctx, |ui| {
         ui.label(tr("dialog.print_merge_hint"));
         ui.horizontal(|ui| {
@@ -2849,8 +2852,26 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     let (h, r) = crate::export::parse_csv(&text);
                     st.headers = h;
                     st.rows = r;
+                    st.kinds.clear();
                     st.path = Some(p);
                 }
+            }
+            if ui
+                .add_enabled(
+                    !st.headers.is_empty(),
+                    egui::Button::new(tr("merge.save_csv")),
+                )
+                .clicked()
+            {
+                let text = pm::to_csv(st);
+                crate::files::Dialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name("merge.csv")
+                    .save_file(app, move |app, path| {
+                        if let Err(e) = crate::files::write(&path, text.into_bytes()) {
+                            app.status = e.to_string();
+                        }
+                    });
             }
             if let Some(p) = &st.path {
                 ui.label(
@@ -2858,6 +2879,150 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default(),
                 );
+            }
+        });
+        ui.separator();
+        // The record grid: a header row of fields (name, kind, counter
+        // settings), then one row per record.
+        let values = pm::values(st);
+        let mut remove_field = None;
+        let mut remove_row = None;
+        egui::ScrollArea::both()
+            .max_height(320.0)
+            .max_width(720.0)
+            .show(ui, |ui| {
+                egui::Grid::new("print_merge_grid")
+                    .striped(true)
+                    .spacing([6.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("");
+                        for i in 0..st.headers.len() {
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut st.headers[i])
+                                            .desired_width(110.0),
+                                    );
+                                    if ui
+                                        .small_button("x")
+                                        .on_hover_text(tr("merge.delete_field"))
+                                        .clicked()
+                                    {
+                                        remove_field = Some(i);
+                                    }
+                                });
+                                if st.kinds.len() < st.headers.len() {
+                                    st.kinds.resize(st.headers.len(), FieldKind::Text);
+                                }
+                                let names = [
+                                    "merge.kind_text",
+                                    "merge.kind_number",
+                                    "merge.kind_image",
+                                    "merge.kind_qr",
+                                ];
+                                let cur = match st.kinds[i] {
+                                    FieldKind::Text => 0,
+                                    FieldKind::Number { .. } => 1,
+                                    FieldKind::Image => 2,
+                                    FieldKind::Qr => 3,
+                                };
+                                let mut pick = cur;
+                                egui::ComboBox::from_id_salt(("merge_kind", i))
+                                    .selected_text(tr(names[cur]))
+                                    .width(110.0)
+                                    .show_ui(ui, |ui| {
+                                        for (k, n) in names.iter().enumerate() {
+                                            ui.selectable_value(&mut pick, k, tr(n));
+                                        }
+                                    });
+                                if pick != cur {
+                                    st.kinds[i] = match pick {
+                                        1 => FieldKind::Number {
+                                            start: 1,
+                                            step: 1,
+                                            digits: 1,
+                                        },
+                                        2 => FieldKind::Image,
+                                        3 => FieldKind::Qr,
+                                        _ => FieldKind::Text,
+                                    };
+                                }
+                                if let FieldKind::Number {
+                                    start,
+                                    step,
+                                    digits,
+                                } = &mut st.kinds[i]
+                                {
+                                    ui.horizontal(|ui| {
+                                        ui.add(
+                                            egui::DragValue::new(start).prefix(tr("merge.start")),
+                                        );
+                                        ui.add(egui::DragValue::new(step).prefix(tr("merge.step")));
+                                    });
+                                    ui.add(
+                                        egui::DragValue::new(digits)
+                                            .range(1..=12)
+                                            .prefix(tr("merge.digits")),
+                                    );
+                                }
+                            });
+                        }
+                        ui.end_row();
+                        for r in 0..st.rows.len() {
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .small_button("x")
+                                    .on_hover_text(tr("merge.delete_record"))
+                                    .clicked()
+                                {
+                                    remove_row = Some(r);
+                                }
+                                ui.label((r + 1).to_string());
+                            });
+                            st.rows[r].resize(st.headers.len(), String::new());
+                            for c in 0..st.headers.len() {
+                                if matches!(pm::kind_of(st, c), FieldKind::Number { .. }) {
+                                    let v = values
+                                        .get(r)
+                                        .and_then(|row| row.get(c))
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    ui.label(egui::RichText::new(v).color(Tokens::text_dim()));
+                                } else {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut st.rows[r][c])
+                                            .desired_width(130.0),
+                                    );
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
+        if let Some(i) = remove_field {
+            pm::remove_field(st, i);
+        }
+        if let Some(r) = remove_row {
+            if r < st.rows.len() {
+                st.rows.remove(r);
+            }
+        }
+        ui.horizontal(|ui| {
+            if ui.button(tr("merge.add_field")).clicked() {
+                let name = trf(
+                    "merge.field_n",
+                    &[("n", &(st.headers.len() + 1).to_string())],
+                );
+                pm::add_field(st, &name);
+            }
+            if ui
+                .add_enabled(
+                    !st.headers.is_empty(),
+                    egui::Button::new(tr("merge.add_record")),
+                )
+                .clicked()
+            {
+                pm::add_record(st);
             }
         });
         if !st.headers.is_empty() {
@@ -2890,14 +3055,14 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 )
                 .clicked()
             {
-                crate::export::perform_merge(app, &st.headers, &st.rows);
+                pm::perform(app, st);
                 *close = true;
             }
             if ui.button(tr("dialog.close")).clicked() {
                 *close = true;
             }
         });
-        if !st.rows.is_empty() {
+        if !st.headers.is_empty() {
             app.merge_state = Some(st.clone());
         }
     });

@@ -88,6 +88,7 @@ mod picture_mosaic;
 mod placeholder;
 mod preflight;
 mod prefs;
+mod print_merge;
 mod raster;
 mod recognize;
 mod recovery;

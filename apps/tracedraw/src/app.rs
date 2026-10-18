@@ -861,6 +861,8 @@ pub struct App {
     pub settings: crate::settings::Settings,
     pub welcome_tab: WelcomeTab,
     pub fullscreen_preview: bool,
+    /// File > Print Preview, while it is open.
+    pub print_preview: Option<crate::ui::print_preview::PrintPreview>,
     pub preview_selected_only: bool,
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
@@ -1676,6 +1678,7 @@ impl App {
             settings: crate::settings::Settings::default(),
             welcome_tab: WelcomeTab::GetStarted,
             fullscreen_preview: false,
+            print_preview: None,
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
@@ -4510,6 +4513,13 @@ impl App {
     /// starting with the choices of Options > Global > Printing.
     pub fn print(&mut self) {
         self.dialog = crate::ui::dialogs::Dialog::Print(self.settings.printing.state());
+    }
+
+    /// File > Print Preview: the sheets for the given print settings, or
+    /// for those of Options > Global > Printing.
+    pub fn print_preview(&mut self, st: Option<crate::ui::dialogs::PrintState>) {
+        let st = st.unwrap_or_else(|| self.settings.printing.state());
+        self.print_preview = Some(crate::ui::print_preview::PrintPreview::new(st));
     }
 
     pub fn import(&mut self) {

@@ -1627,7 +1627,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         }
         if item(ui, "menu.file.print_merge_perform", "", loaded) {
             if let Some(st) = app.merge_state.clone() {
-                crate::export::perform_merge(app, &st.headers, &st.rows);
+                crate::print_merge::perform(app, &st);
             }
         }
     });
@@ -1636,7 +1636,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.print();
     }
     if item(ui, "menu.file.print_preview", "", doc) {
-        app.fullscreen_preview = true;
+        app.print_preview(None);
     }
     if item(ui, "menu.file.preflight", "", doc) {
         app.dialog = Dialog::Preflight(Default::default());

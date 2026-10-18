@@ -300,28 +300,7 @@ fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u
 /// Print: build a PDF with the print options and open it in the system
 /// viewer, which owns the printer dialog.
 pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
-    let mut doc = app.engine.document().clone();
-    if !st.all_pages {
-        doc.pages.retain(|p| p.id == app.page);
-    }
-    let options = print_layout(app, st, &doc);
-    let mut doc = crate::imposition::impose(&doc, &options);
-    for page in doc.pages.iter_mut() {
-        let w = page.size.width;
-        for layer in page.layers.iter_mut() {
-            for s in layer.shapes.iter_mut() {
-                // Emulsion down: the whole sheet, marks too, mirrored.
-                if st.mirror {
-                    s.transform = Affine::translate((w, 0.0))
-                        * Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
-                        * s.transform;
-                }
-                if st.invert {
-                    invert_colors(s);
-                }
-            }
-        }
-    }
+    let doc = print_sheets(app, st);
     let pdf = if st.separations {
         separations_pdf(&doc)
     } else {
@@ -344,6 +323,95 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
         "status.print_sent",
         &[("path", &path.display().to_string())],
     ))
+}
+
+/// The sheets the printer gets for the Print dialog's settings: the pages
+/// imposed with their marks, mirrored and inverted when asked. Print and
+/// Print Preview both start here, so the preview shows what prints.
+pub fn print_sheets(app: &App, st: &PrintState) -> Document {
+    let mut doc = app.engine.document().clone();
+    if !st.all_pages {
+        doc.pages.retain(|p| p.id == app.page);
+    }
+    let options = print_layout(app, st, &doc);
+    let mut doc = crate::imposition::impose(&doc, &options);
+    for page in doc.pages.iter_mut() {
+        let w = page.size.width;
+        for layer in page.layers.iter_mut() {
+            for s in layer.shapes.iter_mut() {
+                // Emulsion down: the whole sheet, marks too, mirrored.
+                if st.mirror {
+                    s.transform = Affine::translate((w, 0.0))
+                        * Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+                        * s.transform;
+                }
+                if st.invert {
+                    invert_colors(s);
+                }
+            }
+        }
+    }
+    doc
+}
+
+/// A separation plate: a process ink (0 cyan to 3 black) or a spot ink by
+/// its id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plate {
+    Process(usize),
+    Spot(u32),
+}
+
+/// The plates of a drawing: the four process inks, then its spot inks,
+/// each with its name.
+pub fn plates(doc: &Document) -> Vec<(Plate, String)> {
+    let mut plates: Vec<(Plate, String)> = vec![
+        (Plate::Process(0), "Cyan".into()),
+        (Plate::Process(1), "Magenta".into()),
+        (Plate::Process(2), "Yellow".into()),
+        (Plate::Process(3), "Black".into()),
+    ];
+    plates.extend(doc.inks.iter().map(|i| (Plate::Spot(i.id), i.name.clone())));
+    plates
+}
+
+/// One plate of a page: every colour turned into the grey of the ink's
+/// coverage (black = full ink); registration colour prints on all plates.
+pub fn plate_page(
+    page: &tracedraw_core::document::Page,
+    plate: Plate,
+) -> tracedraw_core::document::Page {
+    use tracedraw_core::{Color, Fill};
+    let mut p = page.clone();
+    let coverage = move |c: Color| -> Color {
+        if matches!(c, Color::Registration) {
+            return Color::Gray { v: 0.0 };
+        }
+        let v = match (plate, c) {
+            (Plate::Spot(id), Color::Spot { ink, tint, .. }) if ink == id => tint,
+            (Plate::Spot(_), _) | (Plate::Process(_), Color::Spot { .. }) => 0.0,
+            (Plate::Process(i), _) => match c.convert_to("CMYK") {
+                Color::Cmyk { c, m, y, k } => [c, m, y, k].get(i).copied().unwrap_or(0.0),
+                _ => 0.0,
+            },
+        };
+        Color::Gray {
+            v: 1.0 - v.clamp(0.0, 1.0),
+        }
+    };
+    for layer in p.layers.iter_mut() {
+        for s in layer.shapes.iter_mut() {
+            // Fills the separations cannot split show as their average
+            // colour.
+            if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
+                if let Some(c) = s.fill.preview_color() {
+                    s.fill = Fill::Solid(c);
+                }
+            }
+            map_colors(s, &coverage);
+        }
+    }
+    p
 }
 
 /// The print layout for the Print dialog's settings: the imposition, the
@@ -433,60 +501,17 @@ fn invert_colors(s: &mut tracedraw_core::Shape) {
 /// colour is drawn as a gray value. A spot colour prints on its own plate
 /// only, at its tint.
 fn separations_pdf(doc: &Document) -> Vec<u8> {
-    use tracedraw_core::{Color, Fill};
     let mut sep = Document::new(format!("{} (separations)", doc.title), doc.pages[0].size);
     sep.pages.clear();
     sep.symbols = doc.symbols.clone();
-    /// A plate: a process ink (0 to 3) or a spot ink by number.
-    #[derive(Clone, Copy)]
-    enum Plate {
-        Process(usize),
-        Spot(u32),
-    }
-    let mut plates: Vec<(Plate, String)> = vec![
-        (Plate::Process(0), "Cyan".into()),
-        (Plate::Process(1), "Magenta".into()),
-        (Plate::Process(2), "Yellow".into()),
-        (Plate::Process(3), "Black".into()),
-    ];
-    plates.extend(doc.inks.iter().map(|i| (Plate::Spot(i.id), i.name.clone())));
+    let plates = plates(doc);
     for page in &doc.pages {
         for (plate, name) in &plates {
-            let plate = *plate;
-            let mut p = page.clone();
+            let mut p = plate_page(page, *plate);
             p.name = format!("{} {}", page.name, name);
             let mut ids = sep.ids().clone();
             p.id = ids.page();
             sep.set_ids(ids);
-            let coverage = move |c: Color| -> Color {
-                // Registration prints on every plate.
-                if matches!(c, Color::Registration) {
-                    return Color::Gray { v: 0.0 };
-                }
-                let v = match (plate, c) {
-                    (Plate::Spot(id), Color::Spot { ink, tint, .. }) if ink == id => tint,
-                    (Plate::Spot(_), _) | (Plate::Process(_), Color::Spot { .. }) => 0.0,
-                    (Plate::Process(i), _) => match c.convert_to("CMYK") {
-                        Color::Cmyk { c, m, y, k } => [c, m, y, k][i],
-                        _ => 0.0,
-                    },
-                };
-                Color::Gray {
-                    v: 1.0 - v.clamp(0.0, 1.0),
-                }
-            };
-            for layer in p.layers.iter_mut() {
-                for s in layer.shapes.iter_mut() {
-                    // Fills the separations cannot split show as their
-                    // average colour.
-                    if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
-                        if let Some(c) = s.fill.preview_color() {
-                            s.fill = Fill::Solid(c);
-                        }
-                    }
-                    map_colors(s, &coverage);
-                }
-            }
             sep.pages.push(p);
         }
     }
@@ -646,96 +671,6 @@ pub fn parse_csv(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
         .map(|r| r.iter().map(|s| s.to_string()).collect())
         .collect();
     (headers, rows)
-}
-
-/// Duplicate the current page once per data row, substituting `<Field>`
-/// placeholders in every text object.
-pub fn perform_merge(app: &mut App, headers: &[String], rows: &[Vec<String>]) {
-    let page = app.page;
-    let template = match app.doc().page(page) {
-        Ok(p) => p.clone(),
-        Err(_) => return,
-    };
-    let mut cmds = Vec::new();
-    for _ in rows {
-        cmds.push(Command::DuplicatePage { page });
-    }
-    if let Err(e) = app.engine.run_batch("Print Merge", &cmds) {
-        app.status = e.to_string();
-        return;
-    }
-    // The duplicates were inserted right after the template page, in order:
-    // DuplicatePage inserts at idx + 1 each time, so the last row is nearest.
-    let idx = app
-        .doc()
-        .pages
-        .iter()
-        .position(|p| p.id == page)
-        .unwrap_or(0);
-    let new_pages: Vec<tracedraw_core::PageId> = app.doc().pages[idx + 1..idx + 1 + rows.len()]
-        .iter()
-        .map(|p| p.id)
-        .collect();
-    let mut cmds = Vec::new();
-    for (k, pid) in new_pages.iter().rev().enumerate() {
-        let Some(row) = rows.get(k) else { continue };
-        let Ok(p) = app.doc().page(*pid) else {
-            continue;
-        };
-        let shapes: Vec<tracedraw_core::Shape> =
-            p.layers.iter().flat_map(|l| l.shapes.clone()).collect();
-        for s in shapes {
-            if let ShapeKind::Text {
-                spans,
-                origin,
-                frame,
-                align,
-                para,
-                on_path,
-            } = &s.kind
-            {
-                let mut changed = false;
-                let new_spans: Vec<TextSpan> = spans
-                    .iter()
-                    .map(|sp| {
-                        let mut t = sp.text.clone();
-                        for (h, v) in headers.iter().zip(row) {
-                            let ph = format!("<{h}>");
-                            if t.contains(&ph) {
-                                t = t.replace(&ph, v);
-                                changed = true;
-                            }
-                        }
-                        TextSpan {
-                            text: t,
-                            ..sp.clone()
-                        }
-                    })
-                    .collect();
-                if changed {
-                    cmds.push(Command::SetShapeKind {
-                        shape: s.id,
-                        kind: ShapeKind::Text {
-                            spans: new_spans,
-                            origin: *origin,
-                            frame: *frame,
-                            align: *align,
-                            para: para.clone(),
-                            on_path: on_path.clone(),
-                        },
-                    });
-                }
-            }
-        }
-        cmds.push(Command::RenamePage {
-            page: *pid,
-            name: format!("{} {}", template.name, k + 1),
-        });
-    }
-    if let Err(e) = app.engine.run_batch("Print Merge", &cmds) {
-        app.status = e.to_string();
-    }
-    app.status = trf("status.merge_done", &[("n", &rows.len().to_string())]);
 }
 
 // ----- find and replace ----------------------------------------------------------

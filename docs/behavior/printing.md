@@ -34,6 +34,23 @@ and turn the preflight outcome off (see `options.md`).
   - A sketch of the first sheet (the pages numbered, blank booklet pages
     grey) and the number of sheets.
 
+## Print Preview
+
+File > Print Preview, or Print Preview in the Print dialog (which hands
+over its settings), fills the window with the sheets exactly as Print
+sends them: the imposition, the marks, Mirror and Invert, built by the
+same function (`export::print_sheets`).
+
+- Top bar: Print (prints these settings and closes), Close (Esc), the
+  sheet shown with previous and next (Page Up, Page Down), the Plate
+  (Composite, then cyan, magenta, yellow, black and each spot ink) while
+  Print separations is on, and Zoom from 25 to 400 % of the fitted size
+  with Fit.
+- Left: the Print dialog's options (all pages, fit, scale, prepress and
+  layout with its sketch); every change rebuilds the sheets at once.
+- A plate shows the ink's coverage in grey, black = full ink, as the
+  separations print; registration colour shows on every plate.
+
 ## Imposition
 
 - Pages keep their aspect ratio; each cell is as large as the largest
@@ -66,6 +83,9 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
   of n" and the date and time, in 6 pt under the pages.
 
 ## Checks
+
+- `ui::print_preview::tests::plates_split_the_sheet_by_ink`
+- `ui::print_preview::tests::the_settings_key_ignores_copies_and_preflight`
 
 - `imposition::tests::booklets_pair_the_pages_for_folding`
 - `imposition::tests::n_up_fills_sheets_in_reading_order_and_scales_to_fit`

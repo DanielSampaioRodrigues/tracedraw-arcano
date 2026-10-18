@@ -61,6 +61,7 @@ pub mod pdf_password;
 pub mod picture_mosaic_docker;
 pub mod preflight_dialog;
 pub mod preview;
+pub mod print_preview;
 pub mod propbar;
 pub mod publish_pdf;
 pub mod rulers;
@@ -264,6 +265,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
     if app.fullscreen_preview {
         preview::fullscreen(app, ui);
+        return;
+    }
+    if app.print_preview.is_some() {
+        print_preview::show(app, ui);
         return;
     }
 

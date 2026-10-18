@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- File > Print Preview shows the sheets as they print: imposition,
+  marks, mirror, invert and each separation plate, with the print options
+  beside them and zoom (it showed the page full screen).
+- Print Merge has a record grid: fields and records are added, edited
+  and removed in the dialog and saved as CSV; fields can be counters,
+  pictures or QR codes. Merged pages follow the records' order (they came
+  out reversed).
+
 - `.cdr` files of versions 1 and 2 (the `WL` files before RIFF) open:
   rectangles, ellipses, curves, text with its font, size, alignment and
   line spacing, uniform fills and outlines in the stacking order of the
