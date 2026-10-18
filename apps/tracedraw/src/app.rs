@@ -4512,7 +4512,13 @@ impl App {
     /// File > Print (Ctrl+P, the toolbar button): the Print dialog,
     /// starting with the choices of Options > Global > Printing.
     pub fn print(&mut self) {
-        self.dialog = crate::ui::dialogs::Dialog::Print(self.settings.printing.state());
+        let mut st = self.settings.printing.state();
+        // The drawing's own bleed, when it has one, is the bleed limit.
+        let bleed = self.doc().metadata.bleed;
+        if bleed > 0.0 {
+            st.bleed_limit = bleed;
+        }
+        self.dialog = crate::ui::dialogs::Dialog::Print(st);
     }
 
     /// File > Print Preview: the sheets for the given print settings, or

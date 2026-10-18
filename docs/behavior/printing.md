@@ -7,32 +7,43 @@ is downloaded). `export::print` builds it; the sheets come from
 
 ## Print dialog
 
-Two columns: the pages and the prepress options on the left, the layout
-on the right; under them the preflight outcome (see `preflight.md`) and
-Print, Print Preview and Cancel. The dialog starts with the choices of
-Options > Global > Printing, which can also keep those of the last print
-and turn the preflight outcome off (see `options.md`).
+Tabs: General, Color, Composite, Layout, Prepress, PostScript and the
+preflight's Issues ("No Issues" or the count; hidden when Options >
+Global > Printing turns the preflight off). Under them Print Preview
+(hands the settings to the preview), Print, Cancel and Apply (keeps the
+settings as Options > Global > Printing's). The dialog starts with those
+preferences, and with the drawing's own bleed as the bleed limit when it
+has one.
 
-- Copies (handed to the viewer), All pages (off: the current page only),
-  Fit to page (off: a scale in percent for fitted sheets).
-- Prepress: Print separations (one grey page per ink, C, M, Y and K, for
-  every sheet), Bleed (the document's bleed around every page), Crop
-  marks, Registration marks, Color bars, Densitometer scale, Page
-  information, Mirror (the whole sheet, marks included, flipped for
-  emulsion-down film), Invert (every colour of the sheet, for negatives).
-- Layout:
-  - Imposition: As in document (one page per sheet), Several pages per
-    sheet (a grid of columns x rows, 2 x 2 by default, filled left to
-    right and top to bottom), Booklet (two pages per sheet side in
-    saddle-stitch order), Step and repeat (each page repeated over the
-    grid, for cards and labels).
-  - Sheet: Fit to pages (the sheet takes the size of the pages, the gaps
-    and the margins) or A5, A4, A3, SRA3, A2, Letter, Legal, Tabloid,
-    portrait or Landscape. On a fixed sheet the pages shrink to fit (never
-    grow) and the grid is centred.
-  - Gap between pages (5 mm by default) for the grid layouts.
-  - A sketch of the first sheet (the pages numbered, blank booklet pages
-    grey) and the number of sheets.
+- General:
+  - Destination: Printer is the system printer (a PDF opened in the
+    system viewer, which owns the printer and the copy count; in the
+    browser the PDF is downloaded), a PDF file or a PostScript file (saved
+    where chosen). Orientation: Match orientation (the Layout tab's
+    Landscape box), Portrait or Landscape, for fixed sheets.
+  - Print range: Current document, Current page, Pages (a list such as
+    `1-3, 5, 8-`; an empty or unusable list prints them all), Selection
+    (the selected objects of the current page).
+  - Copies: a file gets its copies inside, as whole sets (Collate) or
+    each sheet repeated.
+  - Print as bitmap: each sheet becomes one picture at the resolution
+    given (36 to 1200 dpi).
+- Color: Composite or Separations (one grey page per ink and sheet: C, M,
+  Y, K, then the spot inks; black = full ink); Convert spot colors to
+  CMYK prints spot inks as their CMYK mix at their tint.
+- Composite: Print text in black (fills, outlines and character colours
+  of every text); Always overprint black (100 % black fills and outlines
+  overprint).
+- Layout: As in document, Fit to page or Scale (percent); Bleed limit
+  (how far beyond the page objects print, 4 mm by default); the
+  imposition, sheet, gap and the sketch (below).
+- Prepress: Invert and Mirror (the whole sheet, marks included); Print
+  file information (with its text, the drawing's name when left empty)
+  and Print page numbers (each page's number under it); Crop/fold marks;
+  Registration marks; Color bars and Densitometer scale.
+- PostScript: with a PostScript file as the destination, the language
+  level written in its header (2 or 3).
+- Issues: what the preflight finds, and the way to its dialog.
 
 ## Print Preview
 
@@ -79,10 +90,15 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
   of the top target.
 - Densitometer scale: black from 0 to 100 % in steps of ten, right of the
   top target.
-- Page information: the drawing's name, the pages on the sheet, "sheet n
+- Page numbers: each page's number, 6 pt, under the page.
+- Page information: the drawing's name (or the text given), the pages on the sheet, "sheet n
   of n" and the date and time, in 6 pt under the pages.
 
 ## Checks
+
+- `export::tests::page_lists_and_ranges_pick_pages`
+- `export::tests::print_colour_options_change_the_sheets_objects`
+- `export::tests::copies_repeat_sheets_collated_or_not_and_ps_gets_its_level`
 
 - `ui::print_preview::tests::plates_split_the_sheet_by_ink`
 - `ui::print_preview::tests::the_settings_key_ignores_copies_and_preflight`

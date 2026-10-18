@@ -33,6 +33,16 @@ pub struct PrintPrefs {
     /// The Print dialog runs the preflight checks and shows what they find.
     #[serde(default = "yes")]
     pub preflight: bool,
+    pub destination: usize,
+    pub orientation: usize,
+    #[serde(default = "yes")]
+    pub collate: bool,
+    pub spot_to_cmyk: bool,
+    pub text_black: bool,
+    pub overprint_black: bool,
+    pub bleed_limit: f64,
+    pub page_numbers: bool,
+    pub ps_level: u8,
 }
 
 impl Default for PrintPrefs {
@@ -52,6 +62,15 @@ impl Default for PrintPrefs {
             gutter: st.gutter,
             remember_last: false,
             preflight: true,
+            destination: st.destination,
+            orientation: st.orientation,
+            collate: st.collate,
+            spot_to_cmyk: st.spot_to_cmyk,
+            text_black: st.text_black,
+            overprint_black: st.overprint_black,
+            bleed_limit: st.bleed_limit,
+            page_numbers: st.page_numbers,
+            ps_level: st.ps_level,
         }
     }
 }
@@ -75,6 +94,19 @@ impl PrintPrefs {
                 0
             },
             landscape: self.landscape,
+            destination: self.destination.min(2),
+            orientation: self.orientation.min(2),
+            collate: self.collate,
+            spot_to_cmyk: self.spot_to_cmyk,
+            text_black: self.text_black,
+            overprint_black: self.overprint_black,
+            bleed_limit: if self.bleed_limit.is_finite() && self.bleed_limit > 0.0 {
+                self.bleed_limit.min(50.0)
+            } else {
+                PrintState::default().bleed_limit
+            },
+            page_numbers: self.page_numbers,
+            ps_level: self.ps_level.clamp(2, 3),
             gutter: if self.gutter.is_finite() {
                 self.gutter.clamp(0.0, 100.0)
             } else {
@@ -97,6 +129,15 @@ impl PrintPrefs {
         self.sheet = st.sheet;
         self.landscape = st.landscape;
         self.gutter = st.gutter;
+        self.destination = st.destination;
+        self.orientation = st.orientation;
+        self.collate = st.collate;
+        self.spot_to_cmyk = st.spot_to_cmyk;
+        self.text_black = st.text_black;
+        self.overprint_black = st.overprint_black;
+        self.bleed_limit = st.bleed_limit;
+        self.page_numbers = st.page_numbers;
+        self.ps_level = st.ps_level;
     }
 }
 

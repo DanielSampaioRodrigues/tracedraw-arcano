@@ -53,11 +53,18 @@ pub struct Marks {
     pub color_bars: bool,
     pub densitometer: bool,
     pub page_info: bool,
+    /// Each page's number under it.
+    pub page_numbers: bool,
 }
 
 impl Marks {
     pub fn any(self) -> bool {
-        self.crop || self.registration || self.color_bars || self.densitometer || self.page_info
+        self.crop
+            || self.registration
+            || self.color_bars
+            || self.densitometer
+            || self.page_info
+            || self.page_numbers
     }
 }
 
@@ -427,6 +434,23 @@ pub fn marks(
             out.push(s);
         }
     }
+    if m.page_numbers {
+        for c in &sheet.cells {
+            let Some(i) = c.page else { continue };
+            out.push(mark_shape(
+                ShapeKind::Text {
+                    spans: vec![TextSpan::new((i + 1).to_string(), "DejaVu Sans", 6.0)],
+                    origin: Point::new(c.trim.center().x, c.trim.y0 - bleed - 3.5),
+                    frame: None,
+                    align: tracedraw_core::document::TextAlign::Center,
+                    para: Default::default(),
+                    on_path: None,
+                },
+                Fill::Solid(Color::Registration),
+                None,
+            ));
+        }
+    }
     if m.page_info {
         let on_sheet: Vec<String> = sheet
             .cells
@@ -707,6 +731,7 @@ mod tests {
                 color_bars: true,
                 densitometer: true,
                 page_info: true,
+                page_numbers: true,
             },
             title: "t".into(),
             when: "now".into(),
@@ -716,9 +741,10 @@ mod tests {
         assert_eq!(out.pages.len(), 1);
         let shapes = &out.pages[0].layers[0].shapes;
         // The page in a clip frame, then the marks: crop marks,
-        // registration, 11 colour patches, 11 density steps, the text.
+        // registration, 11 colour patches, 11 density steps, the page
+        // number, the text.
         assert!(matches!(shapes[0].kind, ShapeKind::ClipFrame { .. }));
-        assert_eq!(shapes.len(), 1 + 1 + 1 + 11 + 11 + 1);
+        assert_eq!(shapes.len(), 1 + 1 + 1 + 11 + 11 + 1 + 1);
         // Ids are all different.
         let mut seen = std::collections::HashSet::new();
         fn walk(s: &Shape, seen: &mut std::collections::HashSet<ShapeId>) -> bool {

@@ -146,6 +146,37 @@ pub struct PrintState {
     pub gutter: f64,
     /// What the preflight found when the dialog opened.
     pub preflight: Option<Vec<crate::preflight::Issue>>,
+    /// The dialog's tab: 0 General, 1 Color, 2 Composite, 3 Layout,
+    /// 4 Prepress, 5 PostScript, 6 Issues.
+    pub tab: usize,
+    /// 0 the system viewer (which prints), 1 a PDF file, 2 a PostScript
+    /// file.
+    pub destination: usize,
+    /// 0 as the pages are, 1 portrait, 2 landscape (fixed sheets).
+    pub orientation: usize,
+    /// 0 the whole drawing, 1 the current page, 2 the pages in `pages`,
+    /// 3 the selection.
+    pub range: usize,
+    /// Pages to print, e.g. "1-3, 5".
+    pub pages: String,
+    /// Copies of a file come out as whole sets (on) or page by page.
+    pub collate: bool,
+    /// Every sheet printed as one picture of `bitmap_dpi`.
+    pub as_bitmap: bool,
+    pub bitmap_dpi: f64,
+    /// Spot inks printed as their CMYK mix.
+    pub spot_to_cmyk: bool,
+    /// Text in black, whatever its colour.
+    pub text_black: bool,
+    /// Black fills and outlines overprint what lies below.
+    pub overprint_black: bool,
+    /// How far beyond the page objects print, mm (with Bleed on).
+    pub bleed_limit: f64,
+    /// The page information's text; empty = the drawing's name.
+    pub info_text: String,
+    pub page_numbers: bool,
+    /// PostScript language level of a PostScript file (2 or 3).
+    pub ps_level: u8,
 }
 
 /// The sheets the Print dialog offers: fitted to the pages, then paper
@@ -234,15 +265,67 @@ impl PrintState {
         }
     }
 
-    /// The sheet size, turned for landscape; `None` fits it to the pages.
-    pub fn sheet_size(&self) -> Option<Size> {
+    /// The sheet for pages like `page`: portrait or landscape as the
+    /// General tab's Orientation says, or as the Layout tab's Landscape box
+    /// when it matches the layout.
+    pub fn sheet_size_for(&self, page: Size) -> Option<Size> {
         let s = SHEETS.get(self.sheet).and_then(|(_, s)| *s)?;
-        Some(if self.landscape {
+        let _ = page;
+        let landscape = match self.orientation {
+            1 => false,
+            2 => true,
+            _ => self.landscape,
+        };
+        Some(if landscape {
             Size::new(s.height, s.width)
         } else {
             s
         })
     }
+
+    /// The indexes of the pages to print among `count` pages, the current
+    /// one being `current`.
+    pub fn page_indexes(&self, count: usize, current: usize) -> Vec<usize> {
+        match self.range {
+            1 | 3 => vec![current.min(count.saturating_sub(1))],
+            2 => {
+                let picked = parse_page_list(&self.pages, count);
+                if picked.is_empty() {
+                    (0..count).collect()
+                } else {
+                    picked
+                }
+            }
+            _ if !self.all_pages => vec![current.min(count.saturating_sub(1))],
+            _ => (0..count).collect(),
+        }
+    }
+}
+
+/// Page numbers from a list like "1-3, 5, 8-" (1-based, ranges with a
+/// dash, an open end running to the last page), as 0-based indexes below
+/// `count`, in order, each once.
+pub fn parse_page_list(text: &str, count: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    for part in text.split([',', ';', ' ']).filter(|p| !p.trim().is_empty()) {
+        let part = part.trim();
+        let (a, b) = match part.split_once('-') {
+            Some((a, b)) => (
+                a.trim().parse::<usize>().unwrap_or(1),
+                b.trim().parse::<usize>().unwrap_or(count),
+            ),
+            None => match part.parse::<usize>() {
+                Ok(n) => (n, n),
+                Err(_) => continue,
+            },
+        };
+        for n in a.max(1)..=b.min(count) {
+            if !out.contains(&(n - 1)) {
+                out.push(n - 1);
+            }
+        }
+    }
+    out
 }
 
 impl Default for PrintState {
@@ -268,6 +351,21 @@ impl Default for PrintState {
             landscape: false,
             gutter: 5.0,
             preflight: None,
+            tab: 0,
+            destination: 0,
+            orientation: 0,
+            range: 0,
+            pages: String::new(),
+            collate: true,
+            as_bitmap: false,
+            bitmap_dpi: 300.0,
+            spot_to_cmyk: false,
+            text_black: false,
+            overprint_black: false,
+            bleed_limit: 4.0,
+            info_text: String::new(),
+            page_numbers: false,
+            ps_level: 2,
         }
     }
 }
@@ -280,6 +378,17 @@ pub struct PrintMergeState {
     pub path: Option<std::path::PathBuf>,
     /// What each field holds, by field; missing ones are text.
     pub kinds: Vec<crate::print_merge::FieldKind>,
+    /// The record the navigation is on (0-based).
+    pub current: usize,
+    /// View Single Record: one record as a form instead of the grid.
+    pub single: bool,
+    /// Configure Columns: names, kinds and counter settings shown.
+    pub configure: bool,
+    /// The Add Column form while it is open: name and kind (0 text,
+    /// 1 number, 2 picture, 3 QR code).
+    pub adding: Option<(String, usize)>,
+    /// The Go to Record field.
+    pub go_to: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -2743,244 +2852,554 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
     });
 }
 
+/// A titled frame around a group of the Print dialog's options.
+fn print_group(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.strong(title);
+        add(ui);
+    });
+}
+
 fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut bool) {
     window(ctx, tr("dialog.print")).show(ctx, |ui| {
-        ui.label(egui::RichText::new(tr("dialog.print_hint")).color(Tokens::text_dim()));
-        // Pages and prepress on the left, the layout on the right.
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(250.0);
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.copies"));
-                    ui.add(egui::DragValue::new(&mut st.copies).range(1..=999));
-                });
-                ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
-                    if !st.fit_to_page {
-                        ui.add(
-                            egui::DragValue::new(&mut st.scale)
-                                .range(1.0..=1000.0)
-                                .suffix(" %"),
-                        );
-                    }
-                });
-                ui.separator();
-                ui.strong(tr("dialog.prepress"));
-                ui.checkbox(&mut st.separations, tr("dialog.separations"));
-                ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
-                ui.checkbox(&mut st.crop_marks, tr("dialog.crop_marks"));
-                ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
-                ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
-                ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
-                ui.checkbox(&mut st.page_info, tr("print.page_info_mark"));
-                ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
-                ui.checkbox(&mut st.invert, tr("dialog.invert"));
-            });
-            // Space, not a separator: a separator here would take all
-            // the height there is.
-            ui.add_space(16.0);
-            ui.vertical(|ui| {
-                ui.set_width(310.0);
-                print_layout_fields(app, ui, st);
-            });
+        let issues = if app.settings.printing.preflight {
+            st.preflight
+                .get_or_insert_with(|| crate::ui::preflight_dialog::issues_of(app))
+                .clone()
+        } else {
+            Vec::new()
+        };
+        let issues_tab = if issues.is_empty() {
+            tr("print.tab_no_issues")
+        } else {
+            trf("print.tab_issues", &[("n", &issues.len().to_string())])
+        };
+        let tabs = [
+            tr("print.tab_general"),
+            tr("print.tab_color"),
+            tr("print.tab_composite"),
+            tr("print.tab_layout"),
+            tr("print.tab_prepress"),
+            tr("print.tab_postscript"),
+            issues_tab,
+        ];
+        ui.horizontal(|ui| {
+            for (i, t) in tabs.iter().enumerate() {
+                if i == 6 && !app.settings.printing.preflight {
+                    continue;
+                }
+                ui.selectable_value(&mut st.tab, i, t.as_str());
+            }
         });
         ui.separator();
-        // Preflight: what the checks find, and the way to the list
-        // (unless Options > Global > Printing turns it off).
-        if app.settings.printing.preflight {
-            let issues = st
-                .preflight
-                .get_or_insert_with(|| crate::ui::preflight_dialog::issues_of(app))
-                .clone();
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-                if let Some(i) = issues.first() {
-                    let warn = issues
-                        .iter()
-                        .any(|i| i.check.severity() == crate::preflight::Severity::Warning);
-                    let sev = if warn {
-                        crate::preflight::Severity::Warning
-                    } else {
-                        i.check.severity()
-                    };
-                    crate::ui::preflight_dialog::paint_icon(ui.painter(), r.center(), sev);
-                }
-                ui.label(crate::ui::preflight_dialog::summary(&issues));
-                if !issues.is_empty() && ui.button(tr("preflight.open")).clicked() {
-                    app.dialog = Dialog::Preflight(Default::default());
-                    *close = true;
-                }
-            });
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button(tr("dialog.print")).clicked() {
-                match crate::export::print(app, st) {
-                    Ok(msg) => app.status = msg,
-                    Err(e) => app.status = format!("{}: {e}", tr("dialog.print_failed")),
-                }
-                if app.settings.printing.remember_last {
-                    app.settings.printing.remember(st);
-                    app.settings.save();
-                }
-                *close = true;
+        egui::Frame::new().show(ui, |ui| {
+            ui.set_min_size(egui::vec2(560.0, 380.0));
+            ui.set_max_width(560.0);
+            match st.tab {
+                1 => print_tab_color(ui, st),
+                2 => print_tab_composite(ui, st),
+                3 => print_tab_layout(app, ui, st),
+                4 => print_tab_prepress(app, ui, st),
+                5 => print_tab_postscript(ui, st),
+                6 => print_tab_issues(app, ui, &issues, close),
+                _ => print_tab_general(app, ui, st),
             }
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
             if ui.button(tr("menu.file.print_preview")).clicked() {
                 app.print_preview(Some(st.clone()));
                 *close = true;
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
-                *close = true;
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(tr("print.apply")).clicked() {
+                    app.settings.printing.remember(st);
+                    app.settings.save();
+                }
+                if ui.button(tr("dialog.cancel")).clicked() {
+                    *close = true;
+                }
+                if ui.button(tr("dialog.print")).clicked() {
+                    match crate::export::print(app, st) {
+                        Ok(msg) if !msg.is_empty() => app.status = msg,
+                        Ok(_) => {}
+                        Err(e) => app.status = format!("{}: {e}", tr("dialog.print_failed")),
+                    }
+                    if app.settings.printing.remember_last {
+                        app.settings.printing.remember(st);
+                        app.settings.save();
+                    }
+                    *close = true;
+                }
+            });
         });
     });
+}
+
+fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) {
+    print_group(ui, &tr("print.destination"), |ui| {
+        egui::Grid::new("print_dest")
+            .num_columns(2)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                ui.label(tr("print.printer"));
+                let dests = ["print.dest_viewer", "print.dest_pdf", "print.dest_ps"];
+                egui::ComboBox::from_id_salt("print_destination")
+                    .selected_text(tr(dests[st.destination.min(2)]))
+                    .width(300.0)
+                    .show_ui(ui, |ui| {
+                        for (i, d) in dests.iter().enumerate() {
+                            ui.selectable_value(&mut st.destination, i, tr(d));
+                        }
+                    });
+                ui.end_row();
+                ui.label(tr("print.orientation"));
+                let ors = [
+                    "print.orient_match",
+                    "print.orient_portrait",
+                    "print.orient_landscape",
+                ];
+                egui::ComboBox::from_id_salt("print_orientation")
+                    .selected_text(tr(ors[st.orientation.min(2)]))
+                    .width(300.0)
+                    .show_ui(ui, |ui| {
+                        for (i, o) in ors.iter().enumerate() {
+                            if ui.selectable_value(&mut st.orientation, i, tr(o)).clicked() && i > 0
+                            {
+                                st.landscape = i == 2;
+                            }
+                        }
+                    });
+                ui.end_row();
+            });
+    });
+    ui.add_space(6.0);
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(270.0);
+            print_group(ui, &tr("print.range"), |ui| {
+                ui.radio_value(&mut st.range, 0, tr("print.range_document"));
+                ui.radio_value(&mut st.range, 1, tr("print.range_page"));
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut st.range, 2, tr("print.range_pages"));
+                    ui.add_enabled(
+                        st.range == 2,
+                        egui::TextEdit::singleline(&mut st.pages)
+                            .hint_text(format!("1-{}", app.doc().pages.len()))
+                            .desired_width(110.0),
+                    );
+                });
+                ui.add_enabled_ui(!app.selection.is_empty(), |ui| {
+                    ui.radio_value(&mut st.range, 3, tr("print.range_selection"));
+                });
+            });
+        });
+        ui.vertical(|ui| {
+            print_group(ui, &tr("print.copies"), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(tr("print.number_of_copies"));
+                    ui.add(egui::DragValue::new(&mut st.copies).range(1..=999));
+                });
+                ui.add_enabled(
+                    st.copies > 1,
+                    egui::Checkbox::new(&mut st.collate, tr("print.collate")),
+                );
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut st.as_bitmap, tr("print.as_bitmap"));
+                ui.add_enabled(
+                    st.as_bitmap,
+                    egui::DragValue::new(&mut st.bitmap_dpi)
+                        .range(36.0..=1200.0)
+                        .suffix(" dpi"),
+                );
+            });
+        });
+    });
+    // Keep the older "all pages" choice in step with the range.
+    st.all_pages = st.range != 1;
+}
+
+fn print_tab_color(ui: &mut Ui, st: &mut PrintState) {
+    egui::Grid::new("print_color")
+        .num_columns(2)
+        .spacing([24.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(tr("print.color"));
+            ui.vertical(|ui| {
+                ui.radio_value(&mut st.separations, false, tr("print.composite_output"));
+                ui.radio_value(&mut st.separations, true, tr("print.separations_output"));
+            });
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(&mut st.spot_to_cmyk, tr("print.spot_to_cmyk"));
+            ui.end_row();
+        });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(tr("print.color_hint")).color(Tokens::text_dim()));
+}
+
+fn print_tab_composite(ui: &mut Ui, st: &mut PrintState) {
+    print_group(ui, &tr("print.options"), |ui| {
+        ui.checkbox(&mut st.text_black, tr("print.text_black"));
+        ui.checkbox(&mut st.overprint_black, tr("print.overprint_black"));
+    });
+}
+
+fn print_tab_layout(app: &App, ui: &mut Ui, st: &mut PrintState) {
+    print_group(ui, &tr("print.position_size"), |ui| {
+        let mut mode = if st.fit_to_page {
+            1
+        } else if (st.scale - 100.0).abs() > 1e-9 {
+            2
+        } else {
+            0
+        };
+        ui.radio_value(&mut mode, 0, tr("print.as_in_document"));
+        ui.radio_value(&mut mode, 1, tr("dialog.fit_to_page"));
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut mode, 2, tr("print.scale"));
+            ui.add_enabled(
+                mode == 2,
+                egui::DragValue::new(&mut st.scale)
+                    .range(1.0..=1000.0)
+                    .suffix(" %"),
+            );
+        });
+        match mode {
+            0 => {
+                st.fit_to_page = false;
+                st.scale = 100.0;
+            }
+            1 => st.fit_to_page = true,
+            _ => {
+                st.fit_to_page = false;
+                if (st.scale - 100.0).abs() < 1e-9 {
+                    st.scale = 99.0;
+                }
+            }
+        }
+    });
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut st.bleed, tr("print.bleed_limit"));
+        ui.add_enabled(
+            st.bleed,
+            egui::DragValue::new(&mut st.bleed_limit)
+                .range(0.0..=50.0)
+                .speed(0.5)
+                .suffix(" mm"),
+        );
+    });
+    ui.add_space(6.0);
+    print_layout_fields(app, ui, st);
+}
+
+fn print_tab_prepress(app: &App, ui: &mut Ui, st: &mut PrintState) {
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(270.0);
+            print_group(ui, &tr("print.paper_film"), |ui| {
+                ui.checkbox(&mut st.invert, tr("dialog.invert"));
+                ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
+            });
+            ui.add_space(6.0);
+            print_group(ui, &tr("print.file_info"), |ui| {
+                ui.checkbox(&mut st.page_info, tr("print.print_file_info"));
+                ui.add_enabled(
+                    st.page_info,
+                    egui::TextEdit::singleline(&mut st.info_text)
+                        .hint_text(app.document_name())
+                        .desired_width(240.0),
+                );
+                ui.checkbox(&mut st.page_numbers, tr("print.page_numbers"));
+            });
+            ui.add_space(6.0);
+            print_group(ui, &tr("print.finishing"), |ui| {
+                ui.checkbox(&mut st.crop_marks, tr("print.crop_fold_marks"));
+            });
+        });
+        ui.vertical(|ui| {
+            print_group(ui, &tr("print.registration"), |ui| {
+                ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
+            });
+            ui.add_space(6.0);
+            print_group(ui, &tr("print.calibration"), |ui| {
+                ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
+                ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
+            });
+        });
+    });
+}
+
+fn print_tab_postscript(ui: &mut Ui, st: &mut PrintState) {
+    if st.destination != 2 {
+        ui.label(egui::RichText::new(tr("print.postscript_hint")).color(Tokens::text_dim()));
+        ui.add_space(6.0);
+    }
+    ui.add_enabled_ui(st.destination == 2, |ui| {
+        print_group(ui, &tr("print.compatibility"), |ui| {
+            egui::ComboBox::from_id_salt("print_ps_level")
+                .selected_text(trf("print.ps_level", &[("n", &st.ps_level.to_string())]))
+                .show_ui(ui, |ui| {
+                    for l in [2u8, 3] {
+                        ui.selectable_value(
+                            &mut st.ps_level,
+                            l,
+                            trf("print.ps_level", &[("n", &l.to_string())]),
+                        );
+                    }
+                });
+        });
+    });
+}
+
+fn print_tab_issues(
+    app: &mut App,
+    ui: &mut Ui,
+    issues: &[crate::preflight::Issue],
+    close: &mut bool,
+) {
+    ui.label(crate::ui::preflight_dialog::summary(issues));
+    ui.add_space(4.0);
+    egui::ScrollArea::vertical()
+        .max_height(300.0)
+        .show(ui, |ui| {
+            for issue in issues {
+                ui.horizontal(|ui| {
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                    crate::ui::preflight_dialog::paint_icon(
+                        ui.painter(),
+                        r.center(),
+                        issue.check.severity(),
+                    );
+                    let mut text = tr(&issue.check.key());
+                    if !issue.detail.is_empty() {
+                        text = format!("{text}: {}", issue.detail);
+                    }
+                    ui.label(text);
+                });
+            }
+        });
+    ui.add_space(6.0);
+    if ui.button(tr("preflight.open")).clicked() {
+        app.dialog = Dialog::Preflight(Default::default());
+        *close = true;
+    }
+}
+
+fn merge_kind_names() -> [String; 4] {
+    [
+        tr("merge.kind_text"),
+        tr("merge.kind_number"),
+        tr("merge.kind_image"),
+        tr("merge.kind_qr"),
+    ]
+}
+
+fn merge_kind_of(index: usize) -> crate::print_merge::FieldKind {
+    use crate::print_merge::FieldKind;
+    match index {
+        1 => FieldKind::Number {
+            start: 1,
+            step: 1,
+            digits: 1,
+        },
+        2 => FieldKind::Image,
+        3 => FieldKind::Qr,
+        _ => FieldKind::Text,
+    }
 }
 
 fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, close: &mut bool) {
     use crate::print_merge::{self as pm, FieldKind};
     window(ctx, tr("dialog.print_merge")).show(ctx, |ui| {
-        ui.label(tr("dialog.print_merge_hint"));
+        ui.set_width(720.0);
+        if st.kinds.len() < st.headers.len() {
+            st.kinds.resize(st.headers.len(), FieldKind::Text);
+        }
         ui.horizontal(|ui| {
-            if ui.button(tr("dialog.load_csv")).clicked() {
-                crate::files::Dialog::new()
-                    .add_filter("CSV", &["csv", "txt"])
-                    .pick_into("print_merge_csv");
-            }
-            if let Some(p) = crate::files::take_picked("print_merge_csv") {
-                if let Ok(text) = crate::files::read_to_string(&p) {
-                    let (h, r) = crate::export::parse_csv(&text);
-                    st.headers = h;
-                    st.rows = r;
-                    st.kinds.clear();
-                    st.path = Some(p);
+            ui.label(tr("merge.hint"));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(tr("merge.import_file")).clicked() {
+                    crate::files::Dialog::new()
+                        .add_filter("CSV", &["csv", "txt"])
+                        .pick_into("print_merge_csv");
                 }
+            });
+        });
+        if let Some(p) = crate::files::take_picked("print_merge_csv") {
+            if let Ok(text) = crate::files::read_to_string(&p) {
+                let (h, r) = crate::export::parse_csv(&text);
+                st.headers = h;
+                st.rows = r;
+                st.kinds.clear();
+                st.current = 0;
+                st.path = Some(p);
+            }
+        }
+        ui.add_space(4.0);
+        ui.strong(tr("merge.add_or_edit"));
+        ui.horizontal(|ui| {
+            if ui.button(tr("merge.add_column")).clicked() {
+                st.adding = Some((String::new(), 0));
+                ui.memory_mut(|m| m.request_focus(egui::Id::new("merge_add_name")));
             }
             if ui
                 .add_enabled(
                     !st.headers.is_empty(),
-                    egui::Button::new(tr("merge.save_csv")),
+                    egui::Button::new(tr("merge.configure")).selected(st.configure),
                 )
                 .clicked()
             {
-                let text = pm::to_csv(st);
-                crate::files::Dialog::new()
-                    .add_filter("CSV", &["csv"])
-                    .set_file_name("merge.csv")
-                    .save_file(app, move |app, path| {
-                        if let Err(e) = crate::files::write(&path, text.into_bytes()) {
-                            app.status = e.to_string();
-                        }
-                    });
+                st.configure = !st.configure;
             }
-            if let Some(p) = &st.path {
-                ui.label(
-                    p.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                );
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = if st.single {
+                    tr("merge.view_all")
+                } else {
+                    tr("merge.view_single")
+                };
+                if ui
+                    .add_enabled(!st.rows.is_empty(), egui::Button::new(label))
+                    .clicked()
+                {
+                    st.single = !st.single;
+                }
+            });
         });
-        ui.separator();
-        // The record grid: a header row of fields (name, kind, counter
-        // settings), then one row per record.
-        let values = pm::values(st);
+        // Add Column: name and type.
+        let mut add_done = None;
+        if let Some((name, kind)) = &mut st.adding {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.strong(tr("merge.add_column_title"));
+                ui.label(tr("merge.name"));
+                ui.add(
+                    egui::TextEdit::singleline(name)
+                        .id(egui::Id::new("merge_add_name"))
+                        .desired_width(320.0),
+                );
+                ui.label(tr("merge.type"));
+                ui.horizontal(|ui| {
+                    for (i, n) in merge_kind_names().iter().enumerate() {
+                        ui.radio_value(kind, i, n.as_str());
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let ok = !name.trim().is_empty();
+                    if ui
+                        .add_enabled(ok, egui::Button::new(tr("merge.add")))
+                        .clicked()
+                    {
+                        add_done = Some(Some((name.trim().to_string(), *kind)));
+                    }
+                    if ui.button(tr("dialog.cancel")).clicked() {
+                        add_done = Some(None);
+                    }
+                });
+            });
+        }
+        if let Some(done) = add_done {
+            if let Some((name, kind)) = done {
+                pm::add_field(st, &name);
+                if let Some(k) = st.kinds.last_mut() {
+                    *k = merge_kind_of(kind);
+                }
+                if st.rows.is_empty() {
+                    pm::add_record(st);
+                }
+            }
+            st.adding = None;
+        }
+        // Configure Columns: name, kind and counter settings of each field.
         let mut remove_field = None;
-        let mut remove_row = None;
-        egui::ScrollArea::both()
-            .max_height(320.0)
-            .max_width(720.0)
-            .show(ui, |ui| {
-                egui::Grid::new("print_merge_grid")
-                    .striped(true)
-                    .spacing([6.0, 4.0])
+        if st.configure && !st.headers.is_empty() {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                egui::ScrollArea::horizontal()
+                    .id_salt("merge_cfg")
                     .show(ui, |ui| {
-                        ui.label("");
-                        for i in 0..st.headers.len() {
-                            ui.vertical(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut st.headers[i])
-                                            .desired_width(110.0),
-                                    );
-                                    if ui
-                                        .small_button("x")
-                                        .on_hover_text(tr("merge.delete_field"))
-                                        .clicked()
-                                    {
-                                        remove_field = Some(i);
-                                    }
-                                });
-                                if st.kinds.len() < st.headers.len() {
-                                    st.kinds.resize(st.headers.len(), FieldKind::Text);
-                                }
-                                let names = [
-                                    "merge.kind_text",
-                                    "merge.kind_number",
-                                    "merge.kind_image",
-                                    "merge.kind_qr",
-                                ];
-                                let cur = match st.kinds[i] {
-                                    FieldKind::Text => 0,
-                                    FieldKind::Number { .. } => 1,
-                                    FieldKind::Image => 2,
-                                    FieldKind::Qr => 3,
-                                };
-                                let mut pick = cur;
-                                egui::ComboBox::from_id_salt(("merge_kind", i))
-                                    .selected_text(tr(names[cur]))
-                                    .width(110.0)
-                                    .show_ui(ui, |ui| {
-                                        for (k, n) in names.iter().enumerate() {
-                                            ui.selectable_value(&mut pick, k, tr(n));
+                        ui.horizontal(|ui| {
+                            for i in 0..st.headers.len() {
+                                ui.vertical(|ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut st.headers[i])
+                                                .desired_width(110.0),
+                                        );
+                                        if ui
+                                            .small_button("x")
+                                            .on_hover_text(tr("merge.delete_field"))
+                                            .clicked()
+                                        {
+                                            remove_field = Some(i);
                                         }
                                     });
-                                if pick != cur {
-                                    st.kinds[i] = match pick {
-                                        1 => FieldKind::Number {
-                                            start: 1,
-                                            step: 1,
-                                            digits: 1,
-                                        },
-                                        2 => FieldKind::Image,
-                                        3 => FieldKind::Qr,
-                                        _ => FieldKind::Text,
+                                    let names = merge_kind_names();
+                                    let cur = match st.kinds[i] {
+                                        FieldKind::Text => 0,
+                                        FieldKind::Number { .. } => 1,
+                                        FieldKind::Image => 2,
+                                        FieldKind::Qr => 3,
                                     };
-                                }
-                                if let FieldKind::Number {
-                                    start,
-                                    step,
-                                    digits,
-                                } = &mut st.kinds[i]
-                                {
-                                    ui.horizontal(|ui| {
+                                    let mut pick = cur;
+                                    egui::ComboBox::from_id_salt(("merge_kind", i))
+                                        .selected_text(names[cur].clone())
+                                        .width(110.0)
+                                        .show_ui(ui, |ui| {
+                                            for (k, n) in names.iter().enumerate() {
+                                                ui.selectable_value(&mut pick, k, n.as_str());
+                                            }
+                                        });
+                                    if pick != cur {
+                                        st.kinds[i] = merge_kind_of(pick);
+                                    }
+                                    if let FieldKind::Number {
+                                        start,
+                                        step,
+                                        digits,
+                                    } = &mut st.kinds[i]
+                                    {
                                         ui.add(
                                             egui::DragValue::new(start).prefix(tr("merge.start")),
                                         );
                                         ui.add(egui::DragValue::new(step).prefix(tr("merge.step")));
-                                    });
-                                    ui.add(
-                                        egui::DragValue::new(digits)
-                                            .range(1..=12)
-                                            .prefix(tr("merge.digits")),
-                                    );
-                                }
-                            });
+                                        ui.add(
+                                            egui::DragValue::new(digits)
+                                                .range(1..=12)
+                                                .prefix(tr("merge.digits")),
+                                        );
+                                    }
+                                });
+                                ui.separator();
+                            }
+                        });
+                    });
+            });
+        }
+        if let Some(i) = remove_field {
+            pm::remove_field(st, i);
+        }
+        st.current = st.current.min(st.rows.len().saturating_sub(1));
+        // The records: a grid, or the current one as a form.
+        let values = pm::values(st);
+        egui::Frame::new()
+            .fill(Tokens::field())
+            .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
+            .inner_margin(4.0)
+            .show(ui, |ui| {
+                ui.set_min_size(egui::vec2(700.0, 300.0));
+                egui::ScrollArea::both()
+                    .max_height(300.0)
+                    .id_salt("merge_grid")
+                    .show(ui, |ui| {
+                        if st.headers.is_empty() {
+                            return;
                         }
-                        ui.end_row();
-                        for r in 0..st.rows.len() {
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .small_button("x")
-                                    .on_hover_text(tr("merge.delete_record"))
-                                    .clicked()
-                                {
-                                    remove_row = Some(r);
-                                }
-                                ui.label((r + 1).to_string());
-                            });
-                            st.rows[r].resize(st.headers.len(), String::new());
-                            for c in 0..st.headers.len() {
+                        let cell =
+                            |ui: &mut Ui, st: &mut PrintMergeState, r: usize, c: usize, w: f32| {
                                 if matches!(pm::kind_of(st, c), FieldKind::Number { .. }) {
                                     let v = values
                                         .get(r)
@@ -2988,51 +3407,118 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         .cloned()
                                         .unwrap_or_default();
                                     ui.label(egui::RichText::new(v).color(Tokens::text_dim()));
-                                } else {
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut st.rows[r][c])
-                                            .desired_width(130.0),
-                                    );
+                                } else if let Some(text) =
+                                    st.rows.get_mut(r).and_then(|row| row.get_mut(c))
+                                {
+                                    ui.add(egui::TextEdit::singleline(text).desired_width(w));
                                 }
-                            }
-                            ui.end_row();
+                            };
+                        for row in st.rows.iter_mut() {
+                            row.resize(st.headers.len(), String::new());
+                        }
+                        if st.single {
+                            let r = st.current;
+                            egui::Grid::new("merge_single")
+                                .num_columns(2)
+                                .spacing([12.0, 6.0])
+                                .show(ui, |ui| {
+                                    for c in 0..st.headers.len() {
+                                        ui.label(st.headers[c].clone());
+                                        cell(ui, st, r, c, 420.0);
+                                        ui.end_row();
+                                    }
+                                });
+                        } else {
+                            egui::Grid::new("merge_grid")
+                                .striped(true)
+                                .spacing([6.0, 4.0])
+                                .show(ui, |ui| {
+                                    ui.label("");
+                                    for h in &st.headers {
+                                        ui.strong(h.as_str());
+                                    }
+                                    ui.end_row();
+                                    for r in 0..st.rows.len() {
+                                        let mark = if r == st.current { "\u{25b6}" } else { "" };
+                                        if ui
+                                            .selectable_label(
+                                                r == st.current,
+                                                format!("{mark}{}", r + 1),
+                                            )
+                                            .clicked()
+                                        {
+                                            st.current = r;
+                                        }
+                                        for c in 0..st.headers.len() {
+                                            cell(ui, st, r, c, 130.0);
+                                        }
+                                        ui.end_row();
+                                    }
+                                });
                         }
                     });
             });
-        if let Some(i) = remove_field {
-            pm::remove_field(st, i);
-        }
-        if let Some(r) = remove_row {
-            if r < st.rows.len() {
-                st.rows.remove(r);
-            }
-        }
+        // Records: add and remove, and the navigation.
         ui.horizontal(|ui| {
-            if ui.button(tr("merge.add_field")).clicked() {
-                let name = trf(
-                    "merge.field_n",
-                    &[("n", &(st.headers.len() + 1).to_string())],
-                );
-                pm::add_field(st, &name);
-            }
             if ui
-                .add_enabled(
-                    !st.headers.is_empty(),
-                    egui::Button::new(tr("merge.add_record")),
-                )
+                .add_enabled(!st.headers.is_empty(), egui::Button::new("+"))
+                .on_hover_text(tr("merge.add_record"))
                 .clicked()
             {
                 pm::add_record(st);
+                st.current = st.rows.len() - 1;
             }
+            if ui
+                .add_enabled(!st.rows.is_empty(), egui::Button::new("\u{2212}"))
+                .on_hover_text(tr("merge.delete_record"))
+                .clicked()
+                && st.current < st.rows.len()
+            {
+                st.rows.remove(st.current);
+                st.current = st.current.min(st.rows.len().saturating_sub(1));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let n = st.rows.len();
+                if ui
+                    .add_enabled(n > 0, egui::Button::new(tr("merge.go_to")))
+                    .clicked()
+                {
+                    if let Ok(k) = st.go_to.trim().parse::<usize>() {
+                        st.current = k.clamp(1, n.max(1)) - 1;
+                    }
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut st.go_to)
+                        .desired_width(60.0)
+                        .hint_text(format!("{}", st.current + 1)),
+                );
+                if ui
+                    .add_enabled(n > 0 && st.current + 1 < n, egui::Button::new(">|"))
+                    .clicked()
+                {
+                    st.current = n - 1;
+                }
+                if ui
+                    .add_enabled(n > 0 && st.current + 1 < n, egui::Button::new(">"))
+                    .clicked()
+                {
+                    st.current += 1;
+                }
+                if ui
+                    .add_enabled(st.current > 0, egui::Button::new("<"))
+                    .clicked()
+                {
+                    st.current -= 1;
+                }
+                if ui
+                    .add_enabled(st.current > 0, egui::Button::new("|<"))
+                    .clicked()
+                {
+                    st.current = 0;
+                }
+            });
         });
         if !st.headers.is_empty() {
-            ui.label(trf(
-                "dialog.fields_rows",
-                &[
-                    ("f", &st.headers.join(", ")),
-                    ("n", &st.rows.len().to_string()),
-                ],
-            ));
             ui.label(
                 egui::RichText::new(tr("dialog.print_merge_fields_hint"))
                     .color(Tokens::text_dim())
@@ -3046,21 +3532,37 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 }
             });
         }
-        ui.add_space(6.0);
+        ui.separator();
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
-                    !st.rows.is_empty(),
-                    egui::Button::new(tr("dialog.perform_merge")),
+                    !st.headers.is_empty(),
+                    egui::Button::new(tr("merge.save_data")),
                 )
                 .clicked()
             {
-                pm::perform(app, st);
-                *close = true;
+                let text = pm::to_csv(st);
+                crate::files::Dialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name("merge.csv")
+                    .save_file(app, move |app, path| {
+                        if let Err(e) = crate::files::write(&path, text.into_bytes()) {
+                            app.status = e.to_string();
+                        }
+                    });
             }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(tr("dialog.cancel")).clicked() {
+                    *close = true;
+                }
+                if ui
+                    .add_enabled(!st.rows.is_empty(), egui::Button::new(tr("merge.finish")))
+                    .clicked()
+                {
+                    pm::perform(app, st);
+                    *close = true;
+                }
+            });
         });
         if !st.headers.is_empty() {
             app.merge_state = Some(st.clone());

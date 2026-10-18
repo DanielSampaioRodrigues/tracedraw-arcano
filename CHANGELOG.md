@@ -6,6 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The Print dialog has tabs: General (destination: system printer, PDF
+  or PostScript file; orientation; current document, page, page list or
+  selection; copies with collate; print as bitmap), Color (separations,
+  spot colours as CMYK), Composite (text in black, overprint black),
+  Layout (as in document, fit, scale, bleed limit, imposition), Prepress
+  (invert, mirror, file information, page numbers, crop, registration,
+  calibration), PostScript (language level) and the preflight's Issues.
+- Print Merge is laid out around its records: Import File, Add Column
+  (name and type), Configure Columns, View Single Record, record
+  navigation, Save Data Source and Finish.
+
 - `.cdr` files of versions 3 and 4 open properly (they opened blank or
   out of shape): version 3 objects with their own matrices, fills,
   fountains, outlines with caps and arrowheads, groups and artistic text;

@@ -6,13 +6,23 @@ again. `print_merge.rs` holds the model and the merge.
 
 ## Records
 
-- Load CSV reads a file whose first line names the fields (comma or
-  semicolon, whichever the first line has more of). Save CSV writes the
-  grid back, counters written out.
-- The grid shows one column per field and one row per record. Add field
-  adds a column (Field1, Field2, ...), Add record an empty row; the small
-  x beside a field or record removes it. Field names are edited in place.
-- Each field has a kind:
+The dialog: "Add columns or records manually or import data from a file"
+with Import File; under "Add or edit records" Add Column, Configure
+Columns and View Single Record; the records; + and - (add a record, delete
+the current one) and the navigation (first, previous, next, last, Go to
+Record); Save Data Source, Finish and Cancel.
+
+- Import File reads a CSV whose first line names the fields (comma or
+  semicolon, whichever the first line has more of). Save Data Source
+  writes the records back as CSV, counters written out.
+- Add Column asks for a name and a type and adds the field to every
+  record (and a first record when there is none).
+- Configure Columns shows each field's name (edited in place), type,
+  counter settings and the x that removes it.
+- View Single Record shows the current record as a form; View All
+  Records goes back to the grid, where a click on a record's number makes
+  it the current one.
+- Types:
   - Text: put in place of `<Field>` in every text object of the page.
   - Number: a counter, not typed in: Start, then Step more for each
     record, padded with zeros to Digits digits (start 7, step 3, digits 3
@@ -29,7 +39,7 @@ again. `print_merge.rs` holds the model and the merge.
 
 ## Merge
 
-Perform Merge copies the current page once per record, right after it,
+Finish (or File > Print Merge > Perform Merge) copies the current page once per record, right after it,
 in the records' order, names the copies "<page> 1", "<page> 2", ... and
 fills them. It is two undo steps (the copies, then the fills).
 

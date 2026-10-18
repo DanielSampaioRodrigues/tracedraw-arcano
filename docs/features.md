@@ -263,7 +263,7 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Print (PDF to the system viewer), copies, range, bleed; imposition (as in document, several pages per sheet, booklet, step and repeat) on fitted or paper sheets; printers' marks (crop marks at every cut, registration targets, colour bars, densitometer scale, page information), mirror and invert of the whole sheet | works (see `behavior/printing.md`) |
+| Print dialog in tabs (General, Color, Composite, Layout, Prepress, PostScript, Issues): system printer through the PDF viewer, PDF or PostScript file, orientation, document, page, page list or selection, copies with collate, print as bitmap, separations, spot colours as CMYK, text in black, overprint black, bleed limit, file information, page numbers, PostScript level; imposition (as in document, several pages per sheet, booklet, step and repeat) on fitted or paper sheets; printers' marks (crop marks at every cut, registration targets, colour bars, densitometer scale, page information), mirror and invert of the whole sheet | works (see `behavior/printing.md`) |
 | Print preview | works: the imposed sheets with marks, mirror, invert and each separation plate, the print options beside them, zoom (see `behavior/printing.md`) |
 | Print merge from CSV (load, insert fields, perform into pages) | works: record grid to add, edit and remove fields and records, save as CSV, counter, picture and QR code fields (see `behavior/print-merge.md`) |
 | Separations and overprint simulation | works |
