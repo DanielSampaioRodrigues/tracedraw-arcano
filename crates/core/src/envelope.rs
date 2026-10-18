@@ -601,7 +601,19 @@ impl Spans {
 /// the path is divided finely enough to bend.
 pub fn apply(path: &BezPath, frame: &Frame, keep_lines: bool, mapping: Mapping) -> BezPath {
     use crate::geometry::Shape as _;
-    let b = path.bounding_box();
+    apply_in(path, path.bounding_box(), frame, keep_lines, mapping)
+}
+
+/// As [`apply`], with the box `b` mapped onto the frame instead of the
+/// path's own bounding box (objects that share one envelope, each mapped
+/// from the box of them all).
+pub fn apply_in(
+    path: &BezPath,
+    b: Rect,
+    frame: &Frame,
+    keep_lines: bool,
+    mapping: Mapping,
+) -> BezPath {
     if b.width() < 1e-9 || b.height() < 1e-9 {
         return path.clone();
     }

@@ -588,15 +588,17 @@ pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Optio
     }
 }
 
-/// Paragraphs of single-byte characters split at carriage returns, all
-/// at `size_pt`.
+/// Paragraphs of single-byte characters split at carriage returns (a line
+/// feed after one is dropped), all at `size_pt`.
 fn early_paragraphs(chars: &[u8], size_pt: Option<f64>) -> Txsm {
     let style = RunStyle {
         size_pt: size_pt.filter(|p| *p > 0.0 && p.is_finite()),
         ..RunStyle::default()
     };
+    // Lines end with CR, or CR LF (version 5): the LF is not a character.
     let paragraphs = chars
         .split(|c| *c == b'\r')
+        .map(|line| line.strip_prefix(b"\n").unwrap_or(line))
         .map(|line| TextParagraph {
             style_id: 0,
             base: RunStyle::default(),
@@ -1734,6 +1736,17 @@ pub(crate) fn parse_style_string(s: &str) -> RunStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn early_text_lines_end_at_cr_or_cr_lf() {
+        let t = early_paragraphs(b"ab\r\ncd\ref", Some(10.0));
+        let lines: Vec<String> = t
+            .paragraphs
+            .iter()
+            .map(|p| p.runs.iter().map(|r| r.text.clone()).collect())
+            .collect();
+        assert_eq!(lines, ["ab", "cd", "ef"]);
+    }
 
     #[test]
     fn version_5_and_6_texts_are_read() {

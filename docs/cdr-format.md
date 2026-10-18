@@ -51,10 +51,12 @@ drawing.
 |---|---|---|
 | Version 3 object types count from 0: rectangle 0, ellipse 1, curve 2, text 3, bitmap 4 | confirmed (file) | Read as the later codes plus one. |
 | Version 3 object (`lobj`) arguments: 100 transformations, 30 coordinates, 20 fill, 10 outline, all inline | confirmed (file) | |
-| Argument 100: u16, count (u16), then 10-byte entries (type u16, data offset u16 at 6); type 0x8c is a matrix of six i32 (a, c, e, b, d, f; factors 16.16, offsets 1/1000 inch); matrices apply in file order | confirmed (file) | A type 0x14 entry (between two matrices, in perspective drawings) is not applied, with a warning. |
+| Argument 100: u16, count (u16), then 10-byte entries (type u16, data offset u16 at 6); type 0x8c is a matrix of six i32 (a, c, e, b, d, f; factors 16.16, offsets 1/1000 inch); matrices apply in file order | confirmed (file) | See the envelope row. |
+| Transformation type 0x14 (version 3) is an envelope: two u16, the box it maps from (four i16: left, top, right, bottom), the indexes of the corner points and the point count (five u16), then the points, clockwise from the bottom-left corner up the left side, three a cubic segment, the last closing on the first. Matrices before it apply first, then the envelope maps the box onto its outline, then the matrices after it | confirmed (file) for the layout and the shapes it bends in charts and drawings; the mapping between box and outline is assumed (ours blends the four sides) | Text and groups under an envelope keep their matrices only, with a warning. |
 | Version 3 group (`grp `) `lobj`: argument 100 places all the group's objects | confirmed (file) | Without it, grouped objects come out small and out of place. Version 4 groups have a `trfd` too, but their objects already carry their whole transform. |
-| Version 4 `trfd`: the same fixed-point matrix after the record type 8 | confirmed (file) | Several matrices compose. |
-| Inline fill (version 3): type u8 (0 none, 1 uniform, 2 linear fountain, 4 radial fountain), then a colour, or the angle (i16, tenths of a degree) and two colours | confirmed (file) for 0, 1 and 2; 4 assumed | Types 6, 7 and 10 are reported and left unfilled. |
+| Version 4 `trfd`: the same fixed-point matrix after the record type 8 | confirmed (file) | Several matrices compose, as in later versions. |
+| Inline fill (version 3): type u8 (0 none, 1 uniform, 2 linear fountain, 4 radial fountain, 6 PostScript texture, 7 two-colour pattern, 10 vector pattern), then a colour; or the angle (i16, tenths of a degree) and two colours; or (7) the tile id (u32, a `bmpf` id), tile width and height (u16), 7 bytes, front and back colours | confirmed (file) for 0, 1, 2 and 7; 4 assumed | Types 6 and 10 show a stand-in of grey stripes (the PostScript texture is a procedure named by number only; the vector pattern's `LIST vect` is not read yet). |
+| `bmpf` of version 3: rows padded to 2 bytes (a 16 x 16 tile in 32 bytes) | confirmed (file) | Later versions pad to 4. |
 | Inline outline (version 3): flags u8 (bit 0 = outlined), width u16 (1/1000 inch), stretch u16, angle u16 (tenths), colour, caps at 32, joins at 33, start and end arrowhead ids (u32 at 34 and 38) | confirmed (file) for flags, width, colour, caps, arrowheads; joins and angle assumed | |
 | Colour, version 3: model u8, four bytes. Model 1: CMYK in percent. Model 0: u16 index, u16 tint; 0 black at the tint, 1 white, other indexes colours of a numbered ink library | confirmed (file) | Library colours become spot inks named by number; their look comes from the file's thumbnail. |
 | Colour, version 4: model u16 then four u16 (model 1: CMYK in percent; model 0: index and tint) | confirmed (file) | Model 1 was read as a library colour before. |
@@ -173,7 +175,7 @@ show. Values are little-endian; lengths in thousandths of an inch.
 | Header: length, argument count, offset of the offsets table (u32 each; u16 before 6); no types table | confirmed (public spec) | We used to read a fourth header field. |
 | Each record: 8 unknown bytes (version 13+), type u16; type 0x08 is a matrix: 6 unknown bytes (version 6+) then six f64 `a c tx b d ty` | confirmed (public spec) | We had 4 + 2 (before version 13) and 8 + 2 + 2 (version 13+) bytes before the matrix. |
 | tx, ty are in coordinate units (1/254000 inch; 1/1000 inch before 6) | confirmed (public spec) | |
-| Several matrices in one `trfd` | assumed | Only the first is used, with a warning. |
+| Several matrices in one `trfd` apply one after the other (the second after the first) | confirmed (file: a version 5 chart a user sent, whose grouped labels sit in place only so; its version 4 copy agrees) | Before 2026-10-18 only the first was used. |
 
 ## `fild` fills (`fill` before version 7)
 

@@ -23,7 +23,7 @@ exceptions, shown disabled so the layout stays complete:
 
 ## Fills, colour and effects
 
-- PostScript fills (legacy; vector pattern fills are done).
+- PostScript fills (legacy): shown with a stand-in pattern; the procedures are named by number only. Vector pattern fills are done from version 7; version 3's (`LIST vect`) show the stand-in.
 
 ## File format
 
@@ -52,8 +52,7 @@ exceptions, shown disabled so the layout stays complete:
   version 12, and the `arrx` arrowheads of newer files (one version 21
   sample).
 - Still open in the reader: splines (0x26 seen only as connector lines, which
-  are read), PostScript (6) fills, perspective and envelopes of version
-  3 objects, version 3 fill types 6, 7 and 10, text of version 4, tabs,
+  are read), PostScript (6) fills, envelopes of version 3 text, version 3 fill types 6, 7 and 10, text of version 4, tabs,
   bullets and drop caps from `stlt` (tables skipped by size), the `ftil`
   fill transform, lenses and other effects, fonts embedded with
   MicroType Express compression. Layouts marked "assumed" in
