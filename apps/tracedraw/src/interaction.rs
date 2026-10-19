@@ -629,7 +629,17 @@ impl App {
         self.snap_mark.set(None);
         self.clear_live_guides();
         self.pointer_screen = response.ctx.pointer_latest_pos();
-        let hover = response.hover_pos();
+        // egui ends a drag when the right button of a right click goes up
+        // and then hovers nothing while the left one is held: the
+        // transform goes on with the latest pointer position.
+        let hover = response.hover_pos().or_else(|| {
+            let held = response.ctx.input(|i| i.pointer.primary_down());
+            if self.transforming() && held {
+                self.pointer_screen
+            } else {
+                None
+            }
+        });
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
         let Some(p) = pointer else {
