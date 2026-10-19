@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Document Properties: language, title, subject, author, copyright,
+  tags, notes and a rating list, applied on OK in one undo step, over a
+  report of the file, the document, its colour settings, objects and
+  points, text, bitmaps, styles, effects, fills, outlines, colour models
+  and symbols. PDF files carry the language.
 - A right click while dragging an object no longer drops the copy at
   once: the outline follows the pointer until the left button goes up.
 
