@@ -1845,3 +1845,40 @@ fn bspline_clicks_place_control_points_of_a_smooth_curve() {
     assert!(near(c.p0, pts[0]) && near(c.p3, pts[3]), "{c:?}");
     assert!(near(c.p1, pts[1]) && near(c.p2, pts[2]), "{c:?}");
 }
+
+/// With a real mouse the right button goes down and up in frames of its
+/// own while the left one is held; the move goes on after it.
+#[test]
+fn the_move_goes_on_after_a_right_click() {
+    let (ctx, mut app, id) = setup();
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let n = Modifiers::NONE;
+    let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, n);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], n);
+    frame(&ctx, &mut app, vec![button(from, true, PointerButton::Primary, n)], n);
+    let mut p = from;
+    for _ in 0..4 {
+        p += egui::vec2(20.0, 0.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+    }
+    frame(&ctx, &mut app, vec![right(p, true)], n);
+    p += egui::vec2(5.0, 0.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+    frame(&ctx, &mut app, vec![right(p, false)], n);
+    for _ in 0..4 {
+        p += egui::vec2(20.0, 10.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+    }
+    assert!(app.transforming(), "the move goes on");
+    frame(&ctx, &mut app, vec![button(p, false, PointerButton::Primary, n)], n);
+    frame(&ctx, &mut app, Vec::new(), n);
+    assert_eq!(shape_count(&app), 2);
+    assert!(close(bounds(&app, id).x0, 10.0), "the original stays");
+    let copy = app.selection.first().copied().expect("copy");
+    assert_ne!(copy, id);
+    let moved = app.view.to_page(p) - app.view.to_page(from);
+    let b = bounds(&app, copy);
+    assert!(close(b.x0, 10.0 + moved.x), "{b:?} {moved:?}");
+    assert!(close(b.y0, 10.0 + moved.y), "{b:?} {moved:?}");
+    assert!(!app.transforming());
+}

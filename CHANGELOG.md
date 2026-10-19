@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- A right click while dragging an object no longer drops the copy at
+  once: the outline follows the pointer until the left button goes up.
+
 ## 0.9.4 (2026-10-19)
 
 - Color Management Settings: Document and Default tabs, the drawing's
