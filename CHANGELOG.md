@@ -49,6 +49,19 @@ full, row-by-row status.
   OpenType features, a sample text and search, every face drawn in
   itself and grouped by family, details, and installing font files for
   TraceDraw.
+- Text docker laid out in Character, Paragraph and Frame sections with
+  the buttons that show it from a section on, Apply to default text and
+  the row boxes: style list, range kerning, text fill, character
+  background and outline rows, six alignments (no alignment and forced
+  justification added), line spacing in % of the character height,
+  points or % of the size, and the frame's background colour.
+- Glyphs docker: recent glyphs, font and range lists, a grid of the
+  font's glyphs with their alternates.
+- Text > Writing Tools is one dialog with Spell Checker, Grammar and
+  Thesaurus tabs; the grammar checker also flags "a"/"an" before the
+  wrong sound and sentences with no end mark.
+- Text > Custom Optional Hyphens: words hyphenated by hand break only
+  there, turned on for text typed, pasted or imported with them.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

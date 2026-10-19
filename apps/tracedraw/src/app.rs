@@ -1049,7 +1049,9 @@ pub struct App {
     pub crop_area: Option<Rect>,
     pub crop_drag: Option<crate::crop_tool::CropDrag>,
     pub transparency_default: crate::effects_ui::TransparencySettings,
-    pub glyph_filter: String,
+    /// The Glyphs docker's font and character range.
+    pub glyph_font: String,
+    pub glyph_range: usize,
     pub table_edit: Option<crate::table::TableEdit>,
     pub missing_fonts: Vec<String>,
     /// Thumbnails of recent drawings loaded for the Welcome Screen (none
@@ -1821,7 +1823,8 @@ impl App {
             crop_area: None,
             crop_drag: None,
             transparency_default: Default::default(),
-            glyph_filter: String::new(),
+            glyph_font: String::new(),
+            glyph_range: 0,
             table_edit: None,
             missing_fonts: Vec::new(),
             shaping_op: crate::ops::Shaping::Weld,
@@ -1986,6 +1989,7 @@ impl App {
     /// Settings that act on the editor directly (undo levels), applied
     /// after loading the preferences and when an options dialog closes.
     pub fn apply_runtime_settings(&mut self) {
+        crate::ui::writing_tools::install_custom_hyphens(self);
         let levels = self.settings.undo_levels.max(1);
         self.engine.set_max_history(levels);
         for slot in &mut self.docs {
@@ -3371,6 +3375,11 @@ impl App {
                     shapes: vec![te.shape],
                 });
                 self.selection.retain(|s| *s != te.shape);
+            } else if self.settings.hyphens_when_typing && !self.settings.custom_hyphens.is_empty()
+            {
+                // Custom optional hyphens break the lines of text typed
+                // with a defined word.
+                crate::ui::writing_tools::apply_custom_hyphens(self, &[te.shape]);
             }
         }
     }
@@ -3434,6 +3443,9 @@ impl App {
         }
         if let Err(e) = self.engine.run_batch("Paste", &cmds) {
             self.status = e.to_string();
+        }
+        if self.settings.hyphens_when_pasting && !self.settings.custom_hyphens.is_empty() {
+            crate::ui::writing_tools::apply_custom_hyphens(self, &ids);
         }
         self.select(ids);
     }
@@ -4704,6 +4716,15 @@ impl App {
     /// File > Import of `path`: the objects are added to the active
     /// layer and selected, as one undo step; Options > Global > File
     /// Formats may centre them in the view.
+    /// Imported text with a word that has custom optional hyphens gets
+    /// hyphenation (Text > Custom Optional Hyphens, "When pasting and
+    /// importing text").
+    fn hyphenate_imported(&mut self, ids: &[ShapeId]) {
+        if self.settings.hyphens_when_pasting && !self.settings.custom_hyphens.is_empty() {
+            crate::ui::writing_tools::apply_custom_hyphens(self, ids);
+        }
+    }
+
     pub fn import_path(&mut self, path: &std::path::Path) {
         let before = self.selection.clone();
         self.import_path_as_in_file(path);
@@ -4808,6 +4829,7 @@ impl App {
                 if let Err(e) = self.engine.run_batch("Import", &cmds) {
                     self.status = e.to_string();
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => {
@@ -4865,6 +4887,7 @@ impl App {
                 if let Err(e) = self.engine.run_batch("Import", &cmds) {
                     self.status = e.to_string();
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
@@ -4915,6 +4938,7 @@ impl App {
                 if !imported.warnings.is_empty() {
                     log::warn!("pdf import: {}", imported.warnings.join("; "));
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
@@ -4984,6 +5008,7 @@ impl App {
                 for w in &imported.warnings {
                     log::warn!("plt import: {w}");
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
@@ -5068,6 +5093,7 @@ impl App {
                 if !imported.warnings.is_empty() {
                     log::warn!("eps import: {}", imported.warnings.join("; "));
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
@@ -5100,6 +5126,7 @@ impl App {
                 if !imported.warnings.is_empty() {
                     log::warn!("metafile import: {}", imported.warnings.join("; "));
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
@@ -5130,6 +5157,7 @@ impl App {
                 if let Err(e) = self.engine.run_batch("Import", &cmds) {
                     self.status = e.to_string();
                 }
+                self.hyphenate_imported(&ids);
                 self.select(ids);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),

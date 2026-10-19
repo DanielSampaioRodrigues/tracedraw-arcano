@@ -1810,7 +1810,8 @@ impl<'a> Ctx<'a> {
         let align = match align.unwrap_or(0) {
             2 => TextAlign::Center,
             3 => TextAlign::Right,
-            4 | 5 => TextAlign::Justify,
+            4 => TextAlign::Justify,
+            5 => TextAlign::ForceJustify,
             _ => TextAlign::Left,
         };
         Some(ShapeKind::Text {

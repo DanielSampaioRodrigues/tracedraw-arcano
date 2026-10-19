@@ -1822,34 +1822,6 @@ impl App {
         self.apply_text_style();
     }
 
-    /// Replace the spans of a text object (Text docker edits).
-    pub fn set_text_spans(&mut self, id: ShapeId, spans: Vec<TextSpan>) {
-        let Some(s) = self.doc().find_shape(id).cloned() else {
-            return;
-        };
-        if let ShapeKind::Text {
-            origin,
-            frame,
-            align,
-            para,
-            on_path,
-            ..
-        } = s.kind
-        {
-            self.run(Command::SetShapeKind {
-                shape: id,
-                kind: ShapeKind::Text {
-                    spans,
-                    origin,
-                    frame,
-                    align,
-                    para,
-                    on_path,
-                },
-            });
-        }
-    }
-
     // ----- scripts -----------------------------------------------------------------------
 
     pub fn run_script_file(&mut self) {

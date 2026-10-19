@@ -73,6 +73,9 @@ pub fn install() {
                 end_char: l.end_char,
                 x: l.edges.first().copied().unwrap_or(0.0),
                 baseline: l.baseline,
+                ascent: l.ascent,
+                descent: l.descent,
+                edges: l.edges.clone(),
             })
             .collect()
     });
@@ -621,6 +624,8 @@ struct HyphenGlyph {
 /// Vertical metrics of a span's face at its size, mm.
 #[derive(Clone, Copy, Default)]
 struct Metrics {
+    /// The font size, mm.
+    size: f64,
     ascent: f64,
     descent: f64,
     line_height: f64,
@@ -1158,6 +1163,71 @@ impl FontSystem {
         None
     }
 
+    /// The characters `family`'s regular face draws, in code point order
+    /// (empty when the family is unknown). For the Glyphs docker.
+    pub fn char_coverage(&self, family: &str) -> Vec<char> {
+        let Some(id) = self.face_for(family, false, false) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return Vec::new();
+        };
+        let mut out: Vec<char> = Vec::new();
+        if let Some(cmap) = face.tables().cmap {
+            for sub in cmap.subtables {
+                if !sub.is_unicode() {
+                    continue;
+                }
+                sub.codepoints(|cp| {
+                    if let Some(c) = char::from_u32(cp) {
+                        if !c.is_control() && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
+                            out.push(c);
+                        }
+                    }
+                });
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// The OpenType features among `candidates` that draw `ch` with
+    /// another glyph in `family` (its alternates, for the Glyphs docker).
+    pub fn glyph_variants(&self, family: &str, ch: char, candidates: &[&str]) -> Vec<String> {
+        let Some(id) = self.face_for(family, false, false) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Some(hb) = rustybuzz::Face::from_slice(&data, index) else {
+            return Vec::new();
+        };
+        let shape = |features: &[rustybuzz::Feature]| -> Vec<u32> {
+            let mut buffer = rustybuzz::UnicodeBuffer::new();
+            buffer.push_str(&ch.to_string());
+            buffer.guess_segment_properties();
+            rustybuzz::shape(&hb, features, buffer)
+                .glyph_infos()
+                .iter()
+                .map(|g| g.glyph_id)
+                .collect()
+        };
+        let plain = shape(&[]);
+        candidates
+            .iter()
+            .filter(|tag| {
+                let t = rustybuzz::ttf_parser::Tag::from_bytes_lossy(tag.as_bytes());
+                shape(&[rustybuzz::Feature::new(t, 1, ..)]) != plain
+            })
+            .map(|t| t.to_string())
+            .collect()
+    }
+
     /// Sorted list of the family names available: those installed on
     /// this machine and those documents brought.
     pub fn families(&self) -> Vec<String> {
@@ -1451,6 +1521,7 @@ impl FontSystem {
         let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
             let s = span.size_pt * PT_MM;
             return Metrics {
+                size: s,
                 ascent: s * 0.8,
                 descent: s * 0.2,
                 line_height: s * 1.2,
@@ -1472,6 +1543,7 @@ impl FontSystem {
         let ul = face.underline_metrics();
         let st = face.strikeout_metrics();
         Metrics {
+            size: span.size_pt * PT_MM,
             ascent: asc,
             descent: desc,
             line_height: asc + desc + gap,
@@ -1918,7 +1990,7 @@ impl FontSystem {
                     // A drop cap takes the first glyph out of the first
                     // line and narrows the lines beside it.
                     let cap = glyphs.first().filter(|_| para.drop_cap_lines > 1).map(|g| {
-                        let step = m.line_height * para.leading_pct / 100.0;
+                        let step = para.line_step(m.line_height, m.size);
                         let n = para.drop_cap_lines as f64;
                         let (scale, _) = drop_cap_placement(&g.path, n, step, 0.0, m.ascent);
                         DropCap {
@@ -1992,7 +2064,7 @@ impl FontSystem {
 
         for (li, line) in lines.iter().enumerate() {
             let m = line.metrics;
-            let step = m.line_height * para.leading_pct / 100.0;
+            let step = para.line_step(m.line_height, m.size);
             // Paragraph spacing.
             let mut advance_y = if artistic {
                 if line.para == 0 && line.first_in_para {
@@ -2084,11 +2156,13 @@ impl FontSystem {
             let hyphen_w = line.hyphen.as_ref().map(|h| h.advance).unwrap_or(0.0);
             let total_w = content_w + hyphen_w;
             let (dx, space_extra) = match req.align {
-                TextAlign::Left => (0.0, 0.0),
+                TextAlign::Left | TextAlign::None => (0.0, 0.0),
                 TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, 0.0),
                 TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), 0.0),
-                TextAlign::Justify => {
-                    if line.last_in_para || n_spaces == 0 || !avail.is_finite() {
+                TextAlign::Justify | TextAlign::ForceJustify => {
+                    // Forced justification spreads the last line too.
+                    let last = line.last_in_para && req.align == TextAlign::Justify;
+                    if last || n_spaces == 0 || !avail.is_finite() {
                         (0.0, 0.0)
                     } else {
                         (0.0, (avail - total_w).max(0.0) / n_spaces as f64)
@@ -2279,6 +2353,7 @@ fn line_metrics(glyphs: &[Glyph], metrics: &[Metrics], fallback: Metrics) -> Met
         m.ascent = m.ascent.max(gm.ascent);
         m.descent = m.descent.max(gm.descent);
         m.line_height = m.line_height.max(gm.line_height);
+        m.size = m.size.max(gm.size);
     }
     m
 }
@@ -2661,6 +2736,7 @@ mod tests {
             underline: false,
             strikethrough: false,
             fill: None,
+            background: None,
             features: Vec::new(),
         }
     }
@@ -2959,6 +3035,120 @@ mod tests {
             on_path: None,
         });
         assert!((l.bounds.width() - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn forced_justification_spreads_the_last_line_too() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq");
+        let para = ParagraphStyle::default();
+        let lay = |align| {
+            f.layout(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: Some(Size::new(30.0, 100.0)),
+                align,
+                para: &para,
+                on_path: None,
+            })
+        };
+        let last_width = |l: &TextLayout| {
+            let line = l.lines.last().expect("lines");
+            line.edges.last().copied().unwrap_or(0.0) - line.edges.first().copied().unwrap_or(0.0)
+        };
+        let full = lay(TextAlign::Justify);
+        let forced = lay(TextAlign::ForceJustify);
+        assert!(full.lines.len() > 1);
+        assert!(last_width(&forced) > last_width(&full) + 1.0);
+        // No alignment lays out as left.
+        assert_eq!(
+            lay(TextAlign::None).baselines,
+            lay(TextAlign::Left).baselines
+        );
+    }
+
+    #[test]
+    fn line_spacing_in_points_and_in_percent_of_the_size() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one\ntwo");
+        let gap = |para: ParagraphStyle| {
+            let l = f.layout(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: Some(Size::new(100.0, 100.0)),
+                align: TextAlign::Left,
+                para: &para,
+                on_path: None,
+            });
+            l.lines[0].baseline - l.lines[1].baseline
+        };
+        let pts = gap(ParagraphStyle {
+            leading_unit: tracedraw_core::LeadingUnit::Points,
+            leading_pct: 36.0,
+            ..ParagraphStyle::default()
+        });
+        assert!((pts - 36.0 * PT_MM).abs() < 1e-6, "{pts}");
+        let size = s.size_pt * PT_MM;
+        let pct = gap(ParagraphStyle {
+            leading_unit: tracedraw_core::LeadingUnit::PercentPointSize,
+            leading_pct: 150.0,
+            ..ParagraphStyle::default()
+        });
+        assert!((pct - 1.5 * size).abs() < 1e-6, "{pct}");
+    }
+
+    #[test]
+    fn character_backgrounds_cover_their_characters() {
+        if !has_fonts() {
+            return;
+        }
+        install();
+        let mut a = span("ab");
+        a.background = Some(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            255, 255, 0,
+        )));
+        let b = span("cd");
+        let kind = tracedraw_core::ShapeKind::Text {
+            spans: vec![a, b],
+            origin: Point::new(10.0, 20.0),
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        let rects = tracedraw_core::document::text_backgrounds(&kind);
+        assert_eq!(rects.len(), 1);
+        let r = rects[0].0;
+        assert!((r.x0 - 10.0).abs() < 1e-6, "{r:?}");
+        assert!(r.y0 < 20.0 && r.y1 > 20.0, "{r:?}");
+        // The background stops where "cd" starts.
+        let whole = tracedraw_core::document::text_outline::lines(
+            &tracedraw_core::document::text_outline::TextRequest {
+                spans: match &kind {
+                    tracedraw_core::ShapeKind::Text { spans, .. } => spans,
+                    _ => unreachable!(),
+                },
+                frame: None,
+                align: TextAlign::Left,
+                para: &ParagraphStyle::default(),
+                on_path: None,
+            },
+        )
+        .expect("lines");
+        let end = whole[0].edges.last().copied().unwrap_or(0.0) + 10.0;
+        assert!(r.x1 < end - 0.5, "{r:?} {end}");
+    }
+
+    #[test]
+    fn custom_hyphens_come_before_the_patterns() {
+        hyphen::set_custom(vec![("zebracorn".into(), vec![3])]);
+        assert_eq!(hyphen::break_points("Zebracorn"), vec![3]);
+        hyphen::set_custom(Vec::new());
+        assert_ne!(hyphen::break_points("zebracorn"), vec![3]);
     }
 
     #[test]

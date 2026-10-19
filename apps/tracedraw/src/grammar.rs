@@ -21,6 +21,11 @@ pub enum Rule {
     UnbalancedQuotes,
     LongSentence,
     RepeatedPunctuation,
+    /// "a" before a vowel sound or "an" before a consonant (English).
+    ArticleAAn,
+    /// A sentence of several words that ends without a full stop, a
+    /// question or an exclamation mark.
+    MissingSentenceEnd,
 }
 
 impl Rule {
@@ -36,6 +41,8 @@ impl Rule {
             Rule::UnbalancedQuotes => "grammar.rule.unbalanced_quotes",
             Rule::LongSentence => "grammar.rule.long_sentence",
             Rule::RepeatedPunctuation => "grammar.rule.repeated_punctuation",
+            Rule::ArticleAAn => "grammar.rule.article_a_an",
+            Rule::MissingSentenceEnd => "grammar.rule.missing_sentence_end",
         }
     }
 }
@@ -61,14 +68,41 @@ pub struct Finding {
 pub struct Options {
     /// French typography puts a space before `; : ! ?`.
     pub space_before_high_punctuation: bool,
+    /// English rules (a and an).
+    pub english: bool,
 }
 
 impl Options {
     pub fn for_language(lang: &str) -> Self {
         Options {
             space_before_high_punctuation: lang.starts_with("fr"),
+            english: lang.is_empty() || lang.starts_with("en"),
         }
     }
+}
+
+/// Words starting with a vowel letter but a consonant sound, and the
+/// other way round, for the a/an rule.
+const VOWEL_LETTER_CONSONANT_SOUND: [&str; 8] =
+    ["one", "once", "uni", "use", "usu", "euro", "ewe", "ufo"];
+const CONSONANT_LETTER_VOWEL_SOUND: [&str; 5] = ["hour", "honest", "honor", "honour", "heir"];
+
+/// The article a word takes: "an" before a vowel sound.
+fn wants_an(word: &str) -> bool {
+    let w = word.to_lowercase();
+    if CONSONANT_LETTER_VOWEL_SOUND
+        .iter()
+        .any(|p| w.starts_with(p))
+    {
+        return true;
+    }
+    if VOWEL_LETTER_CONSONANT_SOUND
+        .iter()
+        .any(|p| w.starts_with(p))
+    {
+        return false;
+    }
+    w.chars().next().is_some_and(|c| "aeiou".contains(c))
 }
 
 const TERMINATORS: [char; 3] = ['.', '!', '?'];
@@ -408,6 +442,81 @@ pub fn check_text(text: &str, opts: Options) -> Vec<Finding> {
         }
     }
 
+    // A and an, before the next word.
+    if opts.english {
+        for pair in ws.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let art: String = chars[a.0..a.1].iter().collect();
+            let lower = art.to_lowercase();
+            if lower != "a" && lower != "an" {
+                continue;
+            }
+            let gap = &chars[a.1..b.0];
+            if gap.is_empty() || !gap.iter().all(|c| *c == ' ') {
+                continue;
+            }
+            let next: String = chars[b.0..b.1].iter().collect();
+            if !next.chars().next().is_some_and(char::is_alphabetic)
+                || next.chars().all(|c| c.is_uppercase())
+            {
+                continue;
+            }
+            let an = wants_an(&next);
+            if an == (lower == "an") {
+                continue;
+            }
+            let mut text = if an {
+                "an".to_string()
+            } else {
+                "a".to_string()
+            };
+            if art.starts_with(|c: char| c.is_uppercase()) {
+                text = text[..1].to_uppercase() + &text[1..];
+            }
+            out.push(Finding {
+                rule: Rule::ArticleAAn,
+                sentence: sentence(a.0),
+                fix: Some(Fix {
+                    start: a.0,
+                    end: a.1,
+                    text,
+                }),
+            });
+        }
+    }
+
+    // A paragraph's last sentence of three words or more with no end mark.
+    let mut start = 0;
+    for (i, c) in chars
+        .iter()
+        .enumerate()
+        .chain(std::iter::once((chars.len(), &'\n')))
+    {
+        if *c != '\n' {
+            continue;
+        }
+        let para: String = chars[start..i].iter().collect();
+        let trimmed = para.trim_end();
+        let words = trimmed.split_whitespace().count();
+        let last = trimmed.chars().last();
+        if words >= 3
+            && last.is_some_and(|l| l.is_alphanumeric())
+            && trimmed.chars().next().is_some_and(char::is_uppercase)
+        {
+            let end = start + trimmed.chars().count();
+            out.push(Finding {
+                rule: Rule::MissingSentenceEnd,
+                sentence: sentence(end.saturating_sub(1)),
+                fix: Some(Fix {
+                    start: end,
+                    end,
+                    text: ".".into(),
+                }),
+            });
+        }
+        start = i + 1;
+    }
+
     out.sort_by_key(|f| f.fix.as_ref().map(|x| x.start).unwrap_or(usize::MAX));
     out
 }
@@ -426,32 +535,6 @@ pub fn apply_fix(text: &str, fix: &Fix) -> String {
 /// Text of a text shape, spans joined.
 fn shape_text(spans: &[TextSpan]) -> String {
     spans.iter().map(|s| s.text.as_str()).collect()
-}
-
-/// Check the selected text objects, or every text object on the page when
-/// nothing is selected. Returns (shape, finding) pairs.
-pub fn check_document(app: &App, opts: Options) -> Vec<(ShapeId, Finding)> {
-    let mut shapes = app.text_shapes();
-    if shapes.is_empty() {
-        if let Ok(page) = app.doc().page(app.page) {
-            shapes = page
-                .layers
-                .iter()
-                .flat_map(|l| &l.shapes)
-                .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
-                .cloned()
-                .collect();
-        }
-    }
-    let mut out = Vec::new();
-    for s in shapes {
-        if let ShapeKind::Text { spans, .. } = &s.kind {
-            for f in check_text(&shape_text(spans), opts) {
-                out.push((s.id, f));
-            }
-        }
-    }
-    out
 }
 
 /// Apply `fix` to the shape's text through the command path. The span
@@ -654,5 +737,38 @@ mod tests {
                 },
             );
         }
+    }
+
+    #[test]
+    fn a_and_an_follow_the_next_sound_and_sentences_need_an_end() {
+        let en = Options::for_language("en");
+        let f = check_text("I ate a apple and an banana in an hour.", en);
+        let fixes: Vec<_> = f
+            .iter()
+            .filter(|x| x.rule == Rule::ArticleAAn)
+            .filter_map(|x| x.fix.clone())
+            .collect();
+        assert_eq!(fixes.len(), 2, "{f:?}");
+        assert_eq!(fixes[0].text, "an");
+        assert_eq!(fixes[1].text, "a");
+        // "a one" and "an hour" are right; other languages are not checked.
+        assert!(!check_text("It is a one off, an hour long.", en)
+            .iter()
+            .any(|x| x.rule == Rule::ArticleAAn));
+        assert!(!check_text("Vi a apple.", Options::for_language("pt"))
+            .iter()
+            .any(|x| x.rule == Rule::ArticleAAn));
+        let f = check_text("This sentence has no end", en);
+        let end = f
+            .iter()
+            .find(|x| x.rule == Rule::MissingSentenceEnd)
+            .expect("missing end");
+        assert_eq!(
+            apply_fix("This sentence has no end", end.fix.as_ref().expect("fix")),
+            "This sentence has no end."
+        );
+        assert!(!check_text("Two words", en)
+            .iter()
+            .any(|x| x.rule == Rule::MissingSentenceEnd));
     }
 }

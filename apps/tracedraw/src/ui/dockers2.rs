@@ -35,7 +35,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Shaping => crate::ui::shaping_docker::shaping(app, ui),
         DockerTab::StepAndRepeat => step_and_repeat(app, ui),
         DockerTab::Text => crate::ui::text_docker::text_docker(app, ui),
-        DockerTab::Glyphs => glyphs(app, ui),
+        DockerTab::Glyphs => crate::ui::glyphs_docker::glyphs(app, ui),
         DockerTab::Color => crate::ui::color_docker::color(app, ui),
         DockerTab::ColorStyles => color_styles(app, ui),
         DockerTab::ObjectStyles => object_styles(app, ui),
@@ -116,63 +116,6 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         .clicked()
     {
         app.step_and_repeat_apply();
-    }
-}
-
-fn glyphs(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        ui.label(tr("docker.font"));
-        crate::ui::font_list::text_font_list(app, ui, "glyphs_font", 180.0);
-    });
-    ui.horizontal(|ui| {
-        ui.label(tr("docker.filter"));
-        ui.text_edit_singleline(&mut app.glyph_filter);
-    });
-    let blocks: [(&str, u32, u32); 8] = [
-        ("Basic Latin", 0x20, 0x7E),
-        ("Latin-1", 0xA0, 0xFF),
-        ("Latin Extended", 0x100, 0x17F),
-        ("Greek", 0x391, 0x3C9),
-        ("Cyrillic", 0x410, 0x44F),
-        ("Punctuation", 0x2010, 0x205E),
-        ("Currency", 0x20A0, 0x20BF),
-        ("Arrows and symbols", 0x2190, 0x21FF),
-    ];
-    let filter = app.glyph_filter.to_lowercase();
-    let mut insert: Option<char> = None;
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for (name, from, to) in blocks {
-            if !filter.is_empty() && !name.to_lowercase().contains(&filter) {
-                continue;
-            }
-            ui.label(egui::RichText::new(name).strong().size(11.0));
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(1.0, 1.0);
-                for cp in from..=to {
-                    let Some(ch) = char::from_u32(cp) else {
-                        continue;
-                    };
-                    if ch.is_control() {
-                        continue;
-                    }
-                    let b = egui::Button::new(egui::RichText::new(ch.to_string()).size(14.0))
-                        .min_size(egui::vec2(22.0, 22.0));
-                    if ui.add(b).on_hover_text(format!("U+{cp:04X}")).clicked() {
-                        insert = Some(ch);
-                    }
-                }
-            });
-        }
-    });
-    if let Some(ch) = insert {
-        if app.text_edit.is_some() {
-            app.insert_text(&ch.to_string());
-        } else {
-            let c = app.page_rect().center();
-            app.start_text(c, None);
-            app.text_insert(&ch.to_string());
-            app.finish_text();
-        }
     }
 }
 

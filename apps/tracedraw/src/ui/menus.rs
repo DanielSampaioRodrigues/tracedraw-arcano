@@ -2814,15 +2814,21 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             app.set_edit_spans(spans);
         }
     }
+    if item(ui, "menu.text.custom_hyphens", "", true) {
+        app.dialog = Dialog::CustomHyphens(Default::default());
+    }
     sub(ui, "menu.text.writing_tools", |ui| {
         if item(ui, "menu.text.spell_check", "Ctrl+F12", true) {
-            app.dialog = Dialog::SpellCheck(Default::default());
+            app.dialog =
+                Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(0));
         }
         if item(ui, "menu.text.grammatik", "", true) {
-            app.dialog = Dialog::Grammar(Default::default());
+            app.dialog =
+                Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(1));
         }
         if item(ui, "menu.text.thesaurus", "", true) {
-            app.dialog = Dialog::Thesaurus(Default::default());
+            app.dialog =
+                Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(2));
         }
         if item(ui, "menu.text.autocorrect", "", true) {
             app.dialog = Dialog::Autocorrect(Default::default());
