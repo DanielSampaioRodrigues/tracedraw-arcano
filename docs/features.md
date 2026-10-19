@@ -38,7 +38,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Capability | Status |
 |---|---|
 | Rectangle, 3-point rectangle, page frame on double-click (Shift: a frame around the selection); Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
-| Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties panel, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
+| Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling, off by default (property bar, Properties panel, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
 | Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes (71 in five sets: basic shapes, arrows, flowchart, banners, callouts; picked from a grid of outlines), Action Lines | works (see `behavior/shape-tools.md`) |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve; lines from an end node of the selected curve continue it (join, close, merge subpaths); Freehand smoothing; outline, arrowheads and Close Curve on the property bar; Pen Preview mode (dashed next segment to the pointer) and Auto add/delete of nodes, placed segments drawn in the new outline's colour | works (see `behavior/curve-tools.md`) |

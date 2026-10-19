@@ -407,7 +407,7 @@ fn written_files_survive_mutation() {
 }
 
 #[test]
-fn corners_one_radius_cannot_hold_are_written_as_curves() {
+fn corners_one_radius_cannot_hold_are_written_as_curves_and_stretched_fixed_ones_as_rectangles() {
     use tracedraw_core::{CornerKind, Corners};
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
@@ -446,14 +446,26 @@ fn corners_one_radius_cannot_hold_are_written_as_curves() {
         }
         assert!(matches!(read[0].kind, ShapeKind::Path { closed: true, .. }));
         assert!(matches!(read[1].kind, ShapeKind::Path { closed: true, .. }));
-        assert!(matches!(read[2].kind, ShapeKind::Path { closed: true, .. }));
         if v < 15 {
+            // A fixed radius on a stretched rectangle: the stretch goes into
+            // the size, the corners stay 3 mm circles.
+            assert!(
+                matches!(read[2].kind, ShapeKind::Rect { radius, .. } if (radius - 3.0).abs() < 0.01),
+                "{v}: {:?}",
+                read[2].kind
+            );
+            let page = read[2].page_corners().expect("corners");
+            assert!(page.radii.iter().all(|r| (r - 3.0).abs() < 0.01), "{v}");
+            let b = read[2].bounds();
+            assert!((b.width() - 80.0).abs() < 0.01 && (b.height() - 20.0).abs() < 0.01);
             // A fixed radius on an evenly scaled rectangle is still a
             // rectangle.
             assert!(
                 matches!(read[3].kind, ShapeKind::Rect { radius, .. } if (radius - 1.5).abs() < 0.01),
                 "{v}"
             );
+        } else {
+            assert!(matches!(read[2].kind, ShapeKind::Path { closed: true, .. }));
         }
     }
 }

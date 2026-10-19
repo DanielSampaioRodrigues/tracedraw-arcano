@@ -30,7 +30,7 @@ whatever tool is active.
 
 - New rectangles take the corners set on the property bar (or in Tools >
   Options > Toolbox > Rectangle tool) while nothing is selected; default
-  square, round, relative scaling on.
+  square, round, relative scaling off (the corners keep their size).
 - Corner style: Round (a quarter circle), Scalloped (a quarter circle
   centred on the corner, cutting inwards) or Chamfered (a straight cut).
   The size is the radius, or for a chamfer how far the cut starts from
@@ -39,13 +39,33 @@ whatever tool is active.
   shows them as two columns, left corners then right ones). With Edit
   Corners Together (the lock, on by default) a size typed in one field
   goes to all four. A corner is at most half the shorter side.
-- Relative Corner Scaling (on by default): the corners scale, or
-  stretch, with the rectangle. Off: they keep their size on the page
-  when the rectangle is resized, and stay circular when it is stretched.
+- Relative Corner Scaling (off by default for new rectangles): off, the
+  corners keep their size on the page when the rectangle is resized, and
+  stay circular when it is stretched in one direction only. On, they
+  scale with the rectangle; a stretch in one direction stretches them
+  too, so round corners become elliptical.
   Turning it on or off keeps the corners as they look. The size is
-  measured against the rectangle's own scaling: scaling a group scales
-  its rectangles' corners, and ungrouping keeps them as they look.
-  Checked by `pick_drag_tests::rounded_corners_keep_their_size_when_relative_scaling_is_off`.
+  measured against the rectangle's own scaling: scaling a group evenly
+  grows its rectangles' corners (they still keep that size afterwards),
+  stretching a group stretches them, and ungrouping keeps them as they
+  look.
+  Drawings saved before this default changed keep what they store: a
+  rectangle without the setting in the file scales its corners as it
+  did. Preferences saved by older versions, which could not store the
+  choice, start with it off once.
+  Checked by `pick_drag_tests::rounded_corners_keep_their_size_when_relative_scaling_is_off`,
+  `pick_drag_tests::new_rounded_rectangles_keep_circular_corners_when_stretched`
+  and `settings::tests::rectangle_corners_keep_their_size_by_default_and_after_upgrading`.
+- Saving: corners that keep their size are written as one plain radius
+  where the format has one. `.cdr` versions with rectangle objects
+  (before 15) get a stretched rectangle with one round radius as a
+  rectangle of its page size and that radius (the stretch moves out of
+  its matrix), unless the stretch also widens an outline that scales
+  with the object or the axes are skewed; then, and in later versions,
+  the outline goes out as a curve. SVG and PDF write every rectangle as
+  the path it draws, so the corners there are exactly as shown
+  (`write::tests::corners_one_radius_cannot_hold_are_written_as_curves_and_stretched_fixed_ones_as_rectangles`,
+  `tests::corners_that_keep_their_size_survive_native_svg_and_pdf`).
 - The sizes on the bar are page sizes in the ruler unit; with relative
   scaling on a stretched rectangle shows the smaller of its two scales.
 - Double-clicking the tool button draws a page frame: a rectangle the
@@ -154,5 +174,8 @@ terminator's ends, a rounded callout) keep their size in long boxes.
 - Given fixed 4 mm corners on a rectangle scaled 3 x 2, then the corners
   still cut (4 - pi) 16 mm2
   (`document::tests::fixed_corners_keep_their_size_when_scaled`).
+- Given a new rectangle with 5 mm corners stretched to twice its width
+  with a side handle, then its corners are still 5 mm circles; with
+  relative scaling turned on and the height doubled, they grow.
 - `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`,
   `ui::propbar::tests::the_rectangle_tool_draws_with_the_default_corners`.

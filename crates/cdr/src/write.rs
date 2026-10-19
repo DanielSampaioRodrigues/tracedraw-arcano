@@ -3411,8 +3411,8 @@ impl<'a> Writer<'a> {
             ShapeKind::Rect { .. } if plain.is_some() => {
                 // Files draw rectangles from their top left corner down
                 // (a negative height), which sets the way corners turn.
-                let (rect, radius) = plain.unwrap_or_default();
-                let t = s.transform * Affine::translate((rect.x0, rect.y1));
+                let (rect, radius, place) = plain.unwrap_or((Rect::ZERO, 0.0, s.transform));
+                let t = place * Affine::translate((rect.x0, rect.y1));
                 let r = units(radius);
                 let mut c = Buf::default();
                 c.i32(units(rect.width())).i32(-units(rect.height())).i32(r);

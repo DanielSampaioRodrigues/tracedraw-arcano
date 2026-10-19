@@ -2229,6 +2229,60 @@ fn rounded_corners_keep_their_size_when_relative_scaling_is_off() {
 }
 
 #[test]
+fn new_rounded_rectangles_keep_circular_corners_when_stretched() {
+    use crate::ui::propbar::{edit_corners, CornerEdit};
+    use tracedraw_core::geometry::Shape as _;
+    let (ctx, mut app, _) = setup();
+    // Relative corner scaling is off for new rectangles.
+    assert!(app.rect_corners.fixed);
+    app.select(Vec::new());
+    edit_corners(&mut app, CornerEdit::Size(0, 5.0));
+    app.set_tool(Tool::Rectangle);
+    app.create_box_shape(Point::new(100.0, 100.0), Point::new(150.0, 130.0));
+    let id = app.selected_shapes()[0].id;
+    app.set_tool(Tool::Pick);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Only twice as wide, with the side handle.
+    let stretch = |app: &mut App, which: Handle, fx: f64, fy: f64| {
+        let from = handle(app, which);
+        let b = bounds(app, id);
+        let target = Point::new(b.x0 + fx * b.width(), b.y0 + fy * b.height());
+        let mut to = app.view.to_screen(target);
+        match which {
+            Handle::E => to.y = from.y,
+            _ => to.x = from.x,
+        }
+        drag(&ctx, app, from, to, Modifiers::NONE, Vec::new());
+    };
+    stretch(&mut app, Handle::E, 2.0, 1.0);
+    let s = app.doc().find_shape(id).expect("rect").clone();
+    let c = s.page_corners().expect("corners");
+    assert!(c.fixed && c.radii.iter().all(|r| close(*r, 5.0)), "{c:?}");
+    // Circles of 5 mm: the area the four corners cut off is (4 - pi) r^2.
+    let path = s.page_path();
+    let b = path.bounding_box();
+    assert!(b.width() > 90.0, "{b:?}");
+    let cut = b.width() * b.height() - path.area().abs();
+    let circles = (4.0 - std::f64::consts::PI) * 25.0;
+    assert!((cut - circles).abs() < 0.2, "{cut} vs {circles}");
+    // Relative scaling turned on: the corners grow with the rectangle.
+    app.select(vec![id]);
+    edit_corners(&mut app, CornerEdit::Scaling(true));
+    let s = app.doc().find_shape(id).expect("rect").clone();
+    let c = s.page_corners().expect("corners");
+    assert!(!c.fixed && close(c.radii[0], 5.0), "{c:?}");
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    stretch(&mut app, Handle::N, 1.0, 2.0);
+    let r = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.page_corners())
+        .expect("corners")
+        .radii[0];
+    assert!(r > 8.0, "relative: {r}");
+}
+
+#[test]
 fn the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off() {
     use crate::ui::cursors::CurveMark;
     let (ctx, mut app, _) = setup();

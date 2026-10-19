@@ -56,7 +56,8 @@ zoom out or context menu; mouse wheel action), Curve tools (Freehand
 smoothing, 0 to 100, 50 by default; Join and close within, 1 to 50
 screen pixels, 5 by default; see `curve-tools.md`), Rectangle (Rectangle
 corners: style, the four sizes, Edit corners together; Scale corners:
-Relative corner scaling; see `shape-tools.md`),
+Relative corner scaling, off by default so that new rectangles keep
+their corner size when resized; see `shape-tools.md`),
 Ellipse (ellipse, pie or arc and its angles), Polygon (points, sharpness),
 Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 (rows, columns), Eraser (thickness, round or square nib).

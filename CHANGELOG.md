@@ -6,6 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Rectangles: new rectangles keep their corner size when resized
+  (Relative corner scaling is off by default on the property bar and in
+  Options > Toolbox > Rectangle tool), so a rounded rectangle stretched in
+  one direction keeps circular corners of the same radius. Turn the
+  setting on to have corners scale with the rectangle. Drawings saved
+  earlier open unchanged; preferences from older versions start with it
+  off once. Scaling a group evenly keeps such corners fixed (grown by the
+  factor) instead of turning a stretched rectangle into a curve, and
+  `.cdr` versions with rectangle objects save a stretched one as a
+  rectangle with its radius.
 - Pen: Preview mode (on by default, on the property bar and in Options >
   Tools > Curve tools) shows the next segment dashed in blue from the last
   node to the pointer before the click, curved by the node's handle. Auto

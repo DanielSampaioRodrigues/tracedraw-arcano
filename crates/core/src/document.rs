@@ -254,6 +254,17 @@ impl Corners {
         }
     }
 
+    /// The corners a new rectangle starts with: square, round once given a
+    /// size, and keeping that size when the rectangle is resized (Relative
+    /// corner scaling off). Drawings read from files keep what they store:
+    /// a missing `fixed` there still means scaling corners.
+    pub fn tool_default() -> Corners {
+        Corners {
+            fixed: true,
+            ..Corners::default()
+        }
+    }
+
     /// Every corner the same size.
     pub fn is_uniform(&self) -> bool {
         self.radii.iter().all(|r| (r - self.radii[0]).abs() < 1e-9)
@@ -1989,9 +2000,10 @@ impl Shape {
 
     /// Put `parent` in front of the shape's own transform (ungrouping,
     /// flattening a group for a file) and keep its look. Fixed corners
-    /// measure against the rectangle's own transform, so when `parent`
-    /// scales them they first become scaling corners of the same size, or a
-    /// curve when the rectangle's axes scale differently.
+    /// measure against the rectangle's own transform: a `parent` that
+    /// scales evenly grows them by its factor and they stay fixed; one that
+    /// stretches turns them into scaling corners of the same size, or a
+    /// curve when the rectangle's axes already scale differently.
     pub fn absorb(&mut self, parent: Affine) {
         let next = parent * self.transform;
         if let ShapeKind::Rect {
@@ -2003,7 +2015,16 @@ impl Shape {
             let (sx, sy) = axis_scale(self.transform);
             let (nx, ny) = axis_scale(next);
             let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
-            if c.fixed && !(same(sx, nx) && same(sy, ny)) {
+            // A parent that scales evenly (turning or mirroring as it
+            // likes) keeps fixed corners fixed, grown by its factor.
+            let [a, b, pc, pd, _, _] = parent.as_coeffs();
+            let (pa, pb) = (a.hypot(b), pc.hypot(pd));
+            let even = pa > 1e-9 && same(pa, pb) && (a * pc + b * pd).abs() <= 1e-9 * pa * pb;
+            if c.fixed && !(same(sx, nx) && same(sy, ny)) && even {
+                let mut grown = *c;
+                grown.radii = c.radii.map(|r| r * pa);
+                self.kind = ShapeKind::rect_with_corners(*rect, grown);
+            } else if c.fixed && !(same(sx, nx) && same(sy, ny)) {
                 self.kind = if same(sx, sy) && sx > 1e-9 {
                     let rect = rect.abs();
                     let limit = (rect.width() * sx).min(rect.height() * sy) / 2.0;
@@ -2028,10 +2049,15 @@ impl Shape {
         self.transform = next;
     }
 
-    /// A rectangle that one round radius in its own space describes (what
-    /// formats with a single radius store): the rectangle and the radius.
-    /// `None` for other kinds and for corners that need a path.
-    pub fn plain_rect(&self) -> Option<(Rect, f64)> {
+    /// A rectangle that one round radius describes (what formats with a
+    /// single radius store): the rectangle, the radius in its space and the
+    /// transform that places it, usually the shape's own. A stretched
+    /// rectangle whose corners keep their size has the stretch moved into
+    /// the rectangle's size, so that its corners stay circles of their page
+    /// radius; not when the stretch also widens a scaling outline or the
+    /// axes are skewed. `None` for other kinds and for corners that need a
+    /// path.
+    pub fn plain_rect(&self) -> Option<(Rect, f64, Affine)> {
         let ShapeKind::Rect {
             rect,
             radius,
@@ -2040,24 +2066,41 @@ impl Shape {
         else {
             return None;
         };
+        let t = self.transform;
         let Some(c) = corners else {
-            return Some((*rect, *radius));
+            return Some((*rect, *radius, t));
         };
         if c.is_square() {
-            return Some((*rect, 0.0));
+            return Some((*rect, 0.0, t));
         }
         if c.kind != CornerKind::Round || !c.is_uniform() {
             return None;
         }
         if !c.fixed {
-            return Some((*rect, c.radii[0]));
+            return Some((*rect, c.radii[0], t));
         }
-        let (sx, sy) = axis_scale(self.transform);
-        if sx < 1e-9 || (sx - sy).abs() > 1e-9 * sx.max(sy) {
+        let (sx, sy) = axis_scale(t);
+        if sx < 1e-9 || sy < 1e-9 {
             return None;
         }
+        let r = c.radii[0];
+        let r = if r.is_finite() { r.max(0.0) } else { 0.0 };
         let limit = (rect.width().abs() * sx).min(rect.height().abs() * sy) / 2.0;
-        Some((*rect, c.radii[0].min(limit) / sx))
+        if (sx - sy).abs() <= 1e-9 * sx.max(sy) {
+            return Some((*rect, r.min(limit) / sx, t));
+        }
+        let [a, b, cc, d, _, _] = t.as_coeffs();
+        let skewed = (a * cc + b * d).abs() > 1e-9 * sx * sy;
+        let widens_outline = self.stroke.as_ref().is_some_and(|s| s.scale_with_object);
+        if skewed || widens_outline {
+            return None;
+        }
+        let page = Rect::new(rect.x0 * sx, rect.y0 * sy, rect.x1 * sx, rect.y1 * sy);
+        Some((
+            page,
+            r.min(limit),
+            t * Affine::scale_non_uniform(1.0 / sx, 1.0 / sy),
+        ))
     }
 
     /// Outline of the shape in local coordinates. Text and groups return an
@@ -4495,14 +4538,34 @@ mod tests {
         let a = area(&s);
         assert!((a - (60.0 * 20.0 - (4.0 - pi) * r * r)).abs() < 0.05, "{a}");
         assert_eq!(s.page_corners().unwrap().radii, [r; 4]);
-        assert_eq!(s.plain_rect(), None);
+        // Formats with one radius get the stretch moved into the size, so
+        // the corners stay circles of 4 mm.
+        let (rect, radius, place) = s.plain_rect().expect("one radius");
+        assert_eq!(rect, Rect::new(0.0, 0.0, 60.0, 20.0));
+        assert_eq!(radius, r);
+        let same_place = place * Point::new(60.0, 20.0) - s.transform * Point::new(20.0, 10.0);
+        assert!(same_place.hypot() < 1e-9, "{place:?}");
+        assert_eq!(axis_scale(place), (1.0, 1.0));
+        // Not when that would thin a scaling outline, nor on skewed axes.
+        let mut outlined = s.clone();
+        outlined.stroke = Some(crate::style::Stroke {
+            scale_with_object: true,
+            ..Default::default()
+        });
+        assert_eq!(outlined.plain_rect(), None);
+        let mut skewed = s.clone();
+        skewed.transform = Affine::new([3.0, 0.0, 1.0, 2.0, 0.0, 0.0]);
+        assert_eq!(skewed.plain_rect(), None);
         // Scaling corners stretch with the object.
         let mut s = rect_shape(20.0, 10.0, Corners::uniform(r, CornerKind::Round));
         s.transform = Affine::scale_non_uniform(3.0, 2.0);
         let a = area(&s);
         assert!((a - (1200.0 - 6.0 * (4.0 - pi) * r * r)).abs() < 0.1, "{a}");
         assert_eq!(s.page_corners().unwrap().radii, [2.0 * r; 4]);
-        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), r)));
+        assert_eq!(
+            s.plain_rect(),
+            Some((Rect::new(0.0, 0.0, 20.0, 10.0), r, s.transform))
+        );
     }
 
     #[test]
@@ -4516,7 +4579,10 @@ mod tests {
         assert_eq!(kind.rect_corners().unwrap().1.radii, [3.0; 4]);
         s.kind = kind;
         assert_eq!(s.page_corners().unwrap().radii, [6.0; 4]);
-        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), 3.0)));
+        assert_eq!(
+            s.plain_rect(),
+            Some((Rect::new(0.0, 0.0, 20.0, 10.0), 3.0, s.transform))
+        );
         // Fixed corners are stored as page sizes, limited by the page box.
         let mut c = Corners::uniform(50.0, CornerKind::Scallop);
         c.fixed = true;
@@ -4526,7 +4592,10 @@ mod tests {
         c.kind = CornerKind::Round;
         c.radii = [4.0; 4];
         s.kind = s.with_page_corners(c).unwrap();
-        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), 2.0)));
+        assert_eq!(
+            s.plain_rect(),
+            Some((Rect::new(0.0, 0.0, 20.0, 10.0), 2.0, s.transform))
+        );
         // Other kinds have no corners.
         let e = Shape::new(
             ShapeId(2),
@@ -4617,15 +4686,33 @@ mod tests {
             );
             s
         };
-        // Evenly scaled rectangle: the same corners, now scaling with it.
-        for parent in [Affine::scale(2.0), Affine::scale_non_uniform(2.0, 1.0)] {
-            let s = check(Affine::IDENTITY, parent);
-            assert!(
-                matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if !k.fixed && k.kind == CornerKind::Chamfer && k.radii == [3.0; 4])
-            );
+        // Stretched by the parent: the same corners, now scaling with it.
+        let s = check(Affine::IDENTITY, Affine::scale_non_uniform(2.0, 1.0));
+        assert!(
+            matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if !k.fixed && k.kind == CornerKind::Chamfer && k.radii == [3.0; 4])
+        );
+        // Scaled evenly by the parent: still fixed, grown by its factor,
+        // also when the rectangle itself is stretched (no curve).
+        for own in [Affine::IDENTITY, Affine::scale_non_uniform(2.0, 1.0)] {
+            for parent in [
+                Affine::scale(2.0),
+                Affine::rotate(0.7) * Affine::scale(2.0),
+                Affine::FLIP_X * Affine::scale(2.0),
+            ] {
+                let s = check(own, parent);
+                assert!(
+                    matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if k.fixed && k.kind == CornerKind::Chamfer && k.radii.iter().all(|r| (r - 6.0).abs() < 1e-9)),
+                    "{:?}",
+                    s.kind
+                );
+            }
         }
-        // A stretched rectangle: its outline as a curve.
-        let s = check(Affine::scale_non_uniform(2.0, 1.0), Affine::scale(2.0));
+        // A stretched rectangle stretched again the other way: its outline
+        // as a curve.
+        let s = check(
+            Affine::scale_non_uniform(2.0, 1.0),
+            Affine::scale_non_uniform(1.0, 3.0),
+        );
         assert!(matches!(s.kind, ShapeKind::Path { closed: true, .. }));
         // Moving and turning change nothing.
         let s = check(

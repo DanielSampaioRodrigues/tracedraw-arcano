@@ -1746,7 +1746,7 @@ impl App {
             star_complex: false,
             complex_points: 9,
             complex_sharpness: 2,
-            rect_corners: tracedraw_core::Corners::default(),
+            rect_corners: tracedraw_core::Corners::tool_default(),
             corners_together: true,
             rect_corner_selected: None,
             marquee_selection: None,

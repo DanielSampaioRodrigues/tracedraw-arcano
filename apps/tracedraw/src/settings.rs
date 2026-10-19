@@ -361,7 +361,7 @@ fn default_desktop() -> [u8; 3] {
 }
 
 /// How many one-time upgrades `Settings::upgrade` knows.
-const UPGRADES: u32 = 1;
+const UPGRADES: u32 = 2;
 
 fn default_true() -> bool {
     true
@@ -838,7 +838,7 @@ impl Default for ToolPrefs {
             star_complex: false,
             complex_points: 9,
             complex_sharpness: 2,
-            rect_corners: tracedraw_core::Corners::default(),
+            rect_corners: tracedraw_core::Corners::tool_default(),
             corners_together: true,
             ellipse_arc: None,
             spiral_revolutions: 4,
@@ -1220,6 +1220,12 @@ impl Settings {
         if self.upgrades < 1 {
             self.treat_all_filled = true;
         }
+        // Older versions had no way to save corners that keep their size
+        // as the tool's default (scaling corners were the only default and
+        // were not written down): new rectangles now keep their corners.
+        if self.upgrades < 2 {
+            self.tools.rect_corners.fixed = true;
+        }
         self.upgrades = self.upgrades.max(UPGRADES);
         self.migrate_ai();
         self
@@ -1469,6 +1475,30 @@ mod tests {
         assert!(!again.upgrade().treat_all_filled);
         // New preferences start up to date.
         assert_eq!(Settings::default().upgrades, UPGRADES);
+    }
+
+    #[test]
+    fn rectangle_corners_keep_their_size_by_default_and_after_upgrading() {
+        // A first start: new rectangles keep their corners when resized.
+        assert!(Settings::default().tools.rect_corners.fixed);
+        // Saved by an older version, which never wrote the value down.
+        let old: Settings = serde_json::from_str(
+            r#"{"upgrades": 1, "tools": {"rect_corners": {"radii": [2.0, 2.0, 2.0, 2.0], "kind": "round"}}}"#,
+        )
+        .expect("old preferences");
+        assert!(!old.tools.rect_corners.fixed);
+        let s = old.upgrade();
+        assert!(s.tools.rect_corners.fixed);
+        assert_eq!(s.tools.rect_corners.radii, [2.0; 4]);
+        // Relative scaling turned on afterwards stays on.
+        let mut s = s;
+        s.tools.rect_corners.fixed = false;
+        let saved = serde_json::to_string(&s).expect("saved");
+        let again: Settings = serde_json::from_str(&saved).expect("read back");
+        assert!(!again.upgrade().tools.rect_corners.fixed);
+        // A file with no tool settings at all starts from the defaults.
+        let bare: Settings = serde_json::from_str(r#"{"language":"en"}"#).expect("bare");
+        assert!(bare.upgrade().tools.rect_corners.fixed);
     }
 
     use super::*;

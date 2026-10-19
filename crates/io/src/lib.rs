@@ -289,6 +289,45 @@ mod tests {
     }
 
     #[test]
+    fn corners_that_keep_their_size_survive_native_svg_and_pdf() {
+        use tracedraw_core::geometry::{Affine, Shape as _};
+        use tracedraw_core::{CornerKind, Corners};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut c = Corners::uniform(5.0, CornerKind::Round);
+        c.fixed = true;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 50.0, 30.0), c),
+        );
+        // Stretched to 100 x 30 mm: the corners stay 5 mm circles.
+        s.transform = Affine::translate((20.0, 20.0)) * Affine::scale_non_uniform(2.0, 1.0);
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = None;
+        let area = s.page_path().area().abs();
+        let circles = 100.0 * 30.0 - (4.0 - std::f64::consts::PI) * 25.0;
+        assert!((area - circles).abs() < 0.05, "{area}");
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        // Native: the flag is written and read back.
+        let json = doc.to_json().unwrap();
+        assert!(json.contains("\"fixed\": true"), "{json}");
+        assert_eq!(Document::from_json(&json).unwrap(), doc);
+        // SVG and PDF draw the outline the rectangle shows.
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let svg = svg_import::parse(&svg::page_to_svg(&doc, 0), &mut ids).expect("svg");
+        let pdf = pdf_import::to_document(
+            pdf_import::parse(&pdf::document_to_pdf(&doc), &mut ids).expect("pdf"),
+            "t",
+        );
+        let pdf_shapes: Vec<Shape> = pdf.all_layers().flat_map(|l| l.shapes.clone()).collect();
+        for (what, shapes) in [("svg", svg.shapes), ("pdf", pdf_shapes)] {
+            let got: f64 = shapes.iter().map(|s| s.page_path().area().abs()).sum();
+            assert!((got - area).abs() < 1.0, "{what}: {got} vs {area}");
+        }
+    }
+
+    #[test]
     fn custom_arrowhead_round_trips_through_the_native_format() {
         let mut doc = Document::default();
         let layer = doc.pages[0].layers[0].id;
