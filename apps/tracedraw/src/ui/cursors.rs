@@ -40,6 +40,12 @@ pub enum ToolCursor {
     },
     /// The Shape tool: a solid arrow with what is under it.
     ShapeArrow(ShapeMark),
+    /// Moving objects with the Pick tool: the arrow with a dotted box at
+    /// its lower right; with `copy` (after a right click, the move leaves
+    /// the original) a plus in a square beside the box.
+    DragMove {
+        copy: bool,
+    },
     /// The system cross hair with the tool's icon at its lower right (the
     /// drawing, effect and fill tools).
     Badge(Tool),
@@ -96,10 +102,15 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     match &app.drag {
         // Over the document palette letting go adds the colours; after a
         // right click the move leaves the original (a copy moves).
-        Drag::Move { .. } if app.over_document_palette() || app.drag_copy => {
+        Drag::Move { .. } if app.over_document_palette() => {
             return Some(ToolCursor::System(egui::CursorIcon::Copy))
         }
-        Drag::Move { .. } | Drag::Pivot => return Some(moving),
+        Drag::Move { .. } => {
+            return Some(ToolCursor::DragMove {
+                copy: app.drag_copy,
+            })
+        }
+        Drag::Pivot => return Some(moving),
         Drag::Scale { handle, .. } => return Some(ToolCursor::System(resize_icon(*handle))),
         Drag::Rotate { .. } | Drag::RotateGuide { .. } => return Some(ToolCursor::Rotate),
         Drag::Skew { handle, .. } => {
@@ -405,6 +416,7 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
         ToolCursor::Rotate => rotate_arrows(painter, p),
         ToolCursor::Skew { horizontal } => skew_arrows(painter, p, horizontal),
         ToolCursor::ShapeArrow(mark) => shape_arrow(painter, p, mark),
+        ToolCursor::DragMove { copy } => drag_move(painter, p, copy),
         ToolCursor::Badge(tool) => badge(painter, p, tool),
         ToolCursor::CurveBadge(tool, mark) => {
             badge(painter, p, tool);
@@ -559,6 +571,73 @@ fn shape_arrow(painter: &Painter, tip: Pos2, mark: ShapeMark) {
         ShapeMark::Control => {
             painter.circle(m, 2.6, INK, Stroke::new(1.2, HALO));
         }
+    }
+}
+
+/// The pointer while objects are moved: a white arrow outlined in black
+/// with its tip on the hot spot, a dotted box under its tail, and with
+/// `copy` a plus in a square at the box's lower right.
+fn drag_move(painter: &Painter, tip: Pos2, copy: bool) {
+    let at = |x: f32, y: f32| tip + Vec2::new(x, y);
+    let arrow = vec![
+        at(0.0, 0.0),
+        at(0.0, 15.0),
+        at(3.6, 11.6),
+        at(6.2, 17.4),
+        at(8.6, 16.4),
+        at(6.0, 10.8),
+        at(10.8, 10.8),
+    ];
+    painter.add(Shape::closed_line(arrow.clone(), Stroke::new(3.0, HALO)));
+    // Filled as two convex parts (the head and the tail), outlined whole.
+    for part in [
+        vec![
+            at(0.0, 0.0),
+            at(0.0, 15.0),
+            at(3.6, 11.6),
+            at(6.0, 10.8),
+            at(10.8, 10.8),
+        ],
+        vec![at(3.6, 11.6), at(6.2, 17.4), at(8.6, 16.4), at(6.0, 10.8)],
+    ] {
+        painter.add(Shape::convex_polygon(part, HALO, Stroke::NONE));
+    }
+    painter.add(Shape::closed_line(arrow, Stroke::new(1.0, INK)));
+    // The dotted box.
+    let b = Rect::from_min_size(at(7.0, 13.0), Vec2::new(11.0, 8.0));
+    painter.rect_filled(b.expand(1.0), CornerRadius::ZERO, HALO);
+    let corners = [
+        b.left_top(),
+        b.right_top(),
+        b.right_bottom(),
+        b.left_bottom(),
+    ];
+    for i in 0..4 {
+        painter.extend(Shape::dashed_line(
+            &[corners[i], corners[(i + 1) % 4]],
+            Stroke::new(1.0, INK),
+            1.5,
+            1.5,
+        ));
+    }
+    if copy {
+        let s = Rect::from_min_size(at(15.0, 17.0), Vec2::splat(9.0));
+        painter.rect(
+            s,
+            CornerRadius::ZERO,
+            HALO,
+            Stroke::new(1.0, INK),
+            egui::StrokeKind::Inside,
+        );
+        let c = s.center();
+        painter.line_segment(
+            [c - Vec2::new(2.5, 0.0), c + Vec2::new(2.5, 0.0)],
+            Stroke::new(1.2, INK),
+        );
+        painter.line_segment(
+            [c - Vec2::new(0.0, 2.5), c + Vec2::new(0.0, 2.5)],
+            Stroke::new(1.2, INK),
+        );
     }
 }
 

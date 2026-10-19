@@ -692,13 +692,16 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
         rulers::rulers(app, ui, full);
     }
 
-    if response.hovered() || response.dragged() {
+    // A right click during a move ends the windowing layer's drag (the
+    // move goes on while the left button is held): the pointer keeps
+    // being drawn until the move ends.
+    if response.hovered() || response.dragged() || app.transforming() {
         let (shift, primary, middle, pos) = ui.input(|i| {
             (
                 i.modifiers.shift,
                 i.pointer.primary_down(),
                 i.pointer.middle_down(),
-                i.pointer.hover_pos(),
+                i.pointer.hover_pos().or(i.pointer.latest_pos()),
             )
         });
         let cursor = cursors::for_tool(app, shift, primary, middle, pos);

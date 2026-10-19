@@ -109,12 +109,15 @@ The pointer says what a press would do (code: `ui/cursors.rs`):
 | A side handle in rotate mode | two half arrows along the slant (sideways for top and bottom, up and down for the sides) |
 | Anything else | the arrow (the cross hair with Options > Tools > Pick > Cross hair) |
 
-While dragging, the pointer keeps the shape of what is being done (move
-arrows, the copy arrow once a right click made the move leave the
-original, the handle's resize arrows, the turning arrow, the slant
+While dragging, the pointer keeps the shape of what is being done (a
+move: the white arrow with a dotted box under its tail, and a plus in a
+square beside the box once a right click made the move leave the
+original; it stays drawn after the right click until the left button
+goes up; the move arrows for the centre of rotation; the handle's resize arrows, the turning arrow, the slant
 arrows, the arrows across a guideline being moved or dragged out of a
-ruler, the cross hair while the ruler origin is dragged). Resize and move arrows are the system's own; the turning and
-slant arrows are drawn by TraceDraw, black on a white halo.
+ruler, the cross hair while the ruler origin is dragged). Resize and move arrows are the system's own; the moving
+arrow, the turning and slant arrows are drawn by TraceDraw, black on a
+white halo.
 
 ## Dragging with the right mouse button
 

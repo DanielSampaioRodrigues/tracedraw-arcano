@@ -529,8 +529,8 @@ fn the_pointer_shows_what_a_press_would_do() {
         current_angle: 0.0,
     };
     assert_eq!(cursor(&app, empty), ToolCursor::Rotate);
-    // A move that will leave the original (after a right click): the copy
-    // arrow.
+    // Moving: the arrow with a dotted box; once a right click makes the
+    // move leave the original, the box gets a plus.
     app.drag = Drag::Move {
         start: Point::ZERO,
         last: Point::ZERO,
@@ -538,15 +538,9 @@ fn the_pointer_shows_what_a_press_would_do() {
         start_bounds: Rect::ZERO,
         source: None,
     };
-    assert_eq!(
-        cursor(&app, empty),
-        ToolCursor::System(egui::CursorIcon::Move)
-    );
+    assert_eq!(cursor(&app, empty), ToolCursor::DragMove { copy: false });
     app.drag_copy = true;
-    assert_eq!(
-        cursor(&app, empty),
-        ToolCursor::System(egui::CursorIcon::Copy)
-    );
+    assert_eq!(cursor(&app, empty), ToolCursor::DragMove { copy: true });
     app.drag_copy = false;
     app.drag = Drag::None;
 }
