@@ -2073,7 +2073,10 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::Barcode(Default::default());
         }
         if item(ui, "menu.object.insert_qr", "", true) {
-            app.dialog = Dialog::QrCode(Default::default());
+            app.insert_qr_code();
+            // Its settings are edited in Properties.
+            app.show_dockers = true;
+            app.docker_tab = DockerTab::Properties;
         }
         if item(ui, "menu.object.insert_page_number", "", true) {
             app.insert_page_number(crate::ops2::PageNumberWhere::Active);

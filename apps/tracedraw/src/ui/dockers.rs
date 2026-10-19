@@ -468,7 +468,12 @@ fn properties(app: &mut App, ui: &mut Ui) {
     }
     // The sections this object has, in the docker's order, with the
     // buttons that open and close them.
-    let mut sections: Vec<(&'static str, &'static str, SectionIcon)> = vec![
+    let mut sections: Vec<(&'static str, &'static str, SectionIcon)> = Vec::new();
+    // A QR code object's own settings come first.
+    if first.qr.is_some() {
+        sections.push(("qr", "qr.section", SectionIcon::Qr));
+    }
+    sections.extend([
         (
             "outline",
             "docker.outline",
@@ -484,7 +489,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
             "docker.transparency",
             SectionIcon::Tool(crate::tools::Tool::Transparency),
         ),
-    ];
+    ]);
     let corners = first.page_corners();
     if corners.is_some() {
         sections.push((
@@ -534,6 +539,11 @@ fn properties(app: &mut App, ui: &mut Ui) {
         }
         ui.add_space(2.0);
         match id {
+            "qr" => {
+                if let Some(qr) = &first.qr {
+                    qr_section(app, ui, first.id, qr);
+                }
+            }
             "outline" => {
                 let mut stroke = first.stroke.clone();
                 let custom = app.settings.custom_arrowheads.clone();
@@ -603,12 +613,157 @@ fn properties(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The QR Code section of Properties: the kind of content and its
+/// fields, the fills of the dark pixels and the background, the pixels'
+/// outline, the pixel size, and Validate. Each change makes the code again
+/// (one undo step); content that cannot be encoded is shown in red and
+/// changes nothing.
+fn qr_section(
+    app: &mut App,
+    ui: &mut Ui,
+    id: tracedraw_core::ShapeId,
+    qr: &tracedraw_core::QrCode,
+) {
+    use tracedraw_core::QrKind;
+    let mut next = qr.clone();
+    let mut changed = false;
+    let msg_id = egui::Id::new(("qr_message", id.raw()));
+    egui::ComboBox::from_id_salt(("qr_kind", id.raw()))
+        .width(ui.available_width() - 8.0)
+        .selected_text(tr(qr_kind_key(qr.kind)))
+        .show_ui(ui, |ui| {
+            for k in QrKind::ALL {
+                if ui
+                    .selectable_label(qr.kind == k, tr(qr_kind_key(k)))
+                    .clicked()
+                    && k != qr.kind
+                {
+                    next.fields = k.carry(qr.kind, &qr.fields);
+                    next.kind = k;
+                    changed = true;
+                }
+            }
+        });
+    // The fields are edited as text and committed when they lose focus or
+    // Enter is pressed, so typing does not add an undo step per letter.
+    for (i, key) in qr.kind.fields().iter().enumerate() {
+        let edit_id = egui::Id::new(("qr_field", id.raw(), i));
+        let mut text: String = ui
+            .data(|d| d.get_temp::<String>(edit_id))
+            .unwrap_or_else(|| qr.fields.get(i).cloned().unwrap_or_default());
+        ui.label(egui::RichText::new(tr(key)).size(11.0));
+        let multi = matches!(qr.kind, QrKind::Text) || key.ends_with("message");
+        let resp = if multi {
+            ui.add(
+                egui::TextEdit::multiline(&mut text)
+                    .desired_rows(2)
+                    .desired_width(f32::INFINITY),
+            )
+        } else {
+            ui.add(egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY))
+        };
+        if resp.has_focus() {
+            ui.data_mut(|d| d.insert_temp(edit_id, text.clone()));
+        }
+        let commit = resp.lost_focus() || (resp.changed() && !resp.has_focus());
+        if commit {
+            ui.data_mut(|d| d.remove::<String>(edit_id));
+            if next.fields.len() <= i {
+                next.fields.resize(i + 1, String::new());
+            }
+            if next.fields[i] != text {
+                next.fields[i] = text;
+                changed = true;
+            }
+        }
+    }
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(tr("qr.dark_fill")).size(11.0));
+    if fill_editor(ui, &mut next.dark) {
+        changed = true;
+    }
+    ui.label(egui::RichText::new(tr("qr.light_fill")).size(11.0));
+    if fill_editor(ui, &mut next.light) {
+        changed = true;
+    }
+    ui.label(egui::RichText::new(tr("qr.outline")).size(11.0));
+    let custom = app.settings.custom_arrowheads.clone();
+    if outline_editor(ui, &mut next.outline, &custom) {
+        changed = true;
+    }
+    ui.horizontal(|ui| {
+        ui.label(tr("qr.pixel_size"));
+        let units = app.units;
+        let mut v = units.from_mm(next.pixel_mm);
+        if ui
+            .add(
+                egui::DragValue::new(&mut v)
+                    .speed(0.05)
+                    .max_decimals(3)
+                    .range(units.from_mm(0.1)..=units.from_mm(50.0))
+                    .suffix(format!(" {}", units.short())),
+            )
+            .changed()
+        {
+            next.pixel_mm = units.to_mm(v).clamp(0.1, 50.0);
+            changed = true;
+        }
+    });
+    if ui
+        .add_sized(
+            [ui.available_width() - 8.0, 24.0],
+            egui::Button::new(tr("qr.validate")),
+        )
+        .clicked()
+    {
+        let m = match crate::qr::validate(qr) {
+            Ok(_) => (true, tr("qr.validate_ok")),
+            Err(e) => (false, e),
+        };
+        ui.data_mut(|d| d.insert_temp(msg_id, m));
+    }
+    if changed {
+        let result = app.set_qr_code(id, next);
+        ui.data_mut(|d| match result {
+            Ok(()) => {
+                d.remove::<(bool, String)>(msg_id);
+            }
+            Err(e) => {
+                d.insert_temp(msg_id, (false, e));
+            }
+        });
+    }
+    if let Some((ok, m)) = ui.data(|d| d.get_temp::<(bool, String)>(msg_id)) {
+        let colour = if ok {
+            egui::Color32::from_rgb(0x10, 0x7C, 0x10)
+        } else {
+            egui::Color32::from_rgb(0xC4, 0x2B, 0x1C)
+        };
+        ui.label(egui::RichText::new(m).color(colour).size(11.0));
+    }
+}
+
+/// The name of a kind of QR content.
+fn qr_kind_key(k: tracedraw_core::QrKind) -> &'static str {
+    use tracedraw_core::QrKind;
+    match k {
+        QrKind::Url => "qr.kind_url",
+        QrKind::Email => "qr.kind_email",
+        QrKind::Phone => "qr.kind_phone",
+        QrKind::Sms => "qr.kind_sms",
+        QrKind::Contact => "qr.kind_contact",
+        QrKind::Text => "qr.kind_text",
+        QrKind::Location => "qr.kind_location",
+    }
+}
+
 /// The picture on a Properties section's button.
 #[derive(Debug, Clone, Copy)]
 enum SectionIcon {
     Tool(crate::tools::Tool),
     Effects,
     Summary,
+    Qr,
 }
 
 impl SectionIcon {
@@ -623,6 +778,29 @@ impl SectionIcon {
                     egui::FontId::proportional(13.0),
                     Tokens::icon(),
                 );
+            }
+            SectionIcon::Qr => {
+                // Three finder squares and a few pixels.
+                let px = r.width() / 7.0;
+                let stroke = egui::Stroke::new(1.2, Tokens::icon());
+                for (cx, cy) in [(0.0, 0.0), (4.0, 0.0), (0.0, 4.0)] {
+                    let sq = egui::Rect::from_min_size(
+                        r.min + egui::vec2(cx * px, cy * px),
+                        egui::vec2(3.0 * px, 3.0 * px),
+                    );
+                    painter.rect_stroke(sq.shrink(0.6), 0.0, stroke, egui::StrokeKind::Inside);
+                    painter.rect_filled(sq.shrink(px), 0.0, Tokens::icon());
+                }
+                for (cx, cy) in [(4.0, 4.0), (6.0, 5.0), (5.0, 6.0), (4.0, 6.0)] {
+                    painter.rect_filled(
+                        egui::Rect::from_min_size(
+                            r.min + egui::vec2(cx * px, cy * px),
+                            egui::vec2(px, px),
+                        ),
+                        0.0,
+                        Tokens::icon(),
+                    );
+                }
             }
             SectionIcon::Summary => {
                 painter.circle_stroke(r.center(), 7.0, egui::Stroke::new(1.3, Tokens::icon()));

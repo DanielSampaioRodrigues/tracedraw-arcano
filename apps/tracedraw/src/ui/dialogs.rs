@@ -402,13 +402,6 @@ pub struct FindReplaceState {
     pub cursor: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct QrState {
-    pub text: String,
-    pub size_mm: f64,
-    pub error: String,
-}
-
 /// Paste Special: the system clipboard is read once when the dialog opens.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PasteSpecialState {
@@ -602,7 +595,6 @@ pub enum Dialog {
         width: f64,
         height: f64,
     },
-    QrCode(QrState),
     PasteSpecial(PasteSpecialState),
     Barcode(BarcodeState),
     ConvertToBitmap(crate::bitmap_modes::ConvertOptions),
@@ -1529,53 +1521,6 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Barcode(st) => crate::ui::barcode_wizard::dialog(app, ctx, st, &mut close),
-        Dialog::QrCode(st) => {
-            window(ctx, tr("dialog.qr_code")).show(ctx, |ui| {
-                ui.label(tr("dialog.qr_text"));
-                ui.add(egui::TextEdit::multiline(&mut st.text).id(multiline_id(0)));
-                if st.size_mm <= 0.0 {
-                    st.size_mm = 30.0;
-                }
-                unit_value(ui, &tr("dialog.size"), &mut st.size_mm, app.units);
-                if !st.error.is_empty() {
-                    ui.colored_label(egui::Color32::RED, &st.error);
-                }
-                if ok_cancel(ui, &mut close) {
-                    match qr_path(&st.text, st.size_mm) {
-                        Ok(path) => {
-                            let page = app.page_rect();
-                            let c = page.center();
-                            let p = tracedraw_core::geometry::Affine::translate((
-                                c.x - st.size_mm / 2.0,
-                                c.y - st.size_mm / 2.0,
-                            )) * path;
-                            if let Some(id) = app.new_shape(ShapeKind::Path {
-                                path: p,
-                                closed: true,
-                            }) {
-                                app.run(Command::SetFill {
-                                    shapes: vec![id],
-                                    fill: Fill::Solid(Color::BLACK),
-                                });
-                                app.run(Command::SetStroke {
-                                    shapes: vec![id],
-                                    stroke: None,
-                                });
-                                app.run(Command::SetShapeName {
-                                    shape: id,
-                                    name: Some("QR code".into()),
-                                });
-                                app.select(vec![id]);
-                            }
-                        }
-                        Err(e) => {
-                            st.error = e;
-                            close = false;
-                        }
-                    }
-                }
-            });
-        }
         Dialog::ConvertToBitmap(o) => {
             window(ctx, tr("dialog.convert_to_bitmap")).show(ctx, |ui| {
                 convert_fields(app, ui, o);
@@ -4732,7 +4677,6 @@ mod tests {
                 width: 75.0,
                 height: 100.0,
             },
-            Dialog::QrCode(QrState::default()),
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),
             Dialog::ConvertToBitmap(crate::bitmap_modes::ConvertOptions {

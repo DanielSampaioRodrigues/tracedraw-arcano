@@ -90,6 +90,7 @@ mod placeholder;
 mod preflight;
 mod prefs;
 mod print_merge;
+mod qr;
 mod raster;
 mod recognize;
 mod recovery;

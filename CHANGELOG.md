@@ -21,6 +21,10 @@ full, row-by-row status.
   width reduction, magnification, bar height, wide to narrow ratio,
   check character and quiet zone; font, size, weight, alignment and the
   text options.
+- QR codes are live objects: Object > Insert > QR Code places one at
+  once, and Properties edits its kind of content (URL, email, phone,
+  SMS, contact, text, location) and fields, pixel and background fills,
+  pixel outline and pixel size, with Validate reading the code back.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

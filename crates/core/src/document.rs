@@ -1241,6 +1241,147 @@ pub struct Shape {
     /// [`Shape::drawn_as`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raster_fx: Option<Box<RasterFx>>,
+    /// A group that is a QR code: what it encodes and how it looks. The
+    /// group's children (the background and the dark pixels) are made
+    /// again from it whenever it changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qr: Option<Box<QrCode>>,
+}
+
+/// What a QR code holds: the kind of content, which decides the fields
+/// and how they are written into the code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum QrKind {
+    #[default]
+    Url,
+    Email,
+    Phone,
+    Sms,
+    Contact,
+    Text,
+    Location,
+}
+
+impl QrKind {
+    pub const ALL: [QrKind; 7] = [
+        QrKind::Url,
+        QrKind::Email,
+        QrKind::Phone,
+        QrKind::Sms,
+        QrKind::Contact,
+        QrKind::Text,
+        QrKind::Location,
+    ];
+
+    /// The names of the kind's fields (keys of the interface's strings),
+    /// in the order [`QrCode::fields`] holds them.
+    pub fn fields(self) -> &'static [&'static str] {
+        match self {
+            QrKind::Url => &["qr.field_url"],
+            QrKind::Email => &["qr.field_email", "qr.field_subject", "qr.field_message"],
+            QrKind::Phone => &["qr.field_phone"],
+            QrKind::Sms => &["qr.field_phone", "qr.field_message"],
+            QrKind::Contact => &[
+                "qr.field_first_name",
+                "qr.field_last_name",
+                "qr.field_organization",
+                "qr.field_phone",
+                "qr.field_email",
+                "qr.field_url",
+                "qr.field_address",
+            ],
+            QrKind::Text => &["qr.field_text"],
+            QrKind::Location => &["qr.field_latitude", "qr.field_longitude"],
+        }
+    }
+
+    /// The fields of one kind carried over to another: what both share by
+    /// name keeps its value, the rest starts empty.
+    pub fn carry(self, from: QrKind, values: &[String]) -> Vec<String> {
+        let old = from.fields();
+        self.fields()
+            .iter()
+            .map(|f| {
+                old.iter()
+                    .position(|o| o == f)
+                    .and_then(|i| values.get(i).cloned())
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+}
+
+/// A QR code object's settings (see [`Shape::qr`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct QrCode {
+    pub kind: QrKind,
+    /// The kind's fields, in the order [`QrKind::fields`] names them.
+    pub fields: Vec<String>,
+    /// The side of one pixel (module), in millimetres.
+    pub pixel_mm: f64,
+    /// The fill of the dark pixels.
+    pub dark: Fill,
+    /// The fill behind them, over the code and its quiet zone.
+    pub light: Fill,
+    /// The outline of the dark pixels.
+    pub outline: Option<Stroke>,
+}
+
+impl Default for QrCode {
+    fn default() -> Self {
+        QrCode {
+            kind: QrKind::Url,
+            fields: vec!["https://github.com/igtoth/tracedraw".into()],
+            pixel_mm: 2.5,
+            dark: Fill::Solid(crate::Color::BLACK),
+            light: Fill::Solid(crate::Color::WHITE),
+            outline: None,
+        }
+    }
+}
+
+impl QrCode {
+    fn field(&self, i: usize) -> &str {
+        self.fields.get(i).map(|s| s.trim()).unwrap_or("")
+    }
+
+    /// The text the code encodes: the fields in the form phones and
+    /// scanners read for the kind (a `mailto:`-like message, `tel:`,
+    /// `SMSTO:`, a vCard 3.0, `geo:`). Empty when nothing is filled in.
+    pub fn payload(&self) -> String {
+        let f = |i| self.field(i);
+        match self.kind {
+            QrKind::Url | QrKind::Text => self.fields.first().cloned().unwrap_or_default(),
+            QrKind::Email if f(0).is_empty() => String::new(),
+            QrKind::Email => format!("MATMSG:TO:{};SUB:{};BODY:{};;", f(0), f(1), f(2)),
+            QrKind::Phone if f(0).is_empty() => String::new(),
+            QrKind::Phone => format!("tel:{}", f(0)),
+            QrKind::Sms if f(0).is_empty() => String::new(),
+            QrKind::Sms => format!("SMSTO:{}:{}", f(0), f(1)),
+            QrKind::Contact => {
+                if (0..7).all(|i| f(i).is_empty()) {
+                    return String::new();
+                }
+                let mut v = String::from("BEGIN:VCARD\nVERSION:3.0\n");
+                v.push_str(&format!("N:{};{}\n", f(1), f(0)));
+                v.push_str(&format!("FN:{}\n", format!("{} {}", f(0), f(1)).trim()));
+                for (key, i) in [("ORG", 2), ("TEL", 3), ("EMAIL", 4), ("URL", 5), ("ADR", 6)] {
+                    if !f(i).is_empty() {
+                        if key == "ADR" {
+                            v.push_str(&format!("ADR:;;{}\n", f(i)));
+                        } else {
+                            v.push_str(&format!("{key}:{}\n", f(i)));
+                        }
+                    }
+                }
+                v.push_str("END:VCARD");
+                v
+            }
+            QrKind::Location if f(0).is_empty() || f(1).is_empty() => String::new(),
+            QrKind::Location => format!("geo:{},{}", f(0), f(1)),
+        }
+    }
 }
 
 /// Bitmap effects on a vector object, and the picture they make of it.
@@ -1366,6 +1507,7 @@ impl Shape {
             extra_fills: Vec::new(),
             extra_strokes: Vec::new(),
             raster_fx: None,
+            qr: None,
         }
     }
 
