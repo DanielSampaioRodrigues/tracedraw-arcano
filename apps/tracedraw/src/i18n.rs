@@ -129,8 +129,35 @@ pub fn is_rtl() -> bool {
     language() == "ar"
 }
 
+#[cfg(test)]
+thread_local! {
+    /// A language for this thread only, so that a test can lay the
+    /// interface out in another language without changing it for the
+    /// tests running beside it.
+    static THREAD_TABLE: std::cell::RefCell<Option<HashMap<String, String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with `code` as the language of this thread only (tests).
+#[cfg(test)]
+pub fn with_thread_language<R>(code: &str, f: impl FnOnce() -> R) -> R {
+    let src = FILES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, s)| *s)
+        .unwrap_or(FILES[0].1);
+    let before = THREAD_TABLE.with(|t| t.replace(Some(parse(src))));
+    let out = f();
+    THREAD_TABLE.with(|t| *t.borrow_mut() = before);
+    out
+}
+
 /// Translate a key.
 pub fn tr(key: &str) -> String {
+    #[cfg(test)]
+    if let Some(v) = THREAD_TABLE.with(|t| t.borrow().as_ref().and_then(|m| m.get(key).cloned())) {
+        return v;
+    }
     if let Ok(st) = state().read() {
         if let Some(v) = st.table.get(key) {
             return v.clone();

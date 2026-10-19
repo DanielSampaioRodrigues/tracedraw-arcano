@@ -6,6 +6,23 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Ctrl+click selects an object inside a clip frame (where the frame
+  shows it), and Ctrl+Alt+click digs through a clip frame's contents,
+  as in groups; text over a rectangle in a `.cdr` drawing is hit first,
+  and an empty rectangle over text gives way to Alt+click (#190).
+- Fit Text to Path on a closed path centres the text where the path is
+  clicked (the bottom of an ellipse too), the mirrors keep the letters
+  in place along the path, and the Text placement list has Top centre
+  and Bottom centre on a closed path, the bottom one reading left to
+  right inside the curve; Tick snapping moves the text off the path in
+  steps of its spacing (#193).
+- Print > Prepress > Invert prints a true negative: the sheet's paper
+  turns black as well, so black text no longer comes out white on white
+  paper (#191).
+- The Properties docker keeps its width when an object is selected:
+  the Transparency section sits in three rows, the Rectangle section
+  lists the corner kinds one under the other with the radii two by two,
+  and no section can push the docker wider (#196).
 - Properties docker, Outline Pen and property bar with several objects
   selected (#204): changing one value (such as the outline width) no
   longer gives every object the first object's whole outline, fill or

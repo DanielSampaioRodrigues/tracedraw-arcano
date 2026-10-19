@@ -85,7 +85,7 @@ impl App {
         } else if self.pending_text_path {
             self.pending_text_path = false;
             if let Some(t) = target {
-                self.fit_text_to_picked_path(t);
+                self.fit_text_to_picked_path(t, Some(p));
                 return true;
             }
         }

@@ -26,6 +26,14 @@ outline are drawn, the contents are clipped to the frame's path.
   moves alone and the contents stay where they are
   (`compensate_unlocked_clip_frames` undoes the transform on them).
 
+## Picking
+
+A click selects the clip frame (anywhere in its box). Ctrl+click
+selects the object of the contents under the pointer, only inside the
+frame where the contents show; further Ctrl+clicks go into a group
+among the contents. Ctrl+Alt+click digs through the contents and then
+the clip frame (see `pick-tool.md`).
+
 ## Opacity mask
 
 Object > Clip to Frame > Opacity Mask (a check item) turns the selected clip

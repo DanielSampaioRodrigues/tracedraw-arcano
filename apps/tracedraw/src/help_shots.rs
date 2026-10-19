@@ -596,3 +596,48 @@ fn help_shots() {
     std::fs::write(dir.join("shots.txt"), list).unwrap();
     eprintln!("{} screenshots; not made: {missed:#?}", made.len());
 }
+
+#[test]
+#[ignore]
+fn scratch_196_window() {
+    let dir = std::path::PathBuf::from(
+        "/tmp/claude-0/-home-claude/ecd2ad2c-4fd8-5343-ab00-e2a436bfbe5e/scratchpad/v196",
+    );
+    std::fs::create_dir_all(&dir).unwrap();
+    for lang in ["en", "de", "ru", "pt-BR"] {
+        let mut sh = Shooter::new();
+        let mut app = demo_app();
+        crate::i18n::set_language(lang);
+        app.show_welcome = false;
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        app.settings.properties_closed.clear();
+        let sel = app.selection.clone();
+        for (tag, s) in [("none", Vec::new()), ("rect", sel)] {
+            app.select(s);
+            let mut c = None;
+            for _ in 0..4 {
+                sh.time += 0.5;
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(W as f32, H as f32),
+                    )),
+                    time: Some(sh.time),
+                    ..Default::default()
+                };
+                let mut out = sh.ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+                sh.tex.apply(&out.textures_delta);
+                let shapes = std::mem::take(&mut out.shapes);
+                let prims = sh.ctx.tessellate(shapes, out.pixels_per_point);
+                let mut cv = Canvas::new(W, H);
+                cv.paint(&sh.tex, &prims);
+                out.textures_delta.clear();
+                c = Some(cv);
+            }
+            c.unwrap()
+                .save(&dir.join(format!("{lang}_{tag}.png")), (0, 0, W, H));
+        }
+    }
+    crate::i18n::set_language("en");
+}

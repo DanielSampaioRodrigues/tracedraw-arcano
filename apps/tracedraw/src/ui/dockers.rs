@@ -256,33 +256,48 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
     let content = egui::Rect::from_min_max(egui::pos2(full.left(), bar.bottom()), full.max);
     ui.painter()
         .rect_filled(content, 0.0, crate::theme::Tokens::field());
-    ui.scope_builder(
-        egui::UiBuilder::new().max_rect(content.shrink2(egui::vec2(8.0, 6.0))),
-        |ui| {
-            // Hints scrolls its page above its own navigation bar.
-            if app.docker_tab == DockerTab::Hints {
-                crate::ui::hints::hints_docker(app, ui);
-                return;
-            }
-            // AI Generate keeps Generate at the bottom, under its own scroll.
-            if app.docker_tab == DockerTab::AiGenerate {
-                crate::ui::ai_generate_docker::ai_generate(app, ui);
-                return;
-            }
-            // Objects keeps its New Layer and Delete bar under the tree.
-            if app.docker_tab == DockerTab::Objects {
-                crate::ui::objects_docker::objects_docker(app, ui);
-                return;
-            }
-            egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
-                DockerTab::Properties => properties(app, ui),
-                DockerTab::Hints | DockerTab::Objects => {}
-                DockerTab::Transformations => crate::ui::transform_docker::transformations(app, ui),
-                DockerTab::Undo => undo_docker(app, ui),
-                other => crate::ui::dockers2::show(app, ui, other),
-            });
-        },
-    );
+    // The docker keeps the width it was given (its default or the one the
+    // user dragged it to): the page lies in a child that never widens the
+    // panel, clipped to the docker, so no section can push it wider.
+    let inner = content.shrink2(egui::vec2(8.0, 6.0));
+    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    page.set_clip_rect(content.intersect(ui.clip_rect()));
+    ui.advance_cursor_after_rect(content);
+    docker_page(app, &mut page);
+    // How wide the page's widgets came out, for the tests that check
+    // that every section keeps to the docker.
+    #[cfg(test)]
+    {
+        let need = page.min_rect().width() - inner.width();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("docker_overflow"), need));
+    }
+}
+
+/// The page of the docker shown: its own layout under the title bar.
+fn docker_page(app: &mut App, ui: &mut Ui) {
+    // Hints scrolls its page above its own navigation bar.
+    if app.docker_tab == DockerTab::Hints {
+        crate::ui::hints::hints_docker(app, ui);
+        return;
+    }
+    // AI Generate keeps Generate at the bottom, under its own scroll.
+    if app.docker_tab == DockerTab::AiGenerate {
+        crate::ui::ai_generate_docker::ai_generate(app, ui);
+        return;
+    }
+    // Objects keeps its New Layer and Delete bar under the tree.
+    if app.docker_tab == DockerTab::Objects {
+        crate::ui::objects_docker::objects_docker(app, ui);
+        return;
+    }
+    egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
+        DockerTab::Properties => properties(app, ui),
+        DockerTab::Hints | DockerTab::Objects => {}
+        DockerTab::Transformations => crate::ui::transform_docker::transformations(app, ui),
+        DockerTab::Undo => undo_docker(app, ui),
+        other => crate::ui::dockers2::show(app, ui, other),
+    });
 }
 
 fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
@@ -589,7 +604,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 extra_fills(app, ui, first);
             }
             "transparency" => {
-                ui.horizontal_wrapped(|ui| crate::ui::toolbar::transparency_part(app, ui));
+                crate::ui::toolbar::transparency_section(app, ui);
             }
             "corners" => {
                 if let Some(c) = corners {
@@ -908,21 +923,23 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
     let mut edit = None;
     // Values that differ across the selected rectangles show as mixed.
     let mix = app.selection_corner_mix().map_or([false; 6], |(_, m)| m);
-    ui.horizontal_wrapped(|ui| {
-        for (kind, key) in [
-            (CornerKind::Round, "toolbar.corner_round"),
-            (CornerKind::Scallop, "toolbar.corner_scallop"),
-            (CornerKind::Chamfer, "toolbar.corner_chamfer"),
-        ] {
-            if ui.radio(!mix[0] && c.kind == kind, tr(key)).clicked() {
-                edit = Some(CornerEdit::Kind(kind));
-            }
+    // The corner kinds one under the other, so that long names keep to
+    // the docker's width.
+    for (kind, key) in [
+        (CornerKind::Round, "toolbar.corner_round"),
+        (CornerKind::Scallop, "toolbar.corner_scallop"),
+        (CornerKind::Chamfer, "toolbar.corner_chamfer"),
+    ] {
+        if ui.radio(!mix[0] && c.kind == kind, tr(key)).clicked() {
+            edit = Some(CornerEdit::Kind(kind));
         }
-    });
+    }
     let u = app.units;
+    // The four radii as the corners lie, two by two, each named above
+    // its field.
     egui::Grid::new("docker_corners")
-        .num_columns(4)
-        .spacing([6.0, 4.0])
+        .num_columns(2)
+        .spacing([10.0, 4.0])
         .show(ui, |ui| {
             for pair in [
                 [
@@ -935,35 +952,44 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
                 ],
             ] {
                 for (i, key) in pair {
-                    ui.label(tr(key));
-                    let mut v = u.world_from_mm(c.radii[i]);
-                    if mix.get(i + 1).copied().unwrap_or(false) {
-                        // Empty until a size is typed, which goes to all.
-                        if ui
-                            .add(
-                                crate::ui::field::NumField::new(&mut v)
-                                    .range(0.0..=10_000.0)
-                                    .suffix(format!(" {}", u.short()))
-                                    .width(72.0)
-                                    .mixed(true),
+                    ui.vertical(|ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(tr(key))
+                                    .color(Tokens::text_dim())
+                                    .size(11.0),
                             )
-                            .changed()
-                        {
-                            edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
+                            .truncate(),
+                        );
+                        let mut v = u.world_from_mm(c.radii[i]);
+                        if mix.get(i + 1).copied().unwrap_or(false) {
+                            // Empty until a size is typed, which goes to all.
+                            if ui
+                                .add(
+                                    crate::ui::field::NumField::new(&mut v)
+                                        .range(0.0..=10_000.0)
+                                        .suffix(format!(" {}", u.short()))
+                                        .width(72.0)
+                                        .mixed(true),
+                                )
+                                .changed()
+                            {
+                                edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
+                            }
+                        } else {
+                            let r = ui.add(
+                                egui::DragValue::new(&mut v)
+                                    .range(0.0..=10_000.0)
+                                    .speed(0.1)
+                                    .suffix(format!(" {}", u.short())),
+                            );
+                            if (r.drag_stopped() || r.lost_focus() || (r.changed() && !r.dragged()))
+                                && (u.world_to_mm(v) - c.radii[i]).abs() > 1e-12
+                            {
+                                edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
+                            }
                         }
-                        continue;
-                    }
-                    let r = ui.add(
-                        egui::DragValue::new(&mut v)
-                            .range(0.0..=10_000.0)
-                            .speed(0.1)
-                            .suffix(format!(" {}", u.short())),
-                    );
-                    if (r.drag_stopped() || r.lost_focus() || (r.changed() && !r.dragged()))
-                        && (u.world_to_mm(v) - c.radii[i]).abs() > 1e-12
-                    {
-                        edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
-                    }
+                    });
                 }
                 ui.end_row();
             }
@@ -1752,7 +1778,7 @@ fn outline_editor_mixed(
         if !hair || width_mixed {
             // The slider applies when let go; the box takes any width
             // typed (Enter or leaving it applies).
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let r = ui.add(crate::ui::Rail(
                     egui::Slider::new(&mut s.width, 0.1..=25.0)
                         .logarithmic(true)
@@ -1776,7 +1802,7 @@ fn outline_editor_mixed(
                 }
             });
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(tr("docker.caps"));
             let mixed = mix.has(StrokeField::Cap);
             for (c, n) in [
@@ -1791,7 +1817,7 @@ fn outline_editor_mixed(
                 }
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(tr("docker.corners"));
             let mixed = mix.has(StrokeField::Join);
             for (j, n) in [
@@ -1806,7 +1832,7 @@ fn outline_editor_mixed(
                 }
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (field, id, key) in [
                 (StrokeField::StartArrow, "Start", "docker.arrow_start"),
                 (StrokeField::EndArrow, "End", "docker.arrow_end"),
@@ -1822,7 +1848,7 @@ fn outline_editor_mixed(
                 }
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(tr("docker.dash"));
             let mixed = mix.has(StrokeField::Dash);
             for (d, n) in [
@@ -2208,6 +2234,124 @@ mod tests {
         assert_eq!(outline_paint_of(&s), Fill::Solid(blue));
         assert_eq!(fountain_kind_key(FountainKind::Shaped), "fill.shaped");
         assert_ne!(tr("fill.shaped"), "fill.shaped");
+    }
+
+    /// The Properties docker keeps its default width with every section
+    /// open, whatever the object, its fill, outline and transparency, in
+    /// the languages with the longest words: no section needs more room
+    /// than the docker has, and selecting an object never widens it.
+    #[test]
+    fn properties_sections_fit_the_default_docker_width() {
+        use tracedraw_core::geometry::{Point, Rect};
+        use tracedraw_core::Color;
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.settings.autocorrect.enabled = false;
+        app.settings.properties_closed.clear();
+        let rect = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 2.0,
+                corners: None,
+            })
+            .expect("rect");
+        let ellipse = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(70.0, 10.0, 120.0, 40.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        let polygon = app
+            .new_shape(ShapeKind::Polygon {
+                rect: Rect::new(130.0, 10.0, 170.0, 40.0),
+                points: 5,
+                sharpness: 50.0,
+                complex: None,
+                twist: 0.0,
+            })
+            .expect("polygon");
+        app.start_text(Point::new(20.0, 80.0), None);
+        app.text_insert("Docker test");
+        app.finish_text();
+        let text = app.selection[0];
+        app.start_text(
+            Point::new(20.0, 100.0),
+            Some(tracedraw_core::geometry::Size::new(60.0, 30.0)),
+        );
+        app.text_insert("Paragraph");
+        app.finish_text();
+        let paragraph = app.selection[0];
+        app.select(vec![ellipse]);
+        app.duplicate();
+        app.convert_to_bitmap(50.0, true);
+        let bitmap = app.selection[0];
+        app.select(Vec::new());
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        let overflow = |ctx: &egui::Context, app: &mut App| {
+            for _ in 0..3 {
+                draw(ctx, app);
+            }
+            let need: f32 = ctx
+                .data(|d| d.get_temp(egui::Id::new("docker_overflow")))
+                .expect("the docker is drawn");
+            let width = egui::containers::panel::PanelState::load(ctx, egui::Id::new("dockers"))
+                .map(|s| s.size().x)
+                .expect("the docker is shown");
+            (need, width)
+        };
+        let red = Color::rgb8(255, 0, 0);
+        let fills = [
+            Fill::Solid(red),
+            Fill::linear(red, Color::WHITE, 0.0),
+            Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Dots,
+                front: red,
+                back: Color::WHITE,
+                size_mm: 5.0,
+            }),
+            Fill::Texture(tracedraw_core::style::Texture {
+                kind: tracedraw_core::style::TextureKind::Wood,
+                color_a: red,
+                color_b: Color::WHITE,
+                scale: 5.0,
+                seed: 1,
+            }),
+        ];
+        for lang in ["en", "de", "ru", "pt-BR"] {
+            crate::i18n::with_thread_language(lang, || {
+                app.select(Vec::new());
+                let (need, empty) = overflow(&ctx, &mut app);
+                assert!(need <= 0.5, "{lang}, nothing selected: {need} too wide");
+                assert!(empty <= 341.0, "{lang}: {empty}");
+                for (name, id) in [
+                    ("rectangle", rect),
+                    ("ellipse", ellipse),
+                    ("polygon", polygon),
+                    ("text", text),
+                    ("paragraph", paragraph),
+                    ("bitmap", bitmap),
+                ] {
+                    app.select(vec![id]);
+                    let (need, w) = overflow(&ctx, &mut app);
+                    assert!(need <= 0.5, "{lang}, {name}: {need} too wide");
+                    assert!((w - empty).abs() < 1.0, "{lang}, {name}: {w} after {empty}");
+                }
+                app.select(vec![rect]);
+                for (k, fill) in fills.iter().enumerate() {
+                    app.apply_fill(fill.clone());
+                    for kind in 0..4u8 {
+                        app.transparency_default.set_kind(kind);
+                        let t = app.transparency_default.clone();
+                        app.apply_transparency(&t);
+                        let (need, w) = overflow(&ctx, &mut app);
+                        assert!(need <= 0.5, "{lang}, fill {k}, transparency {kind}: {need}");
+                        assert!((w - empty).abs() < 1.0, "{lang}, fill {k}: {w}");
+                    }
+                }
+            });
+        }
     }
 
     /// The Properties sections come open; a button or a header closes and

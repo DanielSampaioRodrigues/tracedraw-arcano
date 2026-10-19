@@ -4,8 +4,8 @@
 |---|---|
 | Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds); an object with live effects counts where it is drawn: its warped outline and the objects its effects add, and its selection box encloses them |
 | Shift+click | add or remove from the selection |
-| Ctrl+click | the object inside a group, one level further in at each click (the first level inside the topmost group, then the group or object inside that, down to the innermost object); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
-| Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups; Shift+Alt adds it |
+| Ctrl+click | the object inside a group or a clip frame, one level further in at each click (the first level inside the topmost group, then the group or object inside that, down to the innermost object; a clip frame's contents count only inside the frame, where they show); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
+| Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups and clip frames (a clip frame comes after its contents); Shift+Alt adds it |
 | Click on a selected object (any of a selection), or on the centre mark | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
 | Drag on empty | marquee (a dashed blue frame); objects wholly inside are selected; with Alt held when the drag ends, every object the frame touches: its outline crosses or lies in the frame, or the frame lies in its fill (text, bitmaps, tables and clip frames anywhere in their box; a group when one of its objects counts); Shift keeps the selection and adds; Ctrl keeps the marquee square; with Options > Tools > Pick, Marquee selects touched objects, Alt works the other way round |
 | Drag the centre mark (the "x") | moves the selection, also where the mark lies on nothing (an outline-only ring) |
@@ -27,6 +27,19 @@
 
 The toolbox button of each flyout shows the tool last used from it; the
 choice is kept between sessions (`toolbox` in the settings file).
+
+Hidden and locked objects, and the objects on hidden or locked layers,
+are never hit; of the others the topmost under the pointer is (the last
+in the stacking order, which `.cdr` files keep: a text over a
+rectangle is hit before it). Treat all objects as filled (Options >
+Tools > Pick, and the property bar) is on by default, so an empty
+rectangle over a text takes a click inside it; Alt+click reaches the
+text beneath, or the option switched off leaves an empty object to
+clicks on its outline.
+Checks: `pick_drag_tests::text_over_a_rectangle_read_from_cdr_is_hit_first`,
+`pick_drag_tests::an_unfilled_rectangle_over_text_takes_the_click_and_alt_reaches_the_text`,
+`pick_drag_tests::ctrl_click_takes_the_contents_of_a_clip_frame`,
+`pick_drag_tests::clipped_away_contents_are_not_hit`.
 
 The status bar names an object chosen inside a group "Rectangle in a
 group on Layer 1". Arrange commands (order, group, combine) act on the

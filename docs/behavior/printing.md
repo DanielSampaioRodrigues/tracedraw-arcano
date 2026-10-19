@@ -37,7 +37,10 @@ has one.
 - Layout: As in document, Fit to page or Scale (percent); Bleed limit
   (how far beyond the page objects print, 4 mm by default); the
   imposition, sheet, gap and the sketch (below).
-- Prepress: Invert and Mirror (the whole sheet, marks included); Print
+- Prepress: Invert and Mirror (the whole sheet, marks included; Invert
+  prints a negative, the sheet's empty paper black too, so black ink
+  shows clear rather than white on white paper,
+  `export::tests::black_text_prints_black_and_a_negative_blackens_the_sheet`); Print
   file information (with its text, the drawing's name when left empty)
   and Print page numbers (each page's number under it); Crop/fold marks;
   Registration marks; Color bars and Densitometer scale.

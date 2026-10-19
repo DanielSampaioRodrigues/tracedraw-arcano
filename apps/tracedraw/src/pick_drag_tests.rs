@@ -2228,6 +2228,187 @@ fn rounded_corners_keep_their_size_when_relative_scaling_is_off() {
     }
 }
 
+/// A rectangle and a line of text over it, the rectangle filled or not
+/// and below or above the text.
+fn text_and_frame(app: &mut App, filled: bool, frame_on_top: bool) -> (ShapeId, ShapeId) {
+    use tracedraw_core::{Color, Command, Fill, TextSpan};
+    let rect = |app: &mut App| {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 150.0, 80.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: if filled {
+                Fill::Solid(Color::rgb8(240, 240, 200))
+            } else {
+                Fill::None
+            },
+        });
+        id
+    };
+    let text = |app: &mut App| {
+        app.new_shape(ShapeKind::Text {
+            spans: vec![TextSpan::new("Invitation", "Sans", 36.0)],
+            origin: Point::new(30.0, 50.0),
+            frame: None,
+            align: tracedraw_core::document::TextAlign::Left,
+            para: Default::default(),
+            on_path: None,
+        })
+        .expect("text")
+    };
+    if frame_on_top {
+        let t = text(app);
+        (rect(app), t)
+    } else {
+        let r = rect(app);
+        (r, text(app))
+    }
+}
+
+/// The middle of the text object, in page space.
+fn text_middle(app: &App, id: ShapeId) -> Point {
+    app.doc().shape_on_page(id).expect("text").bounds().center()
+}
+
+/// Write the drawing as `.cdr`, read it back and open it.
+fn through_cdr(app: &App) -> App {
+    let bytes = tracedraw_cdr::write::document_to_cdr(app.doc());
+    let (doc, _) = tracedraw_cdr::open_bytes(&bytes, "t").expect("read back");
+    let mut back = App::headless();
+    back.open_document(doc, None);
+    back.view.zoom = 1.0;
+    back
+}
+
+/// The ids of the objects on the first layer, bottom to top, by kind.
+fn kinds_bottom_up(app: &App) -> Vec<&'static str> {
+    app.doc().pages[0]
+        .layers
+        .iter()
+        .flat_map(|l| &l.shapes)
+        .map(|s| match s.kind {
+            ShapeKind::Text { .. } => "text",
+            ShapeKind::ClipFrame { .. } => "clip",
+            ShapeKind::Group { .. } => "group",
+            _ => "shape",
+        })
+        .collect()
+}
+
+fn first_of(app: &App, kind: &str) -> ShapeId {
+    let all: Vec<_> = app.doc().pages[0]
+        .layers
+        .iter()
+        .flat_map(|l| &l.shapes)
+        .collect();
+    all.iter()
+        .zip(kinds_bottom_up(app))
+        .find(|(_, k)| *k == kind)
+        .map(|(s, _)| s.id)
+        .expect("kind")
+}
+
+#[test]
+fn text_over_a_rectangle_read_from_cdr_is_hit_first() {
+    let mut app = App::headless();
+    app.view.zoom = 1.0;
+    let (rect, text) = text_and_frame(&mut app, true, false);
+    let p = text_middle(&app, text);
+    assert_eq!(app.hit_test(p), Some(text));
+    assert_eq!(app.hits_at(p, false), vec![text, rect]);
+    // The file keeps the stacking order: the text is still on top.
+    let back = through_cdr(&app);
+    assert_eq!(kinds_bottom_up(&back), ["shape", "text"]);
+    let t = first_of(&back, "text");
+    assert_eq!(back.hit_test(text_middle(&back, t)), Some(t));
+}
+
+#[test]
+fn an_unfilled_rectangle_over_text_takes_the_click_and_alt_reaches_the_text() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let (rect, text) = text_and_frame(&mut app, false, true);
+    let at = app.view.to_screen(text_middle(&app, text));
+    // Treated as filled (the default), the empty rectangle on top is hit
+    // inside; Alt digs to the text under it.
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.selection, vec![rect]);
+    click_at(&ctx, &mut app, at, Modifiers::ALT);
+    assert_eq!(app.selection, vec![text]);
+    // Not treated as filled, the text is hit straight away.
+    app.settings.treat_all_filled = false;
+    app.select(Vec::new());
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.selection, vec![text]);
+    // The same stacking after a round trip through `.cdr`.
+    let back = through_cdr(&app);
+    assert_eq!(kinds_bottom_up(&back), ["text", "shape"]);
+}
+
+#[test]
+fn ctrl_click_takes_the_contents_of_a_clip_frame() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let (rect, text) = text_and_frame(&mut app, true, false);
+    app.place_inside(vec![text], rect);
+    let clip = app.doc().top_level_of(text).expect("clip frame");
+    let inside = app.view.to_screen(text_middle(&app, text));
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![clip]);
+    click_at(&ctx, &mut app, inside, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![text]);
+    // Ctrl+Alt digs through the contents to the frame.
+    assert_eq!(app.hits_at(text_middle(&app, text), true), vec![text, clip]);
+    // Inside the frame but off the text: the frame.
+    app.select(Vec::new());
+    let off = app.view.to_screen(Point::new(12.0, 12.0));
+    click_at(&ctx, &mut app, off, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![clip]);
+}
+
+#[test]
+fn clipped_away_contents_are_not_hit() {
+    use tracedraw_core::TextSpan;
+    let mut app = App::headless();
+    app.view.zoom = 1.0;
+    let frame = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 40.0, 80.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    let text = app
+        .new_shape(ShapeKind::Text {
+            spans: vec![TextSpan::new("Invitation", "Sans", 36.0)],
+            origin: Point::new(30.0, 50.0),
+            frame: None,
+            align: tracedraw_core::document::TextAlign::Left,
+            para: Default::default(),
+            on_path: None,
+        })
+        .expect("text");
+    let b = app.doc().shape(text).expect("text").1.bounds();
+    assert!(b.x1 > 50.0, "{b:?}");
+    app.place_inside(vec![text], frame);
+    let clip = app.doc().top_level_of(text).expect("clip frame");
+    let y = b.center().y;
+    // On the text inside the frame: Ctrl reaches it.
+    assert_eq!(app.hit_test_step(Point::new(35.0, y)), Some(text));
+    // Its letters past the frame do not show and are not hit.
+    let past = Point::new((40.0 + b.x1) / 2.0, y);
+    assert_eq!(app.hit_test(past), None);
+    assert!(app.hits_at(past, true).is_empty());
+    assert_eq!(app.hit_test(Point::new(35.0, y)), Some(clip));
+}
+
 #[test]
 fn new_rounded_rectangles_keep_circular_corners_when_stretched() {
     use crate::ui::propbar::{edit_corners, CornerEdit};

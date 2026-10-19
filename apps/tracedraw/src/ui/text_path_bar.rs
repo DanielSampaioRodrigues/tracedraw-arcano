@@ -29,10 +29,27 @@ const VERTICALS: [(PathTextVertical, &str); 4] = [
     (PathTextVertical::Center, "toolbar.path_on_center"),
 ];
 
-const PLACEMENTS: [(TextAlign, &str); 3] = [
-    (TextAlign::Left, "toolbar.path_place_left"),
-    (TextAlign::Center, "toolbar.path_place_center"),
-    (TextAlign::Right, "toolbar.path_place_right"),
+/// Where along the path the text sits: an alignment, or on a closed
+/// path centred on its top or bottom.
+#[derive(Clone, Copy, PartialEq)]
+enum Placement {
+    Along(TextAlign),
+    Top,
+    Bottom,
+}
+
+const PLACEMENTS: [(Placement, &str); 5] = [
+    (Placement::Along(TextAlign::Left), "toolbar.path_place_left"),
+    (
+        Placement::Along(TextAlign::Center),
+        "toolbar.path_place_center",
+    ),
+    (
+        Placement::Along(TextAlign::Right),
+        "toolbar.path_place_right",
+    ),
+    (Placement::Top, "toolbar.path_place_top"),
+    (Placement::Bottom, "toolbar.path_place_bottom"),
 ];
 
 /// A drop-down list of `items`; returns the one picked when it changed.
@@ -94,15 +111,29 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
         TextAlign::Center | TextAlign::Right => ft.align,
         _ => TextAlign::Left,
     };
-    if let Some(a) = choice(
+    let current = match app.fitted_text_round_placement() {
+        Some(false) => Placement::Top,
+        Some(true) => Placement::Bottom,
+        None => Placement::Along(along),
+    };
+    // Top and bottom only on a closed path.
+    let shown = if app.fitted_text_closed() {
+        &PLACEMENTS[..]
+    } else {
+        &PLACEMENTS[..3]
+    };
+    match choice(
         ui,
         "path_placement",
         &tr("toolbar.path_placement"),
-        along,
-        &PLACEMENTS,
-        90.0,
+        current,
+        shown,
+        110.0,
     ) {
-        app.edit_fitted_text(|_, align| *align = a);
+        Some(Placement::Along(a)) => app.edit_fitted_text(|_, align| *align = a),
+        Some(Placement::Top) => app.place_fitted_text_round(false),
+        Some(Placement::Bottom) => app.place_fitted_text_round(true),
+        None => {}
     }
     sep(ui);
     let u = app.units;
@@ -129,13 +160,37 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
             });
         }
     }
+    // Tick snapping: a drag off the path moves the text in steps.
+    let snap = app.settings.path_tick_snap;
+    if ui
+        .selectable_label(snap, tr("toolbar.path_tick_snap"))
+        .on_hover_text(tr("toolbar.path_tick_snap_tip"))
+        .clicked()
+    {
+        app.settings.path_tick_snap = !snap;
+    }
+    let mut step = u.from_mm(app.settings.path_tick_mm);
+    let r = ui
+        .add_enabled(
+            snap,
+            NumField::new(&mut step)
+                .speed(0.1)
+                .suffix(format!(" {}", u.short())),
+        )
+        .on_hover_text(tr("toolbar.path_tick_spacing"));
+    if r.changed() {
+        let mm = u.to_mm(step);
+        if mm.is_finite() && mm > 0.0 {
+            app.settings.path_tick_mm = mm.min(1000.0);
+        }
+    }
     sep(ui);
     let (h, v) = tp.mirrors();
     if pic_button(ui, Pic::MirrorH, &tr("toolbar.mirror_h"), true, h).clicked() {
-        app.edit_fitted_text(|t, _| t.set_mirrors(!h, v));
+        app.mirror_fitted_text(!h, v);
     }
     if pic_button(ui, Pic::MirrorV, &tr("toolbar.mirror_v"), true, v).clicked() {
-        app.edit_fitted_text(|t, _| t.set_mirrors(h, !v));
+        app.mirror_fitted_text(h, !v);
     }
     sep(ui);
     if ui

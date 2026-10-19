@@ -215,15 +215,25 @@ impl App {
 
     /// The children of a group (`g` in page space) that are under `p`, top
     /// first, each in page space; a child group counts only where one of
-    /// its own objects is.
+    /// its own objects is. The children of a clip frame are its contents,
+    /// and only where they show: inside the frame.
     fn children_hit(
         &self,
         g: &tracedraw_core::Shape,
         p: Point,
         tol: f64,
     ) -> Vec<tracedraw_core::Shape> {
-        let ShapeKind::Group { children } = &g.kind else {
-            return Vec::new();
+        let children = match &g.kind {
+            ShapeKind::Group { children } => children,
+            ShapeKind::ClipFrame { frame, contents } => {
+                let mut f = (**frame).clone();
+                f.transform = g.transform * f.transform;
+                if !f.page_path().contains(p) {
+                    return Vec::new();
+                }
+                contents
+            }
+            _ => return Vec::new(),
         };
         children
             .iter()
@@ -329,11 +339,12 @@ impl App {
             out: &mut Vec<ShapeId>,
         ) {
             let inner = app.children_hit(s, p, tol);
-            if inner.is_empty() {
-                out.push(s.id);
-            }
             for c in &inner {
                 leaves(app, c, p, tol, out);
+            }
+            // A clip frame is an object of its own under its contents.
+            if inner.is_empty() || matches!(s.kind, ShapeKind::ClipFrame { .. }) {
+                out.push(s.id);
             }
         }
         for s in self

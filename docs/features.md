@@ -12,7 +12,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups (round handles; move, colour and delete one object of a group), Tab cycling | works |
+| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups and clip frames (round handles; move, colour and delete one object of a group), Tab cycling | works (see `behavior/pick-tool.md`) |
 | Second click rotate/skew handles: rotate about a movable centre of rotation, skew with the side handles, Ctrl steps, Shift about the centre line | works (see `behavior/pick-tool.md`) |
 | Handle modifiers: Shift scales from the centre, Ctrl in 100 % steps (mirror at the same size), Alt frees a corner; Ctrl keeps a move straight; right click during a drag leaves the original; Space drops a copy; Esc cancels | works |
 | Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |
@@ -90,7 +90,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 |---|---|
 | Artistic text and paragraph text frames (dashed frames, Show Text Frames, resizing a frame with the Pick tool reflows the text), in-place editing | works (see `behavior/text.md`) |
 | Font family, size, bold, italic, alignment, underline, strikethrough | works |
-| Properties docker: sections in the order Outline, Fill, Transparency, the kind's own, Summary, open by default with header bars and a row of buttons, closed ones kept; fill kinds as pictures; the Transparency tool's settings in its own section | works (see `behavior/workspaces.md`, Properties docker) |
+| Properties docker: sections in the order Outline, Fill, Transparency, the kind's own, Summary, open by default with header bars and a row of buttons, closed ones kept; fill kinds as pictures; the Transparency tool's settings in its own section; the docker keeps its width and every section fits the default one | works (see `behavior/workspaces.md`, Properties docker) |
 | Several objects with different values: the Properties docker, the Outline Pen and the property bar show values that differ as mixed (empty field, no colour, nothing highlighted), and a change of one attribute (outline width, colour, caps, corners, dash, arrowheads, nib, behind fill, scale with object; fill type, colour, gradient settings; transparency type, amount, merge mode, target; corner style, sizes, scaling) changes only that attribute on each object, one undo step | works (see `behavior/mixed-selection.md`) |
 | Font list: type to find a family, count and filter (all, installed, in this drawing, to download), the five used last, names drawn in their own fonts with an icon of how each is built, styles under each family, sample size slider, preview with guide lines | works (see `behavior/text.md`, Font list) |
 | Font Sampler panel: sample text in several fonts side by side at a chosen size, fonts added by name, stand-ins named, a click applies the font | works (see `behavior/text.md`, Font Sampler) |
@@ -98,7 +98,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |
 | Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) and Custom Optional Hyphens (words hyphenated by hand win; turned on for typed, pasted and imported text holding them) | works |
-| Text on path (offset, distance, mirror), straighten text | works |
+| Text on path (offset, distance with tick snapping, mirrors that keep the letters in place; on a closed path centred where it was clicked), straighten text | works (see `behavior/text.md`) |
 | Fit text to frame; wrap paragraph text around objects above it on the page (contour or square; left, right, both sides, above and below; text wrap offset); baselines on the page's baseline grid (see `behavior/text-wrap.md`) | works |
 | Insert Placeholder Text: filler that fills each selected paragraph frame (see `behavior/text.md`) | works |
 | Linked paragraph text frames (link, unlink, live re-flow) | works |

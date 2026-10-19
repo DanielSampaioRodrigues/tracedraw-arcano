@@ -313,6 +313,17 @@ pub struct Settings {
     /// lines (else only the selected ones).
     #[serde(default = "default_true")]
     pub show_text_frames: bool,
+    /// Text fitted to a path: a drag off the path moves the text away
+    /// from it in steps of `path_tick_mm` (tick snapping).
+    #[serde(default)]
+    pub path_tick_snap: bool,
+    /// The step of tick snapping, mm.
+    #[serde(default = "default_path_tick")]
+    pub path_tick_mm: f64,
+}
+
+fn default_path_tick() -> f64 {
+    1.0
 }
 
 /// The docker tab column as it was left: the dockers in it, in order, and
@@ -1149,6 +1160,8 @@ impl Default for Settings {
             warnings: Default::default(),
             curves: Default::default(),
             show_text_frames: true,
+            path_tick_snap: false,
+            path_tick_mm: default_path_tick(),
         }
     }
 }

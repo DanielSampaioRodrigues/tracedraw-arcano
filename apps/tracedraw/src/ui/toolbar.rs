@@ -1845,11 +1845,31 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The transparency settings of the Transparency tool's bar and the
-/// Properties docker: the kind (none, uniform, fountain, pattern, texture),
-/// the amount or the fountain's angle and kind, the merge mode and what
-/// it applies to; a change applies to the selection.
+/// The transparency settings of the Transparency tool's bar: the kind
+/// (none, uniform, fountain, pattern, texture), the amount or the
+/// fountain's angle and kind, the merge mode and what it applies to, in
+/// one row; a change applies to the selection.
 pub fn transparency_part(app: &mut App, ui: &mut Ui) {
+    transparency_controls(app, ui, false);
+}
+
+/// The same settings for the Properties docker, in rows that keep to the
+/// docker's width: the kind and what it applies to, then the amount (or
+/// the fountain's angle and kind), then the merge mode.
+pub fn transparency_section(app: &mut App, ui: &mut Ui) {
+    ui.vertical(|ui| transparency_controls(app, ui, true));
+}
+
+/// `f` in a row of its own when `stacked`, else straight in `ui`.
+fn part_row(ui: &mut Ui, stacked: bool, f: impl FnOnce(&mut Ui)) {
+    if stacked {
+        ui.horizontal(f);
+    } else {
+        f(ui);
+    }
+}
+
+fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
     use crate::mixed::{transparency_mixed, TransparencyField as F};
     let kinds = [
         tr("transparency.none"),
@@ -1883,131 +1903,149 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
         None => (app.transparency_default.clone(), Some(0)),
     };
     let mut field = None;
-    egui::ComboBox::from_id_salt("transparency_kind")
-        .selected_text(
-            current
-                .and_then(|c| kinds.get(c).cloned())
-                .unwrap_or_default(),
-        )
-        .width(110.0)
-        .show_ui(ui, |ui| {
-            for (i, k) in kinds.iter().enumerate() {
-                if ui.selectable_label(current == Some(i), k).clicked() {
-                    if i == 0 {
-                        app.clear_transparency();
-                    } else {
-                        set.set_kind((i - 1) as u8);
-                        field = Some(F::Kind);
-                    }
-                }
-            }
-        });
-    let kind_mixed = mixed.contains(&F::Kind);
-    if set.kind == 0 && !kind_mixed {
-        let amount_mixed = mixed.contains(&F::Amount);
-        let mut amount = set.amount;
-        let mut slider = egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %");
-        if amount_mixed {
-            slider = slider.text(tr("docker.mixed"));
-        }
-        if ui
-            .add_enabled(has_selection, crate::ui::Rail(slider))
-            .changed()
-        {
-            set.amount = amount;
-            field = Some(F::Amount);
-        }
-    } else if set.kind == 1 && !kind_mixed {
-        if let Fill::Fountain(f) = &mut set.mask {
-            let mut angle = f.angle;
-            if ui
-                .add(
-                    crate::ui::field::NumField::new(&mut angle)
-                        .suffix("°")
-                        .speed(1.0)
-                        .mixed(mixed.contains(&F::MaskAngle)),
-                )
-                .changed()
-            {
-                f.angle = angle;
-                field = Some(F::MaskAngle);
-            }
-            let kinds = tracedraw_core::style::FountainKind::ALL
-                .map(|k| (k, crate::ui::dockers::fountain_kind_key(k)));
-            let kind_shown = !mixed.contains(&F::MaskKind);
-            let name = kinds
-                .iter()
-                .find(|(k, _)| kind_shown && *k == f.kind)
-                .map(|(_, n)| tr(n))
-                .unwrap_or_default();
-            egui::ComboBox::from_id_salt("transparency_fountain_kind")
-                .selected_text(name)
-                .width(90.0)
-                .show_ui(ui, |ui| {
-                    for (k, n) in kinds {
-                        if ui
-                            .selectable_label(kind_shown && f.kind == k, tr(n))
-                            .clicked()
-                        {
-                            f.kind = k;
-                            field = Some(F::MaskKind);
-                        }
-                    }
-                });
-        }
-    }
-    vsep(ui);
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(tr("transparency.merge_mode"))
-                .color(Tokens::text_dim())
-                .size(11.0),
-        )
-        .extend(),
-    );
-    let merge_shown = !mixed.contains(&F::Merge);
-    egui::ComboBox::from_id_salt("transparency_merge")
-        .selected_text(if merge_shown {
-            set.merge.name().to_string()
-        } else {
-            String::new()
-        })
-        .width(100.0)
-        .show_ui(ui, |ui| {
-            for m in tracedraw_core::live::MergeMode::ALL {
-                if ui
-                    .selectable_label(merge_shown && set.merge == m, m.name())
-                    .clicked()
-                {
-                    set.merge = m;
-                    field = Some(F::Merge);
-                }
-            }
-        });
     let targets = [
         tr("transparency.target_fill"),
         tr("transparency.target_outline"),
         tr("transparency.target_all"),
     ];
     let target_shown = !mixed.contains(&F::Target);
-    egui::ComboBox::from_id_salt("transparency_target")
-        .selected_text(if target_shown {
-            targets[(set.target as usize).min(2)].clone()
-        } else {
-            String::new()
-        })
-        .width(80.0)
-        .show_ui(ui, |ui| {
-            for (i, t) in targets.iter().enumerate() {
-                if ui
-                    .selectable_label(target_shown && set.target as usize == i, t)
-                    .clicked()
-                {
-                    set.target = i as u8;
-                    field = Some(F::Target);
+    let target_list =
+        |ui: &mut Ui, set: &mut crate::effects_ui::TransparencySettings, field: &mut Option<F>| {
+            egui::ComboBox::from_id_salt("transparency_target")
+                .selected_text(if target_shown {
+                    targets[(set.target as usize).min(2)].clone()
+                } else {
+                    String::new()
+                })
+                .width(80.0)
+                .show_ui(ui, |ui| {
+                    for (i, t) in targets.iter().enumerate() {
+                        if ui
+                            .selectable_label(target_shown && set.target as usize == i, t)
+                            .clicked()
+                        {
+                            set.target = i as u8;
+                            *field = Some(F::Target);
+                        }
+                    }
+                });
+        };
+    part_row(ui, stacked, |ui| {
+        egui::ComboBox::from_id_salt("transparency_kind")
+            .selected_text(
+                current
+                    .and_then(|c| kinds.get(c).cloned())
+                    .unwrap_or_default(),
+            )
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (i, k) in kinds.iter().enumerate() {
+                    if ui.selectable_label(current == Some(i), k).clicked() {
+                        if i == 0 {
+                            app.clear_transparency();
+                        } else {
+                            set.set_kind((i - 1) as u8);
+                            field = Some(F::Kind);
+                        }
+                    }
                 }
+            });
+        // In the docker, what it applies to goes beside the kind.
+        if stacked {
+            target_list(ui, &mut set, &mut field);
+        }
+    });
+    part_row(ui, stacked, |ui| {
+        let kind_mixed = mixed.contains(&F::Kind);
+        if set.kind == 0 && !kind_mixed {
+            let amount_mixed = mixed.contains(&F::Amount);
+            let mut amount = set.amount;
+            let mut slider = egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %");
+            if amount_mixed {
+                slider = slider.text(tr("docker.mixed"));
             }
-        });
+            if ui
+                .add_enabled(has_selection, crate::ui::Rail(slider))
+                .changed()
+            {
+                set.amount = amount;
+                field = Some(F::Amount);
+            }
+        } else if set.kind == 1 && !kind_mixed {
+            if let Fill::Fountain(f) = &mut set.mask {
+                let mut angle = f.angle;
+                if ui
+                    .add(
+                        crate::ui::field::NumField::new(&mut angle)
+                            .suffix("°")
+                            .speed(1.0)
+                            .mixed(mixed.contains(&F::MaskAngle)),
+                    )
+                    .changed()
+                {
+                    f.angle = angle;
+                    field = Some(F::MaskAngle);
+                }
+                let kinds = tracedraw_core::style::FountainKind::ALL
+                    .map(|k| (k, crate::ui::dockers::fountain_kind_key(k)));
+                let kind_shown = !mixed.contains(&F::MaskKind);
+                let name = kinds
+                    .iter()
+                    .find(|(k, _)| kind_shown && *k == f.kind)
+                    .map(|(_, n)| tr(n))
+                    .unwrap_or_default();
+                egui::ComboBox::from_id_salt("transparency_fountain_kind")
+                    .selected_text(name)
+                    .width(90.0)
+                    .show_ui(ui, |ui| {
+                        for (k, n) in kinds {
+                            if ui
+                                .selectable_label(kind_shown && f.kind == k, tr(n))
+                                .clicked()
+                            {
+                                f.kind = k;
+                                field = Some(F::MaskKind);
+                            }
+                        }
+                    });
+            }
+        }
+    });
+    part_row(ui, stacked, |ui| {
+        if !stacked {
+            vsep(ui);
+        }
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(tr("transparency.merge_mode"))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            )
+            .extend(),
+        );
+        let merge_shown = !mixed.contains(&F::Merge);
+        egui::ComboBox::from_id_salt("transparency_merge")
+            .selected_text(if merge_shown {
+                set.merge.name().to_string()
+            } else {
+                String::new()
+            })
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                for m in tracedraw_core::live::MergeMode::ALL {
+                    if ui
+                        .selectable_label(merge_shown && set.merge == m, m.name())
+                        .clicked()
+                    {
+                        set.merge = m;
+                        field = Some(F::Merge);
+                    }
+                }
+            });
+        if !stacked {
+            target_list(ui, &mut set, &mut field);
+        }
+    });
     if let Some(f) = field {
         app.transparency_default = set.clone();
         if has_selection {

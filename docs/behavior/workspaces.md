@@ -82,9 +82,20 @@ come open; the ones closed are kept in the preferences
 (`properties_closed`). F11 and the status bar's fill and outline open
 their section again. The fill kinds are pictures (none, uniform,
 gradient, pattern, texture, mesh) with their names as tooltips; the
-Transparency section holds the Transparency tool's settings (kind,
-amount or gradient, merge mode, what it applies to).
-Checks: `ui::dockers::tests::properties_sections_open_close_and_jump`;
+Transparency section holds the Transparency tool's settings in rows
+that keep to the docker's width: the kind and what it applies to, then
+the amount (or the gradient's angle and kind), then the merge mode. The
+Rectangle section lists the corner kinds (round, scalloped, chamfered)
+one under the other and the four radii two by two as the corners lie,
+each named above its field. The docker keeps the width it has (340
+points by default, or what the edge was dragged to): selecting an
+object never widens it, and its contents are laid out within it and
+clipped to it. Every section of every kind of object (rectangle,
+ellipse, polygon, artistic and paragraph text, bitmap) with each fill
+and transparency kind fits the default width, in English, German,
+Russian and Brazilian Portuguese.
+Checks: `ui::dockers::tests::properties_sections_open_close_and_jump`,
+`ui::dockers::tests::properties_sections_fit_the_default_docker_width`;
 every kind's sections draw in
 `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`.
 

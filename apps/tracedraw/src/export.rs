@@ -460,6 +460,32 @@ pub fn print_sheets(app: &App, st: &PrintState) -> Document {
             }
         }
     }
+    // A negative turns the paper black too, so that what was black ink
+    // (now white) shows as the clear part of the film.
+    if st.invert {
+        let mut ids = doc.ids().clone();
+        for page in doc.pages.iter_mut() {
+            let size = page.size;
+            let mut ground = tracedraw_core::Shape::new(
+                ids.shape(),
+                ShapeKind::Rect {
+                    rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, size.width, size.height),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            ground.fill = tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK);
+            ground.stroke = None;
+            if page.layers.is_empty() {
+                page.layers
+                    .push(tracedraw_core::Layer::new(ids.layer(), "Negative"));
+            }
+            if let Some(layer) = page.layers.first_mut() {
+                layer.shapes.insert(0, ground);
+            }
+        }
+        doc.set_ids(ids);
+    }
     if st.as_bitmap {
         sheets_as_bitmaps(&mut doc, st.bitmap_dpi.clamp(36.0, 1200.0));
     }
@@ -1249,6 +1275,82 @@ mod tests {
         assert_eq!(st.page_indexes(3, 0), vec![2]);
     }
 
+    /// Black text prints black, and a negative (Invert) prints it as the
+    /// clear part of a black sheet rather than white on white paper.
+    #[test]
+    fn black_text_prints_black_and_a_negative_blackens_the_sheet() {
+        use tracedraw_core::{Color, Fill};
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Card", "Sans", 24.0)],
+                origin: tracedraw_core::geometry::Point::new(20.0, 100.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("text");
+        let k100 = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
+        app.run(tracedraw_core::Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(k100),
+        });
+        // The sheet may hold the page in groups or clip frames.
+        fn texts(s: &tracedraw_core::Shape, out: &mut Vec<Fill>) {
+            match &s.kind {
+                ShapeKind::Text { .. } => out.push(s.fill.clone()),
+                ShapeKind::Group { children } => children.iter().for_each(|c| texts(c, out)),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    texts(frame, out);
+                    contents.iter().for_each(|c| texts(c, out));
+                }
+                _ => {}
+            }
+        }
+        let text_fill = |doc: &Document| -> Vec<Fill> {
+            let mut out = Vec::new();
+            for l in doc.all_layers() {
+                l.shapes.iter().for_each(|s| texts(s, &mut out));
+            }
+            out
+        };
+        let st = PrintState::default();
+        let sheets = print_sheets(&app, &st);
+        assert_eq!(text_fill(&sheets), vec![Fill::Solid(k100)]);
+        // The PDF as text with its zlib streams inflated.
+        let bytes = tracedraw_io::pdf::document_to_pdf(&sheets);
+        let mut pdf = String::from_utf8_lossy(&bytes).into_owned();
+        let mut rest: &[u8] = &bytes;
+        while let Some(i) = rest.windows(7).position(|w| w == b"stream\n") {
+            let data = &rest[i + 7..];
+            use std::io::Read;
+            let mut out = Vec::new();
+            if flate2::read::ZlibDecoder::new(data)
+                .read_to_end(&mut out)
+                .is_ok()
+            {
+                pdf.push_str(&String::from_utf8_lossy(&out));
+            }
+            rest = data;
+        }
+        assert!(pdf.contains("0 0 0 1 k"), "black ink in the PDF");
+        let st = PrintState {
+            invert: true,
+            ..PrintState::default()
+        };
+        let sheets = print_sheets(&app, &st);
+        match text_fill(&sheets).as_slice() {
+            [Fill::Solid(c)] => assert!(c.to_rgb8().iter().all(|v| *v > 180), "{c:?}"),
+            other => panic!("{other:?}"),
+        }
+        let first = &sheets.pages[0].layers[0].shapes[0];
+        assert_eq!(first.fill, Fill::Solid(Color::BLACK));
+        let b = first.bounds();
+        let size = sheets.pages[0].size;
+        assert!(b.x0 <= 0.0 && b.y0 <= 0.0 && b.x1 >= size.width && b.y1 >= size.height);
+    }
+
     #[test]
     fn print_colour_options_change_the_sheets_objects() {
         use tracedraw_core::{Color, Fill};
@@ -1381,5 +1483,188 @@ mod tests {
             replace_in("cat concat", "cat", "dog", false, true),
             "dog concat"
         );
+    }
+}
+
+#[cfg(test)]
+mod scratch_191 {
+    use super::*;
+    use tracedraw_core::{Color, Fill, Stroke, TextSpan};
+
+    #[test]
+    #[ignore]
+    fn scratch_black_text_outputs() {
+        tracedraw_text::install();
+        let dir = std::path::PathBuf::from(
+            "/tmp/claude-0/-home-claude/ecd2ad2c-4fd8-5343-ab00-e2a436bfbe5e/scratchpad/p191",
+        );
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut report = String::new();
+        let colors: Vec<(&str, Color)> = vec![
+            ("k100", Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)),
+            ("rich", Color::cmyk_pct(60.0, 40.0, 40.0, 100.0)),
+            ("reg", Color::Registration),
+            ("gray0", Color::Gray { v: 0.0 }),
+            ("rgb0", Color::BLACK),
+            (
+                "lab0",
+                Color::Lab {
+                    l: 0.0,
+                    a: 0.0,
+                    b: 0.0,
+                },
+            ),
+            (
+                "spot",
+                Color::Spot {
+                    ink: 1,
+                    tint: 1.0,
+                    c: 0.0,
+                    m: 0.0,
+                    y: 0.0,
+                    k: 1.0,
+                },
+            ),
+        ];
+        for (name, color) in &colors {
+            for mode in ["fill", "outline", "paragraph", "group"] {
+                let mut app = App::headless();
+                app.run(tracedraw_core::Command::SetInks {
+                    inks: vec![tracedraw_core::document::Ink {
+                        id: 1,
+                        name: "Black".into(),
+                        cmyk: [0.0, 0.0, 0.0, 1.0],
+                    }],
+                });
+                let id = app
+                    .new_shape(ShapeKind::Text {
+                        spans: vec![TextSpan::new("WWWW", "Sans", 72.0)],
+                        origin: tracedraw_core::geometry::Point::new(20.0, 100.0),
+                        frame: (mode == "paragraph")
+                            .then(|| tracedraw_core::geometry::Size::new(150.0, 60.0)),
+                        align: Default::default(),
+                        para: Default::default(),
+                        on_path: None,
+                    })
+                    .expect("text");
+                let outline = mode == "outline";
+                app.run(tracedraw_core::Command::SetFill {
+                    shapes: vec![id],
+                    fill: if outline {
+                        Fill::None
+                    } else {
+                        Fill::Solid(*color)
+                    },
+                });
+                app.run(tracedraw_core::Command::SetStroke {
+                    shapes: vec![id],
+                    stroke: outline.then(|| Stroke::new(*color, 1.0)),
+                });
+                if mode == "group" {
+                    let r = app
+                        .new_shape(ShapeKind::Rect {
+                            rect: tracedraw_core::geometry::Rect::new(5.0, 5.0, 10.0, 10.0),
+                            radius: 0.0,
+                            corners: None,
+                        })
+                        .unwrap();
+                    app.select(vec![id, r]);
+                    app.group_selection();
+                }
+                let tag = format!("{name}_{mode}");
+                let variants: Vec<(&str, Box<dyn Fn(&mut PrintState)>)> = vec![
+                    ("plain", Box::new(|_| {})),
+                    ("opb", Box::new(|s| s.overprint_black = true)),
+                    ("tb", Box::new(|s| s.text_black = true)),
+                    ("s2c", Box::new(|s| s.spot_to_cmyk = true)),
+                    ("bmp", Box::new(|s| s.as_bitmap = true)),
+                    ("mirror", Box::new(|s| s.mirror = true)),
+                    ("invert", Box::new(|s| s.invert = true)),
+                    (
+                        "marks",
+                        Box::new(|s| {
+                            s.crop_marks = true;
+                            s.registration_marks = true;
+                            s.color_bars = true;
+                        }),
+                    ),
+                ];
+                for (v, set) in &variants {
+                    let mut st = PrintState::default();
+                    set(&mut st);
+                    let doc = print_sheets(&app, &st);
+                    let pdf = tracedraw_io::pdf::document_to_pdf(&doc);
+                    std::fs::write(dir.join(format!("print_{tag}_{v}.pdf")), pdf).unwrap();
+                }
+                let st = PrintState {
+                    separations: true,
+                    ..PrintState::default()
+                };
+                let doc = separations_doc(&print_sheets(&app, &st));
+                std::fs::write(
+                    dir.join(format!("print_{tag}_seps.pdf")),
+                    tracedraw_io::pdf::document_to_pdf(&doc),
+                )
+                .unwrap();
+                for (k, std_) in [
+                    tracedraw_io::pdf::PdfStandard::None,
+                    tracedraw_io::pdf::PdfStandard::X1a,
+                    tracedraw_io::pdf::PdfStandard::X3,
+                    tracedraw_io::pdf::PdfStandard::X4,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let opts = tracedraw_io::pdf::PdfOptions {
+                        standard: std_,
+                        output_condition: "FOGRA39".into(),
+                        flatten_dpi: 150.0,
+                        ..Default::default()
+                    };
+                    let pdf = tracedraw_io::pdf::document_to_pdf_with(app.doc(), &opts);
+                    std::fs::write(dir.join(format!("publish_{tag}_x{k}.pdf")), pdf).unwrap();
+                }
+                // Through `.cdr` and back.
+                for ver in [14u16, 17, 20, 24, 27] {
+                    let bytes = tracedraw_cdr::write::document_to_cdr_version(app.doc(), ver);
+                    let Ok((doc, _)) = tracedraw_cdr::open_bytes(&bytes, "t") else {
+                        report.push_str(&format!("{tag} v{ver}: unreadable\n"));
+                        continue;
+                    };
+                    let mut texts = Vec::new();
+                    fn walk(s: &tracedraw_core::Shape, out: &mut Vec<String>) {
+                        match &s.kind {
+                            ShapeKind::Text { spans, .. } => out.push(format!(
+                                "fill {:?} stroke {:?} span_fills {:?}",
+                                s.fill,
+                                s.stroke.as_ref().map(|k| k.color),
+                                spans.iter().map(|sp| sp.fill.clone()).collect::<Vec<_>>()
+                            )),
+                            ShapeKind::Group { children } => {
+                                children.iter().for_each(|c| walk(c, out))
+                            }
+                            _ => {}
+                        }
+                    }
+                    for s in doc
+                        .pages
+                        .iter()
+                        .flat_map(|p| &p.layers)
+                        .flat_map(|l| &l.shapes)
+                    {
+                        walk(s, &mut texts);
+                    }
+                    report.push_str(&format!("{tag} v{ver}: {texts:?}\n"));
+                    let mut back = App::headless();
+                    back.open_document(doc, None);
+                    let pdf = tracedraw_io::pdf::document_to_pdf(&print_sheets(
+                        &back,
+                        &PrintState::default(),
+                    ));
+                    std::fs::write(dir.join(format!("cdr{ver}_{tag}.pdf")), pdf).unwrap();
+                }
+            }
+        }
+        std::fs::write(dir.join("report.txt"), report).unwrap();
     }
 }
