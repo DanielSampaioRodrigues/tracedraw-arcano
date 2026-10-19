@@ -414,12 +414,33 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         Some(s) => (s.fill.clone(), s.stroke.clone()),
         None => (app.default_fill(), app.default_stroke()),
     };
+    // Values that differ across the selection read "Mixed", as in the
+    // Properties panel.
+    let several = shapes.len() > 1;
+    let fill_mixed = several && !app.selection_fill_mix().is_empty();
+    let stroke_mixed = several && !app.selection_stroke_mix().is_empty();
     let (fill_text, fill_swatch, outline_label, outline_swatch) = if doc {
         (
-            crate::app::fill_description(&fill),
-            crate::app::fill_preview_color(&fill),
-            outline_text(app, &stroke),
-            stroke.as_ref().map(|s| crate::canvas::to_color32(s.color)),
+            if fill_mixed {
+                tr("docker.mixed")
+            } else {
+                crate::app::fill_description(&fill)
+            },
+            if fill_mixed {
+                None
+            } else {
+                crate::app::fill_preview_color(&fill)
+            },
+            if stroke_mixed {
+                tr("docker.mixed")
+            } else {
+                outline_text(app, &stroke)
+            },
+            if stroke_mixed {
+                None
+            } else {
+                stroke.as_ref().map(|s| crate::canvas::to_color32(s.color))
+            },
         )
     } else {
         (

@@ -4,6 +4,7 @@ use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use egui::Ui;
+use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
 use tracedraw_core::{
     document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, FountainRepeat,
     Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
@@ -285,18 +286,29 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
 }
 
 fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
+    color_row_mixed(ui, label, c, false)
+}
+
+/// [`color_row`] for objects whose colours differ when `mixed`: no colour
+/// is shown, and the one picked goes to all of them.
+fn color_row_mixed(ui: &mut Ui, label: &str, c: &mut Color, mixed: bool) -> bool {
     let [r, g, b] = c.to_rgb8();
     let mut rgb = [r, g, b];
     let changed = ui
         .horizontal(|ui| {
             ui.label(label);
-            let ch = ui.color_edit_button_srgb(&mut rgb).changed();
-            ui.label(
-                egui::RichText::new(crate::app::color_description(*c))
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-            );
-            ch
+            let resp = ui.color_edit_button_srgb(&mut rgb);
+            if mixed {
+                crate::ui::field::mixed_swatch(ui, resp.rect);
+                crate::ui::field::mixed_note(ui);
+            } else {
+                ui.label(
+                    egui::RichText::new(crate::app::color_description(*c))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+            }
+            resp.changed()
         })
         .inner;
     if changed {
@@ -545,18 +557,30 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 }
             }
             "outline" => {
-                let mut stroke = first.stroke.clone();
+                // A group shows what is inside it; values that differ
+                // across the selection show as mixed, and an edit changes
+                // only what was edited on each object.
+                let base = app.paint_targets().into_iter().next();
+                let old = base
+                    .as_ref()
+                    .map_or(first.stroke.clone(), |b| b.stroke.clone());
+                let mix = app.selection_stroke_mix();
+                let mut stroke = old.clone();
                 let custom = app.settings.custom_arrowheads.clone();
-                if outline_editor(ui, &mut stroke, &custom) {
-                    let shapes = app.selection.clone();
-                    app.run(Command::SetStroke { shapes, stroke });
+                let mut touched = Vec::new();
+                if outline_editor_mixed(ui, &mut stroke, &custom, &mix, &mut touched) {
+                    app.patch_selection_stroke(&old, &stroke, &touched);
                 }
                 extra_strokes(app, ui, first);
             }
             "fill" => {
-                let mut fill = first.fill.clone();
-                if fill_editor(ui, &mut fill) {
-                    app.apply_fill(fill);
+                let base = app.paint_targets().into_iter().next();
+                let old = base.as_ref().map_or(first.fill.clone(), |b| b.fill.clone());
+                let mix = app.selection_fill_mix();
+                let mut fill = old.clone();
+                let mut touched = Vec::new();
+                if fill_editor_mixed(ui, &mut fill, &mix, &mut touched) {
+                    app.patch_selection_fill(&old, &fill, &touched);
                 }
                 extra_fills(app, ui, first);
             }
@@ -878,13 +902,15 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
     use crate::ui::propbar::{edit_corners, CornerEdit};
     use tracedraw_core::{CornerKind, Corners};
     let mut edit = None;
+    // Values that differ across the selected rectangles show as mixed.
+    let mix = app.selection_corner_mix().map_or([false; 6], |(_, m)| m);
     ui.horizontal_wrapped(|ui| {
         for (kind, key) in [
             (CornerKind::Round, "toolbar.corner_round"),
             (CornerKind::Scallop, "toolbar.corner_scallop"),
             (CornerKind::Chamfer, "toolbar.corner_chamfer"),
         ] {
-            if ui.radio(c.kind == kind, tr(key)).clicked() {
+            if ui.radio(!mix[0] && c.kind == kind, tr(key)).clicked() {
                 edit = Some(CornerEdit::Kind(kind));
             }
         }
@@ -907,6 +933,22 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
                 for (i, key) in pair {
                     ui.label(tr(key));
                     let mut v = u.world_from_mm(c.radii[i]);
+                    if mix.get(i + 1).copied().unwrap_or(false) {
+                        // Empty until a size is typed, which goes to all.
+                        if ui
+                            .add(
+                                crate::ui::field::NumField::new(&mut v)
+                                    .range(0.0..=10_000.0)
+                                    .suffix(format!(" {}", u.short()))
+                                    .width(72.0)
+                                    .mixed(true),
+                            )
+                            .changed()
+                        {
+                            edit = Some(CornerEdit::Size(i, u.world_to_mm(v)));
+                        }
+                        continue;
+                    }
                     let r = ui.add(
                         egui::DragValue::new(&mut v)
                             .range(0.0..=10_000.0)
@@ -925,7 +967,10 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
     ui.checkbox(&mut app.corners_together, tr("toolbar.corners_together"));
     let mut relative = !c.fixed;
     if ui
-        .checkbox(&mut relative, tr("toolbar.relative_corners"))
+        .add(
+            egui::Checkbox::new(&mut relative, tr("toolbar.relative_corners"))
+                .indeterminate(mix[5]),
+        )
         .changed()
     {
         edit = Some(CornerEdit::Scaling(relative));
@@ -1013,15 +1058,23 @@ fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
 }
 
 fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
+    fill_editor_mixed(ui, fill, &FillMix::default(), &mut Vec::new())
+}
+
+/// [`fill_editor`] for a selection whose fills differ as `mix` says: no
+/// type is highlighted when the types differ (and no settings are shown
+/// until one is picked), a uniform colour that differs shows no colour.
+/// A choice that equals the value shown still applies to every object:
+/// it is added to `touched`.
+fn fill_editor_mixed(
+    ui: &mut Ui,
+    fill: &mut Fill,
+    mix: &FillMix,
+    touched: &mut Vec<FillField>,
+) -> bool {
     let mut changed = false;
-    let mut kind = match fill {
-        Fill::None => 0,
-        Fill::Solid(_) => 1,
-        Fill::Fountain(_) => 2,
-        Fill::Pattern(_) => 3,
-        Fill::Texture(_) => 4,
-        Fill::Mesh(_) => 5,
-    };
+    let mut kind = tracedraw_core::patch::fill_kind(fill);
+    let shown_kind = (!mix.kind).then_some(kind);
     // The kinds as pictures: none, uniform, gradient, pattern, texture,
     // mesh.
     ui.horizontal_wrapped(|ui| {
@@ -1038,7 +1091,7 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         .enumerate()
         {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
-            if kind == i {
+            if shown_kind == Some(i) {
                 ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
             } else if resp.hovered() {
                 ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
@@ -1048,13 +1101,22 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
                 egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
                 i,
             );
-            if resp.on_hover_text(tr(n)).clicked() && kind != i {
+            if resp.on_hover_text(tr(n)).clicked() && shown_kind != Some(i) {
+                if kind == i {
+                    // The type the first object has, picked for objects
+                    // of other types: they all take its fill.
+                    touched.push(FillField::All);
+                }
                 kind = i;
                 changed = true;
             }
         }
     });
-    if changed {
+    if mix.kind && !changed {
+        crate::ui::field::mixed_note(ui);
+        return false;
+    }
+    if changed && tracedraw_core::patch::fill_kind(fill) != kind {
         let base = fill
             .preview_color()
             .unwrap_or(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0));
@@ -1083,9 +1145,20 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
             )),
         };
     }
+    if !mix.kind && !mix.fields.is_empty() && !matches!(fill, Fill::Solid(_)) {
+        crate::ui::field::mixed_note(ui);
+    }
     match fill {
         Fill::None => {}
-        Fill::Solid(c) => changed |= color_row(ui, &tr("docker.colour"), c),
+        Fill::Solid(c) => {
+            let mixed = !mix.kind && mix.has(FillField::All);
+            if color_row_mixed(ui, &tr("docker.colour"), c, mixed) {
+                changed = true;
+                if mixed {
+                    touched.push(FillField::All);
+                }
+            }
+        }
         Fill::Fountain(f) => changed |= fountain_editor(ui, f),
         Fill::Pattern(p) => changed |= pattern_editor(ui, p),
         Fill::Texture(t) => changed |= texture_editor(ui, t),
@@ -1546,13 +1619,19 @@ fn arrow_combo(
     label: &str,
     a: &mut Arrowhead,
     custom: &[Arrowhead],
+    mixed: bool,
 ) -> bool {
     let mut changed = false;
+    let shown = if mixed {
+        format!("{label}:")
+    } else {
+        format!("{label}: {}", a.name())
+    };
     egui::ComboBox::from_id_salt(id)
-        .selected_text(format!("{label}: {}", a.name()))
+        .selected_text(shown)
         .show_ui(ui, |ui| {
             for k in Arrowhead::ALL {
-                if ui.selectable_label(*a == k, k.name()).clicked() {
+                if ui.selectable_label(!mixed && *a == k, k.name()).clicked() {
                     *a = k;
                     changed = true;
                 }
@@ -1563,7 +1642,7 @@ fn arrow_combo(
                 } else {
                     k.name().to_string()
                 };
-                if ui.selectable_label(a == k, name).clicked() {
+                if ui.selectable_label(!mixed && a == k, name).clicked() {
                     *a = k.clone();
                     changed = true;
                 }
@@ -1600,9 +1679,28 @@ fn set_outline_paint(s: &mut Stroke, paint: Fill) -> bool {
 }
 
 fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]) -> bool {
+    outline_editor_mixed(ui, stroke, custom, &StrokeMix::default(), &mut Vec::new())
+}
+
+/// [`outline_editor`] for a selection whose outlines differ as `mix`
+/// says: a value that differs shows empty (no colour, an empty width box,
+/// no button highlighted, a check box neither on nor off). Every control
+/// the user sets adds its field to `touched`, so a value chosen in a
+/// mixed control applies to every object even when it equals the one
+/// shown.
+fn outline_editor_mixed(
+    ui: &mut Ui,
+    stroke: &mut Option<Stroke>,
+    custom: &[Arrowhead],
+    mix: &StrokeMix,
+    touched: &mut Vec<StrokeField>,
+) -> bool {
     let mut changed = false;
     let mut has = stroke.is_some();
-    if ui.checkbox(&mut has, tr("docker.outline")).changed() {
+    if ui
+        .add(egui::Checkbox::new(&mut has, tr("docker.outline")).indeterminate(mix.presence))
+        .changed()
+    {
         *stroke = if has { Some(Stroke::default()) } else { None };
         changed = true;
     }
@@ -1613,11 +1711,23 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
         // colour, the others its own fill.
         ui.label(tr("docker.outline_fill"));
         let mut paint = outline_paint_of(s);
+        let paint_mix = if mix.has(StrokeField::Paint) {
+            FillMix {
+                kind: false,
+                fields: vec![FillField::All],
+            }
+        } else {
+            FillMix::default()
+        };
+        let mut paint_touched = Vec::new();
         let edited = ui
-            .push_id("outline_paint", |ui| fill_editor(ui, &mut paint))
+            .push_id("outline_paint", |ui| {
+                fill_editor_mixed(ui, &mut paint, &paint_mix, &mut paint_touched)
+            })
             .inner;
         if edited {
             changed = true;
+            touched.push(StrokeField::Paint);
             remove = set_outline_paint(s, paint);
         }
     }
@@ -1625,12 +1735,17 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
         *stroke = None;
     }
     if let Some(s) = stroke {
+        let width_mixed = mix.has(StrokeField::Width);
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
-        if ui.checkbox(&mut hair, tr("docker.hairline")).changed() {
+        if ui
+            .add(egui::Checkbox::new(&mut hair, tr("docker.hairline")).indeterminate(width_mixed))
+            .changed()
+        {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };
+            touched.push(StrokeField::Width);
             changed = true;
         }
-        if !hair {
+        if !hair || width_mixed {
             // The slider applies when let go; the box takes any width
             // typed (Enter or leaving it applies).
             ui.horizontal(|ui| {
@@ -1639,87 +1754,133 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
                         .logarithmic(true)
                         .show_value(false),
                 ));
-                changed |= r.drag_stopped() || (r.changed() && !r.dragged());
-                changed |= ui
+                let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
+                w |= ui
                     .add(
                         crate::ui::field::NumField::new(&mut s.width)
                             .range(0.001..=1000.0)
                             .unit_mm(1.0)
                             .max_decimals(3)
-                            .width(56.0),
+                            .width(56.0)
+                            .mixed(width_mixed),
                     )
                     .changed();
                 ui.label(tr("docker.width_mm"));
+                if w {
+                    touched.push(StrokeField::Width);
+                    changed = true;
+                }
             });
         }
         ui.horizontal(|ui| {
             ui.label(tr("docker.caps"));
+            let mixed = mix.has(StrokeField::Cap);
             for (c, n) in [
                 (tracedraw_core::LineCap::Butt, "docker.cap_butt"),
                 (tracedraw_core::LineCap::Round, "docker.cap_round"),
                 (tracedraw_core::LineCap::Square, "docker.cap_square"),
             ] {
-                if ui.selectable_label(s.cap == c, tr(n)).clicked() {
+                if ui.selectable_label(!mixed && s.cap == c, tr(n)).clicked() {
                     s.cap = c;
+                    touched.push(StrokeField::Cap);
                     changed = true;
                 }
             }
         });
         ui.horizontal(|ui| {
             ui.label(tr("docker.corners"));
+            let mixed = mix.has(StrokeField::Join);
             for (j, n) in [
                 (tracedraw_core::LineJoin::Miter, "docker.join_miter"),
                 (tracedraw_core::LineJoin::Round, "docker.join_round"),
                 (tracedraw_core::LineJoin::Bevel, "docker.join_bevel"),
             ] {
-                if ui.selectable_label(s.join == j, tr(n)).clicked() {
+                if ui.selectable_label(!mixed && s.join == j, tr(n)).clicked() {
                     s.join = j;
+                    touched.push(StrokeField::Join);
                     changed = true;
                 }
             }
         });
         ui.horizontal(|ui| {
-            changed |= arrow_combo(
-                ui,
-                "Start",
-                &tr("docker.arrow_start"),
-                &mut s.start_arrow,
-                custom,
-            );
-            changed |= arrow_combo(ui, "End", &tr("docker.arrow_end"), &mut s.end_arrow, custom);
+            for (field, id, key) in [
+                (StrokeField::StartArrow, "Start", "docker.arrow_start"),
+                (StrokeField::EndArrow, "End", "docker.arrow_end"),
+            ] {
+                let a = if field == StrokeField::StartArrow {
+                    &mut s.start_arrow
+                } else {
+                    &mut s.end_arrow
+                };
+                if arrow_combo(ui, id, &tr(key), a, custom, mix.has(field)) {
+                    touched.push(field);
+                    changed = true;
+                }
+            }
         });
         ui.horizontal(|ui| {
             ui.label(tr("docker.dash"));
+            let mixed = mix.has(StrokeField::Dash);
             for (d, n) in [
                 (vec![], "docker.dash_solid"),
                 (vec![4.0, 2.0], "docker.dash_dashed"),
                 (vec![1.0, 1.0], "docker.dash_dotted"),
                 (vec![6.0, 2.0, 1.0, 2.0], "docker.dash_dash_dot"),
             ] {
-                if ui.selectable_label(s.dash == d, tr(n)).clicked() {
+                if ui.selectable_label(!mixed && s.dash == d, tr(n)).clicked() {
                     s.dash = d;
+                    touched.push(StrokeField::Dash);
                     changed = true;
                 }
             }
         });
-        changed |= ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut s.stretch, 0.1..=1.0).text(tr("docker.nib_stretch")),
-            ))
-            .drag_stopped();
-        changed |= ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut s.nib_angle, -90.0..=90.0)
-                    .text(tr("docker.nib_angle_lc"))
-                    .suffix("°"),
-            ))
-            .drag_stopped();
-        changed |= ui
-            .checkbox(&mut s.behind_fill, tr("docker.behind_fill"))
-            .changed();
-        changed |= ui
-            .checkbox(&mut s.scale_with_object, tr("docker.scale_with_object"))
-            .changed();
+        for (field, key, range, suffix) in [
+            (StrokeField::Stretch, "docker.nib_stretch", 0.1..=1.0, ""),
+            (
+                StrokeField::NibAngle,
+                "docker.nib_angle_lc",
+                -90.0..=90.0,
+                "°",
+            ),
+        ] {
+            let v = if field == StrokeField::Stretch {
+                &mut s.stretch
+            } else {
+                &mut s.nib_angle
+            };
+            // A slider cannot be empty: a mixed one says so in its text.
+            let text = if mix.has(field) {
+                format!("{} ({})", tr(key), tr("docker.mixed"))
+            } else {
+                tr(key)
+            };
+            if ui
+                .add(crate::ui::Rail(
+                    egui::Slider::new(v, range).text(text).suffix(suffix),
+                ))
+                .drag_stopped()
+            {
+                touched.push(field);
+                changed = true;
+            }
+        }
+        for (field, key) in [
+            (StrokeField::BehindFill, "docker.behind_fill"),
+            (StrokeField::ScaleWithObject, "docker.scale_with_object"),
+        ] {
+            let v = if field == StrokeField::BehindFill {
+                &mut s.behind_fill
+            } else {
+                &mut s.scale_with_object
+            };
+            if ui
+                .add(egui::Checkbox::new(v, tr(key)).indeterminate(mix.has(field)))
+                .changed()
+            {
+                touched.push(field);
+                changed = true;
+            }
+        }
     }
     changed
 }
@@ -1862,6 +2023,83 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// Every text the frame painted.
+    fn painted_texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
+        fn walk(s: &egui::Shape, out: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut texts = Vec::new();
+        for c in &out.shapes {
+            walk(&c.shape, &mut texts);
+        }
+        texts
+    }
+
+    /// Two objects with different outline colours and widths: the panel
+    /// shows the colour and the width as mixed (no colour, an empty width
+    /// box); one object alone shows its values.
+    #[test]
+    fn mixed_values_show_empty() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let mut ids = Vec::new();
+        for (x, c, w) in [
+            (10.0, tracedraw_core::Color::rgb8(0, 0, 255), 1.234),
+            (70.0, tracedraw_core::Color::rgb8(255, 255, 0), 3.456),
+        ] {
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: tracedraw_core::geometry::Rect::new(x, 10.0, x + 40.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            app.run(Command::SetStroke {
+                shapes: vec![id],
+                stroke: Some(Stroke::new(c, w)),
+            });
+            ids.push(id);
+        }
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        let mixed = tr("docker.mixed");
+        app.select(ids[..1].to_vec());
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        assert!(!texts.iter().any(|t| *t == mixed));
+        assert!(texts.iter().any(|t| t == "1.234"), "the width shows");
+        app.select(ids.clone());
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        assert!(texts.iter().any(|t| *t == mixed), "the colour is mixed");
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.contains("1.234") || t.contains("3.456")),
+            "no width shows: {:?}",
+            texts
+                .iter()
+                .filter(|t| t.contains("1.234") || t.contains("3.456"))
+                .collect::<Vec<_>>()
+        );
+        let mix = app.selection_stroke_mix();
+        assert!(mix.has(StrokeField::Width) && mix.has(StrokeField::Paint));
     }
 
     /// The outline's paint editor works on the outline: uniform is its

@@ -19,6 +19,9 @@ pub struct NumField<'a, N: Numeric> {
     unit_mm: Option<f64>,
     /// Width in points when the field is not given a size by its parent.
     width: f32,
+    /// The selection has different values here: the box is empty and a
+    /// value typed applies even when it equals the one held.
+    mixed: bool,
 }
 
 /// The width of a field added without a size (see [`NumField::width`]).
@@ -34,7 +37,15 @@ impl<'a, N: Numeric> NumField<'a, N> {
             max_decimals: None,
             unit_mm: None,
             width: DEFAULT_WIDTH,
+            mixed: false,
         }
+    }
+
+    /// Show the field empty because the selected objects differ in this
+    /// value; any value typed then applies to all of them.
+    pub fn mixed(mut self, mixed: bool) -> Self {
+        self.mixed = mixed;
+        self
     }
 
     /// The field's width when it is added on its own; a field placed with
@@ -78,6 +89,9 @@ impl<'a, N: Numeric> NumField<'a, N> {
     }
 
     fn text(&self) -> String {
+        if self.mixed {
+            return String::new();
+        }
         format!(
             "{}{}",
             format_number(
@@ -135,6 +149,9 @@ impl<N: Numeric> Widget for NumField<'_, N> {
                 .vertical_align(egui::Align::Center)
                 .desired_width(width),
         );
+        if self.mixed {
+            resp = resp.on_hover_text(crate::i18n::tr("docker.mixed_tip"));
+        }
         // Typing does not change the value; applying it does.
         resp.flags.set(egui::response::Flags::CHANGED, false);
         if resp.has_focus() && stored.is_none() {
@@ -162,7 +179,7 @@ impl<N: Numeric> Widget for NumField<'_, N> {
                     if N::INTEGRAL {
                         v = v.round();
                     }
-                    if v != self.value.to_f64() {
+                    if v != self.value.to_f64() || self.mixed {
                         *self.value = N::from_f64(v);
                         resp.mark_changed();
                     }
@@ -171,6 +188,29 @@ impl<N: Numeric> Widget for NumField<'_, N> {
         }
         resp
     }
+}
+
+/// Cover a colour button whose objects have different colours: an empty
+/// swatch with a slash, so no colour is shown; the button still opens
+/// its picker, and the colour picked goes to every object.
+pub fn mixed_swatch(ui: &Ui, rect: egui::Rect) {
+    let p = ui.painter();
+    let r = rect.shrink(1.0);
+    p.rect_filled(r, 2.0, crate::theme::Tokens::field());
+    let line = egui::Stroke::new(1.0, crate::theme::Tokens::text_dim());
+    p.rect_stroke(r, 2.0, line, egui::StrokeKind::Inside);
+    p.line_segment([r.left_bottom(), r.right_top()], line);
+}
+
+/// The dim "Mixed" word shown where the selected objects differ, with its
+/// explanation on hover.
+pub fn mixed_note(ui: &mut Ui) -> Response {
+    ui.label(
+        egui::RichText::new(crate::i18n::tr("docker.mixed"))
+            .color(crate::theme::Tokens::text_dim())
+            .italics(),
+    )
+    .on_hover_text(crate::i18n::tr("docker.mixed_tip"))
 }
 
 /// Millimetres per unit for a unit name typed after a value.
@@ -382,6 +422,13 @@ mod tests {
         assert_eq!(format_number(0.123456, false, 1, Some(4)), "0.1235");
         assert_eq!(format_number(-0.0001, false, 0, Some(2)), "0");
         assert_eq!(format_number(7.6, true, 0, None), "8");
+    }
+
+    #[test]
+    fn a_mixed_field_is_empty() {
+        let mut v = 2.5f64;
+        assert_eq!(NumField::new(&mut v).text(), "2.5");
+        assert_eq!(NumField::new(&mut v).mixed(true).text(), "");
     }
 
     #[test]

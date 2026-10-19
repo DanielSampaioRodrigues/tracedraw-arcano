@@ -2949,6 +2949,16 @@ impl App {
             }
             Command::SetFill { fill, .. } => Command::SetFill { shapes, fill },
             Command::SetStroke { stroke, .. } => Command::SetStroke { shapes, stroke },
+            Command::PatchStroke { stroke, fields, .. } => Command::PatchStroke {
+                shapes,
+                stroke,
+                fields,
+            },
+            Command::PatchFill { fill, fields, .. } => Command::PatchFill {
+                shapes,
+                fill,
+                fields,
+            },
             Command::SetOpacity { opacity, .. } => Command::SetOpacity { shapes, opacity },
             other => other,
         };
@@ -3160,6 +3170,8 @@ impl App {
             Command::TransformShapes { .. }
                 | Command::SetFill { .. }
                 | Command::SetStroke { .. }
+                | Command::PatchStroke { .. }
+                | Command::PatchFill { .. }
                 | Command::SetOpacity { .. }
         ) {
             self.last_repeatable = Some(cmd.clone());
@@ -3841,24 +3853,26 @@ impl App {
                 return;
             }
         }
-        let make = |existing: Option<&Stroke>| -> Option<Stroke> {
-            color.map(|c| {
-                let mut s = existing.cloned().unwrap_or_default();
-                s.color = c;
-                s
-            })
-        };
         if self.selection.is_empty() {
             self.request_default_change(crate::defaults::DefaultChange::OutlineColor(color));
         } else {
-            let shapes = self.selected_shapes();
-            let cmds: Vec<Command> = shapes
-                .iter()
-                .map(|s| Command::SetStroke {
-                    shapes: vec![s.id],
-                    stroke: make(s.stroke.as_ref()),
-                })
-                .collect();
+            // Only the colour changes: each object (and each object in a
+            // group) keeps its own width, dash and the rest.
+            let shapes = self.selection.clone();
+            let cmds = vec![match color {
+                Some(c) => Command::PatchStroke {
+                    shapes,
+                    stroke: Stroke {
+                        color: c,
+                        ..Stroke::default()
+                    },
+                    fields: vec![tracedraw_core::patch::StrokeField::Paint],
+                },
+                None => Command::SetStroke {
+                    shapes,
+                    stroke: None,
+                },
+            }];
             if let Err(e) = self.engine.run_batch("Outline Color", &cmds) {
                 self.status = e.to_string();
             } else if let Some(c) = color {
@@ -3874,17 +3888,16 @@ impl App {
             self.request_default_change(crate::defaults::DefaultChange::OutlineWidth(width));
             return;
         }
-        let cmds: Vec<Command> = shapes
-            .iter()
-            .map(|s| {
-                let mut st = s.stroke.clone().unwrap_or_default();
-                st.width = width;
-                Command::SetStroke {
-                    shapes: vec![s.id],
-                    stroke: Some(st),
-                }
-            })
-            .collect();
+        // Only the width changes: each object (and each object in a
+        // group) keeps its own colour and the rest of its outline.
+        let cmds = vec![Command::PatchStroke {
+            shapes: shapes.iter().map(|s| s.id).collect(),
+            stroke: Stroke {
+                width,
+                ..Stroke::default()
+            },
+            fields: vec![tracedraw_core::patch::StrokeField::Width],
+        }];
         if let Err(e) = self.engine.run_batch("Outline Width", &cmds) {
             self.status = e.to_string();
         }

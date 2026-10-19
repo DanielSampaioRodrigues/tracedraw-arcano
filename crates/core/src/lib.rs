@@ -26,6 +26,7 @@ pub mod live;
 pub mod nodes;
 pub mod painterly;
 pub mod paragraphs;
+pub mod patch;
 mod press;
 pub mod shaping;
 pub mod style;

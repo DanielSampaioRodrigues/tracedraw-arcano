@@ -1289,6 +1289,24 @@ fn distance_in(
     step: Option<f64>,
     unit_mm: f64,
 ) -> Option<f64> {
+    distance_in_mixed(ui, app, mm, width, step, unit_mm, false)
+}
+
+/// [`distance`] for a value the selected objects do not share: the field
+/// is empty, a typed value goes to all of them.
+fn distance_mixed(ui: &mut Ui, app: &App, mm: f64, width: f32, mixed: bool) -> Option<f64> {
+    distance_in_mixed(ui, app, mm, width, Some(1.0), app.units.world_mm(), mixed)
+}
+
+fn distance_in_mixed(
+    ui: &mut Ui,
+    app: &App,
+    mm: f64,
+    width: f32,
+    step: Option<f64>,
+    unit_mm: f64,
+    mixed: bool,
+) -> Option<f64> {
     let u = app.units;
     let d = app.settings.precision.min(6) as usize;
     let unit_mm = if unit_mm.is_finite() && unit_mm > 0.0 {
@@ -1303,11 +1321,12 @@ fn distance_in(
             .fixed_decimals(d.min(3))
             .max_decimals(d)
             .suffix(format!(" {}", u.short()))
-            .unit_mm(u.mm()),
+            .unit_mm(u.mm())
+            .mixed(mixed),
     );
     let mut out = None;
     // Typed values apply with Enter or when the field is left.
-    if r.changed() && (v * unit_mm - mm).abs() > 1e-12 {
+    if r.changed() && (mixed || (v * unit_mm - mm).abs() > 1e-12) {
         out = Some(v * unit_mm);
     }
     if let Some(step) = step {
@@ -1800,11 +1819,21 @@ fn set_no_outline(app: &mut App) {
 /// The outline width: a box typed into (Enter or leaving it applies, Esc
 /// puts it back) and an arrow dropping the usual widths. Returns the
 /// width picked or typed.
-fn outline_width_box(app: &mut App, ui: &mut Ui, width: Option<f64>) -> Option<Option<f64>> {
+fn outline_width_box(
+    app: &mut App,
+    ui: &mut Ui,
+    width: Option<f64>,
+    mixed: bool,
+) -> Option<Option<f64>> {
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("outline_width_list");
     let id = ui.make_persistent_id("outline_width_box");
-    let shown = outline_text(app, width);
+    // Objects with different widths: the box is empty until one is typed.
+    let shown = if mixed {
+        String::new()
+    } else {
+        outline_text(app, width)
+    };
     let mut picked: Option<Option<f64>> = None;
     let inner = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -1861,7 +1890,7 @@ fn outline_width_box(app: &mut App, ui: &mut Ui, width: Option<f64>) -> Option<O
                 .max_height(400.0)
                 .show(ui, |ui| {
                     if ui
-                        .selectable_label(width.is_none(), tr("toolbar.none"))
+                        .selectable_label(!mixed && width.is_none(), tr("toolbar.none"))
                         .clicked()
                     {
                         picked = Some(None);
@@ -1888,28 +1917,39 @@ fn outline_width_box(app: &mut App, ui: &mut Ui, width: Option<f64>) -> Option<O
 /// Outline width and the line style and arrowheads of the selection's
 /// outline.
 pub fn outline_part(app: &mut App, ui: &mut Ui) {
-    let first = app.selected_shapes().into_iter().next();
+    use tracedraw_core::patch::StrokeField;
+    // The first object's outline; values that differ across the selection
+    // show empty. Each control changes only its own value on each object.
+    let first = app.paint_targets().into_iter().next();
     let stroke = first.as_ref().and_then(|s| s.stroke.clone());
+    let mix = app.selection_stroke_mix();
     label_pic(ui, Pic::Pen, &tr("toolbar.outline_width"));
     let width = stroke.as_ref().map(|s| s.width);
-    match outline_width_box(app, ui, width) {
+    match outline_width_box(app, ui, width, mix.presence || mix.has(StrokeField::Width)) {
         Some(None) => set_no_outline(app),
         Some(Some(w)) => app.apply_outline_width(w),
         None => {}
     }
     // Line style: solid or one of the dash presets.
     let dash = stroke.as_ref().map(|s| s.dash.clone()).unwrap_or_default();
+    let dash_shown = !mix.has(StrokeField::Dash);
     egui::ComboBox::from_id_salt("line_style_bar")
-        .selected_text(dash_label(&dash))
+        .selected_text(if dash_shown {
+            dash_label(&dash)
+        } else {
+            String::new()
+        })
         .width(96.0)
         .show_ui(ui, |ui| {
             for d in DASHES {
                 if ui
-                    .selectable_label(dash.as_slice() == *d, dash_label(d))
+                    .selectable_label(dash_shown && dash.as_slice() == *d, dash_label(d))
                     .clicked()
                 {
+                    // Each object (each one in a group too) keeps the
+                    // rest of its own outline.
                     let cmds: Vec<Command> = app
-                        .selected_shapes()
+                        .paint_targets()
                         .iter()
                         .filter_map(|s| {
                             let mut st = s.stroke.clone()?;
@@ -1938,18 +1978,32 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
                 }
             })
             .unwrap_or_default();
+        let shown = !mix.has(if start {
+            StrokeField::StartArrow
+        } else {
+            StrokeField::EndArrow
+        });
         egui::ComboBox::from_id_salt(if start {
             "arrow_start_bar"
         } else {
             "arrow_end_bar"
         })
-        .selected_text(arrow_label(&current))
+        .selected_text(if shown {
+            arrow_label(&current)
+        } else {
+            String::new()
+        })
         .width(56.0)
         .show_ui(ui, |ui| {
             for a in tracedraw_core::Arrowhead::ALL {
-                if ui.selectable_label(current == a, arrow_label(&a)).clicked() {
+                if ui
+                    .selectable_label(shown && current == a, arrow_label(&a))
+                    .clicked()
+                {
+                    // Each object (each one in a group too) keeps the
+                    // rest of its own outline.
                     let cmds: Vec<Command> = app
-                        .selected_shapes()
+                        .paint_targets()
                         .iter()
                         .filter_map(|s| {
                             let mut st = s.stroke.clone()?;
@@ -2388,6 +2442,8 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
         .iter()
         .find_map(|s| s.page_corners())
         .unwrap_or(app.rect_corners);
+    // Values that differ across the selected rectangles show as mixed.
+    let mix = app.selection_corner_mix().map_or([false; 6], |(_, m)| m);
     let mut edit = None;
     for (kind, pic, tip) in [
         (CornerKind::Round, Pic::CornerRound, "toolbar.corner_round"),
@@ -2402,7 +2458,7 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
             "toolbar.corner_chamfer",
         ),
     ] {
-        if pic_button(ui, pic, &tr(tip), true, current.kind == kind).clicked() {
+        if pic_button(ui, pic, &tr(tip), true, !mix[0] && current.kind == kind).clicked() {
             edit = Some(CornerEdit::Kind(kind));
         }
     }
@@ -2414,7 +2470,8 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
         stacked(ui, |ui| {
             for i in column {
                 row(ui, |ui| {
-                    if let Some(v) = distance(ui, app, current.radii[i], 66.0, Some(1.0)) {
+                    let mixed = mix.get(i + 1).copied().unwrap_or(false);
+                    if let Some(v) = distance_mixed(ui, app, current.radii[i], 66.0, mixed) {
                         edit = Some(CornerEdit::Size(i, v));
                     }
                 });
@@ -2440,7 +2497,7 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
         Pic::CornerScaling,
         &tr("toolbar.relative_corners"),
         true,
-        relative,
+        relative && !mix[5],
     )
     .clicked()
     {

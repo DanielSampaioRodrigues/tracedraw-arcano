@@ -1850,7 +1850,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
 /// the amount or the fountain's angle and kind, the merge mode and what
 /// it applies to; a change applies to the selection.
 pub fn transparency_part(app: &mut App, ui: &mut Ui) {
-    let shapes = app.selected_shapes();
+    use crate::mixed::{transparency_mixed, TransparencyField as F};
     let kinds = [
         tr("transparency.none"),
         tr("transparency.uniform"),
@@ -1858,74 +1858,86 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
         tr("transparency.pattern"),
         tr("transparency.texture"),
     ];
-    // Reflect the first selected object in the bar.
-    let has_mask = shapes
-        .first()
-        .map(|s| {
-            s.effects
-                .iter()
-                .any(|e| matches!(e, tracedraw_core::live::Effect::Transparency { .. }))
-        })
-        .unwrap_or(false);
-    let first_opacity = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
-    let current = if has_mask {
-        app.transparency_default.kind.max(1) as usize + 1
-    } else if first_opacity < 1.0 {
-        1
-    } else {
-        0
+    // Reflect the first selected object in the bar; settings that differ
+    // across the selection show as mixed, and a change sends only that
+    // setting to each object.
+    let ts = app.selection_transparency();
+    let mixed = transparency_mixed(&ts);
+    let has_selection = !ts.is_empty();
+    let (mut set, current) = match ts.first() {
+        Some(t) => {
+            let mut set = app.transparency_default.clone();
+            if t.kind >= 1 {
+                set.kind = (t.kind - 1) as u8;
+            }
+            if t.kind == 1 {
+                set.amount = t.amount.round();
+            }
+            if let Some(m) = &t.mask {
+                set.mask = m.clone();
+                set.merge = t.merge;
+                set.target = t.target;
+            }
+            (set, (!mixed.contains(&F::Kind)).then_some(t.kind))
+        }
+        None => (app.transparency_default.clone(), Some(0)),
     };
-    let mut changed = false;
+    let mut field = None;
     egui::ComboBox::from_id_salt("transparency_kind")
-        .selected_text(kinds[current].clone())
+        .selected_text(
+            current
+                .and_then(|c| kinds.get(c).cloned())
+                .unwrap_or_default(),
+        )
         .width(110.0)
         .show_ui(ui, |ui| {
             for (i, k) in kinds.iter().enumerate() {
-                if ui.selectable_label(current == i, k).clicked() {
+                if ui.selectable_label(current == Some(i), k).clicked() {
                     if i == 0 {
                         app.clear_transparency();
                     } else {
-                        app.transparency_default.set_kind((i - 1) as u8);
-                        changed = true;
+                        set.set_kind((i - 1) as u8);
+                        field = Some(F::Kind);
                     }
                 }
             }
         });
-    if app.transparency_default.kind == 0 {
-        let mut amount = if first_opacity < 1.0 {
-            ((1.0 - first_opacity) * 100.0).round()
-        } else {
-            app.transparency_default.amount
-        };
+    let kind_mixed = mixed.contains(&F::Kind);
+    if set.kind == 0 && !kind_mixed {
+        let amount_mixed = mixed.contains(&F::Amount);
+        let mut amount = set.amount;
+        let mut slider = egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %");
+        if amount_mixed {
+            slider = slider.text(tr("docker.mixed"));
+        }
         if ui
-            .add_enabled(
-                !shapes.is_empty(),
-                crate::ui::Rail(egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %")),
-            )
+            .add_enabled(has_selection, crate::ui::Rail(slider))
             .changed()
         {
-            app.transparency_default.amount = amount;
-            changed = true;
+            set.amount = amount;
+            field = Some(F::Amount);
         }
-    } else if app.transparency_default.kind == 1 {
-        if let Fill::Fountain(f) = &mut app.transparency_default.mask {
+    } else if set.kind == 1 && !kind_mixed {
+        if let Fill::Fountain(f) = &mut set.mask {
             let mut angle = f.angle;
             if ui
                 .add(
                     crate::ui::field::NumField::new(&mut angle)
                         .suffix("°")
-                        .speed(1.0),
+                        .speed(1.0)
+                        .mixed(mixed.contains(&F::MaskAngle)),
                 )
                 .changed()
             {
                 f.angle = angle;
-                changed = true;
+                field = Some(F::MaskAngle);
             }
             let kinds = tracedraw_core::style::FountainKind::ALL
                 .map(|k| (k, crate::ui::dockers::fountain_kind_key(k)));
+            let kind_shown = !mixed.contains(&F::MaskKind);
             let name = kinds
                 .iter()
-                .find(|(k, _)| *k == f.kind)
+                .find(|(k, _)| kind_shown && *k == f.kind)
                 .map(|(_, n)| tr(n))
                 .unwrap_or_default();
             egui::ComboBox::from_id_salt("transparency_fountain_kind")
@@ -1933,9 +1945,12 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
                 .width(90.0)
                 .show_ui(ui, |ui| {
                     for (k, n) in kinds {
-                        if ui.selectable_label(f.kind == k, tr(n)).clicked() {
+                        if ui
+                            .selectable_label(kind_shown && f.kind == k, tr(n))
+                            .clicked()
+                        {
                             f.kind = k;
-                            changed = true;
+                            field = Some(F::MaskKind);
                         }
                     }
                 });
@@ -1950,17 +1965,22 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
         )
         .extend(),
     );
+    let merge_shown = !mixed.contains(&F::Merge);
     egui::ComboBox::from_id_salt("transparency_merge")
-        .selected_text(app.transparency_default.merge.name())
+        .selected_text(if merge_shown {
+            set.merge.name().to_string()
+        } else {
+            String::new()
+        })
         .width(100.0)
         .show_ui(ui, |ui| {
             for m in tracedraw_core::live::MergeMode::ALL {
                 if ui
-                    .selectable_label(app.transparency_default.merge == m, m.name())
+                    .selectable_label(merge_shown && set.merge == m, m.name())
                     .clicked()
                 {
-                    app.transparency_default.merge = m;
-                    changed = true;
+                    set.merge = m;
+                    field = Some(F::Merge);
                 }
             }
         });
@@ -1969,23 +1989,30 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
         tr("transparency.target_outline"),
         tr("transparency.target_all"),
     ];
+    let target_shown = !mixed.contains(&F::Target);
     egui::ComboBox::from_id_salt("transparency_target")
-        .selected_text(targets[(app.transparency_default.target as usize).min(2)].clone())
+        .selected_text(if target_shown {
+            targets[(set.target as usize).min(2)].clone()
+        } else {
+            String::new()
+        })
         .width(80.0)
         .show_ui(ui, |ui| {
             for (i, t) in targets.iter().enumerate() {
                 if ui
-                    .selectable_label(app.transparency_default.target as usize == i, t)
+                    .selectable_label(target_shown && set.target as usize == i, t)
                     .clicked()
                 {
-                    app.transparency_default.target = i as u8;
-                    changed = true;
+                    set.target = i as u8;
+                    field = Some(F::Target);
                 }
             }
         });
-    if changed && !shapes.is_empty() {
-        let s = app.transparency_default.clone();
-        app.apply_transparency(&s);
+    if let Some(f) = field {
+        app.transparency_default = set.clone();
+        if has_selection {
+            app.patch_transparency(&set, &[f]);
+        }
     }
 }
 
@@ -2399,19 +2426,24 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
 /// (colour; fountain kind, start and end colours, angle, edge pad). With a
 /// selection the fields edit it; otherwise they set the default fill.
 fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::document::Shape]) {
+    use tracedraw_core::patch::FillField;
     use tracedraw_core::style::FountainKind;
-    let mut fill = shapes
-        .first()
+    // The first object's fill; values that differ across the selection
+    // show as mixed, and a change goes only into what was changed.
+    let base = app.paint_targets().into_iter().next();
+    let old = base
+        .as_ref()
         .map(|s| s.fill.clone())
         .unwrap_or_else(|| app.default_fill());
-    let kind = match &fill {
-        Fill::None => 0,
-        Fill::Solid(_) => 1,
-        Fill::Fountain(_) => 2,
-        Fill::Pattern(_) => 3,
-        Fill::Texture(_) => 4,
-        Fill::Mesh(_) => 5,
+    let mix = if shapes.is_empty() {
+        tracedraw_core::patch::FillMix::default()
+    } else {
+        app.selection_fill_mix()
     };
+    let mut fill = old.clone();
+    let kind = tracedraw_core::patch::fill_kind(&fill);
+    let shown_kind = (!mix.kind).then_some(kind);
+    let mut touched: Vec<FillField> = Vec::new();
     let mut changed = false;
     for (i, key) in [
         "docker.fill_none",
@@ -2424,7 +2456,15 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     .iter()
     .enumerate()
     {
-        if ui.selectable_label(kind == i, tr(key)).clicked() && kind != i {
+        let clicked = ui
+            .selectable_label(shown_kind == Some(i), tr(key))
+            .clicked();
+        if clicked && kind == i && mix.kind {
+            // The first object's type, picked for objects of other types.
+            touched.push(FillField::All);
+            changed = true;
+        }
+        if clicked && kind != i {
             let base = fill
                 .preview_color()
                 .unwrap_or(tracedraw_core::Color::cmyk_pct(0.0, 0.0, 0.0, 20.0));
@@ -2459,53 +2499,83 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         }
     }
     vsep(ui);
-    let color_button = |ui: &mut Ui, c: &mut tracedraw_core::Color| -> bool {
+    let color_button = |ui: &mut Ui, c: &mut tracedraw_core::Color, mixed: bool| -> bool {
         let mut rgb = c.to_rgb8();
-        if ui.color_edit_button_srgb(&mut rgb).changed() {
+        let r = ui.color_edit_button_srgb(&mut rgb);
+        if mixed {
+            crate::ui::field::mixed_swatch(ui, r.rect);
+        }
+        if r.changed() {
             *c = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
             true
         } else {
             false
         }
     };
+    // A setting the user set; when it was mixed it applies to every
+    // object even if it equals the value shown.
+    let mut set = |field: FillField, changed: &mut bool| {
+        *changed = true;
+        if mix.has(field) {
+            touched.push(field);
+        }
+    };
     match &mut fill {
+        _ if mix.kind => {
+            crate::ui::field::mixed_note(ui);
+        }
         Fill::Solid(c) => {
             ui.label(
                 egui::RichText::new(tr("docker.colour"))
                     .color(Tokens::text_dim())
                     .size(11.0),
             );
-            changed |= color_button(ui, c);
+            if color_button(ui, c, mix.has(FillField::All)) {
+                set(FillField::All, &mut changed);
+            }
         }
         Fill::Fountain(f) => {
+            let kind_shown = !mix.has(FillField::FountainKind);
             for k in FountainKind::ALL {
                 let key = crate::ui::dockers::fountain_kind_key(k);
-                if ui.selectable_label(f.kind == k, tr(key)).clicked() && f.kind != k {
+                if ui
+                    .selectable_label(kind_shown && f.kind == k, tr(key))
+                    .clicked()
+                    && (f.kind != k || !kind_shown)
+                {
                     f.kind = k;
-                    changed = true;
+                    set(FillField::FountainKind, &mut changed);
                 }
             }
             vsep(ui);
             if let Some(first) = f.stops.first_mut() {
-                changed |= color_button(ui, &mut first.color);
+                if color_button(ui, &mut first.color, mix.has(FillField::StartColor)) {
+                    set(FillField::StartColor, &mut changed);
+                }
             }
             if let Some(last) = f.stops.last_mut() {
-                changed |= color_button(ui, &mut last.color);
+                if color_button(ui, &mut last.color, mix.has(FillField::EndColor)) {
+                    set(FillField::EndColor, &mut changed);
+                }
             }
             ui.label(
                 egui::RichText::new(tr("toolbar.angle"))
                     .color(Tokens::text_dim())
                     .size(11.0),
             );
-            changed |= ui
+            if ui
                 .add(
                     crate::ui::field::NumField::new(&mut f.angle)
                         .speed(1.0)
                         .range(-360.0..=360.0)
                         .fixed_decimals(1)
-                        .suffix("°"),
+                        .suffix("°")
+                        .mixed(mix.has(FillField::Angle)),
                 )
-                .changed();
+                .changed()
+            {
+                set(FillField::Angle, &mut changed);
+            }
             ui.label(
                 egui::RichText::new(tr("docker.edge_pad"))
                     .color(Tokens::text_dim())
@@ -2517,18 +2587,23 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     crate::ui::field::NumField::new(&mut pad)
                         .speed(1.0)
                         .range(0.0..=49.0)
-                        .suffix(" %"),
+                        .suffix(" %")
+                        .mixed(mix.has(FillField::EdgePad)),
                 )
                 .changed()
             {
                 f.edge_pad = pad / 100.0;
-                changed = true;
+                set(FillField::EdgePad, &mut changed);
             }
         }
         _ => {}
     }
     if changed {
-        app.apply_fill_or_default(fill);
+        if shapes.is_empty() {
+            app.apply_fill_or_default(fill);
+        } else {
+            app.patch_selection_fill(&old, &fill, &touched);
+        }
     }
     vsep(ui);
     ui.label(

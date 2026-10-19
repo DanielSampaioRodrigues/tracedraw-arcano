@@ -166,6 +166,21 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         stroke: Option<Stroke>,
     },
+    /// Copy only `fields` of `stroke` to each shape's own outline (and to
+    /// everything inside a group), keeping its other values; a shape
+    /// without an outline gets the default outline with those fields.
+    PatchStroke {
+        shapes: Vec<ShapeId>,
+        stroke: Stroke,
+        fields: Vec<crate::patch::StrokeField>,
+    },
+    /// Copy only `fields` of `fill` to each shape's own fill, as
+    /// [`crate::patch::patch_fill`] does.
+    PatchFill {
+        shapes: Vec<ShapeId>,
+        fill: Fill,
+        fields: Vec<crate::patch::FillField>,
+    },
     SetShapeKind {
         shape: ShapeId,
         kind: ShapeKind,
@@ -393,6 +408,8 @@ impl Command {
             Command::TransformShapes { .. } => "Transform",
             Command::SetFill { .. } => "Fill",
             Command::SetStroke { .. } => "Outline",
+            Command::PatchStroke { .. } => "Outline",
+            Command::PatchFill { .. } => "Fill",
             Command::SetShapeKind { .. } => "Edit Object",
             Command::SetShapeName { .. } => "Rename Object",
             Command::SetQrCode { .. } => "QR Code",
@@ -676,6 +693,38 @@ impl Command {
                 }
                 for id in shapes {
                     for_group_deep(any_mut(doc, *id)?, &mut |s| s.stroke = stroke.clone());
+                }
+            }
+            Command::PatchStroke {
+                shapes,
+                stroke,
+                fields,
+            } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                for id in shapes {
+                    for_group_deep(any_mut(doc, *id)?, &mut |s| {
+                        s.stroke = Some(crate::patch::patch_stroke(
+                            s.stroke.as_ref(),
+                            stroke,
+                            fields,
+                        ))
+                    });
+                }
+            }
+            Command::PatchFill {
+                shapes,
+                fill,
+                fields,
+            } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                for id in shapes {
+                    for_group_deep(any_mut(doc, *id)?, &mut |s| {
+                        s.fill = crate::patch::patch_fill(&s.fill, fill, fields)
+                    });
                 }
             }
             Command::SetShapeKind { shape, kind } => {

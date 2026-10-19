@@ -6,6 +6,15 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker, Outline Pen and property bar with several objects
+  selected (#204): changing one value (such as the outline width) no
+  longer gives every object the first object's whole outline, fill or
+  transparency; only the value changed is set and each object keeps the
+  rest. Values that differ across the selection show as mixed (an empty
+  field, no colour, nothing highlighted); a value set there goes to all
+  (docs/behavior/mixed-selection.md). The property bar's width, line
+  style and arrowheads and a palette outline colour also keep each
+  object's other outline values, inside groups too.
 - Page tab menu: six rows with a picture each and no separators (Rename
   Page..., Insert Page After, Insert Page Before, Duplicate Page...,
   Delete Page, Switch Page Orientation); Page Size and Page Background
