@@ -170,6 +170,12 @@ pub enum Command {
         shape: ShapeId,
         name: Option<String>,
     },
+    /// A QR code object's settings (its children are set with
+    /// [`Command::SetShapeKind`] in the same step).
+    SetQrCode {
+        shape: ShapeId,
+        qr: Option<Box<crate::document::QrCode>>,
+    },
     /// Move a shape to another layer and position (z-order).
     Reorder {
         shape: ShapeId,
@@ -356,6 +362,7 @@ impl Command {
             Command::SetStroke { .. } => "Outline",
             Command::SetShapeKind { .. } => "Edit Object",
             Command::SetShapeName { .. } => "Rename Object",
+            Command::SetQrCode { .. } => "QR Code",
             Command::Reorder { .. } => "Order",
             Command::Group { .. } => "Group",
             Command::Ungroup { .. } => "Ungroup",
@@ -626,6 +633,7 @@ impl Command {
                 any_mut(doc, *shape)?.node_types = types.clone()
             }
             Command::SetShapeName { shape, name } => any_mut(doc, *shape)?.name = name.clone(),
+            Command::SetQrCode { shape, qr } => any_mut(doc, *shape)?.qr = qr.clone(),
 
             Command::Reorder {
                 shape,

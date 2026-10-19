@@ -35,9 +35,9 @@ pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
     split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer,
-    MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle, Shadow, Shape,
-    ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
-    TrackedTask, VerticalAlign,
+    MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle, QrCode, QrKind,
+    Shadow, Shape, ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath,
+    TextSpan, TimeTracker, TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
