@@ -600,7 +600,8 @@ mod tests {
     /// A ZIP file around a written RIFF stream, with extra members.
     fn zip_file(members: &[(&str, Vec<u8>)]) -> Vec<u8> {
         use std::io::Write;
-        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        // A bare RIFF stream, as versions before 14 write it.
+        let riff = crate::write::document_to_cdr_version(&tracedraw_core::Document::default(), 12);
         let mut buf = std::io::Cursor::new(Vec::new());
         {
             let mut w = zip::ZipWriter::new(&mut buf);
@@ -648,7 +649,8 @@ mod tests {
         // None in a file without one, nor in a RIFF file.
         let (doc, _) = crate::open_bytes(&zip_file(&[]), "plain").expect("opens");
         assert!(doc.cmyk_profile.is_none());
-        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        // A bare RIFF stream, as versions before 14 write it.
+        let riff = crate::write::document_to_cdr_version(&tracedraw_core::Document::default(), 12);
         assert!(crate::open_bytes(&riff, "riff")
             .expect("opens")
             .0
@@ -694,7 +696,8 @@ mod tests {
         assert!(doc.fonts.is_empty());
         assert!(report.warnings.iter().any(|w| w.contains("compressed")));
         // A RIFF file has no embedded members; the document still opens.
-        let riff = crate::write::document_to_cdr(&tracedraw_core::Document::default());
+        // A bare RIFF stream, as versions before 14 write it.
+        let riff = crate::write::document_to_cdr_version(&tracedraw_core::Document::default(), 12);
         let (doc, _) = crate::open_bytes(&riff, "riff").expect("opens");
         assert!(doc.fonts.is_empty());
     }

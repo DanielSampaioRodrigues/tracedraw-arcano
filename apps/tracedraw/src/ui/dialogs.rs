@@ -596,6 +596,11 @@ pub enum Dialog {
         name: String,
     },
     DocumentProperties(Box<crate::ui::doc_properties::DocPropsState>),
+    /// Save on a drawing opened from a `.cdr` version TraceDraw does not
+    /// save in: choose another version first.
+    OldCdrVersion {
+        version: u16,
+    },
     ConfirmClose,
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
@@ -1118,6 +1123,34 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
+        Dialog::OldCdrVersion { version } => {
+            let mut choose = false;
+            window(ctx, tr("dialog.old_cdr_title")).show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.label(trf(
+                    "dialog.old_cdr_text",
+                    &[
+                        ("version", &version.to_string()),
+                        ("oldest", &tracedraw_cdr::write::CHECKED_SINCE.to_string()),
+                        ("newest", &tracedraw_cdr::write::CHECKED_UNTIL.to_string()),
+                    ],
+                ));
+                let a = tr("dialog.old_cdr_choose");
+                let b = tr("dialog.cancel");
+                match crate::ui::chrome::button_row(ui, &[&a, &b], false) {
+                    Some(0) => choose = true,
+                    Some(_) => close = true,
+                    None => {}
+                }
+                if enter_pressed(ui) {
+                    choose = true;
+                }
+            });
+            if choose {
+                app.save_as_from_old_cdr();
+                return;
+            }
+        }
         Dialog::DocumentProperties(st) => {
             crate::ui::doc_properties::dialog(app, ctx, st, &mut close)
         }
@@ -4291,6 +4324,7 @@ mod tests {
                 name: "Layer".into(),
             },
             Dialog::DocumentProperties(Box::default()),
+            Dialog::OldCdrVersion { version: 9 },
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
             Dialog::Updates,

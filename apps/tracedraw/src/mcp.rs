@@ -181,12 +181,12 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
                 Some(v) => v
                     .as_u64()
                     .and_then(|v| u16::try_from(v).ok())
-                    .filter(|v| tracedraw_cdr::write::versions().contains(v))
+                    .filter(|v| tracedraw_cdr::write::checked_versions().contains(v))
                     .ok_or_else(|| {
                         format!(
                             "version must be {} to {}",
-                            tracedraw_cdr::write::OLDEST_VERSION,
-                            tracedraw_cdr::write::NEWEST_VERSION
+                            tracedraw_cdr::write::CHECKED_SINCE,
+                            tracedraw_cdr::write::CHECKED_UNTIL
                         )
                     })?,
             };
@@ -212,6 +212,7 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
             app.file = Some(path.clone());
             if is_cdr {
                 app.cdr_version = Some(version);
+                app.cdr_unsaved_version = None;
                 return Ok(format!("saved {} (version {version})", path.display()));
             }
             Ok(format!("saved {}", path.display()))
@@ -430,7 +431,7 @@ mod tests {
         let (_, report) = tracedraw_cdr::open_bytes(&bytes, "v21").expect("opens");
         assert_eq!(report.version.map(|v| v.0), Some(21));
         assert_eq!(app.cdr_save_version(), 21);
-        for bad in [json!(3), json!(28), json!("x"), json!(-1)] {
+        for bad in [json!(3), json!(9), json!(28), json!("x"), json!(-1)] {
             let r = call(
                 &mut app,
                 5,

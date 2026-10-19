@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` saving writes only the versions checked in other programs (14
+  to 27). Save on a drawing opened from an older version asks to choose a
+  version first ("Older file version", then Save As on version 14)
+  instead of writing the old version again. The command line writes
+  version 27 by default and the experimental 7 to 13 only with
+  `TRACEDRAW_CDR_EXPERIMENTAL=1`; the MCP `save` tool takes 14 to 27.
 - Help: a user guide of 120 pages (getting started, lines and shapes,
   objects, color, effects, text, templates and styles, pages, bitmaps,
   printing, web graphics, file formats, customizing, reference) with

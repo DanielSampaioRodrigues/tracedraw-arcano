@@ -47,15 +47,22 @@ pub const CHECKED_UNTIL: u16 = 27;
 pub const OLDEST_VERSION: u16 = 7;
 /// The newest version the writer produces.
 pub const NEWEST_VERSION: u16 = 27;
-/// The version [`document_to_cdr`] writes.
-pub const DEFAULT_VERSION: u16 = 12;
+/// The version [`document_to_cdr`] writes: the newest.
+pub const DEFAULT_VERSION: u16 = NEWEST_VERSION;
+
+/// The versions the app and the command line save in: those checked to
+/// open in other programs. The older ones the writer can produce stay
+/// for testing (`TRACEDRAW_CDR_EXPERIMENTAL=1` on the command line).
+pub fn checked_versions() -> std::ops::RangeInclusive<u16> {
+    CHECKED_SINCE..=CHECKED_UNTIL
+}
 
 /// The versions [`document_to_cdr_version`] can write, oldest first.
 pub fn versions() -> std::ops::RangeInclusive<u16> {
     OLDEST_VERSION..=NEWEST_VERSION
 }
 
-/// Write the whole document as a version 12 `.cdr` file.
+/// Write the whole document as a `.cdr` file of [`DEFAULT_VERSION`].
 pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
     document_to_cdr_version(doc, DEFAULT_VERSION)
 }

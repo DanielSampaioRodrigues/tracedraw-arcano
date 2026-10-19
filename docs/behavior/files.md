@@ -39,9 +39,7 @@ One window, 760 px wide, the same on every system:
   it; every face is listed in the file's font table either way. It is
   greyed below version 16 and when no face may be embedded. Both
   choices stay for the next Save As and for Save.
-- Only the versions checked in other programs are offered (14 to 27); a
-  drawing opened from an older file is still saved in its version by
-  Save, and the command line writes 7 to 27.
+- Only the versions checked in other programs are offered (14 to 27).
 - **Title**, **Subject** and **Rating** (five stars; clicking the lit
   last star takes it off): the document's properties, also in File >
   Document Properties; changed ones are set (one undo step each) before
@@ -63,13 +61,23 @@ version decides who can open a file:
   from.
 - The version chosen stays with the drawing: Save writes the same
   version again without asking. Each open drawing keeps its own.
-- A drawing opened from a file older than version 7 is saved as version
-  7 (the oldest written), one newer than 27 as version 27. Options >
-  Global > File Formats (version 27 at first) is used for a drawing
-  saved to a `.cdr` file without a version of its own.
-- `tracedraw-cli convert in.svg out.cdr` writes version 12, or the
-  version in `TRACEDRAW_CDR_VERSION`; the MCP `save` tool takes an
-  optional `version` (`mcp.md`).
+- TraceDraw saves only the versions checked in other programs, 14 to 27.
+  A drawing opened from an older `.cdr` (versions 1 to 13) keeps its
+  file, but Save does not write that version: the status line says
+  which version Save writes ("Save writes version 14."), and Save opens
+  "Older file version": the drawing came from version N, TraceDraw does
+  not save in it, choose a version from 14 to 27; Choose Version...
+  (or Enter) opens Save As on version 14, Cancel saves nothing. Once
+  saved in a checked version, Save writes it without asking. A file
+  newer than 27 is saved as 27. Options > Global > File Formats (version
+  27 at first) is used for a drawing saved to a `.cdr` file without a
+  version of its own.
+- `tracedraw-cli convert in.svg out.cdr` writes version 27, or the
+  version in `TRACEDRAW_CDR_VERSION` (14 to 27; another version is
+  refused with exit code 2). Versions 7 to 13 are experimental and are
+  written only with `TRACEDRAW_CDR_EXPERIMENTAL=1`, for testing them in
+  other programs. The MCP `save` tool takes an optional `version`, 14 to
+  27 (`mcp.md`).
 
 What each version's file holds is in `docs/cdr-format.md`, Writing.
 
@@ -87,10 +95,12 @@ What each version's file holds is in `docs/cdr-format.md`, Writing.
 - An empty name, a bare extension and a missing folder save nothing and
   say why; typed extensions become the type's
   (`ui::save_as::tests::names_and_folders_are_checked`).
-- A version 9 file opened offers CDR version 27; a new drawing offers
-  TraceDraw and 27; a copy saved as version 9 is version 9 and Ctrl+S
-  writes version 9 again without asking; versions 3 and 99 are saved as
-  7 and 27
+- A version 21 file opened: Ctrl+S opens Save As (an opened `.cdr` is
+  never overwritten in place), and once saved Ctrl+S writes it again; a
+  version 9 file opened says Save writes version 14, Ctrl+S writes
+  nothing and asks for a version, Save As opens on 14 and saves version
+  14, after which Ctrl+S saves without asking; versions 3 and 99 are
+  saved as 14 and 27
   (`ui::save_as::tests::a_drawing_opened_from_a_cdr_file_keeps_its_version`).
 - A drawing with a CMYK profile offers it by name and size; saved with
   the box on, the version 27 file holds the profile, with the box off it

@@ -62,7 +62,7 @@
     </td>
     <td width="25%" valign="top">
       <h3>Opens your files</h3>
-      A clean-room <code>.cdr</code> reader for format versions 1 to 25 and a writer for versions 7 to 22, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
+      A clean-room <code>.cdr</code> reader for format versions 1 to 27 and a writer for versions 7 to 27, plus SVG, PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL and text documents.
     </td>
     <td width="25%" valign="top">
       <h3>Ready for scripts and agents</h3>
@@ -216,9 +216,9 @@ or the moon button at the right of the status bar).
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
-      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 1 to 25) and its templates, CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
+      Open: <code>.tdraw</code>, <code>.cdr</code> (versions 1 to 27) and its templates, CMX, SVG and SVGZ, PDF and AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX, and bitmaps.
       <br><br>
-      Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code> (versions 7 to 22), SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
+      Save and export: <code>.tdraw</code> (JSON), <code>.cdr</code> (versions 7 to 27), SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF, BMP and TIFF.
     </td>
     <td width="33%" valign="top">
       <h4>The everyday essentials</h4>
@@ -250,10 +250,14 @@ is confirmed and what is still assumed.
   document palette; what the reader cannot map yet is counted and
   reported, never silently dropped.
 - **Writing back, in the version you need:** drawings save as `.cdr` in
-  any version from 7 to 22, as well as in TraceDraw's own JSON format. A
+  any version from 7 to 27, as well as in TraceDraw's own JSON format. A
   drawing opened from a `.cdr` saves in its own version unless you pick
-  another. Versions 16 to 22 are checked to open in the program that
-  wrote the samples; 7 to 15 are offered as experimental until they are.
+  another. Save As offers versions 14 to 27, the ones checked to open in
+  the program that wrote the samples; versions 7 to 13 are experimental
+  and are not saved (a drawing opened from one asks which checked version
+  to save in). From version 16 the file can carry the drawing's CMYK
+  colour profile and the fonts its text uses (when their licence allows
+  embedding).
 - **Never crashes on a file:** `tracedraw-cli stress` runs mutation tests
   against the reader, opening any file always yields a document, and
   what a file may decompress to is capped.
@@ -269,7 +273,7 @@ MCP server all go through it, so anything a click can do, a script can do.
 tracedraw-cli convert poster.cdr poster.pdf
 TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
 TRACEDRAW_PAGE=2 tracedraw-cli convert brochure.cdr page2.png
-TRACEDRAW_CDR_VERSION=15 tracedraw-cli convert logo.svg logo.cdr   # .cdr version 15
+TRACEDRAW_CDR_VERSION=15 tracedraw-cli convert logo.svg logo.cdr   # .cdr version 15 (14 to 27)
 
 # A PDF with a bookmark per page that cannot be printed or copied
 # without its permissions password
@@ -365,8 +369,8 @@ Anyone who wants to help is welcome, with or without writing code:
 - **Open our test files in your copy of the reference program.** The
   [`interop` branch](https://github.com/igtoth/tracedraw/tree/interop/bundles)
   holds small `.cdr` files saved by TraceDraw in versions 7 to 15; telling
-  us which ones open (and which do not) is what moves those versions out
-  of experimental. Releases from 2021 on open version 15 and newer only,
+  us which ones open (and which do not) is what lets TraceDraw save
+  versions 7 to 13 again. Releases from 2021 on open version 15 and newer only,
   so versions 7 to 14 need CorelDRAW 2020 or older.
 - **Report bugs** with the steps and a screenshot
   ([bug report](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml)).

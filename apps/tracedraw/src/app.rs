@@ -774,6 +774,10 @@ pub struct App {
     /// the `.cdr` file it came from, or the one last chosen when saving
     /// it. `None`: the version of Options > Global > File Formats.
     pub cdr_version: Option<u16>,
+    /// The `.cdr` version the active drawing was opened from, when it is
+    /// one TraceDraw does not save in (older than the checked versions):
+    /// Save asks for a version first.
+    pub cdr_unsaved_version: Option<u16>,
     /// The `.tdraw` format version the active drawing is saved in: the
     /// version of the file it came from, or the one chosen in Save As.
     /// `None`: the current one.
@@ -1703,6 +1707,7 @@ impl App {
             vector_fx_base: Default::default(),
             github: Default::default(),
             cdr_version: None,
+            cdr_unsaved_version: None,
             tdraw_version: None,
             cdr_embed_profile: true,
             cdr_embed_fonts: false,
@@ -3971,6 +3976,7 @@ impl App {
         let mut unread = 0usize;
         // The version of an opened `.cdr` file: saving keeps it.
         let mut cdr_version = None;
+        let mut opened_version = None;
         // The format version of an opened `.tdraw` file: saving keeps it.
         let mut tdraw_version = None;
         let result = if ext == "svg" || ext == "svgz" {
@@ -4280,18 +4286,28 @@ impl App {
                     }
                     unread = report.skipped_objects;
                     cdr_version = report.version.map(|v| writable_cdr_version(v.0));
-                    (
-                        doc,
-                        crate::i18n::trf(
-                            "status.opened_cdr",
-                            &[
-                                ("version", &ver.to_string()),
-                                ("pages", &report.pages.to_string()),
-                                ("objects", &report.shapes.to_string()),
-                                ("skipped", &report.skipped_objects.to_string()),
-                            ],
-                        ),
-                    )
+                    opened_version = report.version.map(|v| v.0);
+                    let mut msg = crate::i18n::trf(
+                        "status.opened_cdr",
+                        &[
+                            ("version", &ver.to_string()),
+                            ("pages", &report.pages.to_string()),
+                            ("objects", &report.shapes.to_string()),
+                            ("skipped", &report.skipped_objects.to_string()),
+                        ],
+                    );
+                    // An older version than TraceDraw saves: say which
+                    // version Save will write.
+                    if let (Some(v), Some(w)) = (report.version, cdr_version) {
+                        if v.0 != w {
+                            msg.push(' ');
+                            msg.push_str(&crate::i18n::trf(
+                                "status.cdr_saves_as",
+                                &[("version", &w.to_string())],
+                            ));
+                        }
+                    }
+                    (doc, msg)
                 })
                 .map_err(|e| e.to_string())
         } else {
@@ -4310,6 +4326,8 @@ impl App {
             Ok((doc, msg)) => {
                 self.open_document(doc, None);
                 self.cdr_version = cdr_version;
+                self.cdr_unsaved_version =
+                    opened_version.filter(|v| *v < tracedraw_cdr::write::CHECKED_SINCE);
                 self.tdraw_version = tdraw_version;
                 if cdr_version.is_some() {
                     self.apply_open_policy();
@@ -4371,6 +4389,14 @@ impl App {
             self.dialog = crate::ui::dialogs::Dialog::GithubSave(self.github_form(true));
             return;
         }
+        // A drawing opened from a `.cdr` version TraceDraw does not save
+        // in: say so and let the user choose the version first.
+        if !save_as {
+            if let Some(version) = self.cdr_unsaved_version {
+                self.dialog = crate::ui::dialogs::Dialog::OldCdrVersion { version };
+                return;
+            }
+        }
         // In a browser every save is a download, so there is no path to
         // write back to.
         if !save_as && !crate::files::WEB {
@@ -4380,6 +4406,15 @@ impl App {
             }
         }
         self.save_as_dialog();
+    }
+
+    /// Save As for a drawing opened from a `.cdr` version TraceDraw does
+    /// not save in, offering the oldest version it saves.
+    pub(crate) fn save_as_from_old_cdr(&mut self) {
+        self.save_as_dialog();
+        if let crate::ui::dialogs::Dialog::SaveAs(st) = &mut self.dialog {
+            st.version = tracedraw_cdr::write::CHECKED_SINCE;
+        }
     }
 
     /// The `.cdr` version the active drawing is saved in.
@@ -4395,6 +4430,7 @@ impl App {
     pub(crate) fn save_cdr_to(&mut self, path: PathBuf, version: u16) {
         let version = writable_cdr_version(version);
         self.cdr_version = Some(version);
+        self.cdr_unsaved_version = None;
         self.save_to(path);
     }
 
@@ -5566,12 +5602,13 @@ pub(crate) fn is_cdr_path(path: &std::path::Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("cdr"))
 }
 
-/// The `.cdr` version saving writes for `version`: versions older than
-/// the oldest one written become the oldest, newer ones the newest.
+/// The `.cdr` version saving writes for `version`: only versions checked
+/// to open in other programs are saved, so older ones become the oldest
+/// of those and newer ones the newest.
 pub(crate) fn writable_cdr_version(version: u16) -> u16 {
     version.clamp(
-        tracedraw_cdr::write::OLDEST_VERSION,
-        tracedraw_cdr::write::NEWEST_VERSION,
+        tracedraw_cdr::write::CHECKED_SINCE,
+        tracedraw_cdr::write::CHECKED_UNTIL,
     )
 }
 

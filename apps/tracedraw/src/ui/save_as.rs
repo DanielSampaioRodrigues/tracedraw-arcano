@@ -931,43 +931,58 @@ mod tests {
     #[test]
     fn a_drawing_opened_from_a_cdr_file_keeps_its_version() {
         let dir = temp_dir("save-as-keep");
-        let old = dir.join("old.cdr");
         let doc = drawing().engine.document().clone();
+        // A version TraceDraw saves in is kept: Save asks where (an opened
+        // .cdr is never overwritten without Save As) and offers it.
+        let kept = dir.join("kept.cdr");
+        std::fs::write(
+            &kept,
+            tracedraw_cdr::write::document_to_cdr_version(&doc, 21),
+        )
+        .expect("written");
+        let mut app = App::headless();
+        app.open_path(kept.clone());
+        assert_eq!(app.cdr_version, Some(21));
+        assert_eq!(app.cdr_unsaved_version, None);
+        app.engine.mark_unsaved();
+        app.save(false);
+        assert!(state(&mut app).cdr);
+        app.dialog = Dialog::None;
+        // An older version: Save does not write it, it says so and Save As
+        // opens on the oldest version saved.
+        let old = dir.join("old.cdr");
         std::fs::write(&old, tracedraw_cdr::write::document_to_cdr_version(&doc, 9))
             .expect("written");
-        let mut app = App::headless();
-        app.settings.formats.cdr_version = 21;
         app.open_path(old.clone());
-        assert_eq!(app.cdr_version, Some(9));
-        // Save As offers the newest version, as .cdr.
-        app.save_as_dialog();
+        assert_eq!(app.cdr_unsaved_version, Some(9));
+        assert_eq!(app.cdr_version, Some(tracedraw_cdr::write::CHECKED_SINCE));
+        assert!(app.status.contains("14"), "{}", app.status);
+        app.save(false);
+        assert!(
+            matches!(app.dialog, Dialog::OldCdrVersion { version: 9 }),
+            "{:?}",
+            app.dialog
+        );
+        assert_eq!(version_of(&old), Some(9), "the file is not written");
+        app.save_as_from_old_cdr();
         let st = state(&mut app);
-        let newest = tracedraw_cdr::write::NEWEST_VERSION;
-        assert!(st.cdr && st.version == newest, "{st:?}");
-        app.new_document();
-        app.save_as_dialog();
-        let st = state(&mut app);
-        assert!(!st.cdr && st.version == newest);
-        app.switch_document(app.docs.len() - 2);
-        app.save_as_dialog();
-        let st = state(&mut app);
-        st.version = 9;
+        assert!(st.cdr && st.version == 14, "{st:?}");
         st.open_dir(dir.clone());
         st.name = "copy".into();
         let mut st = st.clone();
         assert!(app.finish_save_as(&mut st));
         app.dialog = Dialog::None;
-        assert_eq!(version_of(&dir.join("copy.cdr")), Some(9));
-        // Ctrl+S writes the same version again, without asking.
-        app.engine.mark_saved();
+        assert_eq!(version_of(&dir.join("copy.cdr")), Some(14));
+        // From then on Save writes that version without asking.
+        assert_eq!(app.cdr_unsaved_version, None);
+        app.engine.mark_unsaved();
         app.save(false);
         assert!(matches!(app.dialog, Dialog::None));
-        assert_eq!(version_of(&dir.join("copy.cdr")), Some(9));
-        // Versions too old or too new to write become the nearest written.
+        // Versions too old or too new become the nearest saved.
         app.cdr_version = Some(3);
-        assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::OLDEST_VERSION);
+        assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::CHECKED_SINCE);
         app.cdr_version = Some(99);
-        assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::NEWEST_VERSION);
+        assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::CHECKED_UNTIL);
         assert_eq!(version_choices().first(), Some(&27));
         assert_eq!(version_choices().last(), Some(&14));
         assert!(version_label(15).contains("15"));

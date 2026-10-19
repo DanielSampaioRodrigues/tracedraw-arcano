@@ -101,9 +101,10 @@ Imported objects go (File > Import, Ctrl+I): where the file has them
 the import's undo step.
 
 Saving .cdr files: the Version new drawings are saved in (`cdr_version`,
-12 by default, 7 to 22; a value out of range from a file is brought
+27 by default, 14 to 27; a value out of range from a file is brought
 into it). Saving a `.cdr` file sets it to the version chosen there; a
-drawing opened from a `.cdr` file keeps its own (`files.md`).
+drawing opened from a `.cdr` file keeps its own when TraceDraw saves
+that version (`files.md`).
 
 ### Bitmap Tracing
 
