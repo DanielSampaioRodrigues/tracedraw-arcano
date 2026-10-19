@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dialogs can be dragged by their title bar; they open centred (or where they were left, with Center dialog boxes off).
+
 - CMX files: text exported in several colours is read with each part in its colour and place (the long instruction form, character styles and per character styles are read), and version 8 `.cdr` files from the bidirectional edition read their paragraph text (#187).
 
 - Tables: cells are selected by dragging across them, Ctrl+click,
@@ -260,6 +262,10 @@ full, row-by-row status.
   is let go (#188).
 - A right click while dragging an object no longer drops the copy at
   once: the outline follows the pointer until the left button goes up.
+- Files dropped on the window open or import: with a drawing shown they
+  are imported into it in the middle of the view, otherwise each opens
+  in its own tab (a picture gets a new drawing). `.psd` and every other
+  format File > Open and File > Import read are supported.
 
 ## 0.9.4 (2026-10-19)
 

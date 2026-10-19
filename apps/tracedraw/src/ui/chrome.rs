@@ -37,14 +37,14 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
     let room = (ctx.content_rect().size() - Vec2::splat(16.0)).max(Vec2::splat(200.0));
     let shown = size.min(room);
     if shown != size {
-        egui::Window::new(id)
+        let w = egui::Window::new(id)
             .id(egui::Id::new(id))
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .fixed_size(shown)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .fixed_size(shown);
+        placed(w, ctx, egui::Id::new(id))
             .frame(
                 Frame::new()
                     .fill(crate::theme::Tokens::title_bar())
@@ -88,14 +88,14 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
         }
         return closed;
     }
-    egui::Window::new(id)
+    let w = egui::Window::new(id)
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
-        .fixed_size(size)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .fixed_size(size);
+    placed(w, ctx, egui::Id::new(id))
         .frame(
             Frame::new()
                 .fill(crate::theme::Tokens::title_bar())
@@ -139,6 +139,28 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
     closed
 }
 
+/// Place a dialog window `id`: it can always be dragged by its title bar.
+/// When it opens (it was not shown on the frame before) it starts at the
+/// centre of the main window, or, with Center dialog boxes off, where it
+/// was left; while open it stays where the user put it.
+fn placed<'a>(window: egui::Window<'a>, ctx: &Context, id: egui::Id) -> egui::Window<'a> {
+    let frame = ctx.cumulative_frame_nr();
+    let key = id.with("chrome_last_frame");
+    let last: Option<u64> = ctx.data(|d| d.get_temp(key));
+    ctx.data_mut(|d| d.insert_temp(key, frame));
+    let opened = last.is_none_or(|l| l + 1 < frame);
+    let window = window
+        .movable(true)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
+        .constrain(true);
+    if opened && center_dialogs(ctx) {
+        window.current_pos(ctx.content_rect().center())
+    } else {
+        window
+    }
+}
+
 /// An auto-sized dialog window in the same chrome as [`dialog`]: the white
 /// title bar with the close button, a white edge and the light grey body,
 /// centred over the main window. The close button asks the dialog system
@@ -177,16 +199,8 @@ impl Window {
             .collapsible(false)
             .resizable(false)
             .frame(window_frame());
-        let window = if center_dialogs(ctx) {
-            window.anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-        } else {
-            // Dragged by the title bar; opens where it was left.
-            window
-                .movable(true)
-                .pivot(Align2::CENTER_CENTER)
-                .default_pos(ctx.content_rect().center())
-                .constrain(true)
-        };
+        // Dragged by the title bar; opens centred (or where it was left).
+        let window = placed(window, ctx, self.id);
         window.show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
             let min_w = title_width(ui, &self.title).max(280.0);
@@ -800,6 +814,72 @@ pub fn parse_number(text: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A dialog opens centred, moves when its title bar is dragged and
+    /// stays there while open; opened again it is centred again.
+    #[test]
+    fn dialogs_open_centred_and_move_by_their_title_bar() {
+        let ctx = crate::theme::ui_context();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 800.0));
+        let run = |ctx: &Context, events: Vec<egui::Event>, show: bool| -> Option<Rect> {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut rect = None;
+            let mut out = ctx.run_ui(input, |ui| {
+                if show {
+                    window("Movable")
+                        .show(ui.ctx(), |ui| {
+                            ui.label("body");
+                            ui.add_space(80.0);
+                        })
+                        .map(|_| ());
+                    rect = ui.ctx().memory(|m| {
+                        m.area_rect(egui::Id::new(("chrome_dialog", "Movable".to_string())))
+                    });
+                }
+            });
+            out.textures_delta.clear();
+            rect
+        };
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), true);
+        }
+        let r = run(&ctx, Vec::new(), true).expect("shown");
+        assert!((r.center() - screen.center()).length() < 2.0, "{r:?}");
+        // Drag the title bar 200 px right and 100 px down.
+        let from = Pos2::new(r.left() + 40.0, r.top() + TITLE_BAR / 2.0);
+        let to = from + Vec2::new(200.0, 100.0);
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(&ctx, vec![egui::Event::PointerMoved(from)], true);
+        run(&ctx, vec![press(from, true)], true);
+        for i in 1..=5 {
+            let p = from + (to - from) * (i as f32 / 5.0);
+            run(&ctx, vec![egui::Event::PointerMoved(p)], true);
+        }
+        run(&ctx, vec![press(to, false)], true);
+        let moved = run(&ctx, Vec::new(), true).expect("shown");
+        assert!(
+            (moved.center() - (r.center() + Vec2::new(200.0, 100.0))).length() < 3.0,
+            "{r:?} -> {moved:?}"
+        );
+        // Closed for a frame, then opened again: centred.
+        run(&ctx, Vec::new(), false);
+        run(&ctx, Vec::new(), false);
+        run(&ctx, Vec::new(), true);
+        let again = run(&ctx, Vec::new(), true).expect("shown");
+        assert!(
+            (again.center() - screen.center()).length() < 2.0,
+            "{again:?}"
+        );
+    }
 
     #[test]
     fn fields_read_numbers_with_units_and_commas() {
