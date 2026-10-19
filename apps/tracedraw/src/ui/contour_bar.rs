@@ -11,6 +11,7 @@ use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::fill_tool_bars::color_pick;
 use crate::ui::propbar::sep;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::shaping::Join;
 
@@ -88,7 +89,7 @@ pub fn contour_controls(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("contour.corners"));
+            .rich_tip(tr("contour.corners"));
     });
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt("contour_blend")
@@ -107,7 +108,7 @@ pub fn contour_controls(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("docker.color_blend"));
+            .rich_tip(tr("docker.color_blend"));
         changed |= color_pick(
             ui,
             &palette,

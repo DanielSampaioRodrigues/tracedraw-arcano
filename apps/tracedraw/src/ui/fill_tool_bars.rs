@@ -13,6 +13,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::field::NumField;
+use crate::ui::tips::RichTip;
 use egui::{epaint, vec2, Color32, Rect, Sense, Stroke, Ui};
 use tracedraw_core::Color;
 
@@ -79,7 +80,7 @@ pub fn color_pick(
         },
         Stroke::NONE,
     ));
-    let resp = resp.on_hover_text(tip);
+    let resp = resp.rich_tip(tip);
     if !enabled {
         return false;
     }
@@ -100,7 +101,7 @@ pub fn color_pick(
                         };
                         ui.painter()
                             .rect_stroke(r, 0.0, edge, egui::StrokeKind::Inside);
-                        let s = s.on_hover_text(crate::ui::palette::swatch_tip(name, *c));
+                        let s = s.rich_tip(crate::ui::palette::swatch_tip(name, *c));
                         if s.clicked() {
                             *color = *c;
                             changed = true;
@@ -162,7 +163,7 @@ pub fn mesh_bar(app: &mut App, ui: &mut Ui) {
             node.is_some(),
             egui::Slider::new(&mut transparency, 0..=100).suffix(" %"),
         )
-        .on_hover_text(tr("toolbar.mesh_node_transparency"));
+        .rich_tip(tr("toolbar.mesh_node_transparency"));
     if r.changed() {
         app.set_mesh_node_alpha(1.0 - transparency as f32 / 100.0);
     }

@@ -12,6 +12,7 @@ use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::field::NumField;
 use crate::ui::propbar::{dash_label, label_pic, outline_text, sep, Pic, DASHES};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::Arrowhead;
 
@@ -81,7 +82,7 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
             }
         })
         .response
-        .on_hover_text(tr("callout.line_style"));
+        .rich_tip(tr("callout.line_style"));
     if let Some(d) = dash {
         app.set_callout_style(|s| s.dash = d.clone());
     }
@@ -100,7 +101,7 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
             }
         })
         .response
-        .on_hover_text(tr("callout.head"));
+        .rich_tip(tr("callout.head"));
     if let Some(h) = head {
         app.set_callout_style(|s| s.head = h.clone());
     }
@@ -127,7 +128,7 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
                 .unit_mm(1.0)
                 .suffix(" mm"),
         )
-        .on_hover_text(tr("callout.gap_tip"));
+        .rich_tip(tr("callout.gap_tip"));
     if r.changed() {
         app.set_callout_style(|s| s.gap = gap);
     }

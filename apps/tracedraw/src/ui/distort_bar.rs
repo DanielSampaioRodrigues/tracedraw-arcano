@@ -10,6 +10,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::propbar::sep;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Stroke, Ui};
 
 fn dim(ui: &mut Ui, text: String) {
@@ -46,7 +47,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
                         .range(-200.0..=200.0)
                         .max_decimals(1),
                 )
-                .on_hover_text(tr("distort.amount_tip"))
+                .rich_tip(tr("distort.amount_tip"))
                 .changed();
         }
         DistortMode::Zipper => {
@@ -66,7 +67,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
                         .range(0..=tracedraw_core::distort::MAX_FREQUENCY)
                         .width(44.0),
                 )
-                .on_hover_text(tr("distort.frequency_tip"))
+                .rich_tip(tr("distort.frequency_tip"))
                 .changed();
             for (flag, key, tip) in [
                 (&mut s.random, "distort.random", "distort.random_tip"),
@@ -75,7 +76,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
             ] {
                 if ui
                     .selectable_label(*flag, tr(key))
-                    .on_hover_text(tr(tip))
+                    .rich_tip(tr(tip))
                     .clicked()
                 {
                     *flag = !*flag;
@@ -143,7 +144,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
     if undistorted
         && ui
             .button(tr("docker.apply"))
-            .on_hover_text(tr("distort.apply_tip"))
+            .rich_tip(tr("distort.apply_tip"))
             .clicked()
     {
         app.add_distortion();

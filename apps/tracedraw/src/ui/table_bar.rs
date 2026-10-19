@@ -7,6 +7,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::{ok_cancel, window};
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use tracedraw_core::{document::ShapeKind, BorderSet, CellMargins, Color, Command, Fill, Stroke};
 
@@ -153,7 +154,7 @@ fn borders(app: &mut App, ui: &mut Ui, cells: bool) {
                 }
             })
             .response
-            .on_hover_text(tr("table.border_choice_tip"));
+            .rich_tip(tr("table.border_choice_tip"));
     }
     let shown = if cells || selected.is_some() {
         app.table_shown_border()
@@ -298,7 +299,7 @@ fn cell_text(app: &mut App, ui: &mut Ui) {
         };
         if ui
             .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
-            .on_hover_text(tr(key))
+            .rich_tip(tr(key))
             .clicked()
         {
             match key {

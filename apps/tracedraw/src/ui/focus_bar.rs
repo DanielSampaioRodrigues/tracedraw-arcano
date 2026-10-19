@@ -6,6 +6,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, RichText};
 
 pub fn show(app: &mut App, ctx: &Context) {
@@ -27,7 +28,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                     ui.horizontal(|ui| {
                         if ui
                             .button(RichText::new("\u{2715}").size(14.0))
-                            .on_hover_text(tr("focus.exit"))
+                            .rich_tip(tr("focus.exit"))
                             .clicked()
                         {
                             go = Some(None);
@@ -35,7 +36,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                         let title = app.doc().title.clone();
                         if ui
                             .link(RichText::new(title).size(15.0).color(Tokens::text()))
-                            .on_hover_text(tr("focus.exit"))
+                            .rich_tip(tr("focus.exit"))
                             .clicked()
                         {
                             go = Some(None);

@@ -6,6 +6,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::ui::field::NumField;
 use crate::ui::propbar::{pic_button, sep, Pic};
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::document::{PathTextOrientation, PathTextVertical, TextAlign};
 
@@ -78,7 +79,7 @@ fn choice<T: Copy + PartialEq>(
             }
         })
         .response
-        .on_hover_text(tip);
+        .rich_tip(tip);
     picked
 }
 
@@ -148,7 +149,7 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
                     .speed(0.1)
                     .suffix(format!(" {}", u.short())),
             )
-            .on_hover_text(tr(key));
+            .rich_tip(tr(key));
         if r.changed() {
             let mm = u.to_mm(v);
             app.edit_fitted_text(|t, _| {
@@ -164,7 +165,7 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
     let snap = app.settings.path_tick_snap;
     if ui
         .selectable_label(snap, tr("toolbar.path_tick_snap"))
-        .on_hover_text(tr("toolbar.path_tick_snap_tip"))
+        .rich_tip(tr("toolbar.path_tick_snap_tip"))
         .clicked()
     {
         app.settings.path_tick_snap = !snap;
@@ -177,7 +178,7 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
                 .speed(0.1)
                 .suffix(format!(" {}", u.short())),
         )
-        .on_hover_text(tr("toolbar.path_tick_spacing"));
+        .rich_tip(tr("toolbar.path_tick_spacing"));
     if r.changed() {
         let mm = u.to_mm(step);
         if mm.is_finite() && mm > 0.0 {
@@ -195,7 +196,7 @@ pub fn text_path_bar(app: &mut App, ui: &mut Ui) {
     sep(ui);
     if ui
         .button(tr("menu.text.straighten_text"))
-        .on_hover_text(tr("toolbar.path_straighten_tip"))
+        .rich_tip(tr("toolbar.path_straighten_tip"))
         .clicked()
     {
         app.straighten_text();

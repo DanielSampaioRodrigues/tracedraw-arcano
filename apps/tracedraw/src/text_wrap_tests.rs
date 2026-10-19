@@ -3,10 +3,8 @@
 
 use crate::app::{App, TextEdit};
 use tracedraw_core::{
-    geometry::{Rect, Shape as _},
-    paragraphs::paragraph_styles,
-    Command, Document, ParagraphStyle, Point, ShapeId, ShapeKind, Size, TextAlign, TextSpan,
-    TextWrap, WrapMode, WrapSide,
+    geometry::Rect, paragraphs::paragraph_styles, Command, Document, ParagraphStyle, Point,
+    ShapeId, ShapeKind, Size, TextAlign, TextSpan, TextWrap, WrapMode, WrapSide,
 };
 
 fn fonts_available() -> bool {

@@ -6,6 +6,7 @@
 use crate::app::{App, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{
     document::ShapeKind,
@@ -1227,7 +1228,7 @@ pub fn pic_button(ui: &mut Ui, pic: Pic, tip: &str, enabled: bool, pressed: bool
             Tokens::border()
         },
     );
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 /// A thin separator between groups.
@@ -1250,7 +1251,7 @@ pub(crate) fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
         pic,
         Tokens::icon(),
     );
-    resp.on_hover_text(tip);
+    resp.rich_tip(tip);
 }
 
 /// A text label before a field ("X:", "Units:").
@@ -1584,7 +1585,7 @@ pub fn origin_point(b: tracedraw_core::geometry::Rect, origin: (u8, u8)) -> Poin
 /// The 3 x 3 object origin selector.
 fn origin_selector(ui: &mut Ui, app: &mut App) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(22.0, BAR_H), Sense::click());
-    let resp = resp.on_hover_text(tr("toolbar.object_origin"));
+    let resp = resp.rich_tip(tr("toolbar.object_origin"));
     let cell = 5.0;
     let gap = 2.0;
     let total = cell * 3.0 + gap * 2.0;
@@ -1833,7 +1834,7 @@ pub(crate) fn outline_unit_combo(ui: &mut Ui, salt: &str, current: Units) -> Opt
             }
         })
         .response
-        .on_hover_text(tr("toolbar.outline_units"));
+        .rich_tip(tr("toolbar.outline_units"));
     picked
 }
 
@@ -1906,7 +1907,7 @@ fn outline_width_box(
                     .vertical_align(egui::Align::Center)
                     .desired_width(72.0),
             )
-            .on_hover_text(tr("toolbar.outline_width"));
+            .rich_tip(tr("toolbar.outline_width"));
         if resp.has_focus() {
             ui.data_mut(|d| d.insert_temp(id, buf.clone()));
         } else if stored.is_some() || resp.lost_focus() {
@@ -2396,7 +2397,7 @@ pub fn char_offset_part(app: &mut App, ui: &mut Ui) {
                  val: &mut f64,
                  range: std::ops::RangeInclusive<f64>,
                  suffix: &str| {
-        ui.label(label).on_hover_text(tr(tip));
+        ui.label(label).rich_tip(tr(tip));
         ui.add_sized(
             [72.0, ROW + 4.0],
             crate::ui::field::NumField::new(val)
@@ -2404,7 +2405,7 @@ pub fn char_offset_part(app: &mut App, ui: &mut Ui) {
                 .max_decimals(1)
                 .suffix(suffix),
         )
-        .on_hover_text(tr(tip));
+        .rich_tip(tr(tip));
     };
     field(
         ui,
@@ -2861,7 +2862,7 @@ fn wrap_style_list(app: &mut App, ui: &mut Ui) {
             !app.selection.is_empty(),
             egui::Button::new("\u{25BE}").small(),
         )
-        .on_hover_text(tr("context.wrap_style"));
+        .rich_tip(tr("context.wrap_style"));
     if button.clicked() {
         egui::Popup::toggle_id(&ctx, popup_id);
     }

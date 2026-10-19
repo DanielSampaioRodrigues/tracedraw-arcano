@@ -11,6 +11,7 @@ use crate::i18n::tr;
 use crate::theme::{self, Tokens};
 use crate::tools::{Tool, GROUPS};
 use crate::ui::icons;
+use crate::ui::tips::RichTip;
 use egui::{Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// Tools after which a flyout draws a separator.
@@ -423,7 +424,7 @@ fn quick_customize(app: &mut App, ui: &mut Ui, horizontal: bool) {
             },
         )
         .response
-        .on_hover_text(tr("toolbox.quick_customize"));
+        .rich_tip(tr("toolbox.quick_customize"));
     });
 }
 

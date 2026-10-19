@@ -13,6 +13,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::propbar::{pic_button, sep, Pic};
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use tracedraw_core::envelope::{Mapping, Mode};
 use tracedraw_core::geometry::ParamCurve;
@@ -82,7 +83,7 @@ fn mapping_list(app: &mut App, ui: &mut Ui, width: f32) {
             }
         })
         .response
-        .on_hover_text(tr("envelope.mapping_tip"));
+        .rich_tip(tr("envelope.mapping_tip"));
     if let Some(m) = chosen {
         app.set_envelope_mapping(m);
     }
@@ -103,7 +104,7 @@ fn preset_list(app: &mut App, ui: &mut Ui, enabled: bool) {
                 }
             })
             .response
-            .on_hover_text(tr("envelope.presets_tip"));
+            .rich_tip(tr("envelope.presets_tip"));
     });
     if let Some(p) = chosen {
         app.apply_envelope_preset(p);
@@ -211,7 +212,7 @@ pub fn envelope_bar(app: &mut App, ui: &mut Ui) {
 /// One preset's picture in the docker's grid; true when clicked.
 fn preset_cell(ui: &mut Ui, i: usize, size: Vec2, enabled: bool) -> bool {
     let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let resp = resp.on_hover_text(tr("envelope.preset_tip"));
+    let resp = resp.rich_tip(tr("envelope.preset_tip"));
     let p = ui.painter_at(r);
     if resp.hovered() && enabled {
         p.rect_filled(r, 2.0, Tokens::tool_hover());

@@ -7,6 +7,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// Height of the bottom row and width of the vertical scrollbar.
@@ -380,7 +381,7 @@ fn nav_button(ui: &mut Ui, g: Glyph, tip: &str) -> bool {
             tri(p, 1.0);
         }
     }
-    resp.on_hover_text(tip).clicked()
+    resp.rich_tip(tip).clicked()
 }
 
 /// One tab per page, slanted at the sides; the current page's tab is white.
@@ -700,7 +701,7 @@ mod tests {
         let ctx = crate::theme::ui_context();
         let mut heights = [0.0f32; 3];
         frame(&ctx, |ui| {
-            let mut measure = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
+            let measure = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
                 ui.vertical(|ui| f(ui)).response.rect.height()
             };
             heights[0] = measure(ui, &mut |ui| {

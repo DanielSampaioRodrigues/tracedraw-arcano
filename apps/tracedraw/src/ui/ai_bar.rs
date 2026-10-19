@@ -8,6 +8,7 @@ use crate::ai::AiStatus;
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 /// Height of the bar.
@@ -66,18 +67,10 @@ pub fn ai_bar(app: &mut App, ui: &mut Ui) {
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(4.0);
-            if ui
-                .small_button("x")
-                .on_hover_text(tr("ai.hide_bar"))
-                .clicked()
-            {
+            if ui.small_button("x").rich_tip(tr("ai.hide_bar")).clicked() {
                 app.settings.ai.show_bar = false;
             }
-            if ui
-                .small_button("...")
-                .on_hover_text(tr("ai.settings"))
-                .clicked()
-            {
+            if ui.small_button("...").rich_tip(tr("ai.settings")).clicked() {
                 app.open_ai_drawing();
             }
             if let Some((text, colour)) = state(app) {
@@ -85,7 +78,7 @@ pub fn ai_bar(app: &mut App, ui: &mut Ui) {
                     egui::Label::new(RichText::new(text.clone()).color(colour).size(11.0))
                         .truncate(),
                 )
-                .on_hover_text(text);
+                .rich_tip(text);
             }
         });
     });
@@ -112,7 +105,7 @@ fn model_list(app: &mut App, ui: &mut Ui) {
             }
         })
         .response
-        .on_hover_text(tr("ai.model"));
+        .rich_tip(tr("ai.model"));
     if fetch {
         app.ai_fetch_models();
     }

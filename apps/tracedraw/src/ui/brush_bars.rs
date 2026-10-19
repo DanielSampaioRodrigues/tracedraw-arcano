@@ -13,6 +13,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::field::NumField;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use serde::{Deserialize, Serialize};
 
@@ -114,7 +115,7 @@ fn dim(ui: &mut Ui, text: String) {
 fn percent(ui: &mut Ui, label: &str, tip: &str, v: &mut u32) {
     dim(ui, tr(label));
     ui.add(NumField::new(v).range(1..=100).suffix(" %"))
-        .on_hover_text(tr(tip));
+        .rich_tip(tr(tip));
 }
 
 /// The bar of the brush tool in use.
@@ -128,7 +129,7 @@ pub fn brush_bar(app: &mut App, ui: &mut Ui) {
                 .range(0.5..=500.0)
                 .suffix(format!(" {}", app.units.short())),
         )
-        .on_hover_text(tr("toolbar.nib_size_tip"))
+        .rich_tip(tr("toolbar.nib_size_tip"))
         .changed()
     {
         app.brush_radius = app.units.to_mm(w).clamp(0.5, 500.0);
@@ -183,14 +184,14 @@ pub fn brush_bar(app: &mut App, ui: &mut Ui) {
             );
             if ui
                 .selectable_label(!b.repel, tr("toolbar.attract"))
-                .on_hover_text(tr("toolbar.attract_tip"))
+                .rich_tip(tr("toolbar.attract_tip"))
                 .clicked()
             {
                 b.repel = false;
             }
             if ui
                 .selectable_label(b.repel, tr("toolbar.repel"))
-                .on_hover_text(tr("toolbar.attract_tip"))
+                .rich_tip(tr("toolbar.attract_tip"))
                 .clicked()
             {
                 b.repel = true;
@@ -199,7 +200,7 @@ pub fn brush_bar(app: &mut App, ui: &mut Ui) {
         Tool::Roughen => {
             dim(ui, tr("toolbar.frequency"));
             ui.add(NumField::new(&mut b.roughen_frequency).range(1..=10))
-                .on_hover_text(tr("toolbar.roughen_frequency_tip"));
+                .rich_tip(tr("toolbar.roughen_frequency_tip"));
             dim(ui, tr("toolbar.spike_size"));
             let mut a = app.units.from_mm(app.roughen_amount);
             if ui

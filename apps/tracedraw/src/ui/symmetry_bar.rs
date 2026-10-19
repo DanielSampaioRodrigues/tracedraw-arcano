@@ -5,6 +5,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, RichText};
 
 const GREEN: Color32 = Color32::from_rgb(0x1E, 0x9E, 0x3C);
@@ -35,7 +36,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                                 )
                                 .frame(false),
                             )
-                            .on_hover_text(tr("menu.object.symmetry_finish"));
+                            .rich_tip(tr("menu.object.symmetry_finish"));
                         // The tick in green, over the label's start.
                         let r = finish.rect;
                         ui.painter().text(
@@ -54,7 +55,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                         let (mut c, mut changed) = (center, false);
                         changed |= ui
                             .add(egui::DragValue::new(&mut n).range(1..=12))
-                            .on_hover_text(tr("dialog.mirror_lines"))
+                            .rich_tip(tr("dialog.mirror_lines"))
                             .changed();
                         ui.separator();
                         let u = app.units;
@@ -93,7 +94,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .prefix("\u{21BB} ")
                                     .suffix("°"),
                             )
-                            .on_hover_text(tr("dialog.mirror_angle"))
+                            .rich_tip(tr("dialog.mirror_angle"))
                             .changed();
                         if changed {
                             app.set_symmetry(c, a, n);

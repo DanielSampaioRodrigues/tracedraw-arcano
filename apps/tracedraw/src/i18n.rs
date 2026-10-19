@@ -120,6 +120,14 @@ pub fn set_language(code: &str) {
     }
 }
 
+/// Every key of the English table.
+pub fn english_keys() -> Vec<String> {
+    state()
+        .read()
+        .map(|s| s.english.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
 pub fn language() -> String {
     state().read().map(|s| s.code.clone()).unwrap_or_default()
 }

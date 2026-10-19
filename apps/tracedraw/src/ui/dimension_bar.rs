@@ -10,6 +10,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::field::NumField;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::geometry::PathEl;
 
@@ -41,7 +42,7 @@ fn text_field(
         .unwrap_or_else(|| shown.to_string());
     let r = ui
         .add(egui::TextEdit::singleline(&mut buf).desired_width(56.0))
-        .on_hover_text(tr(key));
+        .rich_tip(tr(key));
     if r.has_focus() {
         ui.data_mut(|d| d.insert_temp(id, buf.clone()));
     }
@@ -123,7 +124,7 @@ pub fn dimension_bar(app: &mut App, ui: &mut Ui) {
                 .range(1.0..=500.0)
                 .suffix(" pt"),
         )
-        .on_hover_text(tr("dimension.text_size"));
+        .rich_tip(tr("dimension.text_size"));
     if (r.drag_stopped() || r.lost_focus()) && (size - style.text_size).abs() > 1e-9 {
         app.set_dimension_style(|s| s.text_size = size);
     }

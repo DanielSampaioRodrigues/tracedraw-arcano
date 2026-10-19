@@ -14,6 +14,7 @@ use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::fill_tool_bars::color_pick;
 use crate::ui::propbar::sep;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::extrude::ExtrudeKind;
 
@@ -36,7 +37,7 @@ fn length(ui: &mut Ui, app: &App, mm: &mut f64, tip: &str) -> bool {
                 .suffix(format!(" {}", app.units.short()))
                 .width(76.0),
         )
-        .on_hover_text(tip);
+        .rich_tip(tip);
     if r.changed() {
         *mm = app.units.world_to_mm(v);
         return true;
@@ -64,7 +65,7 @@ pub fn extrude_controls(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("extrude.kind"));
+            .rich_tip(tr("extrude.kind"));
     });
     ui.horizontal(|ui| {
         if s.kind.parallel() {
@@ -80,7 +81,7 @@ pub fn extrude_controls(app: &mut App, ui: &mut Ui) {
                         .max_decimals(0)
                         .width(44.0),
                 )
-                .on_hover_text(tr("extrude.depth_tip"))
+                .rich_tip(tr("extrude.depth_tip"))
                 .changed();
             dim(ui, tr("docker.vanishing_point"));
             changed |= length(ui, app, &mut s.vanishing.x, "x");
@@ -239,7 +240,7 @@ pub fn extrude_space(app: &mut App, ui: &mut Ui) {
                             .max_decimals(0)
                             .width(40.0),
                     )
-                    .on_hover_text(tr("docker.light_intensity"))
+                    .rich_tip(tr("docker.light_intensity"))
                     .changed();
             });
         });
@@ -263,7 +264,7 @@ fn degrees(ui: &mut Ui, v: &mut f64, range: std::ops::RangeInclusive<f64>, tip: 
             .suffix("\u{b0}")
             .width(52.0),
     )
-    .on_hover_text(tip)
+    .rich_tip(tip)
     .changed()
 }
 
@@ -306,7 +307,7 @@ pub fn extrude_bar(app: &mut App, ui: &mut Ui) {
         ui.vertical(|ui| extrude_space(app, ui));
     })
     .response
-    .on_hover_text(tr("extrude.space_menu_tip"));
+    .rich_tip(tr("extrude.space_menu_tip"));
     sep(ui);
     extrude_actions(app, ui);
     sep(ui);
@@ -484,7 +485,7 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 2.0;
         for (i, key) in EXTRUDE_PAGES.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
-            let resp = resp.on_hover_text(tr(key));
+            let resp = resp.rich_tip(tr(key));
             let on = app.extrude_page == i;
             let p = ui.painter();
             if on {
@@ -556,7 +557,7 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                             .max_decimals(0)
                             .width(80.0),
                     )
-                    .on_hover_text(tr("extrude.depth_tip"))
+                    .rich_tip(tr("extrude.depth_tip"))
                     .changed();
             });
             // X and Y: the vanishing point, from the page origin or the
@@ -677,7 +678,7 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                                     .max_decimals(0)
                                     .width(40.0),
                             )
-                            .on_hover_text(tr("docker.light_intensity"))
+                            .rich_tip(tr("docker.light_intensity"))
                             .changed();
                     });
                 });

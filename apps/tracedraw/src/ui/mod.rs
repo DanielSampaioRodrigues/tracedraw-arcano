@@ -87,6 +87,7 @@ pub mod template_dialog;
 pub mod text_docker;
 pub mod text_path_bar;
 pub mod time_tracker;
+pub mod tips;
 pub mod toolbar;
 pub mod toolbox;
 pub mod transform_docker;
@@ -1010,6 +1011,36 @@ mod tests {
         frame_with(ctx, app, vec![button(at, true, b)]);
         frame_with(ctx, app, vec![button(at, false, b)]);
         frame_with(ctx, app, Vec::new());
+    }
+
+    /// Every tip the bars give, for every tool with nothing, each object
+    /// and everything selected, written to `$TIPS_OUT` (one per line).
+    #[test]
+    #[ignore]
+    fn collect_bar_tips() {
+        let Some(out) = std::env::var_os("TIPS_OUT") else {
+            return;
+        };
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        frame(&ctx, &mut app);
+        app.select_all();
+        let ids = app.selection.clone();
+        crate::ui::tips::start_recording();
+        for tool in Tool::ALL {
+            app.set_tool(tool);
+            let mut sels = vec![Vec::new(), ids.clone()];
+            sels.extend(ids.iter().map(|i| vec![*i]));
+            for sel in sels {
+                app.select(sel);
+                frame(&ctx, &mut app);
+                frame(&ctx, &mut app);
+            }
+        }
+        let tips = crate::ui::tips::recorded();
+        let text: Vec<String> = tips.iter().map(|t| t.replace('\n', "\\n")).collect();
+        std::fs::write(out, text.join("\n")).unwrap();
     }
 
     /// Every tool gets a drag across the page, a drag starting on an

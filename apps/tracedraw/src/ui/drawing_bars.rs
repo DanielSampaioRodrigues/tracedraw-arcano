@@ -10,6 +10,7 @@ use crate::recognize::LEVEL_KEYS;
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::field::NumField;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 
 fn dim(ui: &mut Ui, text: String) {
@@ -32,7 +33,7 @@ fn level(ui: &mut Ui, id: &str, tip: &str, v: &mut u8) {
             }
         })
         .response
-        .on_hover_text(tr(tip));
+        .rich_tip(tr(tip));
     *v = cur;
 }
 
@@ -59,7 +60,7 @@ pub fn drawing_bar(app: &mut App, ui: &mut Ui) {
         }
         Tool::Sketch => {
             ui.checkbox(&mut app.sketch.join, tr("sketch.join"))
-                .on_hover_text(tr("sketch.join_tip"));
+                .rich_tip(tr("sketch.join_tip"));
             let mut d = app.units.from_mm(app.sketch.join_distance);
             let r = ui.add_enabled(
                 app.sketch.join,
@@ -103,14 +104,14 @@ pub fn knife_bar(app: &mut App, ui: &mut Ui) {
     let split = app.knife.gap <= 0.0;
     if ui
         .selectable_label(split, tr("knife.split"))
-        .on_hover_text(tr("knife.split_tip"))
+        .rich_tip(tr("knife.split_tip"))
         .clicked()
     {
         app.knife.gap = 0.0;
     }
     if ui
         .selectable_label(!split, tr("knife.gap"))
-        .on_hover_text(tr("knife.gap_tip"))
+        .rich_tip(tr("knife.gap_tip"))
         .clicked()
         && split
     {
@@ -128,7 +129,7 @@ pub fn knife_bar(app: &mut App, ui: &mut Ui) {
         app.knife.gap = app.units.to_mm(w).clamp(0.0, 1000.0);
     }
     ui.checkbox(&mut app.knife.one_object, tr("knife.one_object"))
-        .on_hover_text(tr("knife.one_object_tip"));
+        .rich_tip(tr("knife.one_object_tip"));
     crate::ui::propbar::sep(ui);
     dim(
         ui,

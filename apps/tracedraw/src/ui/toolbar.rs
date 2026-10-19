@@ -5,6 +5,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::icons;
+use crate::ui::tips::RichTip;
 use egui::{Ui, Vec2};
 use tracedraw_core::{document::ShapeKind, geometry::Rect, Fill};
 
@@ -69,15 +70,34 @@ fn std_button(
     resp
 }
 
+/// A standard toolbar button that opens a list: the icon with a small
+/// down arrow on its right, one button.
+fn std_list_button(ui: &mut Ui, action: icons::Action, tip: &str) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(STD + 11.0, STD), egui::Sense::click());
+    std_frame(ui, rect, resp.hovered(), resp.is_pointer_button_down_on());
+    let resp = resp.on_hover_ui(|ui| rich_tip(ui, tip));
+    let icon = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + STD / 2.0, rect.center().y),
+        Vec2::splat(STD_ICON),
+    );
+    icons::draw_action(ui.painter(), icon, action, Tokens::icon());
+    let c = egui::pos2(rect.right() - 7.0, rect.center().y + 1.0);
+    ui.painter().add(egui::epaint::PathShape::convex_polygon(
+        vec![
+            c + Vec2::new(-3.0, -1.5),
+            c + Vec2::new(3.0, -1.5),
+            c + Vec2::new(0.0, 2.0),
+        ],
+        Tokens::text_dim(),
+        egui::Stroke::NONE,
+    ));
+    resp
+}
+
 /// A button's tip: the title (with its shortcut) in bold on the first
 /// line, what it does under it.
 pub(crate) fn rich_tip(ui: &mut Ui, tip: &str) {
-    let (title, desc) = tip.split_once('\n').unwrap_or((tip, ""));
-    ui.set_max_width(280.0);
-    ui.label(egui::RichText::new(title).font(crate::theme::bold(12.0)));
-    if !desc.is_empty() {
-        ui.label(egui::RichText::new(desc).size(12.0));
-    }
+    crate::ui::tips::show(ui, tip);
 }
 
 /// The tip of the standard bar's button `key`: its title and the
@@ -96,7 +116,7 @@ fn std_arrow(ui: &mut Ui, id: &str, enabled: bool) -> egui::Response {
             egui::Sense::hover()
         },
     );
-    let resp = resp.on_hover_text(tr("toolbar.more"));
+    let resp = resp.rich_tip(tr("toolbar.more"));
     let _ = id;
     std_frame(ui, rect, enabled && resp.hovered(), false);
     let c = rect.center();
@@ -245,7 +265,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                         .unwrap_or_default();
                     if ui
                         .button(name)
-                        .on_hover_text(path.display().to_string())
+                        .rich_tip(path.display().to_string())
                         .clicked()
                     {
                         app.open_path(path.clone());
@@ -500,7 +520,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(egui::Button::new("\u{2715}").frame(false))
-                            .on_hover_text(tr("toolbar.snap_close"))
+                            .rich_tip(tr("toolbar.snap_close"))
                             .clicked()
                         {
                             ui.close();
@@ -524,13 +544,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             });
         std_sep(ui);
         // Options opens its list of option pages.
-        let options = std_button(
-            ui,
-            icons::Action::Options,
-            &tip("toolbar.options"),
-            true,
-            false,
-        );
+        let options = std_list_button(ui, icons::Action::Options, &tip("toolbar.options"));
         egui::Popup::menu(&options)
             .id(egui::Id::new("options_button_menu"))
             .show(|ui| crate::ui::menus::options_items(app, ui));
@@ -659,7 +673,7 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
                     cutout,
                     egui::Button::new(tr("menu.bitmaps.remove_background")),
                 )
-                .on_disabled_hover_text(tip)
+                .rich_disabled_tip(tip)
                 .clicked()
             {
                 app.ai_remove_background();
@@ -944,14 +958,14 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 if ui
                     .add(egui::Button::new("\u{25cf}").selected(!app.eraser_square))
-                    .on_hover_text(tr("toolbar.eraser_round"))
+                    .rich_tip(tr("toolbar.eraser_round"))
                     .clicked()
                 {
                     app.eraser_square = false;
                 }
                 if ui
                     .add(egui::Button::new("\u{25a0}").selected(app.eraser_square))
-                    .on_hover_text(tr("toolbar.eraser_square"))
+                    .rich_tip(tr("toolbar.eraser_square"))
                     .clicked()
                 {
                     app.eraser_square = true;
@@ -1395,7 +1409,7 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
         ui.add(crate::ui::Rail(
             egui::Slider::new(&mut v, 0..=100).show_value(true),
         ))
-        .on_hover_text(tr("toolbar.freehand_smoothing"));
+        .rich_tip(tr("toolbar.freehand_smoothing"));
         app.settings.curves.smoothing = v;
     }
     if app.tool == Tool::Pen {
@@ -1520,8 +1534,8 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
             ready && !busy,
             egui::Button::new(format!("\u{2726} {}", tr("toolbar.remove_background"))),
         )
-        .on_hover_text(tip.clone())
-        .on_disabled_hover_text(tip)
+        .rich_tip(tip.clone())
+        .rich_disabled_tip(tip)
         .clicked()
     {
         app.ai_remove_background();
@@ -1587,7 +1601,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     ] {
         if ui
             .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
-            .on_hover_text(tr(key))
+            .rich_tip(tr(key))
             .clicked()
         {
             match key {
@@ -1871,7 +1885,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                     .suffix(" pt")
                     .width(62.0),
             )
-            .on_hover_text(tr("toolbar.font_size"));
+            .rich_tip(tr("toolbar.font_size"));
         let (arrow_rect, arrow) =
             ui.allocate_exact_size(egui::vec2(16.0, field.rect.height()), egui::Sense::click());
         if arrow.hovered() {
@@ -2226,7 +2240,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
                     .integer(),
             ),
         )
-        .on_hover_text(tr("toolbar.curve_smoothness"));
+        .rich_tip(tr("toolbar.curve_smoothness"));
     if r.changed() {
         let first = app.smoothing.is_none();
         if first {
@@ -2490,8 +2504,8 @@ fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
                 .spacing([2.0, 2.0])
                 .show(ui, |ui| {
                     for (i, s) in CommonShape::of(shown).enumerate() {
-                        let picked = shape_thumbnail(ui, s, app.common_shape == s, false)
-                            .on_hover_text(s.name());
+                        let picked =
+                            shape_thumbnail(ui, s, app.common_shape == s, false).rich_tip(s.name());
                         if picked.clicked() {
                             app.common_shape = s;
                             egui::Popup::close_id(ui.ctx(), popup);
@@ -2685,7 +2699,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             }
         })
         .response
-        .on_hover_text(tr("shadow.feather_direction"));
+        .rich_tip(tr("shadow.feather_direction"));
     let edge_key = |e: FeatherEdges| match e {
         FeatherEdges::Linear => "shadow.edges_linear",
         FeatherEdges::Squared => "shadow.edges_squared",
@@ -2707,7 +2721,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             }
         })
         .response
-        .on_hover_text(tr("shadow.feather_edges"));
+        .rich_tip(tr("shadow.feather_edges"));
     dim(ui, "transparency.merge_mode");
     egui::ComboBox::from_id_salt("shadow_merge")
         .selected_text(sh.merge.name())
@@ -2797,7 +2811,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             app.can_break_shadow_apart(),
             egui::Button::new(tr("shadow.break_apart")),
         )
-        .on_hover_text(tr("shadow.break_apart_tip"))
+        .rich_tip(tr("shadow.break_apart_tip"))
         .clicked()
     {
         app.break_shadow_apart();
