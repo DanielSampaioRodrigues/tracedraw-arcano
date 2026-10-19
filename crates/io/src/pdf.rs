@@ -820,6 +820,7 @@ impl PageWriter<'_> {
             let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
             let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
         }
+        let _ = writeln!(self.content, "{} M", f(s.miter_ratio()));
     }
 
     /// Draw the outline `s` of `shape` along `path` (page space).

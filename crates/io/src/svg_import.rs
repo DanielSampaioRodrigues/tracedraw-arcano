@@ -302,6 +302,7 @@ fn convert_stroke(s: &usvg::Stroke, t: Affine) -> Stroke {
             usvg::LineJoin::Bevel => LineJoin::Bevel,
         },
         dash,
+        miter_limit: Stroke::miter_angle_from_ratio(s.miterlimit().get() as f64),
         ..Default::default()
     }
 }

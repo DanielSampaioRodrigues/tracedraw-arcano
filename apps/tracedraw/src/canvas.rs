@@ -120,6 +120,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
     draw_fountain_handles(app, painter);
+    draw_shadow_handles(app, painter);
 
     // 3-point tools: base segment waiting for the third click, previewed to the pointer.
     if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
@@ -746,6 +747,61 @@ fn draw_fountain_handles(app: &App, painter: &Painter) {
         );
         painter.rect_stroke(
             ERect::from_center_size(sp, egui::vec2(9.0, 9.0)),
+            0.0,
+            EStroke::new(1.0, Tokens::SELECTION),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
+/// Drop Shadow tool: the selected shadow's start handle (white), end
+/// handle (the shadow colour) and the dashed line between them with the
+/// opacity slider on it.
+fn draw_shadow_handles(app: &App, painter: &Painter) {
+    use crate::shadow_tool::{shadow_handles, ShadowHandle};
+    if app.tool != Tool::DropShadow {
+        return;
+    }
+    let Some((_, sh, b)) = app.selected_shadow() else {
+        return;
+    };
+    let view = &app.view;
+    let hs = shadow_handles(&sh, b);
+    let pos = |h: ShadowHandle| {
+        hs.iter()
+            .find(|(k, _)| *k == h)
+            .map(|(_, p)| view.to_screen(*p))
+    };
+    let (Some(a), Some(z), Some(o)) = (
+        pos(ShadowHandle::Start),
+        pos(ShadowHandle::End),
+        pos(ShadowHandle::Opacity),
+    ) else {
+        return;
+    };
+    let d = z - a;
+    let len = d.length();
+    if len > 1e-3 {
+        let step = 6.0;
+        let mut t = 0.0;
+        while t < len {
+            let t1 = (t + step * 0.6).min(len);
+            painter.line_segment(
+                [a + d * (t / len), a + d * (t1 / len)],
+                EStroke::new(1.0, Tokens::SELECTION),
+            );
+            t += step;
+        }
+        // The opacity slider: a short bar across the line.
+        let n = egui::vec2(-d.y, d.x) / len * 5.0;
+        painter.line_segment([o - n, o + n], EStroke::new(3.0, Tokens::SELECTION));
+    }
+    let [r, g, bl] = sh.color.to_rgb8();
+    for (c, fill) in [(a, Color32::WHITE), (z, Color32::from_rgb(r, g, bl))] {
+        let rect = ERect::from_center_size(c, egui::vec2(9.0, 9.0));
+        painter.rect_filled(rect, 0.0, fill);
+        painter.rect_stroke(
+            rect,
             0.0,
             EStroke::new(1.0, Tokens::SELECTION),
             egui::StrokeKind::Outside,

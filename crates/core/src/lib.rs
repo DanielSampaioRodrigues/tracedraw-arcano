@@ -28,6 +28,7 @@ pub mod painterly;
 pub mod paragraphs;
 pub mod patch;
 mod press;
+pub mod shadow;
 pub mod shaping;
 pub mod style;
 pub mod text_flow;
@@ -50,7 +51,8 @@ pub use id::{LayerId, PageId, ShapeId};
 pub use paragraphs::ParagraphFormat;
 pub use style::{
     arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, FountainRepeat, LineCap, LineJoin,
-    Mesh, MeshNode, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind, WidthNode,
+    Mesh, MeshNode, OutlinePosition, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
+    WidthNode,
 };
 pub use text_flow::{TextWrap, WrapMode, WrapSide};
 

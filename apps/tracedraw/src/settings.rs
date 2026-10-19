@@ -39,6 +39,14 @@ pub struct Settings {
     /// Arrowheads created with Object > Create > Arrowhead.
     #[serde(default)]
     pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
+    /// Dash patterns made with Edit Line Style (on, off, ... lengths in
+    /// outline widths).
+    #[serde(default)]
+    pub custom_dashes: Vec<Vec<f64>>,
+    /// The unit outline widths are shown and typed in (a unit id, "pt"
+    /// by default); widths are kept in millimetres.
+    #[serde(default = "default_outline_units")]
+    pub outline_units: String,
     /// Grid, ruler and guideline settings new drawings start with
     /// (Document Options > Save as Default).
     #[serde(default)]
@@ -373,6 +381,10 @@ fn default_desktop() -> [u8; 3] {
 
 /// How many one-time upgrades `Settings::upgrade` knows.
 const UPGRADES: u32 = 2;
+
+fn default_outline_units() -> String {
+    "pt".into()
+}
 
 fn default_true() -> bool {
     true
@@ -1082,6 +1094,8 @@ impl Default for Settings {
             wheel_zooms: true,
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
+            custom_dashes: Vec::new(),
+            outline_units: default_outline_units(),
             document_defaults: DocumentDefaults::default(),
             startup: Startup::default(),
             undo_levels: default_undo_levels(),

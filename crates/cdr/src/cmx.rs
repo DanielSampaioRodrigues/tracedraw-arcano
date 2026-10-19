@@ -1042,6 +1042,7 @@ impl Ctx {
             fill: None,
             widths: Vec::new(),
             painterly: None,
+            ..Stroke::default()
         })
     }
 

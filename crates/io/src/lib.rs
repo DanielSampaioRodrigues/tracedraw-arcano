@@ -289,6 +289,45 @@ mod tests {
     }
 
     #[test]
+    fn outline_position_mitre_limit_dashes_and_shadows_round_trip() {
+        use tracedraw_core::shadow::{FeatherDirection, FeatherEdges, Perspective, ShadowEdge};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(10.0, 10.0, 40.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.stroke = Some(Stroke {
+            position: tracedraw_core::OutlinePosition::Outside,
+            miter_limit: 17.5,
+            align_dashes: true,
+            dash: vec![5.0, 1.0, 1.0, 1.0],
+            ..Stroke::new(Color::BLACK, 1.0)
+        });
+        s.shadow = Some(tracedraw_core::Shadow {
+            merge: tracedraw_core::live::MergeMode::IfDarker,
+            feather_direction: FeatherDirection::Outside,
+            feather_edges: FeatherEdges::InvertedSquared,
+            perspective: Some(Perspective {
+                edge: ShadowEdge::Top,
+                angle: 75.0,
+                stretch: 0.4,
+                fade: 0.3,
+            }),
+            ..Default::default()
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let json = doc.to_json().unwrap();
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+    }
+
+    #[test]
     fn corners_that_keep_their_size_survive_native_svg_and_pdf() {
         use tracedraw_core::geometry::{Affine, Shape as _};
         use tracedraw_core::{CornerKind, Corners};

@@ -804,31 +804,39 @@ impl App {
                 self.effects_input(response, p, mods)
             }
             Tool::DropShadow => {
+                let mut first = false;
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
+                    // The press point, not where the drag was noticed.
+                    let press = response
+                        .ctx
+                        .input(|i| i.pointer.press_origin())
+                        .map(|o| self.view.to_page(o))
+                        .unwrap_or(p);
+                    if let Some(handle) = self.shadow_handle_at(press) {
+                        self.drag = Drag::ShadowHandle { handle };
+                    } else if let Some(id) = self.hit_test(press) {
                         self.select(vec![id]);
                         self.drag = Drag::Shadow {
                             shape: id,
-                            start: p,
+                            start: press,
                         };
+                        first = true;
                     }
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::Shadow { shape, start } = self.drag.clone() {
-                        let offset = p - start;
-                        let mut sh = self
-                            .doc()
-                            .shape(shape)
-                            .ok()
-                            .and_then(|(_, s)| s.shadow)
-                            .unwrap_or(self.shadow_default);
-                        sh.offset = offset;
-                        self.select(vec![shape]);
-                        self.set_shadow(Some(sh), true);
-                        self.drag = Drag::Shadow { shape, start };
+                    match self.drag.clone() {
+                        Drag::Shadow { shape, start } => {
+                            self.drag_new_shadow(shape, start, p, first);
+                            self.drag = Drag::Shadow { shape, start };
+                        }
+                        Drag::ShadowHandle { handle } => self.drag_shadow_handle(handle, p),
+                        _ => {}
                     }
                 }
                 if response.clicked_by(PointerButton::Primary) {
+                    if self.shadow_handle_at(p).is_some() {
+                        return;
+                    }
                     match self.hit_test(p) {
                         Some(id) => self.select(vec![id]),
                         None => self.select(Vec::new()),
@@ -1968,6 +1976,7 @@ impl App {
             Drag::FountainHandle { .. }
             | Drag::ContourDrag { .. }
             | Drag::Shadow { .. }
+            | Drag::ShadowHandle { .. }
             | Drag::RulerOrigin { .. }
             | Drag::Node { .. }
             | Drag::KindNode { .. }

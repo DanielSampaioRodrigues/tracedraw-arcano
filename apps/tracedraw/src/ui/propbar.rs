@@ -1761,21 +1761,80 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// Outline widths the list offers.
+/// Outline widths the list offers in millimetres.
 pub(crate) const OUTLINE_WIDTHS_MM: [f64; 10] =
     [0.1, 0.2, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+/// ... in points.
+const OUTLINE_WIDTHS_PT: [f64; 13] = [
+    0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 12.0, 16.0,
+];
+/// ... in inches.
+const OUTLINE_WIDTHS_IN: [f64; 9] = [0.003, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.08, 0.1];
+/// ... in pixels.
+const OUTLINE_WIDTHS_PX: [f64; 10] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0];
 
-/// Text for an outline width in the ruler unit ("Hairline", "None").
+/// The units an outline width can be shown and typed in.
+pub const OUTLINE_UNITS: [Units; 5] = [
+    Units::Points,
+    Units::Millimeters,
+    Units::Centimeters,
+    Units::Inches,
+    Units::Pixels,
+];
+
+/// The widths the outline width list offers in unit `u`: round values in
+/// that unit, given back in millimetres (the model's unit).
+pub fn outline_width_presets(u: Units) -> Vec<f64> {
+    let list: &[f64] = match u {
+        Units::Points => &OUTLINE_WIDTHS_PT,
+        Units::Inches => &OUTLINE_WIDTHS_IN,
+        Units::Pixels => &OUTLINE_WIDTHS_PX,
+        _ => return OUTLINE_WIDTHS_MM.to_vec(),
+    };
+    list.iter().map(|v| u.to_mm(*v)).collect()
+}
+
+/// Decimals an outline width shows in unit `u`.
+fn outline_decimals(u: Units) -> usize {
+    match u {
+        Units::Pixels => 1,
+        Units::Points => 2,
+        Units::Inches => 4,
+        _ => 3,
+    }
+}
+
+/// An outline width (mm) in unit `u`, as the lists show it ("0.75 pt").
+pub fn outline_width_label(w: f64, u: Units) -> String {
+    let v = crate::ui::field::format_number(u.from_mm(w), false, 0, Some(outline_decimals(u)));
+    format!("{v} {}", u.short())
+}
+
+/// Text for an outline width in the outline unit ("Hairline", "None").
 pub fn outline_text(app: &App, width: Option<f64>) -> String {
     match width {
         None => tr("toolbar.none"),
         Some(w) if w <= tracedraw_core::Stroke::HAIRLINE + 1e-9 => tr("toolbar.hairline"),
-        Some(w) => {
-            let u = app.units;
-            let d = if u == Units::Pixels { 2 } else { 3 };
-            format!("{:.*} {}", d, u.from_mm(w), u.short())
-        }
+        Some(w) => outline_width_label(w, app.outline_units()),
     }
+}
+
+/// The outline unit picker (points, millimetres, ...), next to a width.
+pub(crate) fn outline_unit_combo(ui: &mut Ui, salt: &str, current: Units) -> Option<Units> {
+    let mut picked = None;
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(current.short())
+        .width(44.0)
+        .show_ui(ui, |ui| {
+            for u in OUTLINE_UNITS {
+                if ui.selectable_label(u == current, u.short()).clicked() {
+                    picked = Some(u);
+                }
+            }
+        })
+        .response
+        .on_hover_text(tr("toolbar.outline_units"));
+    picked
 }
 
 /// What an outline width box's text asks for: no outline (`Some(None)`),
@@ -1854,7 +1913,7 @@ fn outline_width_box(
             ui.data_mut(|d| d.remove::<String>(id));
             let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
             if !escaped && buf != shown {
-                picked = parse_outline_width(&buf, app.units);
+                picked = parse_outline_width(&buf, app.outline_units());
             }
         }
         let (arrow_rect, arrow) =
@@ -1898,7 +1957,7 @@ fn outline_width_box(
                     if ui.selectable_label(false, tr("toolbar.hairline")).clicked() {
                         picked = Some(Some(tracedraw_core::Stroke::HAIRLINE));
                     }
-                    for w in OUTLINE_WIDTHS_MM {
+                    for w in outline_width_presets(app.outline_units()) {
                         if ui
                             .selectable_label(false, outline_text(app, Some(w)))
                             .clicked()
@@ -1930,6 +1989,9 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
         Some(Some(w)) => app.apply_outline_width(w),
         None => {}
     }
+    if let Some(u) = outline_unit_combo(ui, "outline_units_bar", app.outline_units()) {
+        app.set_outline_units(u);
+    }
     // Line style: solid or one of the dash presets.
     let dash = stroke.as_ref().map(|s| s.dash.clone()).unwrap_or_default();
     let dash_shown = !mix.has(StrokeField::Dash);
@@ -1941,9 +2003,15 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
         })
         .width(96.0)
         .show_ui(ui, |ui| {
-            for d in DASHES {
+            let custom = app.settings.custom_dashes.clone();
+            let all: Vec<&[f64]> = DASHES
+                .iter()
+                .copied()
+                .chain(custom.iter().map(|d| d.as_slice()))
+                .collect();
+            for d in all {
                 if ui
-                    .selectable_label(dash_shown && dash.as_slice() == *d, dash_label(d))
+                    .selectable_label(dash_shown && dash.as_slice() == d, dash_label(d))
                     .clicked()
                 {
                     // Each object (each one in a group too) keeps the
@@ -1964,6 +2032,10 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
                         app.status = e.to_string();
                     }
                 }
+            }
+            ui.separator();
+            if ui.button(tr("docker.edit_line_style")).clicked() {
+                crate::ui::line_style::request(ui);
             }
         });
     // Arrowheads at the start and the end.
@@ -2953,13 +3025,50 @@ mod tests {
         );
         assert_eq!(parse_outline_width("thick", mm), None);
         assert_eq!(parse_outline_width("-1", mm), None);
+        // Points: the number is points, stored in millimetres.
+        let pt = parse_outline_width("2", Units::Points)
+            .flatten()
+            .expect("width");
+        assert!((pt - 2.0 * 25.4 / 72.0).abs() < 1e-12);
     }
 
     #[test]
-    fn outline_widths_read_in_the_ruler_unit() {
+    fn the_width_presets_follow_the_outline_unit() {
+        let pts = outline_width_presets(Units::Points);
+        // Round point values, given in millimetres.
+        assert!(pts.iter().any(|w| (w - 25.4 / 72.0).abs() < 1e-12));
+        for w in &pts {
+            let v = Units::Points.from_mm(*w);
+            assert!((v * 4.0 - (v * 4.0).round()).abs() < 1e-9, "{v}");
+        }
+        assert_eq!(outline_width_label(pts[2], Units::Points), "0.75 pt");
+        assert_eq!(
+            outline_width_presets(Units::Millimeters),
+            OUTLINE_WIDTHS_MM.to_vec()
+        );
+        let inches = outline_width_presets(Units::Inches);
+        assert!((inches[2] - 0.254).abs() < 1e-12);
+        assert_ne!(pts, outline_width_presets(Units::Pixels));
+        for u in OUTLINE_UNITS {
+            assert!(outline_width_presets(u)
+                .iter()
+                .all(|w| *w > 0.0 && w.is_finite()));
+        }
+    }
+
+    #[test]
+    fn outline_widths_read_in_the_outline_unit() {
         let mut app = App::headless();
         app.units = Units::Millimeters;
-        assert_eq!(outline_text(&app, Some(0.2)), "0.200 mm");
+        // Points by default, whatever the ruler unit.
+        assert_eq!(app.outline_units(), Units::Points);
+        assert_eq!(outline_text(&app, Some(25.4 / 72.0)), "1 pt");
+        assert_eq!(outline_text(&app, Some(0.2)), "0.57 pt");
+        app.set_outline_units(Units::Millimeters);
+        assert_eq!(app.settings.outline_units, "mm");
+        assert_eq!(outline_text(&app, Some(0.2)), "0.2 mm");
+        app.set_outline_units(Units::Inches);
+        assert_eq!(outline_text(&app, Some(2.54)), "0.1 \"");
         assert_eq!(outline_text(&app, None), tr("toolbar.none"));
         assert_eq!(
             outline_text(&app, Some(tracedraw_core::Stroke::HAIRLINE)),

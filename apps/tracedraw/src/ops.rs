@@ -343,6 +343,12 @@ impl App {
     /// Break Apart: every subpath becomes an object; the pieces come out
     /// selected.
     pub fn break_apart(&mut self) {
+        // A drop shadow breaks off its object first (Break Drop Shadow
+        // Apart).
+        if self.can_break_shadow_apart() {
+            self.break_shadow_apart();
+            return;
+        }
         let ids = self.selection.clone();
         let before: std::collections::HashSet<tracedraw_core::ShapeId> = self
             .doc()

@@ -16,6 +16,8 @@ const OUTLINE_PX: f64 = 4.0;
 pub enum ColorTarget {
     Fill(ShapeId),
     Outline(ShapeId),
+    /// The end handle of a drop shadow (Drop Shadow tool): its colour.
+    Shadow(ShapeId),
     DocumentPalette,
     Nothing,
 }
@@ -30,6 +32,11 @@ impl App {
             return ColorTarget::Nothing;
         }
         let p = self.view.to_page(at);
+        if self.shadow_handle_at(p) == Some(crate::shadow_tool::ShadowHandle::End) {
+            if let Some((id, ..)) = self.selected_shadow() {
+                return ColorTarget::Shadow(id);
+            }
+        }
         // Inside a closed object counts even when it has no fill yet.
         let Some(id) = self.hit_test_inside(p) else {
             return ColorTarget::Nothing;
@@ -68,6 +75,13 @@ impl App {
                 self.selection = saved;
                 true
             }
+            ColorTarget::Shadow(id) => match color {
+                Some(c) => {
+                    self.set_shadow_color(id, c);
+                    true
+                }
+                None => false,
+            },
             ColorTarget::Nothing => false,
         }
     }

@@ -35,10 +35,16 @@ pub enum StrokeField {
     Widths,
     /// Painterly brush marks.
     Painterly,
+    /// Where the outline sits: outside, centred on or inside the path.
+    Position,
+    /// The mitre limit angle.
+    MiterLimit,
+    /// Dashes fitted to corners and ends.
+    AlignDashes,
 }
 
 impl StrokeField {
-    pub const ALL: [StrokeField; 13] = [
+    pub const ALL: [StrokeField; 16] = [
         StrokeField::Paint,
         StrokeField::Width,
         StrokeField::Cap,
@@ -52,6 +58,9 @@ impl StrokeField {
         StrokeField::NibAngle,
         StrokeField::Widths,
         StrokeField::Painterly,
+        StrokeField::Position,
+        StrokeField::MiterLimit,
+        StrokeField::AlignDashes,
     ];
 
     /// True when `a` and `b` have the same value for this field.
@@ -70,6 +79,9 @@ impl StrokeField {
             StrokeField::NibAngle => a.nib_angle == b.nib_angle,
             StrokeField::Widths => a.widths == b.widths,
             StrokeField::Painterly => a.painterly == b.painterly,
+            StrokeField::Position => a.position == b.position,
+            StrokeField::MiterLimit => a.miter_limit == b.miter_limit,
+            StrokeField::AlignDashes => a.align_dashes == b.align_dashes,
         }
     }
 
@@ -92,6 +104,9 @@ impl StrokeField {
             StrokeField::NibAngle => to.nib_angle = from.nib_angle,
             StrokeField::Widths => to.widths = from.widths.clone(),
             StrokeField::Painterly => to.painterly = from.painterly,
+            StrokeField::Position => to.position = from.position,
+            StrokeField::MiterLimit => to.miter_limit = from.miter_limit,
+            StrokeField::AlignDashes => to.align_dashes = from.align_dashes,
         }
     }
 }
@@ -398,6 +413,33 @@ mod tests {
         let pn = patch_stroke(None, &edited, &fields);
         assert_eq!(pn.width, 2.0);
         assert_eq!(pn.color, Stroke::default().color);
+    }
+
+    #[test]
+    fn position_mitre_and_dash_alignment_change_one_at_a_time() {
+        let mut a = stroke(Color::rgb8(255, 0, 0), 1.0);
+        let b = stroke(Color::rgb8(0, 0, 255), 2.0);
+        let mut new = a.clone();
+        new.position = crate::OutlinePosition::Inside;
+        new.miter_limit = 30.0;
+        new.align_dashes = true;
+        let fields = stroke_changes(&a, &new);
+        assert_eq!(
+            fields,
+            vec![
+                StrokeField::Position,
+                StrokeField::MiterLimit,
+                StrokeField::AlignDashes
+            ]
+        );
+        let out = patch_stroke(Some(&b), &new, &fields);
+        assert_eq!(out.color, b.color);
+        assert_eq!(out.width, b.width);
+        assert_eq!(out.position, crate::OutlinePosition::Inside);
+        assert_eq!(out.miter_limit, 30.0);
+        assert!(out.align_dashes);
+        a.position = crate::OutlinePosition::Outside;
+        assert!(!StrokeField::Position.same(&a, &b));
     }
 
     #[test]

@@ -312,7 +312,8 @@ fn write_unlinked(
         paint_value(&shape.fill, bounds, symbols, defs, next_grad)
     );
 
-    // A calligraphic outline has no SVG equivalent: the swept band is
+    // A calligraphic, variable, inside or outside outline, or one with
+    // dashes fitted to the corners, has no SVG equivalent: its area is
     // written as a filled path after the object.
     let calligraphic = shape.stroke.as_ref().and_then(|s| {
         tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0).map(|b| {
@@ -344,6 +345,9 @@ fn write_unlinked(
                 "stroke=\"{paint}\" stroke-width=\"{}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\"",
                 s.width
             );
+            if s.join == LineJoin::Miter {
+                let _ = write!(a, " stroke-miterlimit=\"{}\"", fmt(s.miter_ratio()));
+            }
             if !s.dash.is_empty() {
                 let dashes: Vec<String> = s.dash.iter().map(|d| fmt(d * s.width)).collect();
                 let _ = write!(a, " stroke-dasharray=\"{}\"", dashes.join(" "));
@@ -1035,6 +1039,26 @@ mod tests {
         s.stroke = stroke;
         doc.layer_mut(layer).unwrap().shapes.push(s);
         page_to_svg(&doc, 0)
+    }
+
+    #[test]
+    fn positioned_outlines_are_written_as_filled_areas() {
+        let mut st = Stroke::new(Color::rgb8(255, 0, 0), 2.0);
+        // Centred: a stroke with its mitre limit.
+        let svg = one_shape_svg(Fill::None, Some(st.clone()));
+        assert!(svg.contains("stroke-miterlimit=\"22.9"), "{svg}");
+        // Inside: no stroke on the object, a filled path in the colour.
+        st.position = tracedraw_core::OutlinePosition::Inside;
+        let svg = one_shape_svg(Fill::None, Some(st.clone()));
+        assert!(!svg.contains("stroke-width"), "{svg}");
+        assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
+        // Aligned dashes too.
+        st.position = tracedraw_core::OutlinePosition::Center;
+        st.dash = vec![3.0, 2.0];
+        st.align_dashes = true;
+        let svg = one_shape_svg(Fill::None, Some(st));
+        assert!(!svg.contains("stroke-dasharray"), "{svg}");
+        assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
     }
 
     #[test]

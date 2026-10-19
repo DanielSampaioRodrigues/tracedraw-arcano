@@ -6,6 +6,19 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outline widths are shown and typed in a unit of their own, points by
+  default (millimetres, centimetres, inches or pixels on request), and
+  the width list offers round values in it.
+- Outlines: position outside, centred or inside the path; a mitre limit
+  angle (5 degrees for new outlines); Align dashes fits a dash pattern
+  so corners and line ends fall on dashes; Edit Line Style makes custom
+  dash patterns on a grid, kept in the settings and listed with the
+  presets. SVG and PDF exports draw them the same.
+- Drop shadows: perspective shadows dragged from an edge (angle,
+  stretch, fade), merge modes (Multiply for new shadows), feather
+  direction and edges, presets, on-canvas handles (end with colour drop,
+  opacity bar, start) and Break Drop Shadow Apart (a bitmap behind the
+  object, one undo step). Shadows in older files look as before.
 - Ctrl+click selects an object inside a clip frame (where the frame
   shows it), and Ctrl+Alt+click digs through a clip frame's contents,
   as in groups; text over a rectangle in a `.cdr` drawing is hit first,

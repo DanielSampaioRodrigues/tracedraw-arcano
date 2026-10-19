@@ -11,9 +11,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::field::NumField;
-use crate::ui::propbar::{
-    dash_label, label_pic, outline_text, sep, Pic, DASHES, OUTLINE_WIDTHS_MM,
-};
+use crate::ui::propbar::{dash_label, label_pic, outline_text, sep, Pic, DASHES};
 use egui::{Color32, Painter, Stroke, Ui};
 use tracedraw_core::Arrowhead;
 
@@ -56,7 +54,7 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
             {
                 width = Some(hair);
             }
-            for w in OUTLINE_WIDTHS_MM {
+            for w in crate::ui::propbar::outline_width_presets(app.outline_units()) {
                 if ui
                     .selectable_label((style.width - w).abs() < 1e-9, outline_text(app, Some(w)))
                     .clicked()

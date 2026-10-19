@@ -946,6 +946,48 @@ pub struct Stroke {
     /// Drawn as painterly brush marks along the path instead of a line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub painterly: Option<crate::painterly::Painterly>,
+    /// Where a closed path's outline lies: outside the path, centred on
+    /// it or inside it. Open paths are always centred.
+    #[serde(default, skip_serializing_if = "OutlinePosition::is_center")]
+    pub position: OutlinePosition,
+    /// Mitre limit as an angle in degrees: mitred corners sharper than
+    /// this are bevelled. Outlines saved before the field existed keep the
+    /// limit they were drawn with (a length ratio of 4, about 29 degrees).
+    #[serde(default = "legacy_miter_limit")]
+    pub miter_limit: f64,
+    /// Fit the dash pattern to each run between corners so that corners
+    /// and line ends fall in the middle of a dash.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub align_dashes: bool,
+}
+
+/// Where an outline lies relative to the path of a closed object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OutlinePosition {
+    /// The whole width outside the path; the object looks larger.
+    Outside,
+    /// Half the width on each side of the path.
+    #[default]
+    Center,
+    /// The whole width inside the path; the object keeps its size.
+    Inside,
+}
+
+impl OutlinePosition {
+    pub const ALL: [OutlinePosition; 3] = [
+        OutlinePosition::Outside,
+        OutlinePosition::Center,
+        OutlinePosition::Inside,
+    ];
+
+    pub fn is_center(&self) -> bool {
+        *self == OutlinePosition::Center
+    }
+}
+
+fn legacy_miter_limit() -> f64 {
+    Stroke::miter_angle_from_ratio(4.0)
 }
 
 /// A point of a variable-width outline: where it is along the path and
@@ -1019,6 +1061,39 @@ fn one() -> f64 {
 
 impl Stroke {
     pub const HAIRLINE: f64 = 0.0762;
+    /// Mitre limit of new outlines, degrees.
+    pub const DEFAULT_MITER_LIMIT: f64 = 5.0;
+    /// The range the mitre limit is kept in, degrees.
+    pub const MITER_LIMIT_RANGE: std::ops::RangeInclusive<f64> = 1.0..=179.0;
+
+    /// The mitre limit as the ratio of the mitre length to the outline
+    /// width (what renderers, SVG and PDF take): `1 / sin(angle / 2)`.
+    /// A value that is not a finite angle uses the default.
+    pub fn miter_ratio(&self) -> f64 {
+        let a = if self.miter_limit.is_finite() {
+            self.miter_limit
+        } else {
+            Self::DEFAULT_MITER_LIMIT
+        };
+        let a = a.clamp(
+            *Self::MITER_LIMIT_RANGE.start(),
+            *Self::MITER_LIMIT_RANGE.end(),
+        );
+        1.0 / (a.to_radians() / 2.0).sin()
+    }
+
+    /// The mitre limit angle (degrees) for a ratio of mitre length to
+    /// width (SVG `stroke-miterlimit`, PDF `M`): `2 asin(1 / ratio)`.
+    /// Ratios below 1 or not finite give the default.
+    pub fn miter_angle_from_ratio(ratio: f64) -> f64 {
+        if !ratio.is_finite() || ratio < 1.0 {
+            return Self::DEFAULT_MITER_LIMIT;
+        }
+        (2.0 * (1.0 / ratio).asin().to_degrees()).clamp(
+            *Self::MITER_LIMIT_RANGE.start(),
+            *Self::MITER_LIMIT_RANGE.end(),
+        )
+    }
 
     pub fn hairline(color: Color) -> Self {
         Stroke {
@@ -1054,6 +1129,9 @@ impl Default for Stroke {
             fill: None,
             widths: Vec::new(),
             painterly: None,
+            position: OutlinePosition::Center,
+            miter_limit: Self::DEFAULT_MITER_LIMIT,
+            align_dashes: false,
         }
     }
 }
@@ -1612,6 +1690,56 @@ mod arrowhead_tests {
         let old = r#"{"color":{"model":"gray","v":0.0},"width":1.0,"cap":"butt","join":"miter","dash":[],"scale_with_object":false,"behind_fill":false,"start_arrow":"none","end_arrow":"arrow","stretch":1.0,"nib_angle":0.0}"#;
         let back: Stroke = serde_json::from_str(old).unwrap();
         assert_eq!(back.end_arrow, Arrowhead::Arrow);
+        // ... and keep the mitre limit and position they were drawn with.
+        assert!((back.miter_ratio() - 4.0).abs() < 1e-9);
+        assert_eq!(back.position, OutlinePosition::Center);
+        assert!(!back.align_dashes);
+    }
+
+    #[test]
+    fn position_mitre_limit_and_dash_alignment_round_trip() {
+        let stroke = Stroke {
+            position: OutlinePosition::Inside,
+            miter_limit: 12.5,
+            align_dashes: true,
+            dash: vec![4.0, 2.0],
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let json = serde_json::to_string(&stroke).unwrap();
+        assert!(json.contains("\"position\":\"inside\""), "{json}");
+        let back: Stroke = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, stroke);
+        // A centred outline without alignment does not write the fields.
+        let plain = serde_json::to_string(&Stroke::new(Color::BLACK, 1.0)).unwrap();
+        assert!(!plain.contains("position") && !plain.contains("align_dashes"));
+    }
+
+    #[test]
+    fn mitre_limit_angles_and_ratios_convert_both_ways() {
+        let s = Stroke::new(Color::BLACK, 1.0);
+        assert_eq!(s.miter_limit, 5.0);
+        // 1 / sin(2.5 degrees)
+        assert!(
+            (s.miter_ratio() - 22.926).abs() < 1e-3,
+            "{}",
+            s.miter_ratio()
+        );
+        for r in [1.5, 4.0, 10.0] {
+            let a = Stroke::miter_angle_from_ratio(r);
+            let back = Stroke {
+                miter_limit: a,
+                ..s.clone()
+            };
+            assert!((back.miter_ratio() - r).abs() < 1e-9, "{r}");
+        }
+        for bad in [f64::NAN, 0.5, f64::INFINITY] {
+            assert_eq!(Stroke::miter_angle_from_ratio(bad), 5.0);
+        }
+        let odd = Stroke {
+            miter_limit: f64::NAN,
+            ..s
+        };
+        assert!(odd.miter_ratio().is_finite());
     }
 
     #[test]

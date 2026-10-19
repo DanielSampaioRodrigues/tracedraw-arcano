@@ -492,6 +492,7 @@ impl Writer<'_> {
             } else {
                 let _ = writeln!(self.out, "[] 0 setdash");
             }
+            let _ = writeln!(self.out, "{} setmiterlimit", f(s.miter_ratio()));
             self.path_ops(&path);
             let _ = writeln!(self.out, "stroke");
             // Arrowheads (presets and custom): the page-space path already

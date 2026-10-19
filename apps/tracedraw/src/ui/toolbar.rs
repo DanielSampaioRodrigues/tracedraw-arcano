@@ -1209,111 +1209,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
             }
-            Tool::DropShadow => {
-                let first = shapes.first().and_then(|s| s.shadow);
-                let mut sh = first.unwrap_or(app.shadow_default);
-                let mut changed = false;
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drop_shadow"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                if ui
-                    .add_enabled(
-                        !shapes.is_empty() && first.is_none(),
-                        egui::Button::new(tr("docker.apply")),
-                    )
-                    .clicked()
-                {
-                    app.set_shadow(Some(sh), false);
-                }
-                let mut opacity = (sh.opacity * 100.0).round();
-                ui.label(
-                    egui::RichText::new(tr("toolbar.opacity"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                if ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut opacity)
-                            .range(0.0..=100.0)
-                            .suffix(" %"),
-                    )
-                    .changed()
-                {
-                    sh.opacity = opacity / 100.0;
-                    changed = true;
-                }
-                ui.label(
-                    egui::RichText::new(tr("toolbar.feathering"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                let mut blur = sh.blur;
-                if ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut blur)
-                            .speed(0.1)
-                            .range(0.0..=50.0)
-                            .suffix(" mm"),
-                    )
-                    .changed()
-                {
-                    sh.blur = blur;
-                    changed = true;
-                }
-                let mut dx = sh.offset.x;
-                let mut dy = sh.offset.y;
-                ui.label(
-                    egui::RichText::new(tr("docker.offset"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                changed |= ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut dx)
-                            .speed(0.1)
-                            .suffix(" mm"),
-                    )
-                    .changed();
-                changed |= ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut dy)
-                            .speed(0.1)
-                            .suffix(" mm"),
-                    )
-                    .changed();
-                sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
-                let [r, g, b] = sh.color.to_rgb8();
-                let mut rgb = [r, g, b];
-                if ui.color_edit_button_srgb(&mut rgb).changed() {
-                    sh.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
-                    changed = true;
-                }
-                if changed {
-                    app.shadow_default = sh;
-                    if first.is_some() {
-                        app.set_shadow(Some(sh), true);
-                    }
-                }
-                vsep(ui);
-                if ui
-                    .add_enabled(
-                        first.is_some(),
-                        egui::Button::new(tr("toolbar.clear_shadow")),
-                    )
-                    .clicked()
-                {
-                    app.set_shadow(None, false);
-                }
-                if shapes.is_empty() {
-                    ui.label(
-                        egui::RichText::new(tr("toolbar.shadow_hint"))
-                            .color(Tokens::text_dim())
-                            .size(11.0),
-                    );
-                }
-            }
+            Tool::DropShadow => shadow_bar(app, ui, &shapes),
             Tool::Transparency => {
                 transparency_part(app, ui);
                 if shapes.is_empty() {
@@ -2761,4 +2657,256 @@ fn shape_thumbnail(
     });
     flush(&mut run, false);
     resp
+}
+
+/// The Drop Shadow tool's property bar: presets, opacity, feathering and
+/// its direction and edges, merge mode, the flat offset or the
+/// perspective angle, stretch and fade, colour, Break Apart and Clear.
+fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
+    use tracedraw_core::shadow::{FeatherDirection, FeatherEdges, Perspective, ShadowEdge};
+    let dim = |ui: &mut Ui, key: &str| {
+        ui.label(
+            egui::RichText::new(tr(key))
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+    };
+    let first = shapes.first().and_then(|s| s.shadow);
+    let mut sh = first.unwrap_or(app.shadow_default);
+    let mut changed = false;
+    dim(ui, "toolbar.drop_shadow");
+    if ui
+        .add_enabled(
+            !shapes.is_empty() && first.is_none(),
+            egui::Button::new(tr("docker.apply")),
+        )
+        .clicked()
+    {
+        app.set_shadow(Some(sh), false);
+    }
+    let mut preset = None;
+    egui::ComboBox::from_id_salt("shadow_presets")
+        .selected_text(tr("shadow.presets"))
+        .width(110.0)
+        .show_ui(ui, |ui| {
+            for (key, _) in tracedraw_core::Shadow::presets() {
+                if ui
+                    .selectable_label(false, tr(&format!("shadow.preset.{key}")))
+                    .clicked()
+                {
+                    preset = Some(key);
+                }
+            }
+        });
+    if let Some(key) = preset {
+        app.apply_shadow_preset(key);
+        return;
+    }
+    vsep(ui);
+    // Flat or standing on an edge.
+    let kind_key = |p: Option<ShadowEdge>| match p {
+        None => "shadow.flat",
+        Some(ShadowEdge::Bottom) => "shadow.edge_bottom",
+        Some(ShadowEdge::Top) => "shadow.edge_top",
+        Some(ShadowEdge::Left) => "shadow.edge_left",
+        Some(ShadowEdge::Right) => "shadow.edge_right",
+    };
+    let current = sh.perspective.map(|p| p.edge);
+    egui::ComboBox::from_id_salt("shadow_kind")
+        .selected_text(tr(kind_key(current)))
+        .width(110.0)
+        .show_ui(ui, |ui| {
+            let mut options = vec![None];
+            options.extend(ShadowEdge::ALL.iter().map(|e| Some(*e)));
+            for o in options {
+                if ui.selectable_label(current == o, tr(kind_key(o))).clicked() {
+                    sh.perspective = o.map(|e| {
+                        let mut per = Perspective::new(e);
+                        if let Some(old) = sh.perspective {
+                            per.fade = old.fade;
+                            per.stretch = old.stretch;
+                        }
+                        per
+                    });
+                    changed = true;
+                }
+            }
+        });
+    dim(ui, "toolbar.opacity");
+    let mut opacity = (sh.opacity * 100.0).round();
+    if ui
+        .add(
+            crate::ui::field::NumField::new(&mut opacity)
+                .range(0.0..=100.0)
+                .suffix(" %"),
+        )
+        .changed()
+    {
+        sh.opacity = opacity / 100.0;
+        changed = true;
+    }
+    dim(ui, "toolbar.feathering");
+    let mut blur = sh.blur;
+    if ui
+        .add(
+            crate::ui::field::NumField::new(&mut blur)
+                .speed(0.1)
+                .range(0.0..=50.0)
+                .suffix(" mm"),
+        )
+        .changed()
+    {
+        sh.blur = blur;
+        changed = true;
+    }
+    let dir_key = |d: FeatherDirection| match d {
+        FeatherDirection::Inside => "shadow.feather_inside",
+        FeatherDirection::Middle => "shadow.feather_middle",
+        FeatherDirection::Outside => "shadow.feather_outside",
+        FeatherDirection::Average => "shadow.feather_average",
+    };
+    egui::ComboBox::from_id_salt("shadow_feather_dir")
+        .selected_text(tr(dir_key(sh.feather_direction)))
+        .width(80.0)
+        .show_ui(ui, |ui| {
+            for d in FeatherDirection::ALL {
+                if ui
+                    .selectable_label(sh.feather_direction == d, tr(dir_key(d)))
+                    .clicked()
+                {
+                    sh.feather_direction = d;
+                    changed = true;
+                }
+            }
+        })
+        .response
+        .on_hover_text(tr("shadow.feather_direction"));
+    let edge_key = |e: FeatherEdges| match e {
+        FeatherEdges::Linear => "shadow.edges_linear",
+        FeatherEdges::Squared => "shadow.edges_squared",
+        FeatherEdges::InvertedSquared => "shadow.edges_inverted_squared",
+        FeatherEdges::Flat => "shadow.edges_flat",
+    };
+    egui::ComboBox::from_id_salt("shadow_feather_edges")
+        .selected_text(tr(edge_key(sh.feather_edges)))
+        .width(96.0)
+        .show_ui(ui, |ui| {
+            for e in FeatherEdges::ALL {
+                if ui
+                    .selectable_label(sh.feather_edges == e, tr(edge_key(e)))
+                    .clicked()
+                {
+                    sh.feather_edges = e;
+                    changed = true;
+                }
+            }
+        })
+        .response
+        .on_hover_text(tr("shadow.feather_edges"));
+    dim(ui, "transparency.merge_mode");
+    egui::ComboBox::from_id_salt("shadow_merge")
+        .selected_text(sh.merge.name())
+        .width(90.0)
+        .show_ui(ui, |ui| {
+            for m in tracedraw_core::live::MergeMode::ALL {
+                if ui.selectable_label(sh.merge == m, m.name()).clicked() {
+                    sh.merge = m;
+                    changed = true;
+                }
+            }
+        });
+    vsep(ui);
+    match sh.perspective.as_mut() {
+        None => {
+            let mut dx = sh.offset.x;
+            let mut dy = sh.offset.y;
+            dim(ui, "docker.offset");
+            changed |= ui
+                .add(
+                    crate::ui::field::NumField::new(&mut dx)
+                        .speed(0.1)
+                        .suffix(" mm"),
+                )
+                .changed();
+            changed |= ui
+                .add(
+                    crate::ui::field::NumField::new(&mut dy)
+                        .speed(0.1)
+                        .suffix(" mm"),
+                )
+                .changed();
+            sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
+        }
+        Some(per) => {
+            dim(ui, "shadow.angle");
+            changed |= ui
+                .add(
+                    crate::ui::field::NumField::new(&mut per.angle)
+                        .range(-360.0..=360.0)
+                        .suffix("°"),
+                )
+                .changed();
+            dim(ui, "shadow.stretch");
+            let mut stretch = (per.stretch * 100.0).round();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut stretch)
+                        .range(0.0..=1000.0)
+                        .suffix(" %"),
+                )
+                .changed()
+            {
+                per.stretch = stretch / 100.0;
+                changed = true;
+            }
+            dim(ui, "shadow.fade");
+            let mut fade = (per.fade * 100.0).round();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut fade)
+                        .range(0.0..=100.0)
+                        .suffix(" %"),
+                )
+                .changed()
+            {
+                per.fade = fade / 100.0;
+                changed = true;
+            }
+        }
+    }
+    let [r, g, b] = sh.color.to_rgb8();
+    let mut rgb = [r, g, b];
+    if ui.color_edit_button_srgb(&mut rgb).changed() {
+        sh.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+        changed = true;
+    }
+    if changed {
+        app.shadow_default = sh;
+        if first.is_some() {
+            app.set_shadow(Some(sh), true);
+        }
+    }
+    vsep(ui);
+    if ui
+        .add_enabled(
+            app.can_break_shadow_apart(),
+            egui::Button::new(tr("shadow.break_apart")),
+        )
+        .on_hover_text(tr("shadow.break_apart_tip"))
+        .clicked()
+    {
+        app.break_shadow_apart();
+    }
+    if ui
+        .add_enabled(
+            first.is_some(),
+            egui::Button::new(tr("toolbar.clear_shadow")),
+        )
+        .clicked()
+    {
+        app.set_shadow(None, false);
+    }
+    if shapes.is_empty() {
+        dim(ui, "toolbar.shadow_hint");
+    }
 }

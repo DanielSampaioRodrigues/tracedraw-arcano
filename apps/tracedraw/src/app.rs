@@ -547,6 +547,10 @@ pub enum Drag {
         shape: ShapeId,
         start: Point,
     },
+    /// Dragging a handle of the selected drop shadow (Drop Shadow tool).
+    ShadowHandle {
+        handle: crate::shadow_tool::ShadowHandle,
+    },
     /// Dragging a selection across the text being edited (Text tool).
     TextSelect,
     /// Dragging a paragraph text frame (Text tool).

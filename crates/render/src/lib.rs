@@ -530,38 +530,7 @@ impl Renderer<'_> {
         // Drop shadow: blurred silhouette behind the object.
         if let Some(sh) = &shape.shadow {
             if !self.flags.wireframe && sh.opacity > 0.0 {
-                let (w, h) = (self.pixmap.width(), self.pixmap.height());
-                if let Some(mut layer) = Pixmap::new(w, h) {
-                    let shifted = Affine::translate(sh.offset) * page_path.clone();
-                    if let Some(sk_sh) = to_sk_path(&(self.screen * shifted)) {
-                        let mut paint = Paint::default();
-                        paint.anti_alias = self.flags.anti_alias;
-                        paint.set_color(sk_color(sh.color));
-                        layer.fill_path(
-                            &sk_sh,
-                            &paint,
-                            FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
-                        let radius = (sh.blur * self.zoom).round() as i32;
-                        if radius > 0 {
-                            box_blur(&mut layer, radius.min(64));
-                        }
-                        let pp = tiny_skia::PixmapPaint {
-                            opacity: sh.opacity.clamp(0.0, 1.0) as f32,
-                            ..Default::default()
-                        };
-                        self.pixmap.draw_pixmap(
-                            0,
-                            0,
-                            layer.as_ref(),
-                            &pp,
-                            Transform::identity(),
-                            None,
-                        );
-                    }
-                }
+                self.draw_drop_shadow(sh, &page_path);
             }
         }
 
@@ -784,6 +753,33 @@ impl Renderer<'_> {
         }
     }
 
+    /// A drop shadow beneath an object whose page-space path is
+    /// `page_path`: its silhouette moved (flat) or sheared (perspective),
+    /// filled with the shadow colour, feathered, faded along a
+    /// perspective shadow and merged with what is beneath.
+    fn draw_drop_shadow(&mut self, sh: &tracedraw_core::Shadow, page_path: &BezPath) {
+        let (w, h) = (self.pixmap.width(), self.pixmap.height());
+        let Some(mut layer) = Pixmap::new(w, h) else {
+            return;
+        };
+        if !shadow_layer(
+            &mut layer,
+            sh,
+            page_path,
+            self.screen,
+            self.zoom,
+            self.flags.anti_alias,
+        ) {
+            return;
+        }
+        let pp = tiny_skia::PixmapPaint {
+            blend_mode: merge_blend(sh.merge),
+            ..Default::default()
+        };
+        self.pixmap
+            .draw_pixmap(0, 0, layer.as_ref(), &pp, Transform::identity(), None);
+    }
+
     /// A one pixel line along `sk` (the Wireframe view).
     fn hairline(&mut self, sk: &tiny_skia::Path, color: tracedraw_core::Color) {
         let mut paint = Paint::default();
@@ -999,23 +995,7 @@ impl Renderer<'_> {
                 *px = np;
             }
         }
-        use tiny_skia::BlendMode as B;
-        use tracedraw_core::live::MergeMode as M;
-        let blend = match merge {
-            M::Normal | M::Red | M::Green | M::Blue => B::SourceOver,
-            M::Add => B::Plus,
-            M::Subtract => B::Difference,
-            M::Difference => B::Difference,
-            M::Multiply => B::Multiply,
-            M::Divide => B::Screen,
-            M::IfLighter => B::Lighten,
-            M::IfDarker => B::Darken,
-            M::Hue => B::Hue,
-            M::Saturation => B::Saturation,
-            M::Color => B::Color,
-            M::Invert => B::Exclusion,
-            M::And | M::Or | M::Xor => B::Xor,
-        };
+        let blend = merge_blend(merge);
         let paint = tiny_skia::PixmapPaint {
             blend_mode: blend,
             ..Default::default()
@@ -1619,7 +1599,7 @@ impl Renderer<'_> {
         };
         let sk = SkStroke {
             width: width_px,
-            miter_limit: 4.0,
+            miter_limit: stroke.miter_ratio() as f32,
             line_cap: match stroke.cap {
                 LCap::Butt => LineCap::Butt,
                 LCap::Round => LineCap::Round,
@@ -1636,14 +1616,141 @@ impl Renderer<'_> {
     }
 }
 
+/// Paint the drop shadow `sh` of an object with page path `page_path` into
+/// the empty `layer` (pixels = `screen` times page millimetres, `zoom`
+/// pixels per millimetre), with its opacity and fade but not its merge
+/// mode. False when nothing was painted.
+fn shadow_layer(
+    layer: &mut Pixmap,
+    sh: &tracedraw_core::Shadow,
+    page_path: &BezPath,
+    screen: Affine,
+    zoom: f64,
+    anti_alias: bool,
+) -> bool {
+    use tracedraw_core::shadow::FeatherDirection;
+    let b = page_path.bounding_box();
+    let shifted = sh.silhouette_transform(b) * page_path.clone();
+    let Some(sk_sh) = to_sk_path(&(screen * shifted)) else {
+        return false;
+    };
+    let mut paint = Paint::default();
+    paint.anti_alias = anti_alias;
+    paint.set_color_rgba8(255, 255, 255, 255);
+    layer.fill_path(
+        &sk_sh,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
+    let blur = if sh.blur.is_finite() { sh.blur } else { 0.0 };
+    let radius = (blur * zoom).round() as i32;
+    let feathered = radius > 0;
+    if feathered {
+        match sh.feather_direction {
+            // One even pass about as wide as the three passes together.
+            FeatherDirection::Average => {
+                box_blur_passes(layer, ((radius as f64) * 1.7).round().min(110.0) as i32, 1)
+            }
+            _ => box_blur(layer, radius.min(64)),
+        }
+    }
+    // The fade of a perspective shadow, in pixels.
+    let fade = sh.fade_axis(b).map(|(a, e, f)| {
+        let (a, e) = (screen * a, screen * e);
+        let d = e - a;
+        (a, d, d.hypot2().max(1e-9), f)
+    });
+    let opacity = sh.opacity.clamp(0.0, 1.0);
+    let [cr, cg, cb] = sh.color.to_rgb8();
+    let width = layer.width() as usize;
+    for (i, px) in layer.pixels_mut().iter_mut().enumerate() {
+        let cov = px.alpha();
+        if cov == 0 {
+            continue;
+        }
+        let mut a = cov as f64 / 255.0;
+        if feathered {
+            a = sh.feather_value(a);
+        }
+        if let Some((pa, d, len2, f)) = fade {
+            let x = (i % width) as f64 + 0.5;
+            let y = (i / width) as f64 + 0.5;
+            let t = ((x - pa.x) * d.x + (y - pa.y) * d.y) / len2;
+            a *= 1.0 - f * t.clamp(0.0, 1.0);
+        }
+        let a = (a * opacity).clamp(0.0, 1.0);
+        let c = tiny_skia::ColorU8::from_rgba(cr, cg, cb, (a * 255.0).round() as u8);
+        *px = c.premultiply();
+    }
+    true
+}
+
+/// The drop shadow of `shape` alone as an image at `dpi`, with the page
+/// rectangle it covers (Break Drop Shadow Apart). The shadow's opacity and
+/// fade are in the pixels; its merge mode is not. `None` when the shape
+/// has no shadow or it covers nothing.
+pub fn render_shadow_image(shape: &Shape, dpi: f64) -> Option<(Rect, Pixmap)> {
+    let sh = shape.shadow.as_ref()?;
+    let path = shape.page_path();
+    if path.elements().is_empty() || !(dpi.is_finite() && dpi > 0.0) {
+        return None;
+    }
+    let area = sh.bounds(path.bounding_box());
+    let zoom = dpi / 25.4;
+    let w = (area.width() * zoom).ceil();
+    let h = (area.height() * zoom).ceil();
+    if !(w >= 1.0 && h >= 1.0 && w * h <= 64.0e6) {
+        return None;
+    }
+    let mut pm = Pixmap::new(w as u32, h as u32)?;
+    // Page (y up) to the image (y down), the area's top left at 0, 0.
+    let screen = Affine::new([zoom, 0.0, 0.0, -zoom, -area.x0 * zoom, area.y1 * zoom]);
+    if !shadow_layer(&mut pm, sh, &path, screen, zoom, true) {
+        return None;
+    }
+    let exact = Rect::new(area.x0, area.y1 - h / zoom, area.x0 + w / zoom, area.y1);
+    Some((exact, pm))
+}
+
+/// The blend mode a merge mode draws with.
+pub fn merge_blend(merge: tracedraw_core::live::MergeMode) -> tiny_skia::BlendMode {
+    use tiny_skia::BlendMode as B;
+    use tracedraw_core::live::MergeMode as M;
+    match merge {
+        M::Normal | M::Red | M::Green | M::Blue => B::SourceOver,
+        M::Add => B::Plus,
+        M::Subtract => B::Difference,
+        M::Difference => B::Difference,
+        M::Multiply => B::Multiply,
+        M::Divide => B::Screen,
+        M::IfLighter => B::Lighten,
+        M::IfDarker => B::Darken,
+        M::Hue => B::Hue,
+        M::Saturation => B::Saturation,
+        M::Color => B::Color,
+        M::Invert => B::Exclusion,
+        M::And | M::Or | M::Xor => B::Xor,
+    }
+}
+
 /// Three-pass box blur (approximates a Gaussian) on premultiplied RGBA.
 pub fn box_blur(pm: &mut Pixmap, radius: i32) {
+    box_blur_passes(pm, radius, 3);
+}
+
+/// Box blur with `passes` passes each way on premultiplied RGBA.
+pub fn box_blur_passes(pm: &mut Pixmap, radius: i32, passes: usize) {
     let w = pm.width() as usize;
     let h = pm.height() as usize;
+    if w == 0 || h == 0 {
+        return;
+    }
     let r = radius.max(1) as usize;
     let data = pm.data_mut();
     let mut tmp = vec![0u8; data.len()];
-    for _ in 0..3 {
+    for _ in 0..passes {
         blur_pass(data, &mut tmp, w, h, r, true);
         blur_pass(&tmp, data, w, h, r, false);
     }
@@ -3371,6 +3478,7 @@ mod tests {
             opacity: 0.8,
             blur: 0.0,
             color: Color::BLACK,
+            ..Default::default()
         });
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let page = doc.pages[0].id;
@@ -3380,6 +3488,139 @@ mod tests {
         assert!(p.red() < 100, "red was {}", p.red());
         let far = img.pixel(2, 2).unwrap();
         assert_eq!(far.red(), 255);
+    }
+
+    /// A 40 x 40 mm page with a red square under a blue square that has
+    /// `shadow`; rendered at 1 px per mm.
+    fn shadow_scene(shadow: tracedraw_core::Shadow) -> Pixmap {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(40.0, 40.0));
+        let layer = doc.pages[0].layers[0].id;
+        let mut under = rect(
+            doc.ids_mut().shape().0,
+            Rect::new(0.0, 0.0, 40.0, 40.0),
+            Color::rgb8(255, 0, 0),
+        );
+        under.stroke = None;
+        let mut s = rect(
+            doc.ids_mut().shape().0,
+            Rect::new(10.0, 20.0, 20.0, 30.0),
+            Color::rgb8(0, 0, 255),
+        );
+        s.stroke = None;
+        s.shadow = Some(shadow);
+        let l = doc.layer_mut(layer).unwrap();
+        l.shapes.push(under);
+        l.shapes.push(s);
+        let page = doc.pages[0].id;
+        render_page_image(&doc, page, 25.4).unwrap()
+    }
+
+    #[test]
+    fn shadow_merge_mode_multiplies_with_what_is_beneath() {
+        let base = tracedraw_core::Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(5.0, -5.0),
+            opacity: 1.0,
+            blur: 0.0,
+            color: Color::rgb8(0, 255, 0),
+            ..Default::default()
+        };
+        // Normal: green over red is green.
+        let normal = shadow_scene(tracedraw_core::Shadow {
+            merge: tracedraw_core::live::MergeMode::Normal,
+            ..base
+        });
+        // Multiply (the default): green times red is black.
+        let multiply = shadow_scene(base);
+        // (22, 22) in the image is inside the shadow, outside the object.
+        let n = normal.pixel(22, 22).unwrap();
+        let m = multiply.pixel(22, 22).unwrap();
+        assert!(n.green() > 200 && n.red() < 50, "{n:?}");
+        assert!(m.green() < 50 && m.red() < 50, "{m:?}");
+    }
+
+    #[test]
+    fn perspective_shadow_falls_on_the_floor_and_fades() {
+        use tracedraw_core::shadow::{Perspective, ShadowEdge};
+        let mut sh = tracedraw_core::Shadow {
+            opacity: 1.0,
+            blur: 0.0,
+            color: Color::BLACK,
+            merge: tracedraw_core::live::MergeMode::Normal,
+            perspective: Some(Perspective::new(ShadowEdge::Bottom)),
+            ..Default::default()
+        };
+        // The square's base at y 20 stays; its top lands at (38, 22).
+        let b = Rect::new(10.0, 20.0, 20.0, 30.0);
+        sh.set_end_point(b, tracedraw_core::geometry::Point::new(38.0, 22.0));
+        if let Some(p) = sh.perspective.as_mut() {
+            p.fade = 0.8;
+        }
+        let img = shadow_scene(sh);
+        // Image y = 40 - page y. Near the base, right of the square: dark.
+        let near = img.pixel(22, 19).unwrap();
+        // Far along the shadow: lighter (faded), still darker than the red.
+        let far = img.pixel(33, 18).unwrap();
+        assert!(near.red() < 120, "{near:?}");
+        assert!(far.red() > near.red(), "{far:?} {near:?}");
+        // Above the square's top where a flat shadow would not be: red.
+        let above = img.pixel(15, 5).unwrap();
+        assert_eq!((above.red(), above.green()), (255, 0));
+    }
+
+    #[test]
+    fn shadow_image_holds_the_shadow_alone() {
+        let mut s = rect(1, Rect::new(10.0, 10.0, 20.0, 20.0), Color::rgb8(0, 0, 255));
+        assert!(render_shadow_image(&s, 100.0).is_none());
+        s.shadow = Some(tracedraw_core::Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(5.0, -5.0),
+            blur: 1.0,
+            ..Default::default()
+        });
+        let (r, pm) = render_shadow_image(&s, 100.0).expect("image");
+        assert!(
+            r.x0 < 15.0 && r.x1 > 25.0 && r.y0 < 5.0 && r.y1 > 15.0,
+            "{r:?}"
+        );
+        let zoom = 100.0 / 25.4;
+        assert!((pm.width() as f64 - r.width() * zoom).abs() < 1.0);
+        // The middle of the shadow is half opaque black.
+        let cx = ((20.0 - r.x0) * zoom) as u32;
+        let cy = ((r.y1 - 10.0) * zoom) as u32;
+        let c = pm.pixel(cx, cy).unwrap().demultiply();
+        assert!((c.alpha() as i32 - 128).abs() < 10, "{c:?}");
+        assert!(render_shadow_image(&s, f64::NAN).is_none());
+    }
+
+    #[test]
+    fn inside_outlines_stay_inside_the_fill() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(40.0, 40.0));
+        let layer = doc.pages[0].layers[0].id;
+        let mut s = rect(
+            doc.ids_mut().shape().0,
+            Rect::new(10.0, 10.0, 30.0, 30.0),
+            Color::rgb8(0, 0, 255),
+        );
+        let mut st = Stroke::new(Color::BLACK, 4.0);
+        st.position = tracedraw_core::OutlinePosition::Inside;
+        s.stroke = Some(st.clone());
+        doc.layer_mut(layer).unwrap().shapes.push(s.clone());
+        let page = doc.pages[0].id;
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        // 1 mm outside the edge: white; 1 mm and 3 mm inside: black.
+        assert_eq!(img.pixel(8, 20).unwrap().red(), 255);
+        assert!(img.pixel(11, 20).unwrap().red() < 60);
+        assert!(img.pixel(13, 20).unwrap().red() < 60);
+        // 5 mm inside: the blue fill.
+        assert!(img.pixel(15, 20).unwrap().blue() > 200);
+        // Outside: the same width beyond the edge, the fill untouched.
+        st.position = tracedraw_core::OutlinePosition::Outside;
+        if let Some(sh) = doc.find_shape_mut(s.id) {
+            sh.stroke = Some(st);
+        }
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        assert!(img.pixel(7, 20).unwrap().red() < 60);
+        assert!(img.pixel(11, 20).unwrap().blue() > 200);
+        assert_eq!(img.pixel(5, 20).unwrap().red(), 255);
     }
 
     #[test]

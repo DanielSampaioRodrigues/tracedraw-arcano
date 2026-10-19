@@ -122,7 +122,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Mesh fill: Mesh Fill tool and bar (rows and columns keeping colours, Smooth colour, node transparency, Clear Mesh), nodes dragged and coloured from the palette, grid lines added and removed (see `behavior/mesh-fill.md`) | works |
 | Area Fill (enclosed region; fill and outline: default, own or none) (see `behavior/area-fill.md`) | works |
 | Interactive Fill tool: property bar with fill type and gradient fields, axis and centre handles on the canvas | works |
-| Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
+| Outline: width (shown in points, mm, cm, inches or pixels), colour, caps, joins, mitre limit (angle), position (outside, centred, inside), dashes with Align dashes and custom line styles (Edit Line Style), nib, behind fill, scale with object, arrowheads (presets and custom from the selection) (see `behavior/outline-pen.md`) | works |
 | Outline paint: every fill kind (none, uniform, gradient, pattern, texture, mesh) with the fill editors, on screen, in SVG (gradient and pattern strokes) and PDF (the outline's area shaded or rasterised) | works (see `behavior/outline-pen.md`, Outline paint; other exports use the outline colour) |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
@@ -131,7 +131,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Drop shadow (offset, opacity, feather, colour), live | works |
+| Drop shadow, live: flat or perspective (from an edge: angle, stretch, fade), opacity, feathering with direction and edges, merge mode (Multiply by default), colour, presets, on-canvas start, end and opacity handles with colour drop, Break Drop Shadow Apart (see `behavior/drop-shadow.md`) | works |
 | Contour (to centre, inside, outside; steps, offset, mitred, round or bevelled corners, colour direction, end colours, object and colour accelerations), live; the tool's drag and bar edit it like the panel (see `behavior/contour.md`) | works |
 | Blend (steps or spacing along a path, rotation with loop, along the full path, accelerations with sizing and link, direct or clockwise or counterclockwise colours), live, both objects kept and the steps following either (see `behavior/blend.md`) | works |
 | Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the centre marker dragged, the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |

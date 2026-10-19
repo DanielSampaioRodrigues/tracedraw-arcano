@@ -712,6 +712,25 @@ pub struct Shadow {
     /// Feathering radius in mm.
     pub blur: f64,
     pub color: crate::color::Color,
+    /// How the shadow combines with what lies beneath. Shadows saved
+    /// before the field existed were drawn normally and keep that; new
+    /// shadows multiply.
+    #[serde(default)]
+    pub merge: crate::live::MergeMode,
+    /// Which side of the edge the feathering spreads to.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub feather_direction: crate::shadow::FeatherDirection,
+    /// The shape of the feathered ramp.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub feather_edges: crate::shadow::FeatherEdges,
+    /// A perspective shadow laid from one of the object's edges; `None`:
+    /// a flat shadow moved by `offset`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perspective: Option<crate::shadow::Perspective>,
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
 }
 
 impl Default for Shadow {
@@ -721,6 +740,10 @@ impl Default for Shadow {
             opacity: 0.5,
             blur: 1.5,
             color: crate::color::Color::BLACK,
+            merge: crate::live::MergeMode::Multiply,
+            feather_direction: crate::shadow::FeatherDirection::Middle,
+            feather_edges: crate::shadow::FeatherEdges::Linear,
+            perspective: None,
         }
     }
 }

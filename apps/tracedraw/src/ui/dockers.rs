@@ -382,7 +382,7 @@ fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
 /// The further outlines of the selection, as [`extra_fills`].
 fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape) {
     let mut strokes = first.extra_strokes.clone();
-    let custom = app.settings.custom_arrowheads.clone();
+    let custom = crate::ui::line_style::OutlineLib::of(app);
     let mut changed = false;
     let mut remove = None;
     for (i, st) in strokes.iter_mut().enumerate() {
@@ -449,7 +449,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
         }
         ui.separator();
         let mut stroke = app.default_stroke();
-        let custom = app.settings.custom_arrowheads.clone();
+        let custom = crate::ui::line_style::OutlineLib::of(app);
         if outline_editor(ui, &mut stroke, &custom) {
             app.set_default_properties(tracedraw_core::DefaultKind::Graphic, |p| p.stroke = stroke);
         }
@@ -578,7 +578,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     .map_or(first.stroke.clone(), |b| b.stroke.clone());
                 let mix = app.selection_stroke_mix();
                 let mut stroke = old.clone();
-                let custom = app.settings.custom_arrowheads.clone();
+                let custom = crate::ui::line_style::OutlineLib::of(app);
                 let mut touched = Vec::new();
                 if outline_editor_mixed(ui, &mut stroke, &custom, &mix, &mut touched) {
                     app.patch_selection_stroke(&old, &stroke, &touched);
@@ -730,7 +730,7 @@ fn qr_section(
         changed = true;
     }
     ui.label(egui::RichText::new(tr("qr.outline")).size(11.0));
-    let custom = app.settings.custom_arrowheads.clone();
+    let custom = crate::ui::line_style::OutlineLib::of(app);
     if outline_editor(ui, &mut next.outline, &custom) {
         changed = true;
     }
@@ -1708,8 +1708,12 @@ fn set_outline_paint(s: &mut Stroke, paint: Fill) -> bool {
     }
 }
 
-fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]) -> bool {
-    outline_editor_mixed(ui, stroke, custom, &StrokeMix::default(), &mut Vec::new())
+fn outline_editor(
+    ui: &mut Ui,
+    stroke: &mut Option<Stroke>,
+    lib: &crate::ui::line_style::OutlineLib,
+) -> bool {
+    outline_editor_mixed(ui, stroke, lib, &StrokeMix::default(), &mut Vec::new())
 }
 
 /// [`outline_editor`] for a selection whose outlines differ as `mix`
@@ -1721,10 +1725,11 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
 fn outline_editor_mixed(
     ui: &mut Ui,
     stroke: &mut Option<Stroke>,
-    custom: &[Arrowhead],
+    lib: &crate::ui::line_style::OutlineLib,
     mix: &StrokeMix,
     touched: &mut Vec<StrokeField>,
 ) -> bool {
+    let custom = lib.arrows.as_slice();
     let mut changed = false;
     let mut has = stroke.is_some();
     if ui
@@ -1785,17 +1790,28 @@ fn outline_editor_mixed(
                         .show_value(false),
                 ));
                 let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
-                w |= ui
+                // The width in the outline unit; the model keeps mm.
+                let u = lib.units;
+                let mut v = u.from_mm(s.width);
+                if ui
                     .add(
-                        crate::ui::field::NumField::new(&mut s.width)
-                            .range(0.001..=1000.0)
-                            .unit_mm(1.0)
-                            .max_decimals(3)
+                        crate::ui::field::NumField::new(&mut v)
+                            .range(u.from_mm(0.001)..=u.from_mm(1000.0))
+                            .unit_mm(u.mm())
+                            .max_decimals(4)
                             .width(56.0)
                             .mixed(width_mixed),
                     )
-                    .changed();
-                ui.label(tr("docker.width_mm"));
+                    .changed()
+                {
+                    s.width = u.to_mm(v).clamp(0.001, 1000.0);
+                    w = true;
+                }
+                if let Some(nu) =
+                    crate::ui::propbar::outline_unit_combo(ui, "outline_units_docker", u)
+                {
+                    crate::ui::line_style::request_units(ui, nu);
+                }
                 if w {
                     touched.push(StrokeField::Width);
                     changed = true;
@@ -1864,6 +1880,97 @@ fn outline_editor_mixed(
                 }
             }
         });
+        if !lib.dashes.is_empty() {
+            // Custom dash patterns from Edit Line Style.
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr("docker.dash_custom"));
+                for d in &lib.dashes {
+                    let r = ui
+                        .push_id(
+                            ("custom_dash", d.len(), d.iter().sum::<f64>() as i64),
+                            |ui| {
+                                let r = crate::ui::line_style::preview(ui, d, 48.0);
+                                if s.dash == *d {
+                                    ui.painter().rect_stroke(
+                                        r.rect.expand(2.0),
+                                        0.0,
+                                        egui::Stroke::new(1.0, Tokens::ACCENT),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                                r
+                            },
+                        )
+                        .inner;
+                    if r.clicked() {
+                        s.dash = d.clone();
+                        touched.push(StrokeField::Dash);
+                        changed = true;
+                    }
+                }
+            });
+        }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !s.dash.is_empty(),
+                    egui::Checkbox::new(&mut s.align_dashes, tr("docker.align_dashes")),
+                )
+                .on_hover_text(tr("docker.align_dashes_tip"))
+                .changed()
+            {
+                touched.push(StrokeField::AlignDashes);
+                changed = true;
+            }
+            if ui.button(tr("docker.edit_line_style")).clicked() {
+                crate::ui::line_style::request(ui);
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(tr("docker.outline_position"));
+            for (pos, n) in [
+                (
+                    tracedraw_core::OutlinePosition::Outside,
+                    "docker.position_outside",
+                ),
+                (
+                    tracedraw_core::OutlinePosition::Center,
+                    "docker.position_center",
+                ),
+                (
+                    tracedraw_core::OutlinePosition::Inside,
+                    "docker.position_inside",
+                ),
+            ] {
+                let shown = !mix.has(StrokeField::Position) && s.position == pos;
+                if ui.selectable_label(shown, tr(n)).clicked() {
+                    s.position = pos;
+                    touched.push(StrokeField::Position);
+                    changed = true;
+                }
+            }
+        });
+        if s.join == tracedraw_core::LineJoin::Miter {
+            ui.horizontal(|ui| {
+                ui.label(tr("docker.miter_limit"));
+                if ui
+                    .add(
+                        crate::ui::field::NumField::new(&mut s.miter_limit)
+                            .range(Stroke::MITER_LIMIT_RANGE)
+                            .speed(0.5)
+                            .max_decimals(1)
+                            .suffix("°")
+                            .width(56.0)
+                            .mixed(mix.has(StrokeField::MiterLimit)),
+                    )
+                    .on_hover_text(tr("docker.miter_limit_tip"))
+                    .changed()
+                {
+                    touched.push(StrokeField::MiterLimit);
+                    changed = true;
+                }
+            });
+        }
         for (field, key, range, suffix) in [
             (StrokeField::Stretch, "docker.nib_stretch", 0.1..=1.0, ""),
             (
@@ -2147,6 +2254,8 @@ mod tests {
         let ctx = crate::theme::ui_context();
         let mut app = App::headless();
         app.settings.autocorrect.enabled = false;
+        // Widths in millimetres, as the numbers below are.
+        app.settings.outline_units = crate::app::Units::Millimeters.id().to_string();
         let mut ids = Vec::new();
         for (x, c, w) in [
             (10.0, tracedraw_core::Color::rgb8(0, 0, 255), 1.234),

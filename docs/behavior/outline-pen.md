@@ -12,13 +12,85 @@ Colour (Shift+F12) opens the Colour panel. The model is
 | Colour | black (C0 M0 Y0 K100 for new objects) | any colour model |
 | Width | 0.2 mm (0.567 pt) for new objects; imported outlines keep theirs | a hairline (0.0762 mm, 0.216 pt) draws one device pixel at every zoom |
 | Caps | butt | butt, round, square |
-| Corners | mitre | mitre (limit 4), round, bevel |
-| Dash | solid | presets dashed 4:2, dotted 1:1, dash dot 6:2:1:2, in multiples of the width |
+| Corners | mitre | mitre, round, bevel |
+| Mitre limit | 5 degrees | 1 to 179 degrees; shown with mitred corners |
+| Dash | solid | presets dashed 4:2, dotted 1:1, dash dot 6:2:1:2, and custom line styles, in multiples of the width |
+| Align dashes | off | fit the dashes to the corners and ends (with a dash pattern) |
+| Position | centred | outside, centred, inside |
 | Arrowheads | none / none | start and end; presets and custom heads, filled in the outline colour |
 | Nib stretch | 1.0 | 0.1 to 1: the calligraphic nib's thickness across its axis |
 | Nib angle | 0 | degrees |
 | Behind fill | off | the outline is drawn under the fill |
 | Scale with object | off | the width follows the object's scale factor `sqrt(|det|)` |
+
+## Width unit
+
+Widths are kept in millimetres. The Properties docker's outline section
+and the property bar show and take them in the outline unit, picked
+next to the width: points (the default), millimetres, centimetres,
+inches or pixels. The choice is a preference (`outline_units` in the
+settings) shared by both places and the callout bar. The width list
+offers round values in that unit: points 0.25, 0.5, 0.75, 1, 1.5, 2, 3,
+4, 6, 8, 10, 12, 16; millimetres (and centimetres) 0.1 to 3 mm; inches
+0.003 to 0.1; pixels 1 to 16. A number typed with a unit after it
+(`1 mm`) is read in that unit. Checked by
+`ui::propbar::tests::outline_widths_read_in_the_outline_unit` and
+`ui::propbar::tests::the_width_presets_follow_the_outline_unit`.
+
+## Mitre limit
+
+A mitred corner sharper than the mitre limit angle is bevelled. The
+angle `a` is kept in the model (`Stroke::miter_limit`, degrees) and
+given to the renderer, SVG (`stroke-miterlimit`), PDF (`M`) and EPS
+(`setmiterlimit`) as the ratio of mitre length to width
+`1 / sin(a / 2)` (5 degrees: 22.9). SVG files read back the other way:
+`a = 2 asin(1 / ratio)`. Outlines in files saved before the field
+existed keep the limit they were drawn with, ratio 4 (about 29
+degrees). `.cdr` files: the limit is neither read nor written (where it
+lives in the outline record is not known); outlines read from them take
+the default.
+
+## Position
+
+For the closed subpaths of an object the outline can lie wholly
+outside the path (the object looks larger by the width), centred on it
+(half on each side, the default) or wholly inside it (the object keeps
+its size). Open subpaths are always centred. Hairlines, calligraphic
+and variable outlines are always centred.
+
+The area of an inside or outside outline is the outline stroked at
+twice the width (dash lengths kept in millimetres), intersected with
+the object's even-odd fill area (inside) or with that area cut away
+(outside), and merged with the centred outline of any open subpaths
+(`shaping::outline_band`). The renderer fills this area instead of
+stroking, and SVG and PDF write it as a filled path in the outline's
+paint (no stroke on the object), so exports look the same as the
+screen. Curves are flattened at 0.02 mm for the cut.
+
+## Align dashes
+
+With Align dashes a dash pattern is fitted to each run of the path
+between corners (a turn of more than 3 degrees between neighbouring
+segments; smooth nodes do not split a run). A run of length `L` with
+pattern length `P` (in mm: the pattern times the width) takes
+`n = max(1, round(L / P))` repeats, stretched by `L / (n P)`, and starts
+and ends with half the first dash. The halves that meet at a corner,
+and at the start of a closed subpath, join into one dash, so every
+corner and every end of an open line lies inside a dash
+(`shaping::aligned_dashes`). Aligned dashes are drawn and exported as
+filled areas, like an inside or outside outline.
+
+## Edit Line Style
+
+The Edit line style button (Properties docker, outline section, and at
+the end of the property bar's line style list) opens a grid of cells,
+one cell per outline width (2 to 32 cells): clicking a cell switches it
+between dash and gap. The pattern is read from the cells as on and off
+runs, starting at the first dash after a gap; it needs at least one
+dash and one gap. Add keeps it as a new line style, Replace changes the
+one picked in the list, Delete forgets it (outlines that use it keep
+their pattern). Custom line styles are kept in the settings
+(`custom_dashes`, at most 64) and listed after the presets.
 
 ## Calligraphic outline
 
@@ -68,6 +140,15 @@ Exports:
 | PDF | the outline's area (`shaping::stroke_area`: width, caps, joins, miter limit 4, dashes) clipped with the non-zero rule and shaded (gradients) or painted with the renderer's pixels at 150 dpi (patterns, textures, meshes, shaped gradients). |
 | EPS, EMF and the rest | the outline colour. |
 | `.cdr` | the outline colour (outline fills are not written). |
+
+Position, mitre limit and dash alignment are checked by
+`shaping::tests::inside_and_outside_outlines_cover_one_side_of_the_path`,
+`shaping::tests::aligned_dashes_put_corners_and_ends_on_dashes`,
+`style::tests::position_mitre_limit_and_dash_alignment_round_trip`,
+`style::tests::mitre_limit_angles_and_ratios_convert_both_ways`, the
+renderer's `tests::inside_outlines_stay_inside_the_fill`, the SVG
+export's `svg::tests::positioned_outlines_are_written_as_filled_areas`,
+the native format's round trip and `ui::line_style::tests`.
 
 Checked by `tests::outlines_take_a_gradient_fill` and
 `tests::outlines_take_pattern_texture_mesh_and_shaped_paints` in the
