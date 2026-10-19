@@ -1146,7 +1146,7 @@ fn room(dir: &Path) {
         [toward(lb), toward(rb), toward(rt), toward(lt)],
     ];
     let mut b = Build::new("Room", Size::new(w, h));
-    let mut laid = |b: &mut Build,
+    let laid = |b: &mut Build,
                     plane: usize,
                     u0: f64,
                     w0: f64,

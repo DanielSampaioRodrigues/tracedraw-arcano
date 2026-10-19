@@ -3872,8 +3872,10 @@ mod tests {
 
     #[test]
     fn tdraw_files_can_be_written_in_an_older_format_version() {
-        let mut doc = Document::default();
-        doc.title = "Older".into();
+        let doc = Document {
+            title: "Older".into(),
+            ..Default::default()
+        };
         for version in 0..=TDRAW_FORMAT_VERSION {
             let json = doc.to_json_version(version).expect("json");
             assert_eq!(tdraw_text_version(&json), version);

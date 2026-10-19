@@ -477,7 +477,7 @@ mod tests {
             offset: 1.0,
         };
         let r = square(40.0, -30.0, 60.0, -10.0, w);
-        let free = free_segments(0.0, 100.0, -22.0, -18.0, &[r.clone()], 2.0);
+        let free = free_segments(0.0, 100.0, -22.0, -18.0, std::slice::from_ref(&r), 2.0);
         assert_eq!(free, vec![(0.0, 39.0), (61.0, 100.0)]);
         // Above the object (and its offset) the line is whole.
         assert_eq!(

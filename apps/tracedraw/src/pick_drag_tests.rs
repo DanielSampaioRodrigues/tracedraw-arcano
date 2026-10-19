@@ -1946,6 +1946,8 @@ fn a_rectangle_drawn_with_alignment_guides_takes_another_objects_size() {
     drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
     let b = bounds(&app, app.selection.first().copied().expect("another"));
     assert!((b.height() - 31.0).abs() < 0.1, "{b:?}");
+}
+
 /// A curve tool's drag from `from` to `to`, node placed at the press.
 fn pull(ctx: &egui::Context, app: &mut App, from: Point, to: Point) {
     let (a, b) = (app.view.to_screen(from), app.view.to_screen(to));
