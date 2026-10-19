@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Linux: the window can be resized and maximized under every window
+  manager (Xfwm4 kept it at one size) and fits small screens: a smaller
+  minimum size, maximized at start when the kept size does not fit.
+  Bars longer than the window slide with "«" and "»" buttons (and the
+  mouse wheel), and dialogs taller than the window scroll (#168).
 - VBA macro files are read (new `tracedraw-vba-project` crate): `.gms`
   and other compound files with a VBA project (modules, their kinds and
   code in the project's code page, references, protection, modules saved

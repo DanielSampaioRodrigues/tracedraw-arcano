@@ -62,6 +62,7 @@ pub mod menus;
 pub mod objects_docker;
 pub mod options;
 pub mod options_global;
+pub mod overflow;
 pub mod palette;
 pub mod pdf_password;
 pub mod picture_mosaic_docker;
@@ -321,14 +322,14 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         bars::background(app, ui, Bar::Standard);
         ui.horizontal(|ui| {
             bars::grip(app, ui, Bar::Standard, true);
-            toolbar::standard_toolbar(app, ui);
+            overflow::row(ui, "standard", |ui| toolbar::standard_toolbar(app, ui));
         });
     };
     let property = |app: &mut App, ui: &mut Ui| {
         bars::background(app, ui, Bar::Property);
         ui.horizontal(|ui| {
             bars::grip(app, ui, Bar::Property, true);
-            toolbar::property_bar(app, ui);
+            overflow::row(ui, "property", |ui| toolbar::property_bar(app, ui));
         });
     };
     let status_dock = bars_layout.dock(Bar::Status);
@@ -360,24 +361,26 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| property(app, ui));
     }
     if app.show_text_toolbar {
-        Panel::top("text_toolbar")
-            .frame(bar())
-            .show(ui, |ui| toolbar::text_toolbar(app, ui));
+        Panel::top("text_toolbar").frame(bar()).show(ui, |ui| {
+            overflow::row(ui, "text", |ui| toolbar::text_toolbar(app, ui))
+        });
     }
     if app.show_zoom_toolbar {
-        Panel::top("zoom_toolbar")
-            .frame(bar())
-            .show(ui, |ui| toolbar::zoom_toolbar(app, ui));
+        Panel::top("zoom_toolbar").frame(bar()).show(ui, |ui| {
+            overflow::row(ui, "zoom", |ui| toolbar::zoom_toolbar(app, ui))
+        });
     }
     if app.show_transform_toolbar {
-        Panel::top("transform_toolbar")
-            .frame(bar())
-            .show(ui, |ui| toolbar::transform_toolbar(app, ui));
+        Panel::top("transform_toolbar").frame(bar()).show(ui, |ui| {
+            overflow::row(ui, "transform", |ui| toolbar::transform_toolbar(app, ui))
+        });
     }
     if app.settings.time_tracker.show_bar {
         Panel::top("time_tracker_toolbar")
             .frame(bar())
-            .show(ui, |ui| time_tracker::toolbar(app, ui));
+            .show(ui, |ui| {
+                overflow::row(ui, "time_tracker", |ui| time_tracker::toolbar(app, ui))
+            });
     }
     if app.show_status_bar && status_dock == Dock::Bottom {
         status_panel(app, ui, Panel::bottom("status_bar"));

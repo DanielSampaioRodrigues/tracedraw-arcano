@@ -32,6 +32,62 @@ const TITLE_FONT: f32 = 13.0;
 /// button was clicked or Escape pressed.
 pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce(&mut Ui)) -> bool {
     let mut closed = false;
+    // On a screen smaller than the dialog, the window takes what there
+    // is and its body scrolls (both ways) over the dialog's full layout.
+    let room = (ctx.content_rect().size() - Vec2::splat(16.0)).max(Vec2::splat(200.0));
+    let shown = size.min(room);
+    if shown != size {
+        egui::Window::new(id)
+            .id(egui::Id::new(id))
+            .order(egui::Order::Foreground)
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(shown)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .frame(
+                Frame::new()
+                    .fill(crate::theme::Tokens::title_bar())
+                    .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
+                    .inner_margin(Margin::ZERO),
+            )
+            .show(ctx, |ui| {
+                ui.set_min_size(shown);
+                let (bar, _) =
+                    ui.allocate_exact_size(Vec2::new(shown.x, TITLE_BAR), Sense::hover());
+                if title_bar(ui, bar, title, id) {
+                    closed = true;
+                }
+                egui::ScrollArea::both()
+                    .id_salt((id, "scroll"))
+                    .max_width(shown.x)
+                    .max_height(shown.y - TITLE_BAR)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let (r, _) = ui.allocate_exact_size(
+                            Vec2::new(size.x, size.y - TITLE_BAR),
+                            Sense::hover(),
+                        );
+                        let body = Rect::from_min_max(Pos2::new(r.left() - 1.0, r.top()), r.max);
+                        ui.painter().rect_filled(
+                            Rect::from_min_max(
+                                body.min + Vec2::new(EDGE, 0.0),
+                                body.max - Vec2::new(EDGE, EDGE),
+                            ),
+                            0.0,
+                            Tokens::panel(),
+                        );
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                            form_style(ui);
+                            add(ui)
+                        });
+                    });
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            closed = true;
+        }
+        return closed;
+    }
     egui::Window::new(id)
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
@@ -153,7 +209,13 @@ impl Window {
                 })
                 .show(ui, |ui| {
                     form_style(ui);
-                    add(ui)
+                    // A dialog taller than the window scrolls.
+                    let max_h = (ui.ctx().content_rect().height() - TITLE_BAR - 60.0).max(150.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("dialog_body")
+                        .max_height(max_h)
+                        .show(ui, |ui| add(ui))
+                        .inner
                 });
             out = Some(inner.inner);
             let width = ui.min_rect().width().max(min_w);

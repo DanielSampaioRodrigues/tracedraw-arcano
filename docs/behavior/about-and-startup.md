@@ -36,10 +36,19 @@ the version on the right).
 - The bar eases towards 80 % over 1.6 s while the fonts load and fills
   once they are in. The splash stays up at least 1.6 s.
 - Then the editor is built and the window becomes the main window:
-  decorations, resizable, a minimum of 1000 x 600, the size kept from the
-  last session (1600 x 950 the first time, never larger than 95 % of the
-  monitor) centred on the monitor, maximized when it was left maximized
-  (the first start is maximized).
+  decorations, resizable, the maximize button, a minimum of 800 x 500
+  (never more than four fifths of the monitor, so it fits a 1366 x 768
+  or 1280 x 720 screen with a taskbar at any interface size), the size
+  kept from the last session (1600 x 950 the first time, never larger
+  than 95 % of the monitor) centred on the monitor, maximized when it
+  was left maximized or when that size does not fit the monitor (a
+  small screen).
+- The splash window is made resizable too, though it has no frame to
+  drag: a window made not resizable stays at its size for good under
+  some window managers (Xfwm4), and the main window could then neither
+  be resized nor maximized
+  (`splash::tests::small_screens_get_a_window_that_fits_and_starts_maximized`,
+  `splash::tests::the_main_window_offers_the_maximize_button`).
 - Options > General > Show the splash screen at start-up turns it off.
   `--no-splash` or `TRACEDRAW_NO_SPLASH=1` skip it for one run and open a
   plain 1600 x 950 window (automation and the visual checks use this).

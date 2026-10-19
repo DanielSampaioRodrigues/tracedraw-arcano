@@ -19,7 +19,9 @@ use web_time::{Duration, Instant};
 pub const SIZE: Vec2 = Vec2::new(640.0, 380.0);
 /// The main window's size when none was kept, and its minimum.
 pub const DEFAULT_SIZE: Vec2 = Vec2::new(1600.0, 950.0);
-pub const MIN_SIZE: Vec2 = Vec2::new(1000.0, 600.0);
+/// Small enough for a 1280 x 720 screen with a taskbar, at any interface
+/// size (see [`min_size_for`]).
+pub const MIN_SIZE: Vec2 = Vec2::new(800.0, 500.0);
 /// The shortest time the splash stays up, so it never just flashes.
 pub const MIN_TIME: Duration = Duration::from_millis(1600);
 
@@ -255,9 +257,41 @@ pub fn main_window_size(saved: [f32; 2], monitor: Option<Vec2>) -> Vec2 {
         DEFAULT_SIZE
     };
     if let Some(m) = monitor.filter(|m| m.x > 0.0 && m.y > 0.0) {
-        size = size.min(m * 0.95).max(MIN_SIZE.min(m));
+        size = size.min(m * 0.95).max(min_size_for(monitor));
     }
     size
+}
+
+/// The window's minimum size on a monitor of `monitor` (both in points):
+/// [`MIN_SIZE`], never more than four fifths of the monitor, so the
+/// window always fits the screen with room for a taskbar.
+pub fn min_size_for(monitor: Option<Vec2>) -> Vec2 {
+    match monitor.filter(|m| m.x > 0.0 && m.y > 0.0) {
+        Some(m) => MIN_SIZE.min(m * 0.8),
+        None => MIN_SIZE,
+    }
+}
+
+/// The main window starts maximized when it was left so, or when the
+/// size it would get does not fit the monitor (a small screen).
+pub fn start_maximized(saved: [f32; 2], maximized: bool, monitor: Option<Vec2>) -> bool {
+    if maximized {
+        return true;
+    }
+    let Some(m) = monitor.filter(|m| m.x > 0.0 && m.y > 0.0) else {
+        return false;
+    };
+    let saved = Vec2::new(saved[0], saved[1]);
+    let wanted = if saved.x.is_finite()
+        && saved.y.is_finite()
+        && saved.x >= MIN_SIZE.x
+        && saved.y >= MIN_SIZE.y
+    {
+        saved
+    } else {
+        DEFAULT_SIZE
+    };
+    wanted.x > m.x * 0.95 || wanted.y > m.y * 0.95
 }
 
 /// Where a window of `size` sits centred on a monitor of `monitor` (its
@@ -281,13 +315,18 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     // or the main window keeps the splash's maximum and cannot be
     // maximized or resized.
     ctx.send_viewport_cmd(V::MaxInnerSize(egui::Vec2::INFINITY));
-    ctx.send_viewport_cmd(V::MinInnerSize(MIN_SIZE));
+    ctx.send_viewport_cmd(V::MinInnerSize(min_size_for(monitor)));
     ctx.send_viewport_cmd(V::Resizable(true));
+    ctx.send_viewport_cmd(V::EnableButtons {
+        close: true,
+        minimized: true,
+        maximize: true,
+    });
     ctx.send_viewport_cmd(V::InnerSize(size));
     if let Some(p) = centred_position(size, monitor) {
         ctx.send_viewport_cmd(V::OuterPosition(p));
     }
-    if settings.window_maximized {
+    if start_maximized(settings.window_size, settings.window_maximized, monitor) {
         ctx.send_viewport_cmd(V::Maximized(true));
     }
     ctx.send_viewport_cmd(V::Focus);
@@ -339,6 +378,49 @@ mod tests {
         let resizable =
             at(&|c| matches!(c, V::Resizable(true))).expect("the window turns resizable");
         assert!(max < resizable && min < resizable, "{cmds:?}");
+    }
+
+    #[test]
+    fn small_screens_get_a_window_that_fits_and_starts_maximized() {
+        // 1366 x 768 and 1280 x 720 screens, at 100 % and at 125 % (the
+        // monitor's size in points shrinks as the interface grows).
+        for m in [
+            Vec2::new(1366.0, 768.0),
+            Vec2::new(1280.0, 720.0),
+            Vec2::new(1366.0, 768.0) / 1.25,
+            Vec2::new(1280.0, 720.0) / 1.25,
+        ] {
+            let min = min_size_for(Some(m));
+            assert!(
+                min.x <= m.x * 0.8 + 0.01 && min.y <= m.y * 0.8 + 0.01,
+                "{m:?} {min:?}"
+            );
+            let size = main_window_size([0.0, 0.0], Some(m));
+            assert!(size.x <= m.x && size.y <= m.y, "{m:?} {size:?}");
+            assert!(size.x >= min.x && size.y >= min.y);
+            // The default size does not fit: the window starts maximized.
+            assert!(start_maximized([0.0, 0.0], false, Some(m)));
+        }
+        // A large screen keeps the kept size, not maximized.
+        let big = Some(Vec2::new(2560.0, 1440.0));
+        assert!(!start_maximized([1600.0, 950.0], false, big));
+        assert!(start_maximized([1600.0, 950.0], true, big));
+        assert_eq!(min_size_for(big), MIN_SIZE);
+    }
+
+    #[test]
+    fn the_main_window_offers_the_maximize_button() {
+        use egui::ViewportCommand as V;
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            open_main_window(ui.ctx(), &Settings::default());
+        });
+        out.textures_delta.clear();
+        let cmds = &out.viewport_output[&egui::ViewportId::ROOT].commands;
+        assert!(cmds
+            .iter()
+            .any(|c| matches!(c, V::EnableButtons { maximize: true, .. })));
+        assert!(cmds.iter().any(|c| matches!(c, V::Decorations(true))));
     }
 
     #[test]

@@ -102,6 +102,22 @@ into it (`ui::field::tests`).
   Nodes, Reduce Nodes with the Curve smoothness slider); toggles are drawn
   pressed while on. The full list is in `shape-tool.md`.
 
+## Bars longer than the window
+
+The standard toolbar, the property bar, the text, zoom, transform and
+Time Tracker bars and the toolbox show what fits between a "«" button at
+their start and a "»" button at their end (up and down arrows for the
+toolbox on a side). "»" slides the bar so the first item not wholly in
+view comes first; "«" slides it back, cut between items, to the start;
+the mouse wheel over the bar slides it too. The items stay as they are on
+the bar and work as there (the bar is drawn once). A bar that fits shows
+no buttons; the slide is worked out again when the window changes size
+(`ui::overflow::tests`).
+
+Dialogs taller (or wider) than the window keep their size inside a
+window that fits the screen, and their body scrolls; dockers scroll as
+before.
+
 ## Moving the bars
 
 The toolbox, the colour palette, the standard toolbar, the property bar
@@ -164,6 +180,10 @@ and the status bar move (`ui/bars.rs`).
 - `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`
 - `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`
   draws every tool's bar.
+- `ui::overflow::tests::forward_brings_the_first_hidden_item_to_the_start`
+- `ui::overflow::tests::back_returns_between_items_and_to_the_start`
+- `ui::overflow::tests::areas_holding_items_are_not_cut_points`
+- `ui::overflow::tests::a_bar_that_fits_does_not_slide`
 - `ui::bars::tests::a_dropped_bar_docks_at_the_nearest_edge_or_floats`
 - `ui::bars::tests::bars_only_go_where_they_can`
 - `ui::bars::tests::the_drop_zone_leaves_the_status_bar_outside`

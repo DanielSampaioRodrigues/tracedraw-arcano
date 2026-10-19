@@ -178,10 +178,14 @@ fn main() -> eframe::Result<()> {
     });
     let splash = settings.show_splash && !plain;
     let viewport = if splash {
+        // The splash has no frame, so it cannot be dragged larger; it is
+        // still created resizable: some window managers (Xfwm4) keep a
+        // window made not resizable at its size for good, and the main
+        // window it becomes could then neither be resized nor maximized.
         egui::ViewportBuilder::default()
             .with_inner_size(splash::SIZE)
             .with_decorations(false)
-            .with_resizable(false)
+            .with_resizable(true)
             .with_title("TraceDraw")
     } else {
         egui::ViewportBuilder::default()

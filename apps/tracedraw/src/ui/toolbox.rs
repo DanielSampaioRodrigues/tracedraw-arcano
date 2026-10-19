@@ -70,13 +70,15 @@ pub fn toolbox(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
     use crate::ui::bars::Dock;
     match dock {
         Dock::Top | Dock::Bottom => {
-            ui.horizontal(|ui| tools(app, ui, dock));
+            crate::ui::overflow::row(ui, "toolbox_row", |ui| tools(app, ui, dock));
         }
         Dock::Floating => {
             ui.set_max_width(floating_width());
             ui.horizontal_wrapped(|ui| tools(app, ui, dock));
         }
-        Dock::Left | Dock::Right => tools(app, ui, dock),
+        Dock::Left | Dock::Right => {
+            crate::ui::overflow::column(ui, "toolbox_column", |ui| tools(app, ui, dock))
+        }
     }
 }
 
