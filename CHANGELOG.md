@@ -254,6 +254,8 @@ full, row-by-row status.
 - Dragging in the Properties fill colour picker is one undo step and
   adds only the final colour to the document palette, when the button
   is let go (#188).
+- A right click while dragging an object no longer drops the copy at
+  once: the outline follows the pointer until the left button goes up.
 
 ## 0.9.4 (2026-10-19)
 
