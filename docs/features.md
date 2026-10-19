@@ -91,17 +91,17 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Properties docker: sections in the order Outline, Fill, Transparency, the kind's own, Summary, open by default with header bars and a row of buttons, closed ones kept; fill kinds as pictures; the Transparency tool's settings in its own section | works (see `behavior/workspaces.md`, Properties docker) |
 | Font list: type to find a family, count and filter (all, installed, in this drawing, to download), the five used last, names drawn in their own fonts with an icon of how each is built, styles under each family, sample size slider, preview with guide lines | works (see `behavior/text.md`, Font list) |
 | Font Sampler panel: sample text in several fonts side by side at a chosen size, fonts added by name, stand-ins named, a click applies the font | works (see `behavior/text.md`, Font Sampler) |
-| Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap; vertical alignment of paragraph text in its frame (top, middle, bottom); Text docker with Character, Paragraph and Frame sections (see `behavior/text.md`, Text docker) | works |
+| Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap; vertical alignment of paragraph text in its frame (top, middle, bottom); line spacing in % of the character height, points or % of the size; no alignment and forced justification; character backgrounds and paragraph frame backgrounds; Text docker with Character, Paragraph and Frame sections, Apply to default text and the row boxes; Glyphs docker with recent glyphs, ranges and alternates (see `behavior/text.md`) | works |
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |
 | Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |
-| Hyphenation (Liang patterns en/pt, heuristic elsewhere) | works |
+| Hyphenation (Liang patterns en/pt, heuristic elsewhere) and Custom Optional Hyphens (words hyphenated by hand win; turned on for typed, pasted and imported text holding them) | works |
 | Text on path (offset, distance, mirror), straighten text | works |
 | Fit text to frame, wrap paragraph text around objects | works |
 | Insert Placeholder Text: filler that fills each selected paragraph frame (see `behavior/text.md`) | works |
 | Linked paragraph text frames (link, unlink, live re-flow) | works |
 | Change case, insert formatting codes, show non-printing characters, Encode, Make Text Web Compatible | works |
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
-| Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
+| Writing Tools dialog with Spell Checker (system Hunspell word lists), Grammar (rule based, a/an and missing end marks included) and Thesaurus tabs (built-in or MyThes file); Autocorrect | works |
 | Missing-font substitution with report: stand-ins drawn to the same widths (Liberation for Arial, Times and Courier, Carlito for Calibri, Caladea for Cambria, ...), else of the same style, named in the report | works (see `behavior/text.md`) |
 | Letters a font lacks drawn with a font that has them (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Indic and symbols included); variable fonts drawn at their weight and slant; fonts found by their legacy family names too ("Arial Narrow", "Arial Black") | works (see `behavior/text.md`) |
 | Browser build: about a hundred free font families in a font folder, fetched the first time text needs one | works (see `behavior/web.md`, `web/FONTS.md`) |

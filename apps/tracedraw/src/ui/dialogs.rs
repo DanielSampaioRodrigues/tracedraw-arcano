@@ -499,39 +499,11 @@ impl OpenNotes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SpellState {
-    pub unknown: Vec<(tracedraw_core::ShapeId, String)>,
-    pub cursor: usize,
-    pub replacement: String,
-    pub checked: bool,
-    pub dictionary_words: usize,
-}
-
 /// Text > Encode.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EncodeState {
     pub from: crate::encode::Encoding,
     pub to: crate::encode::Encoding,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ThesaurusState {
-    /// Word typed or taken from the selection.
-    pub word: String,
-    /// Word as it appears in the text (keeps its capitalisation on replace).
-    pub original: String,
-    pub target: Option<tracedraw_core::ShapeId>,
-    pub looked_up: Option<String>,
-    pub meanings: Vec<crate::thesaurus::Meaning>,
-    pub selected: Option<String>,
-    pub started: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct GrammarState {
-    pub findings: Vec<(tracedraw_core::ShapeId, crate::grammar::Finding)>,
-    pub checked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -640,10 +612,9 @@ pub enum Dialog {
     TextStatistics,
     /// Text > Change Case: the case picked, applied on OK.
     ChangeCase(crate::ops2::CaseMode),
-    SpellCheck(SpellState),
-    Thesaurus(ThesaurusState),
+    WritingTools(crate::ui::writing_tools::WritingToolsState),
+    CustomHyphens(crate::ui::writing_tools::CustomHyphensState),
     Encode(EncodeState),
-    Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
     ColorManagement,
@@ -1921,10 +1892,11 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::SpellCheck(st) => spell_dialog(app, ctx, st, &mut close),
-        Dialog::Thesaurus(st) => thesaurus_dialog(app, ctx, st, &mut close),
+        Dialog::WritingTools(st) => crate::ui::writing_tools::dialog(app, ctx, st, &mut close),
+        Dialog::CustomHyphens(st) => {
+            crate::ui::writing_tools::custom_hyphens_dialog(app, ctx, st, &mut close)
+        }
         Dialog::Encode(st) => encode_dialog(app, ctx, st, &mut close),
-        Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
         Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
         Dialog::ColorManagement => color_management_dialog(app, ctx, &mut close),
@@ -3814,88 +3786,6 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
     }
 }
 
-fn spell_dialog(app: &mut App, ctx: &Context, st: &mut SpellState, close: &mut bool) {
-    if !st.checked {
-        let (unknown, words) = crate::spell::check_document(app);
-        st.unknown = unknown;
-        st.dictionary_words = words;
-        st.checked = true;
-        st.cursor = 0;
-        st.replacement = st
-            .unknown
-            .first()
-            .map(|(_, w)| w.clone())
-            .unwrap_or_default();
-    }
-    window(ctx, tr("dialog.spell_check")).show(ctx, |ui| {
-        if st.dictionary_words == 0 {
-            ui.colored_label(
-                egui::Color32::from_rgb(180, 80, 0),
-                tr("dialog.no_dictionary"),
-            );
-        }
-        if st.unknown.is_empty() {
-            ui.label(tr("dialog.spell_done"));
-        } else if let Some((id, word)) = st.unknown.get(st.cursor).cloned() {
-            ui.label(trf("dialog.not_in_dictionary", &[("w", &word)]));
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.replace_with"));
-                ui.text_edit_singleline(&mut st.replacement);
-            });
-            let suggestions = crate::spell::suggest(&word);
-            ui.horizontal_wrapped(|ui| {
-                for s in suggestions {
-                    if ui.small_button(&s).clicked() {
-                        st.replacement = s;
-                    }
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.replace")).clicked() {
-                    crate::spell::replace_word(app, id, &word, &st.replacement);
-                    st.unknown.remove(st.cursor);
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-                if ui.button(tr("dialog.skip")).clicked() {
-                    st.cursor += 1;
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-                if ui.button(tr("dialog.add_to_dictionary")).clicked() {
-                    crate::spell::add_user_word(&word);
-                    let w = word.clone();
-                    st.unknown.retain(|(_, x)| *x != w);
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-            });
-            if st.cursor >= st.unknown.len() {
-                st.unknown.clear();
-            }
-        }
-        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
-            *close = true;
-        }
-    });
-}
-
-fn thesaurus_lookup(app: &App, st: &mut ThesaurusState) {
-    let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
-    st.meanings = th.lookup(&st.word).to_vec();
-    st.looked_up = Some(st.word.trim().to_string());
-    st.selected = None;
-}
-
 fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut bool) {
     use crate::encode::Encoding;
     let original = app.selected_text_content();
@@ -3948,225 +3838,6 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
     });
     if apply {
         app.reencode_selected_text(st.from, st.to);
-    }
-}
-
-fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close: &mut bool) {
-    if !st.started {
-        st.started = true;
-        if let Some(s) = app.text_shapes().first() {
-            if let ShapeKind::Text { spans, .. } = &s.kind {
-                let text: String = spans.iter().map(|x| x.text.as_str()).collect();
-                if let Some(w) = crate::thesaurus::first_word(&text) {
-                    st.word = w.clone();
-                    st.original = w;
-                    st.target = Some(s.id);
-                }
-            }
-        }
-        if !st.word.is_empty() {
-            thesaurus_lookup(app, st);
-        }
-    }
-    let mut pick_file = false;
-    let mut relookup: Option<String> = None;
-    let mut replace: Option<(tracedraw_core::ShapeId, String)> = None;
-    window(ctx, tr("dialog.thesaurus")).show(ctx, |ui| {
-        ui.set_min_width(360.0);
-        let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
-        match &th.source {
-            crate::thesaurus::Source::BuiltIn => {
-                ui.colored_label(
-                    egui::Color32::from_rgb(180, 80, 0),
-                    tr("thesaurus.built_in_note"),
-                );
-            }
-            crate::thesaurus::Source::File(p) => {
-                ui.label(trf(
-                    "thesaurus.source_file",
-                    &[
-                        ("path", &p.display().to_string()),
-                        ("n", &th.len().to_string()),
-                    ],
-                ));
-            }
-        }
-        ui.horizontal(|ui| {
-            ui.label(tr("thesaurus.word"));
-            let r = ui.text_edit_singleline(&mut st.word);
-            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button(tr("thesaurus.look_up")).clicked() || enter {
-                thesaurus_lookup(app, st);
-            }
-        });
-        ui.separator();
-        if let Some(w) = &st.looked_up {
-            if st.meanings.is_empty() {
-                ui.label(trf("thesaurus.no_entry", &[("w", w)]));
-            } else {
-                egui::ScrollArea::vertical()
-                    .max_height(260.0)
-                    .show(ui, |ui| {
-                        for m in &st.meanings {
-                            ui.label(
-                                egui::RichText::new(format!("({})", m.pos))
-                                    .italics()
-                                    .color(Tokens::text_dim()),
-                            );
-                            ui.horizontal_wrapped(|ui| {
-                                for syn in &m.synonyms {
-                                    let on = st.selected.as_deref() == Some(syn.as_str());
-                                    let r = ui.selectable_label(on, syn);
-                                    if r.clicked() {
-                                        st.selected = Some(syn.clone());
-                                    }
-                                    if r.double_clicked() {
-                                        relookup = Some(syn.clone());
-                                    }
-                                }
-                            });
-                        }
-                    });
-            }
-        }
-        if st.target.is_none() {
-            ui.label(
-                egui::RichText::new(tr("thesaurus.no_text_selected")).color(Tokens::text_dim()),
-            );
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            let can_replace = st.target.is_some() && st.selected.is_some();
-            if ui
-                .add_enabled(can_replace, egui::Button::new(tr("dialog.replace")))
-                .clicked()
-            {
-                if let (Some(id), Some(sel)) = (st.target, st.selected.clone()) {
-                    replace = Some((id, sel));
-                }
-            }
-            if ui.button(tr("thesaurus.pick_file")).clicked() {
-                pick_file = true;
-            }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if let Some(w) = relookup {
-        st.word = w;
-        thesaurus_lookup(app, st);
-    }
-    if let Some((id, sel)) = replace {
-        let repl = crate::thesaurus::match_case(&st.original, &sel);
-        crate::spell::replace_word(app, id, &st.original, &repl);
-        app.status = trf("thesaurus.replaced", &[("a", &st.original), ("b", &repl)]);
-        st.original = repl.clone();
-        st.word = repl;
-        thesaurus_lookup(app, st);
-    }
-    if pick_file {
-        crate::files::Dialog::new()
-            .add_filter("MyThes", &["dat"])
-            .pick_into("thesaurus_file");
-    }
-    if let Some(p) = crate::files::take_picked("thesaurus_file") {
-        app.settings.thesaurus_file = Some(p);
-        app.settings.save();
-        thesaurus_lookup(app, st);
-    }
-}
-
-fn grammar_options() -> crate::grammar::Options {
-    crate::grammar::Options::for_language(&crate::i18n::language())
-}
-
-fn grammar_dialog(app: &mut App, ctx: &Context, st: &mut GrammarState, close: &mut bool) {
-    if !st.checked {
-        st.findings = crate::grammar::check_document(app, grammar_options());
-        st.checked = true;
-    }
-    let mut fix: Option<(tracedraw_core::ShapeId, crate::grammar::Fix)> = None;
-    let mut fix_all = false;
-    window(ctx, tr("dialog.grammar")).show(ctx, |ui| {
-        ui.set_min_width(420.0);
-        ui.label(egui::RichText::new(tr("grammar.scope_note")).color(Tokens::text_dim()));
-        if st.findings.is_empty() {
-            ui.label(tr("grammar.no_issues"));
-        } else {
-            ui.label(trf(
-                "grammar.issues_found",
-                &[("n", &st.findings.len().to_string())],
-            ));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for (i, (id, f)) in st.findings.iter().enumerate() {
-                        ui.push_id(i, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    let rule = if f.rule == crate::grammar::Rule::LongSentence {
-                                        trf(
-                                            f.rule.key(),
-                                            &[(
-                                                "n",
-                                                &crate::grammar::LONG_SENTENCE_WORDS.to_string(),
-                                            )],
-                                        )
-                                    } else {
-                                        tr(f.rule.key())
-                                    };
-                                    ui.label(egui::RichText::new(rule).strong());
-                                    let mut s: String = f.sentence.chars().take(90).collect();
-                                    if s.chars().count() < f.sentence.chars().count() {
-                                        s.push_str("...");
-                                    }
-                                    ui.label(egui::RichText::new(s).color(Tokens::text_dim()));
-                                });
-                                if let Some(x) = &f.fix {
-                                    if ui.button(tr("grammar.fix")).clicked() {
-                                        fix = Some((*id, x.clone()));
-                                    }
-                                }
-                            });
-                            ui.separator();
-                        });
-                    }
-                });
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button(tr("grammar.check_again")).clicked() {
-                st.checked = false;
-            }
-            let any_fix = st.findings.iter().any(|(_, f)| f.fix.is_some());
-            if ui
-                .add_enabled(any_fix, egui::Button::new(tr("grammar.fix_all")))
-                .clicked()
-            {
-                fix_all = true;
-            }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if let Some((id, x)) = fix {
-        crate::grammar::apply_fix_to_shape(app, id, &x);
-        st.checked = false;
-    }
-    if fix_all {
-        // One fix at a time, re-checking in between so offsets stay valid.
-        for _ in 0..500 {
-            let findings = crate::grammar::check_document(app, grammar_options());
-            let Some((id, f)) = findings.into_iter().find(|(_, f)| f.fix.is_some()) else {
-                break;
-            };
-            if let Some(x) = f.fix {
-                crate::grammar::apply_fix_to_shape(app, id, &x);
-            }
-        }
-        st.checked = false;
     }
 }
 
@@ -5022,10 +4693,11 @@ mod tests {
             Dialog::TextDropCap,
             Dialog::TextStatistics,
             Dialog::ChangeCase(crate::ops2::CaseMode::Sentence),
-            Dialog::SpellCheck(SpellState::default()),
-            Dialog::Thesaurus(ThesaurusState::default()),
+            Dialog::WritingTools(Default::default()),
+            Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(1)),
+            Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(2)),
+            Dialog::CustomHyphens(Default::default()),
             Dialog::Encode(EncodeState::default()),
-            Dialog::Grammar(GrammarState::default()),
             Dialog::Autocorrect(AutocorrectState::default()),
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
             Dialog::ColorManagement,

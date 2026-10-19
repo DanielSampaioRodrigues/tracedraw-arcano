@@ -123,30 +123,71 @@ the keystrokes of one editing session are one "Edit Text" undo step.
 ## Text docker
 
 Ctrl+T, the property bar's Text Properties button and Window > Panels >
-Text. Three sections, each under a header bar with a triangle; the
-buttons at the top ("A", the pilcrow and a frame) show which are open
-and open or close them, as a click on a header does. All come open; the
-ones closed are kept in the preferences (`text_sections_closed`).
+Text. Three sections, Character, Paragraph and Frame, each under a header
+bar with a triangle that opens or closes it (the ones closed are kept in
+the preferences, `text_sections_closed`).
 
-- Character: the font list, the size list (as on the property bar),
-  bold, italic and underline; then, for the first selected text,
-  tracking (-50 to 200 %), the characters' horizontal and vertical
-  offsets and angle, strikethrough and the OpenType features
-  (ligatures, small capitals, old-style numerals, fractions, swashes).
-- Paragraph: left, centre, right and full justification as picture
-  buttons; then line spacing (0 to 2000 %), character spacing (-100 to
-  2000 %), word spacing (0 to 2000 %), space before and after
-  paragraphs, first-line, left and right indents in the ruler unit.
-- Frame, for paragraph text: columns (1 to 8) and the gutter between
-  them, the vertical alignment (top, middle, bottom: the lines move down
-  together by the room left under them in the frame, half of it for the
-  middle; text that overflows starts at the top), Bullets and Drop Cap
-  (their dialogs; pushed in while the text has them), Hyphenate and Fit
-  Text to Frame. With artistic text the section says it is for
-  paragraph text.
-- The font, size, style and alignment become those of new text too; the
-  other fields change the first selected text, one undo step each.
-- Labels in the sections show without a trailing colon.
+- The three buttons at the top ("A", paragraph lines, a frame) show the
+  docker from that section on: Character shows all three, Paragraph the
+  Paragraph and Frame sections, Frame only the Frame section (kept as
+  `text_docker_from`).
+- The two buttons at the right: Apply to default text (a box with an
+  arrow) gives new text the font, style, size, underline and alignment
+  of the selected text, and offers its fill or outline as the default
+  through the usual question about new objects; the eye shows boxes at
+  the right of the rows, and while they are shown only the ticked rows
+  are taken (`text_docker_checks`, `text_docker_ticked`).
+- Character: the font list across the docker; the style list (Normal,
+  Italic, Bold, Bold-Italic) and the size list; range kerning (-50 to
+  200 %) and the underline button; the text fill, the characters'
+  background and the text outline, each as a kind (No Fill or Uniform
+  Fill; none, hairline or a width in points for the outline), a colour
+  and "..." for the Properties docker's full fill or outline settings.
+  The background is drawn behind each character's box, from its descent
+  to its ascent (`TextSpan::background`). The expander under the section
+  shows the characters' offsets and angle, strikethrough and the
+  OpenType features.
+- Paragraph: the gear opens Custom Optional Hyphens; six alignment
+  buttons, no alignment (lines start at the left; characters keep their
+  offsets), left, centre, right, full justification and forced
+  justification (the last line of each paragraph is spread too); line
+  spacing with its unit (% of the character height, points, or % of the
+  font size; a change of unit keeps about the same spacing); left,
+  first-line and right indents and space before and after paragraphs in
+  the ruler unit. The expander shows character and word spacing.
+- Frame, for paragraph text: the frame's background colour (on or off
+  and its colour; drawn behind the text inside the frame), the vertical
+  alignment as a list (top, middle, bottom), Fit Text to Frame, columns
+  (1 to 8) and the gap between them (greyed for one column). The
+  expander shows Bullets, Drop Cap and Columns (their dialogs) and
+  Hyphenate. With artistic text the section says it is for paragraph
+  text.
+- Every field edits the selected text: the characters selected while
+  editing, otherwise every selected text object, one undo step each.
+  With no text selected the font, style, size, underline and alignment
+  become those of new text.
+- Labels show without a trailing colon.
+
+## Glyphs docker
+
+Window > Panels > Glyphs. From the top:
+
+- Recent glyphs: the glyphs inserted last, newest first (up to 24, kept
+  in the preferences as font and glyph); empty, it says "Shows the most
+  recently used glyphs". A click inserts one again in its own font.
+- The font list (every family installed or carried by a drawing).
+- The character range: Entire Font, Basic Latin, Latin-1 Supplement,
+  Latin Extended, Greek, Cyrillic, Hebrew, Arabic, Punctuation, Numbers,
+  Currency, Arrows, Mathematical Operators, Symbols.
+- A grid of large cells with the glyphs the font draws in that range
+  (from its character map), scrolled row by row. The tip names the
+  character and its code point. A small arrow under a glyph means the
+  font has alternates for it (stylistic alternate, swash, small
+  capitals, capitals to small capitals, stylistic sets 1 to 5: the
+  features whose shaping gives another glyph); it lists them.
+- A click inserts the glyph at the caret of the text being edited, in
+  the docker's font (an alternate with its OpenType feature on), else as
+  a new artistic text at the page centre.
 
 ## Character offsets, angle and spacing
 
@@ -310,7 +351,15 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 ## Checks
 
 - The Text docker: `ui::text_docker::tests::the_sections_open_close_and_draw_for_any_text`,
-  `ui::text_docker::tests::vertical_alignment_is_kept_with_the_text`;
+  `ui::text_docker::tests::vertical_alignment_is_kept_with_the_text`,
+  `ui::text_docker::tests::section_buttons_boxes_and_apply_to_default`,
+  `ui::text_docker::tests::fields_edit_the_selected_text`;
+  `tests::forced_justification_spreads_the_last_line_too`,
+  `tests::line_spacing_in_points_and_in_percent_of_the_size`,
+  `tests::character_backgrounds_cover_their_characters` (text crate);
+- The Glyphs docker: `ui::glyphs_docker::tests::ranges_pick_their_characters`,
+  `ui::glyphs_docker::tests::a_glyph_goes_in_as_new_text_in_the_dockers_font_and_is_remembered`,
+  `ui::glyphs_docker::tests::the_docker_draws`;
   `tests::paragraph_text_sits_at_the_top_middle_or_bottom_of_its_frame`
   (text crate). Checked on screen: Bottom moved "Hello world" to the
   frame's bottom edge.

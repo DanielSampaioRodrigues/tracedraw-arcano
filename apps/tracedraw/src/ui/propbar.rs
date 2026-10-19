@@ -106,6 +106,10 @@ pub enum Pic {
     TextCenter,
     TextRight,
     TextJustify,
+    /// No alignment: lines crossed by a red X.
+    TextNone,
+    /// Forced justification: every line full width.
+    TextForceJustify,
     Bullets,
     DropCap,
     TextProperties,
@@ -605,6 +609,22 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                     _ => 14.0 - w,
                 };
                 line((x0, y), (x0 + w, y), Stroke::new(1.3 * k, color));
+            }
+        }
+        Pic::TextNone | Pic::TextForceJustify => {
+            for i in 0..4 {
+                let y = 3.0 + i as f32 * 3.3;
+                let w = if pic == Pic::TextNone {
+                    [12.0, 8.0, 11.0, 7.0][i]
+                } else {
+                    12.0
+                };
+                line((2.0, y), (2.0 + w, y), Stroke::new(1.3 * k, color));
+            }
+            if pic == Pic::TextNone {
+                let red = Stroke::new(1.4 * k, egui::Color32::from_rgb(0xD0, 0x30, 0x30));
+                line((8.0, 7.5), (15.0, 14.5), red);
+                line((15.0, 7.5), (8.0, 14.5), red);
             }
         }
         Pic::Bullets => {

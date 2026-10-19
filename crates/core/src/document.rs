@@ -39,12 +39,18 @@ pub mod text_outline {
     /// One laid-out line: the characters it holds (indexes in the
     /// concatenated span text, the newline ending a paragraph left out)
     /// and where it starts (x and baseline, mm, frame top at y = 0, y up).
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct Line {
         pub start_char: usize,
         pub end_char: usize,
         pub x: f64,
         pub baseline: f64,
+        /// Height above and depth below the baseline, mm.
+        pub ascent: f64,
+        pub descent: f64,
+        /// Pen x before each character from `start_char` to `end_char`,
+        /// then after the last one.
+        pub edges: Vec<f64>,
     }
 
     type Liner = fn(&TextRequest) -> Vec<Line>;
@@ -59,6 +65,80 @@ pub mod text_outline {
     pub fn lines(req: &TextRequest) -> Option<Vec<Line>> {
         LINER.get().map(|f| f(req))
     }
+}
+
+/// The rectangles behind a text, in its local space (apply its
+/// transform): the paragraph frame's background first, then one per piece
+/// of a span with a background on each line, from descent to ascent.
+/// Empty for other shapes, text on a path and without a text engine.
+pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        frame,
+        align,
+        para,
+        on_path: None,
+    } = kind
+    else {
+        return Vec::new();
+    };
+    let frame_bg = match (frame, &para.frame_fill) {
+        (Some(f), Some(fill)) => Some((
+            Rect::new(origin.x, origin.y, origin.x + f.width, origin.y + f.height),
+            fill.clone(),
+        )),
+        _ => None,
+    };
+    if spans.iter().all(|s| s.background.is_none()) {
+        return frame_bg.into_iter().collect();
+    }
+    let Some(lines) = text_outline::lines(&text_outline::TextRequest {
+        spans,
+        frame: *frame,
+        align: *align,
+        para,
+        on_path: None,
+    }) else {
+        return Vec::new();
+    };
+    // Layout space to local space, as the outline is placed.
+    let (dx, dy) = match frame {
+        Some(f) => (origin.x, origin.y + f.height),
+        None => (origin.x, origin.y),
+    };
+    let mut out: Vec<(Rect, Fill)> = frame_bg.into_iter().collect();
+    let mut span_start = 0usize;
+    for sp in spans {
+        let n = sp.char_count();
+        let (from, to) = (span_start, span_start + n);
+        span_start = to;
+        let Some(fill) = &sp.background else {
+            continue;
+        };
+        for line in &lines {
+            let a = from.max(line.start_char);
+            let b = to.min(line.end_char);
+            if b <= a {
+                continue;
+            }
+            let x0 = line.edges.get(a - line.start_char).copied();
+            let x1 = line.edges.get(b - line.start_char).copied();
+            let (Some(x0), Some(x1)) = (x0, x1) else {
+                continue;
+            };
+            out.push((
+                Rect::new(
+                    dx + x0.min(x1),
+                    dy + line.baseline - line.descent,
+                    dx + x0.max(x1),
+                    dy + line.baseline + line.ascent,
+                ),
+                fill.clone(),
+            ));
+        }
+    }
+    out
 }
 
 /// Paragraph text as one artistic text a laid-out line, each placed where
@@ -540,7 +620,33 @@ pub enum TextAlign {
     Left,
     Center,
     Right,
+    /// Full justification: every line but a paragraph's last fills the
+    /// width.
     Justify,
+    /// No alignment: lines start at the left edge, as Left does, and
+    /// characters keep any offsets they were given.
+    None,
+    /// Forced justification: the last line of each paragraph fills the
+    /// width too.
+    #[serde(rename = "force_justify")]
+    ForceJustify,
+}
+
+impl TextAlign {
+    /// Every alignment in the order the alignment buttons show them.
+    pub const ALL: [TextAlign; 6] = [
+        TextAlign::None,
+        TextAlign::Left,
+        TextAlign::Center,
+        TextAlign::Right,
+        TextAlign::Justify,
+        TextAlign::ForceJustify,
+    ];
+
+    /// Lines are spread over the width (full or forced justification).
+    pub fn is_justified(self) -> bool {
+        matches!(self, TextAlign::Justify | TextAlign::ForceJustify)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -573,6 +679,10 @@ pub struct TextSpan {
     /// Per-span fill override (character colour); `None` = object fill.
     #[serde(default)]
     pub fill: Option<Fill>,
+    /// The characters' background (a highlight behind each character's
+    /// box, from descent to ascent); `None` = no background.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<Fill>,
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
@@ -598,6 +708,7 @@ impl TextSpan {
             underline: false,
             strikethrough: false,
             fill: None,
+            background: None,
             features: Vec::new(),
         }
     }
@@ -768,8 +879,11 @@ fn same_style(a: &TextSpan, b: &TextSpan) -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ParagraphStyle {
-    /// Line spacing as a percentage of the font's line height.
+    /// Line spacing, in `leading_unit`: a percentage of the font's line
+    /// height (the default), points, or a percentage of the font size.
     pub leading_pct: f64,
+    /// What `leading_pct` measures.
+    pub leading_unit: LeadingUnit,
     /// Space added after every character, as a percentage of the width
     /// of a space (-100 to 2000).
     pub char_spacing_pct: f64,
@@ -799,6 +913,44 @@ pub struct ParagraphStyle {
     pub baseline_grid_mm: f64,
     /// Where paragraph text sits in its frame from top to bottom.
     pub vertical_align: VerticalAlign,
+    /// The paragraph frame's background; `None` = transparent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_fill: Option<Fill>,
+}
+
+/// The unit of a paragraph's line spacing (the Text docker's list next to
+/// the line spacing field).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeadingUnit {
+    /// Percent of the character height (the font's line height).
+    #[default]
+    PercentCharHeight,
+    /// Points from baseline to baseline.
+    Points,
+    /// Percent of the font size.
+    PercentPointSize,
+}
+
+impl LeadingUnit {
+    pub const ALL: [LeadingUnit; 3] = [
+        LeadingUnit::PercentCharHeight,
+        LeadingUnit::Points,
+        LeadingUnit::PercentPointSize,
+    ];
+}
+
+impl ParagraphStyle {
+    /// The distance from one baseline to the next, mm, for a line whose
+    /// font has `line_height_mm` from ascent to descent plus gap at a size
+    /// of `size_mm`.
+    pub fn line_step(&self, line_height_mm: f64, size_mm: f64) -> f64 {
+        match self.leading_unit {
+            LeadingUnit::PercentCharHeight => line_height_mm * self.leading_pct / 100.0,
+            LeadingUnit::Points => self.leading_pct * 25.4 / 72.0,
+            LeadingUnit::PercentPointSize => size_mm * self.leading_pct / 100.0,
+        }
+    }
 }
 
 /// Where paragraph text sits in its frame (the Text docker's Frame
@@ -817,6 +969,7 @@ impl Default for ParagraphStyle {
     fn default() -> Self {
         ParagraphStyle {
             leading_pct: 100.0,
+            leading_unit: LeadingUnit::PercentCharHeight,
             char_spacing_pct: 0.0,
             word_spacing_pct: 100.0,
             space_before: 0.0,
@@ -835,6 +988,7 @@ impl Default for ParagraphStyle {
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,
+            frame_fill: None,
         }
     }
 }

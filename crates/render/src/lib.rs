@@ -301,6 +301,24 @@ impl Renderer<'_> {
         if !shape.visible {
             return;
         }
+        // Character backgrounds go under the text, in its transform.
+        if matches!(shape.kind, ShapeKind::Text { .. }) && !self.flags.wireframe {
+            for (rect, fill) in tracedraw_core::document::text_backgrounds(&shape.kind) {
+                let mut bg = Shape::new(
+                    shape.id,
+                    ShapeKind::Rect {
+                        rect,
+                        radius: 0.0,
+                        corners: None,
+                    },
+                );
+                bg.transform = shape.transform;
+                bg.fill = fill;
+                bg.stroke = None;
+                bg.opacity = shape.opacity;
+                self.draw_shape(&bg, parent);
+            }
+        }
         // Live effects: geometry warps, extra objects below and above, and
         // the pixel effects (lens, non-uniform transparency).
         if !shape.effects.is_empty() {

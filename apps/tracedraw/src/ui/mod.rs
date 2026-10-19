@@ -46,6 +46,7 @@ pub mod font_list;
 pub mod font_sampler;
 pub mod fx_icons;
 pub mod github_dialogs;
+pub mod glyphs_docker;
 pub mod hints;
 pub mod icons;
 pub mod lab_dialog;
@@ -82,6 +83,7 @@ pub mod vector_mosaic_docker;
 pub mod welcome;
 pub mod window_bars;
 pub mod windows;
+pub mod writing_tools;
 
 use crate::app::App;
 use crate::canvas;
