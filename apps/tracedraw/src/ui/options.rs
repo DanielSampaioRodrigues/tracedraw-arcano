@@ -1430,6 +1430,8 @@ pub struct ShortcutEditor {
 
 /// The Commands page's category for the toolbox's tools.
 pub const TOOLBOX: &str = "toolbox";
+/// The commands category of the loaded VBA macros.
+pub const MACROS: &str = "macros";
 
 /// The user's shortcut for `id` (a menu key or a tool id).
 fn user_shortcut(app: &App, id: &str) -> Option<String> {
@@ -1480,7 +1482,10 @@ fn set_menu_shortcut(app: &mut App, id: &str, text: &str) {
 /// "File > Export...": the menus a command sits in and its name.
 fn command_label(e: &crate::ui::menus::invoke::Entry) -> String {
     let mut parts: Vec<String> = e.path.iter().map(|k| tr(k)).collect();
-    parts.push(tr(&e.key));
+    parts.push(match crate::macros::command_name(&e.key) {
+        Some((name, _)) => name,
+        None => tr(&e.key),
+    });
     parts
         .iter()
         .map(|p| p.trim_end_matches("...").to_string())
@@ -1516,11 +1521,17 @@ fn command_items(app: &App, category: Option<&str>, filter: &str) -> Vec<Command
     if category.is_none_or(|c| c != TOOLBOX) {
         for e in &app.shortcut_editor.entries {
             let top = e.path.first().map(String::as_str);
-            if category.is_some_and(|c| top != Some(c)) {
-                continue;
+            let is_macro = e.key.starts_with("menu.macro.");
+            match category {
+                Some(MACROS) if !is_macro => continue,
+                Some(c) if c != MACROS && top != Some(c) => continue,
+                _ => {}
             }
             let label = command_label(e);
-            let name = tr(&e.key).trim_end_matches("...").to_string();
+            let name = match crate::macros::command_name(&e.key) {
+                Some((name, _)) => name,
+                None => tr(&e.key).trim_end_matches("...").to_string(),
+            };
             out.push(CommandItem {
                 id: e.key.clone(),
                 name,
@@ -1565,6 +1576,7 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
     let category_name = |c: Option<&str>| match c {
         None => tr("options.all_commands"),
         Some(TOOLBOX) => tr("menu.window.toolbar_toolbox"),
+        Some(MACROS) => tr("options.macros_category"),
         Some(k) => tr(k),
     };
     ui.horizontal(|ui| {
@@ -1582,6 +1594,11 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
                     &mut pick,
                     Some(TOOLBOX.to_string()),
                     category_name(Some(TOOLBOX)),
+                );
+                ui.selectable_value(
+                    &mut pick,
+                    Some(MACROS.to_string()),
+                    category_name(Some(MACROS)),
                 );
                 app.shortcut_editor.category = pick;
             });

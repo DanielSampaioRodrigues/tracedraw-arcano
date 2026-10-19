@@ -380,6 +380,24 @@ impl Dialog {
         }
     }
 
+    /// Pick one or more files and run `then` with their paths (one file in
+    /// a browser).
+    pub fn pick_files(self, app: &mut App, then: impl FnOnce(&mut App, Vec<PathBuf>) + 'static) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut d = rfd::FileDialog::new();
+            for (name, exts) in &self.filters {
+                let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
+                d = d.add_filter(name, &exts);
+            }
+            if let Some(paths) = d.pick_files() {
+                then(app, paths);
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        self.pick_file(app, move |app, p| then(app, vec![p]));
+    }
+
     /// Pick a file and keep its path for [`take_picked`]`(key)`.
     pub fn pick_into(self, key: &str) {
         let key = key.to_string();

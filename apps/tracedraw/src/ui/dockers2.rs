@@ -67,6 +67,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Comments => crate::ui::comments_docker::comments_docker(app, ui),
         DockerTab::AiGenerate => crate::ui::ai_generate_docker::ai_generate(app, ui),
         DockerTab::Effects => crate::ui::effects_docker::effects_docker(app, ui),
+        DockerTab::Macros => crate::ui::macros_ui::manager(app, ui),
         _ => {}
     }
 }
@@ -475,16 +476,40 @@ fn find_replace(app: &mut App, ui: &mut Ui) {
 }
 
 fn scripts(app: &mut App, ui: &mut Ui) {
-    let debugging = app.script_debug.is_some();
+    let debugging = app.script_debug.is_some() || app.macros.run.is_some();
+    // The language of the snippet: JavaScript, or VBA (run as a macro).
+    ui.horizontal(|ui| {
+        let vba = app.macros.scripts_vba;
+        let js_r = ui.selectable_label(!vba, "JavaScript");
+        let vba_r = ui
+            .add_enabled(!crate::files::WEB, egui::Button::selectable(vba, "VBA"))
+            .on_hover_text(tr("docker.vba_hint"));
+        if (js_r.clicked() && vba) || (vba_r.clicked() && !vba) {
+            std::mem::swap(&mut app.script_source, &mut app.macros.other_source);
+            app.macros.scripts_vba = !vba;
+            if app.macros.scripts_vba && app.script_source.is_empty() {
+                app.script_source = "Sub Main()\n    Dim s As Shape\n    Set s = ActiveLayer.CreateRectangle2(1, 1, 2, 1)\n    s.Fill.UniformColor.CMYKAssign 0, 100, 100, 0\n    Debug.Print \"Objects: \" & ActivePage.Shapes.Count\nEnd Sub\n".into();
+            }
+        }
+    });
+    let vba = app.macros.scripts_vba;
     ui.horizontal_wrapped(|ui| {
         if ui
             .add_enabled(!debugging, egui::Button::new(tr("docker.run")))
             .clicked()
         {
             let src = app.script_source.clone();
-            app.run_script(&src);
+            if vba {
+                app.run_vba_snippet(&src);
+            } else {
+                app.run_script(&src);
+            }
+        }
+        if app.macros.run.is_some() && ui.button(tr("docker.stop")).clicked() {
+            app.stop_macro();
         }
         if !crate::files::WEB
+            && !vba
             && ui
                 .add_enabled(!debugging, egui::Button::new(tr("docker.debug")))
                 .on_hover_text(tr("docker.debug_hint"))
@@ -498,9 +523,14 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         {
             app.toggle_recording();
         }
+        let (lang, ext) = if vba {
+            ("VBA", "bas")
+        } else {
+            ("JavaScript", "js")
+        };
         if ui.button(tr("docker.load")).clicked() {
             crate::files::Dialog::new()
-                .add_filter("JavaScript", &["js"])
+                .add_filter(lang, &[ext])
                 .pick_file(app, |app, p| {
                     if let Ok(s) = crate::files::read_to_string(p) {
                         app.script_source = s;
@@ -509,8 +539,8 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         }
         if ui.button(tr("docker.save")).clicked() {
             if let Some(p) = crate::files::Dialog::new()
-                .add_filter("JavaScript", &["js"])
-                .set_file_name("macro.js")
+                .add_filter(lang, &[ext])
+                .set_file_name(format!("macro.{ext}"))
                 .save_path()
             {
                 let _ = crate::files::write(p, &app.script_source);
@@ -519,10 +549,11 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         if ui.button(tr("docker.clear")).clicked() {
             app.scripts_output.clear();
         }
-        if ui
-            .button(tr("docker.install_filter"))
-            .on_hover_text(tr("docker.install_filter_hint"))
-            .clicked()
+        if !vba
+            && ui
+                .button(tr("docker.install_filter"))
+                .on_hover_text(tr("docker.install_filter_hint"))
+                .clicked()
         {
             let src = app.script_source.clone();
             app.install_script_filter(&src);
@@ -550,7 +581,7 @@ fn scripts(app: &mut App, ui: &mut Ui) {
             app.remove_script_filter(&name);
         }
     }
-    if app.script_source.is_empty() {
+    if app.script_source.is_empty() && !vba {
         app.script_source = "// Example\nconst r = ActiveLayer.CreateRectangle(20, 20, 60, 40);\nr.Fill.ApplyUniformFill(Color.CMYK(0, 100, 100, 0));\nprint('Objects: ' + ActivePage.Shapes.Count);\n".into();
     }
     if debugging {
@@ -570,7 +601,14 @@ fn scripts(app: &mut App, ui: &mut Ui) {
                 ui.label(egui::RichText::new(line).monospace().size(11.0));
             }
         });
-    dim(ui, tr("docker.scripts_hint"));
+    dim(
+        ui,
+        tr(if vba {
+            "docker.scripts_hint_vba"
+        } else {
+            "docker.scripts_hint"
+        }),
+    );
 }
 
 /// Continue, Step and Stop for a script in the debugger, where it is,

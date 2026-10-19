@@ -176,6 +176,7 @@ pub fn docker_topic(t: DockerTab) -> &'static str {
         DockerTab::ObjectStyles => "templates-styles/object-styles",
         DockerTab::FindReplace => "objects/find-replace",
         DockerTab::Scripts => "customize/scripts",
+        DockerTab::Macros => "customize/scripts#macros",
         DockerTab::Palettes => "color/palettes",
         DockerTab::Lens => "effects/lens",
         DockerTab::Blend => "effects/blend",

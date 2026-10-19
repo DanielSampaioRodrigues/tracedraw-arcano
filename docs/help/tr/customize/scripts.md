@@ -62,3 +62,7 @@ aktarabilir ve kaydedebilir:
 
 Her indirmede, toplu işler için çizimleri programı açmadan biçimler arasında
 dönüştüren `tracedraw-cli` de bulunur.
+
+## Makrolar {#macros}
+
+TraceDraw, çizim programları için yazılmış VBA makro projelerini çalıştırır (masaüstü sürümü). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] bir proje (`.gms`) veya modül dosyaları (`.bas`, `.cls`, `.frm`) ekler; projeler saklanır ve açılışta yüklenir. [[docker.macros]] paneli makroları listeler: birine çift tıklayın veya çalıştırmak için [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>) kullanın. Makronun formları, ileti ve giriş kutuları ekranda görünür, <kbd>Esc</kbd> veya [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] onu durdurur ve bir çalıştırmanın değiştirdiği her şey tek bir geri alma adımıdır. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) kodu gösterir ve düzenler. Windows işlevlerini veya düzenleyicinin kendi nesne modelini çağıran makrolar çalışmaz.

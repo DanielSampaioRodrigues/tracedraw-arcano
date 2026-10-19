@@ -1006,8 +1006,9 @@ pub(crate) mod replay {
 
     /// Items that would block on a native file chooser, start another
     /// program (an editor or the web browser) or close the window.
-    const SKIP: [&str; 15] = [
+    const SKIP: [&str; 16] = [
         "menu.file.send_to_mail",
+        "menu.tools.macros_load",
         "menu.help.updates",
         "menu.help.community",
         "menu.help.support",
@@ -2964,6 +2965,53 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Tools > Macros: the Macro Manager, Run Macro, the editor, loading a
+/// project, and every loaded macro by project (so each can get a
+/// shortcut in Options > Customization).
+fn macros_items(app: &mut App, ui: &mut Ui) {
+    app.macros.ensure_loaded();
+    let running = app.macros.run.is_some();
+    if item(ui, "menu.tools.macro_manager", "", true) {
+        app.show_macro_manager();
+    }
+    if item(ui, "menu.tools.macros_run", "Alt+Shift+F8", true) {
+        app.open_run_macro();
+    }
+    if item(ui, "menu.tools.macro_editor", "Alt+F11", true) {
+        app.open_macro_editor();
+    }
+    if item(ui, "menu.tools.macros_load", "", !crate::files::WEB) {
+        app.load_macro_project();
+    }
+    if item(ui, "menu.tools.macros_stop", "", running) {
+        app.stop_macro();
+    }
+    let all: Vec<(String, Vec<(String, String)>)> = app
+        .macros
+        .projects
+        .iter()
+        .map(|p| (p.name().to_string(), p.macros()))
+        .collect();
+    if !all.is_empty() {
+        sep(ui);
+    }
+    let mut run = None;
+    for (i, (project, macros)) in all.iter().enumerate() {
+        let key = crate::macros::project_menu_key(project);
+        sub(ui, &key, |ui| {
+            for (m, n) in macros {
+                let id = crate::macros::command_key(project, m, n);
+                if item_text(ui, &format!("{m}.{n}"), "", !running, None, &id) {
+                    run = Some((i, m.clone(), n.clone()));
+                }
+            }
+        });
+    }
+    if let Some((i, m, n)) = run {
+        app.request_macro(i, &m, &n);
+    }
+}
+
 fn tools_menu(app: &mut App, ui: &mut Ui) {
     sub(ui, "menu.tools.options", |ui| options_items(app, ui));
     if item(ui, "menu.tools.save_settings_as_default", "", true) {
@@ -2986,6 +3034,7 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
             app.toggle_recording();
         }
     });
+    sub(ui, "menu.tools.macros", |ui| macros_items(app, ui));
     if item(ui, "menu.tools.ai_generate", "", true) {
         app.open_ai_generate();
     }

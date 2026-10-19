@@ -180,6 +180,31 @@ impl Engine {
         Ok(())
     }
 
+    /// [`Engine::amend`] for several commands: they join the step just
+    /// recorded, or make a step of their own named `label` when anything
+    /// else happened since. A failing command leaves the drawing as it was.
+    pub fn amend_batch(&mut self, label: &'static str, cmds: &[Command]) -> Result<()> {
+        if cmds.is_empty() {
+            return Ok(());
+        }
+        if self.revision != self.step_revision || self.undo.is_empty() {
+            return self.run_batch(label, cmds);
+        }
+        let mut doc = self.doc.clone();
+        for c in cmds {
+            c.apply(&mut doc)?;
+        }
+        doc.assign_uids(&mut self.uid_state);
+        self.doc = doc;
+        if let Some(last) = self.undo.last_mut() {
+            last.after = self.doc.clone();
+        }
+        self.redo.clear();
+        self.revision += 1;
+        self.step_revision = self.revision;
+        Ok(())
+    }
+
     /// Mint a fresh shape id. Ids never rewind on undo.
     pub fn new_shape_id(&mut self) -> ShapeId {
         self.doc.ids_mut().shape()

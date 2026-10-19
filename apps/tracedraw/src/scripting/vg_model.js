@@ -883,6 +883,8 @@ class ShapeRange extends __Geo {
   Combine() { return new Shape(__call('vg_combine', { ids: this._ids() }).id); }
   Ungroup() { this._ids().forEach(id => __call('vg_ungroup', { id: id, all: false })); }
   UngroupAll() { this._ids().forEach(id => __call('vg_ungroup', { id: id, all: true })); }
+  UngroupAllEx() { const out = []; this._ids().forEach(id => out.push(...__call('vg_ungroup', { id: id, all: true }).ids)); return new ShapeRange(out); }
+  UngroupEx() { const out = []; this._ids().forEach(id => out.push(...__call('vg_ungroup', { id: id, all: false }).ids)); return new ShapeRange(out); }
   BreakApart() { this._ids().forEach(id => __call('vg_break_apart', { id: id })); }
   Duplicate(OffsetX, OffsetY) { return new ShapeRange(__call('vg_duplicate', { ids: this._ids(), dx: __mm(OffsetX || 0), dy: __mm(OffsetY || 0) }).ids); }
   Clone(OffsetX, OffsetY) { return this.Duplicate(OffsetX, OffsetY); }
@@ -977,6 +979,8 @@ class SelectionShape extends __Geo {
   Group() { return new Shape(__call('vg_group', { ids: this._ids() }).id); }
   Combine() { return new Shape(__call('vg_combine', { ids: this._ids() }).id); }
   UngroupAll() { this._ids().forEach(id => __call('vg_ungroup', { id: id, all: true })); }
+  UngroupAllEx() { const out = []; this._ids().forEach(id => out.push(...__call('vg_ungroup', { id: id, all: true }).ids)); return new ShapeRange(out); }
+  UngroupEx() { const out = []; this._ids().forEach(id => out.push(...__call('vg_ungroup', { id: id, all: false }).ids)); return new ShapeRange(out); }
   Ungroup() { this._ids().forEach(id => __call('vg_ungroup', { id: id, all: false })); }
 }
 

@@ -174,6 +174,10 @@ struct Ctx {
     withs: Vec<String>,
     loops: Vec<(LoopKind, String)>,
     labels: HashMap<String, usize>,
+    /// Statement lists inside the procedure that hold labels (a loop's
+    /// body with `Skip:` before `Next`...), innermost last: their state
+    /// machine's number and their labels.
+    nested: Vec<(u32, HashMap<String, usize>)>,
     onerror: bool,
     sm: bool,
     top: usize,
@@ -192,6 +196,7 @@ impl Ctx {
             withs: Vec::new(),
             loops: Vec::new(),
             labels: HashMap::new(),
+            nested: Vec::new(),
             onerror: false,
             sm: false,
             top: 0,
@@ -203,15 +208,31 @@ impl Ctx {
 struct Gen<'a> {
     modules: &'a [Module],
     asts: &'a [ModuleAst],
+    /// Names the host defines (lower case) and the controls of each form
+    /// module (by module index, lower case): an undeclared name that is
+    /// one of them is the host's or the control, not a new variable.
+    host_names: std::collections::HashSet<String>,
+    form_controls: HashMap<usize, std::collections::HashSet<String>>,
     lnames: Vec<String>,
     tmp: u32,
     statics: String,
 }
 
-pub fn generate(modules: &[Module], asts: &[ModuleAst]) -> R<Program> {
+pub fn generate(modules: &[Module], asts: &[ModuleAst], opts: &crate::Options) -> R<Program> {
     let mut g = Gen {
         modules,
         asts,
+        host_names: opts.host_names.iter().map(|n| low(n)).collect(),
+        form_controls: modules
+            .iter()
+            .enumerate()
+            .filter_map(|(i, m)| {
+                opts.form_controls
+                    .iter()
+                    .find(|(f, _)| f.eq_ignore_ascii_case(&m.name))
+                    .map(|(_, cs)| (i, cs.iter().map(|c| low(c)).collect()))
+            })
+            .collect(),
         lnames: modules.iter().map(|m| low(&m.name)).collect(),
         tmp: 0,
         statics: String::new(),
@@ -231,8 +252,7 @@ pub fn generate(modules: &[Module], asts: &[ModuleAst]) -> R<Program> {
         out.push_str(&g.consts(mi)?);
     }
     for (mi, m) in modules.iter().enumerate() {
-        let a = &asts[mi];
-        for p in &a.procs {
+        for p in &asts[mi].procs {
             procedures.push(ProcInfo {
                 module: m.name.clone(),
                 name: p.name.clone(),
@@ -241,9 +261,17 @@ pub fn generate(modules: &[Module], asts: &[ModuleAst]) -> R<Program> {
                 params: p.params.iter().map(|p| p.name.clone()).collect(),
             });
         }
-        match m.kind {
-            ModuleKind::Class | ModuleKind::Form => out.push_str(&g.class(mi)?),
-            ModuleKind::Standard | ModuleKind::Document => out.push_str(&g.standard(mi)?),
+    }
+    // Classes and forms first: a standard module's variable declared
+    // `As New SomeClass` makes one when the program loads.
+    for (mi, m) in modules.iter().enumerate() {
+        if matches!(m.kind, ModuleKind::Class | ModuleKind::Form) {
+            out.push_str(&g.class(mi)?);
+        }
+    }
+    for (mi, m) in modules.iter().enumerate() {
+        if matches!(m.kind, ModuleKind::Standard | ModuleKind::Document) {
+            out.push_str(&g.standard(mi)?);
         }
     }
     out.push_str(&g.statics);
@@ -888,9 +916,20 @@ impl<'a> Gen<'a> {
                 continue;
             }
             if matches!(self.resolve(&cx, &name), Res::Unknown) {
-                if self.ast(mi).option_explicit {
-                    cx.line = line;
-                    return self.err(&cx, format!("Variable not defined: {name}"));
+                // Under Option Explicit an undeclared name can only be the
+                // host's (a global the object model defines) or a form's
+                // control: neither is known for sure when compiling, so it
+                // is looked up when it runs. Without it, names the host
+                // or the form defines are theirs too.
+                let _ = line;
+                if self.ast(mi).option_explicit
+                    || self.host_names.contains(&key)
+                    || self
+                        .form_controls
+                        .get(&mi)
+                        .is_some_and(|cs| cs.contains(&key))
+                {
+                    continue;
                 }
                 let js = format!("$l_{key}");
                 pre.push_str(&format!("let {js};\n"));
@@ -916,10 +955,12 @@ impl<'a> Gen<'a> {
                     idx += 1;
                 }
             }
-            check_jumps(&p.body, &cx.labels, true).map_err(|(line, l)| CompileError {
-                module: mname.clone(),
-                line,
-                message: format!("GoTo to a label inside a block or a missing label: {l}"),
+            check_jumps(&p.body, &cx.labels, &mut Vec::new()).map_err(|(line, l)| {
+                CompileError {
+                    module: mname.clone(),
+                    line,
+                    message: format!("GoTo to a label inside a block or a missing label: {l}"),
+                }
             })?;
         }
         if cx.onerror {
@@ -971,10 +1012,45 @@ impl<'a> Gen<'a> {
     }
 
     fn block(&mut self, cx: &mut Ctx, stmts: &[Stmt]) -> R<String> {
-        let mut s = String::new();
-        for st in stmts {
-            s.push_str(&self.stmt(cx, st)?);
+        if !stmts.iter().any(|s| matches!(s.kind, StmtKind::Label(_))) {
+            let mut s = String::new();
+            for st in stmts {
+                s.push_str(&self.stmt(cx, st)?);
+            }
+            return Ok(s);
         }
+        // A list with labels: its own state machine, so a GoTo from it or
+        // from inside it reaches them (the "skip to Next" idiom).
+        self.tmp += 1;
+        let id = self.tmp;
+        let mut labels = HashMap::new();
+        let mut idx = 0usize;
+        for st in stmts {
+            if let StmtKind::Label(n) = &st.kind {
+                labels.insert(low(n), idx);
+            } else {
+                idx += 1;
+            }
+        }
+        cx.nested.push((id, labels));
+        let mut s = format!("{{let __pc{id}=0;\n__sm{id}:while(true){{switch(__pc{id}){{\n");
+        let mut idx = 0usize;
+        for st in stmts {
+            if matches!(st.kind, StmtKind::Label(_)) {
+                continue;
+            }
+            s.push_str(&format!("case {idx}:\n"));
+            match self.stmt(cx, st) {
+                Ok(code) => s.push_str(&code),
+                Err(e) => {
+                    cx.nested.pop();
+                    return Err(e);
+                }
+            }
+            idx += 1;
+        }
+        s.push_str(&format!("case {idx}:\n}}break;}}}}\n"));
+        cx.nested.pop();
         Ok(s)
     }
 
@@ -1015,6 +1091,87 @@ impl<'a> Gen<'a> {
         ))
     }
 
+    /// An If whose branches hold labels (a GoTo from one branch into
+    /// another, which VBA allows): one state machine for all branches.
+    /// Case 0 tests the conditions and goes to the branch; each branch
+    /// ends by going to the end.
+    fn if_with_labels(
+        &mut self,
+        cx: &mut Ctx,
+        branches: &[(Expr, Vec<Stmt>)],
+        otherwise: Option<&[Stmt]>,
+    ) -> R<String> {
+        self.tmp += 1;
+        let id = self.tmp;
+        let lists: Vec<&[Stmt]> = branches
+            .iter()
+            .map(|(_, b)| b.as_slice())
+            .chain(otherwise)
+            .collect();
+        // Case numbers: 0 tests; each list's statements follow, then a
+        // case that leaves; the last case is the end.
+        let mut labels = HashMap::new();
+        let mut starts = Vec::new();
+        let mut idx = 1usize;
+        for l in &lists {
+            starts.push(idx);
+            for st in l.iter() {
+                if let StmtKind::Label(n) = &st.kind {
+                    labels.insert(low(n), idx);
+                } else {
+                    idx += 1;
+                }
+            }
+            idx += 1;
+        }
+        let end = idx;
+        let mut test = String::new();
+        for (i, (c, _)) in branches.iter().enumerate() {
+            let c = self.expr(cx, c)?;
+            if i > 0 {
+                test.push_str("else ");
+            }
+            test.push_str(&format!(
+                "if(__v.bool({c})){{__pc{id}={};continue __sm{id};}}",
+                starts[i]
+            ));
+        }
+        let fallback = if otherwise.is_some() {
+            starts[branches.len()]
+        } else {
+            end
+        };
+        test.push_str(&format!(
+            "__pc{id}={fallback};continue __sm{id};
+"
+        ));
+        cx.nested.push((id, labels));
+        let mut s =
+            format!("{{let __pc{id}=0;\n__sm{id}:while(true){{switch(__pc{id}){{\ncase 0:{test}");
+        let mut idx = 1usize;
+        for l in &lists {
+            for st in l.iter() {
+                if matches!(st.kind, StmtKind::Label(_)) {
+                    continue;
+                }
+                s.push_str(&format!("case {idx}:\n"));
+                match self.stmt(cx, st) {
+                    Ok(code) => s.push_str(&code),
+                    Err(e) => {
+                        cx.nested.pop();
+                        return Err(e);
+                    }
+                }
+                idx += 1;
+            }
+            s.push_str(&format!("case {idx}:__pc{id}={end};continue __sm{id};\n"));
+            idx += 1;
+        }
+        s.push_str(&format!("case {end}:\n}}break;}}}}\n"));
+        cx.nested.pop();
+        Ok(s)
+    }
+
     fn label_index(&self, cx: &Ctx, l: &str) -> R<usize> {
         match cx.labels.get(&low(l)) {
             Some(i) => Ok(*i),
@@ -1032,6 +1189,17 @@ impl<'a> Gen<'a> {
                 self.assign(cx, target, v, *set)?
             }
             StmtKind::Call(e, args) => self.call_stmt(cx, e, args.as_deref())?,
+            StmtKind::If {
+                branches,
+                otherwise,
+            } if branches
+                .iter()
+                .map(|(_, b)| b)
+                .chain(otherwise.iter())
+                .any(|b| b.iter().any(|st| matches!(st.kind, StmtKind::Label(_)))) =>
+            {
+                self.if_with_labels(cx, branches, otherwise.as_deref())?
+            }
             StmtKind::If {
                 branches,
                 otherwise,
@@ -1192,8 +1360,18 @@ impl<'a> Gen<'a> {
                 }
             },
             StmtKind::GoTo(l) => {
-                let i = self.label_index(cx, l)?;
-                format!("{{__pc={i};continue __sm;}}")
+                let key = low(l);
+                if let Some((id, i)) = cx
+                    .nested
+                    .iter()
+                    .rev()
+                    .find_map(|(id, labels)| labels.get(&key).map(|i| (*id, *i)))
+                {
+                    format!("{{__pc{id}={i};continue __sm{id};}}")
+                } else {
+                    let i = self.label_index(cx, l)?;
+                    format!("{{__pc={i};continue __sm;}}")
+                }
             }
             StmtKind::OnErrorResumeNext => "__oe=1;__v.Err.Clear();".into(),
             StmtKind::OnErrorGoTo0 => "__oe=0;__v.Err.Clear();".into(),
@@ -1946,26 +2124,60 @@ fn uses_jumps(stmts: &[Stmt]) -> bool {
     })
 }
 
-/// Every GoTo target is a label of the procedure's top level.
+/// Every GoTo target is a label of the procedure's top level or of a
+/// statement list the GoTo is in; On Error GoTo and Resume go to labels
+/// of the top level.
 fn check_jumps(
     stmts: &[Stmt],
     labels: &HashMap<String, usize>,
-    _top: bool,
+    inner: &mut Vec<Vec<String>>,
 ) -> Result<(), (u32, String)> {
-    for s in stmts {
-        let target = match &s.kind {
-            StmtKind::GoTo(l) | StmtKind::OnErrorGoTo(l) => Some(l),
-            StmtKind::Resume(ResumeKind::Label(l)) => Some(l),
+    let here: Vec<String> = stmts
+        .iter()
+        .filter_map(|s| match &s.kind {
+            StmtKind::Label(n) => Some(low(n)),
             _ => None,
+        })
+        .collect();
+    inner.push(here);
+    for s in stmts {
+        let (target, any) = match &s.kind {
+            StmtKind::GoTo(l) => (Some(l), true),
+            StmtKind::OnErrorGoTo(l) => (Some(l), false),
+            StmtKind::Resume(ResumeKind::Label(l)) => (Some(l), false),
+            _ => (None, false),
         };
         if let Some(l) = target {
-            if !labels.contains_key(&low(l)) {
+            let k = low(l);
+            let found = labels.contains_key(&k) || (any && inner.iter().any(|ls| ls.contains(&k)));
+            if !found {
+                inner.pop();
                 return Err((s.line, l.clone()));
             }
         }
-        for c in children(s) {
-            check_jumps(c, labels, false)?;
+        // The branches of an If can jump into each other.
+        let kids = children(s);
+        let shared: Vec<String> = if matches!(s.kind, StmtKind::If { .. }) {
+            kids.iter()
+                .flat_map(|c| c.iter())
+                .filter_map(|st| match &st.kind {
+                    StmtKind::Label(n) => Some(low(n)),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        inner.push(shared);
+        for c in kids {
+            if let Err(e) = check_jumps(c, labels, inner) {
+                inner.pop();
+                inner.pop();
+                return Err(e);
+            }
         }
+        inner.pop();
     }
+    inner.pop();
     Ok(())
 }

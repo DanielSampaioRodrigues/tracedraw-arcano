@@ -622,7 +622,12 @@ impl<'a> Parser<'a> {
         // Labels at the start of a line.
         if self.tok().line_start {
             if let Tok::Ident(name) = self.peek().clone() {
-                if matches!(self.peek_at(1), Tok::Op(":")) && !self.at_terminator() {
+                // `Do:` and `Else:` start statements; they are not labels.
+                let keyword = [
+                    "do", "else", "loop", "next", "wend", "end", "exit", "resume",
+                ]
+                .contains(&name.to_ascii_lowercase().as_str());
+                if matches!(self.peek_at(1), Tok::Op(":")) && !self.at_terminator() && !keyword {
                     self.bump();
                     self.bump();
                     return mk(StmtKind::Label(name));
@@ -1415,6 +1420,10 @@ impl<'a> Parser<'a> {
             return Ok(Expr::Unary(UnOp::Neg, Box::new(self.unary()?)));
         }
         if self.eat_op("+") {
+            return self.unary();
+        }
+        // A file number written `#n` (`Input(n, #f)`, `EOF(#1)`): the number.
+        if self.eat_op("#") {
             return self.unary();
         }
         self.power()

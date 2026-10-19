@@ -639,6 +639,11 @@ V.g = function (name) {
   return (0, eval)(k.e);
 };
 V.setg = function (cur, name, v) {
+  // A form's control assigned by its name: its default property.
+  if (cur !== null && typeof cur === "object" && typeof cur.__default === "string") {
+    cur[cur.__default] = v;
+    return;
+  }
   const k = findKey(G, name);
   G[k === null ? name : k] = v;
 };
@@ -707,6 +712,8 @@ function strNum(s) {
 // The default value of an object used as a value.
 function dv(x) {
   if (x === V.Err) return V.Err.Number;
+  // A form control: its default property (Value).
+  if (x !== null && typeof x === "object" && typeof x.__default === "string") return x[x.__default];
   return x;
 }
 
@@ -1577,6 +1584,38 @@ B.formatdatetime = function (d, kind) {
 };
 B.freefile = () => V.unsupported("FreeFile");
 B.getobject = (p, c) => V.raise(429, miss(c) ? V.cstr(p) : V.cstr(c));
+// The registry settings of a program (GetSetting and the like): the host
+// keeps them (`__host_setting`); without one they last for this run.
+const settingsStore = {};
+function settingOp(op, app, section, key, value) {
+  if (typeof G.__host_setting === "function") return G.__host_setting(op, app, section, key, value);
+  const id = (app + "\u0001" + section).toLowerCase();
+  const s = settingsStore[id] || (settingsStore[id] = {});
+  if (op === "get") return Object.prototype.hasOwnProperty.call(s, key.toLowerCase()) ? s[key.toLowerCase()][1] : null;
+  if (op === "set") { s[key.toLowerCase()] = [key, value]; return null; }
+  if (op === "delete") { if (key === null) delete settingsStore[id]; else delete s[key.toLowerCase()]; return null; }
+  return Object.keys(s).map((k) => s[k]);
+}
+B.getsetting = function (app, section, key, def) {
+  const r = settingOp("get", V.cstr(app), V.cstr(section), V.cstr(key), null);
+  return r === null || r === undefined ? (miss(def) ? "" : V.cstr(def)) : String(r);
+};
+B.getsetting.__params = ["appname", "section", "key", "default"];
+B.savesetting = function (app, section, key, value) {
+  settingOp("set", V.cstr(app), V.cstr(section), V.cstr(key), V.cstr(value));
+};
+B.savesetting.__params = ["appname", "section", "key", "setting"];
+B.deletesetting = function (app, section, key) {
+  settingOp("delete", V.cstr(app), V.cstr(section), miss(key) ? null : V.cstr(key), null);
+};
+B.deletesetting.__params = ["appname", "section", "key"];
+B.getallsettings = function (app, section) {
+  const pairs = settingOp("all", V.cstr(app), V.cstr(section), null, null) || [];
+  if (!pairs.length) return undefined;
+  const a = new VArray([[0, pairs.length - 1], [0, 1]], null, null, false);
+  pairs.forEach((p, i) => { a.set([i, 0], String(p[0])); a.set([i, 1], String(p[1])); });
+  return a;
+};
 B.hex = (x) => { const n = V.clng(x); return (n < 0 ? (n >>> 0) : n).toString(16).toUpperCase(); };
 B.hour = (d) => partsOf(V.cdate(d).v).h;
 B.iif = (c, a, b) => (V.bool(c) ? a : b);

@@ -61,3 +61,7 @@ su equipo pueden abrir, editar, inspeccionar, exportar y guardar dibujos:
 
 Cada descarga incluye también `tracedraw-cli`, que convierte dibujos entre
 formatos sin abrir el programa, para trabajos por lotes.
+
+## Macros {#macros}
+
+TraceDraw ejecuta proyectos de macros VBA escritos para programas de dibujo (versión de escritorio). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] añade un proyecto (`.gms`) o archivos de módulo (`.bas`, `.cls`, `.frm`); los proyectos se guardan y se cargan al iniciar. El [[docker.macros]] muestra sus macros: haga doble clic en una o use [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>) para ejecutarla. Los formularios y cuadros de mensaje y de entrada de la macro aparecen en pantalla, <kbd>Esc</kbd> o [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] la detiene, y todo lo que cambia una ejecución es un solo paso de deshacer. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) muestra y edita el código. Las macros que llaman funciones de Windows o al modelo de objetos del propio editor no se ejecutan.

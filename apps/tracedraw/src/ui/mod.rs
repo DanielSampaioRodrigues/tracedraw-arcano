@@ -56,6 +56,7 @@ pub mod hints;
 pub mod icons;
 pub mod lab_dialog;
 pub mod layout_options;
+pub mod macros_ui;
 pub mod menu_glyphs;
 pub mod menu_pics;
 pub mod menus;
@@ -263,6 +264,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.debug_tick() {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }
+    // VBA macros: their requests, dialogs, forms and editor.
+    macros_ui::frame(app, &ctx);
     // Help > Updates, once a day.
     app.update_tick(crate::recovery::now_secs(), Some(ctx.clone()));
     // Options > Save > Auto-backup.

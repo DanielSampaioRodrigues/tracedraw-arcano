@@ -3942,6 +3942,8 @@ dependencies = [
  "tracedraw-io",
  "tracedraw-render",
  "tracedraw-text",
+ "tracedraw-vba",
+ "tracedraw-vba-project",
  "ureq",
  "wasm-bindgen",
  "wasm-bindgen-futures",

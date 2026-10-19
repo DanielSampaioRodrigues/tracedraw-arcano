@@ -1108,6 +1108,8 @@ pub struct App {
     pub debug_paused: Option<u32>,
     pub breakpoints: std::collections::BTreeSet<u32>,
     pub debug_expr: String,
+    /// VBA macro projects, the running macro and its dialogs.
+    pub macros: crate::macros::MacroState,
     /// AI Drawing: the request, the key in use, the conversation.
     pub ai: crate::ai::AiSession,
     /// AI Generate and Remove Background.
@@ -1428,10 +1430,11 @@ pub enum DockerTab {
     Comments,
     AiGenerate,
     Effects,
+    Macros,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 41] = [
+    pub const ALL: [DockerTab; 42] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1473,6 +1476,7 @@ impl DockerTab {
         DockerTab::PictureMosaic,
         DockerTab::Shelf,
         DockerTab::Effects,
+        DockerTab::Macros,
     ];
 
     /// Window > Panels, in groups divided by separators, in the order of
@@ -1511,7 +1515,12 @@ impl DockerTab {
             DockerTab::ColorStyles,
         ],
         &[DockerTab::Shelf, DockerTab::Links],
-        &[DockerTab::Undo, DockerTab::Hints, DockerTab::Scripts],
+        &[
+            DockerTab::Undo,
+            DockerTab::Hints,
+            DockerTab::Scripts,
+            DockerTab::Macros,
+        ],
     ];
 
     /// Window > Panels > Effects.
@@ -1572,6 +1581,7 @@ impl DockerTab {
             DockerTab::Export => "docker.export",
             DockerTab::Comments => "docker.comments",
             DockerTab::AiGenerate => "docker.ai_generate",
+            DockerTab::Macros => "docker.macros",
             DockerTab::Effects => "docker.effects",
         }
     }
@@ -1905,6 +1915,7 @@ impl App {
             scripts_output: Vec::new(),
             script_source: String::new(),
             script_debug: None,
+            macros: Default::default(),
             debug_paused: None,
             breakpoints: Default::default(),
             debug_expr: String::new(),

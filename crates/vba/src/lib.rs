@@ -132,13 +132,29 @@ fn parse(m: &Module) -> Result<ast::ModuleAst, CompileError> {
     parser::Parser::new(&m.name, toks).module()
 }
 
+/// What the compiler may know about the host: the global names its
+/// object model defines and the controls of each form. An undeclared name
+/// a procedure assigns is then the host's or the control (as the
+/// reference does) instead of a new variable.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    pub host_names: Vec<String>,
+    /// (form module name, its control names).
+    pub form_controls: Vec<(String, Vec<String>)>,
+}
+
 /// Compile a project's modules into one JavaScript program.
 pub fn compile(modules: &[Module]) -> Result<Program, CompileError> {
+    compile_with(modules, &Options::default())
+}
+
+/// [`compile`] knowing the host's names and the forms' controls.
+pub fn compile_with(modules: &[Module], opts: &Options) -> Result<Program, CompileError> {
     let mut asts = Vec::new();
     for m in modules {
         asts.push(parse(m)?);
     }
-    codegen::generate(modules, &asts)
+    codegen::generate(modules, &asts, opts)
 }
 
 /// The JavaScript that runs one macro (a procedure without arguments) of

@@ -62,3 +62,7 @@ opslaan:
 
 Elke download bevat ook `tracedraw-cli`, dat tekeningen tussen indelingen
 omzet zonder het programma te openen, voor batchwerk.
+
+## Macro's {#macros}
+
+TraceDraw voert VBA-macroprojecten uit die voor tekenprogramma's zijn geschreven (desktopversie). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] voegt een project (`.gms`) of modulebestanden (`.bas`, `.cls`, `.frm`) toe; projecten worden bewaard en bij het starten geladen. Het paneel [[docker.macros]] toont de macro's: dubbelklik op een macro of gebruik [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>) om hem uit te voeren. Formulieren, berichtvensters en invoervensters van de macro verschijnen op het scherm, <kbd>Esc</kbd> of [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] stopt hem, en alles wat één uitvoering verandert is één stap ongedaan maken. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) toont en bewerkt de code. Macro's die Windows-functies of het objectmodel van de editor zelf aanroepen, werken niet.

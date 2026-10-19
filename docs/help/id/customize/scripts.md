@@ -61,3 +61,7 @@ Anda dapat membuka, menyunting, memeriksa, mengekspor, dan menyimpan gambar:
 
 Setiap unduhan juga menyertakan `tracedraw-cli`, yang mengonversi gambar antar
 format tanpa membuka program, untuk pekerjaan massal.
+
+## Makro {#macros}
+
+TraceDraw menjalankan proyek makro VBA yang ditulis untuk program menggambar (versi desktop). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] menambahkan proyek (`.gms`) atau berkas modul (`.bas`, `.cls`, `.frm`); proyek disimpan dan dimuat saat program dibuka. [[docker.macros]] menampilkan makronya: klik dua kali salah satunya atau gunakan [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>) untuk menjalankannya. Formulir, kotak pesan, dan kotak input makro muncul di layar, <kbd>Esc</kbd> atau [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] menghentikannya, dan semua perubahan satu kali jalan menjadi satu langkah urung. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) menampilkan dan menyunting kode. Makro yang memanggil fungsi Windows atau model objek editor itu sendiri tidak berjalan.

@@ -16,6 +16,7 @@
 //! undo step. Scripts an AI service wrote run untrusted
 //! ([`run_untrusted`]): without file access, with limits, all or nothing.
 
+pub mod vba_run;
 mod vg;
 
 use crate::app::App;
@@ -513,6 +514,48 @@ impl ScriptFilter {
     pub fn handles(&self, ext: &str) -> bool {
         self.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext))
     }
+}
+
+/// The names the object model for macros defines (globals, classes,
+/// constants): the VBA compiler leaves them to the host. Worked out once.
+pub fn vg_global_names() -> Vec<String> {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            let mut inner = blank_host(Document::default(), Trust::User);
+            inner.vg = true;
+            let mut names: Vec<String> = evaluate_with(
+                inner,
+                "Object.getOwnPropertyNames(globalThis).join('\\n')",
+                None,
+                None,
+                None,
+            )
+            .ok()
+            .and_then(|e| e.text)
+            .map(|t| t.lines().map(str::to_string).collect())
+            .unwrap_or_default();
+            for src in [COMMON, vg::PRELUDE] {
+                for line in src.lines() {
+                    for kw in ["const ", "let ", "class ", "function "] {
+                        if let Some(rest) = line.strip_prefix(kw) {
+                            let n: String = rest
+                                .chars()
+                                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+                                .collect();
+                            if !n.is_empty() {
+                                names.push(n);
+                            }
+                        }
+                    }
+                }
+            }
+            names.retain(|n| !n.starts_with("__") && !n.is_empty());
+            names.sort();
+            names.dedup();
+            names
+        })
+        .clone()
 }
 
 fn blank_host(doc: Document, trust: Trust) -> HostInner {

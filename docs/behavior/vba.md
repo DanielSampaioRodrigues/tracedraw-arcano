@@ -397,6 +397,9 @@ model is documented with scripting.
 
 - `compile(&[Module]) -> Result<Program, CompileError>`: all modules of
   a project are compiled together so calls between modules resolve.
+  `compile_with(&modules, &Options { host_names, form_controls })` also
+  takes the host's global names and each form's control names, which
+  are left to run time under `Option Explicit` instead of failing.
   `Module { name, kind: Standard | Class | Form | Document, source }`.
   A `CompileError` names the module and the VBA line.
 - `RUNTIME_JS`: the VBA runtime (`__v`), evaluated once before the
@@ -421,6 +424,7 @@ model is documented with scripting.
 | `fn.__params = ["x", ...]` | parameter names of a host method, needed for named arguments |
 | `__host_form_create/show/hide/unload(form)` | forms; the host fills `form.__controls` |
 | `form.__event(control, event, args)` | the host fires `Control_Event` handlers |
+| `__host_setting(op, app, section, key, value)` | GetSetting, SaveSetting, DeleteSetting, GetAllSettings; without it settings last for the run |
 
 ### Supported
 
@@ -450,7 +454,8 @@ CDate, CCur, CVar...), tests (IsNumeric, IsDate, IsEmpty, IsNull,
 IsArray, IsObject, VarType, TypeName), arrays (Array, LBound, UBound,
 Filter), dates (Now, Date, Time, DateSerial, DateAdd, DateDiff,
 DatePart, Year...Second, Weekday, MonthName, Timer), MsgBox, InputBox,
-IIf, Choose, Switch, Collection, `CreateObject("Scripting.Dictionary")`
+IIf, Choose, Switch, GetSetting, SaveSetting, DeleteSetting,
+GetAllSettings, Collection, `CreateObject("Scripting.Dictionary")`
 and the vb constants.
 
 ### Not supported
@@ -466,7 +471,9 @@ These compile and fail at run time with error 445
 - GoSub/Return, On x GoTo/GoSub, AddressOf, Implements.
 - RaiseEvent does nothing; WithEvents is ignored; Class_Terminate is
   not called.
-- GoTo only reaches labels at the top level of a procedure.
+- GoTo reaches labels in the same block, in the blocks around it and
+  in the other branches of the same If; not labels inside a loop or a
+  With from outside it.
 - Named arguments to host methods need `__params`, otherwise error 448.
 - Debug.Print does not add the leading space VBA prints before
   positive numbers; dates format as m/d/yyyy.
@@ -640,3 +647,159 @@ follows the public MS-OVBA and MS-OFORMS specifications.
   are damaged give errors, never panics; projects go round trip through
   `write_gms`, through exported module files and through a folder
   (`tests`).
+
+## VBA macros in the app
+
+Macro projects written for other drawing suites load and run in the
+desktop app (`apps/tracedraw/src/macros.rs`, `scripting/vba_run.rs`,
+`ui/macros_ui.rs`). The browser build lists nothing and says that
+macros run in the desktop version.
+
+### Running macros
+
+- A macro runs on a worker thread of its own, on a copy of the drawing
+  taken when it starts; the app keeps drawing and stays responsive.
+- What it changes reaches the drawing at every pause (a message, an
+  input box, a form waiting for the user) and when it ends, so a
+  macro's changes show while its form is up. All of one run is one
+  undo step named "Macro"; if the user edits the drawing during a pause,
+  later changes start a new step. Each form event starts from the
+  drawing as it is then, so the macro sees the user's edits.
+- MsgBox is a modal message box with the style's buttons (OK, OK and
+  Cancel, Abort Retry Ignore, Yes No Cancel, Yes No, Retry Cancel), its
+  icon (critical, question, exclamation, information) and its default
+  button (vbDefaultButton2 to 4), and returns vbOK (1) to vbNo (7).
+  Enter picks the default button; Esc and the close box answer Cancel
+  when there is one and OK for a lone OK; Yes No and Abort Retry Ignore
+  must be answered with a button. The title is "TraceDraw" when the
+  macro gives none.
+- InputBox shows the prompt, a text field with the default, OK and
+  Cancel; Cancel, Esc and the close box return "".
+- Debug.Print lines go to the Scripts panel's output.
+- While a macro runs, after a moment a notice at the bottom says so with
+  a Stop button. Stop, Esc (with no message or modal form open) and
+  Tools > Macros > Stop Macro end it at its next statement (a loop
+  checks every 256 statements), also while it waits for a message or a
+  form. What it changed until then stays, as one undo step, and the
+  status line says it was stopped.
+- A run-time error stops the run and opens "Run-time error 'n':" with
+  the description and "Module m, procedure p, line l" (the VBA line).
+  Debug opens the Macro Editor on that line; End closes the box. A
+  compile error opens the same box with the module and line.
+- Only one macro runs at a time; Run is greyed while one does.
+- Settings a macro saves with SaveSetting are kept in
+  `settings.json` in the macros folder and read back with GetSetting in
+  later runs. `GMSManager.UserGMSPath` is the macros folder.
+
+### Forms on screen
+
+- A form shown with `Show` (modal by default, or `vbModeless`) opens as
+  a window over the app with the form's caption and inside size (points
+  at 96 dots per inch), back colour, picture and font. A modal form
+  blocks the rest of the app until it is hidden or unloaded; a modeless
+  one leaves the app usable and its events run while the macro's
+  procedure has returned.
+- Controls are drawn at their designed places, inside frames and
+  multi-page pages, with caption, text, colours and font: labels, text
+  boxes (one line or several, password character, maximum length,
+  locked), command buttons (the Default button has a blue frame),
+  check boxes, option buttons (one per group: same group name, or same
+  container), toggle buttons, combo boxes (a drop-down list, or a text
+  with a list), list boxes (one choice, several, columns), frames,
+  multi-pages and tab strips (the tabs switch pages), images, spin
+  buttons and scroll bars. Unknown controls show as an empty box.
+- Every property the macro reads or sets goes to the window at once:
+  Caption, Value, Text, Enabled, Visible, Locked, Left, Top, Width,
+  Height, colours, Font, ListIndex, List, Column, Selected,
+  ListCount, Tag, ControlTipText and the rest (`macro_forms.rs`), and
+  AddItem, RemoveItem, Clear and SetFocus.
+- Events: Click, DblClick, Change, AfterUpdate (a text box left after
+  typing), Enter and Exit (focus), KeyDown, KeyUp and KeyPress (a text
+  box), SpinUp and SpinDown, Scroll; on the form Click, DblClick,
+  Initialize (created), Activate (shown), QueryClose and Terminate.
+  Setting a value from the macro fires Change (and Click for check and
+  option boxes and lists) as VBA does.
+- Enter clicks the form's Default button and Esc its Cancel button
+  (outside a text box of several lines).
+- `Me.Hide` hides the form and returns from a modal `Show`; `Unload Me`
+  removes it. The close box asks the macro through
+  `UserForm_QueryClose` (CloseMode vbFormControlMenu); setting Cancel
+  keeps the form, otherwise it unloads.
+- Forms still open when a run ends or is stopped are closed.
+
+### Macro Manager
+
+- Tools > Macros > Macro Manager opens a docker (also in Window >
+  Panels) with the loaded projects as a tree: each project, its modules
+  with their kind (module, class, form, document), and each module's
+  macros (public Subs without arguments).
+- A padlock marks a password-protected project (its code is still
+  read) and modules saved without their code, which cannot run.
+- Load... (Tools > Macros > Load Macro Project...) takes a `.gms`
+  project, or `.bas`, `.cls` and `.frm` modules (the `.frx` beside a
+  `.frm` comes along) that become one project. A copy is kept in the
+  `macros` folder of the settings folder, and every copy there loads
+  again at start-up. A project of the same name replaces the earlier
+  copy.
+- Run (or a double click on a macro) runs it; Edit opens the editor at
+  the module or the macro; Rename renames the project and its copy;
+  Unload removes it and deletes its copy; Export writes the chosen
+  module as `.bas`, `.cls` or `.frm` with its `.frx`, or the chosen
+  project as a `.gms` file.
+- Before a project's first run in a session, its warnings are shown
+  with Run Anyway and Cancel; they never block. They come from reading
+  the code: Windows functions (`Declare`), file statements (Open, Kill,
+  FileCopy, Dir...), Shell, objects other than `Scripting.Dictionary`
+  given to CreateObject, modules without code, and protection. A "!"
+  beside the project shows them too.
+- Tools > Macros > Run Macro... (Alt+Shift+F8; Alt+F8 stays the Transformations panel's Rotate) lists every macro of every
+  project as "Project > Module.Macro" with a search field; Run, Edit,
+  Cancel; Enter runs the chosen one.
+- Tools > Macros also lists each project as a submenu of its macros.
+  These are commands: Options > Customization > Commands has them under
+  the Macros category (and under Tools), so each macro can get a
+  shortcut key. The app has no toolbar editing for any command, so
+  macros cannot be added to toolbars.
+
+### Macro Editor
+
+- Tools > Macros > Macro Editor... (Alt+F11) opens a window on the
+  chosen project (the first one, or a new "Macros" project with a sample
+  module when none is loaded): the modules on the left, the code on
+  the right with line numbers and VBA colouring (keywords, comments,
+  strings).
+- Save (Ctrl+S) puts the code back into the module, writes the project
+  copy and compiles the project: "Saved. No compile errors." or the
+  compile error with its module and line, where the caret goes.
+  Switching modules or closing the window saves first.
+- Run Sub (F5) runs the Sub the caret is in, after saving.
+- Find with Find Next searches from the caret's line on, then from the
+  top, case-insensitively, and selects the line found.
+- The Scripts panel has a JavaScript / VBA switch: in VBA, Run runs the
+  first Sub without arguments of the snippet (or the lines as the body of
+  one) as a macro, with its messages, forms and output; Load and Save use
+  `.bas` files. The debugger works on JavaScript only.
+
+### Checks (tests in `macros.rs` and `ui/macros_ui.rs`)
+
+- Given a macro that asks with MsgBox (vbYesNo + vbQuestion, title
+  "Ask") and InputBox, when the test answers Yes and "Frame", then the
+  box shows style 36 and the default text, the rectangle it draws is
+  named "Frame", Debug.Print reaches the output, and one undo removes
+  the whole run.
+- Given a form with a text box and an OK button whose Click draws an
+  ellipse named after the text box and unloads the form, when the user
+  types "Round" and clicks OK, then UserForm_Initialize has set the
+  caption, the ellipse is named "Round" and the macro goes on after
+  `Show`.
+- A division by zero on line 3 of module Main gives error 11 at Main,
+  line 3; an endless loop ends with Stop and the status names it.
+- A project written with `write_gms`, loaded from that file, runs and
+  counts the page's objects.
+- Loading keeps a copy that a new session loads again; Rename renames
+  it; Unload deletes it.
+- Warnings name the Windows function and the object of another program,
+  and leave `Scripting.Dictionary` out.
+- MsgBox styles give the right buttons, answers, default button and
+  Esc answer.
+

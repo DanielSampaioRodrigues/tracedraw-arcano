@@ -60,3 +60,7 @@ rysunki:
 
 Każde pobranie zawiera też `tracedraw-cli`, które konwertuje rysunki między
 formatami bez otwierania programu, do pracy wsadowej.
+
+## Makra {#macros}
+
+TraceDraw uruchamia projekty makr VBA napisane dla programów do rysowania (wersja na komputer). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] dodaje projekt (`.gms`) lub pliki modułów (`.bas`, `.cls`, `.frm`); projekty są zachowywane i wczytywane przy starcie. Panel [[docker.macros]] pokazuje ich makra: kliknij dwukrotnie makro lub użyj [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>), aby je uruchomić. Formularze, okna komunikatów i okna wprowadzania makra pojawiają się na ekranie, <kbd>Esc</kbd> lub [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] je zatrzymuje, a wszystko, co zmieni jedno uruchomienie, to jeden krok cofania. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) pokazuje i edytuje kod. Makra wywołujące funkcje Windows lub model obiektów samego edytora nie działają.

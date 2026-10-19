@@ -59,3 +59,7 @@ počítači mohou kresby otevírat, upravovat, zkoumat, exportovat a ukládat:
 
 Každé stažení obsahuje také `tracedraw-cli`, který převádí kresby mezi
 formáty bez otevření programu, pro dávkovou práci.
+
+## Makra {#macros}
+
+TraceDraw spouští projekty maker VBA napsané pro kreslicí programy (verze pro počítač). [[menu.tools > menu.tools.macros > menu.tools.macros_load]] přidá projekt (`.gms`) nebo soubory modulů (`.bas`, `.cls`, `.frm`); projekty se uchovají a načtou při spuštění. Panel [[docker.macros]] zobrazuje jejich makra: poklepejte na makro nebo použijte [[menu.tools > menu.tools.macros > menu.tools.macros_run]] (<kbd>Alt+Shift+F8</kbd>). Formuláře, okna se zprávou a vstupní okna makra se zobrazí na obrazovce, <kbd>Esc</kbd> nebo [[menu.tools > menu.tools.macros > menu.tools.macros_stop]] makro zastaví a vše, co jedno spuštění změní, je jeden krok zpět. [[menu.tools > menu.tools.macros > menu.tools.macro_editor]] (<kbd>Alt+F11</kbd>) zobrazí a upraví kód. Makra volající funkce Windows nebo objektový model samotného editoru nefungují.

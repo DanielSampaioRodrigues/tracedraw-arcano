@@ -103,6 +103,23 @@ full, row-by-row status.
   tab strips). Projects can be written back as module files or as a
   compound file.
 
+- VBA macros: a compiler from VBA modules, classes and form code to
+  scripts over the TraceDraw object model, with the VBA run-time library,
+  Collection and Scripting.Dictionary.
+- VBA macros: the object model they are written against (Application,
+  Document, Page, Layer, Shapes and ShapeRange, Shape with Fill,
+  Outline, Transparency, Curve, Text and its views, Color, the cdr*
+  constants), with lengths in the document unit and the reference
+  point (docs/behavior/vba.md). Ids minted by scripts no longer collide
+  with the drawing's own after a run that groups or adds pages.
+- VBA macros in the app (desktop): Tools > Macros with the Macro
+  Manager docker, Run Macro (Alt+Shift+F8), Load Macro Project and the Macro
+  Editor (Alt+F11). Projects are kept in the settings folder and load at
+  start-up; macros run on their own thread with MsgBox and InputBox
+  dialogs, their user forms on screen with events, Stop and Esc, an
+  error box with the VBA line and one undo step per run. Each macro can
+  get a shortcut, and the Scripts panel runs VBA snippets too.
+
 - Moving objects with the Pick tool shows the arrow with a dotted box,
   and the box gets a plus after a right click (the move leaves the
   original and a copy lands where the left button goes up). The pointer

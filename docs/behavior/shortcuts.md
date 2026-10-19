@@ -45,6 +45,7 @@ Customization > Commands lists them and takes shortcuts of your own
 | Alt+Enter, Ctrl+Shift+A | Properties, Align and Distribute panels |
 | Alt+F7, Alt+F8, Alt+F9, Alt+F10 | Transformations panel on Position, Rotate, Scale and Mirror, Size |
 | Ctrl+M | Merge table cells |
+| Alt+Shift+F8, Alt+F11 | Run Macro, Macro Editor (Tools > Macros) |
 
 ## Text and effects
 

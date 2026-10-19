@@ -671,11 +671,10 @@ fn compile_errors_name_the_module_and_line() {
     let e = compile(&[Module::new(
         "M",
         ModuleKind::Standard,
-        "Option Explicit\nSub A()\n  y = 2\nEnd Sub\n",
+        "Sub A()\n  Dim i\n  Next i\nEnd Sub\n",
     )])
     .unwrap_err();
-    assert_eq!(e.line, 3);
-    assert!(e.message.contains("Variable not defined: y"));
+    assert_eq!(e.line, 3, "{e}");
 }
 
 #[test]
@@ -891,4 +890,133 @@ End Sub
     assert_eq!(out[1], "1,234.6       25%           Hello World");
     assert_eq!(out[2], "apple,grape   a-b-c");
     assert_eq!(out[3], "3             3             2024-02-29");
+}
+
+#[test]
+fn goto_reaches_a_label_inside_a_loop_and_ifs_around_it() {
+    // The common "skip to Next" idiom: a label just before Next.
+    let out = run(r##"
+Sub Main()
+    Dim i As Integer, c As Integer
+    For i = 1 To 6
+        If i Mod 2 = 0 Then c = c + 10: GoTo myNext
+        Select Case i
+            Case 3
+                GoTo myNext
+        End Select
+        c = c + 1
+myNext:
+    Next i
+    Debug.Print c
+    Dim n As Integer
+    Do While n < 3
+        n = n + 1
+        If n = 2 Then GoTo Again
+        Debug.Print "n"; n
+Again:
+    Loop
+    GoTo Done
+    Debug.Print "skipped"
+Done:
+    Debug.Print "done"
+End Sub
+"##);
+    assert_eq!(out, vec!["32", "n1", "n3", "done"]);
+}
+
+#[test]
+fn a_do_loop_on_one_line_with_colons() {
+    let out = run(r##"
+Sub Main()
+    Dim n As Integer
+    Do: n = n + 1: DoEvents: Loop While n < 5
+    Debug.Print n
+    Do: n = n - 1: Loop Until n = 2
+    Debug.Print n
+End Sub
+"##);
+    assert_eq!(out, vec!["5", "2"]);
+}
+
+#[test]
+fn file_numbers_in_arguments_parse_and_fail_at_run_time() {
+    let e = run_err(
+        r##"
+Sub Main()
+    Dim s As String, hF As Integer
+    hF = 1
+    s = Input(LOF(hF), #hF)
+End Sub
+"##,
+    );
+    assert!(e.contains("445") || e.contains("Not supported"), "{e}");
+}
+
+#[test]
+fn undeclared_names_under_option_explicit_are_left_to_the_host() {
+    // Names the host or a form provides are not known when compiling.
+    let m = Module::new(
+        "m",
+        ModuleKind::Standard,
+        "Option Explicit\r\nSub Main()\r\nOptimization = True\r\nEnd Sub\r\n",
+    );
+    assert!(compile(&[m]).is_ok());
+}
+
+#[test]
+fn goto_from_an_if_branch_into_its_else_branch() {
+    let out = run(r##"
+Sub Main()
+    Dim i As Integer
+    For i = 1 To 3
+        If i = 2 Then
+            Debug.Print "two"
+            GoTo AfterIt
+        Else
+            Debug.Print "other"
+AfterIt:
+            Debug.Print "after"; i
+        End If
+    Next
+End Sub
+"##);
+    assert_eq!(
+        out,
+        vec!["other", "after1", "two", "after2", "other", "after3"]
+    );
+}
+
+#[test]
+fn a_module_variable_as_new_class_of_a_later_module() {
+    let mods = [
+        Module::new(
+            "Main",
+            ModuleKind::Standard,
+            "Public cfg As New Config\r\nSub Go()\r\n  cfg.Size = 4\r\n  Debug.Print cfg.Size * 2\r\nEnd Sub\r\n",
+        ),
+        Module::new("Config", ModuleKind::Class, "Public Size As Integer\r\n"),
+    ];
+    let r = run_modules(&mods, "Main", "Go", "");
+    assert_eq!(r.lines, vec!["8"], "{:?}", r.result);
+}
+
+#[test]
+fn settings_are_kept_for_the_run_without_a_host() {
+    let out = run(r##"
+Sub Main()
+    Debug.Print "[" & GetSetting("App", "Opt", "Size", "10") & "]"
+    SaveSetting "App", "Opt", "Size", 12
+    SaveSetting "App", "Opt", "Name", "x"
+    Debug.Print GetSetting("app", "opt", "SIZE")
+    Dim a
+    a = GetAllSettings("App", "Opt")
+    Debug.Print UBound(a, 1), a(1, 0), a(1, 1)
+    DeleteSetting "App", "Opt", "Size"
+    Debug.Print "[" & GetSetting("App", "Opt", "Size") & "]"
+End Sub
+"##);
+    assert_eq!(
+        out,
+        vec!["[10]", "12", "1             Name          x", "[]"]
+    );
 }
