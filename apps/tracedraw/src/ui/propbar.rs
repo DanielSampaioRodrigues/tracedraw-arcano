@@ -2684,6 +2684,68 @@ pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
     true
 }
 
+/// The key of a wrap style's name.
+pub fn wrap_style_key(
+    mode: tracedraw_core::WrapMode,
+    side: tracedraw_core::WrapSide,
+) -> &'static str {
+    use tracedraw_core::{WrapMode as M, WrapSide as S};
+    match (mode, side) {
+        (M::Contour, S::Left) => "context.wrap_contour_left",
+        (M::Contour, S::Right) => "context.wrap_contour_right",
+        (M::Contour, S::Straddle) => "context.wrap_contour_straddle",
+        (_, S::Left) => "context.wrap_square_left",
+        (_, S::Right) => "context.wrap_square_right",
+        (_, S::Straddle) => "context.wrap_square_straddle",
+        (_, S::AboveBelow) => "context.wrap_square_above_below",
+    }
+}
+
+/// The arrow beside Wrap Paragraph Text: the wrap styles and the text wrap
+/// offset of the selected objects; picking one turns wrapping on.
+fn wrap_style_list(app: &mut App, ui: &mut Ui) {
+    let ctx = ui.ctx().clone();
+    let popup_id = ui.make_persistent_id("wrap_style_list");
+    let (on, current) = app.wrap_state();
+    let button = ui
+        .add_enabled(
+            !app.selection.is_empty(),
+            egui::Button::new("\u{25BE}").small(),
+        )
+        .on_hover_text(tr("context.wrap_style"));
+    if button.clicked() {
+        egui::Popup::toggle_id(&ctx, popup_id);
+    }
+    egui::Popup::new(popup_id, ctx.clone(), button.rect, ui.layer_id())
+        .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(260.0)
+        .show(|ui| {
+            for (mode, side) in tracedraw_core::TextWrap::STYLES {
+                let here = on && current.mode == mode && current.side == side;
+                if ui
+                    .selectable_label(here, tr(wrap_style_key(mode, side)))
+                    .clicked()
+                {
+                    app.set_wrap_style(mode, side);
+                }
+            }
+            ui.separator();
+            wrap_offset_field(app, ui, current.offset);
+        });
+}
+
+/// The text wrap offset field (property bar list and context menu).
+pub fn wrap_offset_field(app: &mut App, ui: &mut Ui, offset: f64) {
+    ui.horizontal(|ui| {
+        ui.label(tr("context.wrap_offset"));
+        let mut v = offset;
+        if crate::ui::text_docker::length(ui, app, &mut v) {
+            app.set_wrap_offset(v);
+        }
+    });
+}
+
 /// Wrap Paragraph Text, To Front and To Back of the layer and Convert to
 /// Curves, for the selected objects.
 pub fn order_part(app: &mut App, ui: &mut Ui) {
@@ -2703,6 +2765,7 @@ pub fn order_part(app: &mut App, ui: &mut Ui) {
             wrap: !wrap,
         });
     }
+    wrap_style_list(app, ui);
     if pic_button(ui, Pic::ToFront, &tr("toolbar.to_front"), true, false).clicked() {
         app.order(0);
     }

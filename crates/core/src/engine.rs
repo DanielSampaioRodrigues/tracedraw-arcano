@@ -63,6 +63,7 @@ impl Engine {
             uid_state: fresh_seed(),
         };
         e.doc.assign_uids(&mut e.uid_state);
+        e.doc.refresh_text_flow();
         e
     }
 
@@ -92,6 +93,7 @@ impl Engine {
     pub fn replace(&mut self, doc: Document) {
         self.doc = doc;
         self.doc.assign_uids(&mut self.uid_state);
+        self.doc.refresh_text_flow();
         self.undo.clear();
         self.redo.clear();
         self.revision += 1;
@@ -115,6 +117,7 @@ impl Engine {
         let before = self.doc.clone();
         cmd.apply(&mut self.doc)?;
         self.doc.assign_uids(&mut self.uid_state);
+        self.doc.refresh_text_flow();
         self.undo.push(HistoryEntry {
             label,
             before,
@@ -141,6 +144,7 @@ impl Engine {
             c.apply(&mut doc)?;
         }
         doc.assign_uids(&mut self.uid_state);
+        doc.refresh_text_flow();
         self.doc = doc;
         self.undo.push(HistoryEntry {
             label,
@@ -168,6 +172,7 @@ impl Engine {
         let mut doc = self.doc.clone();
         cmd.apply(&mut doc)?;
         doc.assign_uids(&mut self.uid_state);
+        doc.refresh_text_flow();
         self.doc = doc;
         last.after = self.doc.clone();
         self.revision += 1;

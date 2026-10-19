@@ -1769,7 +1769,10 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         }
     }
     vsep(ui);
-    changed |= text_align_list(app, ui);
+    if text_align_list(app, ui) {
+        let a = app.text_align;
+        app.apply_text_align(a);
+    }
     vsep(ui);
     let shapes = app.selected_shapes();
     let is_text = shapes

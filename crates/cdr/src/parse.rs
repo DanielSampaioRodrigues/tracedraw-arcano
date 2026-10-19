@@ -1745,6 +1745,11 @@ impl<'a> Ctx<'a> {
         let mut spans: Vec<TextSpan> = Vec::new();
         let mut align: Option<u32> = object_style.align;
         let mut para_fmt = ParagraphStyle::default();
+        // Each paragraph's own alignment (its style string from version
+        // 16, its style table entry before) and spacing, with where it
+        // starts in the text.
+        let mut own: Vec<(usize, Option<u32>, ParagraphStyle)> = Vec::new();
+        let mut chars = 0usize;
         let n = parsed.paragraphs.len();
         for (i, para) in parsed.paragraphs.iter().enumerate() {
             let para_style = if para.style_id != 0 {
@@ -1756,34 +1761,24 @@ impl<'a> Ctx<'a> {
             if align.is_none() {
                 align = base.align;
             }
+            let own_align = para.base.align.or(if para.style_id != 0 {
+                self.style_defaults(para.style_id).align
+            } else {
+                None
+            });
+            let fmt = paragraph_spacing(&base, &para_fmt);
             if i == 0 {
-                // Paragraph formatting from the style table: the first
-                // paragraph sets the object's (one ParagraphStyle per object).
-                if let Some(ls) = base.line_spacing {
-                    para_fmt.leading_pct = (ls * 100.0).clamp(10.0, 1000.0);
-                } else if let Some(mm) = base.line_spacing_mm {
-                    // A distance between baselines, as a share of the
-                    // font's line height, which our leading counts in
-                    // (taken as 1.15 times the size, as common text
-                    // faces have it).
-                    let line_mm = base.size_pt.unwrap_or(12.0) * 25.4 / 72.0 * 1.15;
-                    if line_mm > 0.0 {
-                        para_fmt.leading_pct = (mm / line_mm * 100.0).clamp(10.0, 1000.0);
-                    }
-                }
-                if let Some((left, first, right)) = base.indent_pt {
-                    const PT_MM: f64 = 25.4 / 72.0;
-                    para_fmt.left_indent = left * PT_MM;
-                    para_fmt.first_line_indent = first * PT_MM;
-                    para_fmt.right_indent = right * PT_MM;
-                }
+                // The first paragraph sets the object's formatting.
+                para_fmt = fmt.clone();
             }
+            own.push((chars, own_align, fmt));
             for (k, run) in para.runs.iter().enumerate() {
                 let style = run.style.over(&base);
                 let mut text = text::line_breaks(&self.run_text(run, &style));
                 if i + 1 < n && k + 1 == para.runs.len() {
                     text.push('\n');
                 }
+                chars += text.chars().count();
                 let span = self.make_span(text, &style, object_fill);
                 match spans.last_mut() {
                     Some(last)
@@ -1807,21 +1802,42 @@ impl<'a> Ctx<'a> {
         }
         // 0 none, 1 left, 2 centre, 3 right, 4 full and 5 forced justify
         // (a centred version 12 paragraph stores 2).
-        let align = match align.unwrap_or(0) {
+        let code = |a: u32| match a {
             2 => TextAlign::Center,
             3 => TextAlign::Right,
             4 => TextAlign::Justify,
             5 => TextAlign::ForceJustify,
             _ => TextAlign::Left,
         };
-        Some(ShapeKind::Text {
+        let align = code(align.unwrap_or(0));
+        let mut kind = ShapeKind::Text {
             spans,
             origin,
             frame,
             align,
-            para: para_fmt,
+            para: para_fmt.clone(),
             on_path: None,
-        })
+        };
+        // Paragraphs formatted apart from one another keep their own
+        // alignment and spacing; text whose paragraphs all agree keeps the
+        // object's, as before.
+        let aligns_differ = own.windows(2).any(|w| w[0].1 != w[1].1);
+        let spacing_differs = own.iter().any(|(_, _, f)| *f != para_fmt);
+        if aligns_differ || spacing_differs {
+            for (start, own_align, fmt) in &own {
+                let a = match own_align {
+                    Some(a) if aligns_differ => code(*a),
+                    _ => align,
+                };
+                let target = tracedraw_core::ParagraphFormat::of(a, fmt);
+                tracedraw_core::paragraphs::edit_paragraph_formats(
+                    &mut kind,
+                    Some((*start, *start)),
+                    |f| *f = target.clone(),
+                );
+            }
+        }
+        Some(kind)
     }
 
     /// `outl`: outline definition, see `docs/cdr-format.md` for the layout.
@@ -4409,9 +4425,73 @@ fn shift_onto_page(layers: &mut [Layer], width: f64) {
     }
 }
 
+/// A paragraph's line spacing, space before and after and indents from
+/// its resolved style, the values of `base` where it says nothing.
+fn paragraph_spacing(style: &text::RunStyle, base: &ParagraphStyle) -> ParagraphStyle {
+    let mut p = base.clone();
+    if let Some(ls) = style.line_spacing {
+        p.leading_pct = (ls * 100.0).clamp(10.0, 1000.0);
+    } else if let Some(mm) = style.line_spacing_mm {
+        // A distance between baselines, as a share of the font's line
+        // height, which our leading counts in (taken as 1.15 times the
+        // size, as common text faces have it).
+        let line_mm = style.size_pt.unwrap_or(12.0) * 25.4 / 72.0 * 1.15;
+        if line_mm > 0.0 {
+            p.leading_pct = (mm / line_mm * 100.0).clamp(10.0, 1000.0);
+        }
+    }
+    // Space before and after (version 16+ style strings), in character
+    // heights when the spacing unit is the character height: 1 before is
+    // the usual line spacing, so only what goes past it is extra room.
+    if matches!(style.spacing_method, None | Some(0)) {
+        let line_mm = style.size_pt.unwrap_or(12.0) * 25.4 / 72.0 * 1.15;
+        if let Some(b) = style.para_before {
+            p.space_before = ((b - 1.0).max(0.0) * line_mm).min(1000.0);
+        }
+        if let Some(a) = style.para_after {
+            p.space_after = (a.max(0.0) * line_mm).min(1000.0);
+        }
+    }
+    if let Some((left, first, right)) = style.indent_pt {
+        const PT_MM: f64 = 25.4 / 72.0;
+        p.left_indent = left * PT_MM;
+        p.first_line_indent = first * PT_MM;
+        p.right_indent = right * PT_MM;
+    }
+    p
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paragraph_spacing_before_and_after_come_from_the_style_string() {
+        let st = text::parse_style_string(
+            r#"{"character":{"latin":{"size":"304800"}},"paragraph":{"beforeParaSpacing":"2000000","afterParaSpacing":"500000","spacingMethod":"0","interLineSpacing":"1200000"}}"#,
+        );
+        assert_eq!(st.para_before, Some(2.0));
+        assert_eq!(st.para_after, Some(0.5));
+        let p = paragraph_spacing(&st, &ParagraphStyle::default());
+        let line_mm = st.size_pt.unwrap_or(12.0) * 25.4 / 72.0 * 1.15;
+        assert!((p.space_before - line_mm).abs() < 1e-9, "{p:?}");
+        assert!((p.space_after - line_mm / 2.0).abs() < 1e-9, "{p:?}");
+        assert!((p.leading_pct - 120.0).abs() < 1e-9);
+        // The defaults files hold: no extra room.
+        let d = text::parse_style_string(
+            r#"{"paragraph":{"beforeParaSpacing":"1000000","afterParaSpacing":"0"}}"#,
+        );
+        let p = paragraph_spacing(&d, &ParagraphStyle::default());
+        assert_eq!((p.space_before, p.space_after), (0.0, 0.0));
+        // Another unit is not read.
+        let other = text::parse_style_string(
+            r#"{"paragraph":{"beforeParaSpacing":"2000000","spacingMethod":"1"}}"#,
+        );
+        assert_eq!(
+            paragraph_spacing(&other, &ParagraphStyle::default()).space_before,
+            0.0
+        );
+    }
     use tracedraw_core::geometry::Shape as _;
 
     #[test]

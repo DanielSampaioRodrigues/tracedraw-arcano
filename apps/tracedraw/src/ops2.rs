@@ -827,15 +827,10 @@ impl App {
     pub fn toggle_baseline_grid(&mut self) {
         let g = self.doc().metadata.grid.baseline_spacing.max(0.1);
         for s in self.text_shapes() {
-            if let ShapeKind::Text {
-                frame: Some(_),
-                para,
-                ..
-            } = &s.kind
-            {
-                let mut p = para.clone();
-                p.baseline_grid_mm = if p.baseline_grid_mm > 0.0 { 0.0 } else { g };
-                self.set_paragraph_style(s.id, p);
+            if let ShapeKind::Text { frame: Some(_), .. } = &s.kind {
+                self.edit_paragraph_style(s.id, |p| {
+                    p.baseline_grid_mm = if p.baseline_grid_mm > 0.0 { 0.0 } else { g };
+                });
             }
         }
     }
@@ -1520,43 +1515,159 @@ impl App {
 
     pub fn fit_text_to_frame(&mut self) {
         for s in self.text_shapes() {
-            if let ShapeKind::Text {
-                frame: Some(_),
-                para,
-                ..
-            } = &s.kind
-            {
-                let mut p = para.clone();
-                p.fit_to_frame = !p.fit_to_frame;
-                self.set_paragraph_style(s.id, p);
+            if let ShapeKind::Text { frame: Some(_), .. } = &s.kind {
+                self.edit_paragraph_style(s.id, |p| p.fit_to_frame = !p.fit_to_frame);
             }
         }
     }
 
+    /// The characters the paragraph settings act on in text `id`: the
+    /// selection (or the caret) while it is being edited; `None`, every
+    /// paragraph, when the whole object is selected.
+    pub fn paragraph_range(&self, id: ShapeId) -> Option<(usize, usize)> {
+        self.text_edit
+            .as_ref()
+            .filter(|te| te.shape == id)
+            .map(|te| te.selection())
+    }
+
+    /// The alignment and paragraph style the paragraph controls show for a
+    /// text: the paragraph at the caret (the first selected one) while it
+    /// is being edited, else its first paragraph. `None` for other shapes.
+    pub fn paragraph_style_of(
+        &self,
+        s: &Shape,
+    ) -> Option<(tracedraw_core::TextAlign, tracedraw_core::ParagraphStyle)> {
+        let ShapeKind::Text {
+            spans, align, para, ..
+        } = &s.kind
+        else {
+            return None;
+        };
+        let index = self.paragraph_range(s.id).map_or(0, |(a, _)| {
+            tracedraw_core::paragraphs::paragraph_of(spans, a)
+        });
+        let f = tracedraw_core::paragraphs::paragraph_format(spans, *align, para, index);
+        let mut p = para.clone();
+        let a = f.apply_to(&mut p);
+        Some((a, p))
+    }
+
+    /// Give text `id` the paragraph style `para`, as edited from what
+    /// [`App::paragraph_style_of`] showed: the frame settings (columns,
+    /// fitting, baseline grid, vertical alignment, background) go to the
+    /// object, the paragraph settings that changed to the paragraphs of
+    /// [`App::paragraph_range`] (each keeps the others). One undo step.
     pub fn set_paragraph_style(&mut self, id: ShapeId, para: tracedraw_core::ParagraphStyle) {
         let Some(s) = self.doc().find_shape(id).cloned() else {
             return;
         };
-        if let ShapeKind::Text {
-            spans,
-            origin,
-            frame,
-            align,
-            on_path,
-            ..
-        } = s.kind
-        {
-            self.run(Command::SetShapeKind {
-                shape: id,
-                kind: ShapeKind::Text {
-                    spans,
-                    origin,
-                    frame,
-                    align,
-                    para,
-                    on_path,
-                },
-            });
+        let Some((align, old)) = self.paragraph_style_of(&s) else {
+            return;
+        };
+        let mut kind = s.kind.clone();
+        if let ShapeKind::Text { para: own, .. } = &mut kind {
+            own.columns = para.columns;
+            own.gutter = para.gutter;
+            own.fit_to_frame = para.fit_to_frame;
+            own.baseline_grid_mm = para.baseline_grid_mm;
+            own.vertical_align = para.vertical_align;
+            own.frame_fill = para.frame_fill.clone();
+        }
+        let before = tracedraw_core::ParagraphFormat::of(align, &old);
+        let after = tracedraw_core::ParagraphFormat::of(align, &para);
+        if before != after {
+            tracedraw_core::paragraphs::edit_paragraph_formats(
+                &mut kind,
+                self.paragraph_range(id),
+                |f| f.take_changes(&before, &after),
+            );
+        }
+        if kind != s.kind {
+            self.run(Command::SetShapeKind { shape: id, kind });
+        }
+    }
+
+    /// Change the paragraph style of text `id` with `f`, starting from
+    /// what [`App::paragraph_style_of`] shows (see
+    /// [`App::set_paragraph_style`]).
+    pub fn edit_paragraph_style(
+        &mut self,
+        id: ShapeId,
+        f: impl FnOnce(&mut tracedraw_core::ParagraphStyle),
+    ) {
+        let Some(s) = self.doc().find_shape(id).cloned() else {
+            return;
+        };
+        let Some((_, mut p)) = self.paragraph_style_of(&s) else {
+            return;
+        };
+        f(&mut p);
+        self.set_paragraph_style(id, p);
+    }
+
+    /// Whether any selected object wraps paragraph text, and the wrap
+    /// style of the first one.
+    pub fn wrap_state(&self) -> (bool, tracedraw_core::TextWrap) {
+        let shapes = self.selected_shapes();
+        (
+            shapes.iter().any(|s| s.wrap_text),
+            shapes.first().map(|s| s.wrap_style).unwrap_or_default(),
+        )
+    }
+
+    /// Wrap paragraph text around the selected objects with this style,
+    /// keeping the offset of the first one.
+    pub fn set_wrap_style(
+        &mut self,
+        mode: tracedraw_core::WrapMode,
+        side: tracedraw_core::WrapSide,
+    ) {
+        let (_, current) = self.wrap_state();
+        let style = tracedraw_core::TextWrap {
+            mode,
+            side,
+            ..current
+        };
+        let shapes = self.selection.clone();
+        self.run(Command::SetWrapStyle { shapes, style });
+    }
+
+    /// Wrap paragraph text around the selected objects this far from them
+    /// (mm), keeping the style of the first one.
+    pub fn set_wrap_offset(&mut self, offset: f64) {
+        let (_, current) = self.wrap_state();
+        let style = tracedraw_core::TextWrap {
+            offset: offset.max(0.0),
+            ..current
+        };
+        let shapes = self.selection.clone();
+        self.run(Command::SetWrapStyle { shapes, style });
+    }
+
+    /// Align the paragraphs of the selected text: those of the selection
+    /// while a text is edited, else every paragraph of every selected
+    /// text object. One undo step.
+    pub fn apply_text_align(&mut self, a: tracedraw_core::TextAlign) {
+        self.text_align = a;
+        let cmds: Vec<Command> = self
+            .selected_shapes()
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
+            .filter_map(|s| {
+                let mut kind = s.kind.clone();
+                tracedraw_core::paragraphs::edit_paragraph_formats(
+                    &mut kind,
+                    self.paragraph_range(s.id),
+                    |f| f.align = a,
+                );
+                (kind != s.kind).then_some(Command::SetShapeKind { shape: s.id, kind })
+            })
+            .collect();
+        if !cmds.is_empty() {
+            if let Err(e) = self.engine.run_batch("Text Alignment", &cmds) {
+                self.status = e.to_string();
+            }
         }
     }
 
@@ -1779,8 +1890,9 @@ impl App {
         }
     }
 
-    /// Apply the property bar text style (font, size, bold, italic, align)
-    /// to every selected text object.
+    /// Apply the property bar text style (font, size, bold, italic) to
+    /// every selected text object (the alignment goes through
+    /// [`App::apply_text_align`]).
     pub fn apply_text_style(&mut self) {
         // While editing with a selection, only the selected characters change.
         if self.text_edit.as_ref().is_some_and(|te| te.has_selection()) {
@@ -1808,9 +1920,9 @@ impl App {
                     spans,
                     origin,
                     frame,
+                    align,
                     para,
                     on_path,
-                    ..
                 } => {
                     let mut spans = spans.clone();
                     for sp in spans.iter_mut() {
@@ -1826,7 +1938,7 @@ impl App {
                             spans,
                             origin: *origin,
                             frame: *frame,
-                            align: self.text_align,
+                            align: *align,
                             para: para.clone(),
                             on_path: on_path.clone(),
                         },

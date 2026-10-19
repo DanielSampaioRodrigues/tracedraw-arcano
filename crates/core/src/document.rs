@@ -176,6 +176,8 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
         let (mut piece, _) = split_spans_at(&tail, line.end_char.saturating_sub(line.start_char));
         for sp in piece.iter_mut() {
             sp.text = sp.text.replace('\n', "");
+            // Each line is placed already: one artistic line of its own.
+            sp.paragraph = None;
         }
         piece.retain(|sp| !sp.text.is_empty());
         if piece.iter().all(|sp| sp.text.trim().is_empty()) {
@@ -686,6 +688,11 @@ pub struct TextSpan {
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
+    /// The formatting of the paragraph these characters are in, when it
+    /// has its own (see [`crate::paragraphs`]); `None` = the text
+    /// object's alignment and paragraph style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph: Option<Box<crate::paragraphs::ParagraphFormat>>,
 }
 
 /// Serde: leave a zero out of the file.
@@ -710,6 +717,7 @@ impl TextSpan {
             fill: None,
             background: None,
             features: Vec::new(),
+            paragraph: None,
         }
     }
 
@@ -795,13 +803,37 @@ pub fn spans_insert(spans: &mut [TextSpan], at: usize, text: &str) {
         }
         seen += n;
     }
-    let (i, cut) = match target {
+    let (mut i, mut cut) = match target {
         Some(t) => t,
         None => match spans.len() {
             0 => return,
             n => (n - 1, spans[n - 1].char_count()),
         },
     };
+    // At the start of a paragraph with formatting other than the one
+    // before it, the text joins the paragraph's first character, so the
+    // paragraph keeps its format.
+    if at > 0 && at < total {
+        let before_nl = spans
+            .get(i)
+            .zip(cut.checked_sub(1))
+            .and_then(|(s, c)| s.text.chars().nth(c))
+            == Some('\n');
+        if before_nl {
+            let mut seen = 0usize;
+            for (k, span) in spans.iter().enumerate() {
+                let n = span.char_count();
+                if at < seen + n {
+                    if spans.get(i).map(|s| &s.paragraph) != Some(&span.paragraph) {
+                        i = k;
+                        cut = at - seen;
+                    }
+                    break;
+                }
+                seen += n;
+            }
+        }
+    }
     if let Some(span) = spans.get_mut(i) {
         let byte = span
             .text
@@ -907,15 +939,21 @@ pub struct ParagraphStyle {
     pub hyphenate: bool,
     /// Fit text to frame: scale the font so the text fills the frame height.
     pub fit_to_frame: bool,
-    /// Align baselines to a grid of this pitch in mm, measured down from the
-    /// top of the frame (Text > Align to Baseline Grid); 0 = off. Only
-    /// paragraph text snaps.
+    /// Align baselines to a grid of this pitch in mm (Text > Align to
+    /// Baseline Grid); 0 = off. Only paragraph text snaps. The grid is the
+    /// page's (from its top and the grid's start offset) for a frame that
+    /// is not turned, else it is measured down from the frame top.
     pub baseline_grid_mm: f64,
     /// Where paragraph text sits in its frame from top to bottom.
     pub vertical_align: VerticalAlign,
     /// The paragraph frame's background; `None` = transparent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_fill: Option<Fill>,
+    /// What the frame's text wraps around and where the page's baseline
+    /// grid falls, worked out from the drawing (see
+    /// [`crate::text_flow`]); not saved.
+    #[serde(skip)]
+    pub flow: crate::text_flow::FrameFlow,
 }
 
 /// The unit of a paragraph's line spacing (the Text docker's list next to
@@ -989,6 +1027,7 @@ impl Default for ParagraphStyle {
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,
             frame_fill: None,
+            flow: crate::text_flow::FrameFlow::default(),
         }
     }
 }
@@ -1444,9 +1483,16 @@ pub struct Shape {
     /// Live effects, evaluated at render time (see `live.rs`).
     #[serde(default)]
     pub effects: Vec<crate::live::Effect>,
-    /// Paragraph text flows around this object.
+    /// Paragraph text flows around this object (see
+    /// [`crate::text_flow`]).
     #[serde(default)]
     pub wrap_text: bool,
+    /// How paragraph text flows around it when `wrap_text` is on.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::text_flow::TextWrap::is_default"
+    )]
+    pub wrap_style: crate::text_flow::TextWrap,
     /// The object style it is linked to ([`ObjectStyle::id`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<u32>,
@@ -1743,6 +1789,7 @@ impl Shape {
             data: Vec::new(),
             effects: Vec::new(),
             wrap_text: false,
+            wrap_style: crate::text_flow::TextWrap::default(),
             style: None,
             node_types: std::collections::BTreeMap::new(),
             uid: None,
@@ -3578,7 +3625,10 @@ impl Document {
         if let serde_json::Value::Object(m) = &mut v {
             m.remove(FORMAT_VERSION_KEY);
         }
-        Ok(serde_json::from_value(v)?)
+        let mut doc: Document = serde_json::from_value(v)?;
+        // What text wraps around is not saved: work it out again.
+        doc.refresh_text_flow();
+        Ok(doc)
     }
 }
 

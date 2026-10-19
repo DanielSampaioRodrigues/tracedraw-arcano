@@ -92,7 +92,10 @@ Open it with `Ctrl+T`, **Text Properties** on the property bar, or
   capitals, old-style numerals, fractions, swashes).
 - **Paragraph**: alignment; line spacing; character and word spacing;
   space before and after paragraphs; first-line, left and right
-  indents.
+  indents. While you type in a text, these settings (and Bullets, Drop
+  Cap, Tabs and Hyphenate) change only the paragraphs you have selected,
+  or the one with the cursor; with the whole text object selected they
+  change every paragraph.
 - **Frame** (paragraph text): 1 to 8 columns and the gutter between
   them; vertical alignment (top, middle, bottom); Bullets; Drop Cap;
   Hyphenate; and Fit Text to Frame.
@@ -106,7 +109,15 @@ Open it with `Ctrl+T`, **Text Properties** on the property bar, or
 - Resizing a frame with the Pick tool's handles reflows the text; the
   letters keep their size.
 - **Fit Text to Frame** scales the text so it fills the frame.
-- Paragraph text can wrap round other objects.
+- Paragraph text flows round objects placed over it: select the object
+  and click **Wrap Paragraph Text** on the property bar (or in its
+  context menu). The arrow beside the button picks how: along the
+  object's outline or its bounding box, with the text on its left, on
+  its right, on both sides or (bounding box) only above and below, and
+  the room kept free around it. Objects below the frame do not push
+  its text.
+- With **Text > Align to Baseline Grid**, the lines of every frame sit
+  on the page's baseline grid, so text in frames side by side lines up.
 - **Text > Insert Placeholder Text** fills the selected frames with
   filler text, as much as each one holds.
 

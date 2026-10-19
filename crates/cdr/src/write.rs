@@ -2523,7 +2523,29 @@ fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
 /// later write it: the first run's font, size, weight and colour, the
 /// alignment, and every other member with the values files hold when it
 /// is not set.
-fn full_text_style(sp: Option<&TextSpan>, fill: Option<&Fill>, align: TextAlign) -> String {
+/// A paragraph's line spacing as a factor of the character height (the
+/// unit of a style string's `interLineSpacing`), the character height of
+/// `size_pt` text taken as 1.15 times the size as the reader takes it.
+fn line_spacing_factor(f: &tracedraw_core::ParagraphFormat, size_pt: f64) -> f64 {
+    let size = if size_pt > 0.0 { size_pt } else { 12.0 };
+    let v = match f.leading_unit {
+        tracedraw_core::LeadingUnit::PercentCharHeight => f.leading_pct / 100.0,
+        tracedraw_core::LeadingUnit::Points => f.leading_pct / (size * 1.15),
+        tracedraw_core::LeadingUnit::PercentPointSize => f.leading_pct / 100.0 / 1.15,
+    };
+    if v.is_finite() {
+        v.clamp(0.1, 10.0)
+    } else {
+        1.0
+    }
+}
+
+fn full_text_style(
+    sp: Option<&TextSpan>,
+    fill: Option<&Fill>,
+    align: TextAlign,
+    leading: f64,
+) -> String {
     let black = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
     let colour = fill
         .and_then(fill_colour)
@@ -2551,7 +2573,7 @@ fn full_text_style(sp: Option<&TextSpan>, fill: Option<&Fill>, align: TextAlign)
             r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"{screen}"}},"#,
             r#""angle":"0","outline":{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{black}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}},"#,
             r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
-            r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"1000000","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
+            r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
         ),
         colour = colour,
         screen = screen,
@@ -2560,7 +2582,20 @@ fn full_text_style(sp: Option<&TextSpan>, fill: Option<&Fill>, align: TextAlign)
         latin = font(0),
         far = font(128),
         justify = justify_code(align),
+        leading = (leading * 1_000_000.0).round() as i64,
     )
+}
+
+/// The alignment of each paragraph of a text (its own, or `align`).
+fn paragraph_aligns(spans: &[TextSpan], align: TextAlign) -> Vec<TextAlign> {
+    tracedraw_core::paragraphs::paragraph_formats_of(
+        spans,
+        align,
+        &tracedraw_core::ParagraphStyle::default(),
+    )
+    .into_iter()
+    .map(|f| f.align)
+    .collect()
 }
 
 /// The `justify` value of a style string: 1 left, 2 centre, 3 right, 4
@@ -3403,20 +3438,31 @@ impl<'a> Writer<'a> {
                 spans,
                 origin,
                 align,
+                para,
                 on_path: None,
                 ..
             } => {
+                // Each paragraph goes out with its own alignment (and line
+                // spacing from version 16); the object takes the first
+                // paragraph's.
+                let own_align = *align;
+                let first_align = paragraph_aligns(spans, own_align)
+                    .first()
+                    .copied()
+                    .unwrap_or(own_align);
+                let align = &first_align;
                 let t = s.transform * Affine::translate(origin.to_vec2());
                 self.has_text = true;
                 let record = if v.0 >= 16 {
                     self.txsm16(
                         spans,
-                        *align,
+                        own_align,
+                        para,
                         &s.fill,
                         Affine::translate(-centre.to_vec2()) * t,
                     )
                 } else {
-                    self.txsm7(spans, *align, &s.fill)
+                    self.txsm7(spans, own_align, &s.fill)
                 };
                 // The character settings of the first run, the width of
                 // the lines as the frame's one column (files give artistic
@@ -3568,11 +3614,10 @@ impl<'a> Writer<'a> {
         }
         let paragraphs = Self::paragraphs(spans);
         t.u32(paragraphs.len() as u32);
-        let align_index = STYLE_ALIGNS
-            .iter()
-            .position(|(a, _)| *a == align)
-            .unwrap_or(0);
-        for runs in &paragraphs {
+        let aligns = paragraph_aligns(spans, align);
+        for (pi, runs) in paragraphs.iter().enumerate() {
+            let a = aligns.get(pi).copied().unwrap_or(align);
+            let align_index = STYLE_ALIGNS.iter().position(|(x, _)| *x == a).unwrap_or(0);
             // The paragraph's look lives in a style of its own (font, size,
             // weight, colour, alignment), as files of versions 13 to 15
             // keep it; the run records then only override what differs.
@@ -3691,7 +3736,14 @@ impl<'a> Writer<'a> {
     /// alignment) and one record per run whose style string the letters
     /// select; text in UTF-16 (16) or one byte per letter (17 on:
     /// Windows-1252, or UTF-8 for letters it lacks).
-    fn txsm16(&mut self, spans: &[TextSpan], align: TextAlign, fill: &Fill, m: Affine) -> Vec<u8> {
+    fn txsm16(
+        &mut self,
+        spans: &[TextSpan],
+        align: TextAlign,
+        para: &tracedraw_core::ParagraphStyle,
+        fill: &Fill,
+        m: Affine,
+    ) -> Vec<u8> {
         let v = self.v;
         let mut t = Buf::default();
         t.u32(u32::MAX)
@@ -3727,15 +3779,21 @@ impl<'a> Writer<'a> {
         t.u32(0).zeros(8);
         let paragraphs = Self::paragraphs(spans);
         t.u32(paragraphs.len() as u32);
-        for runs in &paragraphs {
+        let formats = tracedraw_core::paragraphs::paragraph_formats_of(spans, align, para);
+        for (pi, runs) in paragraphs.iter().enumerate() {
+            let format = formats.get(pi);
+            let align = format.map_or(align, |f| f.align);
             for sp in runs {
                 self.font_id(&sp.font_family);
             }
             let first = runs.first().or(spans.first());
+            let leading = format.map_or(1.0, |f| {
+                line_spacing_factor(f, first.map_or(12.0, |sp| sp.size_pt))
+            });
             // The paragraph's default style is complete, as files hold it:
             // a style that leaves out the spacings makes the program that
             // opens the file hang.
-            let default = full_text_style(first, Some(fill), align);
+            let default = full_text_style(first, Some(fill), align, leading);
             t.u32(style_for(align))
                 .zeros(1)
                 .u8(0)

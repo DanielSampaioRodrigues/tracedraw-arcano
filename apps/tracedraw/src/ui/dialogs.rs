@@ -3544,10 +3544,7 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
     let target = app
         .selected_shapes()
         .into_iter()
-        .find_map(|s| match &s.kind {
-            ShapeKind::Text { para, .. } => Some((Some(s.id), para.clone())),
-            _ => None,
-        });
+        .find_map(|s| app.paragraph_style_of(&s).map(|(_, p)| (Some(s.id), p)));
     let (target, mut p) = target.unwrap_or_else(|| (None, app.doc().defaults.paragraph.clone()));
     let mut changed = false;
     let u = app.units;

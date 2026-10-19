@@ -868,9 +868,7 @@ pub fn apply_custom_hyphens(app: &mut App, ids: &[ShapeId]) -> usize {
             .split(|c: char| !c.is_alphabetic())
             .any(|w| words.iter().any(|d| d == w));
         if has {
-            let mut p = para.clone();
-            p.hyphenate = true;
-            app.set_paragraph_style(*id, p);
+            app.edit_paragraph_style(*id, |p| p.hyphenate = true);
             n += 1;
         }
     }

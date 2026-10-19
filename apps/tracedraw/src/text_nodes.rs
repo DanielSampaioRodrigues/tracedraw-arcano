@@ -177,34 +177,33 @@ fn spacing_measures(s: &Shape) -> Option<(usize, usize, f64, f64)> {
 /// The paragraph of `s` after a spacing arrow moved by the layout-space
 /// drag `d`: horizontal moves the right end of the widest line by `d.x`
 /// (character spacing, or word spacing with `word`), vertical moves the
-/// last baseline by `d.y` (line spacing; down spreads the lines).
+/// last baseline by `d.y` (line spacing; down spreads the lines). Every
+/// paragraph changes, those with spacing of their own too: character and
+/// word spacing by the same amount, line spacing by the same factor, so
+/// they keep their differences.
 pub fn spacing_after_drag(s: &Shape, horizontal: bool, word: bool, d: Vec2) -> Option<ShapeKind> {
-    let ShapeKind::Text {
-        spans,
-        origin,
-        frame,
-        align,
-        para,
-        on_path,
-    } = &s.kind
-    else {
+    if !matches!(s.kind, ShapeKind::Text { .. }) {
         return None;
-    };
+    }
     let (n, spaces, pitch, space) = spacing_measures(s)?;
-    let mut p = para.clone();
+    let mut kind = s.kind.clone();
     if horizontal {
         if word {
             if spaces == 0 || space <= 0.0 {
                 return None;
             }
-            let per = d.x / spaces as f64;
-            p.word_spacing_pct = (p.word_spacing_pct + per / space * 100.0).clamp(0.0, 2000.0);
+            let delta = d.x / spaces as f64 / space * 100.0;
+            tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, None, |f| {
+                f.word_spacing_pct = (f.word_spacing_pct + delta).clamp(0.0, 2000.0)
+            });
         } else {
             if n == 0 || space <= 0.0 {
                 return None;
             }
-            let per = d.x / n as f64;
-            p.char_spacing_pct = (p.char_spacing_pct + per / space * 100.0).clamp(-100.0, 2000.0);
+            let delta = d.x / n as f64 / space * 100.0;
+            tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, None, |f| {
+                f.char_spacing_pct = (f.char_spacing_pct + delta).clamp(-100.0, 2000.0)
+            });
         }
     } else {
         let lines = crate::text_editing::layout_of_text_shape(s, Affine::IDENTITY)?
@@ -215,16 +214,12 @@ pub fn spacing_after_drag(s: &Shape, horizontal: bool, word: bool, d: Vec2) -> O
             return None;
         }
         let new_pitch = (pitch - d.y / (lines - 1) as f64).max(0.0);
-        p.leading_pct = (p.leading_pct * new_pitch / pitch).clamp(0.0, 2000.0);
+        let factor = new_pitch / pitch;
+        tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, None, |f| {
+            f.leading_pct = (f.leading_pct * factor).clamp(0.0, 2000.0)
+        });
     }
-    Some(ShapeKind::Text {
-        spans: spans.clone(),
-        origin: *origin,
-        frame: *frame,
-        align: *align,
-        para: p,
-        on_path: on_path.clone(),
-    })
+    Some(kind)
 }
 
 impl App {
@@ -604,5 +599,49 @@ mod tests {
             para.leading_pct
         );
         assert_eq!(app.text_arrow_at(Point::new(-1000.0, -1000.0)), None);
+    }
+
+    #[test]
+    fn spacing_arrows_reach_paragraphs_with_spacing_of_their_own() {
+        let mut s = tracedraw_core::Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![TextSpan::new("ab cd\nef gh\nij kl", "DejaVu Sans", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        // The second paragraph: 150 % line spacing, 10 % character spacing.
+        tracedraw_core::paragraphs::edit_paragraph_formats(&mut s.kind, Some((7, 7)), |f| {
+            f.leading_pct = 150.0;
+            f.char_spacing_pct = 10.0;
+        });
+        let styles = |k: &ShapeKind| match k {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => tracedraw_core::paragraphs::paragraph_styles(spans, *align, para),
+            _ => Vec::new(),
+        };
+        let Some(wider) = spacing_after_drag(&s, true, false, Vec2::new(10.0, 0.0)) else {
+            // No fonts: nothing to measure.
+            return;
+        };
+        let st = styles(&wider);
+        let d = st[0].1.char_spacing_pct;
+        assert!(d > 0.0);
+        // The same amount added everywhere: the difference stays.
+        assert!((st[1].1.char_spacing_pct - (10.0 + d)).abs() < 1e-9);
+        assert!((st[2].1.char_spacing_pct - d).abs() < 1e-9);
+        let (_, _, pitch, _) = spacing_measures(&s).expect("measures");
+        let taller = spacing_after_drag(&s, false, false, Vec2::new(0.0, -pitch)).expect("drag");
+        let st = styles(&taller);
+        // The same factor everywhere.
+        let f = st[0].1.leading_pct / 100.0;
+        assert!(f > 1.0);
+        assert!((st[1].1.leading_pct - 150.0 * f).abs() < 1e-9);
+        assert!((st[2].1.leading_pct - 100.0 * f).abs() < 1e-9);
     }
 }

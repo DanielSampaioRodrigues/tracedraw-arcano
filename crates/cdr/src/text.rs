@@ -209,6 +209,14 @@ pub(crate) struct RunStyle {
     pub char_spacing: Option<f64>,
     /// Paragraph indents in points: (left, first line, right).
     pub indent_pt: Option<(f64, f64, f64)>,
+    /// Version 16+ style strings: the space before and after a paragraph
+    /// as factors of the character height (`beforeParaSpacing` 1.0 is no
+    /// extra space, `afterParaSpacing` 0.0 none), and the unit they and
+    /// the line spacing are given in (`spacingMethod`; only 0, the
+    /// character height, is read).
+    pub para_before: Option<f64>,
+    pub para_after: Option<f64>,
+    pub spacing_method: Option<u32>,
     /// An inline uniform fill colour (version 16 and later style strings
     /// describe the run's fill as an object with its colour);
     /// `Some(None)` is no fill.
@@ -245,6 +253,9 @@ impl RunStyle {
             },
             char_spacing: self.char_spacing.or(base.char_spacing),
             indent_pt: self.indent_pt.or(base.indent_pt),
+            para_before: self.para_before.or(base.para_before),
+            para_after: self.para_after.or(base.para_after),
+            spacing_method: self.spacing_method.or(base.spacing_method),
             fill_color: self.fill_color.or(base.fill_color),
             underline: self.underline.or(base.underline),
             strikethrough: self.strikethrough.or(base.strikethrough),
@@ -1473,13 +1484,36 @@ fn apply_style_object(s: &mut RunStyle, obj: &Json, depth: usize) {
 
 /// The `paragraph` section of a version 16+ style string: line spacing as
 /// a millionth of the line height (1000000 = 100 %, assumed from a version
-/// 21 file holding the default), alignment; the underline, overline and
+/// 21 file holding the default), the space before and after the paragraph
+/// in the same unit and the unit itself (`spacingMethod`), alignment; the
+/// underline, overline and
 /// strikeout geometry keys are left out (their names would read as
 /// outline references).
 fn apply_paragraph_object(s: &mut RunStyle, items: &[(String, Json)]) {
     for (k, v) in items {
         let lk = k.to_ascii_lowercase();
         if matches!(v, Json::Obj(_) | Json::Arr(_)) {
+            continue;
+        }
+        if lk == "beforeparaspacing" || lk == "afterparaspacing" {
+            if let Some(n) = v.num() {
+                let f = n / 1_000_000.0;
+                if f.is_finite() && (0.0..100.0).contains(&f) {
+                    if lk.starts_with("before") {
+                        s.para_before = Some(f);
+                    } else {
+                        s.para_after = Some(f);
+                    }
+                }
+            }
+            continue;
+        }
+        if lk == "spacingmethod" {
+            if let Some(n) = v.num() {
+                if (0.0..=16.0).contains(&n) {
+                    s.spacing_method = Some(n as u32);
+                }
+            }
             continue;
         }
         if lk == "interlinespacing" {

@@ -237,6 +237,11 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         wrap: bool,
     },
+    /// Turn wrapping on for `shapes` with this wrap style and offset.
+    SetWrapStyle {
+        shapes: Vec<ShapeId>,
+        style: crate::text_flow::TextWrap,
+    },
     SetObjectData {
         shape: ShapeId,
         data: Vec<(String, String)>,
@@ -383,6 +388,7 @@ impl Command {
             Command::SetOverprint { .. } => "Overprint",
             Command::SetLink { .. } => "Hyperlink",
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
+            Command::SetWrapStyle { .. } => "Wrap Style",
             Command::SetObjectData { .. } => "Object Data",
             Command::OrderRelative { in_front: true, .. } => "In Front Of",
             Command::OrderRelative { .. } => "Behind",
@@ -767,6 +773,21 @@ impl Command {
                 }
                 for id in shapes {
                     any_mut(doc, *id)?.wrap_text = *wrap;
+                }
+            }
+            Command::SetWrapStyle { shapes, style } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                let mut style = *style;
+                if !style.offset.is_finite() {
+                    style.offset = 0.0;
+                }
+                style.offset = style.offset.clamp(0.0, 1000.0);
+                for id in shapes {
+                    let s = any_mut(doc, *id)?;
+                    s.wrap_text = true;
+                    s.wrap_style = style;
                 }
             }
             Command::SetLink { shapes, link } => {

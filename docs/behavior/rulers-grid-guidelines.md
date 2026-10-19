@@ -87,7 +87,9 @@ stand for a distance in the world (`drawing_scale.rs`):
   top" below the page top (12.7 mm), then every 14 pt down to the page
   bottom, in the line colour (light blue by default).
 - View > Snap To > Baseline Grid snaps to them; Text > Align to Baseline
-  Grid uses the spacing.
+  Grid uses the spacing, and the baselines of paragraph text then sit on
+  these very lines (measured from the page top and the start offset;
+  see `text-wrap.md`).
 
 ## Pixel grid
 

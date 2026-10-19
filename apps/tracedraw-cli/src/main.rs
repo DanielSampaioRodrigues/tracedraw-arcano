@@ -132,10 +132,12 @@ fn pdf_security(
 fn load(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
-    let loaded = read_document(path)?;
+    let mut loaded = read_document(path)?;
     if !loaded.0.fonts.is_empty() {
         tracedraw_text::fonts().add_document_fonts(&loaded.0.fonts);
     }
+    // Paragraph text flows around the objects marked to wrap it.
+    loaded.0.refresh_text_flow();
     // CMYK colours render through the profile the drawing carries.
     if let Some(p) = &loaded.0.cmyk_profile {
         match tracedraw_core::icc::Profile::parse(&p.data) {

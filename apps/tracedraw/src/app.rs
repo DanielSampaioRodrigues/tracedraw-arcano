@@ -3451,7 +3451,16 @@ impl App {
                 self.text_italic = sp.italic;
                 self.text_underline = sp.underline;
             }
-            self.text_align = *align;
+            // The alignment of the paragraph at the caret.
+            let index = self.paragraph_range(id).map_or(0, |(a, _)| {
+                tracedraw_core::paragraphs::paragraph_of(spans, a)
+            });
+            self.text_align = match &kind {
+                Ok(ShapeKind::Text { para, .. }) => {
+                    tracedraw_core::paragraphs::paragraph_format(spans, *align, para, index).align
+                }
+                _ => *align,
+            };
         }
     }
 

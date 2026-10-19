@@ -390,10 +390,25 @@ impl App {
                         .or_else(|| layout.caret(te.caret).map(|c| c.0))
                         .unwrap_or(0.0);
                     goal_x = Some(x);
+                    // The line above or below: parts of one line split
+                    // around a wrap object share a baseline and count as
+                    // one.
+                    let here = layout.lines.get(li).map_or(0.0, |l| l.baseline);
                     let target = if m == CaretMove::Up {
-                        li.checked_sub(1)
+                        layout
+                            .lines
+                            .get(..li)
+                            .unwrap_or(&[])
+                            .iter()
+                            .rposition(|l| l.baseline > here + 1e-6)
                     } else {
-                        Some(li + 1)
+                        layout
+                            .lines
+                            .iter()
+                            .enumerate()
+                            .skip(li + 1)
+                            .find(|(_, l)| l.baseline < here - 1e-6)
+                            .map(|(i, _)| i)
                     };
                     match target.and_then(|t| layout.lines.get(t)) {
                         Some(l) => layout

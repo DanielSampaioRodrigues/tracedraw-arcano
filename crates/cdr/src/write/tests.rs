@@ -571,6 +571,82 @@ fn runs_lines_and_alignment_round_trip() {
     }
 }
 
+/// Paragraphs of one text with alignments of their own keep them in
+/// every version.
+#[test]
+fn paragraph_alignments_round_trip() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("left\ncentre\nright", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    tracedraw_core::paragraphs::edit_paragraph_formats(&mut t.kind, Some((6, 6)), |f| {
+        f.align = TextAlign::Center
+    });
+    tracedraw_core::paragraphs::edit_paragraph_formats(&mut t.kind, Some((14, 14)), |f| {
+        f.align = TextAlign::Right
+    });
+    doc.pages[0].layers[0].shapes = vec![t];
+    doc.set_ids(ids);
+    for v in versions() {
+        let (back, rep) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{v}: {:?}", rep.warnings);
+        let ShapeKind::Text {
+            spans, align, para, ..
+        } = &read[0].kind
+        else {
+            panic!("{v}: {:?}", read[0].kind);
+        };
+        let aligns: Vec<TextAlign> =
+            tracedraw_core::paragraphs::paragraph_styles(spans, *align, para)
+                .into_iter()
+                .map(|(a, _)| a)
+                .collect();
+        assert_eq!(
+            aligns,
+            vec![TextAlign::Left, TextAlign::Center, TextAlign::Right],
+            "{v}: {spans:?}"
+        );
+    }
+}
+
+/// Each paragraph's own line spacing goes out in its style string from
+/// version 16 and reads back on that paragraph alone.
+#[test]
+fn paragraph_line_spacing_round_trips_from_version_16() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("one\ntwo\nthree", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    tracedraw_core::paragraphs::edit_paragraph_formats(&mut t.kind, Some((5, 5)), |f| {
+        f.leading_pct = 150.0
+    });
+    doc.pages[0].layers[0].shapes = vec![t];
+    doc.set_ids(ids);
+    for v in versions().filter(|v| *v >= 16) {
+        let (back, _) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        let ShapeKind::Text {
+            spans, align, para, ..
+        } = &back.pages[0].layers[0].shapes[0].kind
+        else {
+            panic!("{v}");
+        };
+        let leading: Vec<f64> = tracedraw_core::paragraphs::paragraph_styles(spans, *align, para)
+            .iter()
+            .map(|(_, p)| (p.leading_pct * 1000.0).round() / 1000.0)
+            .collect();
+        assert_eq!(leading, vec![100.0, 150.0, 100.0], "{v}");
+    }
+}
+
 /// Text fitted to a path goes out as the outline of its letters.
 #[test]
 fn text_on_a_path_is_written_as_its_outline() {
