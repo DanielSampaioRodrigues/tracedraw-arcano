@@ -763,7 +763,6 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn blend(
     start: &Shape,
     end: &Shape,
