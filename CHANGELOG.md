@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- CMX files: text exported in several colours is read with each part in its colour and place (the long instruction form, character styles and per character styles are read), and version 8 `.cdr` files from the bidirectional edition read their paragraph text (#187).
+
 - Tables: cells are selected by dragging across them, Ctrl+click,
   Shift+click, the row and column arrows at the left and top edges, the
   corner and Ctrl+A; selected whole rows or columns move by dragging;

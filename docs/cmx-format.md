@@ -50,15 +50,20 @@ header bytes, the data; 0xff after the last field). Confirmed.
 ## `page`: instructions
 
 Each page chunk is a stream of instructions: a u16 size (the whole
-instruction), an i16 code, then field lists. Confirmed.
+instruction), an i16 code, then field lists. Confirmed. A size of 0xFFFF
+marks the long form: a u32 size (the whole instruction, header of 8
+bytes included), then the code. Confirmed on a version 2 export whose text
+object styles (101) and characters (102) use it.
 
 | Code | Instruction |
 |---|---|
 | 9, 10 | begin and end a page; field 4 holds the page size (u32 width, height) |
 | 11, 12 | begin and end a layer; the name in field 4 (u32 count, UTF-16) or at the end of field 1 (8-bit) |
 | 13, 14 | begin and end a group |
-| 20, 21 | begin and end a text object (its text stream, instructions 98 to 102, is not read) |
-| 65 | glyph run: field 1 a u16 count, that many UTF-16 units, then each character's place from the baseline's start (i32 x, y); fields 2 and 3 the text again and the glyph numbers |
+| 20, 21 | begin and end a text object (its text stream is instructions 98 to 102) |
+| 101 | a character style of the text object (long form): field 1 a u16, then rendering attributes; the styles are numbered from 0 in order |
+| 102 | the text object's characters: field 1 a u32 count, that many UTF-16 units, then the style number of each character (u16; 0xFFFF for none, as on spaces) |
+| 65 | glyph run: field 1 a u16 count, that many UTF-16 units, then each character's place from the baseline's start (i32 x, y); fields 2 and 3 the text again and the glyph numbers. A text in several colours is drawn by one run per colour, each run leaving out the other runs' characters (the places jump over them); a run whose character style (85) names no fill takes the style (101) of its characters, found by where they sit in the text (102) |
 | 66 | ellipse |
 | 67 | curve or polygon: field 1 the rendering attributes, field 2 the points, a node byte each |
 | 68 | rectangle: field 1 the attributes, field 2 the geometry |
@@ -99,5 +104,5 @@ images; other depths are reported and left out.
 
 ## Not read yet
 
-The text stream (instructions 98 to 102), lenses, the fills named above,
+The rest of the text stream (instructions 98 to 100), lenses, the fills named above,
 16-bit coordinate files and big-endian files.

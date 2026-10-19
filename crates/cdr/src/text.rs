@@ -281,6 +281,37 @@ enum LineSpacing {
 /// intervals, set5, tabs, bullets, indents, hyphens, drop caps, set11),
 /// then the style records. Returns (style id, record).
 pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(u32, StyleRec)> {
+    if v != 8 {
+        return read_stlt_set11(d, v, v >= 9, warn);
+    }
+    // Version 8 has two layouts (800 and the bidirectional 801, which has
+    // the set11 table) that the major version cannot tell apart: without
+    // it first, and with it when that reads with complaints.
+    let mut notes = Vec::new();
+    let without = read_stlt_set11(d, v, false, &mut |m| notes.push(m));
+    if notes.is_empty() && !without.is_empty() {
+        return without;
+    }
+    let mut notes_with = Vec::new();
+    let with = read_stlt_set11(d, v, true, &mut |m| notes_with.push(m));
+    let use_with = notes_with.is_empty() && !with.is_empty();
+    for m in if use_with { notes_with } else { notes } {
+        warn(m);
+    }
+    if use_with {
+        with
+    } else {
+        without
+    }
+}
+
+/// [`read_stlt`] with the set11 table present or not.
+fn read_stlt_set11(
+    d: &[u8],
+    v: u16,
+    has_set11: bool,
+    warn: &mut dyn FnMut(String),
+) -> Vec<(u32, StyleRec)> {
     let v16 = v < 6;
     let coord_size = if v16 { 2 } else { 4 };
     let mut r = Reader::new(d, v16);
@@ -440,9 +471,8 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
     {
         return Vec::new();
     }
-    // The set11 table exists from the CDR 8 variant (801) on; our major
-    // version cannot tell 800 from 801, so version 8 reads it as absent.
-    let has_set11 = v >= 9;
+    // The set11 table exists from the CDR 8 variant (801) on (the caller
+    // says whether to read it).
     if has_set11 && skip_table(&mut r, 12).is_none() {
         return Vec::new();
     }
@@ -594,6 +624,27 @@ pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Optio
     }
     if v >= 16 {
         read_txsm_16(d, v, warn)
+    } else if v == 8 {
+        // Version 8 has two layouts (800 and the bidirectional 801) that
+        // the major version cannot tell apart: frames of 32 or 34 bytes.
+        // The shorter one first; when its counts are implausible, the
+        // longer one.
+        let mut notes = Vec::new();
+        let short = read_txsm_7_frames(d, v, 32, &mut |m| notes.push(m));
+        if short.is_some() && notes.is_empty() {
+            return short;
+        }
+        let mut notes_long = Vec::new();
+        let long = read_txsm_7_frames(d, v, 34, &mut |m| notes_long.push(m));
+        let use_long = long.is_some() && notes_long.is_empty();
+        for m in if use_long { notes_long } else { notes } {
+            warn(m);
+        }
+        if use_long {
+            long
+        } else {
+            short
+        }
     } else {
         read_txsm_7(d, v, warn)
     }
@@ -683,6 +734,16 @@ fn coord_pt(raw: i32) -> f64 {
 }
 
 fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
+    read_txsm_7_frames(d, v, 32, warn)
+}
+
+/// [`read_txsm_7`] with the size of a version 8 text frame given.
+fn read_txsm_7_frames(
+    d: &[u8],
+    v: u16,
+    frame_v8: usize,
+    warn: &mut dyn FnMut(String),
+) -> Option<Txsm> {
     let mut r = Reader::new(d, false);
     let frame = r.u32()? != 0;
     r.skip(32);
@@ -721,8 +782,8 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
             }
         }
         if !frame {
-            // The 34-byte size belongs to the CDR 8 variant (801), which our
-            // major version cannot tell from 800 (32 bytes).
+            // Version 8: 32 bytes (800) or 34 (the bidirectional 801),
+            // chosen by the caller.
             r.skip(if v >= 15 {
                 40
             } else if v >= 14 {
@@ -730,7 +791,7 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
             } else if v > 8 {
                 34
             } else if v == 8 {
-                32
+                frame_v8
             } else {
                 36
             });
@@ -2160,6 +2221,42 @@ mod tests {
         d.extend_from_slice(text);
         d.push(0); // no path
         d
+    }
+
+    /// A version 8 paragraph text whose frames take `frame_bytes`.
+    fn txsm8_frames(text: &[u8], frame_bytes: usize) -> Vec<u8> {
+        let mut d = vec![0; 4]; // not a frame
+        d.extend_from_slice(&[0; 32]);
+        d.extend_from_slice(&1u32.to_le_bytes()); // frames
+        d.extend_from_slice(&7u32.to_le_bytes()); // frame id
+        d.extend_from_slice(&[0; 48]); // matrix
+        d.extend_from_slice(&0u32.to_le_bytes()); // not on a path
+        d.extend_from_slice(&vec![0; frame_bytes]);
+        d.extend_from_slice(&1u32.to_le_bytes()); // paragraphs
+        d.extend_from_slice(&9u32.to_le_bytes()); // style id
+        d.push(0);
+        d.extend_from_slice(&1u32.to_le_bytes()); // styles
+        d.extend_from_slice(&[text.len() as u8, 0, 0, 0]);
+        d.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        for _ in text {
+            d.extend_from_slice(&[0, 0, 0, 0]);
+        }
+        d.extend_from_slice(text);
+        d.push(0); // no path
+        d
+    }
+
+    /// Version 8 text frames of 32 bytes (800) and of 34 (the
+    /// bidirectional 801) are both read.
+    #[test]
+    fn version_8_frames_of_either_layout() {
+        for bytes in [32, 34] {
+            let mut notes = Vec::new();
+            let t =
+                read_txsm(&txsm8_frames(b"Lorem", bytes), 8, &mut |w| notes.push(w)).expect("txsm");
+            assert!(notes.is_empty(), "{bytes}: {notes:?}");
+            assert_eq!(t.paragraphs[0].runs[0].text, "Lorem", "{bytes}");
+        }
     }
 
     #[test]

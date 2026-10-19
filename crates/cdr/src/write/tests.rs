@@ -2566,3 +2566,23 @@ fn the_package_lists_the_text_faces_and_embeds_those_allowed() {
         .file_names()
         .any(|n| n.starts_with("font/") || n.starts_with("embed/")));
 }
+
+/// The style table of the bidirectional version 8 layout (with the set11
+/// table, as later versions write it) reads as version 8 too.
+#[test]
+fn a_version_8_style_table_with_set11_is_read() {
+    let uses = StyleUses {
+        text_fill: 1,
+        graphic_fill: 2,
+        outline: 3,
+        font: 1,
+        formats: Vec::new(),
+    };
+    let d = stlt(Ver(9), uses);
+    let nine = crate::text::read_stlt(&d, 9, &mut |w| panic!("{w}"));
+    assert!(!nine.is_empty());
+    let mut notes = Vec::new();
+    let eight = crate::text::read_stlt(&d, 8, &mut |w| notes.push(w));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(eight.len(), nine.len());
+}

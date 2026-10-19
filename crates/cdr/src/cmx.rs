@@ -38,6 +38,10 @@ const BEGIN_TEXT: i32 = 20;
 const END_TEXT: i32 = 21;
 const GLYPH_RUN: i32 = 65;
 const TEXT_MATRIX: i32 = 72;
+/// A character style of a text object (long form).
+const TEXT_STYLE: i32 = 101;
+/// A text object's characters and their styles.
+const TEXT_CHARS: i32 = 102;
 const CHAR_STYLE: i32 = 85;
 const ELLIPSE: i32 = 66;
 const POLY_CURVE: i32 = 67;
@@ -579,6 +583,35 @@ struct TextState {
     size_mm: f64,
     fill: Option<Fill>,
     stroke: Option<Stroke>,
+    /// The text object's character styles (instruction 101): the fill and
+    /// outline of each, in order.
+    styles: Vec<(Fill, Option<Stroke>)>,
+    /// The text object's characters (instruction 102) and the style of
+    /// each (an index into `styles`, 0xFFFF for none).
+    chars: Vec<u16>,
+    char_styles: Vec<u16>,
+}
+
+impl TextState {
+    /// The style of the characters a glyph run draws, found by where its
+    /// characters sit in the object's text.
+    fn style_of(&self, run: &[u16]) -> Option<&(Fill, Option<Stroke>)> {
+        let key: Vec<u16> = run
+            .iter()
+            .copied()
+            .skip_while(|c| *c == u16::from(b' '))
+            .take(8)
+            .collect();
+        if key.is_empty() || self.styles.is_empty() {
+            return None;
+        }
+        let at = self
+            .chars
+            .windows(key.len())
+            .position(|w| w == key.as_slice())?;
+        let i = *self.char_styles.get(at)?;
+        self.styles.get(usize::from(i))
+    }
 }
 
 impl Ctx {
@@ -612,15 +645,18 @@ impl Ctx {
         while pos.saturating_add(4) <= d.len() && steps < 5_000_000 {
             steps += 1;
             let mut c = Cur::at(d, pos);
-            let (Some(size), Some(code)) = (c.u16(), c.i16()) else {
+            let Some(size) = c.u16() else {
                 break;
             };
-            // A negative code marks an instruction whose size is a u32
-            // after the code (assumed: no file seen has one).
-            let (code, size, head) = if code < 0 {
-                let Some(long) = c.u32() else { break };
-                (-i32::from(code), long as usize, 8)
+            // A size of 0xFFFF marks the long form: the size as a u32,
+            // then the code (text frame records, 101 and 102, use it).
+            let (code, size, head) = if size == 0xFFFF {
+                let (Some(long), Some(code)) = (c.u32(), c.i16()) else {
+                    break;
+                };
+                (i32::from(code), long as usize, 8)
             } else {
+                let Some(code) = c.i16() else { break };
                 (i32::from(code), usize::from(size), 4)
             };
             if size < head {
@@ -747,7 +783,37 @@ impl Ctx {
                 self.report.skipped_objects += 1;
                 self.note("ellipse instructions are not read yet".into());
             }
-            BEGIN_TEXT => page.text.undrawn += 1,
+            BEGIN_TEXT => {
+                page.text.undrawn += 1;
+                page.text.styles.clear();
+                page.text.chars.clear();
+                page.text.char_styles.clear();
+            }
+            TEXT_STYLE => {
+                // Field 1: a u16, then rendering attributes.
+                let f = fields(body, 0).0;
+                if let Some(a) = field(&f, 1).and_then(|v| v.get(2..)) {
+                    let style = self.attributes(a);
+                    page.text.styles.push(style);
+                }
+            }
+            TEXT_CHARS => {
+                // Field 1: a u32 count, the characters (UTF-16), then the
+                // style of each (u16).
+                let f = fields(body, 0).0;
+                if let Some(v) = field(&f, 1) {
+                    let mut c = Cur::at(v, 0);
+                    let n = c.u32().unwrap_or(0) as usize;
+                    if n.saturating_mul(4) <= v.len() {
+                        let chars: Vec<u16> = (0..n).map_while(|_| c.u16()).collect();
+                        let styles: Vec<u16> = (0..n).map_while(|_| c.u16()).collect();
+                        if chars.len() == n && styles.len() == n {
+                            page.text.chars.extend(chars);
+                            page.text.char_styles.extend(styles);
+                        }
+                    }
+                }
+            }
             TEXT_MATRIX => {
                 // Field 2: a matrix (u16 type; 2 is six doubles) placing the
                 // baseline's start.
@@ -772,7 +838,7 @@ impl Ctx {
                 }
             }
             GLYPH_RUN => {
-                let lines = glyph_run(body, self.unit_mm);
+                let lines = glyph_run(body, self.unit_mm, page.text.size_mm);
                 if lines.is_empty() {
                     return;
                 }
@@ -803,12 +869,30 @@ impl Ctx {
                         },
                     );
                     shape.transform = matrix * Affine::translate(at.to_vec2());
-                    shape.fill = page.text.fill.clone().unwrap_or(Fill::Solid(Color::BLACK));
+                    // A character style naming no fill nor outline: the
+                    // text object's style of these characters, else black.
+                    let unstyled = matches!(
+                        (&page.text.fill, &page.text.stroke),
+                        (Some(Fill::None), None) | (None, _)
+                    );
                     shape.stroke = page.text.stroke.clone();
+                    let units: Vec<u16> = text.encode_utf16().collect();
+                    match page.text.style_of(&units).filter(|_| unstyled) {
+                        // A style with neither fill nor outline: black.
+                        Some((Fill::None, None)) => shape.fill = Fill::Solid(Color::BLACK),
+                        Some((f, st)) => {
+                            shape.fill = f.clone();
+                            shape.stroke = st.clone();
+                        }
+                        None if unstyled => shape.fill = Fill::Solid(Color::BLACK),
+                        None => {
+                            shape.fill = page.text.fill.clone().unwrap_or(Fill::None);
+                        }
+                    }
                     push_shape(page, shape);
                 }
             }
-            END_TEXT | 70 | 71 | 73 | 98..=102 => {}
+            END_TEXT | 70 | 71 | 73 | 98..=100 => {}
             other => self.note(format!("instruction {other} not read")),
         }
     }
@@ -1266,7 +1350,7 @@ fn font_name(f: &[(u8, &[u8])]) -> Option<String> {
 /// A glyph run's field 1: a u16 count, that many UTF-16 units, then each
 /// character's place from the baseline's start (i32 x, y). Characters on
 /// the same y make one line: its place (mm) and its text.
-fn glyph_run(body: &[u8], unit_mm: f64) -> Vec<(Point, String)> {
+fn glyph_run(body: &[u8], unit_mm: f64, size_mm: f64) -> Vec<(Point, String)> {
     let f = fields(body, 0).0;
     let Some(v) = field(&f, 1) else {
         return Vec::new();
@@ -1278,14 +1362,28 @@ fn glyph_run(body: &[u8], unit_mm: f64) -> Vec<(Point, String)> {
     }
     let units: Vec<u16> = (0..n).map_while(|_| c.u16()).collect();
     let places: Vec<(i32, i32)> = (0..n).map_while(|_| Some((c.i32()?, c.i32()?))).collect();
+    // A run may leave out characters drawn by another run (in another
+    // colour): a jump of more than an em and a half along the line starts
+    // a new piece at its own place.
+    let jump = if size_mm > 0.0 {
+        size_mm * 1.5
+    } else {
+        f64::INFINITY
+    };
     let mut lines: Vec<(Point, Vec<u16>)> = Vec::new();
+    let mut last_x = f64::NAN;
     for (i, unit) in units.iter().enumerate() {
         let (x, y) = places.get(i).copied().unwrap_or((0, 0));
         let at = Point::new(f64::from(x) * unit_mm, f64::from(y) * unit_mm);
         match lines.last_mut() {
-            Some((start, line)) if (start.y - at.y).abs() < 1e-9 => line.push(*unit),
+            Some((start, line))
+                if (start.y - at.y).abs() < 1e-9 && (last_x.is_nan() || at.x - last_x <= jump) =>
+            {
+                line.push(*unit)
+            }
             _ => lines.push((at, vec![*unit])),
         }
+        last_x = at.x;
     }
     lines
         .into_iter()
@@ -1363,6 +1461,15 @@ pub(crate) mod tests {
         let mut l = fields.concat();
         l.push(0xff);
         l
+    }
+
+    /// An instruction in the long form: 0xFFFF, the size as a u32, the code.
+    fn long_instr(code: i16, body: &[u8]) -> Vec<u8> {
+        let mut i = 0xFFFFu16.to_le_bytes().to_vec();
+        i.extend_from_slice(&((body.len() + 8) as u32).to_le_bytes());
+        i.extend_from_slice(&code.to_le_bytes());
+        i.extend_from_slice(body);
+        i
     }
 
     pub(crate) fn instr(code: i16, fields: &[Vec<u8>]) -> Vec<u8> {
@@ -1984,6 +2091,9 @@ pub(crate) mod tests {
             begin_layer("L", None),
             instr(20, &[]),
             instr(98, &[]),
+            // Text frame records in the long form are stepped over.
+            long_instr(101, &[0u8; 22]),
+            long_instr(101, &[0u8; 22]),
             instr(102, &[]),
             instr(21, &[]),
             instr(70, &[]),
@@ -2034,18 +2144,78 @@ pub(crate) mod tests {
             Some("Arial")
         );
         // Broken runs read as nothing.
-        assert!(glyph_run(&flist(&[fld(1, &u16s(&[60_000]))]), 1.0).is_empty());
-        assert!(glyph_run(&[], 1.0).is_empty());
+        assert!(glyph_run(&flist(&[fld(1, &u16s(&[60_000]))]), 1.0, 4.0).is_empty());
+        assert!(glyph_run(&[], 1.0, 4.0).is_empty());
+        // Characters left to another run: a jump along the line starts a
+        // new piece at its own place.
+        let mut run = u16s(&[4]);
+        run.extend_from_slice(&u16s(&"abXY".encode_utf16().collect::<Vec<_>>()));
+        run.extend_from_slice(&le(&[0, 0, 2, 0, 30, 0, 32, 0]));
+        let pieces = glyph_run(&flist(&[fld(1, &run)]), 1.0, 4.0);
+        assert_eq!(
+            pieces,
+            vec![
+                (Point::new(0.0, 0.0), "ab".to_string()),
+                (Point::new(30.0, 0.0), "XY".to_string())
+            ]
+        );
+    }
+
+    /// Text drawn in parts: the character styles (101) and the per
+    /// character style indices (102) colour each glyph run whose own style
+    /// names no fill; a style with no fill is black.
+    #[test]
+    fn glyph_runs_take_their_characters_styles() {
+        let mut m = u16s(&[2]);
+        for v in [1.0f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
+            m.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut size = u16s(&[1]);
+        size.extend_from_slice(&84_667u32.to_le_bytes());
+        // Style 0 with no fill, style 1 filled with colour 1.
+        let style = |a: Vec<u8>| {
+            let mut v = u16s(&[16]);
+            v.extend_from_slice(&a);
+            long_instr(101, &flist(&[fld(1, &v)]))
+        };
+        let text: Vec<u16> = "ab cd".encode_utf16().collect();
+        let mut chars = (text.len() as u32).to_le_bytes().to_vec();
+        chars.extend_from_slice(&u16s(&text));
+        chars.extend_from_slice(&u16s(&[0, 0, 0xFFFF, 1, 1]));
+        let run = |t: &str, x: i32| {
+            let u: Vec<u16> = t.encode_utf16().collect();
+            let mut r = u16s(&[u.len() as u16]);
+            r.extend_from_slice(&u16s(&u));
+            let places: Vec<i32> = (0..u.len() as i32).flat_map(|i| [x + i, 0]).collect();
+            r.extend_from_slice(&le(&places));
+            r
+        };
+        let pg = page(&[
+            begin_page(1_000_000, 1_000_000),
+            begin_layer("L", None),
+            instr(20, &[]),
+            style(vec![0]),
+            style(attrs(1, 0)),
+            long_instr(102, &flist(&[fld(1, &chars)])),
+            instr(21, &[]),
+            instr(72, &[fld(1, &[0]), fld(2, &m)]),
+            instr(85, &[fld(1, &[0]), fld(2, &size)]),
+            instr(65, &[fld(1, &run("ab", 0))]),
+            instr(65, &[fld(1, &run("cd", 30))]),
+        ]);
+        let f = riff(&[cont(b'4'), pg, tables()].concat());
+        let (doc, rep) = open_bytes(&f, "t").expect("read");
+        let s = shapes(&doc);
+        assert_eq!(s.len(), 2, "{:?}", rep.warnings);
+        assert_eq!(s[0].fill, Fill::Solid(Color::BLACK));
+        assert_eq!(s[1].fill, Fill::Solid(Color::rgb8(255, 0, 0)));
     }
 
     #[test]
     fn long_instructions() {
-        // A negative code: the size is a u32 after the code (assumed).
+        // The long form: 0xFFFF, the size as a u32, then the code.
         let short = rect(&attrs(1, 0), 0, 0, 100_000, 100_000, 0, 0);
-        let mut long = 0u16.to_le_bytes().to_vec();
-        long.extend_from_slice(&(-68i16).to_le_bytes());
-        long.extend_from_slice(&((short.len() + 4) as u32).to_le_bytes());
-        long.extend_from_slice(&short[4..]);
+        let long = long_instr(68, &short[4..]);
         let f = file(&[page(&[begin_page(1_000_000, 1_000_000), long, short])]);
         let (_, rep) = open_bytes(&f, "t").expect("read");
         assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
