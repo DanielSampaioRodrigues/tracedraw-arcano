@@ -2125,6 +2125,7 @@ impl App {
             path: None,
             rotate_on_path: false,
             end_id: Some(end.id),
+            options: self.blend_options,
         });
         let cmds = vec![Command::SetEffects {
             shape: start.id,

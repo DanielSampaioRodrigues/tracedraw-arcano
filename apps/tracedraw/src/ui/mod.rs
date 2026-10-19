@@ -31,6 +31,7 @@ pub mod defaults_dialog;
 pub mod dialogs;
 pub mod dimension_bar;
 pub mod distort_bar;
+pub mod docker_form;
 pub mod dockers;
 pub mod dockers2;
 pub mod drawing_bars;

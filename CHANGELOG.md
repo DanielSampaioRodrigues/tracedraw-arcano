@@ -25,6 +25,14 @@ full, row-by-row status.
   once, and Properties edits its kind of content (URL, email, phone,
   SMS, contact, text, location) and fields, pixel and background fills,
   pixel outline and pixel size, with Validate reading the code back.
+- Effects menu: Flatten Effects, the effect groups, then the effect
+  panels, each checked while open (Effect Picker moves to the Window
+  menu); Object > Create keeps Arrowhead and Pattern Fill, which asks
+  for a vector or bitmap pattern. The Picture Mosaic, Vector Mosaic,
+  Extrude (pages with a type picture and Measure from), Envelope (24
+  preset shapes in a grid) and Blend panels are laid out anew; blends
+  gain spacing along a path, loop, along the full path, acceleration of
+  sizes and clockwise or counterclockwise colours.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

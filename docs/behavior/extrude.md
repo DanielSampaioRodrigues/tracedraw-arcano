@@ -83,8 +83,16 @@ parallel, or Small back when they have a vanishing point.
   extrusions live (a run of changes is one undo step). Apply (shown when
   a selected object has none) adds the extrusion; Clear Extrude removes
   it; Break Apart turns the effects into objects.
-- Effects > Extrude opens the panel with the same controls. The values
-  are kept in the preferences (`tools.extrude`).
+- Effects > Extrude opens the panel. Five picture buttons at its top
+  choose a page: Camera (a picture of the extrusion type, the type list,
+  the vanishing point lock, Depth, X and Y, and Measure from: Page
+  origin or Object center, which the vanishing point's X and Y count
+  from; for parallel types X and Y are the offset and the vanishing
+  point fields are greyed), Rotation (X, Y and Z turns, Reset),
+  Lighting (angle, intensity, elevation and the further lights), Color
+  (Object fill, Solid or Shade with their colours) and Bevel. Apply,
+  Clear Extrude and Break Apart sit under every page. The values are
+  kept in the preferences (`tools.extrude`).
 
 ## Turn, lights and bevel
 

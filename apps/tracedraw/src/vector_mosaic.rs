@@ -88,13 +88,13 @@ impl Default for VectorMosaicSettings {
         VectorMosaicSettings {
             density: 10.0,
             scale: 1.0,
-            angle: 0.0,
-            keep_original: true,
-            limit_colors: false,
-            colors: 8,
-            method: TrackMethod::Uniform,
+            angle: 30.0,
+            keep_original: false,
+            limit_colors: true,
+            colors: 16,
+            method: TrackMethod::Opacity,
             merge: 1,
-            weld: false,
+            weld: true,
             shape: TileShape::Circle,
             custom: None,
         }
@@ -467,10 +467,36 @@ mod tests {
         (img, Rect::new(0.0, 0.0, 40.0, 20.0))
     }
 
+    /// Uniform tiles of every colour, unturned and apart: the plain
+    /// settings the tests vary.
+    fn uniform() -> VectorMosaicSettings {
+        VectorMosaicSettings {
+            angle: 0.0,
+            keep_original: true,
+            limit_colors: false,
+            colors: 8,
+            method: TrackMethod::Uniform,
+            weld: false,
+            ..VectorMosaicSettings::default()
+        }
+    }
+
+    #[test]
+    fn the_defaults_match_the_panel() {
+        let s = VectorMosaicSettings::default();
+        assert_eq!((s.density, s.scale, s.angle), (10.0, 1.0, 30.0));
+        assert!(!s.keep_original);
+        assert!(s.limit_colors && s.colors == 16);
+        assert_eq!(s.method, TrackMethod::Opacity);
+        assert_eq!(s.merge, 1);
+        assert!(s.weld);
+        assert_eq!(s.shape, TileShape::Circle);
+    }
+
     #[test]
     fn uniform_tiles_cover_the_bounds_flattened_on_white() {
         let (img, b) = source();
-        let s = VectorMosaicSettings::default();
+        let s = uniform();
         let t = tiles(&img, b, 4.0, &s).expect("tiles");
         // 2.54 mm pitch over 40 x 20 mm: about 16 x 8 tiles.
         assert!((100..=180).contains(&t.len()), "{}", t.len());
@@ -484,7 +510,7 @@ mod tests {
         let (img, b) = source();
         let s = VectorMosaicSettings {
             method: TrackMethod::Opacity,
-            ..Default::default()
+            ..uniform()
         };
         let t = tiles(&img, b, 4.0, &s).expect("tiles");
         // Transparent cells give no tile.
@@ -499,7 +525,7 @@ mod tests {
         });
         let s = VectorMosaicSettings {
             method: TrackMethod::Luminosity,
-            ..Default::default()
+            ..uniform()
         };
         let t = tiles(&gray, Rect::new(0.0, 0.0, 20.0, 20.0), 4.0, &s).expect("tiles");
         let left = t
@@ -525,7 +551,7 @@ mod tests {
             &VectorMosaicSettings {
                 limit_colors: true,
                 colors: 2,
-                ..Default::default()
+                ..uniform()
             },
         )
         .expect("tiles");
@@ -533,14 +559,14 @@ mod tests {
         colors.sort();
         colors.dedup();
         assert!(colors.len() <= 2);
-        let plain = tiles(&img, b, 4.0, &VectorMosaicSettings::default()).expect("tiles");
+        let plain = tiles(&img, b, 4.0, &uniform()).expect("tiles");
         let merged = tiles(
             &img,
             b,
             4.0,
             &VectorMosaicSettings {
                 merge: 4,
-                ..Default::default()
+                ..uniform()
             },
         )
         .expect("tiles");
@@ -553,7 +579,7 @@ mod tests {
             4.0,
             &VectorMosaicSettings {
                 angle: 30.0,
-                ..Default::default()
+                ..uniform()
             },
         )
         .expect("tiles");
@@ -564,7 +590,7 @@ mod tests {
             &plain,
             &VectorMosaicSettings {
                 weld: true,
-                ..Default::default()
+                ..uniform()
             },
             || {
                 n += 1;
@@ -580,7 +606,7 @@ mod tests {
             0.1,
             &VectorMosaicSettings {
                 density: 100.0,
-                ..Default::default()
+                ..uniform()
             }
         )
         .is_err());
@@ -605,7 +631,7 @@ mod tests {
         assert!(app.apply_vector_mosaic(&VectorMosaicSettings {
             keep_original: false,
             method: TrackMethod::Opacity,
-            ..Default::default()
+            ..uniform()
         }));
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
         assert!(app.doc().find_shape(id).is_none());

@@ -208,82 +208,134 @@ pub fn envelope_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The Envelope docker.
+/// One preset's picture in the docker's grid; true when clicked.
+fn preset_cell(ui: &mut Ui, i: usize, size: Vec2, enabled: bool) -> bool {
+    let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    let resp = resp.on_hover_text(tr("envelope.preset_tip"));
+    let p = ui.painter_at(r);
+    if resp.hovered() && enabled {
+        p.rect_filled(r, 2.0, Tokens::tool_hover());
+    }
+    let ink = if enabled {
+        Color32::from_gray(0x20)
+    } else {
+        Color32::from_gray(0xA8)
+    };
+    let o = crate::envelope_shapes::outline(i);
+    let area = r.shrink2(Vec2::new(8.0, 7.0));
+    let pts: Vec<Pos2> = o
+        .points(12)
+        .into_iter()
+        .map(|q| {
+            Pos2::new(
+                area.left() + q.x as f32 * area.width(),
+                area.bottom() - q.y as f32 * area.height(),
+            )
+        })
+        .collect();
+    if pts.len() > 2 {
+        p.add(epaint::PathShape::closed_line(pts, Stroke::new(1.0, ink)));
+    }
+    enabled && resp.clicked()
+}
+
+/// The Envelope docker: Add New, the preset shapes, the editing modes
+/// with the mapping, and Keep lines, Copy and Clear.
 pub fn envelope_docker(app: &mut App, ui: &mut Ui) {
     let selected = !app.selection.is_empty();
     let enveloped = app
         .selection
         .iter()
         .any(|id| app.envelope_of(*id).is_some());
+    if crate::ui::docker_form::wide_button(ui, &tr("envelope.add_new"), selected) {
+        app.add_new_envelope();
+        app.set_tool(Tool::Envelope);
+    }
+    ui.add_space(4.0);
+    let title = egui::RichText::new(tr("envelope.choose_preset"));
+    ui.label(if selected {
+        title
+    } else {
+        title.color(Tokens::text_dim())
+    });
+    let width = ui.available_width();
+    let cell = Vec2::new(((width - 18.0) / 4.0).floor().max(40.0), 46.0);
+    egui::Frame::new()
+        .fill(Color32::WHITE)
+        .stroke(Stroke::new(1.0, Tokens::border()))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("envelope_presets")
+                .max_height(cell.y * 5.0)
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    for row in 0..crate::envelope_shapes::COUNT.div_ceil(4) {
+                        ui.horizontal(|ui| {
+                            for col in 0..4 {
+                                let i = row * 4 + col;
+                                if i >= crate::envelope_shapes::COUNT {
+                                    break;
+                                }
+                                if preset_cell(ui, i, cell, selected) {
+                                    app.apply_envelope_frame(|b| {
+                                        crate::envelope_shapes::frame(i, b).unwrap_or_else(|| {
+                                            tracedraw_core::envelope::Frame::around(b)
+                                        })
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+        });
+    ui.add_space(4.0);
+    ui.separator();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         for m in Mode::ALL {
-            if pic_button(
-                ui,
-                mode_pic(m),
-                &tr(mode_key(m)),
-                true,
-                app.envelope_mode == m,
-            )
-            .clicked()
-            {
+            let tip = format!("{}\n{}", tr(mode_key(m)), tr(mode_hint_key(m)));
+            if pic_button(ui, mode_pic(m), &tip, true, app.envelope_mode == m).clicked() {
                 app.envelope_mode = m;
             }
         }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            mapping_list(app, ui, 100.0);
+        });
     });
-    ui.label(egui::RichText::new(tr(mode_key(app.envelope_mode))).font(crate::theme::bold(13.0)));
-    dim(ui, tr(mode_hint_key(app.envelope_mode)));
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        if ui
-            .add_enabled(selected, egui::Button::new(tr("envelope.add_new")))
-            .clicked()
-        {
-            app.add_new_envelope();
-            app.set_tool(Tool::Envelope);
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        let (_, keep) = app.envelope_settings_shown();
+        if pic_button(ui, Pic::KeepLines, &tr("docker.keep_lines"), true, keep).clicked() {
+            app.set_envelope_keep_lines(!keep);
         }
-        if ui
-            .add_enabled(selected, egui::Button::new(tr("envelope.copy")))
-            .clicked()
+        if pic_button(
+            ui,
+            Pic::EnvelopeCopy,
+            &tr("envelope.copy"),
+            selected,
+            app.pending_copy_envelope,
+        )
+        .clicked()
         {
             app.start_copy_envelope();
         }
-        if ui
-            .add_enabled(enveloped, egui::Button::new(tr("envelope.clear")))
-            .clicked()
+        if pic_button(
+            ui,
+            Pic::EnvelopeClear,
+            &tr("envelope.clear"),
+            enveloped,
+            false,
+        )
+        .clicked()
         {
             app.clear_envelope();
         }
-        if ui
-            .add_enabled(enveloped, egui::Button::new(tr("docker.break_apart")))
-            .clicked()
-        {
-            app.flatten_effects();
-        }
     });
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.label(tr("envelope.mapping"));
-        mapping_list(app, ui, 140.0);
-    });
-    let (_, mut keep) = app.envelope_settings_shown();
-    if ui.checkbox(&mut keep, tr("docker.keep_lines")).changed() {
-        app.set_envelope_keep_lines(keep);
+    if !selected {
+        ui.add_space(4.0);
+        dim(ui, tr("docker.envelope_hint"));
     }
-    ui.add_space(6.0);
-    ui.strong(tr("docker.presets"));
-    ui.horizontal_wrapped(|ui| {
-        for p in Preset::ALL {
-            if ui
-                .add_enabled(selected, egui::Button::new(tr(p.key())))
-                .clicked()
-            {
-                app.apply_envelope_preset(p);
-            }
-        }
-    });
-    ui.add_space(6.0);
-    dim(ui, tr("docker.envelope_hint"));
 }
 
 /// The frames of the selected objects' last envelopes, with the Envelope

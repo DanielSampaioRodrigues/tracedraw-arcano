@@ -1238,6 +1238,59 @@ mod tests {
         assert!(!invoke::active());
     }
 
+    /// The Effects menu: Flatten Effects, the bitmap groups, then the
+    /// effect panels, checked while open; Object > Create holds Arrowhead
+    /// and Pattern Fill, which asks for the pattern's type.
+    #[test]
+    fn effects_menu_checks_the_open_effect_panels() {
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        let mut entries = Vec::new();
+        run_frame(&ctx, |ui| entries = commands(&mut app, ui.ctx()));
+        let find = |key: &str| entries.iter().find(|e| e.key == key).cloned();
+        assert_eq!(
+            find("menu.effects.flatten").expect("flatten").path,
+            ["menu.effects"]
+        );
+        assert!(find("menu.effects.picker").is_none_or(|e| e.path == ["menu.window"]));
+        assert_eq!(
+            find("menu.effects.contour").expect("contour").shortcut,
+            "Ctrl+F9"
+        );
+        let create: Vec<String> = entries
+            .iter()
+            .filter(|e| e.path == ["menu.object", "menu.object.create"])
+            .map(|e| e.key.clone())
+            .collect();
+        assert_eq!(
+            create,
+            ["menu.object.create_arrowhead", "menu.object.create_pattern"]
+        );
+        assert!(find("menu.table.create_new_table").is_some());
+        // The panels: checked while their tab is in the shown column.
+        app.show_dockers = false;
+        assert!(!effect_docker_open(&app, DockerTab::Blend));
+        let mut ran = false;
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.effects.blend")
+        });
+        assert!(ran && app.show_dockers && app.docker_tab == DockerTab::Blend);
+        assert!(effect_docker_open(&app, DockerTab::Blend));
+        // Pattern Fill opens its dialog.
+        let id = app.doc().pages[0]
+            .layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .next()
+            .expect("a shape");
+        app.select(vec![id]);
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.object.create_pattern")
+        });
+        assert!(ran && matches!(app.dialog, Dialog::CreatePattern { vector: true }));
+    }
+
     /// File > Close All closes every drawing, asking about unsaved ones.
     #[test]
     fn file_close_all_closes_every_drawing() {
@@ -2027,14 +2080,6 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sub(ui, "menu.object.create", |ui| {
-        if item(ui, "menu.object.create_table", "", true) {
-            app.dialog = Dialog::CreateTable {
-                rows: app.table_rows,
-                cols: app.table_cols,
-                width: app.table_size.0,
-                height: app.table_size.1,
-            };
-        }
         if item(
             ui,
             "menu.object.create_arrowhead",
@@ -2043,29 +2088,14 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         ) {
             app.create_arrowhead_from_selection();
         }
+        // Pattern Fill asks whether the pattern is vector or bitmap.
         if item(
             ui,
             "menu.object.create_pattern",
             "",
             !app.selection.is_empty(),
         ) {
-            app.create_pattern_from_selection();
-        }
-        if item(
-            ui,
-            "menu.object.create_vector_pattern",
-            "",
-            !app.selection.is_empty(),
-        ) {
-            app.create_vector_pattern_from_selection();
-        }
-        if item(
-            ui,
-            "menu.object.create_symbol",
-            "",
-            !app.selection.is_empty(),
-        ) {
-            app.create_symbol_from_selection();
+            app.dialog = Dialog::CreatePattern { vector: true };
         }
     });
     sub(ui, "menu.object.insert", |ui| {
@@ -2470,9 +2500,6 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.effects.flatten", "", has) {
         app.flatten_effects();
     }
-    if check(ui, "menu.effects.picker", "", app.effect_picker.open) {
-        app.effect_picker.open = !app.effect_picker.open;
-    }
     sep(ui);
     // Bitmap effect groups.
     for (key, group) in crate::fx::groups() {
@@ -2507,42 +2534,29 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
         });
     }
     sep(ui);
-    if item(ui, "menu.effects.brush_strokes", "", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::BrushStrokes;
+    // The effect panels: each opens its docker, checked while its tab is
+    // in the docker column.
+    for (key, shortcut, tab) in [
+        ("menu.effects.brush_strokes", "", DockerTab::BrushStrokes),
+        ("menu.effects.bevel", "", DockerTab::Bevel),
+        ("menu.effects.blend", "", DockerTab::Blend),
+        ("menu.effects.contour", "Ctrl+F9", DockerTab::Contour),
+        ("menu.effects.envelope", "Ctrl+F7", DockerTab::Envelope),
+        ("menu.effects.extrude", "", DockerTab::Extrude),
+        ("menu.effects.lens", "Alt+F3", DockerTab::Lens),
+        ("menu.effects.picture_mosaic", "", DockerTab::PictureMosaic),
+        ("menu.effects.vector_mosaic", "", DockerTab::VectorMosaic),
+    ] {
+        if check(ui, key, shortcut, effect_docker_open(app, tab)) {
+            app.show_dockers = true;
+            app.docker_tab = tab;
+        }
     }
-    if item(ui, "menu.effects.bevel", "", has) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Bevel;
-    }
-    if item(ui, "menu.effects.blend", "", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Blend;
-    }
-    if item(ui, "menu.effects.contour", "Ctrl+F9", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Contour;
-    }
-    if item(ui, "menu.effects.envelope", "Ctrl+F7", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Envelope;
-    }
-    if item(ui, "menu.effects.extrude", "", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Extrude;
-    }
-    if item(ui, "menu.effects.lens", "Alt+F3", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Lens;
-    }
-    if item(ui, "menu.effects.picture_mosaic", "", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::PictureMosaic;
-    }
-    if item(ui, "menu.effects.vector_mosaic", "", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::VectorMosaic;
-    }
+}
+
+/// An effect panel's tab is in the shown docker column.
+pub(crate) fn effect_docker_open(app: &App, tab: DockerTab) -> bool {
+    app.show_dockers && (app.docker_tab == tab || app.open_dockers.contains(&tab))
 }
 
 fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
@@ -3086,6 +3100,9 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    if check(ui, "menu.effects.picker", "", app.effect_picker.open) {
+        app.effect_picker.open = !app.effect_picker.open;
+    }
     sub(ui, "menu.window.toolbars", |ui| {
         check(ui, "menu.window.toolbar_menu_bar", "", true);
         if check(

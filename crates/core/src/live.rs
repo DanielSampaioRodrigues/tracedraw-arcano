@@ -53,6 +53,10 @@ pub enum Effect {
         /// in the effect and is drawn with the steps).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         end_id: Option<crate::ShapeId>,
+        /// Spacing, loop, full path, sizing acceleration and the way the
+        /// colours turn; older files have the defaults.
+        #[serde(default, skip_serializing_if = "BlendOptions::is_default")]
+        options: BlendOptions,
     },
     /// Geometry distortions (push/pull, zipper, twister).
     Distort(crate::effects::Distort),
@@ -535,16 +539,17 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 path,
                 rotate_on_path,
                 end_id,
+                options,
             } => {
                 let shapes = blend(
                     &main,
                     end,
                     *steps,
-                    *accel_objects,
-                    *accel_colors,
+                    (*accel_objects, *accel_colors),
                     *rotation,
                     path.as_ref(),
                     *rotate_on_path,
+                    options,
                 );
                 above.extend(shapes);
                 // An end object of the drawing draws itself.
@@ -762,22 +767,14 @@ fn blend(
     start: &Shape,
     end: &Shape,
     steps: u32,
-    accel_objects: f64,
-    accel_colors: f64,
+    (accel_objects, accel_colors): (f64, f64),
     rotation: f64,
     path: Option<&BezPath>,
     rotate_on_path: bool,
+    options: &BlendOptions,
 ) -> Vec<Shape> {
     let a = start.page_path();
     let b = end.page_path();
-    let n = steps.max(1) as usize;
-    let paths = crate::effects::blend(&a, &b, n, 120);
-    let fa = start.fill.preview_color();
-    let fb = end.fill.preview_color();
-    let ca = start.stroke.as_ref().map(|s| s.color);
-    let cb = end.stroke.as_ref().map(|s| s.color);
-    let wa = start.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
-    let wb = end.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
     let path_samples = path.map(|p| {
         let mut pts = Vec::new();
         kurbo::flatten(p.elements().iter().copied(), 0.05, |el| match el {
@@ -790,11 +787,39 @@ fn blend(
         }
         (pts, cum)
     });
-    let ca_center = a.bounding_box().center();
-    let cb_center = b.bounding_box().center();
+    let path_len = path_samples
+        .as_ref()
+        .and_then(|(_, cum)| cum.last().copied())
+        .unwrap_or(0.0);
+    // Fixed spacing along a path sets the number of steps.
+    let n = match options.spacing {
+        Some(d) if d > 1e-6 && path_len > 0.0 => ((path_len / d).floor() as usize)
+            .saturating_sub(1)
+            .clamp(1, 999),
+        _ => steps.max(1) as usize,
+    };
+    let paths = crate::effects::blend(&a, &b, n, 120);
+    let fa = start.fill.preview_color();
+    let fb = end.fill.preview_color();
+    let ca = start.stroke.as_ref().map(|s| s.color);
+    let cb = end.stroke.as_ref().map(|s| s.color);
+    let wa = start.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
+    let wb = end.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
+    let ba = a.bounding_box();
+    let bb = b.bounding_box();
+    let ca_center = ba.center();
+    let cb_center = bb.center();
+    let middle = ca_center.midpoint(cb_center);
+    let size = |r: Rect| (r.width() + r.height()) / 2.0;
     let mut out = Vec::new();
     for (i, p) in paths.into_iter().enumerate() {
-        let t = (i + 1) as f64 / (n + 1) as f64;
+        // Along the whole path the steps reach its ends; otherwise they
+        // sit between the two objects.
+        let t = if options.full_path && path_samples.is_some() && n > 1 {
+            i as f64 / (n - 1) as f64
+        } else {
+            (i + 1) as f64 / (n + 1) as f64
+        };
         let to = t.powf((1.0 + accel_objects).max(0.05));
         let tc = t.powf((1.0 + accel_colors).max(0.05));
         let mut s = start.clone();
@@ -804,8 +829,23 @@ fn blend(
         let mut geo = p;
         let center = geo.bounding_box().center();
         let mut extra = Affine::IDENTITY;
+        if options.accel_sizing {
+            // The size the acceleration asks for over the size the even
+            // blend gave.
+            let (sa, sb) = (size(ba), size(bb));
+            let even = sa + (sb - sa) * t;
+            let wanted = sa + (sb - sa) * to;
+            if even > 1e-9 {
+                extra = Affine::scale_about(wanted / even, center);
+            }
+        }
         if rotation != 0.0 {
-            extra = Affine::rotate_about(rotation.to_radians() * to, center);
+            let pivot = if options.loop_rotation {
+                middle
+            } else {
+                center
+            };
+            extra = Affine::rotate_about(rotation.to_radians() * to, pivot) * extra;
         }
         if let Some((pts, cum)) = &path_samples {
             if pts.len() >= 2 {
@@ -819,8 +859,8 @@ fn blend(
                 let len = seg.hypot().max(1e-9);
                 let u = ((s_at - cum[k]) / len).clamp(0.0, 1.0);
                 let pos = pts[k] + seg * u;
-                let straight = ca_center + (cb_center - ca_center) * to;
-                extra = Affine::translate(pos - straight) * extra;
+                // The step's own centre goes onto the path.
+                extra = Affine::translate(pos - center) * extra;
                 if rotate_on_path {
                     let ang = seg.y.atan2(seg.x);
                     extra = Affine::translate(pos.to_vec2())
@@ -836,15 +876,73 @@ fn blend(
             closed: true,
         };
         if let (Some(x), Some(y)) = (fa, fb) {
-            s.fill = Fill::Solid(lerp_color(x, y, tc as f32));
+            s.fill = Fill::Solid(blend_color(x, y, tc as f32, options.color_blend));
         }
         if let (Some(st), Some(x), Some(y)) = (&mut s.stroke, ca, cb) {
-            st.color = lerp_color(x, y, tc as f32);
+            st.color = blend_color(x, y, tc as f32, options.color_blend);
             st.width = wa + (wb - wa) * to;
         }
         out.push(s);
     }
     out
+}
+
+/// How a blend's colours go from the start colour to the end colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ColorBlend {
+    /// Straight through the colour space.
+    #[default]
+    Direct,
+    /// Around the colour wheel, hue increasing.
+    Clockwise,
+    /// Around the colour wheel, hue decreasing.
+    CounterClockwise,
+}
+
+/// A blend's further options.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlendOptions {
+    /// Along a path: the distance between steps, mm (the step count then
+    /// follows from the path's length). `None`: the step count.
+    pub spacing: Option<f64>,
+    /// The rotation turns the steps about the middle between the two
+    /// objects instead of about each step's own centre.
+    pub loop_rotation: bool,
+    /// Along a path: the steps spread over the whole path, its ends
+    /// included.
+    pub full_path: bool,
+    /// The object acceleration changes the steps' sizes too.
+    pub accel_sizing: bool,
+    pub color_blend: ColorBlend,
+}
+
+impl BlendOptions {
+    pub fn is_default(&self) -> bool {
+        *self == BlendOptions::default()
+    }
+}
+
+/// A colour between `a` and `b` at `t`, straight or around the wheel.
+pub fn blend_color(a: Color, b: Color, t: f32, how: ColorBlend) -> Color {
+    let turn = match how {
+        ColorBlend::Direct => return lerp_color(a, b, t),
+        ColorBlend::Clockwise => 1.0,
+        ColorBlend::CounterClockwise => -1.0,
+    };
+    let (ha, sa, va) = a.to_hsb();
+    let (hb, sb, vb) = b.to_hsb();
+    // The hue's way round in the chosen direction, in degrees.
+    let mut d = (hb - ha).rem_euclid(360.0);
+    if turn < 0.0 {
+        d -= 360.0;
+        if d <= -360.0 {
+            d += 360.0;
+        }
+    }
+    let t = t as f64;
+    let h = (ha + d * t).rem_euclid(360.0);
+    Color::from_hsb(h, sa + (sb - sa) * t, va + (vb - va) * t)
 }
 
 /// The body an extrude effect on `main` describes (older files: Back
@@ -1336,6 +1434,7 @@ mod tests {
             path: None,
             rotate_on_path: false,
             end_id: None,
+            options: BlendOptions::default(),
         });
         let ev = evaluate(&s);
         assert_eq!(ev.above.len(), 10);
@@ -1347,6 +1446,120 @@ mod tests {
         assert_eq!(evaluate(&linked).above.len(), 9);
         let mid = ev.above[4].bounds().center();
         assert!((mid.x - 60.0).abs() < 1.0, "{mid:?}");
+    }
+
+    #[test]
+    fn blend_options_change_the_steps() {
+        let a = rect_shape();
+        let mut b = rect_shape();
+        b.transform = Affine::translate((100.0, 0.0));
+        b.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        let blend = |options: BlendOptions, path: Option<BezPath>, rotation: f64| {
+            let mut s = a.clone();
+            s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+            s.effects.push(Effect::Blend {
+                end: Box::new(b.clone()),
+                steps: 3,
+                accel_objects: 0.5,
+                accel_colors: 0.0,
+                rotation,
+                path,
+                rotate_on_path: false,
+                end_id: Some(b.id),
+                options,
+            });
+            evaluate(&s).above
+        };
+        // A 100 mm path at 10 mm spacing: nine steps whatever the count.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 50.0));
+        line.line_to((100.0, 50.0));
+        let spaced = BlendOptions {
+            spacing: Some(10.0),
+            ..Default::default()
+        };
+        assert_eq!(blend(spaced, Some(line.clone()), 0.0).len(), 9);
+        // Without a path the spacing is ignored.
+        assert_eq!(blend(spaced, None, 0.0).len(), 3);
+        // Along the full path the first and last steps sit on its ends.
+        let full = BlendOptions {
+            full_path: true,
+            ..Default::default()
+        };
+        let steps = blend(full, Some(line), 0.0);
+        let first = steps[0].bounds().center();
+        assert!((first.x - 0.0).abs() < 1.0, "{first:?}");
+        // Loop: the steps turn about the middle between the objects, so
+        // they leave the straight line between them.
+        let looped = BlendOptions {
+            loop_rotation: true,
+            ..Default::default()
+        };
+        let plain = blend(BlendOptions::default(), None, 90.0);
+        let turned = blend(looped, None, 90.0);
+        let (p0, t0) = (plain[0].bounds().center(), turned[0].bounds().center());
+        assert!((p0.y - t0.y).abs() > 3.0, "{p0:?} {t0:?}");
+        // Sizing: toward a bigger end object, acceleration 0.5 keeps the
+        // steps smaller than the even blend makes them.
+        let mut big = b.clone();
+        big.transform = Affine::translate((100.0, 0.0)) * Affine::scale(3.0);
+        let sized_width = |accel_sizing: bool| {
+            let mut s = a.clone();
+            s.effects.push(Effect::Blend {
+                end: Box::new(big.clone()),
+                steps: 3,
+                accel_objects: 0.5,
+                accel_colors: 0.0,
+                rotation: 0.0,
+                path: None,
+                rotate_on_path: false,
+                end_id: Some(big.id),
+                options: BlendOptions {
+                    accel_sizing,
+                    ..Default::default()
+                },
+            });
+            evaluate(&s).above[1].bounds().width()
+        };
+        assert!(sized_width(true) < sized_width(false) - 1e-6);
+        // Around the wheel the middle colour is neither the straight mix
+        // nor the same each way.
+        let mid = |how: ColorBlend| {
+            let o = BlendOptions {
+                color_blend: how,
+                ..Default::default()
+            };
+            blend(o, None, 0.0)[1].fill.preview_color().expect("colour")
+        };
+        let (d, cw, ccw) = (
+            mid(ColorBlend::Direct),
+            mid(ColorBlend::Clockwise),
+            mid(ColorBlend::CounterClockwise),
+        );
+        assert_ne!(d.to_rgb8(), cw.to_rgb8());
+        assert_ne!(cw.to_rgb8(), ccw.to_rgb8());
+        // Red to blue clockwise (hue up) passes green; the other way magenta.
+        let [r, g, _] = cw.to_rgb8();
+        assert!(g > r, "{:?}", cw.to_rgb8());
+        let [r, g, bl] = ccw.to_rgb8();
+        assert!(r > g && bl > g, "{:?}", ccw.to_rgb8());
+        // Old files read with the defaults.
+        let old: Effect = serde_json::from_str(
+            &serde_json::to_string(&Effect::Blend {
+                end: Box::new(b.clone()),
+                steps: 3,
+                accel_objects: 0.0,
+                accel_colors: 0.0,
+                rotation: 0.0,
+                path: None,
+                rotate_on_path: false,
+                end_id: None,
+                options: BlendOptions::default(),
+            })
+            .expect("json"),
+        )
+        .expect("reads");
+        assert!(matches!(old, Effect::Blend { options, .. } if options.is_default()));
     }
 
     #[test]

@@ -948,52 +948,283 @@ fn lens(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("docker.lens_hint"));
 }
 
-fn blend(app: &mut App, ui: &mut Ui) {
-    let cur = app.selected_blends().into_iter().next().map(|(_, e)| e);
-    let (mut steps, mut accel_o, mut accel_c, mut rot, mut rotate_on_path) = match &cur {
-        Some(Effect::Blend {
-            steps,
-            accel_objects,
-            accel_colors,
-            rotation,
-            rotate_on_path,
-            ..
-        }) => (
-            *steps,
-            *accel_objects,
-            *accel_colors,
-            *rotation,
-            *rotate_on_path,
-        ),
-        _ => (app.blend_steps, 0.0, 0.0, 0.0, false),
+/// A small picture button of the Blend docker; true when clicked.
+fn blend_pic(
+    ui: &mut Ui,
+    tip: &str,
+    on: bool,
+    enabled: bool,
+    draw: impl Fn(&egui::Painter, egui::Rect, Color32),
+) -> bool {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
+    let resp = resp.on_hover_text(tip);
+    let p = ui.painter();
+    if on {
+        p.rect_filled(r, 2.0, crate::theme::Tokens::tool_hover());
+        p.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.0, Tokens::ACCENT),
+            egui::StrokeKind::Inside,
+        );
+    } else if resp.hovered() && enabled {
+        p.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.0, Tokens::border()),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let ink = if enabled {
+        Tokens::text()
+    } else {
+        Tokens::text_dim()
     };
+    draw(p, r.shrink(5.0), ink);
+    enabled && resp.clicked()
+}
+
+use egui::Color32;
+
+/// The Blend docker: steps or spacing, rotation with Loop, the path
+/// options, the acceleration of objects and colours (with Apply to
+/// sizing, Link acceleration and Reset), the way the colours turn, and
+/// Apply for two selected objects.
+fn blend(app: &mut App, ui: &mut Ui) {
+    use crate::ui::docker_form::{section, wide_button};
+    use tracedraw_core::live::{BlendOptions, ColorBlend};
+    let cur = app.selected_blends().into_iter().next().map(|(_, e)| e);
+    let (mut steps, mut accel_o, mut accel_c, mut rot, mut rotate_on_path, has_path, mut opt) =
+        match &cur {
+            Some(Effect::Blend {
+                steps,
+                accel_objects,
+                accel_colors,
+                rotation,
+                rotate_on_path,
+                path,
+                options,
+                ..
+            }) => (
+                *steps,
+                *accel_objects,
+                *accel_colors,
+                *rotation,
+                *rotate_on_path,
+                path.is_some(),
+                *options,
+            ),
+            _ => (
+                app.blend_steps,
+                0.0,
+                0.0,
+                0.0,
+                false,
+                false,
+                app.blend_options,
+            ),
+        };
     let mut changed = false;
+    let mut spacing_mm = opt.spacing.unwrap_or(app.blend_spacing_mm);
+    // Steps or spacing: spacing needs a path.
+    ui.horizontal(|ui| {
+        let by_spacing = opt.spacing.is_some();
+        if blend_pic(
+            ui,
+            &tr("docker.blend_by_steps"),
+            !by_spacing,
+            true,
+            |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let pts = [
+                    r.left_bottom(),
+                    egui::pos2(r.left() + r.width() / 3.0, r.bottom()),
+                    egui::pos2(r.left() + r.width() / 3.0, r.center().y),
+                    egui::pos2(r.left() + 2.0 * r.width() / 3.0, r.center().y),
+                    egui::pos2(r.left() + 2.0 * r.width() / 3.0, r.top()),
+                    r.right_top(),
+                ];
+                p.add(egui::Shape::line(pts.to_vec(), s));
+            },
+        ) && by_spacing
+        {
+            opt.spacing = None;
+            changed = true;
+        }
+        if blend_pic(
+            ui,
+            &tr("docker.blend_by_spacing"),
+            by_spacing,
+            has_path,
+            |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let y = r.center().y;
+                p.line_segment([egui::pos2(r.left(), y), egui::pos2(r.right(), y)], s);
+                for x in [r.left(), r.right()] {
+                    p.line_segment([egui::pos2(x, y - 4.0), egui::pos2(x, y + 4.0)], s);
+                }
+            },
+        ) && !by_spacing
+        {
+            opt.spacing = Some(spacing_mm);
+            changed = true;
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.steps"));
+        changed |= ui
+            .add_enabled(
+                opt.spacing.is_none(),
+                egui::DragValue::new(&mut steps).range(1..=999),
+            )
+            .changed();
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_spacing"));
+        let units = app.units;
+        let mut v = units.from_mm(spacing_mm);
+        if ui
+            .add_enabled(
+                opt.spacing.is_some(),
+                egui::DragValue::new(&mut v)
+                    .speed(0.1)
+                    .max_decimals(3)
+                    .suffix(format!(" {}", units.short())),
+            )
+            .changed()
+        {
+            spacing_mm = units.to_mm(v).max(0.01);
+            opt.spacing = Some(spacing_mm);
+            changed = true;
+        }
+    });
+    app.blend_spacing_mm = spacing_mm;
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.rotation"));
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut rot)
+                    .range(-3600.0..=3600.0)
+                    .speed(1.0)
+                    .max_decimals(1)
+                    .suffix("\u{b0}"),
+            )
+            .changed();
+    });
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut steps, 1..=200).text(tr("docker.steps")),
-        ))
+        .add_enabled(
+            rot != 0.0,
+            egui::Checkbox::new(&mut opt.loop_rotation, tr("docker.blend_loop")),
+        )
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut rot, -360.0..=360.0)
-                .text(tr("docker.rotation"))
-                .suffix("°"),
-        ))
+        .add_enabled(
+            has_path,
+            egui::Checkbox::new(&mut opt.full_path, tr("docker.blend_full_path")),
+        )
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut accel_o, -1.0..=1.0).text(tr("docker.object_acceleration")),
-        ))
+        .add_enabled(
+            has_path,
+            egui::Checkbox::new(&mut rotate_on_path, tr("docker.rotate_all_objects")),
+        )
         .changed();
+    section(ui, Some(&tr("docker.blend_acceleration")));
+    ui.spacing_mut().slider_width = (ui.available_width() - 80.0).clamp(80.0, 200.0);
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_object"));
+        if ui
+            .add(crate::ui::Rail(
+                egui::Slider::new(&mut accel_o, -1.0..=1.0).show_value(false),
+            ))
+            .changed()
+        {
+            changed = true;
+            if app.blend_link_accel {
+                accel_c = accel_o;
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_color"));
+        if ui
+            .add_enabled(
+                !app.blend_link_accel,
+                crate::ui::Rail(egui::Slider::new(&mut accel_c, -1.0..=1.0).show_value(false)),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+    });
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut accel_c, -1.0..=1.0).text(tr("docker.color_acceleration")),
-        ))
+        .checkbox(&mut opt.accel_sizing, tr("docker.blend_apply_sizing"))
         .changed();
-    changed |= ui
-        .checkbox(&mut rotate_on_path, tr("docker.rotate_all_objects"))
-        .changed();
+    let mut link = app.blend_link_accel;
+    if ui
+        .checkbox(&mut link, tr("docker.blend_link_accel"))
+        .changed()
+    {
+        app.blend_link_accel = link;
+        if link && accel_c != accel_o {
+            accel_c = accel_o;
+            changed = true;
+        }
+    }
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .add_enabled(
+                accel_o != 0.0 || accel_c != 0.0,
+                egui::Button::new(tr("docker.reset")).min_size(egui::vec2(90.0, 22.0)),
+            )
+            .clicked()
+        {
+            accel_o = 0.0;
+            accel_c = 0.0;
+            changed = true;
+        }
+    });
+    section(ui, Some(&tr("docker.blend_color_blend")));
+    ui.horizontal(|ui| {
+        for (how, key) in [
+            (ColorBlend::Direct, "docker.blend_direct"),
+            (ColorBlend::Clockwise, "docker.blend_clockwise"),
+            (
+                ColorBlend::CounterClockwise,
+                "docker.blend_counterclockwise",
+            ),
+        ] {
+            let on = opt.color_blend == how;
+            if blend_pic(ui, &tr(key), on, true, |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let ctr = r.center();
+                let rad = r.width().min(r.height()) / 2.0;
+                match how {
+                    ColorBlend::Direct => {
+                        p.line_segment([r.left_bottom(), r.right_top()], s);
+                    }
+                    _ => {
+                        let pts: Vec<egui::Pos2> = (0..=12)
+                            .map(|k| {
+                                let a = std::f32::consts::PI * (0.15 + 1.4 * k as f32 / 12.0);
+                                let a = if how == ColorBlend::Clockwise { -a } else { a };
+                                ctr + egui::vec2(a.cos(), a.sin()) * rad
+                            })
+                            .collect();
+                        let end = *pts.last().unwrap_or(&ctr);
+                        p.add(egui::Shape::line(pts, s));
+                        p.circle_filled(end, 2.2, c);
+                    }
+                }
+            }) && !on
+            {
+                opt.color_blend = how;
+                changed = true;
+            }
+        }
+    });
     app.blend_steps = steps;
+    app.blend_options = BlendOptions { ..opt };
     if let Some(Effect::Blend { .. }) = cur {
         if changed {
             app.change_blends("Blend", |e| {
@@ -1004,6 +1235,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
                     accel_colors,
                     rotation,
                     rotate_on_path: r,
+                    options,
                     ..
                 } = &mut e
                 {
@@ -1012,11 +1244,13 @@ fn blend(app: &mut App, ui: &mut Ui) {
                     *accel_colors = accel_c;
                     *rotation = rot;
                     *r = rotate_on_path;
+                    *options = opt;
                 }
                 Some(e)
             });
         }
-        ui.horizontal(|ui| {
+        section(ui, None);
+        ui.horizontal_wrapped(|ui| {
             if ui.button(tr("docker.new_path")).clicked() {
                 app.pending_blend_path = true;
                 app.status = tr("status.click_blend_path");
@@ -1030,10 +1264,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
         });
     } else {
         let two = app.selection.len() == 2;
-        if ui
-            .add_enabled(two, egui::Button::new(tr("docker.apply")))
-            .clicked()
-        {
+        if wide_button(ui, &tr("docker.apply"), two) {
             app.blend_selection(steps, accel_o, accel_c, rot);
         }
         if !two {
@@ -1048,9 +1279,7 @@ fn contour(app: &mut App, ui: &mut Ui) {
 }
 
 fn extrude(app: &mut App, ui: &mut Ui) {
-    crate::ui::extrude_bar::extrude_controls(app, ui);
-    crate::ui::extrude_bar::extrude_space(app, ui);
-    crate::ui::extrude_bar::extrude_actions(app, ui);
+    crate::ui::extrude_bar::extrude_docker(app, ui);
 }
 
 fn bevel(app: &mut App, ui: &mut Ui) {

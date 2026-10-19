@@ -46,6 +46,7 @@ mod drop_menu;
 mod effects_ui;
 mod encode;
 mod envelope_edit;
+mod envelope_shapes;
 mod export;
 mod export_assets;
 mod extrude_tool;
