@@ -4015,16 +4015,23 @@ impl Document {
 /// The `.tdraw` format's version, written into every file. A change that
 /// an older TraceDraw would read wrongly (a field renamed, moved or given
 /// another meaning) raises it and adds a step to [`migrate`]; a new field
-/// with a default does not. See `docs/tdraw-format.md`.
-pub const TDRAW_FORMAT_VERSION: u32 = 1;
+/// with a default does not. The next version is 2: 1 was written by
+/// TraceDraw 0.5 to 0.9 for the layout of 0 and is read as 0. See
+/// `docs/tdraw-format.md`.
+pub const TDRAW_FORMAT_VERSION: u32 = 0;
+
+/// The number TraceDraw 0.5 to 0.9 wrote for the layout of version 0.
+const SAME_AS_ZERO: u64 = 1;
 
 const FORMAT_VERSION_KEY: &str = "format_version";
 
 /// The format version a `.tdraw` file's JSON says it has: 0 for files
-/// written before versions were recorded.
+/// written before versions were recorded, and for the 1 of TraceDraw 0.5
+/// to 0.9 (the same layout).
 pub fn tdraw_version(v: &serde_json::Value) -> u32 {
     v.get(FORMAT_VERSION_KEY)
         .and_then(serde_json::Value::as_u64)
+        .map(|n| if n == SAME_AS_ZERO { 0 } else { n })
         .map(|n| n.min(u64::from(u32::MAX)) as u32)
         .unwrap_or(0)
 }
@@ -4039,26 +4046,16 @@ pub fn tdraw_text_version(s: &str) -> u32 {
 /// One step of [`migrate`]: the JSON of version `i` to version `i + 1`.
 type Step = fn(&mut serde_json::Value);
 
-/// `STEPS[i]` takes a file from version `i` to `i + 1`.
-const STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [
-    // 0 to 1: versions start being recorded; the layout is the same.
-    |_| {},
-];
+/// `STEPS[i]` takes a file from version `i` to `i + 1` (none yet).
+const STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [];
 
 /// `DOWN_STEPS[i]` takes a file from version `i + 1` back to `i`, for
-/// saving in an older version.
-const DOWN_STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [
-    // 1 to 0: no recorded version.
-    |v| {
-        if let serde_json::Value::Object(m) = v {
-            m.remove(FORMAT_VERSION_KEY);
-        }
-    },
-];
+/// saving in an older version (none yet).
+const DOWN_STEPS: [Step; TDRAW_FORMAT_VERSION as usize] = [];
 
 /// The TraceDraw release that first wrote each `.tdraw` format version
 /// (`TDRAW_RELEASES[v]`), for Save As.
-pub const TDRAW_RELEASES: [&str; TDRAW_FORMAT_VERSION as usize + 1] = ["0.4", "0.5"];
+pub const TDRAW_RELEASES: [&str; TDRAW_FORMAT_VERSION as usize + 1] = ["0.4"];
 
 /// Bring a `.tdraw` file's JSON from version `from` up to
 /// [`TDRAW_FORMAT_VERSION`], one step at a time.
@@ -4217,6 +4214,16 @@ mod tests {
         assert_eq!(tdraw_version(&old), 0);
         assert_eq!(
             Document::from_json(&old.to_string()).expect("old").title,
+            "v"
+        );
+        // The 1 that TraceDraw 0.5 to 0.9 wrote is the layout of 0.
+        let mut one = old.clone();
+        one.as_object_mut()
+            .expect("object")
+            .insert("format_version".into(), 1.into());
+        assert_eq!(tdraw_version(&one), 0);
+        assert_eq!(
+            Document::from_json(&one.to_string()).expect("one").title,
             "v"
         );
         // A newer file: unknown fields are left out, the rest reads.

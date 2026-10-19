@@ -26,9 +26,9 @@ One window, 760 px wide, the same on every system:
 - **Save as type**: TraceDraw (`*.tdraw`, the native JSON format, which
   keeps everything) or CDR files (`*.cdr`). It starts at `.cdr` for a
   drawing that came from or was saved to a `.cdr` file.
-- **Version**: for TraceDraw files the `.tdraw` format version, newest
-  first, with the release that first wrote it ("v1 (TraceDraw 0.5)",
-  `docs/tdraw-format.md`); for `.cdr` 27 down to 14, each with its
+- **Version**: for TraceDraw files the `.tdraw` format version, shown
+  as "v0" with nothing to choose while it is the only one
+  (`docs/tdraw-format.md`); for `.cdr` 27 down to 14, each with its
   release name ("v14 (X4)", "v27 (2026)").
 - **Embed colour profile (size)** with "Colour profile: name" (`.cdr`
   only): on, the drawing's CMYK profile is stored in the file; off, it

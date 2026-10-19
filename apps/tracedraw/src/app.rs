@@ -4483,10 +4483,12 @@ impl App {
             crate::files::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|json| {
-                    tdraw_version = Some(
-                        tracedraw_core::document::tdraw_text_version(&json)
-                            .min(tracedraw_core::document::TDRAW_FORMAT_VERSION),
-                    );
+                    // A newer file saves back in the newest version known
+                    // here (while that is 0, the min is a no-op).
+                    #[allow(clippy::unnecessary_min_or_max)]
+                    let known = tracedraw_core::document::tdraw_text_version(&json)
+                        .min(tracedraw_core::document::TDRAW_FORMAT_VERSION);
+                    tdraw_version = Some(known);
                     tracedraw_core::Document::from_json(&json).map_err(|e| e.to_string())
                 })
                 .map(|d| (d, crate::i18n::tr("status.opened")))

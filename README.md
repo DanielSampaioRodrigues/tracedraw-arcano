@@ -128,7 +128,7 @@ or the moon button at the right of the status bar).
       <h3>Bitmaps, too</h3>
       Place PNG, JPEG, BMP, GIF, TIFF and WebP images, or turn vectors into a bitmap, then use 98 bitmap effects in fifteen groups, each with its own dialog and a before and after preview. Effects stay in the object's list in the Properties panel, where they can be changed, hidden or removed.
       <br><br>
-      Colour modes, a colour mask, straighten, crop and resample complete the set.
+      Colour modes, a colour mask, background removal on this computer (no AI needed), straighten, crop and resample complete the set.
     </td>
     <td width="50%" valign="top">
       <img src="docs/images/tracedraw-trace.jpg" alt="The Trace Bitmap dialog with the Clipart preset: the bitmap before and its traced curves after, with the detail, smoothing and colour settings" width="100%">
@@ -306,6 +306,11 @@ for (let i = 0; i < 12; i++) {
 
 See [`docs/behavior/mcp.md`](docs/behavior/mcp.md) for the MCP tools.
 
+**VBA macros** run inside the editor: open a macro project (`.gms`, or
+`.bas`, `.cls` and `.frm` modules with their forms) in the Macro Manager,
+run, step and edit it in the macro editor, on every platform and in the
+browser. See [`docs/behavior/vba.md`](docs/behavior/vba.md).
+
 **Draw with words** (a mode of the AI Generate docker) writes those scripts for you: describe
 what to draw or change, and an AI service you set up with your own key
 (the Messages API, any chat completions service, or a model server on
@@ -325,7 +330,7 @@ see [`docs/behavior/ai-drawing.md`](docs/behavior/ai-drawing.md).
 - **Runs in the browser:** the whole editor compiles to WebAssembly.
 - **Clean-room:** format support from public notes and owned files only;
   no proprietary code or assets.
-- **Tested:** more than 500 tests, including format round trips,
+- **Tested:** about 1,600 tests, including format round trips,
   malformed-input tests, effect geometry and interface drawing, plus
   headless visual checks that drive the real app.
 
@@ -428,6 +433,7 @@ pages) in your browser only when you choose to. The full policy is in
 
 | Document | What it covers |
 |---|---|
+| [User Help](https://igtoth.github.io/tracedraw/help/en/index.html) | the manual, with screenshots; every "?" button and F1 in the app open its page in the interface language |
 | [`docs/features.md`](docs/features.md) | every capability and its status |
 | [`docs/behavior/`](docs/behavior/) | defaults, shortcuts and formulas, tool by tool |
 | [`docs/architecture.md`](docs/architecture.md) | crates, data flow, units, rendering, text |

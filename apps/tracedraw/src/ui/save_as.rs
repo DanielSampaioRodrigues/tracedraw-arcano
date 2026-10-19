@@ -243,9 +243,12 @@ pub fn tdraw_version_choices() -> Vec<u32> {
     (0..=TDRAW_FORMAT_VERSION).rev().collect()
 }
 
-/// "v1 (TraceDraw 0.5)": the format version and the release that first
-/// wrote it.
+/// "v2 (TraceDraw 1.0)": the format version and the release that first
+/// wrote it; just "v0" while it is the only one.
 pub fn tdraw_version_label(version: u32) -> String {
+    if TDRAW_FORMAT_VERSION == 0 {
+        return format!("v{version}");
+    }
     let release = TDRAW_RELEASES.get(version as usize).copied().unwrap_or("?");
     format!("v{version} (TraceDraw {release})")
 }
@@ -639,6 +642,9 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                     version_label,
                     260.0,
                 );
+            } else if tdraw_version_choices().len() == 1 {
+                // One format version: nothing to choose.
+                ui.label(tdraw_version_label(st.tdraw_version));
             } else {
                 combo(
                     ui,
@@ -857,7 +863,8 @@ mod tests {
         assert_eq!(st.file_name(), "native.tdraw");
         assert_eq!(st.tdraw_version, TDRAW_FORMAT_VERSION);
         assert_eq!(tdraw_version_choices()[0], TDRAW_FORMAT_VERSION);
-        assert_eq!(tdraw_version_label(1), "v1 (TraceDraw 0.5)");
+        assert_eq!(tdraw_version_label(0), "v0");
+        assert_eq!(tdraw_version_choices(), vec![0]);
         st.tdraw_version = 0;
         let mut st = st.clone();
         assert!(app.finish_save_as(&mut st));
