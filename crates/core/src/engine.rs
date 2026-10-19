@@ -180,6 +180,13 @@ impl Engine {
         Ok(())
     }
 
+    /// The drawing is as the step just recorded left it: no undo, redo or
+    /// change outside the history since. A side effect added now with
+    /// [`amend`](Self::amend) joins that step.
+    pub fn at_recorded_step(&self) -> bool {
+        self.revision == self.step_revision && !self.undo.is_empty()
+    }
+
     /// [`Engine::amend`] for several commands: they join the step just
     /// recorded, or make a step of their own named `label` when anything
     /// else happened since. A failing command leaves the drawing as it was.

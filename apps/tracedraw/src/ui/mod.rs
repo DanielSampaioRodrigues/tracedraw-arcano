@@ -217,6 +217,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.shortcut_editor.capture.is_none() {
         crate::help::handle_f1(app, &ctx);
     }
+    // Clones take up what the last frame changed on their masters.
+    app.sync_object_clones();
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
     if let Some(cmd) = app.pending_command.take() {
@@ -573,6 +575,12 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         crate::perspective_draw::show_bar(app, &ctx);
     }
     dialogs::show(app, &ctx);
+    // A change this frame made to a master shows on its clones at once.
+    let before = app.engine.revision();
+    app.sync_object_clones();
+    if app.engine.revision() != before {
+        ctx.request_repaint();
+    }
 }
 
 /// The active drawing's window in `full`: rulers, the canvas with its

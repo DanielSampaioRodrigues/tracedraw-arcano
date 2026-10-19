@@ -17,7 +17,7 @@ exceptions, shown disabled so the layout stays complete:
 | Menu | Item | Why |
 |---|---|---|
 | File | Acquire Image | no scanner (TWAIN/WIA/SANE) stack in pure Rust; import the scanned file |
-| Object | Rollover | web-page interactivity with no HTML export target |
+| Object | Rollover | rollover objects (normal, over and down states) are not built yet; HTML export exists, but has no state objects to write |
 | Bitmaps | Plug-ins | no third-party filter host; the built-in effects cover the stock filters |
 | Window | Cascade, Tile, Combine, Dock | document tabs by design (New Window opens a second window of the drawing) |
 

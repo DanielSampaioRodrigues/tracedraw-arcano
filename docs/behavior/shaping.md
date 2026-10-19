@@ -5,8 +5,13 @@ objects selected) and the Shaping panel.
 
 ## Operations
 
-The last object selected is the target and gives the result its fill,
-outline and opacity; the other selected objects are the sources.
+The target gives the result its fill, outline and opacity; the other
+selected objects are the sources. With objects picked one by one
+(click, Shift+click) the target is the one selected last; with a
+selection made by a marquee or a freehand region, the target is the
+bottom-most object of it (as long as the selection is not changed by a
+click afterwards). Checked by
+`ops::curves_and_target_tests::shaping_targets_the_last_clicked_object_but_the_bottom_one_of_a_marquee`.
 
 | Operation | Needs | Result | What stays (menu, property bar) |
 |---|---|---|---|

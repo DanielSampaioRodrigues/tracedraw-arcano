@@ -378,6 +378,7 @@ impl App {
             }
         }
         self.select(ids);
+        self.marquee_selection = Some(self.selection.clone());
     }
 
     /// Add `id` to the selection, taking out the groups holding it and the
@@ -2493,6 +2494,11 @@ impl App {
             if self.tool == Tool::Crop && self.crop_area.is_some() {
                 self.apply_crop();
             }
+            self.finish_curve();
+        }
+        // Space finishes a Bezier curve too (then, as the Pick tool's
+        // key, it switches to Pick).
+        if pressed(Key::Space, Modifiers::NONE) && self.tool == Tool::Bezier {
             self.finish_curve();
         }
         // Esc with a menu or a list open only closes it.

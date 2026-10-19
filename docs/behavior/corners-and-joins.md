@@ -50,8 +50,9 @@ Joins the ends of the selected curves, and the open subpaths inside them.
   when the sides are too short).
 - Bezier Curve: a curve leaving and arriving along the ends' directions,
   handles a third of the gap long.
-- The joined curve replaces the curve selected last and keeps its fill
-  and outline; the other curves are removed. One undo step.
+- The joined curve replaces the curve selected last (with a marquee
+  selection, the bottom-most curve) and keeps its fill and outline; the
+  other curves are removed. One undo step.
 - Nothing within the gap: nothing changes and the status bar says so.
 
 ## Checks

@@ -103,6 +103,28 @@ full, row-by-row status.
   tab strips). Projects can be written back as module files or as a
   compound file.
 
+- Convert to Curves turns a table into a group of curves (cell fills,
+  borders and text) and a symbol instance into its symbol's objects as
+  curves, instead of a plain rectangle; a clip frame keeps its contents
+  (frame and contents become curves and stay clipped); bitmaps are left
+  as they are
+  (the command is greyed for them, with a note in the status bar).
+- Trim, Weld, Intersect and Join Curves take the bottom-most object as
+  the target when the selection was made with a marquee; objects picked
+  one by one keep the one selected last as the target.
+- Colour Management: the Assign and Convert choices described each
+  other. Assign keeps the colour values (the look may change), Convert
+  keeps the look (the values change), in all 18 languages.
+- Imported bitmaps come in at the resolution their file records (PNG,
+  JPEG, TIFF, BMP), 96 dpi when it records none.
+- Space finishes a curve drawn with the Bezier tool (and then switches
+  to the Pick tool, as Space does).
+- Edit > Clone makes a linked clone that follows its master's fill,
+  outline and shape until the clone's own is edited, with Select
+  Master, Select Clones, Revert to Master and Break Clone Link in the
+  context menu (it used to make a plain duplicate).
+- The feature list and guides no longer claim live colour styles or
+  Find and Replace by properties; File > Open does not open bitmaps (File > Import does).
 - VBA macros: a compiler from VBA modules, classes and form code to
   scripts over the TraceDraw object model, with the VBA run-time library,
   Collection and Scripting.Dictionary.
@@ -362,7 +384,7 @@ full, row-by-row status.
 - Tracing a black and white logo keeps white shapes white: the colour
   quantising no longer averages black and white to grey.
 
-- The Transformations panel is laid out as in the reference program:
+- The Transformations panel has a new layout:
   spin boxes with the unit after them, the reference point under the
   check box with the direction picture beside it, a line before Copies.
 

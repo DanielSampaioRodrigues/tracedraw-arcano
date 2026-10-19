@@ -2772,10 +2772,7 @@ pub fn order_part(app: &mut App, ui: &mut Ui) {
     if pic_button(ui, Pic::ToBack, &tr("toolbar.to_back"), true, false).clicked() {
         app.order(3);
     }
-    let curves_ok = app
-        .selected_shapes()
-        .iter()
-        .any(|s| !matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Path { .. }));
+    let curves_ok = app.can_convert_to_curves();
     if pic_button(
         ui,
         Pic::ToCurves,

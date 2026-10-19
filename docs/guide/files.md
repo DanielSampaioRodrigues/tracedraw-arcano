@@ -24,8 +24,11 @@ TraceDraw opens:
 - DXF, EMF, WMF and HPGL (`.plt`);
 - PSD and PSB, with layers as bitmaps;
 - TXT, RTF and DOCX documents, as paragraph text;
-- CMX (partly; see [the CMX notes](../behavior/cmx-import.md));
-- bitmaps: PNG, JPEG, BMP, GIF, TIFF and WebP.
+- CMX (partly; see [the CMX notes](../behavior/cmx-import.md)).
+
+Bitmaps (PNG, JPEG, BMP, GIF, TIFF and WebP) are not opened as
+drawings: bring them in with **File > Import**, which places them at
+the resolution their file records (96 dpi when it records none).
 
 Opening never fails outright: if part of a file cannot be read,
 TraceDraw opens the rest and tells you how many objects were left out.
@@ -36,7 +39,8 @@ issue so the reader can be improved. You can turn these messages off in
 ## Import
 
 To place the contents of another file into the drawing you have open:
-**File > Import** (`Ctrl+I`). Import takes the same formats as Open.
+**File > Import** (`Ctrl+I`). Import takes the same formats as Open, and
+bitmaps as well.
 
 Imported objects land where the file has them. To have them centred in
 the view instead: **Tools > Options > Global > File Formats**.

@@ -17,8 +17,10 @@ tabs; nothing changes until OK. "?" opens the help.
 
 **Document**: Current Profiles (the drawing's RGB, CMYK and grayscale
 profiles: its own CMYK profile when it carries one, else the names it
-stores, else the defaults). Then Assign new (preserve colour appearance)
-or Convert (preserve colour values), and an RGB, a CMYK and a Grayscale
+stores, else the defaults). Then Assign new (preserve colour values: the
+numbers stay, so the colours may look different under the new profile)
+or Convert (preserve colour appearance: the numbers change so the colours
+look the same), and an RGB, a CMYK and a Grayscale
 list: "(Default) name" under Default profiles, then Load color
 profiles... and every RGB, CMYK or grayscale ICC profile found in the
 system folders (`/usr/share/color/icc`, `~/.local/share/color/icc`, the

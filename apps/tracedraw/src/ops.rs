@@ -443,7 +443,17 @@ impl App {
 
     /// Import a raster image as a bitmap object at the page centre (96 dpi).
     pub fn import_bitmap(&mut self, path: &std::path::Path) {
-        let img = match crate::files::open_image(path) {
+        let bytes = match crate::files::read(path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = crate::i18n::trf(
+                    "status.could_not_read",
+                    &[("p", &path.display().to_string()), ("e", &e.to_string())],
+                );
+                return;
+            }
+        };
+        let img = match image::load_from_memory(&bytes) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
                 self.status = crate::i18n::trf(
@@ -454,7 +464,9 @@ impl App {
             }
         };
         let name = path.file_name().and_then(|n| n.to_str()).map(String::from);
-        if let Some(id) = self.place_image(img, name) {
+        // At the resolution the file records, else 96 dpi.
+        let dpi = crate::image_dpi::resolution(&bytes);
+        if let Some(id) = self.place_image_at(img, name, dpi) {
             // Remember where it came from: Bitmaps > Update from Link re-reads it.
             self.run(Command::SetObjectData {
                 shape: id,
@@ -503,12 +515,22 @@ impl App {
         page: tracedraw_core::PageId,
         path: &std::path::Path,
     ) {
-        let img = match crate::files::open_image(path) {
+        let bytes = match crate::files::read(path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = crate::i18n::trf(
+                    "status.could_not_read",
+                    &[("p", &path.display().to_string()), ("e", &e.to_string())],
+                );
+                return;
+            }
+        };
+        let img = match image::load_from_memory(&bytes) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
                 self.status = crate::i18n::trf(
                     "status.could_not_read",
-                    &[("p", &path.display().to_string()), ("e", &e)],
+                    &[("p", &path.display().to_string()), ("e", &e.to_string())],
                 );
                 return;
             }
@@ -536,6 +558,19 @@ impl App {
         img: image::RgbaImage,
         name: Option<String>,
     ) -> Option<tracedraw_core::ShapeId> {
+        self.place_image_at(img, name, None)
+    }
+
+    /// Place an RGBA image at the page centre at `dpi` (horizontal,
+    /// vertical), or 96 dpi when `None`; returns the new shape.
+    pub fn place_image_at(
+        &mut self,
+        img: image::RgbaImage,
+        name: Option<String>,
+        dpi: Option<(f64, f64)>,
+    ) -> Option<tracedraw_core::ShapeId> {
+        let (dpi_x, dpi_y) =
+            dpi.unwrap_or((crate::image_dpi::DEFAULT_DPI, crate::image_dpi::DEFAULT_DPI));
         let (w, h) = img.dimensions();
         let mut png = Vec::new();
         if let Err(e) = image::DynamicImage::ImageRgba8(img)
@@ -545,8 +580,8 @@ impl App {
                 crate::i18n::trf("status.could_not_encode_image", &[("e", &e.to_string())]);
             return None;
         }
-        let mm_w = w as f64 * 25.4 / 96.0;
-        let mm_h = h as f64 * 25.4 / 96.0;
+        let mm_w = w as f64 * 25.4 / dpi_x;
+        let mm_h = h as f64 * 25.4 / dpi_y;
         let page = self.page_rect();
         let c = page.center();
         let rect = Rect::new(
@@ -659,7 +694,7 @@ impl App {
     /// the others replace them).
     pub fn shaping_with(&mut self, op: Shaping, leave_source: bool, leave_target: bool) {
         use tracedraw_core::shaping::{overlay, simplify, Op};
-        let shapes = self.selected_shapes();
+        let shapes = self.selected_shapes_target_last();
         if shapes.is_empty()
             || (shapes.len() < 2 && !matches!(op, Shaping::Simplify | Shaping::Boundary))
         {
@@ -1032,4 +1067,306 @@ pub(crate) fn text_pieces(text: &str) -> Vec<(usize, usize)> {
         .into_iter()
         .flat_map(|(a, b)| (a..b).map(|i| (i, i + 1)))
         .collect()
+}
+
+#[cfg(test)]
+mod curves_and_target_tests {
+    use super::Shaping;
+    use crate::app::App;
+    use tracedraw_core::{
+        document::TextSpan,
+        geometry::{Affine, Rect},
+        Color, Fill, Shape, ShapeId, ShapeKind, Stroke, Table,
+    };
+
+    fn leaves(s: &Shape, out: &mut Vec<Shape>) {
+        match &s.kind {
+            ShapeKind::Group { children } => children.iter().for_each(|c| leaves(c, out)),
+            _ => out.push(s.clone()),
+        }
+    }
+
+    fn ids(s: &Shape, out: &mut Vec<ShapeId>) {
+        out.push(s.id);
+        if let ShapeKind::Group { children } = &s.kind {
+            children.iter().for_each(|c| ids(c, out));
+        }
+    }
+
+    fn converted(app: &App, id: ShapeId) -> Vec<Shape> {
+        let s = app.doc().find_shape(id).expect("still there").clone();
+        assert!(matches!(s.kind, ShapeKind::Group { .. }), "{:?}", s.kind);
+        let mut all = Vec::new();
+        ids(&s, &mut all);
+        let mut unique = all.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), all.len(), "every piece has its own id");
+        assert!(!all.contains(&ShapeId(0)));
+        let mut out = Vec::new();
+        leaves(&s, &mut out);
+        out
+    }
+
+    #[test]
+    fn a_table_becomes_curves_with_its_cells_borders_and_text() {
+        let mut app = App::headless();
+        let border = Stroke::hairline(Color::BLACK);
+        let mut t = Table::new(
+            Rect::new(10.0, 10.0, 70.0, 30.0),
+            2,
+            2,
+            Some(border.clone()),
+        );
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        t.cell_fill = red.clone();
+        t.cells[0].text = vec![TextSpan::new("Hello", "Sans", 12.0)];
+        let id = app.new_shape(ShapeKind::Table(t)).expect("a table");
+        app.select(vec![id]);
+        assert!(app.can_convert_to_curves());
+        app.convert_to_curves();
+        let pieces = converted(&app, id);
+        assert!(
+            pieces
+                .iter()
+                .all(|s| matches!(s.kind, ShapeKind::Path { .. })),
+            "{pieces:?}"
+        );
+        // Four cell fills, one text, one border.
+        let fills = pieces.iter().filter(|s| s.fill == red).count();
+        assert_eq!(fills, 4);
+        let borders: Vec<_> = pieces
+            .iter()
+            .filter(|s| s.stroke.as_ref() == Some(&border))
+            .collect();
+        assert_eq!(borders.len(), 1);
+        assert_eq!(borders[0].fill, Fill::None);
+        assert_eq!(pieces.len(), 6, "{pieces:?}");
+        // The group covers the table's cells.
+        let b = app.doc().find_shape(id).expect("group").bounds();
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-6 && (b.x1 - 70.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        app.undo();
+        assert!(matches!(
+            app.doc().find_shape(id).map(|s| &s.kind),
+            Some(ShapeKind::Table(_))
+        ));
+    }
+
+    #[test]
+    fn a_symbol_instance_becomes_the_curves_of_its_symbol() {
+        let mut app = App::headless();
+        let a = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(20.0, 20.0, 40.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        let b = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(50.0, 20.0, 60.0, 30.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.select(vec![a, b]);
+        app.create_symbol_from_selection();
+        let inst = app.selection[0];
+        app.run(tracedraw_core::Command::TransformShapes {
+            shapes: vec![inst],
+            transform: Affine::translate((5.0, 0.0)),
+        });
+        let before = app.doc().find_shape(inst).expect("instance").clone();
+        let before = before.local_path_with(&app.doc().symbols).elements().len();
+        app.convert_to_curves();
+        let pieces = converted(&app, inst);
+        assert_eq!(pieces.len(), 2, "{pieces:?}");
+        assert!(pieces
+            .iter()
+            .all(|s| matches!(s.kind, ShapeKind::Path { .. })));
+        let g = app.doc().find_shape(inst).expect("group").clone();
+        assert_eq!(g.local_path().elements().len(), before);
+        // Where the instance was: the rectangle moved with it.
+        let bounds = g.bounds();
+        assert!((bounds.x0 - 25.0).abs() < 1e-6, "{bounds:?}");
+        assert!((bounds.x1 - 65.0).abs() < 1e-6, "{bounds:?}");
+    }
+
+    #[test]
+    fn a_clip_frame_keeps_its_contents_as_curves() {
+        let mut app = App::headless();
+        let fid = app.engine.new_shape_id();
+        let rid = app.engine.new_shape_id();
+        let bid = app.engine.new_shape_id();
+        let frame = Shape::new(
+            fid,
+            ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 50.0, 40.0),
+                arc: None,
+            },
+        );
+        let mut inner = Shape::new(
+            rid,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 30.0, 30.0),
+                radius: 2.0,
+                corners: None,
+            },
+        );
+        inner.fill = Fill::Solid(Color::rgb8(0, 128, 0));
+        let bitmap = Shape::new(
+            bid,
+            ShapeKind::Bitmap {
+                rect: Rect::new(20.0, 20.0, 40.0, 30.0),
+                width_px: 1,
+                height_px: 1,
+                png: Vec::new(),
+                fx: None,
+            },
+        );
+        let id = app
+            .new_shape(ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![inner, bitmap],
+            })
+            .expect("a clip frame");
+        app.select(vec![id]);
+        assert!(app.can_convert_to_curves());
+        app.convert_to_curves();
+        let s = app.doc().find_shape(id).expect("still there").clone();
+        let ShapeKind::ClipFrame { frame, contents } = &s.kind else {
+            panic!("still a clip frame: {:?}", s.kind);
+        };
+        assert_eq!(frame.id, fid);
+        assert!(matches!(frame.kind, ShapeKind::Path { .. }));
+        assert_eq!(contents.len(), 2);
+        assert_eq!(contents[0].id, rid);
+        assert!(matches!(contents[0].kind, ShapeKind::Path { .. }));
+        assert_eq!(contents[0].fill, Fill::Solid(Color::rgb8(0, 128, 0)));
+        // A bitmap inside stays a bitmap.
+        assert!(matches!(contents[1].kind, ShapeKind::Bitmap { .. }));
+        // Converting again changes nothing, and the command is greyed.
+        assert!(!app.can_convert_to_curves());
+        let rev = app.engine.revision();
+        app.convert_to_curves();
+        assert_eq!(app.engine.revision(), rev);
+    }
+
+    #[test]
+    fn a_bitmap_is_not_converted() {
+        let mut app = App::headless();
+        let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
+        let id = app.place_image(img, None).expect("bitmap");
+        assert!(!app.can_convert_to_curves());
+        app.convert_to_curves();
+        assert!(matches!(
+            app.doc().find_shape(id).map(|s| &s.kind),
+            Some(ShapeKind::Bitmap { .. })
+        ));
+        assert_eq!(app.status, crate::i18n::tr("status.bitmap_not_curves"));
+    }
+
+    /// A red rectangle under a blue one, overlapping.
+    fn two_rects(app: &mut App) -> (ShapeId, ShapeId) {
+        let mut add = |r: Rect, c: Color| {
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: r,
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            app.run(tracedraw_core::Command::SetFill {
+                shapes: vec![id],
+                fill: Fill::Solid(c),
+            });
+            id
+        };
+        let bottom = add(Rect::new(10.0, 10.0, 40.0, 40.0), Color::rgb8(255, 0, 0));
+        let top = add(Rect::new(30.0, 30.0, 60.0, 60.0), Color::rgb8(0, 0, 255));
+        (bottom, top)
+    }
+
+    fn result_fill(app: &App, gone: &[ShapeId]) -> Fill {
+        let s = app
+            .doc()
+            .all_layers()
+            .flat_map(|l| &l.shapes)
+            .find(|s| !gone.contains(&s.id) && matches!(s.kind, ShapeKind::Path { .. }))
+            .expect("a result")
+            .clone();
+        s.fill
+    }
+
+    #[test]
+    fn shaping_targets_the_last_clicked_object_but_the_bottom_one_of_a_marquee() {
+        let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        for op in [Shaping::Trim, Shaping::Weld, Shaping::Intersect] {
+            // Picked one by one: the one picked last is the target.
+            let mut app = App::headless();
+            let (bottom, top) = two_rects(&mut app);
+            app.select(vec![bottom, top]);
+            app.shaping_with(op, false, false);
+            assert_eq!(result_fill(&app, &[]), blue, "{op:?} clicked");
+
+            let mut app = App::headless();
+            let (bottom, top) = two_rects(&mut app);
+            app.select(vec![top, bottom]);
+            app.shaping_with(op, false, false);
+            assert_eq!(result_fill(&app, &[]), red, "{op:?} clicked in reverse");
+
+            // Marquee: the bottom-most object is the target.
+            let mut app = App::headless();
+            let (bottom, top) = two_rects(&mut app);
+            app.select(Vec::new());
+            app.select_in_region(
+                crate::select_region::Region::Rect(Rect::new(0.0, 0.0, 70.0, 70.0)),
+                false,
+            );
+            assert_eq!(app.selection, vec![bottom, top]);
+            app.shaping_with(op, false, false);
+            assert_eq!(result_fill(&app, &[]), red, "{op:?} marquee");
+        }
+        // A marquee selection changed by a click no longer counts.
+        let mut app = App::headless();
+        let (bottom, top) = two_rects(&mut app);
+        app.select_in_region(
+            crate::select_region::Region::Rect(Rect::new(0.0, 0.0, 70.0, 70.0)),
+            false,
+        );
+        app.select(vec![bottom, top]);
+        assert_eq!(
+            app.selected_shapes_target_last().last().map(|s| s.id),
+            Some(top)
+        );
+    }
+
+    #[test]
+    fn join_curves_keeps_the_bottom_curve_of_a_marquee() {
+        let mut app = App::headless();
+        let line = |app: &mut App, a: (f64, f64), b: (f64, f64)| {
+            let mut p = tracedraw_core::BezPath::new();
+            p.move_to(a);
+            p.line_to(b);
+            app.new_shape(ShapeKind::Path {
+                path: p,
+                closed: false,
+            })
+            .expect("a line")
+        };
+        let a = line(&mut app, (100.0, 100.0), (108.0, 100.0));
+        let b = line(&mut app, (110.0, 102.0), (110.0, 110.0));
+        app.select(Vec::new());
+        app.select_in_region(
+            crate::select_region::Region::Rect(Rect::new(90.0, 90.0, 120.0, 120.0)),
+            false,
+        );
+        app.join_settings.gap = 5.0;
+        assert_eq!(app.join_curves(), 1);
+        assert_eq!(app.selection, vec![a]);
+        assert!(app.doc().find_shape(b).is_none());
+    }
 }

@@ -2212,6 +2212,144 @@ impl Shape {
         }
     }
 
+    /// Whether Convert to Curves changes this object: curves and groups
+    /// already are curves, and a bitmap has no outline to become one.
+    pub fn converts_to_curves(&self) -> bool {
+        match &self.kind {
+            ShapeKind::Path { .. } | ShapeKind::Group { .. } | ShapeKind::Bitmap { .. } => false,
+            // A clip frame changes only when its frame or something it
+            // holds (inside groups too) is not a curve yet.
+            ShapeKind::ClipFrame { frame, contents } => {
+                frame.converts_to_curves_deep(0)
+                    || contents.iter().any(|c| c.converts_to_curves_deep(0))
+            }
+            _ => true,
+        }
+    }
+
+    /// [`Shape::converts_to_curves`], looking inside groups.
+    fn converts_to_curves_deep(&self, depth: usize) -> bool {
+        match &self.kind {
+            ShapeKind::Group { children } if depth < 16 => children
+                .iter()
+                .any(|c| c.converts_to_curves_deep(depth + 1)),
+            _ => self.converts_to_curves(),
+        }
+    }
+
+    /// The kind this object takes when converted to curves, or `None` when
+    /// [`Shape::converts_to_curves`] says it stays as it is. Tables and
+    /// symbol instances become a group of curves made from what they draw
+    /// (cell fills, borders and text; the symbol's objects), each piece
+    /// with its own fill and outline; `next_id` names the new pieces.
+    pub fn curves_kind(
+        &self,
+        symbols: &[Symbol],
+        next_id: &mut dyn FnMut() -> ShapeId,
+    ) -> Option<ShapeKind> {
+        self.curves_kind_depth(symbols, next_id, 0)
+    }
+
+    fn curves_kind_depth(
+        &self,
+        symbols: &[Symbol],
+        next_id: &mut dyn FnMut() -> ShapeId,
+        depth: usize,
+    ) -> Option<ShapeKind> {
+        // A symbol that holds itself would never end.
+        const MAX_DEPTH: usize = 16;
+        if !self.converts_to_curves() || depth > MAX_DEPTH {
+            return None;
+        }
+        match &self.kind {
+            ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. } => {
+                let mut children = self.expand(symbols);
+                if children.is_empty() {
+                    return None;
+                }
+                for c in &mut children {
+                    c.curves_deep(symbols, next_id, depth + 1);
+                }
+                Some(ShapeKind::Group { children })
+            }
+            // A clip frame stays a clip frame: its frame and what it holds
+            // become curves (keeping their ids) and stay clipped.
+            ShapeKind::ClipFrame { frame, contents } => {
+                let mut frame = frame.clone();
+                let mut contents = contents.clone();
+                frame.curves_in_place(symbols, next_id, depth + 1);
+                for c in &mut contents {
+                    c.curves_in_place(symbols, next_id, depth + 1);
+                }
+                let kind = ShapeKind::ClipFrame { frame, contents };
+                (kind != self.kind).then_some(kind)
+            }
+            _ => Some(ShapeKind::Path {
+                path: self.local_path(),
+                closed: true,
+            }),
+        }
+    }
+
+    /// Turn this object, and everything inside a group or clip frame, into
+    /// curves, keeping the ids of the objects that were there (new pieces
+    /// of tables and symbols get new ones).
+    fn curves_in_place(
+        &mut self,
+        symbols: &[Symbol],
+        next_id: &mut dyn FnMut() -> ShapeId,
+        depth: usize,
+    ) {
+        if depth > 16 {
+            return;
+        }
+        match &mut self.kind {
+            ShapeKind::Group { children } => {
+                for c in children {
+                    c.curves_in_place(symbols, next_id, depth + 1);
+                }
+            }
+            _ => {
+                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth) {
+                    self.kind = kind;
+                    self.node_types.clear();
+                }
+            }
+        }
+    }
+
+    /// Give this object and everything inside it new ids, and turn every
+    /// convertible piece into curves.
+    fn curves_deep(
+        &mut self,
+        symbols: &[Symbol],
+        next_id: &mut dyn FnMut() -> ShapeId,
+        depth: usize,
+    ) {
+        self.id = next_id();
+        match &mut self.kind {
+            ShapeKind::Group { children } => {
+                for c in children {
+                    c.curves_deep(symbols, next_id, depth + 1);
+                }
+            }
+            // A frame keeps what it holds; both become curves.
+            ShapeKind::ClipFrame { frame, contents } => {
+                frame.curves_deep(symbols, next_id, depth + 1);
+                for c in contents {
+                    c.curves_deep(symbols, next_id, depth + 1);
+                }
+            }
+            _ => {
+                // The pieces of a converted table or symbol get their ids there.
+                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth) {
+                    self.kind = kind;
+                    self.node_types.clear();
+                }
+            }
+        }
+    }
+
     /// Outline in local space, using the symbol table for instances.
     pub fn local_path_with(&self, symbols: &[Symbol]) -> BezPath {
         match &self.kind {

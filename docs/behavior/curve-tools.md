@@ -28,7 +28,10 @@ meets the start) `Path` objects with the toolbox defaults.
   pulled before becomes a cusp, the segment leaving it straight (its
   incoming handle stays). Clicking the last node again (within the join
   distance) makes it a cusp without adding a node.
-- Double-click or Enter finishes; Esc discards the curve being drawn.
+- Double-click or Enter finishes; with the Bezier tool Space finishes
+  too and then, being the Pick tool's key, switches to Pick (checked by
+  `pick_drag_tests::space_finishes_a_bezier_curve_then_picks`); Esc
+  discards the curve being drawn.
   A press on the first node (within the join distance, 5 screen pixels
   by default, once the curve has three nodes) closes the curve: a click
   closes it with a straight segment from the last node; a drag from the

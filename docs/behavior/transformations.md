@@ -6,7 +6,7 @@ Alt+F9 and Alt+F10 open the panel on Position, Rotate, Scale and Mirror
 and Size (pressed again on the page shown, they close the docker
 column); Object > Transformations opens any of the five.
 
-Each page is laid out as in the reference program: a line under the
+Each page is laid out the same way: a line under the
 picture buttons, the page's name with a colon (Rotate shows a turning
 arrow before its angle instead), the fields as spin boxes (up and down
 arrows at their right, a click steps by a whole millimetre, pixel,

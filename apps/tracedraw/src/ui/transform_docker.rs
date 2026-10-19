@@ -296,7 +296,7 @@ pub fn open(app: &mut App, tab: TransformTab, toggle: bool) {
 }
 
 /// A distance in a spin box (up and down arrows at its right), the
-/// unit's name after it, as the reference program lays these out.
+/// unit's name after it.
 fn length(ui: &mut Ui, id: &str, units: Units, decimals: usize, mm: &mut f64) -> bool {
     let unit = units.world_mm();
     let unit = if unit.is_finite() && unit > 0.0 {
@@ -641,8 +641,8 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 }
             }
         }
-        // The reference point under the check box, indented as the
-        // reference program does; for an offset, the direction picture
+        // The reference point under the check box, indented; for an
+        // offset, the direction picture
         // beside it.
         ui.add_space(4.0);
         let anchor_matters = !matches!(form.tab, TransformTab::Skew) || form.use_anchor;

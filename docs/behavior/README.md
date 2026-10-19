@@ -11,8 +11,9 @@ wrong. Each page records:
 
 Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.md`, `blend.md`,
 `block-shadow.md`,
-`barcode.md`, `border-and-grommet.md`, `brushes.md`, `color-docker.md`, `color-palettes.md`,
-`colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
+`barcode.md`, `bitmap-import.md`, `border-and-grommet.md`, `brushes.md`, `color-docker.md`, `color-palettes.md`,
+`clones.md`, `colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
+`convert-to-curves.md`,
 `coordinates.md`, `corners-and-joins.md`,
 `crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
 `document-properties.md`, `documents.md`, `drawing-window.md`, `drop-shadow.md`, `dxf.md`,

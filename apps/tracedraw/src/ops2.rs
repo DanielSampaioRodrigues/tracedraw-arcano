@@ -992,7 +992,7 @@ impl App {
     /// number of joints made.
     pub fn join_curves(&mut self) -> usize {
         let shapes: Vec<Shape> = self
-            .selected_shapes()
+            .selected_shapes_target_last()
             .into_iter()
             .filter(|s| matches!(s.kind, ShapeKind::Path { .. }))
             .collect();

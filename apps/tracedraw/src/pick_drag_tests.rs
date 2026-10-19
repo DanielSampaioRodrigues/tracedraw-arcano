@@ -2226,3 +2226,33 @@ fn rounded_corners_keep_their_size_when_relative_scaling_is_off() {
         let _ = app.undo();
     }
 }
+
+#[test]
+fn space_finishes_a_bezier_curve_then_picks() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Bezier);
+    let before = shape_count(&app);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 170.0),
+        Point::new(180.0, 150.0),
+    ];
+    for p in pts {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    assert!(app.curve.is_some());
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Space, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.curve.is_none(), "Space ends the curve");
+    assert_eq!(shape_count(&app), before + 1);
+    // Space is also the Pick tool's key: the curve is kept, then Pick.
+    assert_eq!(app.tool, Tool::Pick);
+    let nodes = tracedraw_core::nodes::nodes(&last_path(&app));
+    assert_eq!(nodes.len(), 3, "{nodes:?}");
+}

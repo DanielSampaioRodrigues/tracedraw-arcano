@@ -191,6 +191,26 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         }
         sep(ui);
     }
+    // Clones and their masters.
+    let has_clone = app.selection_has_clone();
+    let has_clones = app.selection_has_clones();
+    if has_clone || has_clones {
+        if has_clone {
+            if ci(ui, close, "context.select_master", "", true) {
+                app.select_clone_masters();
+            }
+            if ci(ui, close, "context.revert_to_master", "", true) {
+                app.revert_clones_to_master();
+            }
+            if ci(ui, close, "context.unlink_clone", "", true) {
+                app.unlink_clones();
+            }
+        }
+        if has_clones && ci(ui, close, "context.select_clones", "", true) {
+            app.select_clones_of_selection();
+        }
+        sep(ui);
+    }
     // One object (a group most of all): edit it on its own.
     if ci(
         ui,
@@ -206,7 +226,7 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         close,
         "menu.object.convert_to_curves",
         "Ctrl+Q",
-        !is_curve || many,
+        app.can_convert_to_curves(),
     ) {
         app.convert_to_curves();
     }

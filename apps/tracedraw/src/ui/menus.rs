@@ -1779,8 +1779,8 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.edit.duplicate", "Ctrl+D", has) {
         app.duplicate();
     }
-    if item(ui, "menu.edit.clone", "", has) {
-        app.duplicate();
+    if item(ui, "menu.edit.clone", "", app.can_clone()) {
+        app.clone_selection();
     }
     sep(ui);
     sub(ui, "menu.edit.select_all", |ui| {
@@ -2414,7 +2414,12 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         app.add_perspective();
     }
     sep(ui);
-    if item(ui, "menu.object.convert_to_curves", "Ctrl+Q", has) {
+    if item(
+        ui,
+        "menu.object.convert_to_curves",
+        "Ctrl+Q",
+        app.can_convert_to_curves(),
+    ) {
         app.convert_to_curves();
     }
     if item(ui, "menu.object.convert_to_bitmap", "", has) {
