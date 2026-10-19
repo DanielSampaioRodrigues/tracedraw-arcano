@@ -752,6 +752,10 @@ pub struct App {
     pub pen_editing: bool,
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
+    /// Text an input method is composing at the caret (Chinese, Japanese,
+    /// Korean and other input methods), shown underlined until it is
+    /// committed.
+    pub ime_preedit: String,
     /// The last colours picked for a fill and for an outline (the
     /// palette's left and right clicks): the "current colours" the first
     /// built-in gradient runs between.
@@ -1675,6 +1679,7 @@ impl App {
             pen_editing: false,
             curve: None,
             text_edit: None,
+            ime_preedit: String::new(),
             current_colors: (Color::BLACK, Color::WHITE),
             file: None,
             remote: None,
@@ -3440,6 +3445,7 @@ impl App {
     }
 
     pub fn finish_text(&mut self) {
+        self.ime_preedit.clear();
         let empty = self.edit_text().trim().is_empty();
         if let Some(te) = self.text_edit.take() {
             if empty {

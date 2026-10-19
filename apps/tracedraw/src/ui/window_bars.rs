@@ -440,6 +440,16 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
         } else if resp.clicked() {
             clicked = Some(i);
         }
+        // A right click on a tab makes its page the current one and opens
+        // the page menu.
+        if resp.secondary_clicked() {
+            app.goto_page(i);
+        }
+        let mut action = None;
+        resp.context_menu(|ui| action = page_tab_menu(app, ui));
+        if let Some(a) = action {
+            apply_page_tab_action(app, a);
+        }
         x += w - slant;
     }
     if let Some(i) = clicked {
@@ -458,9 +468,139 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
     }
 }
 
+/// What the page tab menu asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PageTabAction {
+    Rename,
+    InsertBefore,
+    InsertAfter,
+    Duplicate,
+    Delete,
+    SwitchOrientation,
+    PageSize,
+    Background,
+}
+
+/// The menu of a page tab, for the current page.
+fn page_tab_menu(app: &App, ui: &mut Ui) -> Option<PageTabAction> {
+    use crate::ui::menus::{item, sep};
+    use PageTabAction as A;
+    let mut out = None;
+    let mut pick = |ui: &mut Ui, key: &str, enabled: bool, a: A| {
+        if item(ui, key, "", enabled) {
+            out = Some(a);
+            ui.close();
+        }
+    };
+    pick(ui, "menu.layout.rename_page", true, A::Rename);
+    sep(ui);
+    pick(ui, "page_tab.insert_before", true, A::InsertBefore);
+    pick(ui, "page_tab.insert_after", true, A::InsertAfter);
+    pick(ui, "page_tab.duplicate", true, A::Duplicate);
+    pick(ui, "page_tab.delete", app.doc().pages.len() > 1, A::Delete);
+    sep(ui);
+    pick(
+        ui,
+        "menu.layout.switch_orientation",
+        true,
+        A::SwitchOrientation,
+    );
+    pick(ui, "menu.layout.page_size", true, A::PageSize);
+    pick(ui, "menu.layout.page_background", true, A::Background);
+    out
+}
+
+/// Carry out a page tab menu command on the current page.
+pub(crate) fn apply_page_tab_action(app: &mut App, action: PageTabAction) {
+    use crate::ui::dialogs::{Dialog, OptionsPage};
+    use tracedraw_core::Command;
+    match action {
+        PageTabAction::Rename => {
+            let name = app
+                .doc()
+                .page(app.page)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            app.dialog = Dialog::RenamePage { name };
+        }
+        PageTabAction::InsertBefore => app.insert_page(false),
+        PageTabAction::InsertAfter => app.insert_page(true),
+        PageTabAction::Duplicate => {
+            let page = app.page;
+            let before = app.doc().pages.len();
+            app.run(Command::DuplicatePage { page });
+            // The copy becomes the current page.
+            if app.doc().pages.len() > before {
+                let idx = app.page_index() + 1;
+                app.goto_page(idx);
+            }
+        }
+        PageTabAction::Delete => {
+            if app.doc().pages.len() > 1 {
+                app.delete_page();
+            }
+        }
+        PageTabAction::SwitchOrientation => {
+            let s = app.page_size();
+            let page = app.page;
+            app.run(Command::ResizePage {
+                page,
+                size: tracedraw_core::geometry::Size::new(s.height, s.width),
+            });
+            app.fit_pending = true;
+        }
+        PageTabAction::PageSize => {
+            let s = app.page_size();
+            app.dialog = Dialog::PageSize {
+                width: s.width,
+                height: s.height,
+                all_pages: true,
+            };
+        }
+        PageTabAction::Background => {
+            app.dialog = Dialog::Options;
+            app.options_page = OptionsPage::Background;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::app::App;
+
+    #[test]
+    fn the_page_tab_menu_inserts_duplicates_turns_and_deletes_pages() {
+        use super::{apply_page_tab_action, PageTabAction as A};
+        let mut app = App::headless();
+        let first = app.page;
+        apply_page_tab_action(&mut app, A::InsertAfter);
+        assert_eq!(app.doc().pages.len(), 2);
+        assert_eq!(app.page_index(), 1);
+        app.goto_page(0);
+        apply_page_tab_action(&mut app, A::InsertBefore);
+        assert_eq!(app.doc().pages.len(), 3);
+        assert_eq!(app.page_index(), 0);
+        assert_eq!(app.doc().pages[1].id, first);
+        app.goto_page(1);
+        apply_page_tab_action(&mut app, A::Duplicate);
+        assert_eq!(app.doc().pages.len(), 4);
+        assert_eq!(app.page_index(), 2);
+        let s = app.page_size();
+        apply_page_tab_action(&mut app, A::SwitchOrientation);
+        let t = app.page_size();
+        assert!((s.width - t.height).abs() < 1e-9 && (s.height - t.width).abs() < 1e-9);
+        apply_page_tab_action(&mut app, A::Delete);
+        assert_eq!(app.doc().pages.len(), 3);
+        apply_page_tab_action(&mut app, A::Rename);
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::RenamePage { .. }
+        ));
+        // The last page is never deleted.
+        let mut one = App::headless();
+        apply_page_tab_action(&mut one, A::Delete);
+        assert_eq!(one.doc().pages.len(), 1);
+    }
 
     #[test]
     fn insert_page_before_and_after_the_current_one() {

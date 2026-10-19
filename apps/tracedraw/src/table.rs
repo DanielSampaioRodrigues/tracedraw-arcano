@@ -498,7 +498,15 @@ impl App {
         // While a cell is active every key belongs to it, so letters never
         // reach the single-key shortcuts (align, tools) of the canvas.
         for ev in &events {
+            if !self.ime_preedit.is_empty() && matches!(ev, Event::Key { .. }) {
+                continue;
+            }
             match ev {
+                Event::Ime(ime) => {
+                    if let Some(commit) = self.ime_event(ime) {
+                        self.cell_insert(&commit);
+                    }
+                }
                 Event::Text(t) | Event::Paste(t) => self.cell_insert(t),
                 Event::Copy => {
                     let sel = self.cell_selected_text();

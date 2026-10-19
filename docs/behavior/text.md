@@ -97,6 +97,32 @@ The property bar's font, size and style buttons act on the selected
 characters while a selection exists, and show the style at the caret. All
 the keystrokes of one editing session are one "Edit Text" undo step.
 
+**Input methods** (Chinese, Japanese, Korean and the others): while text
+or a table cell is edited on the canvas, the system's input method is
+switched on at the caret (its candidate window opens there). The text it
+composes shows underlined at the caret, keys go to it while it composes,
+and what it commits is inserted like typed text. A focused field of a
+docker or bar keeps its own input method. Letters the text's font lacks
+are drawn from an installed font that has them (Noto CJK and the
+system's CJK fonts), for each character
+(`text_effect_tests::an_input_method_composes_then_commits_cjk_text`,
+`text_effect_tests::the_canvas_asks_for_the_input_method_while_text_is_typed`).
+
+**Break Apart** (Ctrl+K) on artistic text makes separate text objects of
+its lines when it has more than one line, else of its words, else of its
+letters (a text without spaces, like CJK text, breaks into its
+characters). Each piece keeps the text's look (font, size, styles, fill,
+outline, transformation) and sits where its letters were; the first
+piece keeps the object, the others go just above it, all selected, in one
+"Break Apart" undo step. A single letter, paragraph text and text on a
+path stay as they are
+(`text_effect_tests::break_apart_splits_text_into_lines_words_then_letters`).
+
+Text takes blends (with another text or any object) and extrusions like
+any other object; the steps and sides follow the letters' outlines
+(`text_effect_tests::the_blend_tool_blends_two_texts_and_a_text_with_a_shape`,
+`text_effect_tests::text_can_be_extruded`).
+
 ## Paragraph text frames
 
 - A paragraph text's bounds are its whole frame (with the letters, when

@@ -308,8 +308,47 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 [view.to_screen(top), view.to_screen(bottom)],
                 EStroke::new(1.5, Tokens::text()),
             );
+            ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
         }
     }
+}
+
+/// While text is typed on the canvas: let the system's input method
+/// compose there (its candidate window follows the caret) and show the
+/// text being composed, underlined, at the caret.
+pub(crate) fn ime_at_caret(app: &App, painter: &Painter, top: Pos2, bottom: Pos2) {
+    let ctx = painter.ctx();
+    // A focused field of a docker or bar has the keyboard (and its own
+    // input method position).
+    if ctx.memory(|m| m.focused().is_some()) {
+        return;
+    }
+    let caret = ERect::from_two_pos(top, bottom).expand2(egui::vec2(1.0, 0.0));
+    ctx.output_mut(|o| {
+        o.ime = Some(egui::output::IMEOutput {
+            purpose: egui::IMEPurpose::Normal,
+            rect: painter.clip_rect(),
+            cursor_rect: caret,
+            should_interrupt_composition: false,
+        })
+    });
+    if app.ime_preedit.is_empty() {
+        return;
+    }
+    let size = ((bottom.y - top.y).abs() * 0.8).clamp(10.0, 72.0);
+    let galley = painter.layout_no_wrap(
+        app.ime_preedit.clone(),
+        egui::FontId::proportional(size),
+        Tokens::text(),
+    );
+    let at = Pos2::new(caret.max.x + 1.0, caret.max.y - galley.size().y);
+    let r = ERect::from_min_size(at, galley.size());
+    painter.rect_filled(r.expand(1.0), 0.0, Color32::from_white_alpha(230));
+    painter.galley(at, galley, Tokens::text());
+    painter.line_segment(
+        [Pos2::new(r.min.x, r.max.y), Pos2::new(r.max.x, r.max.y)],
+        EStroke::new(1.0, Tokens::text()),
+    );
 }
 
 /// The window's background, the page with its shadow and border, bleed
@@ -775,6 +814,7 @@ fn draw_table_cells(app: &App, painter: &Painter) {
             [view.to_screen(top), view.to_screen(bottom)],
             EStroke::new(1.5, Tokens::text()),
         );
+        ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
     }
 }
 

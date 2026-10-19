@@ -71,6 +71,61 @@ pub fn polygon(pts: &[Point]) -> BezPath {
 
 /// Intermediate shapes between `a` and `b` (excluding both), `steps` of them.
 pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
+    // Outlines of several parts (letters, shapes with holes) morph part by
+    // part: the n-th part of one into the n-th part of the other, in
+    // order; a part without a partner grows from, or shrinks to, a point
+    // at its own centre. One polygon through every part would join them
+    // into a tangle.
+    let parts = |p: &BezPath| -> Vec<BezPath> {
+        subpaths(p)
+            .into_iter()
+            .map(|(sp, _)| sp)
+            .filter(|sp| sp.elements().len() > 1)
+            .collect()
+    };
+    let (ka, kb) = (parts(a), parts(b));
+    if ka.len() > 1 || kb.len() > 1 {
+        let n = ka.len().max(kb.len());
+        let per = (samples / 2).clamp(24, 96);
+        let mut out = vec![BezPath::new(); steps];
+        for i in 0..n {
+            let (x, y) = match (ka.get(i), kb.get(i)) {
+                (Some(x), Some(y)) => (x.clone(), y.clone()),
+                (Some(x), None) => (x.clone(), point_path(x)),
+                (None, Some(y)) => (point_path(y), y.clone()),
+                (None, None) => continue,
+            };
+            for (k, step) in blend_one(&x, &y, steps, per).into_iter().enumerate() {
+                if let Some(o) = out.get_mut(k) {
+                    o.extend(step.elements().iter().copied());
+                }
+            }
+        }
+        return out;
+    }
+    blend_one(a, b, steps, samples)
+}
+
+/// A closed path collapsed to the centre of `p`'s outline (a part that
+/// appears or vanishes in a blend).
+fn point_path(p: &BezPath) -> BezPath {
+    let pts = resample(p, 32);
+    let n = pts.len().max(1) as f64;
+    let c = Point::new(
+        pts.iter().map(|q| q.x).sum::<f64>() / n,
+        pts.iter().map(|q| q.y).sum::<f64>() / n,
+    );
+    let mut out = BezPath::new();
+    out.move_to(c);
+    out.line_to(c + Vec2::new(1e-6, 0.0));
+    out.line_to(c + Vec2::new(0.0, 1e-6));
+    out.close_path();
+    out
+}
+
+/// The morph of one outline into another (each taken as one closed run of
+/// points).
+fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
     let pa = resample(a, samples);
     let pb = resample(b, samples);
     if pa.len() != pb.len() || pa.is_empty() {
@@ -398,6 +453,41 @@ mod tests {
         };
         let (pulled, pushed) = (attract(&sq, c, 5.0, 1.0), attract(&sq, c, 5.0, -1.0));
         assert!(reach(&pulled) < 20.0 && reach(&pushed) > 20.0);
+    }
+
+    #[test]
+    fn blends_of_several_parts_morph_part_by_part() {
+        // Two "letters" side by side into two "letters" further right,
+        // and a third part that appears from a point.
+        let two = |x: f64| {
+            let mut p = Rect::new(x, 0.0, x + 10.0, 10.0).to_path(0.01);
+            p.extend(Rect::new(x + 20.0, 0.0, x + 30.0, 10.0).to_path(0.01));
+            p
+        };
+        let a = two(0.0);
+        let mut b = two(100.0);
+        b.extend(Rect::new(140.0, 0.0, 150.0, 10.0).to_path(0.01));
+        let steps = blend(&a, &b, 1, 64);
+        assert_eq!(steps.len(), 1);
+        let parts = subpaths(&steps[0]);
+        assert_eq!(parts.len(), 3, "one part per pair");
+        let first = parts[0].0.bounding_box();
+        let second = parts[1].0.bounding_box();
+        // Each part keeps its size halfway and sits halfway.
+        assert!(
+            (first.width() - 10.0).abs() < 1.0 && (first.center().x - 55.0).abs() < 1.0,
+            "{first:?}"
+        );
+        assert!(
+            (second.width() - 10.0).abs() < 1.0 && (second.center().x - 75.0).abs() < 1.0,
+            "{second:?}"
+        );
+        // The new part grows from its own centre: half its size there.
+        let third = parts[2].0.bounding_box();
+        assert!(
+            (third.center().x - 145.0).abs() < 1.0 && third.width() < 6.0,
+            "{third:?}"
+        );
     }
 
     #[test]

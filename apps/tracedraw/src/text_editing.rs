@@ -147,7 +147,18 @@ impl App {
         use egui::{Event, Key};
         let events = ctx.input(|i| i.events.clone());
         for ev in &events {
+            // An input method composing text owns the keys until it
+            // commits (Enter, Backspace and the arrows edit the
+            // composition, not the text).
+            if !self.ime_preedit.is_empty() && matches!(ev, Event::Key { .. }) {
+                continue;
+            }
             match ev {
+                Event::Ime(ime) => {
+                    if let Some(commit) = self.ime_event(ime) {
+                        self.text_insert(&commit);
+                    }
+                }
                 Event::Text(t) => self.text_insert(t),
                 Event::Paste(t) => self.text_insert(t),
                 Event::Copy => {
@@ -215,6 +226,22 @@ impl App {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Follow an input method: its composition is kept to show at the
+    /// caret; the committed text is returned to be inserted.
+    pub fn ime_event(&mut self, ime: &egui::ImeEvent) -> Option<String> {
+        match ime {
+            egui::ImeEvent::Preedit { text, .. } => {
+                self.ime_preedit = text.clone();
+                None
+            }
+            egui::ImeEvent::Commit(text) => {
+                self.ime_preedit.clear();
+                (!text.is_empty()).then(|| text.clone())
+            }
+            _ => None,
         }
     }
 

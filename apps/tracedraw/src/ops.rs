@@ -352,8 +352,18 @@ impl App {
             .flat_map(|l| &l.shapes)
             .map(|s| s.id)
             .collect();
+        // Artistic text breaks into its lines, a single line into its
+        // words, a single word into its characters; curves into their
+        // subpaths. One undo step for the whole selection.
+        let mut cmds = Vec::new();
         for id in &ids {
-            self.run(Command::BreakApart { shape: *id });
+            match self.text_break_commands(*id) {
+                Some(mut c) => cmds.append(&mut c),
+                None => cmds.push(Command::BreakApart { shape: *id }),
+            }
+        }
+        if let Err(e) = self.engine.run_batch("Break Apart", &cmds) {
+            self.status = e.to_string();
         }
         let mut pieces: Vec<tracedraw_core::ShapeId> = self
             .doc()
@@ -366,6 +376,69 @@ impl App {
             .collect();
         pieces.sort_by_key(|id| id.0);
         self.select(pieces);
+    }
+
+    /// The commands that break the artistic text `id` apart (`None` when
+    /// it is not artistic text, or holds a single character): each piece
+    /// a text object of its own with the same look, placed where its
+    /// letters were. The first piece keeps the object (its id, place in
+    /// the stacking order and properties); the others go right above it.
+    pub(crate) fn text_break_commands(
+        &mut self,
+        id: tracedraw_core::ShapeId,
+    ) -> Option<Vec<Command>> {
+        let doc = self.doc();
+        let (layer, index) = doc.locate(id).ok()?;
+        let shape = doc.find_shape(id)?.clone();
+        let ShapeKind::Text {
+            spans,
+            origin,
+            frame: None,
+            para,
+            on_path: None,
+            ..
+        } = &shape.kind
+        else {
+            return None;
+        };
+        let pieces = text_pieces(&tracedraw_core::document::spans_text(spans));
+        if pieces.len() < 2 {
+            return None;
+        }
+        let (layout, _) = crate::text_editing::layout_of_text_shape(
+            &shape,
+            tracedraw_core::geometry::Affine::IDENTITY,
+        )?;
+        let mut cmds = Vec::new();
+        for (k, (a, b)) in pieces.iter().enumerate() {
+            let (head, _) = tracedraw_core::document::split_spans_at(spans, *b);
+            let (_, piece) = tracedraw_core::document::split_spans_at(&head, *a);
+            let (x, baseline, _, _) = layout.caret(*a)?;
+            let kind = ShapeKind::Text {
+                spans: piece,
+                origin: tracedraw_core::geometry::Point::new(origin.x + x, origin.y + baseline),
+                frame: None,
+                align: tracedraw_core::document::TextAlign::Left,
+                para: para.clone(),
+                on_path: None,
+            };
+            if k == 0 {
+                cmds.push(Command::SetShapeKind { shape: id, kind });
+            } else {
+                let mut s = shape.clone();
+                s.id = self.engine.new_shape_id();
+                s.uid = None;
+                s.kind = kind;
+                let new_id = s.id;
+                cmds.push(Command::AddShape { layer, shape: s });
+                cmds.push(Command::Reorder {
+                    shape: new_id,
+                    layer,
+                    index: index + k,
+                });
+            }
+        }
+        Some(cmds)
     }
 
     /// Import a raster image as a bitmap object at the page centre (96 dpi).
@@ -922,4 +995,41 @@ mod smoke_tests {
         other.apply_settings(s);
         assert_eq!(other.toolbox_last[gi], Tool::Spiral);
     }
+}
+
+/// How Break Apart cuts a text: its lines when it has more than one
+/// (empty lines dropped), else its words, else its characters (spaces
+/// dropped). Character ranges of the concatenated text, in order.
+pub(crate) fn text_pieces(text: &str) -> Vec<(usize, usize)> {
+    let chars: Vec<char> = text.chars().collect();
+    let runs = |is_break: &dyn Fn(char) -> bool| -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        let mut start = None;
+        for (i, c) in chars.iter().enumerate() {
+            if is_break(*c) {
+                if let Some(s) = start.take() {
+                    out.push((s, i));
+                }
+            } else if start.is_none() {
+                start = Some(i);
+            }
+        }
+        if let Some(s) = start {
+            out.push((s, chars.len()));
+        }
+        out
+    };
+    let lines = runs(&|c| c == '\n' || c == '\u{2028}' || c == '\r');
+    if lines.len() > 1 {
+        return lines;
+    }
+    let words = runs(&|c: char| c.is_whitespace());
+    if words.len() > 1 {
+        return words;
+    }
+    // A single word (or a run without spaces, like CJK text): characters.
+    runs(&|c: char| c.is_whitespace())
+        .into_iter()
+        .flat_map(|(a, b)| (a..b).map(|i| (i, i + 1)))
+        .collect()
 }

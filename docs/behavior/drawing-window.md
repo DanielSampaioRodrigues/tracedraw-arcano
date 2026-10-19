@@ -33,7 +33,12 @@ From the left, after the ruler's width:
    buttons add a page of the current size next to the current page and
    make it current.
 2. The page tabs: one slanted tab per page, the current one white; a click
-   goes to the page, a double click renames it.
+   goes to the page, a double click renames it. A right click makes the
+   page current and opens its menu: Rename Page, Insert Page Before,
+   Insert Page After, Duplicate Page (the copy becomes current), Delete
+   Page (greyed when it is the only page), Switch Page Orientation, Page
+   Size and Page Background
+   (`ui::window_bars::tests::the_page_tab_menu_inserts_duplicates_turns_and_deletes_pages`).
 3. A dotted splitter: dragging it shares the row between the page tabs and
    the horizontal scrollbar (45 % for the tabs by default).
 4. The horizontal scrollbar.

@@ -88,3 +88,8 @@ For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)
   keeps the ellipse's width and height within 1 mm; reversing the second
   outline changes nothing.
 - Given red to blue direct with 1 step, then the step is (128, 0, 128).
+- Given two texts (or any outlines of several parts), part i of the start
+  morphs into part i of the end; a part with no partner grows from or
+  shrinks to a point at its centre, so the steps read as letters
+  (`blends_of_several_parts_morph_part_by_part`,
+  `the_blend_tool_blends_two_texts_and_a_text_with_a_shape`).
