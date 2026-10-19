@@ -616,6 +616,10 @@ pub enum Dialog {
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
+    /// Object > Create > Pattern Fill: a vector or a bitmap pattern.
+    CreatePattern {
+        vector: bool,
+    },
     CreateTable {
         rows: u32,
         cols: u32,
@@ -1415,6 +1419,20 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::GithubOpen(f) => crate::ui::github_dialogs::open_dialog(app, ctx, f, &mut close),
         Dialog::GithubSave(f) => crate::ui::github_dialogs::save_dialog(app, ctx, f, &mut close),
         Dialog::GithubHistory => crate::ui::github_dialogs::history_dialog(app, ctx, &mut close),
+        Dialog::CreatePattern { vector } => {
+            window(ctx, tr("dialog.create_pattern")).show(ctx, |ui| {
+                ui.label(tr("dialog.create_pattern_type"));
+                ui.radio_value(vector, true, tr("dialog.create_pattern_vector"));
+                ui.radio_value(vector, false, tr("dialog.create_pattern_bitmap"));
+                if ok_cancel(ui, &mut close) {
+                    if *vector {
+                        app.create_vector_pattern_from_selection();
+                    } else {
+                        app.create_pattern_from_selection();
+                    }
+                }
+            });
+        }
         Dialog::CreateTable {
             rows,
             cols,
@@ -4981,6 +4999,8 @@ mod tests {
                 width: 75.0,
                 height: 100.0,
             },
+            Dialog::CreatePattern { vector: true },
+            Dialog::CreatePattern { vector: false },
             Dialog::QrCode(QrState::default()),
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),

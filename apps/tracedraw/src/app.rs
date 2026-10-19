@@ -758,6 +758,19 @@ pub struct App {
     pub media_angle: f64,
     pub dimension_points: Vec<Point>,
     pub blend_steps: u32,
+    /// The Blend docker's options for the next blend (and the shown one).
+    pub blend_options: tracedraw_core::live::BlendOptions,
+    /// The Blend docker's step mode: a fixed distance between steps along
+    /// a path instead of a step count.
+    pub blend_spacing_mm: f64,
+    /// Blend docker: the colour acceleration follows the object one.
+    pub blend_link_accel: bool,
+    /// The Extrude docker's page (camera, rotation, lighting, colour,
+    /// bevel).
+    pub extrude_page: usize,
+    /// Extrude docker: the vanishing point's X and Y are measured from the
+    /// object's centre instead of the page origin.
+    pub extrude_measure_object: bool,
     /// The Distort tool's values (its bar) and its drag under way.
     pub distort: crate::distort_tool::DistortSettings,
     pub distort_drag: Option<crate::distort_tool::DistortDrag>,
@@ -1631,6 +1644,11 @@ impl App {
             media_angle: 45.0,
             dimension_points: Vec::new(),
             blend_steps: 5,
+            blend_options: Default::default(),
+            blend_spacing_mm: 5.0,
+            blend_link_accel: false,
+            extrude_page: 0,
+            extrude_measure_object: false,
             distort: Default::default(),
             distort_drag: None,
             brush_radius: 10.0,

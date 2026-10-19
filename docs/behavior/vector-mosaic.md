@@ -19,6 +19,11 @@ top of the selection, in one undo step ("Vector Mosaic"), and selects it.
 | Weld adjacent overlap | off | | One curve per colour instead of one object per tile |
 | Shape | Circle | Circle, Square, Custom | The tile; squares and custom tiles turn with the screen |
 
+The panel lays these out as labelled rows: Density, Scale, Screen angle
+and Keep original, then Limit colors with its number, then the Tracking
+section (Method, Merge adjacent, Weld adjacent overlap), then Shape with
+Select beside it, the preview under them, and a full-width Apply.
+
 The preview under Shape shows the tile. For Custom, select a closed curve
 and click Select: its outline, fitted to a unit square, becomes the tile
 (the curve itself stays). Apply needs a selection, and for Custom a tile.

@@ -554,6 +554,12 @@ impl App {
     /// A preset in place of each selected object's last envelope (or as a
     /// new one), around the object where the envelope takes it.
     pub fn apply_envelope_preset(&mut self, preset: Preset) {
+        self.apply_envelope_frame(|b| preset.frame(b));
+    }
+
+    /// The frame `make` gives each selected object's box in place of its
+    /// last envelope (or as a new one), one undo step.
+    pub fn apply_envelope_frame(&mut self, make: impl Fn(Rect) -> Frame) {
         let mut cmds = Vec::new();
         for id in self.selection.clone() {
             let Some(s) = self.doc().find_shape(id) else {
@@ -583,7 +589,7 @@ impl App {
                 _ => (self.envelope_keep_lines, self.envelope_mapping),
             };
             if let Some(e) = effects.get_mut(at) {
-                *e = Effect::from_envelope(&preset.frame(b), keep, mapping);
+                *e = Effect::from_envelope(&make(b), keep, mapping);
             }
             cmds.push(Command::SetEffects { shape: id, effects });
         }

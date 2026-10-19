@@ -13,7 +13,8 @@ what you see in the tile is what the pattern repeats.
 
 ## Creating one
 
-Object > Create > Vector Pattern Fill with a selection: the selected
+Object > Create > Pattern Fill with a selection asks for the type,
+Vector or Bitmap; Vector: the selected
 objects become the tile (`Pattern::vector_from_shapes` translates them so
 their joint bounds start at the origin and sets the tile to the bounds
 size). The pattern becomes the default fill for new objects, like the

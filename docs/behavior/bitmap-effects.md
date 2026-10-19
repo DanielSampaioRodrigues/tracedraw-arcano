@@ -26,12 +26,16 @@ later, and removing the last one gives the original back.
 
 ## Effects menu
 
-- The groups in alphabetical order of their English names: 3D Effects,
-  Adjust, Art Strokes, Blur, Camera, Color Transform, Contour,
-  Correction, Creative, Custom, Distort, Noise, Sharpen, Texture,
-  Transform. Items with settings end in "...". Below them Brush Strokes,
-  Bevel, Blend, Contour, Envelope, Extrude, Lens, Picture Mosaic and
-  Vector Mosaic.
+- Flatten Effects first, then a line, then the groups in alphabetical
+  order of their English names: 3D Effects, Adjust, Art Strokes, Blur,
+  Camera, Color Transform, Contour, Correction, Creative, Custom,
+  Distort, Noise, Sharpen, Texture, Transform. Each item shows the
+  effect as its picture; items with settings end in "...". Below a
+  second line the effect panels: Brush Strokes, Bevel, Blend, Contour
+  (Ctrl+F9), Envelope (Ctrl+F7), Extrude, Lens (Alt+F3), Picture Mosaic
+  and Vector Mosaic. Each opens its panel and is checked while the
+  panel's tab is in the shown docker column
+  (`ui::menus::tests::effects_menu_checks_the_open_effect_panels`).
 - The bitmap groups are on for any selection (see "On vector objects").
 - An item without settings (Auto Adjust, Desaturate, Invert Colors)
   adds the effect to every selected object at once. The others open the
@@ -418,7 +422,7 @@ Checks: `fx::tests::bitmap_effects_on_a_vector_object_draw_its_picture`,
 
 ## Effect Picker
 
-Effects > Effect Picker opens a floating window (it stays open while
+Window > Effect Picker opens a floating window (it stays open while
 you work) with every bitmap effect as a tile: the effect applied with
 its default settings to a 64-pixel landscape, and its name below.
 

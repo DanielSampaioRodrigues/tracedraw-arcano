@@ -1,23 +1,21 @@
-//! The Picture Mosaic docker (Effects > Picture Mosaic): the image library
-//! folder and its picture count, Keep original, columns with the rows they
-//! give, blending, duplicates and their spacing, the advanced options
-//! (composition, edges, output priority with its value), the mosaic's
-//! pixel size, and Apply.
+//! The Picture Mosaic docker (Effects > Picture Mosaic), in sections:
+//! Reference (what is selected, Keep original source), Library (the
+//! pictures and their folder, Browse), Grid (columns, the rows they give,
+//! blending), Duplicates with their spacing, Output (composition, edges,
+//! priority, resolution, the artwork's and a tile's pixel size), and a
+//! full-width Apply.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::picture_mosaic::{grid, tile_pixels, Composition, Edges, Priority};
 use crate::theme::Tokens;
-use egui::{RichText, Ui, Vec2};
+use crate::ui::docker_form::{indented, row, section, wide_button};
+use egui::{RichText, Ui};
 
-fn heading(ui: &mut Ui, key: &str) {
-    ui.add_space(4.0);
-    ui.label(RichText::new(tr(key)).strong());
-}
-
-/// The library part: the folder, Browse, and the count or the progress.
+/// The library section: the picture count, the folder, Browse and the
+/// progress while the folder is read.
 fn library(app: &mut App, ui: &mut Ui) {
-    heading(ui, "docker.picture_mosaic_library");
+    section(ui, Some(&tr("docker.picture_mosaic_library")));
     if crate::files::WEB {
         ui.label(
             RichText::new(tr("docker.picture_mosaic_web"))
@@ -26,10 +24,42 @@ fn library(app: &mut App, ui: &mut Ui) {
         );
         return;
     }
-    ui.horizontal(|ui| {
-        let busy = app.picture_mosaic_job.is_some();
+    let none = tr("docker.form_none");
+    let n = app.picture_mosaic.images.len();
+    row(ui, &tr("docker.picture_mosaic_images_label"), |ui| {
+        ui.label(if n == 0 {
+            none.clone()
+        } else {
+            trf("docker.picture_mosaic_images", &[("n", &n.to_string())])
+        });
+    });
+    let name = app
+        .picture_mosaic
+        .library
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| none.clone());
+    let full = app
+        .picture_mosaic
+        .library
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    row(ui, &tr("docker.picture_mosaic_path"), |ui| {
+        let r = ui.add(egui::Label::new(name).truncate());
+        if !full.is_empty() {
+            r.on_hover_text(full);
+        }
+    });
+    let busy = app.picture_mosaic_job.is_some();
+    indented(ui, |ui| {
         if ui
-            .add_enabled(!busy, egui::Button::new(tr("docker.picture_mosaic_browse")))
+            .add_enabled(
+                !busy,
+                egui::Button::new(tr("docker.picture_mosaic_browse"))
+                    .min_size(egui::vec2(100.0, 24.0)),
+            )
             .on_hover_text(tr("docker.picture_mosaic_browse_tip"))
             .clicked()
         {
@@ -37,195 +67,163 @@ fn library(app: &mut App, ui: &mut Ui) {
                 app.picture_mosaic_load_library(dir);
             }
         }
-        let name = app
-            .picture_mosaic
-            .library
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| tr("docker.picture_mosaic_no_folder"));
-        let full = app
-            .picture_mosaic
-            .library
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        let r = ui.add(egui::Label::new(name).truncate());
-        if !full.is_empty() {
-            r.on_hover_text(full);
-        }
     });
-    match &app.picture_mosaic_job {
-        Some(job) => {
-            let done = job.done();
-            let total = job.total.max(1);
-            ui.add(
-                egui::ProgressBar::new(done as f32 / total as f32)
-                    .desired_width(ui.available_width().min(220.0))
-                    .text(trf(
-                        "docker.picture_mosaic_indexing",
-                        &[("n", &done.to_string()), ("total", &job.total.to_string())],
-                    )),
-            );
-        }
-        None => {
-            let n = app.picture_mosaic.images.len();
-            ui.label(
-                RichText::new(trf(
-                    "docker.picture_mosaic_images",
-                    &[("n", &n.to_string())],
-                ))
-                .color(Tokens::text_dim()),
-            );
-        }
+    if let Some(job) = &app.picture_mosaic_job {
+        let done = job.done();
+        let total = job.total.max(1);
+        ui.add(
+            egui::ProgressBar::new(done as f32 / total as f32)
+                .desired_width(ui.available_width().min(240.0))
+                .text(trf(
+                    "docker.picture_mosaic_indexing",
+                    &[("n", &done.to_string()), ("total", &job.total.to_string())],
+                )),
+        );
     }
 }
 
+/// A read-only or editable pixel count.
+fn pixels(ui: &mut Ui, label: &str, v: &mut u32, editable: bool, max: u32) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.add_enabled(
+            editable,
+            egui::DragValue::new(v).range(1..=max).suffix(" px"),
+        )
+        .changed()
+    })
+    .inner
+}
+
 pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
-    ui.spacing_mut().slider_width = 130.0;
-    library(app, ui);
-    ui.add_space(4.0);
+    ui.spacing_mut().slider_width = 110.0;
     let bounds = app.selection_bounds();
+    let selected = app.selection.len();
+    // Reference.
+    ui.label(RichText::new(tr("docker.form_reference")).strong());
+    row(ui, &tr("docker.form_selection"), |ui| {
+        ui.label(match selected {
+            0 => tr("docker.form_nothing_selected"),
+            1 => tr("docker.form_one_selected"),
+            n => trf("docker.form_n_selected", &[("n", &n.to_string())]),
+        });
+    });
+    indented(ui, |ui| {
+        ui.checkbox(
+            &mut app.picture_mosaic.keep_original,
+            tr("docker.picture_mosaic_keep_original"),
+        );
+    });
+    library(app, ui);
     let dpi = app.document_dpi();
     let s = &mut app.picture_mosaic;
-    ui.checkbox(
-        &mut s.keep_original,
-        tr("docker.picture_mosaic_keep_original"),
-    );
     let (cols, rows, _) = match bounds {
         Some(b) => grid(s.columns, b.width(), b.height(), s.edges),
         None => (s.columns, 0, 1.0),
     };
-    egui::Grid::new("picture_mosaic_grid")
-        .num_columns(2)
-        .spacing([8.0, 6.0])
-        .show(ui, |ui| {
-            ui.label(tr("docker.picture_mosaic_columns"));
-            ui.add(egui::DragValue::new(&mut s.columns).range(2..=300));
-            ui.end_row();
-            ui.label(tr("docker.picture_mosaic_rows"));
-            ui.label(if rows > 0 {
-                rows.to_string()
-            } else {
-                String::from("-")
-            });
-            ui.end_row();
-            ui.label(tr("docker.picture_mosaic_blending"));
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut s.blending, 0.0..=100.0)
-                    .suffix(" %")
-                    .max_decimals(0),
-            ));
-            ui.end_row();
-        });
+    section(ui, Some(&tr("docker.form_grid")));
+    row(ui, &tr("docker.picture_mosaic_columns"), |ui| {
+        ui.add(egui::DragValue::new(&mut s.columns).range(2..=300));
+    });
+    row(ui, &tr("docker.picture_mosaic_rows"), |ui| {
+        let mut r = rows;
+        ui.add_enabled(false, egui::DragValue::new(&mut r));
+    });
+    row(ui, &tr("docker.picture_mosaic_blending"), |ui| {
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut s.blending, 0.0..=100.0)
+                .suffix(" %")
+                .max_decimals(0),
+        ));
+    });
+    section(ui, None);
     ui.horizontal(|ui| {
         ui.checkbox(&mut s.duplicates, tr("docker.picture_mosaic_duplicates"));
+        ui.add_enabled(
+            s.duplicates,
+            egui::DragValue::new(&mut s.spacing).range(0..=20),
+        )
+        .on_hover_text(tr("docker.picture_mosaic_spacing_tip"));
     });
-    ui.horizontal(|ui| {
-        ui.add_enabled_ui(s.duplicates, |ui| {
-            ui.label(tr("docker.picture_mosaic_spacing"));
-            ui.add(egui::DragValue::new(&mut s.spacing).range(0..=20))
-                .on_hover_text(tr("docker.picture_mosaic_spacing_tip"));
+    section(ui, Some(&tr("docker.form_output")));
+    let combo = |ui: &mut Ui, id: &str, text: String, add: &mut dyn FnMut(&mut Ui)| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(text)
+            .width(ui.available_width().clamp(120.0, 180.0))
+            .show_ui(ui, |ui| add(ui));
+    };
+    row(ui, &tr("docker.picture_mosaic_composition"), |ui| {
+        combo(
+            ui,
+            "picture_mosaic_composition",
+            tr(s.composition.key()),
+            &mut |ui| {
+                for c in Composition::ALL {
+                    ui.selectable_value(&mut s.composition, c, tr(c.key()));
+                }
+            },
+        );
+    });
+    row(ui, &tr("docker.picture_mosaic_edges"), |ui| {
+        combo(ui, "picture_mosaic_edges", tr(s.edges.key()), &mut |ui| {
+            for e in Edges::ALL {
+                ui.selectable_value(&mut s.edges, e, tr(e.key()));
+            }
         });
     });
-    egui::CollapsingHeader::new(tr("docker.picture_mosaic_advanced"))
-        .id_salt("picture_mosaic_advanced")
-        .default_open(true)
-        .show(ui, |ui| {
-            egui::Grid::new("picture_mosaic_advanced_grid")
-                .num_columns(2)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    ui.label(tr("docker.picture_mosaic_composition"));
-                    egui::ComboBox::from_id_salt("picture_mosaic_composition")
-                        .selected_text(tr(s.composition.key()))
-                        .width(150.0)
-                        .show_ui(ui, |ui| {
-                            for c in Composition::ALL {
-                                ui.selectable_value(&mut s.composition, c, tr(c.key()));
-                            }
-                        });
-                    ui.end_row();
-                    ui.label(tr("docker.picture_mosaic_edges"));
-                    egui::ComboBox::from_id_salt("picture_mosaic_edges")
-                        .selected_text(tr(s.edges.key()))
-                        .width(150.0)
-                        .show_ui(ui, |ui| {
-                            for e in Edges::ALL {
-                                ui.selectable_value(&mut s.edges, e, tr(e.key()));
-                            }
-                        });
-                    ui.end_row();
-                    ui.label(tr("docker.picture_mosaic_priority"));
-                    egui::ComboBox::from_id_salt("picture_mosaic_priority")
-                        .selected_text(tr(s.priority.key()))
-                        .width(150.0)
-                        .show_ui(ui, |ui| {
-                            for p in Priority::ALL {
-                                ui.selectable_value(&mut s.priority, p, tr(p.key()));
-                            }
-                        });
-                    ui.end_row();
-                    match s.priority {
-                        Priority::DocumentDpi => {
-                            ui.label(tr("docker.picture_mosaic_resolution"));
-                            ui.label(format!("{dpi:.0} dpi"));
-                        }
-                        Priority::CustomDpi => {
-                            ui.label(tr("docker.picture_mosaic_resolution"));
-                            ui.add(
-                                egui::DragValue::new(&mut s.dpi)
-                                    .range(10.0..=2400.0)
-                                    .suffix(" dpi"),
-                            );
-                        }
-                        Priority::TileSize => {
-                            ui.label(tr("docker.picture_mosaic_tile_width"));
-                            ui.add(
-                                egui::DragValue::new(&mut s.tile_px)
-                                    .range(4..=2000)
-                                    .suffix(" px"),
-                            );
-                        }
-                        Priority::OutputSize => {
-                            ui.label(tr("docker.picture_mosaic_output_width"));
-                            ui.add(
-                                egui::DragValue::new(&mut s.output_px)
-                                    .range(16..=crate::picture_mosaic::MAX_SIDE)
-                                    .suffix(" px"),
-                            );
-                        }
-                    }
-                    ui.end_row();
-                });
-        });
-    // The mosaic's size for the current selection.
-    if let Some(b) = bounds {
-        if rows > 0 {
-            let (tw, th) = tile_pixels(s, b.width(), b.height(), cols, rows, dpi);
-            ui.label(
-                RichText::new(trf(
-                    "docker.picture_mosaic_output",
-                    &[
-                        ("w", &(tw * cols).to_string()),
-                        ("h", &(th * rows).to_string()),
-                    ],
-                ))
-                .color(Tokens::text_dim()),
-            );
+    row(ui, &tr("docker.picture_mosaic_priority"), |ui| {
+        combo(
+            ui,
+            "picture_mosaic_priority",
+            tr(s.priority.key()),
+            &mut |ui| {
+                for p in Priority::ALL {
+                    ui.selectable_value(&mut s.priority, p, tr(p.key()));
+                }
+            },
+        );
+    });
+    row(ui, &tr("docker.form_dpi"), |ui| {
+        let custom = s.priority == Priority::CustomDpi;
+        let mut shown = if custom { s.dpi } else { dpi };
+        if ui
+            .add_enabled(
+                custom,
+                egui::DragValue::new(&mut shown).range(10.0..=2400.0),
+            )
+            .changed()
+        {
+            s.dpi = shown;
         }
-    }
-    ui.add_space(8.0);
+    });
+    // The artwork's and one tile's pixel size: the output size is set in
+    // Custom output dimensions, the tile size in Custom tile dimensions;
+    // otherwise they follow from the resolution.
+    let (tw, th) = match bounds {
+        Some(b) if rows > 0 => tile_pixels(s, b.width(), b.height(), cols, rows, dpi),
+        _ => (0, 0),
+    };
+    let max = crate::picture_mosaic::MAX_SIDE;
+    ui.columns(2, |c| {
+        c[0].label(tr("docker.form_artwork"));
+        let (mut aw, mut ah) = (tw * cols, th * rows);
+        let out = s.priority == Priority::OutputSize;
+        if pixels(&mut c[0], &tr("docker.form_w"), &mut aw, out, max) {
+            s.output_px = aw.clamp(16, max);
+        }
+        pixels(&mut c[0], &tr("docker.form_h"), &mut ah, false, max);
+        c[1].label(tr("docker.form_tile"));
+        let (mut w, mut h) = (tw, th);
+        let tile = s.priority == Priority::TileSize;
+        if pixels(&mut c[1], &tr("docker.form_w"), &mut w, tile, 2000) {
+            s.tile_px = w.clamp(4, 2000);
+        }
+        pixels(&mut c[1], &tr("docker.form_h"), &mut h, false, 2000);
+    });
     let ready = bounds.is_some()
         && !app.picture_mosaic.images.is_empty()
         && app.picture_mosaic_job.is_none();
-    if ui
-        .add_enabled(
-            ready,
-            egui::Button::new(tr("docker.apply")).min_size(Vec2::new(90.0, 24.0)),
-        )
-        .clicked()
-    {
+    if wide_button(ui, &tr("docker.apply"), ready) {
         let s = app.picture_mosaic.clone();
         app.apply_picture_mosaic(&s);
     }
