@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- VBA macros: a compiler from VBA modules, classes and form code to
+  scripts over the TraceDraw object model, with the VBA run-time library,
+  Collection and Scripting.Dictionary.
 - `.cdr` saving writes only the versions checked in other programs (14
   to 27). Save on a drawing opened from an older version asks to choose a
   version first ("Older file version", then Save As on version 14)
