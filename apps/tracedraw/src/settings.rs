@@ -111,6 +111,10 @@ pub struct Settings {
     /// Options > Display.
     #[serde(default = "default_true")]
     pub show_tooltips: bool,
+    /// The Font Manager's folders, installed files, Favorites and
+    /// collections.
+    #[serde(default)]
+    pub font_manager: crate::ui::font_manager::FontManagerPrefs,
     #[serde(default)]
     pub hide_bbox_curve_tools: bool,
     /// Options > Display: the Pick tool selects and drags the nodes of a
@@ -1025,6 +1029,7 @@ impl Default for Settings {
             startup: Startup::default(),
             undo_levels: default_undo_levels(),
             show_tooltips: true,
+            font_manager: Default::default(),
             hide_bbox_curve_tools: false,
             node_tracking: false,
             preview_page_border: true,

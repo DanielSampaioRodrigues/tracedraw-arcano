@@ -19,6 +19,7 @@ use tracedraw_core::{
     geometry::{Affine, BezPath, Point, Rect, Shape as _},
 };
 
+pub mod catalog;
 pub mod hyphen;
 
 /// Points to millimetres.
@@ -289,7 +290,7 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
 }
 
 /// How a family's fonts are built, for the icons of font lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FontKind {
     /// TrueType outlines.
     TrueType,

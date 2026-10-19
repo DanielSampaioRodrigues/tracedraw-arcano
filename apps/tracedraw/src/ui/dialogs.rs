@@ -512,12 +512,7 @@ pub struct AutocorrectState {
     pub new_to: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct FontManagerState {
-    pub filter: String,
-    pub sample: String,
-    pub selected: Option<String>,
-}
+pub use crate::ui::font_manager::FontManagerState;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PaletteEditorState {
@@ -4437,68 +4432,7 @@ fn border_grommet_preview(
 }
 
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {
-    egui::Window::new(tr("menu.tools.font_manager"))
-        .order(egui::Order::Foreground)
-        .collapsible(false)
-        .resizable(true)
-        .default_width(560.0)
-        .default_height(420.0)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            if st.sample.is_empty() {
-                st.sample = tr("dialog.font_sample");
-            }
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.filter"));
-                ui.text_edit_singleline(&mut st.filter);
-                ui.label(tr("dialog.sample_text"));
-                ui.text_edit_singleline(&mut st.sample);
-            });
-            let missing: Vec<String> = app.missing_fonts.clone();
-            if !missing.is_empty() {
-                ui.colored_label(
-                    egui::Color32::from_rgb(180, 80, 0),
-                    trf(
-                        "dialog.missing_fonts",
-                        &[("f", &crate::ops2::with_stand_ins(&missing))],
-                    ),
-                );
-            }
-            let filter = st.filter.to_lowercase();
-            let families: Vec<String> = app
-                .font_families
-                .iter()
-                .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
-                .cloned()
-                .collect();
-            ui.label(trf("dialog.fonts_n", &[("n", &families.len().to_string())]));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for f in families {
-                        let selected = st.selected.as_deref() == Some(f.as_str());
-                        let r = ui.selectable_label(selected, format!("{f}    {}", st.sample));
-                        if r.clicked() {
-                            st.selected = Some(f.clone());
-                        }
-                        if r.double_clicked() {
-                            app.text_font = f.clone();
-                            app.apply_text_font(&f);
-                        }
-                    }
-                });
-            ui.horizontal(|ui| {
-                if let Some(f) = st.selected.clone() {
-                    if ui.button(tr("dialog.use_font")).clicked() {
-                        app.text_font = f.clone();
-                        app.apply_text_font(&f);
-                    }
-                }
-                if ui.button(tr("dialog.close")).clicked() {
-                    *close = true;
-                }
-            });
-        });
+    crate::ui::font_manager::dialog(app, ctx, st, close);
 }
 
 fn palette_editor_dialog(
