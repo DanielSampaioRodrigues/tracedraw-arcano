@@ -92,6 +92,7 @@ bitmaps/index
   bitmaps/resample-and-straighten
   bitmaps/tracing
   bitmaps/bitmap-mask
+  bitmaps/remove-background
 printing/index
   printing/print
   printing/print-merge

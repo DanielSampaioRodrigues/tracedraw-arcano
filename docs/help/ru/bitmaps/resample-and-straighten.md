@@ -66,6 +66,7 @@
   тоже обрезает его.
 - [[menu.bitmaps.edit_bitmap]] открывает изображение в другой программе.
 - [[menu.bitmaps.remove_background]] делает фон фотографии прозрачным.
+- [[menu.bitmaps.remove_background_local]]: [Удалить фон](remove-background.md).
 - [[menu.bitmaps.break_link]] и [[menu.bitmaps.update_from_link]] работают с
   изображениями, связанными с файлом.
 - [[menu.bitmaps.save_bitmap_as]] сохраняет изображение в файл PNG.

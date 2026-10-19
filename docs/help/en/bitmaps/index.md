@@ -2,7 +2,7 @@
 
 Bitmaps are pictures made of pixels, such as photos and scans. TraceDraw
 places them in drawings, changes their color mode and size, straightens them,
-masks colors out of them, applies effects, and traces them into vector
+masks colors out of them, removes their background, applies effects, and traces them into vector
 shapes. It can also turn vector objects into bitmaps.
 
 To bring a picture in, use [[menu.file > menu.file.import]]; see

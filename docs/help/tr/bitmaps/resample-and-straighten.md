@@ -63,6 +63,7 @@ Bulanıklaştırma gibi bazı efektler bir bitmapin kenarlarının dışına ta�
 - [[menu.bitmaps.edit_bitmap]] bitmapi başka bir programda açar.
 - [[menu.bitmaps.remove_background]] bir fotoğrafın arka planını saydam
   yapar.
+- [[menu.bitmaps.remove_background_local]]: [Arka Planı Kaldır](remove-background.md).
 - [[menu.bitmaps.break_link]] ve [[menu.bitmaps.update_from_link]] bir dosyaya
   bağlı bitmaplerde çalışır.
 - [[menu.bitmaps.save_bitmap_as]] bir bitmapi PNG dosyası olarak kaydeder.

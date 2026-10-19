@@ -60,8 +60,10 @@ Some effects, such as blurs, spread past the edges of a bitmap.
 - [[menu.bitmaps.crop_bitmap]] crops a bitmap with the [[tool.crop]] tool;
   dragging a corner of a bitmap with the [[tool.shape]] tool crops it too.
 - [[menu.bitmaps.edit_bitmap]] opens the bitmap in another program.
-- [[menu.bitmaps.remove_background]] makes the background of a photo
-  transparent.
+- [[menu.bitmaps.remove_background_local]] makes the background of a photo
+  transparent on this computer (see
+  [Removing the background](remove-background.md));
+  [[menu.bitmaps.remove_background]] does it with the AI service.
 - [[menu.bitmaps.break_link]] and [[menu.bitmaps.update_from_link]] work on
   bitmaps linked to a file.
 - [[menu.bitmaps.save_bitmap_as]] saves a bitmap as a PNG file.

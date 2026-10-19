@@ -68,6 +68,7 @@ Alcuni effetti, come le sfocature, si estendono oltre i bordi di una bitmap.
   [[tool.shape]] la ritaglia.
 - [[menu.bitmaps.edit_bitmap]] apre la bitmap in un altro programma.
 - [[menu.bitmaps.remove_background]] rende trasparente lo sfondo di una foto.
+- [[menu.bitmaps.remove_background_local]]: [Rimuovi sfondo](remove-background.md).
 - [[menu.bitmaps.break_link]] e [[menu.bitmaps.update_from_link]] agiscono
   sulle bitmap collegate a un file.
 - [[menu.bitmaps.save_bitmap_as]] salva una bitmap come file PNG.

@@ -43,5 +43,6 @@
 - [[menu.bitmaps.crop_bitmap]] は、[[tool.crop]] ツールでビットマップをトリミングします。[[tool.shape]] ツールでビットマップの角をドラッグしてもトリミングできます。
 - [[menu.bitmaps.edit_bitmap]] は、ビットマップを別のプログラムで開きます。
 - [[menu.bitmaps.remove_background]] は、写真の背景を透明にします。
+- [[menu.bitmaps.remove_background_local]]: [背景を削除](remove-background.md).
 - [[menu.bitmaps.break_link]] と [[menu.bitmaps.update_from_link]] は、ファイルにリンクしたビットマップに使います。
 - [[menu.bitmaps.save_bitmap_as]] は、ビットマップを PNG ファイルとして保存します。

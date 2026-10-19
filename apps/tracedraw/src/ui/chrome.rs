@@ -225,9 +225,12 @@ impl Window {
                     form_style(ui);
                     // A dialog taller than the window scrolls.
                     let max_h = (ui.ctx().content_rect().height() - TITLE_BAR - 60.0).max(150.0);
+                    // The window starts from the size it had last frame, so
+                    // the body may grow up to `max_h` before it scrolls.
                     egui::ScrollArea::vertical()
                         .id_salt("dialog_body")
                         .max_height(max_h)
+                        .min_scrolled_height(max_h)
                         .show(ui, |ui| add(ui))
                         .inner
                 });

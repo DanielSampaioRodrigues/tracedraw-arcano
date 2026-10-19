@@ -2594,6 +2594,10 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
         app.open_resample();
     }
+    // On this computer, no AI service needed.
+    if item(ui, "menu.bitmaps.remove_background_local", "", has_bitmap) {
+        app.dialog = Dialog::RemoveBackground(Default::default());
+    }
     // AI: greyed until the AI service makes pictures (Tools > Options >
     // AI > Service); the tip says why.
     let cutout = app.ai_image_ready() && app.ai_source_bitmap().is_some() && !app.ai_image.busy();

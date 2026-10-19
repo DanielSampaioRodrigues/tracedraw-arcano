@@ -69,6 +69,7 @@ un mapa de bits.
 - [[menu.bitmaps.edit_bitmap]] abre el mapa de bits en otro programa.
 - [[menu.bitmaps.remove_background]] hace transparente el fondo de una
   fotografía.
+- [[menu.bitmaps.remove_background_local]]: [Quitar fondo](remove-background.md).
 - [[menu.bitmaps.break_link]] y [[menu.bitmaps.update_from_link]] actúan
   sobre mapas de bits vinculados a un archivo.
 - [[menu.bitmaps.save_bitmap_as]] guarda un mapa de bits como archivo PNG.

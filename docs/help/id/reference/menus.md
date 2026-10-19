@@ -266,6 +266,7 @@ Anda sendiri; lihat [Opsi kustomisasi](../customize/customization.md#commands).
 | [[menu.bitmaps.edit_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.crop_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.resample]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.remove_background_local]] | [Hapus Latar](../bitmaps/remove-background.md) |
 | [[menu.bitmaps.remove_background]] | [AI drawing and generating](../customize/ai.md) |
 | [[menu.bitmaps.ai_art_styles]] | [AI drawing and generating](../customize/ai.md) |
 | [[menu.bitmaps.mode]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |

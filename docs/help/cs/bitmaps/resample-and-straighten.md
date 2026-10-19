@@ -61,6 +61,7 @@ Některé efekty, například rozostření, přesahují okraje bitmapy.
   oříznout ji lze také tažením rohu bitmapy nástrojem [[tool.shape]].
 - [[menu.bitmaps.edit_bitmap]] otevře bitmapu v jiném programu.
 - [[menu.bitmaps.remove_background]] zprůhlední pozadí fotografie.
+- [[menu.bitmaps.remove_background_local]]: [Odstranit pozadí](remove-background.md).
 - [[menu.bitmaps.break_link]] a [[menu.bitmaps.update_from_link]] pracují s
   bitmapami propojenými se souborem.
 - [[menu.bitmaps.save_bitmap_as]] uloží bitmapu jako soubor PNG.

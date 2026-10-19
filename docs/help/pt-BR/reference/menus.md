@@ -267,6 +267,7 @@ próprios atalhos; veja
 | [[menu.bitmaps.edit_bitmap]] | [Reamostrar, endireitar e expandir bitmaps](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.crop_bitmap]] | [Reamostrar, endireitar e expandir bitmaps](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.resample]] | [Reamostrar, endireitar e expandir bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.remove_background_local]] | [Remover fundo](../bitmaps/remove-background.md) |
 | [[menu.bitmaps.remove_background]] | [Desenhar e gerar com IA](../customize/ai.md) |
 | [[menu.bitmaps.ai_art_styles]] | [Desenhar e gerar com IA](../customize/ai.md) |
 | [[menu.bitmaps.mode]] | [Mudar o modo de cor de bitmaps](../bitmaps/color-modes.md) |

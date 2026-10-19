@@ -327,6 +327,32 @@ fn demo_bitmap(app: &mut App) {
     }
 }
 
+/// A product shot for Remove Background: an orange ball with a soft
+/// shadowed rim and a highlight, on a light backdrop that darkens toward
+/// the bottom.
+fn demo_photo(app: &mut App) {
+    let img = image::RgbaImage::from_fn(240, 180, |x, y| {
+        let (dx, dy) = (x as f32 - 120.0, y as f32 - 86.0);
+        let r = (dx * dx + dy * dy).sqrt();
+        let back = 238.0 - y as f32 * 0.25;
+        let ball = |shade: f32| [255.0 * shade, 140.0 * shade, 30.0 * shade];
+        let shade = (1.0 - r / 120.0).clamp(0.55, 1.0);
+        let hi = (1.0 - ((dx + 22.0).powi(2) + (dy + 24.0).powi(2)).sqrt() / 26.0).max(0.0);
+        let c = ball(shade);
+        let c = [
+            c[0] + (255.0 - c[0]) * hi,
+            c[1] + (255.0 - c[1]) * hi,
+            c[2] + (255.0 - c[2]) * hi,
+        ];
+        let a = (60.0 - r).clamp(0.0, 1.0);
+        let px = |i: usize| (c[i] * a + back * (1.0 - a)).round() as u8;
+        image::Rgba([px(0), px(1), px(2), 255])
+    });
+    if let Some(id) = app.place_image(img, Some("Photo".into())) {
+        app.select(vec![id]);
+    }
+}
+
 /// The screenshots: file name (the topic, `/` and `#` as `-`), what to
 /// show and whether a bitmap is selected first.
 fn shots() -> Vec<(String, Shot, bool)> {
@@ -362,6 +388,7 @@ fn shots() -> Vec<(String, Shot, bool)> {
         ("menu.bitmaps.mode_duotone", true),
         ("menu.bitmaps.mode_paletted", true),
         ("menu.bitmaps.trace_logo", true),
+        ("menu.bitmaps.remove_background_local", true),
         ("menu.text.tabs", false),
         ("menu.text.columns", false),
         ("menu.text.bullets", false),
@@ -522,7 +549,9 @@ fn help_shots() {
         eprintln!("shot {file}");
         let mut sh = Shooter::new();
         let mut app = demo_app();
-        if bitmap {
+        if matches!(shot, Shot::Command("menu.bitmaps.remove_background_local")) {
+            demo_photo(&mut app);
+        } else if bitmap {
             demo_bitmap(&mut app);
         }
         let mut file = file;
@@ -554,7 +583,7 @@ fn help_shots() {
         }
         let docker = matches!(shot, Shot::Docker(_));
         let mut canvas = None;
-        for _ in 0..4 {
+        for _ in 0..8 {
             canvas = Some(sh.frame(&mut app, |app, ctx| {
                 if docker {
                     let rect =

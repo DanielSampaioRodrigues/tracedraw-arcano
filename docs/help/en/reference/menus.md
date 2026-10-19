@@ -266,6 +266,7 @@ only the Welcome Screen is open. The menus can show your own shortcuts; see
 | [[menu.bitmaps.edit_bitmap]] | [Resampling](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.crop_bitmap]] | [Resampling](../bitmaps/resample-and-straighten.md) |
 | [[menu.bitmaps.resample]] | [Resampling](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.remove_background_local]] | [Remove Background](../bitmaps/remove-background.md) |
 | [[menu.bitmaps.remove_background]] | [AI](../customize/ai.md) |
 | [[menu.bitmaps.ai_art_styles]] | [AI](../customize/ai.md) |
 | [[menu.bitmaps.mode]] | [Color modes](../bitmaps/color-modes.md) |

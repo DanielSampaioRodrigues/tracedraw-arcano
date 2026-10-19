@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dialogs taller than their first frame no longer stay cut off at the bottom (hiding OK and Cancel); they grow to fit the window before they scroll.
+
+- Bitmaps > Remove Background...: makes the background of photos transparent on this computer, without an AI service. The background colours are learnt from the picture's edges (or picked with an eyedropper), with tolerance, edge softness, Contiguous, Remove specks and Clean edge colors, and a before and after preview; also on the bitmap property bar. The AI command is now Remove Background with AI (#192).
+
 - AI service presets for OpenCode Zen and OpenCode Go (drawings only); requests to them carry the `x-opencode-session` header those services require, one id per run (#173).
 
 - Dialogs can be dragged by their title bar; they open centred (or where they were left, with Center dialog boxes off).

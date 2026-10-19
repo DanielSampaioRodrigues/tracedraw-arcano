@@ -566,6 +566,8 @@ pub enum Dialog {
     BitmapBw(crate::bitmap_modes::BwSettings),
     BitmapDuotone(crate::ui::bitmap_dialogs::DuotoneState),
     BitmapPaletted(crate::bitmap_modes::PalettedSettings),
+    /// Bitmaps > Remove Background (on this computer, no AI service).
+    RemoveBackground(crate::ui::bitmap_dialogs::BgRemoveState),
     /// The Shape tool's Align Nodes: on a common horizontal and/or
     /// vertical.
     NodeAlign {
@@ -985,6 +987,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::None => {}
         Dialog::LineStyle(st) => crate::ui::line_style::dialog(app, ctx, st, &mut close),
         Dialog::BitmapBw(s) => crate::ui::bitmap_dialogs::bw_dialog(app, ctx, s, &mut close),
+        Dialog::RemoveBackground(st) => {
+            crate::ui::bitmap_dialogs::remove_background_dialog(app, ctx, st, &mut close)
+        }
         Dialog::TimeTracker(st) => crate::ui::time_tracker::dialog(app, ctx, st, &mut close),
         Dialog::TableCount(st) => crate::ui::table_bar::count_dialog(app, ctx, st, &mut close),
         Dialog::Preflight(st) => crate::ui::preflight_dialog::dialog(app, ctx, st, &mut close),
@@ -4353,6 +4358,7 @@ mod tests {
             Dialog::BitmapBw(Default::default()),
             Dialog::BitmapDuotone(Default::default()),
             Dialog::BitmapPaletted(Default::default()),
+            Dialog::RemoveBackground(Default::default()),
             Dialog::RenamePage {
                 name: "Page".into(),
             },

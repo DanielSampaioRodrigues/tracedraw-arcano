@@ -312,3 +312,139 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
         }
     });
 }
+
+/// The Remove Background dialog's state: the settings and whether a click
+/// on the preview picks a background colour.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BgRemoveState {
+    pub settings: crate::bg_remove::BgSettings,
+    pub picking: bool,
+}
+
+/// Bitmaps > Remove Background: tolerance, edge softness, Contiguous,
+/// Remove specks and Clean edge colors, with the background colours
+/// learnt from the border or picked on the preview.
+pub fn remove_background_dialog(
+    app: &mut App,
+    ctx: &Context,
+    st: &mut BgRemoveState,
+    close: &mut bool,
+) {
+    use crate::bg_remove::remove_background;
+    super::dialogs::window(ctx, tr("dialog.remove_background_title")).show(ctx, |ui| {
+        let settings = st.settings.clone();
+        let preview = crate::ui::bitmap_preview::before_after_pick(
+            ui,
+            app,
+            &crate::ui::bitmap_preview::Source::Shown,
+            settings_key(&settings),
+            220.0,
+            st.picking,
+            |img, scale| remove_background(img, &settings, scale),
+        );
+        // A click on a picture adds the colour under it (taken from the
+        // picture as it was, so a removed pixel can be picked too).
+        if let (true, Some(p)) = (st.picking, preview.as_ref()) {
+            if let Some((x, y)) = p.picked {
+                let before = crate::ui::bitmap_preview::copy_of(
+                    app,
+                    ui.ctx(),
+                    &crate::ui::bitmap_preview::Source::Shown,
+                    crate::ui::bitmap_preview::THUMB,
+                );
+                if let Some(t) = before {
+                    let (w, h) = t.img.dimensions();
+                    let c = t
+                        .img
+                        .get_pixel(x.min(w.saturating_sub(1)), y.min(h.saturating_sub(1)))
+                        .0;
+                    let c = [c[0], c[1], c[2]];
+                    if !st.settings.colors.contains(&c) {
+                        st.settings.colors.push(c);
+                    }
+                }
+                st.picking = false;
+            }
+        }
+        ui.add_space(6.0);
+        egui::Grid::new("bg_remove_grid")
+            .num_columns(2)
+            .show(ui, |ui| {
+                ui.label(tr("dialog.bg_colors"));
+                ui.horizontal(|ui| {
+                    if st.settings.colors.is_empty() {
+                        ui.label(tr("dialog.bg_colors_auto"));
+                    }
+                    let mut gone = None;
+                    for (i, c) in st.settings.colors.iter().enumerate() {
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                        ui.painter().rect_filled(rect, 2.0, rgb32(*c));
+                        ui.painter().rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(1.0, crate::theme::Tokens::border()),
+                            egui::StrokeKind::Inside,
+                        );
+                        if resp
+                            .on_hover_text(tr("dialog.bg_color_remove_tip"))
+                            .clicked()
+                        {
+                            gone = Some(i);
+                        }
+                    }
+                    if let Some(i) = gone {
+                        st.settings.colors.remove(i);
+                    }
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                    crate::ui::propbar::frame(ui, rect, resp.hovered(), st.picking);
+                    crate::ui::icons::draw(
+                        ui.painter(),
+                        egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                        crate::tools::Tool::ColorEyedropper,
+                        crate::theme::Tokens::icon(),
+                    );
+                    if resp.on_hover_text(tr("dialog.bg_pick_tip")).clicked() {
+                        st.picking = !st.picking;
+                    }
+                    if !st.settings.colors.is_empty()
+                        && ui
+                            .small_button(tr("dialog.bg_colors_auto_button"))
+                            .on_hover_text(tr("dialog.bg_colors_auto_tip"))
+                            .clicked()
+                    {
+                        st.settings.colors.clear();
+                    }
+                });
+                ui.end_row();
+                ui.label(tr("dialog.tolerance"));
+                ui.add(crate::ui::Rail(egui::Slider::new(
+                    &mut st.settings.tolerance,
+                    0.0..=100.0,
+                )));
+                ui.end_row();
+                ui.label(tr("dialog.edge_softness"));
+                ui.add(crate::ui::Rail(
+                    egui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"),
+                ));
+                ui.end_row();
+            });
+        ui.checkbox(&mut st.settings.contiguous, tr("dialog.bg_contiguous"))
+            .on_hover_text(tr("dialog.bg_contiguous_tip"));
+        ui.checkbox(&mut st.settings.despeckle, tr("dialog.bg_despeckle"))
+            .on_hover_text(tr("dialog.bg_despeckle_tip"));
+        ui.checkbox(&mut st.settings.clean_edges, tr("dialog.bg_clean_edges"))
+            .on_hover_text(tr("dialog.bg_clean_edges_tip"));
+        if ui.button(tr("dialog.reset")).clicked() {
+            st.settings = Default::default();
+            st.picking = false;
+        }
+        if super::dialogs::ok_cancel(ui, close) {
+            let settings = st.settings.clone();
+            app.apply_to_bitmaps("Remove Background", move |img, _| {
+                remove_background(img, &settings, 1.0)
+            });
+        }
+    });
+}

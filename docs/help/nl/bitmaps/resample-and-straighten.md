@@ -67,6 +67,7 @@ bitmap.
 - [[menu.bitmaps.edit_bitmap]] opent de bitmap in een ander programma.
 - [[menu.bitmaps.remove_background]] maakt de achtergrond van een foto
   transparant.
+- [[menu.bitmaps.remove_background_local]]: [Achtergrond verwijderen](remove-background.md).
 - [[menu.bitmaps.break_link]] en [[menu.bitmaps.update_from_link]] werken op
   bitmaps die aan een bestand gekoppeld zijn.
 - [[menu.bitmaps.save_bitmap_as]] slaat een bitmap op als PNG-bestand.

@@ -43,5 +43,6 @@
 - [[menu.bitmaps.crop_bitmap]] 用 [[tool.crop]] 工具裁剪位图；用 [[tool.shape]] 工具拖动位图的角也可以裁剪它。
 - [[menu.bitmaps.edit_bitmap]] 在另一个程序中打开位图。
 - [[menu.bitmaps.remove_background]] 使照片的背景变为透明。
+- [[menu.bitmaps.remove_background_local]]: [删除背景](remove-background.md).
 - [[menu.bitmaps.break_link]] 和 [[menu.bitmaps.update_from_link]] 用于链接到文件的位图。
 - [[menu.bitmaps.save_bitmap_as]] 将位图保存为 PNG 文件。

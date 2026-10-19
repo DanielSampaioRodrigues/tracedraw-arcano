@@ -43,5 +43,6 @@
 - [[menu.bitmaps.crop_bitmap]] 會使用 [[tool.crop]] 工具裁切點陣圖；使用 [[tool.shape]] 工具拖曳點陣圖的角落也可以裁切它。
 - [[menu.bitmaps.edit_bitmap]] 會在另一個程式中開啟點陣圖。
 - [[menu.bitmaps.remove_background]] 會讓相片的背景變成透明。
+- [[menu.bitmaps.remove_background_local]]: [移除背景](remove-background.md).
 - [[menu.bitmaps.break_link]] 和 [[menu.bitmaps.update_from_link]] 適用於連結至檔案的點陣圖。
 - [[menu.bitmaps.save_bitmap_as]] 會將點陣圖儲存為 PNG 檔案。

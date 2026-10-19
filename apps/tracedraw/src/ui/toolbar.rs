@@ -1502,6 +1502,13 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
     if ui.button(tr("menu.bitmaps.resample")).clicked() {
         app.open_resample();
     }
+    if ui
+        .button(tr("menu.bitmaps.remove_background_local"))
+        .on_hover_text(tr("dialog.bg_contiguous_tip"))
+        .clicked()
+    {
+        app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(Default::default());
+    }
     // AI: greyed until the AI service makes pictures.
     let ready = app.ai_image_ready() && app.ai_source_bitmap().is_some();
     let busy = app.ai_image.busy();

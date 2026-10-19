@@ -62,7 +62,9 @@ Alguns efeitos, como desfoques, passam das bordas de um bitmap.
   [[tool.crop]]; arrastar um canto de um bitmap com a ferramenta
   [[tool.shape]] também o recorta.
 - [[menu.bitmaps.edit_bitmap]] abre o bitmap em outro programa.
-- [[menu.bitmaps.remove_background]] deixa transparente o fundo de uma foto.
+- [[menu.bitmaps.remove_background_local]] deixa transparente o fundo de uma
+  foto neste computador (veja [Remover o fundo](remove-background.md));
+  [[menu.bitmaps.remove_background]] faz isso com o serviço de IA.
 - [[menu.bitmaps.break_link]] e [[menu.bitmaps.update_from_link]] trabalham com
   bitmaps vinculados a um arquivo.
 - [[menu.bitmaps.save_bitmap_as]] salva um bitmap como arquivo PNG.
