@@ -22,8 +22,11 @@ meets the start) `Path` objects with the toolbox defaults.
 - Click-drag places a smooth node and pulls its handle out
   symmetrically (the handle follows the pointer while the button is
   down). C while pulling makes it a cusp: the incoming handle stays where
-  it is and only the outgoing one follows. Alt while pulling moves the
-  node itself, its handles with it.
+  it is and only the outgoing one follows. C acts while it is held (also
+  when it went down before the press) and the node stays a cusp after C
+  is let go; pressing it again in the same pull changes nothing more.
+  While a curve is being drawn C never aligns the selection. Alt while
+  pulling moves the node itself, its handles with it.
 - A plain click places a node with a straight segment to it: a node
   pulled before becomes a cusp, the segment leaving it straight (its
   incoming handle stays). Clicking the last node again (within the join
@@ -37,18 +40,49 @@ meets the start) `Path` objects with the toolbox defaults.
   closes it with a straight segment from the last node; a drag from the
   first node pulls the closing segment's handle at the first node (the
   mirror of the pointer, as a pulled handle), and the first node's own
-  outgoing handle stays as it was.
+  outgoing handle stays as it was, with or without C held.
 - With no curve being drawn and one curve selected, the Pen and Bezier
   tools edit it: a click on a segment (within the pick distance) adds a
-  node there, a press on a node that is not an end node drags it as the
-  Shape tool does (end nodes continue the curve, see below).
+  node there (the Pen only with Auto add/delete on), a press on a node
+  that is not an end node drags it as the Shape tool does (end nodes
+  continue the curve, see below); with the Pen and Auto add/delete on a
+  click on such a node deletes it (one undo step, Delete Node; a curve
+  keeps at least two nodes).
+- Auto add/delete (Pen, on by default): also on the curve being drawn, a
+  click on a segment (within the pick distance) adds a node there,
+  splitting the segment so the curve keeps its shape, and a click on a
+  node deletes it, its neighbours joined with their handles. The last
+  node (a click makes it a cusp) and the first once the curve has three
+  nodes (a click closes it) keep their meaning. A drag from a node or a
+  segment places a node as usual. The Bezier tool has no Auto
+  add/delete.
 - The pointer: the cross hair with the tool's sign to start a new
   curve; with a node and a line going on from it over an end node of the
   selected curve (continue it); a ring over the first node (close); a
-  plus over a segment of the selected curve (add a node); a hollow node
-  over one of its nodes, or over the last node of the curve being drawn
-  (edit the node, or make it a cusp).
-- Snapping applies to every placed node.
+  plus over a segment where a click adds a node; a minus over a node a
+  click deletes (Pen, Auto add/delete); a hollow node over a node of the
+  selected curve otherwise, or over the last node of the curve being
+  drawn (edit the node, or make it a cusp).
+- While drawing (code: `pen_look.rs`), the segments placed so far are a
+  hairline in the colour of the outline new objects get (black without
+  one), as the curve will look; nodes placed before are small hollow
+  squares and the last node a filled blue one; the last node's handles
+  are blue dashed lines ending in arrow tips (a cusp shows its incoming
+  handle as it was frozen). While the first node is dragged to close,
+  the closing segment shows dashed in blue with its handle.
+- Preview mode (Pen, on by default): while the button is up a dashed blue
+  segment runs from the last node to the pointer (as the next node would
+  take it, snapped and with Ctrl's steps), curved by the last node's
+  outgoing handle, so the next segment shows before the click. The
+  Bezier tool and the Pen with Preview mode off show nothing past the
+  last node.
+- Both options are on the Pen's property bar and in Options > Tools >
+  Curve tools (kept in the preferences, `curves.pen_preview` and
+  `curves.pen_auto_add_delete`).
+- Snapping applies to every placed node and to a handle being pulled;
+  the snap mark and its screen tip (Options > Snapping) show beside the
+  pointer while nodes are placed and handles pulled, including "grid"
+  and "guideline" when the pointer lands on a grid line or a guideline.
 - Ctrl: the next node goes in steps of the constrain angle from the last
   one (keeping how far the pointer reaches along that direction), and a
   dragged handle in such steps around its node; the preview follows.
@@ -163,6 +197,13 @@ Medium (first), High, Highest; kept in the preferences
 - `pick_drag_tests::clicking_the_last_node_again_makes_it_a_cusp`
 - `pick_drag_tests::dragging_from_the_first_node_shapes_only_the_closing_segment`
 - `pick_drag_tests::the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve`
+- `pick_drag_tests::the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off`
+- `pick_drag_tests::the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn`
+- `pick_drag_tests::c_held_while_pulling_makes_a_cusp_that_stays_and_does_not_align`
+- `pick_drag_tests::the_snap_tip_shows_while_placing_and_pulling_with_the_pen`
+- `pen_look::tests` (preview geometry, colours and node marks, the
+  closing preview, splitting and deleting nodes of the curve being
+  drawn, the defaults)
 - `curve_join::tests` (from either end, closing, two subpaths made one,
   reversing curves, in the curve's own space with one undo step)
 - `ui::cursors::tests::tools_get_their_cursors` (join and close signs)

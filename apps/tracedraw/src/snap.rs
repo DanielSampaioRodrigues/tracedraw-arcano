@@ -305,6 +305,7 @@ impl App {
             self.snap_axis(p.y, &ys, false).unwrap_or(p.y),
         );
         if axis != p {
+            self.mark_axis_snap(p, axis);
             return axis;
         }
         if !self.snap.guides {
@@ -325,10 +326,58 @@ impl App {
                 }
             }
             if let Some((_, q)) = best {
+                self.snap_mark.set(Some(crate::snap_points::Target {
+                    point: q,
+                    mode: crate::snap_points::SnapMode::Guideline,
+                    edge: None,
+                }));
                 return q;
             }
         }
         self.edge_snap(p, exclude)
+    }
+
+    /// The pointer at `p` snapped to `q` along the axes: mark it, with its
+    /// screen tip, when a guideline or the grid took it (guidelines first);
+    /// the page's and objects' bounds are not marked.
+    fn mark_axis_snap(&self, p: Point, q: Point) {
+        use crate::snap_points::{SnapMode, Target};
+        let moved_x = (q.x - p.x).abs() > 1e-12;
+        let moved_y = (q.y - p.y).abs() > 1e-12;
+        let on_guide = self.snap.guides
+            && self.doc().page(self.page).is_ok_and(|pg| {
+                pg.guides.iter().any(|g| match g.line {
+                    GuideLine::Horizontal { y } => moved_y && (y - q.y).abs() < 1e-9,
+                    GuideLine::Vertical { x } => moved_x && (x - q.x).abs() < 1e-9,
+                    GuideLine::Angled { .. } => false,
+                })
+            });
+        let on_grid = || {
+            if !self.snap.grid {
+                return false;
+            }
+            let grid = self.doc().metadata.grid;
+            let rulers = &self.doc().metadata.rulers;
+            let on = |v: f64, step: f64, origin: f64| {
+                let step = step.max(0.001);
+                let k = (v - origin) / step;
+                (k - k.round()).abs() * step < 1e-9
+            };
+            (moved_x && on(q.x, grid.spacing_x, rulers.origin_x))
+                || (moved_y && on(q.y, grid.spacing_y, rulers.origin_y))
+        };
+        let mode = if on_guide {
+            SnapMode::Guideline
+        } else if on_grid() {
+            SnapMode::Grid
+        } else {
+            return;
+        };
+        self.snap_mark.set(Some(Target {
+            point: q,
+            mode,
+            edge: None,
+        }));
     }
 
     /// Where the centre of rotation goes for the pointer at `p`: when

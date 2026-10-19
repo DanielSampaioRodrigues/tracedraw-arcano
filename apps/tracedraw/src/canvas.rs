@@ -239,7 +239,62 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         }
         _ => {}
     }
-    if let Some(c) = &app.curve {
+    if let Some(c) = app.curve.as_ref().filter(|c| c.smooth && !c.bspline) {
+        // Pen and Bezier: the segments placed in the outline the curve
+        // will get, the Pen's dashed preview to the pointer, the nodes
+        // and the last node's handles (see `pen_look`).
+        let ctrl = painter.ctx().input(|i| i.modifiers.ctrl);
+        let pointer = app
+            .pointer_page
+            .map(|p| app.curve_point(app.snap_point(p), ctrl));
+        let preview = app.tool == crate::tools::Tool::Pen && app.settings.curves.pen_preview;
+        let outline = app.default_stroke().map(|s| to_color32(s.color));
+        let look = crate::pen_look::curve_look(c, pointer, preview, outline);
+        for (pts, _) in flatten(&look.placed, view) {
+            if pts.len() > 1 {
+                painter.add(epaint::PathShape::line(
+                    pts,
+                    EStroke::new(1.0, look.placed_color),
+                ));
+            }
+        }
+        if let Some(seg) = &look.preview {
+            for (pts, _) in flatten(seg, view) {
+                dashed_polyline(
+                    painter,
+                    &pts,
+                    EStroke::new(1.0, look.preview_color),
+                    4.0,
+                    3.0,
+                );
+            }
+        }
+        for (node, h) in &look.handles {
+            draw_control_handle(
+                painter,
+                view.to_screen(*node),
+                view.to_screen(*h),
+                look.preview_color,
+            );
+        }
+        for (p, mark) in &look.nodes {
+            let r = ERect::from_center_size(view.to_screen(*p), egui::vec2(5.0, 5.0));
+            match mark {
+                crate::pen_look::NodeLook::Current => {
+                    painter.rect_filled(r.expand(0.5), 0.0, look.preview_color);
+                }
+                crate::pen_look::NodeLook::Placed => {
+                    painter.rect_filled(r, 0.0, Color32::WHITE);
+                    painter.rect_stroke(
+                        r,
+                        0.0,
+                        EStroke::new(1.0, look.placed_color),
+                        epaint::StrokeKind::Middle,
+                    );
+                }
+            }
+        }
+    } else if let Some(c) = &app.curve {
         // The pointer as the next node would take it (Ctrl: in steps of
         // the constrain angle).
         let ctrl = painter.ctx().input(|i| i.modifiers.ctrl);
@@ -1913,6 +1968,20 @@ fn draw_snap_glyph_width(
             let thin = EStroke::new(1.0, color);
             painter.line_segment([c + v(-h + 1.0, -h), c + v(h - 1.0, -h)], thin);
             painter.line_segment([c + v(0.0, -h), c + v(0.0, h - 2.0)], thin);
+        }
+        SnapMode::Grid => {
+            // Two lines each way, the point where they would cross.
+            let thin = EStroke::new(1.0, color);
+            for d in [-h / 2.0, h / 2.0] {
+                painter.line_segment([c + v(d, -h), c + v(d, h)], thin);
+                painter.line_segment([c + v(-h, d), c + v(h, d)], thin);
+            }
+        }
+        SnapMode::Guideline => {
+            // A line through the point, broken around it.
+            painter.line_segment([c + v(-h - 1.0, 0.0), c + v(-2.0, 0.0)], s);
+            painter.line_segment([c + v(2.0, 0.0), c + v(h + 1.0, 0.0)], s);
+            painter.circle_filled(c, 1.5, color);
         }
     }
 }

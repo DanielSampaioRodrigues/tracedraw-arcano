@@ -5,8 +5,10 @@ use crate::app::{App, CurveInProgress, Drag, Handle};
 /// What a Pen or Bezier press would edit on the selected curve.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PenEdit {
-    /// One of its nodes: dragged like with the Shape tool.
-    Node,
+    /// One of its nodes (curve, element index): dragged like with the
+    /// Shape tool; with the Pen's automatic adding and deleting, a click
+    /// deletes it.
+    Node(tracedraw_core::ShapeId, usize),
     /// A segment (curve, segment index, place along it): a click adds a
     /// node there.
     Segment(tracedraw_core::ShapeId, usize, f64),
@@ -1490,6 +1492,22 @@ impl App {
                 }
                 return;
             }
+            // The Pen's automatic adding and deleting: a click on a node of
+            // the curve being drawn deletes it, on a segment adds a node.
+            if let Some(auto) = self.pen_auto_at(raw) {
+                if let Some(c) = &mut self.curve {
+                    match auto {
+                        crate::pen_look::PenAuto::Delete(i) => {
+                            c.delete_node(i);
+                        }
+                        crate::pen_look::PenAuto::Add(k, t) => {
+                            c.insert_node(k, t);
+                        }
+                    }
+                    c.dragging_handle = false;
+                }
+                return;
+            }
         }
         if response.drag_started_by(PointerButton::Primary) && start_close {
             // Dragging from the first node shapes the closing segment.
@@ -1527,7 +1545,9 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
-            let c_pressed = response.ctx.input(|i| i.key_pressed(egui::Key::C));
+            // C held (pressed before or during the pull): a cusp; it stays
+            // one after C is let go.
+            let c_pressed = response.ctx.input(|i| i.key_down(egui::Key::C));
             if let Some(c) = &mut self.curve {
                 if c.closing.is_some() {
                     c.closing = Some(raw);
@@ -1599,12 +1619,17 @@ impl App {
             return false;
         }
         match self.pen_edit_at(p) {
-            Some(PenEdit::Node) if response.drag_started_by(PointerButton::Primary) => {
+            Some(PenEdit::Node(..)) if response.drag_started_by(PointerButton::Primary) => {
                 self.pen_editing = true;
                 self.shape_input(response, p, mods);
                 true
             }
-            Some(PenEdit::Node) if response.clicked_by(PointerButton::Primary) => true,
+            Some(PenEdit::Node(id, index)) if response.clicked_by(PointerButton::Primary) => {
+                if self.pen_deletes_nodes() {
+                    self.pen_delete_node(id, index);
+                }
+                true
+            }
             Some(PenEdit::Segment(id, index, t)) if response.clicked_by(PointerButton::Primary) => {
                 if let Some(ShapeKind::Path { path, closed }) =
                     self.doc().find_shape(id).map(|s| s.kind.clone())
@@ -1649,14 +1674,54 @@ impl App {
         }
         let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
         let lp = shape.transform.inverse() * p;
-        if tracedraw_core::nodes::nodes(path)
+        if let Some(n) = tracedraw_core::nodes::nodes(path)
             .iter()
-            .any(|n| (n.pos - lp).hypot() <= tol)
+            .map(|n| (n.index, (n.pos - lp).hypot()))
+            .filter(|(_, d)| *d <= tol)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
         {
-            return Some(PenEdit::Node);
+            return Some(PenEdit::Node(*id, n.0));
+        }
+        // The Pen adds nodes only with automatic adding and deleting on;
+        // the Bezier tool always does.
+        if self.tool == Tool::Pen && !self.settings.curves.pen_auto_add_delete {
+            return None;
         }
         let (index, t, d) = tracedraw_core::nodes::nearest_segment(path, lp)?;
         (d <= tol).then_some(PenEdit::Segment(*id, index, t))
+    }
+
+    /// The Pen with automatic adding and deleting on: a click on a node
+    /// of the selected curve deletes it.
+    pub(crate) fn pen_deletes_nodes(&self) -> bool {
+        self.tool == Tool::Pen && self.settings.curves.pen_auto_add_delete
+    }
+
+    /// Delete node `index` of curve `id` (one undo step), keeping at least
+    /// two nodes.
+    fn pen_delete_node(&mut self, id: tracedraw_core::ShapeId, index: usize) {
+        let Some(ShapeKind::Path { path, closed }) =
+            self.doc().find_shape(id).map(|s| s.kind.clone())
+        else {
+            return;
+        };
+        if tracedraw_core::nodes::nodes(&path).len() <= 2 {
+            return;
+        }
+        let np = tracedraw_core::nodes::delete_node(&path, index);
+        if self
+            .engine
+            .run_with_label(
+                &Command::SetShapeKind {
+                    shape: id,
+                    kind: ShapeKind::Path { path: np, closed },
+                },
+                "Delete Node",
+            )
+            .is_ok()
+        {
+            self.node_selection.clear();
+        }
     }
 
     fn fill_input(&mut self, response: &Response, p: Point) {
@@ -2569,7 +2634,8 @@ impl App {
         }
         // Align shortcuts: plain letters with a selection (not while nodes
         // are being edited).
-        if !self.selection.is_empty() && !nodes_chosen {
+        // (Not while a curve is drawn: C there makes a cusp.)
+        if !self.selection.is_empty() && !nodes_chosen && self.curve.is_none() {
             use crate::ops::Align;
             for (k, a) in [
                 (Key::L, Align::Left),

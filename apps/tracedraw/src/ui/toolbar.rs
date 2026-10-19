@@ -1574,7 +1574,8 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
 /// mirroring); the page's when nothing is selected.
 /// The curve tools' bar: the selection's position and size, then (with a
 /// selection) its outline width, line style and arrowheads and Close
-/// Curve; the Freehand tool's smoothing; with nothing selected, how to
+/// Curve; the Freehand tool's smoothing; the Pen's preview mode and
+/// automatic adding and deleting of nodes; with nothing selected, how to
 /// finish a curve.
 fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
     use crate::ui::propbar::{pic_button, sep, Pic};
@@ -1602,6 +1603,34 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
         ))
         .on_hover_text(tr("toolbar.freehand_smoothing"));
         app.settings.curves.smoothing = v;
+    }
+    if app.tool == Tool::Pen {
+        // Preview mode and automatic adding and deleting of nodes, also in
+        // Options > Tools > Curve tools.
+        sep(ui);
+        let c = &mut app.settings.curves;
+        if pic_button(
+            ui,
+            Pic::PenPreview,
+            &tr("toolbar.pen_preview_tip"),
+            true,
+            c.pen_preview,
+        )
+        .clicked()
+        {
+            c.pen_preview = !c.pen_preview;
+        }
+        if pic_button(
+            ui,
+            Pic::AutoAddDelete,
+            &tr("toolbar.pen_auto_add_delete_tip"),
+            true,
+            c.pen_auto_add_delete,
+        )
+        .clicked()
+        {
+            c.pen_auto_add_delete = !c.pen_auto_add_delete;
+        }
     }
     if !selected {
         vsep(ui);

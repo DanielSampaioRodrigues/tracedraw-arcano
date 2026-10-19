@@ -74,6 +74,11 @@ pub enum Pic {
     ExtendToClose,
     ExtractSubpath,
     CloseCurve,
+    /// The Pen's preview mode: a node, a dashed segment to a pointer.
+    PenPreview,
+    /// The Pen's automatic adding and deleting of nodes: a curve with a
+    /// node, a plus and a minus.
+    AutoAddDelete,
     StretchNodes,
     RotateNodes,
     AlignNodes,
@@ -839,6 +844,21 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
             dashed(p1, p0);
             node(p0.0, p0.1, true);
             node(p1.0, p1.1, true);
+        }
+        Pic::PenPreview => {
+            arch(1.5, 9.0, 12.0, 6.0, s);
+            node(9.0, 12.0, true);
+            dashed((9.0, 12.0), (13.0, 4.0));
+            // The pointer's cross hair.
+            line((13.0, 1.0), (13.0, 7.0), thin);
+            line((10.0, 4.0), (16.0, 4.0), thin);
+        }
+        Pic::AutoAddDelete => {
+            arch(1.5, 14.5, 13.0, 7.0, s);
+            node(8.0, 8.5, true);
+            line((1.0, 3.0), (5.0, 3.0), s);
+            line((3.0, 1.0), (3.0, 5.0), s);
+            line((11.0, 3.0), (15.0, 3.0), s);
         }
         Pic::StretchNodes | Pic::RotateNodes => {
             let rr = Rect::from_min_max(q(r, 3.5, 3.5), q(r, 12.5, 12.5));

@@ -2120,9 +2120,10 @@ fn the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve() {
         for_tool(&app, false, false, false, Some(on_segment)),
         ToolCursor::CurveBadge(Tool::Pen, CurveMark::AddNode)
     );
+    // With Auto add/delete (the default) a click on the node deletes it.
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_node)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::EditNode)
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::DeleteNode)
     );
     click_at(&ctx, &mut app, on_segment, Modifiers::NONE);
     assert_eq!(node_count(&app, id), 4);
@@ -2225,6 +2226,277 @@ fn rounded_corners_keep_their_size_when_relative_scaling_is_off() {
         }
         let _ = app.undo();
     }
+}
+
+#[test]
+fn the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off() {
+    use crate::ui::cursors::CurveMark;
+    let (ctx, mut app, _) = setup();
+    let id = line_curve(&ctx, &mut app);
+    app.set_tool(Tool::Pen);
+    let on_node = app.view.to_screen(Point::new(150.0, 100.0));
+    let on_segment = app.view.to_screen(Point::new(125.0, 100.0));
+    click_at(&ctx, &mut app, on_node, Modifiers::NONE);
+    assert_eq!(node_count(&app, id), 2);
+    assert!(app.curve.is_none(), "no new curve was started");
+    // One undo step; a curve keeps two nodes.
+    let _ = app.undo();
+    assert_eq!(node_count(&app, id), 3);
+    // Auto add/delete off: the node is only edited, a segment click adds
+    // nothing.
+    app.settings.curves.pen_auto_add_delete = false;
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_node)),
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::EditNode)
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_segment)),
+        ToolCursor::Badge(Tool::Pen)
+    );
+    click_at(&ctx, &mut app, on_node, Modifiers::NONE);
+    assert_eq!(node_count(&app, id), 3);
+    // The Bezier tool adds on a segment and never deletes.
+    app.settings.curves.pen_auto_add_delete = true;
+    app.finish_curve();
+    app.select(vec![id]);
+    app.set_tool(Tool::Bezier);
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_node)),
+        ToolCursor::CurveBadge(Tool::Bezier, CurveMark::EditNode)
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_segment)),
+        ToolCursor::CurveBadge(Tool::Bezier, CurveMark::AddNode)
+    );
+    click_at(&ctx, &mut app, on_node, Modifiers::NONE);
+    assert!(node_count(&app, id) >= 3);
+}
+
+#[test]
+fn the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn() {
+    use crate::ui::cursors::CurveMark;
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    for x in [100.0, 140.0, 180.0] {
+        click_page(&ctx, &mut app, Point::new(x, 150.0));
+    }
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(3));
+    let on_segment = app.view.to_screen(Point::new(120.0, 150.0));
+    let on_node = app.view.to_screen(Point::new(140.0, 150.0));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(on_segment)],
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_segment)),
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::AddNode)
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_node)),
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::DeleteNode)
+    );
+    click_page(&ctx, &mut app, Point::new(120.0, 150.0));
+    let xs: Vec<f64> = app
+        .curve
+        .as_ref()
+        .map(|c| c.nodes.iter().map(|n| n.0.x.round()).collect())
+        .unwrap_or_default();
+    assert_eq!(xs, vec![100.0, 120.0, 140.0, 180.0]);
+    click_page(&ctx, &mut app, Point::new(140.0, 150.0));
+    let xs: Vec<f64> = app
+        .curve
+        .as_ref()
+        .map(|c| c.nodes.iter().map(|n| n.0.x.round()).collect())
+        .unwrap_or_default();
+    assert_eq!(xs, vec![100.0, 120.0, 180.0]);
+    // Off: a click there places a node.
+    app.settings.curves.pen_auto_add_delete = false;
+    click_page(&ctx, &mut app, Point::new(110.0, 150.0));
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(4));
+}
+
+#[test]
+fn c_held_while_pulling_makes_a_cusp_that_stays_and_does_not_align() {
+    let (ctx, mut app, rect) = setup();
+    // The rectangle stays selected: C must not align it.
+    let before = bounds(&app, rect);
+    app.set_tool(Tool::Pen);
+    app.select(vec![rect]);
+    let (a, b, c) = (
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 150.0),
+        Point::new(180.0, 150.0),
+    );
+    click_page(&ctx, &mut app, a);
+    let (from, to) = (
+        app.view.to_screen(b),
+        app.view.to_screen(Point::new(160.0, 170.0)),
+    );
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::NONE,
+        vec![key(egui::Key::C, Modifiers::NONE)],
+    );
+    let release = Event::Key {
+        key: egui::Key::C,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    frame(&ctx, &mut app, vec![release.clone()], Modifiers::NONE);
+    let cv = app.curve.clone().expect("drawing");
+    // The incoming handle was frozen before the pull ended: it is not the
+    // mirror of the outgoing one.
+    let out = cv.nodes[1].1.expect("outgoing handle");
+    assert!(near(out, Point::new(160.0, 170.0)), "{out:?}");
+    let frozen = cv.in_handles.get(&1).copied().expect("a cusp");
+    assert!(
+        frozen.is_none_or(|h| !near(h, Point::new(120.0, 130.0))),
+        "{frozen:?}"
+    );
+    assert_eq!(bounds(&app, rect), before, "C did not align the rectangle");
+    // C pressed before the press: the node is a cusp from the start (the
+    // segment arrives without a handle), and it stays one after C is let
+    // go.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::C, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    pull(&ctx, &mut app, c, Point::new(190.0, 130.0));
+    frame(&ctx, &mut app, vec![release], Modifiers::NONE);
+    let cv = app.curve.clone().expect("drawing");
+    assert_eq!(cv.in_handles.get(&2).copied(), Some(None));
+    assert!(cv.in_handles.contains_key(&1), "the first cusp stayed");
+    // Without C the next pull is smooth.
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(220.0, 150.0),
+        Point::new(230.0, 160.0),
+    );
+    let cv = app.curve.clone().expect("drawing");
+    assert!(!cv.in_handles.contains_key(&3));
+    assert_eq!(bounds(&app, rect), before);
+}
+
+#[test]
+fn c_during_the_closing_drag_keeps_the_first_node_handle() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    let a_out = Point::new(110.0, 170.0);
+    pull(&ctx, &mut app, a, a_out);
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(150.0, 190.0),
+        Point::new(170.0, 190.0),
+    );
+    click_page(&ctx, &mut app, Point::new(160.0, 130.0));
+    let (from, to) = (
+        app.view.to_screen(a),
+        app.view.to_screen(Point::new(90.0, 140.0)),
+    );
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::NONE,
+        vec![key(egui::Key::C, Modifiers::NONE)],
+    );
+    assert!(app.curve.is_none());
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert!(near(cubic(segs[0]).p1, a_out), "{segs:?}");
+    let closing = segs
+        .iter()
+        .rev()
+        .find_map(|s| match s {
+            tracedraw_core::geometry::PathSeg::Cubic(c) if near(c.p3, a) => Some(*c),
+            _ => None,
+        })
+        .expect("a curved closing segment");
+    assert!(near(closing.p2, Point::new(110.0, 160.0)), "{closing:?}");
+}
+
+#[test]
+fn the_snap_tip_shows_while_placing_and_pulling_with_the_pen() {
+    use crate::snap_points::SnapMode;
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.snap.off = false;
+    app.snap.grid = true;
+    app.snap.objects = false;
+    app.snap.guides = false;
+    app.snap.page = false;
+    app.set_tool(Tool::Pen);
+    click_page(&ctx, &mut app, Point::new(100.2, 150.3));
+    // Placing: the pointer near a grid crossing is marked "grid".
+    let near_grid = app.view.to_screen(Point::new(120.3, 140.2));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(near_grid)],
+        Modifiers::NONE,
+    );
+    let mark = app.snap_mark.get().expect("a snap mark");
+    assert_eq!(mark.mode, SnapMode::Grid);
+    assert!(
+        (mark.point - Point::new(120.0, 140.0)).hypot() < 1e-6,
+        "{mark:?}"
+    );
+    // Pulling a handle: the handle snaps and the mark shows too.
+    let from = app.view.to_screen(Point::new(140.0, 150.0));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    for p in [Point::new(150.0, 160.0), Point::new(160.3, 169.8)] {
+        let at = app.view.to_screen(p);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(at)],
+            Modifiers::NONE,
+        );
+    }
+    assert!(app.curve.as_ref().is_some_and(|c| c.dragging_handle));
+    let mark = app.snap_mark.get().expect("a snap mark while pulling");
+    assert_eq!(mark.mode, SnapMode::Grid);
+    let handle = app
+        .curve
+        .as_ref()
+        .and_then(|c| c.nodes.last())
+        .and_then(|n| n.1);
+    assert!(
+        handle.is_some_and(|h| (h - Point::new(160.0, 170.0)).hypot() < 1e-6),
+        "{handle:?}"
+    );
+    let up = app.view.to_screen(Point::new(160.3, 169.8));
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(up, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
 }
 
 #[test]

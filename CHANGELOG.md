@@ -6,6 +6,18 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen: Preview mode (on by default, on the property bar and in Options >
+  Tools > Curve tools) shows the next segment dashed in blue from the last
+  node to the pointer before the click, curved by the node's handle. Auto
+  add/delete (on by default): a click on a segment of the curve being
+  drawn or of the selected curve adds a node, a click on a node deletes
+  it, with plus and minus pointers. While drawing with the Pen or Bezier
+  the placed segments show in the outline colour new curves get, the
+  last node filled blue and the others hollow. C held while pulling a
+  handle makes a cusp even when pressed before the drag, and no longer
+  aligns the selection. The snap screen tips also name the grid and
+  guidelines.
+
 - VBA macros: the object model they are written against (Application,
   Document, Page, Layer, Shapes and ShapeRange, Shape with Fill,
   Outline, Transparency, Curve, Text and its views, Color, the cdr*

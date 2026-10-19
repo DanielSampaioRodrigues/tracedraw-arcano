@@ -2118,9 +2118,10 @@ fn table_page(app: &mut App, ui: &mut Ui) {
     });
 }
 
-/// Options > Tools > Curve tools: the Freehand smoothing and how near an
+/// Options > Tools > Curve tools: the Freehand smoothing, how near an
 /// end node a new line joins the selected curve (and a curve closes on
-/// its first node). See `prefs::CurvePrefs`.
+/// its first node), and the Pen's preview mode and automatic adding and
+/// deleting of nodes. See `prefs::CurvePrefs`.
 fn curves_page(app: &mut App, ui: &mut Ui) {
     let c = &mut app.settings.curves;
     grid("curves").show(ui, |ui| {
@@ -2142,6 +2143,15 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
                 .suffix(" px"),
         );
         c.join_px = px;
+        ui.end_row();
+        row_label(ui, &tr("options.pen"));
+        ui.checkbox(&mut c.pen_preview, tr("options.pen_preview"));
+        ui.end_row();
+        ui.label("");
+        ui.checkbox(
+            &mut c.pen_auto_add_delete,
+            tr("options.pen_auto_add_delete"),
+        );
         ui.end_row();
     });
     ui.add_space(4.0);

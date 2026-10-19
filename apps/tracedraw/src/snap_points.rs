@@ -24,6 +24,11 @@ pub enum SnapMode {
     Edge,
     Center,
     TextBaseline,
+    /// A line of the document grid (turned on with View > Snap To, not
+    /// one of the Options modes): only marked, with its screen tip.
+    Grid,
+    /// A guideline (turned on with View > Snap To): only marked.
+    Guideline,
 }
 
 impl SnapMode {
@@ -51,6 +56,8 @@ impl SnapMode {
             SnapMode::Edge => "snap.edge",
             SnapMode::Center => "snap.center",
             SnapMode::TextBaseline => "snap.text_baseline",
+            SnapMode::Grid => "guides.grid",
+            SnapMode::Guideline => "docker.guidelines",
         }
     }
 
@@ -67,13 +74,18 @@ impl SnapMode {
             SnapMode::Edge => "snap_tip.edge",
             SnapMode::Center => "snap_tip.center",
             SnapMode::TextBaseline => "snap_tip.text_baseline",
+            SnapMode::Grid => "snap_tip.grid",
+            SnapMode::Guideline => "snap_tip.guideline",
         }
     }
 
     /// A single point; edges and baselines are lines the pointer slides
     /// along and give way to points.
     pub fn is_point(self) -> bool {
-        !matches!(self, SnapMode::Edge | SnapMode::TextBaseline)
+        !matches!(
+            self,
+            SnapMode::Edge | SnapMode::TextBaseline | SnapMode::Grid | SnapMode::Guideline
+        )
     }
 }
 
@@ -120,6 +132,8 @@ impl SnapModes {
             SnapMode::Edge => self.edge,
             SnapMode::Center => self.center,
             SnapMode::TextBaseline => self.text_baseline,
+            // Turned on and off with View > Snap To.
+            SnapMode::Grid | SnapMode::Guideline => true,
         }
     }
 
@@ -134,6 +148,7 @@ impl SnapModes {
             SnapMode::Edge => &mut self.edge,
             SnapMode::Center => &mut self.center,
             SnapMode::TextBaseline => &mut self.text_baseline,
+            SnapMode::Grid | SnapMode::Guideline => return,
         };
         *v = on;
     }

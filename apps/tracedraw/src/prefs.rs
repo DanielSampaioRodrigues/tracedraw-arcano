@@ -308,8 +308,9 @@ impl Default for WarningPrefs {
     }
 }
 
-/// Options > Tools > Curves: how the Freehand stroke is smoothed and how
-/// near an end node a new line must start to continue that curve.
+/// Options > Tools > Curves: how the Freehand stroke is smoothed, how
+/// near an end node a new line must start to continue that curve, and the
+/// Pen's preview and automatic adding and deleting of nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CurvePrefs {
@@ -318,6 +319,12 @@ pub struct CurvePrefs {
     /// Screen pixels within which a new line joins an end node of the
     /// selected curve (and a curve closes on its first node).
     pub join_px: f32,
+    /// Pen: a dashed segment runs from the last node to the pointer while
+    /// the button is up, showing the next segment before the click.
+    pub pen_preview: bool,
+    /// Pen: a click on a segment (of the curve being drawn or of the
+    /// selected curve) adds a node there, a click on a node deletes it.
+    pub pen_auto_add_delete: bool,
 }
 
 impl Default for CurvePrefs {
@@ -325,6 +332,8 @@ impl Default for CurvePrefs {
         CurvePrefs {
             smoothing: 50,
             join_px: 5.0,
+            pen_preview: true,
+            pen_auto_add_delete: true,
         }
     }
 }

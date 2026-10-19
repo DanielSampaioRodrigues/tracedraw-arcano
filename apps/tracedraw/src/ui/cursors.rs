@@ -70,8 +70,12 @@ pub enum CurveMark {
     Join,
     /// Close the curve being drawn on its first node.
     Close,
-    /// A click adds a node to the selected curve's segment (Pen, Bezier).
+    /// A click adds a node on a segment: of the selected curve (Pen,
+    /// Bezier) or of the curve being drawn (Pen).
     AddNode,
+    /// Pen: a click deletes the node (of the selected curve or of the
+    /// curve being drawn).
+    DeleteNode,
     /// A node a press edits: a node of the selected curve to drag, or the
     /// last node of the curve being drawn, which a click makes a cusp.
     EditNode,
@@ -349,13 +353,20 @@ fn curve_mark(app: &App, pos: Option<Pos2>) -> Option<CurveMark> {
         if pen && c.nodes.len() >= 2 && c.nodes.last().is_some_and(|(l, _)| near(l)) {
             return Some(CurveMark::EditNode);
         }
-        return None;
+        return match app.pen_auto_at(p) {
+            Some(crate::pen_look::PenAuto::Delete(_)) => Some(CurveMark::DeleteNode),
+            Some(crate::pen_look::PenAuto::Add(..)) => Some(CurveMark::AddNode),
+            None => None,
+        };
     }
     if app.on_join_end(p) {
         return Some(CurveMark::Join);
     }
     match app.pen_edit_at(p) {
-        Some(crate::interaction::PenEdit::Node) => Some(CurveMark::EditNode),
+        Some(crate::interaction::PenEdit::Node(..)) if app.pen_deletes_nodes() => {
+            Some(CurveMark::DeleteNode)
+        }
+        Some(crate::interaction::PenEdit::Node(..)) => Some(CurveMark::EditNode),
         Some(crate::interaction::PenEdit::Segment(..)) => Some(CurveMark::AddNode),
         None => None,
     }
@@ -486,6 +497,13 @@ fn curve_mark_sign(painter: &Painter, p: Pos2, mark: CurveMark) {
                     vec![c + Vec2::new(-4.0, 0.0), c + Vec2::new(4.0, 0.0)],
                     vec![c + Vec2::new(0.0, -4.0), c + Vec2::new(0.0, 4.0)],
                 ],
+                1.4,
+            );
+        }
+        CurveMark::DeleteNode => {
+            haloed(
+                painter,
+                &[vec![c + Vec2::new(-4.0, 0.0), c + Vec2::new(4.0, 0.0)]],
                 1.4,
             );
         }
