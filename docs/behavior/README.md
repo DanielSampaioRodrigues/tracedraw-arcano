@@ -20,7 +20,7 @@ Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `bitmap-effec
 `eyedroppers.md`, `files.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
 `outline-pen.md`, `pdf-import.md`, `picture-mosaic.md`, `pick-tool.md`,
-`plt.md`, `vector-mosaic.md`,
+`plt.md`, `vba.md`, `vector-mosaic.md`,
 `clip-frame.md`, `bitmap-tracing.md`, `psd-import.md`,
 `rulers-grid-guidelines.md`, `shape-tool.md`, `shape-tools.md`,
 `shaping.md`, `shelf.md`, `shortcuts.md`, `area-fill.md`, `snapping.md`, `status-bar.md`,
