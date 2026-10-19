@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.9.4 (2026-10-19)
+
 - Color Management Settings: Document and Default tabs, the drawing's
   current profiles, assign or convert new RGB, CMYK and grayscale
   profiles chosen from the profiles found on the computer, primary mode
