@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Font Manager: a window of its own with libraries (installed fonts,
+  added folders, Favorites and collections), filters by status,
+  embedding rights, technology, weight, width, style, scripts and
+  OpenType features, a sample text and search, every face drawn in
+  itself and grouped by family, details, and installing font files for
+  TraceDraw.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

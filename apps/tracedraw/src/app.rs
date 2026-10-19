@@ -814,6 +814,8 @@ pub struct App {
     /// Families the font lists show: installed, carried by drawings, and
     /// (browser build) offered by the page's font folder.
     pub font_families: Vec<String>,
+    /// What the Font Manager loaded and drew.
+    pub font_catalog: crate::ui::font_manager::Catalog,
     /// The font lists' pictures of family names in their own fonts.
     pub font_previews: crate::ui::font_list::FontPreviews,
     /// `tracedraw_text::fonts().generation()` when `font_families` was
@@ -1664,6 +1666,7 @@ impl App {
             overflow_cache: Default::default(),
             wireframe: false,
             font_families: tracedraw_text::fonts().available_families(),
+            font_catalog: Default::default(),
             font_previews: Default::default(),
             font_generation: tracedraw_text::fonts().generation(),
             color_profile_key: None,
@@ -2054,6 +2057,10 @@ impl App {
     /// Apply persisted settings (language, workspace, snapping, units).
     pub fn load_settings(&mut self) {
         self.apply_settings(crate::settings::Settings::load());
+        // Fonts installed for TraceDraw in the Font Manager.
+        if !crate::ui::font_manager::install_saved(&self.settings.font_manager).is_empty() {
+            self.font_families = tracedraw_text::fonts().available_families();
+        }
     }
 
     /// Apply a set of preferences to the running editor.
