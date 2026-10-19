@@ -227,7 +227,7 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Capability | Status |
 |---|---|
 | Undo/redo with history panel, repeat (Ctrl+R) | works |
-| Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from | works |
+| Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from; Ctrl+V takes what was copied last, here or in another program, including images and files copied in a file manager | works (see `behavior/clipboard.md`) |
 | Find and Replace (text and object attributes) | works |
 | Scripts panel: JavaScript object model (documents, pages, layers, shapes, fills, outlines, colours, curves with their subpaths and nodes, effects listed, added and removed), run, record macro, load/save | works (`scripting::tests`) |
 | File > GitHub: open a drawing from a repository, save it back as a commit with a message (refused over a newer version), the file's history and earlier versions; a personal access token, kept for the session or remembered | works (see `behavior/github.md`) |

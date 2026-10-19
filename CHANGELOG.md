@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Ctrl+V pastes what was copied last: a picture or text copied in
+  another program after a copy in TraceDraw is no longer ignored, files
+  copied in a file manager are imported, and Ctrl+V works when the
+  clipboard holds only a picture or files.
 - Document Properties: language, title, subject, author, copyright,
   tags, notes and a rating list, applied on OK in one undo step, over a
   report of the file, the document, its colour settings, objects and
