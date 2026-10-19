@@ -26,6 +26,8 @@ pub mod hyphen;
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
 
+use tracedraw_core::document::text_outline::{GlyphLayout, PlacedGlyph};
+
 pub struct FontSystem {
     /// Installed fonts, then the fonts documents brought (see
     /// [`FontSystem::add_document_fonts`]).
@@ -61,6 +63,7 @@ pub struct FontSystem {
 /// Register this engine as the core's text outliner (call once at startup).
 pub fn install() {
     tracedraw_core::document::text_outline::set(|req| fonts().outline_cached(req).as_ref().clone());
+    tracedraw_core::document::text_outline::set_glyphs(|req| fonts().glyph_layout(req));
     tracedraw_core::document::text_outline::set_lines(|req| {
         let layout = fonts().layout(req);
         // Lines past what fits the frame flow on (to a linked frame);
@@ -377,17 +380,18 @@ pub fn usable_in_documents(data: &[u8]) -> bool {
 /// Choose the instance of a variable font: weight 700 for bold text and
 /// 400 otherwise (within the font's range), and its italic or slant axis
 /// for italic text when the face is upright. Returns the weight and
-/// whether the letters slant, which decide the synthetic styles.
+/// whether the letters slant, which decide the synthetic styles, and the
+/// axis values set (empty for a static font).
 fn set_axes(
     face: &mut ttf_parser::Face,
     hb: &mut rustybuzz::Face,
     bold: bool,
     italic: bool,
-) -> (u16, bool) {
+) -> (u16, bool, Vec<([u8; 4], f32)>) {
     let mut weight = face.weight().to_number();
     let mut slanted = face.is_italic() || face.is_oblique();
     if !face.is_variable() {
-        return (weight, slanted);
+        return (weight, slanted, Vec::new());
     }
     let mut set: Vec<rustybuzz::Variation> = Vec::new();
     for axis in face.variation_axes() {
@@ -423,7 +427,8 @@ fn set_axes(
         face.set_variation(v.tag, v.value);
     }
     hb.set_variations(&set);
-    (weight, slanted)
+    let coords = set.iter().map(|v| (v.tag.to_bytes(), v.value)).collect();
+    (weight, slanted, coords)
 }
 
 /// Letters 0x20 to 0xFF of the symbol encoding of the Symbol family as
@@ -614,6 +619,22 @@ struct Glyph {
     span: usize,
     /// Width of a trailing hyphen if the line breaks after this glyph.
     hyphen_after: Option<Arc<HyphenGlyph>>,
+    /// The font glyph behind the outline, for writers that keep text as
+    /// text; `None` for markers without an outline.
+    src: Option<Arc<GlyphSource>>,
+}
+
+/// Where a shaped glyph's outline comes from.
+struct GlyphSource {
+    font: tracedraw_core::document::text_outline::GlyphFont,
+    gid: u16,
+    /// From the glyph's space in ems to the outline at the pen origin
+    /// (mm): size, baseline shift, slant and character angle.
+    local: Affine,
+    /// The characters of its cluster (empty for its further glyphs).
+    text: String,
+    /// The outline is the font's own glyph (not made bold by doubling).
+    exact: bool,
 }
 
 #[derive(Clone)]
@@ -678,6 +699,9 @@ pub struct TextLayout {
     /// One entry per laid-out line, in order: the character range it holds
     /// and the pen position before each of its characters (for carets).
     pub lines: Vec<LineBox>,
+    /// The glyphs as fonts draw them and the other marks, filled in by
+    /// [`FontSystem::glyph_layout`] only.
+    glyph_layout: GlyphLayout,
 }
 
 /// Caret geometry of one laid-out line, mm, in layout space (Y up).
@@ -1132,6 +1156,22 @@ impl FontSystem {
             .unwrap_or_else(|e| e.into_inner())
             .iter()
             .any(|f| f == family)
+    }
+
+    /// The embedding bits (OS/2 `fsType`) of the face that draws `family`
+    /// in this style (a stand-in when the family is not installed);
+    /// `None` without such a face or without the bits.
+    pub fn embedding_bits(&self, family: &str, bold: bool, italic: bool) -> Option<u16> {
+        let id = self.face_for(family, bold, italic)?;
+        let (data, index) = self.face_data(id)?;
+        let face = ttf_parser::RawFace::parse(&data, index).ok()?;
+        match face
+            .table(ttf_parser::Tag::from_bytes(b"OS/2"))?
+            .get(8..10)?
+        {
+            &[hi, lo] => Some(u16::from_be_bytes([hi, lo])),
+            _ => None,
+        }
     }
 
     /// The font file of `family`'s face in that weight and slant, for
@@ -1780,7 +1820,12 @@ impl FontSystem {
         let Some(mut hb) = rustybuzz::Face::from_slice(&data, index) else {
             return out;
         };
-        let (weight, slanted) = set_axes(&mut face, &mut hb, span.bold, span.italic);
+        let (weight, slanted, coords) = set_axes(&mut face, &mut hb, span.bold, span.italic);
+        let font = tracedraw_core::document::text_outline::GlyphFont {
+            data: data.clone(),
+            index,
+            coords,
+        };
         let size_pt = span.size_pt * size_scale;
         let upem = face.units_per_em() as f64;
         let scale = size_pt * PT_MM / upem;
@@ -1824,6 +1869,14 @@ impl FontSystem {
         let infos = glyphs.glyph_infos();
         let positions = glyphs.glyph_positions();
         let chars: Vec<(usize, char)> = text.char_indices().collect();
+        // The characters each glyph stands for: from its cluster to the
+        // next cluster (in text order); the first glyph of a cluster
+        // carries them.
+        let mut starts: Vec<usize> = infos.iter().map(|i| i.cluster as usize).collect();
+        starts.sort_unstable();
+        starts.dedup();
+        let mut claimed: Vec<usize> = Vec::new();
+        let size_mm = size_pt * PT_MM;
         let hyphen_glyph = {
             let gid = face.glyph_index('-');
             gid.map(|g| {
@@ -1861,6 +1914,32 @@ impl FontSystem {
             if let Some(a) = place {
                 gp = a * gp;
             }
+            let start = info.cluster as usize;
+            let cluster_text = if claimed.contains(&start) {
+                String::new()
+            } else {
+                claimed.push(start);
+                let end = starts
+                    .iter()
+                    .copied()
+                    .find(|c| *c > start)
+                    .unwrap_or(text.len());
+                text.get(start..end).unwrap_or("").to_string()
+            };
+            let mut local = Affine::translate((0.0, baseline)) * Affine::scale(size_mm);
+            if synth_italic {
+                local = Affine::new([1.0, 0.0, 0.2, 1.0, 0.0, 0.0]) * local;
+            }
+            if let Some(a) = place {
+                local = a * local;
+            }
+            let src = Arc::new(GlyphSource {
+                font: font.clone(),
+                gid: gid.0,
+                local,
+                text: cluster_text,
+                exact: !synth_bold,
+            });
             let cluster = chars.iter().position(|(i, _)| *i == info.cluster as usize);
             let ch = cluster
                 .and_then(|k| chars.get(k))
@@ -1879,6 +1958,7 @@ impl FontSystem {
                 char_idx: char_base + cluster.unwrap_or(0),
                 span: span_idx,
                 hyphen_after: hyphen_glyph.clone(),
+                src: Some(src),
             });
         }
         out
@@ -1888,13 +1968,24 @@ impl FontSystem {
 
     /// Full layout of a text object.
     pub fn layout(&self, req: &TextRequest) -> TextLayout {
+        self.layout_with(req, false)
+    }
+
+    /// The glyphs of a text object as its fonts draw them, placed as
+    /// [`FontSystem::layout`] places its outline, and its other marks
+    /// (underlines, strike lines, added hyphens) as curves.
+    pub fn glyph_layout(&self, req: &TextRequest) -> GlyphLayout {
+        self.layout_with(req, true).glyph_layout
+    }
+
+    fn layout_with(&self, req: &TextRequest, collect: bool) -> TextLayout {
         if req.para.fit_to_frame && req.frame.is_some() {
             // Scale the font size so the text fills the frame height.
             let (mut lo, mut hi) = (0.1, 20.0);
             let mut best = 1.0;
             for _ in 0..14 {
                 let mid = (lo + hi) / 2.0;
-                let l = self.layout_scaled(req, mid);
+                let l = self.layout_scaled(req, mid, false);
                 if l.overflow {
                     hi = mid;
                 } else {
@@ -1902,12 +1993,12 @@ impl FontSystem {
                     lo = mid;
                 }
             }
-            return self.layout_scaled(req, best);
+            return self.layout_scaled(req, best, collect);
         }
-        self.layout_scaled(req, 1.0)
+        self.layout_scaled(req, 1.0, collect)
     }
 
-    fn layout_scaled(&self, req: &TextRequest, size_scale: f64) -> TextLayout {
+    fn layout_scaled(&self, req: &TextRequest, size_scale: f64, collect: bool) -> TextLayout {
         let spans = req.spans;
         if spans.is_empty() {
             return TextLayout {
@@ -1918,6 +2009,7 @@ impl FontSystem {
                 fitted_chars: 0,
                 baselines: Vec::new(),
                 lines: Vec::new(),
+                glyph_layout: GlyphLayout::default(),
             };
         }
         let para = req.para;
@@ -1967,6 +2059,7 @@ impl FontSystem {
                                 char_idx,
                                 span: si,
                                 hyphen_after: None,
+                                src: None,
                             })
                         }
                         char_idx += 1;
@@ -2244,6 +2337,7 @@ impl FontSystem {
         // colour).
         let span_drawn = |span: usize| spans.get(span).is_none_or(|s| !s.layout_only);
         let mut path = BezPath::new();
+        let mut glyphs_out = GlyphLayout::default();
         let mut glyph_count = 0usize;
         let mut min_y = 0.0f64;
         let mut max_x = 0.0f64;
@@ -2281,6 +2375,7 @@ impl FontSystem {
             // The line's outlines; lines past the frame (overflow) are not
             // drawn.
             let mut line_path = BezPath::new();
+            let mut line_glyphs = GlyphLayout::default();
             // Drop cap: the first glyph of a paragraph, scaled so its top
             // meets the top of the first line's letters and it sits on the
             // baseline of the Nth line.
@@ -2289,10 +2384,10 @@ impl FontSystem {
             if let (Some(cap_x), Some(g), false) = (line.cap_x, glyphs.first(), artistic) {
                 let n = ps.drop_cap_lines as f64;
                 let (scale, baseline) = drop_cap_placement(&g.path, n, step, y, m.ascent);
-                let gp = Affine::translate((cap_x, baseline))
-                    * Affine::scale(scale)
-                    * g.path.as_ref().clone();
+                let a = Affine::translate((cap_x, baseline)) * Affine::scale(scale);
                 if span_drawn(g.span) {
+                    place_glyph(collect, a, g, &mut line_glyphs);
+                    let gp = a * g.path.as_ref().clone();
                     line_path.extend(gp.elements().iter().copied());
                 }
                 glyphs = &glyphs[1..];
@@ -2304,7 +2399,9 @@ impl FontSystem {
                 if let Some(span) = spans.get(first_span).filter(|_| span_drawn(first_span)) {
                     let b = self.shape_run(span, 0, &ps.bullet_char, size_scale, 0, ps);
                     for g in &b {
-                        let gp = Affine::translate((bx, y)) * g.path.as_ref().clone();
+                        let a = Affine::translate((bx, y));
+                        place_glyph(collect, a, g, &mut line_glyphs);
+                        let gp = a * g.path.as_ref().clone();
                         line_path.extend(gp.elements().iter().copied());
                     }
                 }
@@ -2379,8 +2476,9 @@ impl FontSystem {
                     continue;
                 }
                 if span_drawn(g.span) {
-                    let gp = Affine::translate((pen + g.x_offset, y + g.y_offset))
-                        * g.path.as_ref().clone();
+                    let a = Affine::translate((pen + g.x_offset, y + g.y_offset));
+                    place_glyph(collect, a, g, &mut line_glyphs);
+                    let gp = a * g.path.as_ref().clone();
                     line_path.extend(gp.elements().iter().copied());
                 }
                 let adv = g.advance + if g.ch == ' ' { space_extra } else { 0.0 };
@@ -2409,6 +2507,9 @@ impl FontSystem {
                 if line.glyphs.last().is_none_or(|g| span_drawn(g.span)) {
                     let gp = Affine::translate((pen, y)) * h.path.clone();
                     line_path.extend(gp.elements().iter().copied());
+                    if collect {
+                        line_glyphs.rest.extend(gp.elements().iter().copied());
+                    }
                 }
                 pen += h.advance;
             }
@@ -2423,6 +2524,11 @@ impl FontSystem {
                         y + sm.underline_pos,
                     );
                     line_path.extend(r.to_path(0.01).elements().iter().copied());
+                    if collect {
+                        line_glyphs
+                            .rest
+                            .extend(r.to_path(0.01).elements().iter().copied());
+                    }
                 }
                 if span.strikethrough {
                     let r = Rect::new(
@@ -2432,10 +2538,19 @@ impl FontSystem {
                         y + sm.strike_pos + sm.underline_thick / 2.0,
                     );
                     line_path.extend(r.to_path(0.01).elements().iter().copied());
+                    if collect {
+                        line_glyphs
+                            .rest
+                            .extend(r.to_path(0.01).elements().iter().copied());
+                    }
                 }
             }
             if line_drawn {
                 path.extend(line_path.elements().iter().copied());
+                glyphs_out.glyphs.append(&mut line_glyphs.glyphs);
+                glyphs_out
+                    .rest
+                    .extend(line_glyphs.rest.elements().iter().copied());
             }
             line_baselines.push((line_start, y));
             max_x = max_x.max(pen);
@@ -2454,6 +2569,12 @@ impl FontSystem {
             let dy = -(h + min_y).max(0.0) * share;
             if dy.abs() > 1e-9 {
                 path.apply_affine(Affine::translate((0.0, dy)));
+                let shift = Affine::translate((0.0, dy));
+                for g in &mut glyphs_out.glyphs {
+                    g.transform = shift * g.transform;
+                    g.path.apply_affine(shift);
+                }
+                glyphs_out.rest.apply_affine(shift);
                 for b in &mut line_baselines {
                     b.1 += dy;
                 }
@@ -2478,7 +2599,8 @@ impl FontSystem {
 
         // 4. Text on a path: re-place the glyphs of artistic text along the curve.
         if let (Some(tp), true) = (req.on_path, artistic) {
-            let placed = place_on_path(&lines, tp, style_of(0).0, spans);
+            let mut on_path = GlyphLayout::default();
+            let placed = place_on_path(&lines, tp, style_of(0).0, spans, collect, &mut on_path);
             return TextLayout {
                 path: placed,
                 bounds,
@@ -2487,6 +2609,7 @@ impl FontSystem {
                 fitted_chars: total_chars,
                 baselines: line_baselines,
                 lines: line_boxes,
+                glyph_layout: on_path,
             };
         }
 
@@ -2498,6 +2621,7 @@ impl FontSystem {
             fitted_chars,
             baselines: line_baselines,
             lines: line_boxes,
+            glyph_layout: glyphs_out,
         }
     }
 }
@@ -2768,7 +2892,14 @@ struct DropCap {
 /// Place artistic text along a path: each glyph is centred on its arc
 /// length position along the baseline (see [`TextOnPath::baseline`]) and
 /// turned to its direction there. Positions wrap around closed paths.
-fn place_on_path(lines: &[Line], tp: &TextOnPath, align: TextAlign, spans: &[TextSpan]) -> BezPath {
+fn place_on_path(
+    lines: &[Line],
+    tp: &TextOnPath,
+    align: TextAlign,
+    spans: &[TextSpan],
+    collect: bool,
+    glyphs: &mut GlyphLayout,
+) -> BezPath {
     let mut out = BezPath::new();
     let Some(line) = lines.first() else {
         return out;
@@ -2815,10 +2946,32 @@ fn place_on_path(lines: &[Line], tp: &TextOnPath, align: TextAlign, spans: &[Tex
         if spans.get(g.span).is_some_and(|s| s.layout_only) {
             continue;
         }
+        place_glyph(collect, place, g, glyphs);
         let gp = place * g.path.as_ref().clone();
         out.extend(gp.elements().iter().copied());
     }
     out
+}
+
+/// Add glyph `g`, placed by `a`, to the glyph layout when glyphs are
+/// collected: as a font glyph, or as curves when it has no font glyph.
+fn place_glyph(collect: bool, a: Affine, g: &Glyph, out: &mut GlyphLayout) {
+    if !collect {
+        return;
+    }
+    let path = a * g.path.as_ref().clone();
+    match &g.src {
+        Some(src) => out.glyphs.push(PlacedGlyph {
+            font: src.font.clone(),
+            glyph_id: src.gid,
+            transform: a * src.local,
+            text: src.text.clone(),
+            span: g.span,
+            path,
+            exact: src.exact,
+        }),
+        None => out.rest.extend(path.elements().iter().copied()),
+    }
 }
 
 /// How a letter centred at a point of the path with unit direction `dir`

@@ -15,6 +15,10 @@ tiny-skia.workspace = true
 usvg = { version = "0.48", default-features = false }
 lopdf = { version = "0.36", default-features = false }
 roxmltree = "0.21"
+# Fonts embedded in PDF files: their tables (ttf-parser) and the subset of
+# glyphs a file uses (subsetter, MIT OR Apache-2.0).
+ttf-parser.workspace = true
+subsetter = "0.2"
 web-time = "1"
 zip.workspace = true
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

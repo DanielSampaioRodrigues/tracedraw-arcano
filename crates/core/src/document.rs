@@ -65,6 +65,105 @@ pub mod text_outline {
     pub fn lines(req: &TextRequest) -> Option<Vec<Line>> {
         LINER.get().map(|f| f(req))
     }
+
+    /// The font file a glyph comes from, shared with the text engine.
+    #[derive(Clone)]
+    pub struct GlyphFont {
+        pub data: std::sync::Arc<Vec<u8>>,
+        /// Face index inside a collection (0 for a single font).
+        pub index: u32,
+        /// Variation axis values the glyph is drawn at, as (tag, value);
+        /// empty for a static font.
+        pub coords: Vec<([u8; 4], f32)>,
+    }
+
+    impl std::fmt::Debug for GlyphFont {
+        // The font data stays out of logs.
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("GlyphFont")
+                .field("bytes", &self.data.len())
+                .field("index", &self.index)
+                .field("coords", &self.coords)
+                .finish()
+        }
+    }
+
+    /// One glyph of laid-out text, as a font file draws it.
+    #[derive(Clone, Debug)]
+    pub struct PlacedGlyph {
+        pub font: GlyphFont,
+        pub glyph_id: u16,
+        /// From the glyph's own space in ems (pen at the origin, y up) to
+        /// layout space (mm): size, position, shifts, angles, slants and
+        /// the turn a path gives it.
+        pub transform: crate::geometry::Affine,
+        /// The characters the glyph stands for (a ligature holds several);
+        /// empty for the further glyphs of one character.
+        pub text: String,
+        /// The span it belongs to.
+        pub span: usize,
+        /// Its outline as drawn, layout space (mm).
+        pub path: BezPath,
+        /// False when the drawn outline is not the font's own glyph
+        /// (synthetic bold); such glyphs are drawn as curves.
+        pub exact: bool,
+    }
+
+    /// Laid-out text as glyphs, for writers that keep text as text: the
+    /// glyphs, and every other mark of the text (underlines, strike lines,
+    /// hyphens added at line breaks, letters no font has) as curves.
+    #[derive(Clone, Debug, Default)]
+    pub struct GlyphLayout {
+        pub glyphs: Vec<PlacedGlyph>,
+        pub rest: BezPath,
+    }
+
+    type Glypher = fn(&TextRequest) -> GlyphLayout;
+    static GLYPHER: OnceLock<Glypher> = OnceLock::new();
+
+    /// Register the text engine's glyph layout.
+    pub fn set_glyphs(f: Glypher) {
+        let _ = GLYPHER.set(f);
+    }
+
+    /// The glyphs of a text object, when a text engine is registered.
+    pub fn glyphs(req: &TextRequest) -> Option<GlyphLayout> {
+        GLYPHER.get().map(|f| f(req))
+    }
+}
+
+/// The glyphs of a text object in its local space (apply its transform),
+/// placed as [`Shape::local_path`] places its outline. `None` for other
+/// shapes and without a text engine.
+pub fn text_glyph_layout(kind: &ShapeKind) -> Option<text_outline::GlyphLayout> {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        frame,
+        align,
+        para,
+        on_path,
+    } = kind
+    else {
+        return None;
+    };
+    let mut layout = text_outline::glyphs(&text_outline::TextRequest {
+        spans,
+        frame: *frame,
+        align: *align,
+        para,
+        on_path: on_path.as_ref(),
+    })?;
+    let shift = match (on_path, frame) {
+        (Some(_), _) | (None, None) => Affine::translate(origin.to_vec2()),
+        (None, Some(f)) => Affine::translate((origin.x, origin.y + f.height)),
+    };
+    for g in &mut layout.glyphs {
+        g.transform = shift * g.transform;
+        g.path.apply_affine(shift);
+    }
+    layout.rest.apply_affine(shift);
+    Some(layout)
 }
 
 /// The rectangles behind a text, in its local space (apply its

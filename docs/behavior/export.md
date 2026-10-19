@@ -32,6 +32,13 @@ Office presets start with their own (see `options.md`).
   measured; bitmap formats are estimated by encoding the preview the same
   way and scaling by the pixel count of the export (times the pages with
   All pages). It shows as "about 820 KB" or "about 3.4 MB".
+- Text in PDF and AI files is text with its fonts embedded as subsets,
+  as Publish to PDF writes it by default (see `publish-to-pdf.md`, Text
+  and fonts). Vector formats write curves with their own segments:
+  quadratic segments (TrueType letters, for example) become the cubic
+  that draws the same curve in PDF, AI, EPS, PostScript and EMF, and
+  stay quadratic in SVG; only DXF, WMF and PLT, which have no curves of
+  that kind, approximate them with short lines.
 - The preview and estimate are worked out again only when the drawing,
   the page, the selection or a setting changes.
 - OK asks where to save; the file name is the drawing's with the format's

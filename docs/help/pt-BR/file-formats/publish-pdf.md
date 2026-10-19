@@ -37,6 +37,31 @@ início) e **mostrar os marcadores quando o arquivo abre**.
   que não permitem transparência.
 - **Sangria** (0 a 50 mm) em volta de cada página.
 
+## Texto e fontes {#text}
+
+O texto vai para o PDF como texto de verdade: num visualizador de PDF é
+possível pesquisá-lo, selecioná-lo e copiá-lo, e ele mantém o preenchimento,
+o contorno, as cores e o ângulo. As fontes também vão para o arquivo, então o
+texto fica igual em qualquer computador. No grupo [[publish.text_fonts]] da
+aba Objetos:
+
+- **[[publish.text_as_curves]]** (desligado no início) grava todo o texto como
+  curvas: o arquivo não tem fontes e o texto não pode ser pesquisado. As
+  curvas seguem exatamente o contorno das próprias letras, então continuam
+  lisas em qualquer zoom.
+- **[[publish.embed_fonts]]** (ligado no início) coloca as fontes no arquivo.
+  Desligado, as fontes são apenas nomeadas e o visualizador usa a sua cópia.
+- **[[publish.embed_base14]]** coloca também Helvetica, Times e Courier no
+  arquivo; caso contrário, as fontes padrão do visualizador as desenham.
+- **[[publish.subset_fonts]]** coloca apenas as letras que o arquivo usa, o
+  que o deixa pequeno, quando uma fonte usa menos que a parcela escolhida
+  (80 %).
+
+Arquivos PDF/X sempre levam as suas fontes. Algumas fontes não permitem ser
+colocadas em outros arquivos: o texto delas é gravado como curvas, a barra de
+status as nomeia depois de publicar e a verificação prévia lista esse texto
+antes.
+
 ## Segurança {#security}
 
 - **Exigir senha para abrir o arquivo**, e a senha.

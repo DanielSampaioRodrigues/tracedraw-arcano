@@ -19,6 +19,7 @@ printed or sent to a print shop (`preflight.rs`, dialog in
 | Empty text object | note | text objects whose text is empty or only spaces |
 | Text does not fit its frame | warning | paragraph text whose last frame (unlinked, or the end of a chain of linked frames) hides part of the text |
 | Font not installed | warning | text in a font family that is not installed (detail: the family) |
+| Font may not be embedded | note | text in a font whose licence forbids embedding (OS/2 embedding bits): PDF files get that text as curves (detail: the family) |
 | Very small text | warning | text smaller than 5 pt as printed (its size times the object's scale) |
 | Small text in rich black | warning | text smaller than 12 pt filled with CMYK black of 99% K or more plus other inks |
 | RGB colour in a CMYK drawing | warning | RGB, HSB, HSL or YIQ colours in fills (solid, fountain stops, mesh nodes, two-colour patterns), outlines or character fills of a drawing whose primary colour mode is CMYK |

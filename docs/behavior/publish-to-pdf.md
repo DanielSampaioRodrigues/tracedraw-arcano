@@ -38,6 +38,58 @@ PDF keeps the drawing's colours as they are.
 Flatten transparency at (300 dpi), for PDF/X-1a and X-3 only; greyed
 for the others, which keep transparency live.
 
+### Text and fonts
+
+Text goes into the file as text: it can be searched, selected and
+copied in a viewer. The choices (kept in the preferences):
+
+| Choice | Default | What it does |
+|---|---|---|
+| Export all text as curves | off | Every text is written as filled outlines; the file has no fonts. The other choices are greyed. |
+| Embed fonts in document | on | The fonts go into the file. Off, a font is only named (a simple TrueType font in the WinAnsi encoding with its widths) for the viewer to supply, and characters outside WinAnsi, ligatures and alternate glyphs are drawn as curves. |
+| Embed base 14 fonts | off | Text in the Helvetica, Times and Courier families names the standard font of its style (Helvetica-Bold, Times-Italic and so on) in WinAnsi with the widths of the font it was set in; on, those fonts are embedded like the others. Characters outside WinAnsi come from the embedded font. |
+| Subset fonts, when less than (80 %) | on | Only the glyphs the file uses go in (plus any glyph they are built from). A font that uses this share of its glyphs or more, a font whose licence forbids subsetting, and every font with the choice off go in whole. |
+
+PDF/X files always embed every font, the standard ones too, whatever
+the choices. The writer:
+
+- Writes an embedded font as a Type0 font with the Identity-H encoding
+  (two bytes per glyph) over a CID font: `CIDFontType2` with the
+  TrueType outlines in `FontFile2` (`CIDToGIDMap /Identity`), or
+  `CIDFontType0` with the CFF outlines in `FontFile3` of subtype
+  `CIDFontType0C`. CFF fonts are converted to CID-keyed CFF. A variable
+  font is instanced at the weight and slant the text uses. A subset's
+  name carries a six-letter tag (`ABCDEF+Name`). The `W` array gives
+  each glyph's advance, and a `ToUnicode` CMap maps each glyph to the
+  characters it stands for (a ligature to all of them), so copying and
+  searching give back the text.
+- Places glyphs as the text engine lays them out: one text matrix per
+  run of glyphs of one font on one line (size, position, slant, turn,
+  the object's transform), with `TJ` adjustments for kerning, tracking
+  and justification, and a matrix of its own for each glyph that leaves
+  the line (text on a path, shifted or turned characters, drop caps).
+- Keeps paint: a uniform fill (RGB, CMYK, grey, spot inks) is the
+  text's fill (render mode 0); a plain outline is its stroke (mode 1,
+  or 2 with a fill), with its width, caps, joins and dashes. A gradient,
+  pattern, texture or mesh fill, and a calligraphic, variable,
+  painterly or painted outline, is painted on the text's outlines as
+  for any curve; the text then goes over it invisibly (mode 3, or as
+  the plain outline's stroke), so it can still be searched. Underlines,
+  strike lines and hyphens added at line breaks are curves. Letters
+  drawn bold by doubling the outline (a family without a bold face) are
+  curves with invisible text over them.
+- Respects licences: a font whose OS/2 embedding bits allow no
+  embedding (restricted licence, or bitmaps only) is never embedded;
+  its text is written as curves. Publish to PDF names those fonts on
+  the status line, and the preflight's "Font may not be embedded" note
+  (`preflight.md`) lists the text that uses them before publishing.
+
+As curves, glyph outlines keep the font's own segments: lines stay
+lines, cubic curves stay cubic, and each quadratic segment of a
+TrueType outline becomes the one cubic that draws the same curve
+(handles two thirds of the way from each end to the control point).
+Nothing is flattened into short lines.
+
 ## Prepress
 
 Bleed: the drawing's bleed (Document Properties) to start with, 0 to
@@ -111,7 +163,9 @@ The standard security handler of ISO 32000-2, revision 6:
 environment: `TRACEDRAW_PDF_BOOKMARKS=1`, `TRACEDRAW_PDF_OPEN_PASSWORD`,
 `TRACEDRAW_PDF_OWNER_PASSWORD` and `TRACEDRAW_PDF_DENY` (a comma list of
 print, hq-print, copy, modify, annotate, forms, assemble, accessibility;
-it needs the owner password).
+it needs the owner password). `TRACEDRAW_PDF_TEXT=curves` writes text
+as curves and `TRACEDRAW_PDF_TEXT=named` leaves the fonts out of the
+file.
 
 ## Checks
 
@@ -129,6 +183,22 @@ it needs the owner password).
 - `pdf_crypt::tests::permissions_make_the_p_value`
 - `pdf_crypt::tests::objects_get_their_strings_and_streams_encrypted`
 - `tests::pdf_protection_comes_from_the_environment_values` (command line)
+- Text and fonts: `pdf::text_tests::text_goes_in_as_text_with_an_embedded_subset_font`
+  (a Type0 font, Identity-H, `FontFile2`, ToUnicode, a tagged subset
+  smaller than the font, the string extracted back by another PDF
+  library), `text_as_curves_writes_no_fonts`,
+  `a_font_that_may_not_be_embedded_goes_as_curves`,
+  `outlines_fills_and_synthetic_bold_pick_the_render_mode`,
+  `turned_text_and_cmyk_colours_keep_their_matrix_and_colour`,
+  `named_fonts_and_standard_fonts_stay_out_of_the_file`,
+  `subsetting_and_the_threshold_decide_how_much_goes_in`,
+  `protected_files_keep_their_text`, `text_as_curves_keeps_the_font_curves`,
+  `quadratic_segments_become_the_same_cubic` (also `eps::tests::`),
+  `pdf::fonts::tests::*` (licence bits, standard fonts, WinAnsi, the
+  ToUnicode CMap), `ui::publish_pdf::tests::publishing_keeps_text_as_text_unless_curves_are_asked_for`
+  (the real text engine with an installed font, and `FontFile3` for a
+  font with CFF outlines when one is installed), and
+  `tests::pdf_text_comes_from_the_environment_value` (command line).
 - Checked by hand: files written by the dialog and the command line open
   in two other PDF libraries and a PDF checker with either password,
   which report the permissions as chosen and no errors.

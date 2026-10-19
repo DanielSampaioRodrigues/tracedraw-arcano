@@ -43,6 +43,9 @@ pub enum Check {
     EmptyPage,
     /// Objects on hidden or non-printing layers: they will not print.
     HiddenObjects,
+    /// Text in a font whose licence forbids embedding: PDF files get its
+    /// text as curves.
+    RestrictedFont,
 }
 
 /// How serious an issue is.
@@ -55,7 +58,7 @@ pub enum Severity {
 }
 
 impl Check {
-    pub const ALL: [Check; 13] = [
+    pub const ALL: [Check; 14] = [
         Check::EmptyText,
         Check::TextOverflow,
         Check::MissingFont,
@@ -69,6 +72,7 @@ impl Check {
         Check::WhiteOverprint,
         Check::EmptyPage,
         Check::HiddenObjects,
+        Check::RestrictedFont,
     ];
 
     /// Stable id, used in the preferences and the i18n keys.
@@ -87,6 +91,7 @@ impl Check {
             Check::WhiteOverprint => "white_overprint",
             Check::EmptyPage => "empty_page",
             Check::HiddenObjects => "hidden_objects",
+            Check::RestrictedFont => "restricted_font",
         }
     }
 
@@ -97,9 +102,11 @@ impl Check {
 
     pub fn severity(self) -> Severity {
         match self {
-            Check::EmptyPage | Check::HiddenObjects | Check::HighResBitmap | Check::EmptyText => {
-                Severity::Info
-            }
+            Check::EmptyPage
+            | Check::HiddenObjects
+            | Check::HighResBitmap
+            | Check::EmptyText
+            | Check::RestrictedFont => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -369,6 +376,43 @@ fn visit(ctx: &Ctx, s: &Shape, parent: Affine, out: &mut Vec<Issue>) {
     }
 }
 
+/// The font that draws `family` in this style forbids embedding (its
+/// licence bits), so PDF files get its text as curves. Remembered per
+/// face until fonts are added.
+pub fn font_restricted(family: &str, bold: bool, italic: bool) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    type Seen = (u64, HashMap<(String, bool, bool), bool>);
+    static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
+    let fonts = tracedraw_text::fonts();
+    let generation = fonts.generation();
+    let key = (family.to_string(), bold, italic);
+    if let Ok(seen) = SEEN.lock() {
+        if let Some((g, map)) = seen.as_ref() {
+            if *g == generation {
+                if let Some(v) = map.get(&key) {
+                    return *v;
+                }
+            }
+        }
+    }
+    let restricted = fonts
+        .embedding_bits(family, bold, italic)
+        .is_some_and(|bits| {
+            tracedraw_io::pdf::licence_of(bits) == tracedraw_io::pdf::FontLicence::Restricted
+        });
+    if let Ok(mut seen) = SEEN.lock() {
+        let fresh = !matches!(seen.as_ref(), Some((g, _)) if *g == generation);
+        if fresh {
+            *seen = Some((generation, HashMap::new()));
+        }
+        if let Some((_, map)) = seen.as_mut() {
+            map.insert(key, restricted);
+        }
+    }
+    restricted
+}
+
 fn text_checks(
     ctx: &Ctx,
     s: &Shape,
@@ -390,6 +434,10 @@ fn text_checks(
         }
         if ctx.missing_fonts.iter().any(|f| f == &sp.font_family) {
             ctx.issue(out, Check::MissingFont, sp.font_family.clone());
+        } else if ctx.prefs.runs(Check::RestrictedFont)
+            && font_restricted(&sp.font_family, sp.bold, sp.italic)
+        {
+            ctx.issue(out, Check::RestrictedFont, sp.font_family.clone());
         }
         let fill = sp.fill.as_ref().unwrap_or(&s.fill);
         if size < ctx.prefs.rich_black_below_pt && fill_colors(fill).into_iter().any(is_rich_black)

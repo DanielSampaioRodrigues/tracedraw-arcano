@@ -2,9 +2,9 @@
 //! file, what goes in (the drawing, every open drawing, the selection,
 //! the current page or a list of pages), the page size, a preset and the
 //! compatibility (General), the output intent (Color), the document
-//! information and bookmarks (Document), transparency flattening
-//! (Objects), the bleed (Prepress), password protection (Security), and
-//! list what the preflight found (Issues). OK writes the file. The PDF
+//! information and bookmarks (Document), transparency flattening and
+//! how text and fonts go in (Objects), the bleed (Prepress), password
+//! protection (Security), and list what the preflight found (Issues). OK writes the file. The PDF
 //! itself comes from `tracedraw_io::pdf`. See docs/behavior/publish-to-pdf.md.
 
 use crate::app::App;
@@ -161,6 +161,16 @@ pub struct PublishPrefs {
     pub preset: String,
     /// Presets saved with "+".
     pub user_presets: Vec<PdfPreset>,
+    /// Export all text as curves (no fonts in the file).
+    pub text_as_curves: bool,
+    /// Put the fonts in the file.
+    pub embed_fonts: bool,
+    /// Put the standard fonts (Helvetica, Times, Courier) in too.
+    pub embed_base14: bool,
+    /// Embed only the glyphs used...
+    pub subset_fonts: bool,
+    /// ...when a font uses fewer than this share of its glyphs (percent).
+    pub subset_below_pct: f64,
 }
 
 impl Default for PublishPrefs {
@@ -180,6 +190,11 @@ impl Default for PublishPrefs {
             accessibility: true,
             preset: "publish.preset_distribution".into(),
             user_presets: Vec::new(),
+            text_as_curves: false,
+            embed_fonts: true,
+            embed_base14: false,
+            subset_fonts: true,
+            subset_below_pct: 80.0,
         }
     }
 }
@@ -191,6 +206,17 @@ impl PublishPrefs {
             2 => PdfStandard::X3,
             3 => PdfStandard::X4,
             _ => PdfStandard::None,
+        }
+    }
+
+    /// How text goes into the file.
+    pub fn text(&self) -> tracedraw_io::pdf::PdfText {
+        tracedraw_io::pdf::PdfText {
+            as_curves: self.text_as_curves,
+            embed_fonts: self.embed_fonts,
+            embed_base14: self.embed_base14,
+            subset: self.subset_fonts,
+            subset_below_pct: self.subset_below_pct.clamp(0.0, 100.0),
         }
     }
 
@@ -435,6 +461,7 @@ impl PublishState {
             bookmarks: self.prefs.bookmarks,
             show_bookmarks: self.prefs.bookmarks && self.prefs.show_bookmarks,
             security: self.security(),
+            text: self.prefs.text(),
         }
     }
 }
@@ -572,12 +599,18 @@ pub fn publish(app: &App, st: &PublishState, path: &Path) -> Result<String, Stri
         return Err(tr("publish.need_pages"));
     }
     let opts = st.options(crate::export::pdfx_profile(app, st.prefs.standard()));
-    let pdf = tracedraw_io::pdf::document_to_pdf_with(&doc, &opts);
+    let (pdf, report) = tracedraw_io::pdf::document_to_pdf_report(&doc, &opts);
     crate::files::write(path, pdf).map_err(|e| e.to_string())?;
-    Ok(trf(
-        "status.exported",
-        &[("path", &path.display().to_string())],
-    ))
+    let mut msg = trf("status.exported", &[("path", &path.display().to_string())]);
+    // Fonts whose licence forbids embedding: their text went as curves.
+    if !report.restricted.is_empty() {
+        msg.push(' ');
+        msg.push_str(&trf(
+            "publish.restricted_fonts",
+            &[("f", &report.restricted.join(", "))],
+        ));
+    }
+    Ok(msg)
 }
 
 /// The issues tab's title: "No Issues", or how many were found.
@@ -866,6 +899,38 @@ fn objects(ui: &mut Ui, st: &mut PublishState) {
         });
     });
     note(ui, "publish.objects_note");
+    ui.add_space(8.0);
+    text_and_fonts(ui, &mut st.prefs);
+}
+
+/// Objects: how text and fonts go into the file.
+fn text_and_fonts(ui: &mut Ui, p: &mut PublishPrefs) {
+    group(ui, &tr("publish.text_fonts"), |ui| {
+        ui.checkbox(&mut p.text_as_curves, tr("publish.text_as_curves"));
+        ui.add_enabled_ui(!p.text_as_curves, |ui| {
+            ui.checkbox(&mut p.embed_fonts, tr("publish.embed_fonts"));
+            ui.add_enabled_ui(p.embed_fonts, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(22.0);
+                    ui.checkbox(&mut p.embed_base14, tr("publish.embed_base14"));
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(22.0);
+                    ui.checkbox(&mut p.subset_fonts, tr("publish.subset_fonts"));
+                    ui.add_enabled_ui(p.subset_fonts, |ui| {
+                        ui.label(tr("publish.subset_below"));
+                        ui.add(
+                            egui::DragValue::new(&mut p.subset_below_pct)
+                                .range(0.0..=100.0)
+                                .speed(1.0)
+                                .suffix(" %"),
+                        );
+                    });
+                });
+            });
+        });
+        note(ui, "publish.fonts_note");
+    });
 }
 
 /// Prepress: the bleed around every page.
@@ -1154,6 +1219,82 @@ mod tests {
                 out.textures_delta.clear();
             }
         }
+    }
+
+    #[test]
+    fn publishing_keeps_text_as_text_unless_curves_are_asked_for() {
+        tracedraw_text::install();
+        let fonts = tracedraw_text::fonts();
+        let Some(family) = ["DejaVu Sans", "Liberation Sans", "Noto Sans"]
+            .into_iter()
+            .find(|f| fonts.has_family(f))
+        else {
+            return;
+        };
+        // Real text with fonts is the default.
+        let defaults = PublishPrefs::default();
+        assert!(!defaults.text_as_curves && defaults.embed_fonts && defaults.subset_fonts);
+        let mut app = app_with_two_pages();
+        app.new_shape(tracedraw_core::document::ShapeKind::Text {
+            spans: vec![tracedraw_core::TextSpan::new(
+                "Searchable words",
+                family,
+                18.0,
+            )],
+            origin: tracedraw_core::geometry::Point::new(10.0, 20.0),
+            frame: None,
+            align: tracedraw_core::TextAlign::Left,
+            para: Default::default(),
+            on_path: None,
+        })
+        .expect("a text");
+        let mut st = PublishState::new(&app);
+        st.pages = Pages::Current;
+        let dir = std::env::temp_dir().join(format!("tracedraw-pdftext-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("words.pdf");
+        publish(&app, &st, &path).expect("published");
+        let bytes = std::fs::read(&path).expect("written");
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(text.contains("/Type0") && text.contains("/FontDescriptor"));
+        let pdf = lopdf::Document::load_mem(&bytes).expect("parse");
+        let words = pdf.extract_text(&[1]).expect("text");
+        assert!(words.contains("Searchable words"), "{words:?}");
+        // Curves when asked: no font, no text to find.
+        st.prefs.text_as_curves = true;
+        publish(&app, &st, &path).expect("published");
+        let bytes = std::fs::read(&path).expect("written");
+        assert!(!String::from_utf8_lossy(&bytes).contains("/Font"));
+        let pdf = lopdf::Document::load_mem(&bytes).expect("parse");
+        let words = pdf.extract_text(&[1]).unwrap_or_default();
+        assert!(!words.contains("Searchable"), "{words:?}");
+        // A font with CFF outlines, when one is installed: a CID font of
+        // CFF data (FontFile3), and the text still comes back.
+        if let Some(cff) = ["Nimbus Sans", "Loma", "Source Sans 3"]
+            .into_iter()
+            .find(|f| fonts.has_family(f))
+        {
+            let mut app = app_with_two_pages();
+            app.new_shape(tracedraw_core::document::ShapeKind::Text {
+                spans: vec![tracedraw_core::TextSpan::new("Searchable words", cff, 18.0)],
+                origin: tracedraw_core::geometry::Point::new(10.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a text");
+            let mut st = PublishState::new(&app);
+            st.pages = Pages::Current;
+            publish(&app, &st, &path).expect("published");
+            let bytes = std::fs::read(&path).expect("written");
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            assert!(text.contains("/CIDFontType0C") && text.contains("/FontFile3"));
+            let pdf = lopdf::Document::load_mem(&bytes).expect("parse");
+            let words = pdf.extract_text(&[1]).expect("text");
+            assert!(words.contains("Searchable words"), "{words:?}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

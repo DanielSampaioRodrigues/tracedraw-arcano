@@ -84,6 +84,18 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
+/// How text goes into a PDF: `curves`, `named` (fonts left out of the
+/// file) or, by default, text with embedded fonts.
+fn pdf_text(choice: Option<&str>) -> tracedraw_io::pdf::PdfText {
+    let mut t = tracedraw_io::pdf::PdfText::default();
+    match choice.map(str::to_ascii_lowercase).as_deref() {
+        Some("curves") => t.as_curves = true,
+        Some("named") => t.embed_fonts = false,
+        _ => {}
+    }
+    t
+}
+
 /// Protection for a written PDF: a password to open it, a password for
 /// the permissions and the permissions to deny (a comma-separated list of
 /// print, hq-print, copy, modify, annotate, forms, assemble and
@@ -580,6 +592,8 @@ fn main() -> ExitCode {
                 // names the output profile and TRACEDRAW_BLEED the bleed in mm.
                 // TRACEDRAW_PDF_BOOKMARKS=1 adds a bookmark per page; the
                 // TRACEDRAW_PDF_*PASSWORD and _DENY variables protect it.
+                // TRACEDRAW_PDF_TEXT=curves writes text as curves, =named
+                // leaves the fonts out of the file.
                 let standard = match std::env::var("TRACEDRAW_PDFX")
                     .unwrap_or_default()
                     .to_ascii_lowercase()
@@ -609,6 +623,7 @@ fn main() -> ExitCode {
                         std::env::var("TRACEDRAW_PDF_OWNER_PASSWORD").ok(),
                         std::env::var("TRACEDRAW_PDF_DENY").ok(),
                     ),
+                    text: pdf_text(std::env::var("TRACEDRAW_PDF_TEXT").ok().as_deref()),
                     ..Default::default()
                 };
                 std::fs::write(output, tracedraw_io::pdf::document_to_pdf_with(&doc, &opts))
@@ -883,6 +898,14 @@ mod tests {
         assert_eq!(page_from(Some(" 3 ")), 2);
         assert_eq!(page_from(Some("0")), 0);
         assert_eq!(page_from(Some("two")), 0);
+    }
+
+    #[test]
+    fn pdf_text_comes_from_the_environment_value() {
+        assert!(pdf_text(Some("curves")).as_curves);
+        assert!(!pdf_text(Some("named")).embed_fonts);
+        let t = pdf_text(None);
+        assert!(!t.as_curves && t.embed_fonts && t.subset);
     }
 
     #[test]

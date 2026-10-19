@@ -36,6 +36,27 @@ the bookmarks when the file opens**.
   which do not allow transparency.
 - **Bleed** (0 to 50 mm) around every page.
 
+## Text and fonts {#text}
+
+Text goes into the PDF as real text: in a PDF viewer you can search it,
+select it and copy it, and it keeps its fill, outline, colors and angle. The
+fonts go into the file as well, so the text looks the same on any computer.
+In the [[publish.text_fonts]] group of the Objects tab:
+
+- **[[publish.text_as_curves]]** (off at first) writes every text as curves
+  instead: the file has no fonts and its text cannot be searched. The curves
+  follow the letters' own outlines exactly, so they stay smooth at any zoom.
+- **[[publish.embed_fonts]]** (on at first) puts the fonts in the file. Turned
+  off, the fonts are only named and the viewer uses its own copy.
+- **[[publish.embed_base14]]** also puts Helvetica, Times and Courier in the
+  file; otherwise the viewer's standard fonts draw them.
+- **[[publish.subset_fonts]]** puts in only the letters the file uses, which
+  keeps it small, when a font uses less than the share you set (80 %).
+
+PDF/X files always carry their fonts. Some fonts do not allow being put in
+other files: their text is written as curves, the status bar names them after
+publishing, and the preflight lists such text beforehand.
+
 ## Security {#security}
 
 - **Require a password to open the file**, and the password.

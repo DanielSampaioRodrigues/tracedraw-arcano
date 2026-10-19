@@ -157,6 +157,16 @@ full, row-by-row status.
   option boxes, lists, frames, pages, images, spin buttons, scroll bars,
   tab strips). Projects can be written back as module files or as a
   compound file.
+- PDF files keep text as text: it can be searched, selected and copied.
+  The fonts go in as subsets (only the glyphs used), TrueType and CFF
+  outlines alike, with a map back to the characters. Publish to PDF >
+  Objects has Export all text as curves (off), Embed fonts in document,
+  Embed base 14 fonts and Subset fonts below a share of glyphs. Fonts
+  whose licence forbids embedding are written as curves, named on the
+  status line and noted by the preflight. Text written as curves (and
+  any curve in PDF and EPS files) keeps the font's exact curves:
+  quadratic segments become the matching cubic instead of a misshapen
+  one.
 
 - Convert to Curves turns a table into a group of curves (cell fills,
   borders and text) and a symbol instance into its symbol's objects as

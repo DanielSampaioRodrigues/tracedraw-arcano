@@ -160,25 +160,37 @@ struct Writer<'a> {
 
 impl Writer<'_> {
     fn path_ops(&mut self, path: &tracedraw_core::BezPath) {
+        // The current point and the start of the subpath.
+        let mut cur: Option<tracedraw_core::geometry::Point> = None;
+        let mut start: Option<tracedraw_core::geometry::Point> = None;
         for el in path.elements() {
             match el {
                 PathEl::MoveTo(p) => {
+                    cur = Some(*p);
+                    start = Some(*p);
                     let _ = writeln!(self.out, "{} {} m", f(p.x * MM_PT), f(p.y * MM_PT));
                 }
                 PathEl::LineTo(p) => {
+                    cur = Some(*p);
                     let _ = writeln!(self.out, "{} {} l", f(p.x * MM_PT), f(p.y * MM_PT));
                 }
                 PathEl::QuadTo(c, p) => {
+                    // Raised to the cubic that is the same curve: the
+                    // handles two thirds of the way to the control point.
+                    let s = cur.unwrap_or(*c);
+                    let c1 = s + (*c - s) * (2.0 / 3.0);
+                    let c2 = *p + (*c - *p) * (2.0 / 3.0);
                     let _ = writeln!(
                         self.out,
                         "{} {} {} {} {} {} c",
-                        f(c.x * MM_PT),
-                        f(c.y * MM_PT),
-                        f(c.x * MM_PT),
-                        f(c.y * MM_PT),
+                        f(c1.x * MM_PT),
+                        f(c1.y * MM_PT),
+                        f(c2.x * MM_PT),
+                        f(c2.y * MM_PT),
                         f(p.x * MM_PT),
                         f(p.y * MM_PT)
                     );
+                    cur = Some(*p);
                 }
                 PathEl::CurveTo(a, b, p) => {
                     let _ = writeln!(
@@ -191,9 +203,11 @@ impl Writer<'_> {
                         f(p.x * MM_PT),
                         f(p.y * MM_PT)
                     );
+                    cur = Some(*p);
                 }
                 PathEl::ClosePath => {
                     let _ = writeln!(self.out, "h");
+                    cur = start;
                 }
             }
         }
@@ -495,6 +509,28 @@ impl Writer<'_> {
 mod tests {
     use super::*;
     use tracedraw_core::geometry::Rect;
+
+    #[test]
+    fn quadratic_segments_become_the_same_cubic() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let k = 25.4 / 72.0;
+        let mut p = tracedraw_core::BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.quad_to((3.0 * k, 3.0 * k), (6.0 * k, 0.0));
+        p.close_path();
+        let s = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: p,
+                closed: true,
+            },
+        );
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let eps = page_to_eps(&doc, 0);
+        assert!(eps.contains("2 2 4 2 6 0 c"), "{eps}");
+    }
 
     #[test]
     fn writes_eps_with_bounding_box_and_fill() {

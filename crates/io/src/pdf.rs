@@ -1,7 +1,9 @@
 //! Minimal PDF writer: one page per document page, vector paths with
 //! uniform fills (RGB or CMYK), axial/radial shadings for fountain fills,
-//! outlines with width, caps, joins and dashes, bitmaps as images, and
-//! uniform transparency via ExtGState. Written by hand; no dependency.
+//! outlines with width, caps, joins and dashes, bitmaps as images,
+//! uniform transparency via ExtGState, and text as text with embedded
+//! subset fonts (see `pdf_fonts.rs`). Written by hand; fonts are subset
+//! with the `subsetter` crate.
 
 use std::fmt::Write as _;
 use tracedraw_core::{
@@ -11,6 +13,10 @@ use tracedraw_core::{
 };
 
 const MM_PT: f64 = 72.0 / 25.4;
+
+#[path = "pdf_fonts.rs"]
+mod fonts;
+pub use fonts::{base14_name, font_licence, licence_of, win_ansi, FontLicence, PdfText};
 
 /// PDF/X conformance level of the output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -77,6 +83,20 @@ pub struct PdfOptions {
     /// Password protection (AES-256). PDF/X files are never protected:
     /// the standards forbid it.
     pub security: Option<crate::pdf_crypt::Security>,
+    /// Text as text with fonts, or as curves.
+    pub text: PdfText,
+}
+
+/// What went into a file besides the drawing: its fonts.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PdfReport {
+    /// Fonts put in the file (their PostScript names).
+    pub embedded: Vec<String>,
+    /// Fonts only named, for the viewer to supply.
+    pub named: Vec<String>,
+    /// Font families whose licence forbids embedding: their text went in
+    /// as curves.
+    pub restricted: Vec<String>,
 }
 
 struct Pdf {
@@ -87,6 +107,11 @@ struct Pdf {
     allow_alpha: bool,
     /// The /Encrypt dictionary's object, once the file is protected.
     encrypt_id: Option<usize>,
+    /// The fonts text uses, written at the end.
+    fonts: Vec<fonts::FontSlot>,
+    /// Fonts that cannot go in a given way: (data address, index, kind).
+    bad_fonts: Vec<(usize, u32, fonts::SlotKind)>,
+    report: PdfReport,
 }
 
 impl Pdf {
@@ -336,6 +361,19 @@ struct PageWriter<'a> {
     /// The drawing's spot inks, and the colour spaces this page uses.
     inks: &'a [tracedraw_core::document::Ink],
     spaces: Vec<(String, usize)>,
+    /// The fonts this page uses (resource name, object).
+    fonts: Vec<(String, usize)>,
+    /// How text is written; `None` writes it as curves.
+    text: Option<TextMode>,
+}
+
+/// How a writer keeps text as text.
+#[derive(Debug, Clone, Copy)]
+struct TextMode {
+    /// Fonts go in the file.
+    embed: bool,
+    /// The standard fonts go in too.
+    embed_base14: bool,
 }
 
 /// A PDF name: `#xx` for bytes outside `!` to `~` and for delimiters.
@@ -393,26 +431,37 @@ impl PageWriter<'_> {
     }
 
     fn path_ops(&mut self, path: &tracedraw_core::BezPath) {
+        // The current point and the start of the subpath.
+        let mut cur: Option<tracedraw_core::geometry::Point> = None;
+        let mut start: Option<tracedraw_core::geometry::Point> = None;
         for el in path.elements() {
             match el {
                 PathEl::MoveTo(p) => {
+                    cur = Some(*p);
+                    start = Some(*p);
                     let _ = writeln!(self.content, "{} {} m", f(p.x * MM_PT), f(p.y * MM_PT));
                 }
                 PathEl::LineTo(p) => {
+                    cur = Some(*p);
                     let _ = writeln!(self.content, "{} {} l", f(p.x * MM_PT), f(p.y * MM_PT));
                 }
                 PathEl::QuadTo(c, p) => {
-                    // PDF has no quadratics; elevate to a cubic.
+                    // Raised to the cubic that is the same curve: the
+                    // handles two thirds of the way to the control point.
+                    let s = cur.unwrap_or(*c);
+                    let c1 = s + (*c - s) * (2.0 / 3.0);
+                    let c2 = *p + (*c - *p) * (2.0 / 3.0);
                     let _ = writeln!(
                         self.content,
                         "{} {} {} {} {} {} c",
-                        f(c.x * MM_PT),
-                        f(c.y * MM_PT),
-                        f(c.x * MM_PT),
-                        f(c.y * MM_PT),
+                        f(c1.x * MM_PT),
+                        f(c1.y * MM_PT),
+                        f(c2.x * MM_PT),
+                        f(c2.y * MM_PT),
                         f(p.x * MM_PT),
                         f(p.y * MM_PT)
                     );
+                    cur = Some(*p);
                 }
                 PathEl::CurveTo(c1, c2, p) => {
                     let _ = writeln!(
@@ -425,8 +474,12 @@ impl PageWriter<'_> {
                         f(p.x * MM_PT),
                         f(p.y * MM_PT)
                     );
+                    cur = Some(*p);
                 }
-                PathEl::ClosePath => self.content.push_str("h\n"),
+                PathEl::ClosePath => {
+                    self.content.push_str("h\n");
+                    cur = start;
+                }
             }
         }
     }
@@ -721,101 +774,345 @@ impl PageWriter<'_> {
             return;
         }
 
+        // Text as text with its fonts, when it can be.
+        if self.text_shape(shape, parent, transform, &path, bounds) {
+            self.content.push_str("Q\n");
+            return;
+        }
+
         // Fill.
         let text = matches!(shape.kind, ShapeKind::Text { .. });
         self.paint_area(&shape.fill, &path, bounds, text);
 
         // Outline.
         if let Some(s) = &shape.stroke {
-            let width = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
-                0.0
-            } else {
-                s.width * MM_PT
-            };
-            let op = self.color_op(s.color, false);
-            let _ = writeln!(
-                self.content,
-                "{} {} w {} J {} j",
-                op,
-                f(width),
-                match s.cap {
-                    LineCap::Butt => 0,
-                    LineCap::Round => 1,
-                    LineCap::Square => 2,
-                },
-                match s.join {
-                    LineJoin::Miter => 0,
-                    LineJoin::Round => 1,
-                    LineJoin::Bevel => 2,
-                }
-            );
-            if !s.dash.is_empty() {
-                let w = if width > 0.0 { width } else { 1.0 };
-                let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
-                let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
-            }
-            if let Some(brush) = &s.painterly {
-                // Painterly brush: the marks, one filled path per opacity.
-                for (alpha, marks) in tracedraw_core::painterly::marks_by_opacity(
-                    &shape.page_path(),
-                    s.width,
-                    brush,
-                    12,
-                ) {
-                    self.content.push_str("q\n");
-                    if self.pdf.allow_alpha {
-                        let name = format!("GS{}", self.gstates.len());
-                        let id = self.pdf.add_str(format!(
-                            "<< /Type /ExtGState /CA {} /ca {} >>",
-                            f(alpha),
-                            f(alpha)
-                        ));
-                        self.gstates.push((name.clone(), id));
-                        let _ = writeln!(self.content, "/{name} gs");
-                    }
-                    let op = self.color_op(s.color, true);
-                    let _ = writeln!(self.content, "{op}");
-                    self.path_ops(&(parent * marks));
-                    self.content.push_str("f\nQ\n");
-                }
-            } else if let Some(band) =
-                tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0)
-            {
-                // Calligraphic nib or variable width: the band, filled.
-                let band = parent * band;
-                if let Some(paint) = outline_paint(s, transform) {
-                    let b = band.bounding_box();
-                    self.paint_area(&paint, &band, b, true);
-                } else {
-                    let op = self.color_op(s.color, true);
-                    let _ = writeln!(self.content, "{op}");
-                    self.path_ops(&band);
-                    self.content.push_str("f\n");
-                }
-            } else if let Some((paint, area)) = outline_paint(s, transform)
-                .map(|p| (p, tracedraw_core::shaping::stroke_area(&path, s)))
-                .filter(|(_, a)| !a.elements().is_empty())
-            {
-                // The outline's own paint: the area it covers, painted
-                // like a fill spread over the outline's bounds.
-                let half = s.width / 2.0;
-                self.paint_area(&paint, &area, bounds.inflate(half, half), true);
-            } else {
-                self.path_ops(&path);
-                self.content.push_str("S\n");
-            }
-            // Arrowheads (presets and custom) are filled with the outline
-            // colour. They are built on the page-space path, which already
-            // carries the shape's own transform, so only the parent applies.
-            for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
-                let op = self.color_op(s.color, true);
-                let _ = writeln!(self.content, "{op}");
-                self.path_ops(&(parent * head));
-                self.content.push_str("f\n");
-            }
+            self.outline(shape, s, parent, transform, &path, bounds);
         }
         self.content.push_str("Q\n");
     }
+
+    /// Set the outline's colour, width, caps, joins and dashes.
+    fn stroke_state(&mut self, s: &tracedraw_core::Stroke) {
+        let width = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
+            0.0
+        } else {
+            s.width * MM_PT
+        };
+        let op = self.color_op(s.color, false);
+        let _ = writeln!(
+            self.content,
+            "{} {} w {} J {} j",
+            op,
+            f(width),
+            match s.cap {
+                LineCap::Butt => 0,
+                LineCap::Round => 1,
+                LineCap::Square => 2,
+            },
+            match s.join {
+                LineJoin::Miter => 0,
+                LineJoin::Round => 1,
+                LineJoin::Bevel => 2,
+            }
+        );
+        if !s.dash.is_empty() {
+            let w = if width > 0.0 { width } else { 1.0 };
+            let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
+            let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
+        }
+    }
+
+    /// Draw the outline `s` of `shape` along `path` (page space).
+    fn outline(
+        &mut self,
+        shape: &Shape,
+        s: &tracedraw_core::Stroke,
+        parent: Affine,
+        transform: Affine,
+        path: &tracedraw_core::BezPath,
+        bounds: Rect,
+    ) {
+        use tracedraw_core::geometry::Shape as _;
+        self.stroke_state(s);
+        if let Some(brush) = &s.painterly {
+            // Painterly brush: the marks, one filled path per opacity.
+            for (alpha, marks) in
+                tracedraw_core::painterly::marks_by_opacity(&shape.page_path(), s.width, brush, 12)
+            {
+                self.content.push_str("q\n");
+                if self.pdf.allow_alpha {
+                    let name = format!("GS{}", self.gstates.len());
+                    let id = self.pdf.add_str(format!(
+                        "<< /Type /ExtGState /CA {} /ca {} >>",
+                        f(alpha),
+                        f(alpha)
+                    ));
+                    self.gstates.push((name.clone(), id));
+                    let _ = writeln!(self.content, "/{name} gs");
+                }
+                let op = self.color_op(s.color, true);
+                let _ = writeln!(self.content, "{op}");
+                self.path_ops(&(parent * marks));
+                self.content.push_str("f\nQ\n");
+            }
+        } else if let Some(band) = tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0)
+        {
+            // Calligraphic nib or variable width: the band, filled.
+            let band = parent * band;
+            if let Some(paint) = outline_paint(s, transform) {
+                let b = band.bounding_box();
+                self.paint_area(&paint, &band, b, true);
+            } else {
+                let op = self.color_op(s.color, true);
+                let _ = writeln!(self.content, "{op}");
+                self.path_ops(&band);
+                self.content.push_str("f\n");
+            }
+        } else if let Some((paint, area)) = outline_paint(s, transform)
+            .map(|p| (p, tracedraw_core::shaping::stroke_area(path, s)))
+            .filter(|(_, a)| !a.elements().is_empty())
+        {
+            // The outline's own paint: the area it covers, painted
+            // like a fill spread over the outline's bounds.
+            let half = s.width / 2.0;
+            self.paint_area(&paint, &area, bounds.inflate(half, half), true);
+        } else {
+            self.path_ops(path);
+            self.content.push_str("S\n");
+        }
+        // Arrowheads (presets and custom) are filled with the outline
+        // colour. They are built on the page-space path, which already
+        // carries the shape's own transform, so only the parent applies.
+        for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
+            let op = self.color_op(s.color, true);
+            let _ = writeln!(self.content, "{op}");
+            self.path_ops(&(parent * head));
+            self.content.push_str("f\n");
+        }
+    }
+
+    /// Text as PDF text: each glyph a font can draw is shown in its font
+    /// (embedded, or named), the rest (underlines, added hyphens, glyphs
+    /// of fonts that may not be embedded, synthetic bold) as curves. A
+    /// solid fill and a plain outline are the text's own fill and stroke;
+    /// other fills and outlines are painted on the outlines, and the text
+    /// goes over them invisibly so it can still be searched and copied.
+    /// False when the shape is no text or text goes as curves; `full` is
+    /// the whole outline (page space) and `bounds` its bounds.
+    fn text_shape(
+        &mut self,
+        shape: &Shape,
+        parent: Affine,
+        transform: Affine,
+        full: &tracedraw_core::BezPath,
+        bounds: Rect,
+    ) -> bool {
+        let Some(mode) = self.text else {
+            return false;
+        };
+        let ShapeKind::Text { spans, .. } = &shape.kind else {
+            return false;
+        };
+        let Some(layout) = tracedraw_core::document::text_glyph_layout(&shape.kind) else {
+            return false;
+        };
+        if layout.glyphs.is_empty() {
+            return false;
+        }
+        let solid_fill = matches!(shape.fill, Fill::Solid(_));
+        let plain_stroke = shape.stroke.as_ref().filter(|s| {
+            s.painterly.is_none()
+                && s.widths.is_empty()
+                && !(s.stretch < 0.999 && s.width > tracedraw_core::Stroke::HAIRLINE + 1e-9)
+                && outline_paint(s, transform).is_none()
+        });
+        if !solid_fill && matches!(shape.fill, Fill::None) && shape.stroke.is_none() {
+            // Nothing shows.
+            return true;
+        }
+        // Each glyph: shown visibly, shown invisibly over its curves, or
+        // curves only.
+        let mut visible: Vec<(Affine, fonts::Shown)> = Vec::new();
+        let mut hidden: Vec<(Affine, fonts::Shown)> = Vec::new();
+        let mut curves = transform * layout.rest.clone();
+        for g in &layout.glyphs {
+            let span = spans.get(g.span);
+            if self.pdf.licence(&g.font) == FontLicence::Restricted {
+                if let Some(sp) = span {
+                    if !self.pdf.report.restricted.contains(&sp.font_family) {
+                        self.pdf.report.restricted.push(sp.font_family.clone());
+                    }
+                }
+                curves.extend((transform * g.path.clone()).elements().iter().copied());
+                continue;
+            }
+            let shown = self.show_glyph(g, span, mode);
+            let m = transform * g.transform;
+            match shown {
+                Some(sh) if g.exact => visible.push((m, sh)),
+                Some(sh) => {
+                    curves.extend((transform * g.path.clone()).elements().iter().copied());
+                    hidden.push((m, sh));
+                }
+                None => curves.extend((transform * g.path.clone()).elements().iter().copied()),
+            }
+        }
+        // Fill: a colour on the curves and as the text's own; anything
+        // else on every outline.
+        if solid_fill {
+            if !curves.elements().is_empty() {
+                self.paint_area(&shape.fill, &curves, bounds, true);
+            }
+        } else {
+            self.paint_area(&shape.fill, full, bounds, true);
+        }
+        // The text, then the outline of the curves (or of everything).
+        let render = match (solid_fill, plain_stroke.is_some()) {
+            (true, true) => 2,
+            (true, false) => 0,
+            (false, true) => 1,
+            (false, false) => 3,
+        };
+        if let Fill::Solid(c) = shape.fill {
+            let op = self.color_op(c, true);
+            let _ = writeln!(self.content, "{op}");
+        }
+        if let Some(s) = plain_stroke {
+            self.stroke_state(s);
+        }
+        self.show_text(&visible, render);
+        self.show_text(&hidden, 3);
+        if let Some(s) = &shape.stroke {
+            if plain_stroke.is_some() {
+                if !curves.elements().is_empty() {
+                    self.path_ops(&curves);
+                    self.content.push_str("S\n");
+                }
+            } else {
+                self.outline(shape, s, parent, transform, full, bounds);
+            }
+        }
+        true
+    }
+
+    /// The font and code that show glyph `g` of `span`: a standard font
+    /// named only (unless those go in), else the embedded font, else the
+    /// font named only. `None` when no font can show it here.
+    fn show_glyph(
+        &mut self,
+        g: &tracedraw_core::document::text_outline::PlacedGlyph,
+        span: Option<&tracedraw_core::TextSpan>,
+        mode: TextMode,
+    ) -> Option<fonts::Shown> {
+        if !mode.embed_base14 {
+            let base14 = span.and_then(|s| base14_name(&s.font_family, s.bold, s.italic));
+            if let Some(name) = base14 {
+                if let Some(sh) = self
+                    .pdf
+                    .show_named(&g.font, g.glyph_id, &g.text, Some(name))
+                {
+                    return Some(sh);
+                }
+            }
+        }
+        if mode.embed {
+            self.pdf.show_embedded(&g.font, g.glyph_id, &g.text)
+        } else {
+            self.pdf.show_named(&g.font, g.glyph_id, &g.text, None)
+        }
+    }
+
+    /// Show `glyphs` (each with its matrix from ems to page millimetres)
+    /// with text render mode `render`: glyphs of one font on one line go
+    /// in one run, set by one text matrix and kept in place by
+    /// adjustments.
+    fn show_text(&mut self, glyphs: &[(Affine, fonts::Shown)], render: u8) {
+        if glyphs.is_empty() {
+            return;
+        }
+        let _ = writeln!(self.content, "BT\n{render} Tr");
+        let mut font: Option<usize> = None;
+        // The run: its matrix (points) and the pen along it, ems.
+        let mut run: Option<(Affine, f64)> = None;
+        let mut pending = String::new();
+        let flush = |content: &mut String, pending: &mut String| {
+            if !pending.is_empty() {
+                let _ = writeln!(content, "[{}] TJ", pending.trim_end());
+                pending.clear();
+            }
+        };
+        for (m, sh) in glyphs {
+            let m = Affine::scale(MM_PT) * *m;
+            let c = m.as_coeffs();
+            let det = c[0] * c[3] - c[1] * c[2];
+            if !det.is_finite() || det.abs() < 1e-12 || c.iter().any(|v| !v.is_finite()) {
+                continue;
+            }
+            if font != Some(sh.slot) {
+                flush(&mut self.content, &mut pending);
+                let Some(slot) = self.pdf.fonts.get(sh.slot) else {
+                    continue;
+                };
+                let (name, id) = (slot.name.clone(), slot.id);
+                if !self.fonts.iter().any(|(n, _)| *n == name) {
+                    self.fonts.push((name.clone(), id));
+                }
+                let _ = writeln!(self.content, "/{name} 1 Tf");
+                font = Some(sh.slot);
+                run = None;
+            }
+            // Along the run: the glyph's origin in the run's space.
+            let along = run.and_then(|(r, pen)| {
+                let rc = r.as_coeffs();
+                let same = (0..4).all(|i| (rc[i] - c[i]).abs() <= 1e-6 * (1.0 + rc[i].abs()));
+                if !same {
+                    return None;
+                }
+                let p = r.inverse() * tracedraw_core::geometry::Point::new(c[4], c[5]);
+                (p.y.abs() < 1e-3).then_some((p.x, pen))
+            });
+            let x = match along {
+                Some((x, pen)) => {
+                    let adj = (pen - x) * 1000.0;
+                    if adj.abs() > 0.01 {
+                        let _ = write!(pending, "{} ", f(adj));
+                    }
+                    x
+                }
+                None => {
+                    flush(&mut self.content, &mut pending);
+                    let _ = writeln!(
+                        self.content,
+                        "{} {} {} {} {} {} Tm",
+                        f6(c[0]),
+                        f6(c[1]),
+                        f6(c[2]),
+                        f6(c[3]),
+                        f(c[4]),
+                        f(c[5])
+                    );
+                    run = Some((m, 0.0));
+                    0.0
+                }
+            };
+            pending.push('<');
+            for b in &sh.code {
+                let _ = write!(pending, "{b:02X}");
+            }
+            pending.push_str("> ");
+            if let Some((_, pen)) = run.as_mut() {
+                *pen = x + sh.width_em;
+            }
+        }
+        flush(&mut self.content, &mut pending);
+        self.content.push_str("ET\n");
+    }
+}
+
+/// A number with six decimals at most (text matrices hold font sizes).
+fn f6(v: f64) -> String {
+    let s = format!("{v:.6}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// PDF stitching function over the fountain's stops (type 3 wrapping type 2
@@ -1162,6 +1459,12 @@ fn raster_of(
 
 /// Write every page with the given options (PDF/X, bleed, metadata).
 pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
+    document_to_pdf_report(doc, opts).0
+}
+
+/// [`document_to_pdf_with`], with what went into the file: its fonts and
+/// the fonts whose text became curves.
+pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, PdfReport) {
     let doc = &*crate::resolve_open_fills(doc);
     let std_ = opts.standard;
     let mut pdf = Pdf {
@@ -1170,7 +1473,15 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         cmyk_only: std_.cmyk_only(),
         allow_alpha: !std_.flatten(),
         encrypt_id: None,
+        fonts: Vec::new(),
+        bad_fonts: Vec::new(),
+        report: PdfReport::default(),
     };
+    // PDF/X wants every font in the file.
+    let text_mode = (!opts.text.as_curves).then_some(TextMode {
+        embed: opts.text.embed_fonts || std_ != PdfStandard::None,
+        embed_base14: opts.text.embed_base14 || std_ != PdfStandard::None,
+    });
     pdf.add_str(String::new()); // 1: catalog, filled at the end
     pdf.add_str(String::new()); // 2: pages
     let bleed = opts.bleed_mm.max(0.0);
@@ -1212,6 +1523,8 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             symbols: &doc.symbols,
             inks: &doc.inks,
             spaces: Vec::new(),
+            fonts: Vec::new(),
+            text: text_mode,
         };
         if let Some(bg) = &page.background {
             let mut bg_shape = Shape::new(
@@ -1248,6 +1561,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             gstates,
             images,
             spaces,
+            fonts,
             ..
         } = w;
         let data = flate(content.as_bytes());
@@ -1270,6 +1584,13 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         if !gstates.is_empty() {
             res.push_str("/ExtGState << ");
             for (n, id) in &gstates {
+                let _ = write!(res, "/{n} {id} 0 R ");
+            }
+            res.push_str(">> ");
+        }
+        if !fonts.is_empty() {
+            res.push_str("/Font << ");
+            for (n, id) in &fonts {
                 let _ = write!(res, "/{n} {id} 0 R ");
             }
             res.push_str(">> ");
@@ -1308,6 +1629,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         ));
         page_ids.push(page_id);
     }
+    pdf.finish_fonts(&opts.text);
     // Link annotations: a web or mail address, or a page of the file.
     for (areas, &page_id) in page_link_areas.iter().zip(&page_ids) {
         let mut annots = Vec::new();
@@ -1473,7 +1795,8 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
     }
     catalog.push_str(" >>");
     pdf.objects[0] = catalog.into_bytes();
-    match security {
+    let report = std::mem::take(&mut pdf.report);
+    let bytes = match security {
         Some(sec) => {
             let random: crate::pdf_crypt::Random = Box::new(|buf: &mut [u8]| {
                 if getrandom::fill(buf).is_err() {
@@ -1495,7 +1818,8 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
             pdf.finish_with("1.7", Some(info_id))
         }
         None => pdf.finish_with(std_.version(), Some(info_id)),
-    }
+    };
+    (bytes, report)
 }
 
 /// Channel count of an ICC profile from its colour space signature.
@@ -2263,5 +2587,503 @@ mod pdfx_tests {
         assert!(!text.contains("/OutputIntents"));
         assert!(text.contains("/ca 0.5"));
         assert!(pdf_date().starts_with("D:20"));
+    }
+}
+
+/// Text written as PDF text, with a stand-in text engine that lays out
+/// one glyph per character of a test font on one line.
+#[cfg(test)]
+mod text_tests {
+    use super::*;
+    use std::sync::{Arc, OnceLock};
+    use tracedraw_core::document::text_outline::{
+        self, GlyphFont, GlyphLayout, PlacedGlyph, TextRequest,
+    };
+    use tracedraw_core::geometry::{BezPath, Point};
+    use tracedraw_core::{Stroke, TextSpan};
+
+    const QUICKSAND: &[u8] = include_bytes!("../../text/testdata/Quicksand-VF.ttf");
+
+    /// The test font, and a copy whose licence forbids embedding.
+    fn font(family: &str) -> GlyphFont {
+        static PLAIN: OnceLock<Arc<Vec<u8>>> = OnceLock::new();
+        static LOCKED: OnceLock<Arc<Vec<u8>>> = OnceLock::new();
+        let data = if family == "Locked Sans" {
+            LOCKED
+                .get_or_init(|| Arc::new(with_fs_type(QUICKSAND, 0x0002)))
+                .clone()
+        } else {
+            PLAIN.get_or_init(|| Arc::new(QUICKSAND.to_vec())).clone()
+        };
+        GlyphFont {
+            data,
+            index: 0,
+            coords: Vec::new(),
+        }
+    }
+
+    /// `data` with the OS/2 embedding bits set to `fs_type`.
+    fn with_fs_type(data: &[u8], fs_type: u16) -> Vec<u8> {
+        let mut out = data.to_vec();
+        let n = u16::from_be_bytes([data[4], data[5]]) as usize;
+        for i in 0..n {
+            let rec = 12 + 16 * i;
+            if &data[rec..rec + 4] == b"OS/2" {
+                let off = u32::from_be_bytes([
+                    data[rec + 8],
+                    data[rec + 9],
+                    data[rec + 10],
+                    data[rec + 11],
+                ]) as usize;
+                out[off + 8..off + 10].copy_from_slice(&fs_type.to_be_bytes());
+            }
+        }
+        out
+    }
+
+    struct Sink(BezPath);
+    impl ttf_parser::OutlineBuilder for Sink {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.0.move_to((x as f64, y as f64));
+        }
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.0.line_to((x as f64, y as f64));
+        }
+        fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+            self.0.quad_to((x1 as f64, y1 as f64), (x as f64, y as f64));
+        }
+        fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+            self.0.curve_to(
+                (x1 as f64, y1 as f64),
+                (x2 as f64, y2 as f64),
+                (x as f64, y as f64),
+            );
+        }
+        fn close(&mut self) {
+            self.0.close_path();
+        }
+    }
+
+    /// One line, one glyph per character; bold spans count as synthetic
+    /// bold (not the font's own glyphs).
+    fn glyphs(req: &TextRequest) -> GlyphLayout {
+        let mut out = GlyphLayout::default();
+        let mut pen = 0.0;
+        for (si, span) in req.spans.iter().enumerate() {
+            let gf = font(&span.font_family);
+            let face = ttf_parser::Face::parse(&gf.data, 0).expect("test font");
+            let upem = face.units_per_em() as f64;
+            let size = span.size_pt * 25.4 / 72.0;
+            for c in span.text.chars() {
+                let gid = face.glyph_index(c).map(|g| g.0).unwrap_or(0);
+                let t = Affine::translate((pen, 0.0)) * Affine::scale(size);
+                let mut sink = Sink(BezPath::new());
+                face.outline_glyph(ttf_parser::GlyphId(gid), &mut sink);
+                out.glyphs.push(PlacedGlyph {
+                    font: gf.clone(),
+                    glyph_id: gid,
+                    transform: t,
+                    text: c.to_string(),
+                    span: si,
+                    path: t * Affine::scale(1.0 / upem) * sink.0,
+                    exact: !span.bold,
+                });
+                pen += face
+                    .glyph_hor_advance(ttf_parser::GlyphId(gid))
+                    .unwrap_or(0) as f64
+                    / upem
+                    * size;
+            }
+            if span.underline {
+                out.rest.move_to((0.0, -1.0));
+                out.rest.line_to((pen, -1.0));
+                out.rest.line_to((pen, -1.3));
+                out.rest.close_path();
+            }
+        }
+        out
+    }
+
+    fn doc_with(spans: Vec<TextSpan>, fill: Fill, stroke: Option<Stroke>) -> Document {
+        text_outline::set_glyphs(glyphs);
+        let mut doc = Document::new("t", tracedraw_core::Size::new(100.0, 50.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans,
+                origin: Point::new(10.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        s.fill = fill;
+        s.stroke = stroke;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        doc
+    }
+
+    fn black() -> Fill {
+        Fill::Solid(Color::BLACK)
+    }
+
+    /// The file as text with every zlib stream inflated after it.
+    fn inflated(bytes: &[u8]) -> String {
+        let mut text = String::from_utf8_lossy(bytes).to_string();
+        let mut rest: &[u8] = bytes;
+        while let Some(i) = rest.windows(7).position(|w| w == b"stream\n") {
+            let data = &rest[i + 7..];
+            use std::io::Read;
+            let mut out = Vec::new();
+            if flate2::read::ZlibDecoder::new(data)
+                .read_to_end(&mut out)
+                .is_ok()
+            {
+                text.push_str(&String::from_utf8_lossy(&out));
+            }
+            rest = data;
+        }
+        text
+    }
+
+    fn extract(bytes: &[u8]) -> String {
+        let doc = lopdf::Document::load_mem(bytes).expect("parses");
+        doc.extract_text(&[1]).expect("text")
+    }
+
+    #[test]
+    fn text_goes_in_as_text_with_an_embedded_subset_font() {
+        let doc = doc_with(
+            vec![TextSpan::new("Hello PDF", "Quicksand", 24.0)],
+            black(),
+            None,
+        );
+        let (bytes, report) = document_to_pdf_report(&doc, &PdfOptions::default());
+        let text = inflated(&bytes);
+        assert!(text.contains("/Subtype /Type0"), "a font object");
+        assert!(text.contains("/Encoding /Identity-H"));
+        assert!(text.contains("/CIDFontType2"));
+        assert!(text.contains("/FontFile2"));
+        assert!(text.contains("/ToUnicode"));
+        assert!(text.contains("beginbfchar"));
+        assert!(text.contains("BT\n0 Tr"), "filled text");
+        assert!(text.contains("/Font << /F0 "));
+        // A subset: tagged name, and much smaller than the font.
+        assert!(
+            text.contains("+Quicksand"),
+            "{}",
+            &text[..2000.min(text.len())]
+        );
+        assert!(bytes.len() < QUICKSAND.len() / 2, "{} bytes", bytes.len());
+        assert_eq!(report.embedded.len(), 1);
+        assert!(report.restricted.is_empty());
+        // The string comes back out of the file.
+        let out = extract(&bytes);
+        assert!(out.contains("Hello PDF"), "{out:?}");
+        // The file opens again in our own reader.
+        let mut ids = tracedraw_core::id::IdSource::default();
+        assert!(crate::pdf_import::parse(&bytes, &mut ids).is_ok());
+    }
+
+    #[test]
+    fn text_as_curves_keeps_the_font_curves() {
+        // A round letter as curves: the glyph's own quadratic segments,
+        // each raised to one cubic, not a run of short lines. (The
+        // letter's outline as a curve object: what text as curves
+        // writes, without registering an outliner for the other tests.)
+        let spans = vec![TextSpan::new("o", "Quicksand", 72.0)];
+        let l = glyphs(&TextRequest {
+            spans: &spans,
+            frame: None,
+            align: tracedraw_core::TextAlign::Left,
+            para: &Default::default(),
+            on_path: None,
+        });
+        let mut doc = doc_with(spans.clone(), black(), None);
+        let s = &mut doc.pages[0].layers[0].shapes[0];
+        s.kind = ShapeKind::Path {
+            path: l.glyphs[0].path.clone(),
+            closed: true,
+        };
+        let opts = PdfOptions::default();
+        let text = inflated(&document_to_pdf_with(&doc, &opts));
+        let curves = text.lines().filter(|l| l.ends_with(" c")).count();
+        let lines = text.lines().filter(|l| l.ends_with(" l")).count();
+        assert!(curves >= 8, "{curves} curves");
+        assert!(lines <= curves, "{lines} lines, {curves} curves");
+    }
+
+    #[test]
+    fn quadratic_segments_become_the_same_cubic() {
+        let mut pdf = Pdf {
+            objects: Vec::new(),
+            spot_spaces: Default::default(),
+            cmyk_only: false,
+            allow_alpha: true,
+            encrypt_id: None,
+            fonts: Vec::new(),
+            bad_fonts: Vec::new(),
+            report: PdfReport::default(),
+        };
+        let mut w = PageWriter {
+            content: String::new(),
+            pdf: &mut pdf,
+            shadings: Vec::new(),
+            gstates: Vec::new(),
+            images: Vec::new(),
+            symbols: &[],
+            inks: &[],
+            spaces: Vec::new(),
+            fonts: Vec::new(),
+            text: None,
+        };
+        let k = 25.4 / 72.0;
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.quad_to((3.0 * k, 3.0 * k), (6.0 * k, 0.0));
+        p.close_path();
+        p.move_to((10.0 * k, 0.0));
+        p.quad_to((13.0 * k, 3.0 * k), (16.0 * k, 0.0));
+        w.path_ops(&p);
+        assert!(w.content.contains("2 2 4 2 6 0 c"), "{}", w.content);
+        assert!(w.content.contains("12 2 14 2 16 0 c"), "{}", w.content);
+    }
+
+    #[test]
+    fn text_as_curves_writes_no_fonts() {
+        let doc = doc_with(
+            vec![TextSpan::new("Curves", "Quicksand", 24.0)],
+            black(),
+            None,
+        );
+        let opts = PdfOptions {
+            text: PdfText {
+                as_curves: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let (bytes, report) = document_to_pdf_report(&doc, &opts);
+        let text = inflated(&bytes);
+        assert!(!text.contains("/Font"));
+        assert!(!text.contains("BT\n"));
+        assert!(report.embedded.is_empty());
+    }
+
+    #[test]
+    fn a_font_that_may_not_be_embedded_goes_as_curves() {
+        let doc = doc_with(
+            vec![
+                TextSpan::new("Open ", "Quicksand", 24.0),
+                TextSpan::new("Locked", "Locked Sans", 24.0),
+            ],
+            black(),
+            None,
+        );
+        let (bytes, report) = document_to_pdf_report(&doc, &PdfOptions::default());
+        assert_eq!(report.restricted, vec!["Locked Sans".to_string()]);
+        assert_eq!(report.embedded.len(), 1, "only the open font");
+        let out = extract(&bytes);
+        assert!(out.contains("Open"), "{out:?}");
+        assert!(!out.contains("Locked"), "{out:?}");
+        // Only restricted text: no font at all, the outlines are filled.
+        let doc = doc_with(
+            vec![TextSpan::new("Locked", "Locked Sans", 24.0)],
+            black(),
+            None,
+        );
+        let (bytes, _) = document_to_pdf_report(&doc, &PdfOptions::default());
+        let text = inflated(&bytes);
+        assert!(!text.contains("/Font"));
+        assert!(text.contains("\nf\n"));
+    }
+
+    #[test]
+    fn outlines_fills_and_synthetic_bold_pick_the_render_mode() {
+        let stroke = || {
+            Some(Stroke {
+                width: 0.3,
+                ..Stroke::default()
+            })
+        };
+        // Fill and outline: render mode 2, the stroke set before the text.
+        let doc = doc_with(
+            vec![TextSpan::new("Ab", "Quicksand", 24.0)],
+            black(),
+            stroke(),
+        );
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("BT\n2 Tr"), "{text}");
+        // Outline only: mode 1.
+        let doc = doc_with(
+            vec![TextSpan::new("Ab", "Quicksand", 24.0)],
+            Fill::None,
+            stroke(),
+        );
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("BT\n1 Tr"));
+        // A gradient fill is painted on the outlines; the text goes over
+        // it invisibly and is still found.
+        let ft =
+            tracedraw_core::Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let doc = doc_with(
+            vec![TextSpan::new("Ab", "Quicksand", 24.0)],
+            Fill::Fountain(ft),
+            None,
+        );
+        let bytes = document_to_pdf(&doc);
+        let text = inflated(&bytes);
+        assert!(text.contains("/ShadingType 2"));
+        assert!(text.contains("BT\n3 Tr"));
+        assert!(extract(&bytes).contains("Ab"));
+        // Synthetic bold: curves, and invisible text over them.
+        let mut bold = TextSpan::new("Bold", "Quicksand", 24.0);
+        bold.bold = true;
+        let doc = doc_with(vec![bold], black(), None);
+        let bytes = document_to_pdf(&doc);
+        let text = inflated(&bytes);
+        assert!(text.contains("BT\n3 Tr") && text.contains("\nf\n"));
+        assert!(extract(&bytes).contains("Bold"));
+    }
+
+    #[test]
+    fn turned_text_and_cmyk_colours_keep_their_matrix_and_colour() {
+        let mut doc = doc_with(
+            vec![TextSpan::new("Turn", "Quicksand", 10.0)],
+            Fill::Solid(Color::Cmyk {
+                c: 0.0,
+                m: 1.0,
+                y: 0.0,
+                k: 0.0,
+            }),
+            None,
+        );
+        let s = &mut doc.pages[0].layers[0].shapes[0];
+        s.transform = Affine::rotate(std::f64::consts::FRAC_PI_2);
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("0 1 0 0 k"), "{text}");
+        // A quarter turn: the matrix maps x to y.
+        let size = 10.0;
+        let tm = text
+            .lines()
+            .find(|l| l.ends_with(" Tm"))
+            .expect("a text matrix");
+        let v: Vec<f64> = tm
+            .split_whitespace()
+            .take(4)
+            .map(|x| x.parse().unwrap())
+            .collect();
+        assert!(v[0].abs() < 1e-6 && (v[1] - size).abs() < 1e-3, "{tm}");
+        assert!((v[2] + size).abs() < 1e-3 && v[3].abs() < 1e-6, "{tm}");
+        // One run for the whole word: one matrix, one TJ.
+        assert_eq!(text.matches(" Tm\n").count(), 1);
+    }
+
+    #[test]
+    fn named_fonts_and_standard_fonts_stay_out_of_the_file() {
+        // Fonts not embedded: a simple font named only, in WinAnsi.
+        let doc = doc_with(
+            vec![TextSpan::new("Caf\u{e9}", "Quicksand", 24.0)],
+            black(),
+            None,
+        );
+        let opts = PdfOptions {
+            text: PdfText {
+                embed_fonts: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let (bytes, report) = document_to_pdf_report(&doc, &opts);
+        let text = inflated(&bytes);
+        assert!(text.contains("/Subtype /TrueType") && text.contains("/WinAnsiEncoding"));
+        assert!(!text.contains("/FontFile"));
+        assert_eq!(report.named.len(), 1);
+        assert!(extract(&bytes).contains("Caf\u{e9}"));
+        // PDF/X wants fonts in the file whatever the choice.
+        let x = PdfOptions {
+            standard: PdfStandard::X4,
+            ..opts.clone()
+        };
+        let text = inflated(&document_to_pdf_with(&doc, &x));
+        assert!(text.contains("/FontFile2"));
+        // A standard family is named, not embedded, unless asked.
+        let doc = doc_with(vec![TextSpan::new("Std", "Helvetica", 24.0)], black(), None);
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("/BaseFont /Helvetica "), "{text}");
+        assert!(!text.contains("/FontFile"));
+        let opts = PdfOptions {
+            text: PdfText {
+                embed_base14: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let text = inflated(&document_to_pdf_with(&doc, &opts));
+        assert!(text.contains("/FontFile2"));
+    }
+
+    #[test]
+    fn subsetting_and_the_threshold_decide_how_much_goes_in() {
+        let doc = doc_with(vec![TextSpan::new("abc", "Quicksand", 24.0)], black(), None);
+        let small = document_to_pdf(&doc);
+        let whole = document_to_pdf_with(
+            &doc,
+            &PdfOptions {
+                text: PdfText {
+                    subset: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        assert!(
+            whole.len() > small.len() * 3,
+            "{} vs {}",
+            whole.len(),
+            small.len()
+        );
+        // A threshold of 0 %: always the whole font, without a subset tag.
+        let all = document_to_pdf_with(
+            &doc,
+            &PdfOptions {
+                text: PdfText {
+                    subset_below_pct: 0.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        assert!(!inflated(&all).contains("+Quicksand"));
+        assert!(extract(&all).contains("abc"));
+        // Underlines and the like stay curves.
+        let mut u = TextSpan::new("u", "Quicksand", 24.0);
+        u.underline = true;
+        let text = inflated(&document_to_pdf(&doc_with(vec![u], black(), None)));
+        assert!(text.contains("BT\n0 Tr") && text.contains("\nf\n"));
+    }
+
+    #[test]
+    fn protected_files_keep_their_text() {
+        let doc = doc_with(
+            vec![TextSpan::new("Secret", "Quicksand", 24.0)],
+            black(),
+            None,
+        );
+        let opts = PdfOptions {
+            security: Some(crate::pdf_crypt::Security {
+                user_password: String::new(),
+                owner_password: "owner".into(),
+                permissions: Default::default(),
+            }),
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&doc, &opts);
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let imp = crate::pdf_import::parse(&bytes, &mut ids).expect("opens");
+        assert_eq!(imp.pages.len(), 1);
     }
 }
