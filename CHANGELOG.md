@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Files dropped on the window open or import: with a drawing shown they
+  are imported into it in the middle of the view, otherwise each opens
+  in its own tab (a picture gets a new drawing). `.psd` and every other
+  format File > Open and File > Import read are supported.
+
 ## 0.9.4 (2026-10-19)
 
 - Color Management Settings: Document and Default tabs, the drawing's

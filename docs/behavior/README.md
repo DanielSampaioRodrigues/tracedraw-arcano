@@ -15,7 +15,7 @@ Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `bitmap-effec
 `colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
 `coordinates.md`, `corners-and-joins.md`,
 `crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
-`documents.md`, `drawing-window.md`, `drop-shadow.md`, `dxf.md`,
+`documents.md`, `drawing-window.md`, `drop-files.md`, `drop-shadow.md`, `dxf.md`,
 `emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
 `eyedroppers.md`, `files.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,

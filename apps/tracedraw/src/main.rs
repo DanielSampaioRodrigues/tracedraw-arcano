@@ -42,6 +42,7 @@ mod dimensions;
 mod distort_tool;
 mod documents;
 mod drawing_scale;
+mod drop_files;
 mod drop_menu;
 mod effects_ui;
 mod encode;
