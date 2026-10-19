@@ -343,6 +343,12 @@ jobs:
       - name: Font catalog
         run: python3 web/font_catalog.py web/fonts.txt site/fonts
 
+      # The user Help (docs/help), one tree per interface language, with
+      # the screenshots of docs/help/img; the app's "?" buttons and F1
+      # open its pages (docs/behavior/help.md).
+      - name: Help
+        run: python3 web/help_site.py docs/help apps/tracedraw/lang site/help
+
       # The browser version is published on the project's page, not as a
       # download: the folder is kept with the run only (its name does not
       # match the release's tracedraw-* artifacts).

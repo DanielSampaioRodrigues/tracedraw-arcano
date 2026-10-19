@@ -133,7 +133,7 @@ const GOLD: Color32 = Color32::from_rgb(0xE8, 0xA3, 0x17);
 pub fn for_key(key: &str) -> Option<Glyph> {
     use Glyph::*;
     Some(match key {
-        "menu.help.product_help" => Help,
+        "menu.help.product_help" | "menu.help.help_topics" => Help,
         "menu.help.video_tutorials" => Video,
         "menu.help.quick_start_guide" => QuickStart,
         "menu.help.user_guide" => UserGuide,

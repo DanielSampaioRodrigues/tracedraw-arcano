@@ -63,6 +63,9 @@ mod github;
 mod gradient_presets;
 mod grammar;
 mod guides;
+mod help;
+#[cfg(test)]
+mod help_shots;
 mod i18n;
 mod imposition;
 mod interaction;

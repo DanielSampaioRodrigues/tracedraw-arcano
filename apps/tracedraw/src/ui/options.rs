@@ -410,9 +410,7 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                         .on_hover_text(tr("dialog.help"))
                         .clicked()
                     {
-                        app.open_url(
-                            "https://github.com/igtoth/tracedraw/blob/main/docs/behavior/README.md",
-                        );
+                        app.open_help(crate::help::options_topic(app.options_page));
                     }
                     if set == OptionsSet::Document
                         && ui

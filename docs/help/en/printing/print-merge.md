@@ -1,0 +1,44 @@
+# Print merge
+
+Print merge fills a design with data, to make many versions of it: name
+badges, numbered tickets, certificates, labels with QR codes. Each record of
+your data becomes a copy of the page, filled in.
+
+## Setting up a merge {#setup}
+
+1. Design the page. Where a value goes, type the field name in angle brackets
+   in a text object, such as `<Name>`.
+2. Choose [[menu.file > menu.file.print_merge > menu.file.print_merge_create]].
+3. Add the data:
+   - **Import file** reads a CSV file whose first line names the fields;
+   - or **Add column** to add fields by hand, then add records with **+**.
+4. Click **Finish**.
+
+![The Print Merge dialog box](../../img/printing-print-merge.png)
+
+The current page is copied once per record, right after it, and each copy is
+filled in. The copies are named after the page and the record number.
+
+## Kinds of field {#fields}
+
+- **Text**: replaces `<Field>` in every text of the page.
+- **Number**: a counter you do not type: a start, a step and a number of digits
+  (start 7, step 3, digits 3 gives 007, 010, 013).
+- **Picture**: the cell holds the path of a picture. A text holding only
+  `<Field>` becomes the picture, as large as fits its box.
+- **QR code**: a text holding only `<Field>` becomes a QR code of the cell's
+  text.
+
+An empty cell, or a picture that does not load, removes that object from the
+record's page.
+
+## Editing the records {#records}
+
+**Configure columns** renames fields, changes their type and counter settings,
+and removes fields. **View single record** shows one record as a form; use the
+arrows or **Go to record** to move through them. The placeholder buttons
+insert a field into the text you are editing. **Save data source** writes the
+records as a CSV file.
+
+[[menu.file.print_merge_edit]] reopens the records, and
+[[menu.file.print_merge_perform]] runs the merge again.

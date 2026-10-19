@@ -652,7 +652,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PublishState, close: &mut b
         };
     });
     if help {
-        app.open_url(crate::ui::dialogs::HELP_URL);
+        app.open_dialog_help();
     }
 }
 

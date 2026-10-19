@@ -212,6 +212,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     apply_shadows(&ctx, app.settings.ui_shadows);
     crate::ui::icons::set_colored(app.settings.colored_icons);
     menus::invoke::set_bindings(&app.settings.shortcuts);
+    // F1: the Help page of the open dialog, the docker or the tool.
+    if app.shortcut_editor.capture.is_none() {
+        crate::help::handle_f1(app, &ctx);
+    }
     app.keyboard(&ctx);
     // A menu command run by a shortcut of the user's.
     if let Some(cmd) = app.pending_command.take() {

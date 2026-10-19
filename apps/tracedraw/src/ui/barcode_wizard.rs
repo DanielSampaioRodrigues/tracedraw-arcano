@@ -9,7 +9,7 @@ use crate::app::{App, Units};
 use crate::barcode::{self, BarcodeSpec, Symbology, TextAlignment, TextOption};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
-use crate::ui::dialogs::{enter_pressed, window, HELP_URL};
+use crate::ui::dialogs::{enter_pressed, window};
 use egui::{Color32, Context, Pos2, Rect as UiRect, Stroke, Ui, Vec2};
 use tracedraw_core::{
     document::{Shape, ShapeKind},
@@ -122,7 +122,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut BarcodeState, close: &mut b
         });
     });
     if help {
-        app.open_url(HELP_URL);
+        app.open_dialog_help();
     }
     if finish {
         match insert(app, &st.spec) {

@@ -455,7 +455,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
         *close = true;
     }
     if help {
-        app.open_url(crate::ui::dialogs::HELP_URL);
+        app.open_dialog_help();
     }
     if ok {
         apply(app, st);

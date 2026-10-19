@@ -3240,9 +3240,13 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
 }
 
 fn help_menu(app: &mut App, ui: &mut Ui) {
+    if item(ui, "menu.help.help_topics", "", true) {
+        app.open_help(crate::help::HOME);
+    }
+    // The page of the active docker, else of the active tool (F1).
     if item(ui, "menu.help.product_help", "F1", true) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Hints;
+        let topic = crate::help::context_topic(app);
+        app.open_help(topic);
     }
     sep(ui);
     if item(ui, "menu.help.welcome_screen", "", true) {

@@ -947,6 +947,9 @@ pub struct App {
     /// drawing, the page, the view and the objects left out stay the same.
     pub align_cache: std::cell::RefCell<Option<crate::snap::AlignCache>>,
     pub dialog: crate::ui::dialogs::Dialog,
+    /// The Help page of the dialog being drawn, for its "?" button
+    /// (`help.rs`).
+    pub dialog_help: &'static str,
     /// Layout > Page Number Settings.
     pub page_numbers: PageNumberSettings,
     /// Last loaded print-merge data, for Edit / Perform without reloading.
@@ -1614,6 +1617,13 @@ impl App {
         // and the application closes through File > Exit (Alt+F4).
         // The Bitmap Effects lens runs the application's bitmap effects.
         tracedraw_render::set_pixel_effects(crate::fx::lens_effects);
+        Self::setup_context(ctx);
+        Self::build(open)
+    }
+
+    /// The interface style every window context takes: options, visuals
+    /// and text sizes (the headless Help screenshots use it too).
+    pub(crate) fn setup_context(ctx: &egui::Context) {
         ctx.options_mut(|o| {
             o.quit_shortcuts.clear();
             // Ctrl+plus and Ctrl+minus zoom the drawing, not the interface;
@@ -1649,7 +1659,6 @@ impl App {
             ]
             .into();
         });
-        Self::build(open)
     }
 
     /// An app without a window, for tests, scripts and the MCP server.
@@ -1795,6 +1804,7 @@ impl App {
             docker_preview: Vec::new(),
             docker_preview_point: None,
             dialog: crate::ui::dialogs::Dialog::None,
+            dialog_help: crate::help::HOME,
             merge_state: None,
             page_numbers: PageNumberSettings::default(),
             show_welcome: false,

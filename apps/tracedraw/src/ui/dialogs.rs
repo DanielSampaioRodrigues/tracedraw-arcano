@@ -887,10 +887,6 @@ pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     ok
 }
 
-/// Where a dialog's "?" button leads.
-pub(crate) const HELP_URL: &str =
-    "https://github.com/igtoth/tracedraw/blob/main/docs/behavior/README.md";
-
 /// "?" on the left, OK and Cancel on the right, as dialogs with help
 /// have them. Returns (OK pressed, "?" pressed).
 pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
@@ -950,6 +946,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         app.shortcut_editor.capture = None;
     }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
+    app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
     if !matches!(dialog, Dialog::None) {
         crate::ui::chrome::modal_blocker(ctx);
     }
@@ -1506,7 +1503,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
             if help {
-                app.open_url(HELP_URL);
+                app.open_dialog_help();
             }
         }
         Dialog::PasteSpecial(st) => {
@@ -3952,7 +3949,7 @@ fn border_grommet_dialog(
         });
     });
     if help {
-        app.open_url(HELP_URL);
+        app.open_dialog_help();
     }
     if ok {
         let n = crate::border_grommet::apply(app, st);

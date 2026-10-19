@@ -586,6 +586,12 @@ pub fn bold(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name(BOLD.into()))
 }
 
+/// Install the bundled interface fonts only (headless drawing).
+#[cfg(test)]
+pub fn install_fonts_bundled(ctx: &egui::Context) {
+    ctx.set_fonts(bundled_font_definitions());
+}
+
 /// Install the interface fonts (see [`font_definitions`]).
 pub fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(font_definitions());

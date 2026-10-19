@@ -311,7 +311,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
         *close = true;
     }
     if help {
-        app.open_url(crate::ui::dialogs::HELP_URL);
+        app.open_dialog_help();
     }
     if let Some(space) = load {
         load_profile_file(app, space);

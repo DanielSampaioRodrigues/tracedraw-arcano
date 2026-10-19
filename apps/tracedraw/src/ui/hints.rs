@@ -240,71 +240,6 @@ impl HintsState {
     }
 }
 
-const DOCS: &str = "https://github.com/igtoth/tracedraw/blob/main/docs/";
-
-/// The help page of a tool (the behaviour notes in the repository).
-fn help_page(tool: Tool) -> &'static str {
-    match tool {
-        Tool::Pick | Tool::FreeformPick => "pick-tool.md",
-        Tool::FreeTransform => "free-transform.md",
-        Tool::Shape
-        | Tool::Smooth
-        | Tool::Smear
-        | Tool::Twirl
-        | Tool::AttractRepel
-        | Tool::Smudge
-        | Tool::Roughen => "shape-tool.md",
-        Tool::VariableOutline => "variable-outline.md",
-        Tool::Crop | Tool::Knife | Tool::SegmentDelete | Tool::Eraser => "crop-knife-eraser.md",
-        Tool::Zoom | Tool::Pan => "zoom-and-pan.md",
-        Tool::BrushStrokes => "brush-strokes.md",
-        Tool::PainterlyBrush => "painterly-brushes.md",
-        Tool::Freehand
-        | Tool::TwoPointLine
-        | Tool::Bezier
-        | Tool::Pen
-        | Tool::BSpline
-        | Tool::Polyline
-        | Tool::ThreePointCurve
-        | Tool::ShapeRecognition
-        | Tool::Sketch => "curve-tools.md",
-        Tool::Rectangle
-        | Tool::ThreePointRectangle
-        | Tool::Ellipse
-        | Tool::ThreePointEllipse
-        | Tool::Polygon
-        | Tool::Star
-        | Tool::Spiral
-        | Tool::CommonShapes
-        | Tool::ActionLines
-        | Tool::GraphPaper => "shape-tools.md",
-        Tool::Text => "text.md",
-        Tool::Table => "table.md",
-        Tool::ParallelDimension
-        | Tool::HorizontalVerticalDimension
-        | Tool::AngularDimension
-        | Tool::SegmentDimension
-        | Tool::Callout => "dimensions.md",
-        Tool::Connector
-        | Tool::RightAngleConnector
-        | Tool::RoundedConnector
-        | Tool::AnchorEditing => "connectors-and-anchors.md",
-        Tool::DropShadow => "drop-shadow.md",
-        Tool::Contour => "contour.md",
-        Tool::Blend => "blend.md",
-        Tool::Distort => "distort.md",
-        Tool::Envelope => "envelope.md",
-        Tool::Extrude => "extrude.md",
-        Tool::BlockShadow => "block-shadow.md",
-        Tool::Transparency => "transparency.md",
-        Tool::ColorEyedropper | Tool::AttributesEyedropper => "eyedroppers.md",
-        Tool::InteractiveFill => "gradient-fill.md",
-        Tool::AreaFill => "area-fill.md",
-        Tool::MeshFill => "mesh-fill.md",
-        Tool::OutlinePen | Tool::OutlineColor => "outline-pen.md",
-    }
-}
-
 /// The docker: the page in a scroll area and the navigation bar under it.
 pub fn hints_docker(app: &mut App, ui: &mut Ui) {
     app.hints.follow(app.tool);
@@ -408,7 +343,7 @@ fn home(app: &mut App, ui: &mut Ui) -> Option<HintPage> {
             }
         });
     }
-    learn_more(app, ui, &tr("hint.app_help"), "README.md");
+    learn_more(app, ui, &tr("hint.app_help"), crate::help::HOME);
     go
 }
 
@@ -427,14 +362,14 @@ fn topic(app: &mut App, ui: &mut Ui, t: Topic) -> Option<HintPage> {
         ai_topic(app, ui);
     }
     let page = match t {
-        Topic::Ai => "ai-options.md",
+        Topic::Ai => "customize/ai",
         _ => t
             .tools()
             .first()
-            .map(|t| help_page(*t))
-            .unwrap_or("../README.md"),
+            .map(|t| crate::help::tool_topic(*t))
+            .unwrap_or(crate::help::HOME),
     };
-    learn_more(app, ui, &t.title(), &format!("behavior/{page}"));
+    learn_more(app, ui, &t.title(), page);
     go
 }
 
@@ -520,7 +455,7 @@ fn tool_page(app: &mut App, ui: &mut Ui, tool: Tool) -> Option<HintPage> {
         app,
         ui,
         &tr(&format!("hinttitle.{}", tool.id())),
-        &format!("behavior/{}", help_page(tool)),
+        crate::help::tool_topic(tool),
     );
     // Which topic lists this tool, for a way back up.
     let topic = Topic::ALL.into_iter().find(|t| t.tools().contains(&tool))?;
@@ -596,7 +531,7 @@ pub fn emphasize_keys(text: &str) -> String {
 }
 
 /// "Learn more" with the help topic link.
-fn learn_more(app: &mut App, ui: &mut Ui, label: &str, page: &str) {
+fn learn_more(app: &mut App, ui: &mut Ui, label: &str, topic: &str) {
     ui.add_space(10.0);
     ui.separator();
     ui.add_space(4.0);
@@ -609,7 +544,7 @@ fn learn_more(app: &mut App, ui: &mut Ui, label: &str, page: &str) {
         ui.vertical(|ui| {
             ui.label(egui::RichText::new(tr("hint.help_topic")).font(theme::bold(16.0)));
             if link(ui, label).clicked() {
-                app.open_url(&format!("{DOCS}{page}"));
+                app.open_help(topic);
             }
         });
     });

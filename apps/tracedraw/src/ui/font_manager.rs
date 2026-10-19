@@ -766,7 +766,7 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
             st.renaming = None;
             app.save_settings();
         }
-        Action::Help => app.open_url(crate::ui::dialogs::HELP_URL),
+        Action::Help => app.open_dialog_help(),
     }
 }
 

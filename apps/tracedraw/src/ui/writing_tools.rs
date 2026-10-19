@@ -5,7 +5,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
-use crate::ui::dialogs::{window, HELP_URL};
+use crate::ui::dialogs::window;
 use egui::{Context, Ui};
 use tracedraw_core::{document::ShapeKind, ShapeId};
 
@@ -191,7 +191,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut WritingToolsState, close: &
         });
     });
     if help {
-        app.open_url(HELP_URL);
+        app.open_dialog_help();
     }
 }
 
@@ -1030,7 +1030,7 @@ pub fn custom_hyphens_dialog(
         });
     });
     if help {
-        app.open_url(HELP_URL);
+        app.open_dialog_help();
     }
     if ok || apply {
         app.settings.hyphens_when_typing = st.when_typing;

@@ -470,7 +470,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 .on_hover_text(tr("menu.help.product_help"))
                 .clicked()
             {
-                app.open_url(HELP_URL);
+                app.open_dialog_help();
             }
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
@@ -504,9 +504,6 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
         app.save_settings();
     }
 }
-
-const HELP_URL: &str =
-    "https://github.com/igtoth/tracedraw/blob/main/docs/behavior/new-document.md";
 
 /// OK: open the drawing and keep the settings for next time (the caller
 /// writes them to disk).
