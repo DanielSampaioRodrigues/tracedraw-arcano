@@ -719,6 +719,9 @@ pub struct Clipboard {
     /// The object styles of the drawing copied from, so that pasted
     /// objects keep their links only to the same styles.
     pub styles: Vec<tracedraw_core::ObjectStyle>,
+    /// What the system clipboard held right after this copy (see
+    /// `ClipboardContent::fingerprint`).
+    pub system: u64,
 }
 
 /// Centres of rotation the user moved. One object's is kept in the
@@ -754,6 +757,9 @@ pub struct App {
     /// The Pen or Bezier tool is dragging a node of the selected curve
     /// (as the Shape tool does), not drawing.
     pub pen_editing: bool,
+    /// A paste event or paste shortcut press came and its key is still
+    /// down (see `interaction::paste_without_text`).
+    pub paste_seen: bool,
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
     /// Text an input method is composing at the caret (Chinese, Japanese,
@@ -1724,6 +1730,7 @@ impl App {
             drag: Drag::None,
             drag_copy: false,
             pen_editing: false,
+            paste_seen: false,
             curve: None,
             text_edit: None,
             ime_preedit: String::new(),
@@ -3592,6 +3599,7 @@ impl App {
             self.clipboard = Some(Clipboard {
                 shapes,
                 styles: self.doc().object_styles.clone(),
+                system: 0,
             });
             self.status = crate::i18n::trf(
                 "status.objects_copied",
