@@ -25,7 +25,9 @@ Counts: works 191, partial 4 (`.cdr` content coverage; CMX import; print preview
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
 | Rulers with numbers from the origin without sign, the unit name, an origin button and pointer markers; draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines panel; all 13 units | works |
 | Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
-| Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
+| Snap to objects, page, guidelines; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
+| Alignment guides (Alt+Shift+A, off by default): live lines and snapping to other objects' edges and centres, the page, margins (offset, inset), equal spacing and equal sizes (width, height) while moving, drawing and resizing, the other pages too in the Multipage View; each object or the selection as one; colour and style (Options > Alignment Guides) | works (see `behavior/live-guides.md`) |
+| Dynamic guides (Alt+Shift+D, off by default): guides at chosen angles from acquired snap points and the line's start, snapping to them and their crossings, distance and angle tip, tick marks with optional snapping; colour and style (Options > Dynamic Guides) | works (see `behavior/live-guides.md`) |
 | Snapping modes (node, intersection, midpoint, quadrant, tangent, perpendicular, edge, center, text baseline) with snap location marks and screen tips; moves carry the grabbed point (Options > Snapping) | works (see `behavior/snapping.md`) |
 | View modes: Wireframe (every object a hairline in its outline colour, no fills, outline widths, opacity or effects, bitmaps grey boxes, clip frame contents unclipped), Normal, Enhanced, Pixels (document pixels shown as blocks when zoomed in, see `behavior/rulers-grid-guidelines.md`); full-screen preview (F9); preview selected only | works |
 | Page sorter view | works |

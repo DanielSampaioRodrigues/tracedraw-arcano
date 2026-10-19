@@ -938,6 +938,14 @@ pub struct App {
     pub docker_preview_point: Option<Point>,
     /// The point the pointer snapped to this frame, for its mark.
     pub snap_mark: std::cell::Cell<Option<crate::snap_points::Target>>,
+    /// The alignment and dynamic guides to draw this frame.
+    pub live_guides: std::cell::RefCell<crate::live_guides::Overlay>,
+    /// The snap points the pointer acquired, newest first: dynamic guides
+    /// come from them.
+    pub guide_anchors: std::cell::RefCell<Vec<Point>>,
+    /// The other objects' boxes for alignment guides, kept while the
+    /// drawing, the page, the view and the objects left out stay the same.
+    pub align_cache: std::cell::RefCell<Option<crate::snap::AlignCache>>,
     pub dialog: crate::ui::dialogs::Dialog,
     /// Layout > Page Number Settings.
     pub page_numbers: PageNumberSettings,
@@ -1779,6 +1787,9 @@ impl App {
             segment_spot: None,
             snap: crate::snap::SnapSettings::default(),
             snap_mark: std::cell::Cell::new(None),
+            live_guides: Default::default(),
+            guide_anchors: Default::default(),
+            align_cache: Default::default(),
             corners: Default::default(),
             join_settings: Default::default(),
             docker_preview: Vec::new(),
@@ -5735,6 +5746,8 @@ mod tests {
         app.view_mode = ViewMode::Wireframe;
         app.snap.dynamic_guides = true;
         app.snap.off = true;
+        app.settings.snap.dynamic.angles = vec![30.0, 60.0];
+        app.settings.snap.align.each_object = true;
         app.color_model = 0;
         app.color_docker.shown = [false, true, true];
         app.align_to = crate::ops2::AlignTo::PageCenter;
@@ -5766,6 +5779,8 @@ mod tests {
         assert!(next.show_grid && !next.show_page_border);
         assert_eq!(next.view_mode, ViewMode::Wireframe);
         assert!(next.snap.dynamic_guides && next.snap.off);
+        assert_eq!(next.settings.snap.dynamic.angles, vec![30.0, 60.0]);
+        assert!(next.settings.snap.align.each_object);
         assert_eq!(next.color_model, 0);
         assert_eq!(next.color_docker.shown, [false, true, true]);
         assert_eq!(next.align_to, crate::ops2::AlignTo::PageCenter);
@@ -5808,7 +5823,13 @@ mod tests {
             serde_json::from_str(r#"{"language":"en"}"#).expect("old file");
         assert_eq!(old.tools, crate::settings::ToolPrefs::default());
         assert_eq!(old.view, crate::settings::ViewPrefs::default());
-        assert!(old.snap.alignment_guides && !old.snap.off);
+        // Alignment and dynamic guides start off, with their defaults.
+        assert!(!old.snap.alignment_guides && !old.snap.dynamic_guides && !old.snap.off);
+        assert_eq!(old.snap.align, crate::live_guides::AlignOptions::default());
+        assert_eq!(
+            old.snap.dynamic,
+            crate::live_guides::DynamicOptions::default()
+        );
     }
 
     /// The preferences are saved when something changed, not every

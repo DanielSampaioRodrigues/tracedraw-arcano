@@ -1840,6 +1840,112 @@ fn bspline_clicks_place_control_points_of_a_smooth_curve() {
     assert!(near(c.p1, pts[1]) && near(c.p2, pts[2]), "{c:?}");
 }
 
+/// With alignment guides on (and every other snapping off), a move of the
+/// rectangle near another one lands its top edge on the other's top and
+/// shows the line while the button is down; a scale handle lines up the
+/// same way.
+#[test]
+fn alignment_guides_line_up_a_moved_object_and_show_the_line() {
+    let (ctx, mut app, id) = setup();
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 60.0, 130.0, 90.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![id]);
+    app.snap.objects = false;
+    app.snap.page = false;
+    app.snap.guides = false;
+    app.snap.alignment_guides = true;
+    // The radius is 10 px; the top edge goes 1 mm past y = 90.
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let to = app.view.to_screen(Point::new(35.0, 25.0 + 51.0));
+    let none = Modifiers::NONE;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    for i in 1..=4 {
+        let p = from + (to - from) * (i as f32 / 4.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], none);
+    }
+    {
+        let o = app.live_guides.borrow();
+        assert!(
+            o.lines
+                .iter()
+                .any(|l| (l.a.y - 90.0).abs() < 1e-9 && (l.b.y - 90.0).abs() < 1e-9),
+            "{o:?}"
+        );
+    }
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    let b = bounds(&app, id);
+    assert!((b.y1 - 90.0).abs() < 1e-6, "{b:?}");
+    assert!(close(b.x0, 10.0), "{b:?}");
+    // The guides go when the button is up.
+    assert!(app.live_guides.borrow().is_empty());
+    // A right side handle dragged near the other's left edge stops on it.
+    let h = handle(&app, Handle::E);
+    let target = app.view.to_screen(Point::new(99.0, b.center().y));
+    drag(
+        &ctx,
+        &mut app,
+        h,
+        egui::pos2(target.x, h.y),
+        none,
+        Vec::new(),
+    );
+    let b = bounds(&app, id);
+    assert!((b.x1 - 100.0).abs() < 1e-6, "{b:?}");
+    // With snapping off (Alt+Q) the same move goes where the pointer goes.
+    app.snap.off = true;
+    let from = app.view.to_screen(b.center());
+    let to = app.view.to_screen(b.center() + Vec2::new(0.0, -5.0));
+    drag(&ctx, &mut app, from, to, none, Vec::new());
+    let after = bounds(&app, id);
+    assert!((after.y1 - 85.0).abs() < 0.2, "{after:?}");
+    let _ = other;
+}
+
+/// With alignment guides on, a rectangle drawn near the size of another
+/// object takes its width and height.
+#[test]
+fn a_rectangle_drawn_with_alignment_guides_takes_another_objects_size() {
+    let (ctx, mut app, id) = setup();
+    app.snap.objects = false;
+    app.snap.page = false;
+    app.snap.guides = false;
+    app.snap.alignment_guides = true;
+    app.settings.snap.align.page = false;
+    app.set_tool(Tool::Rectangle);
+    // The other rectangle is 50 x 30 mm; this one is dragged 51 x 31.
+    let from = app.view.to_screen(Point::new(100.0, 100.0));
+    let to = app.view.to_screen(Point::new(151.0, 131.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let new = app.selection.first().copied().expect("a new rectangle");
+    assert_ne!(new, id);
+    let b = bounds(&app, new);
+    assert!((b.width() - 50.0).abs() < 1e-6, "{b:?}");
+    assert!((b.height() - 30.0).abs() < 1e-6, "{b:?}");
+    // Without the option it keeps the height dragged.
+    app.settings.snap.align.equal_size = false;
+    let from = app.view.to_screen(Point::new(100.0, 200.0));
+    // (Far from the first one's edges, which it would line up with.)
+    let to = app.view.to_screen(Point::new(157.0, 231.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let b = bounds(&app, app.selection.first().copied().expect("another"));
+    assert!((b.height() - 31.0).abs() < 0.1, "{b:?}");
 /// A curve tool's drag from `from` to `to`, node placed at the press.
 fn pull(ctx: &egui::Context, app: &mut App, from: Point, to: Point) {
     let (a, b) = (app.view.to_screen(from), app.view.to_screen(to));

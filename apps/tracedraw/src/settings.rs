@@ -738,6 +738,9 @@ pub struct SnapPrefs {
     pub alignment_guides: bool,
     pub dynamic_guides: bool,
     pub off: bool,
+    /// Options > Alignment Guides and Options > Dynamic Guides.
+    pub align: crate::live_guides::AlignOptions,
+    pub dynamic: crate::live_guides::DynamicOptions,
 }
 
 impl Default for SnapPrefs {
@@ -757,6 +760,8 @@ impl Default for SnapPrefs {
             alignment_guides: s.alignment_guides,
             dynamic_guides: s.dynamic_guides,
             off: s.off,
+            align: Default::default(),
+            dynamic: Default::default(),
         }
     }
 }

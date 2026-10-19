@@ -34,6 +34,8 @@ pub enum OptionsPage {
     NodesAndHandles,
     ClipFrame,
     Snapping,
+    AlignmentGuides,
+    DynamicGuides,
     Save,
     Text,
     // Tools > Options > Customization.
@@ -86,6 +88,8 @@ impl OptionsSet {
                 NodesAndHandles,
                 ClipFrame,
                 Snapping,
+                AlignmentGuides,
+                DynamicGuides,
                 Save,
                 Text,
             ],
@@ -155,6 +159,8 @@ impl OptionsPage {
             NodesAndHandles => "options.nodes_and_handles",
             ClipFrame => "options.clip_frame",
             Snapping => "options.snapping",
+            AlignmentGuides => "options.alignment_guides",
+            DynamicGuides => "options.dynamic_guides",
             Save => "options.save",
             Text => "options.text",
             Appearance => "options.appearance",
@@ -506,6 +512,8 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         NodesAndHandles => nodes_page(app, ui),
         ClipFrame => clip_frame_page(app, ui),
         Snapping => snapping_page(app, ui),
+        AlignmentGuides => alignment_guides_page(app, ui),
+        DynamicGuides => dynamic_guides_page(app, ui),
         Save => save_page(app, ui),
         Text => text_page(app, ui),
         Appearance => appearance_page(app, ui),
@@ -971,6 +979,192 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
                 *modes = crate::snap_points::SnapModes::none();
             }
         });
+    });
+}
+
+/// A length typed in the document's units, kept in millimetres.
+fn length_field(ui: &mut Ui, units: Units, mm: &mut f64, max_mm: f64) {
+    let mut v = units.world_from_mm(*mm);
+    let resp = ui.add_sized(
+        [80.0, 22.0],
+        egui::DragValue::new(&mut v)
+            .range(0.0..=units.world_from_mm(max_mm))
+            .max_decimals(3)
+            .speed(0.1),
+    );
+    if resp.changed() && v.is_finite() {
+        *mm = units.world_to_mm(v).clamp(0.0, max_mm);
+    }
+    ui.label(units.short());
+}
+
+/// The colour and line style of a kind of guide.
+fn guide_look(
+    ui: &mut Ui,
+    id: &str,
+    color: &mut [u8; 3],
+    style: &mut crate::live_guides::GuideStyle,
+) {
+    grid(id).show(ui, |ui| {
+        row_label(ui, &tr("options.guide_color"));
+        rgb_button(ui, color);
+        ui.end_row();
+        row_label(ui, &tr("options.guide_style"));
+        combo(
+            ui,
+            &format!("{id}_style"),
+            style,
+            &crate::live_guides::GuideStyle::ALL,
+            |v| tr(v.key()),
+            140.0,
+        );
+        ui.end_row();
+    });
+}
+
+/// Options > Alignment Guides: what lines up with what while objects are
+/// moved, drawn or resized.
+fn alignment_guides_page(app: &mut App, ui: &mut Ui) {
+    ui.checkbox(
+        &mut app.snap.alignment_guides,
+        tr("options.alignment_guides_on"),
+    );
+    let units = app.units;
+    let on = app.snap.alignment_guides;
+    let a = &mut app.settings.snap.align;
+    ui.add_enabled_ui(on, |ui| {
+        chrome::section(ui, &tr("options.align_moving"));
+        ui.indent("align_moving", |ui| {
+            ui.radio_value(
+                &mut a.each_object,
+                false,
+                tr("options.align_selection_as_one"),
+            );
+            ui.radio_value(&mut a.each_object, true, tr("options.align_each_object"));
+        });
+        chrome::section(ui, &tr("options.align_what"));
+        ui.indent("align_what", |ui| {
+            ui.checkbox(&mut a.edges, tr("options.align_edges"));
+            ui.checkbox(&mut a.centers, tr("options.align_centers"));
+            ui.checkbox(&mut a.page, tr("options.align_page"));
+            ui.checkbox(&mut a.equal_spacing, tr("options.align_equal_spacing"));
+            ui.checkbox(&mut a.equal_size, tr("options.align_equal_size"));
+        });
+        chrome::section(ui, &tr("options.align_margins"));
+        ui.indent("align_margins", |ui| {
+            ui.checkbox(&mut a.margins, tr("options.align_margins_on"));
+            ui.add_enabled_ui(a.margins, |ui| {
+                grid("align_margin_values").show(ui, |ui| {
+                    row_label(ui, &tr("options.align_offset"));
+                    ui.horizontal(|ui| length_field(ui, units, &mut a.offset_mm, 1000.0));
+                    ui.end_row();
+                    row_label(ui, &tr("options.align_inset"));
+                    ui.horizontal(|ui| length_field(ui, units, &mut a.inset_mm, 1000.0));
+                    ui.end_row();
+                });
+            });
+        });
+        chrome::section(ui, &tr("options.guide_look"));
+        guide_look(ui, "align_look", &mut a.color, &mut a.style);
+        if ui.button(tr("options.reset")).clicked() {
+            *a = crate::live_guides::AlignOptions::default();
+        }
+    });
+}
+
+/// The angles offered as check boxes on the Dynamic Guides page.
+const DYNAMIC_PRESETS: [f64; 12] = [
+    0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0, 105.0, 120.0, 135.0, 150.0, 165.0,
+];
+
+/// Options > Dynamic Guides: the angles of the guides from acquired snap
+/// points, their tip and ticks.
+fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
+    ui.checkbox(
+        &mut app.snap.dynamic_guides,
+        tr("options.dynamic_guides_on"),
+    );
+    let units = app.units;
+    let on = app.snap.dynamic_guides;
+    let d = &mut app.settings.snap.dynamic;
+    ui.add_enabled_ui(on, |ui| {
+        chrome::section(ui, &tr("options.dynamic_angles"));
+        ui.indent("dyn_angles", |ui| {
+            let mut angles = d.clean_angles();
+            egui::Grid::new("dyn_angle_grid")
+                .num_columns(4)
+                .show(ui, |ui| {
+                    for (i, a) in DYNAMIC_PRESETS.iter().enumerate() {
+                        let mut has = angles.iter().any(|b| (b - a).abs() < 1e-6);
+                        if ui.checkbox(&mut has, format!("{a:.0}\u{00B0}")).changed() {
+                            if has {
+                                angles.push(*a);
+                            } else {
+                                angles.retain(|b| (b - a).abs() >= 1e-6);
+                            }
+                        }
+                        if i % 4 == 3 {
+                            ui.end_row();
+                        }
+                    }
+                });
+            // Other angles, each with a button that takes it away.
+            let others: Vec<f64> = angles
+                .iter()
+                .copied()
+                .filter(|a| !DYNAMIC_PRESETS.iter().any(|b| (b - a).abs() < 1e-6))
+                .collect();
+            if !others.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for a in others {
+                        if ui
+                            .button(format!("{a:.1}\u{00B0} \u{2715}"))
+                            .on_hover_text(tr("options.dynamic_remove_angle"))
+                            .clicked()
+                        {
+                            angles.retain(|b| (b - a).abs() >= 1e-6);
+                        }
+                    }
+                });
+            }
+            ui.horizontal(|ui| {
+                let id = egui::Id::new("dyn_new_angle");
+                let mut v: f64 = ui.data_mut(|m| *m.get_temp_mut_or(id, 22.5));
+                ui.add_sized(
+                    [70.0, 22.0],
+                    egui::DragValue::new(&mut v)
+                        .range(0.0..=179.9)
+                        .max_decimals(1),
+                );
+                ui.label(tr("options.degrees"));
+                if ui.button(tr("options.dynamic_add_angle")).clicked() && v.is_finite() {
+                    angles.push(v);
+                }
+                ui.data_mut(|m| m.insert_temp(id, v));
+            });
+            angles.sort_by(|a, b| a.total_cmp(b));
+            if angles != d.angles {
+                d.angles = angles;
+            }
+        });
+        chrome::section(ui, &tr("options.dynamic_display"));
+        ui.indent("dyn_display", |ui| {
+            ui.checkbox(&mut d.tooltip, tr("options.dynamic_tooltip"));
+            ui.checkbox(&mut d.ticks, tr("options.dynamic_ticks"));
+            ui.add_enabled_ui(d.ticks, |ui| {
+                grid("dyn_ticks").show(ui, |ui| {
+                    row_label(ui, &tr("options.dynamic_tick_spacing"));
+                    ui.horizontal(|ui| length_field(ui, units, &mut d.tick_mm, 10_000.0));
+                    ui.end_row();
+                });
+                ui.checkbox(&mut d.snap_ticks, tr("options.dynamic_snap_ticks"));
+            });
+        });
+        chrome::section(ui, &tr("options.guide_look"));
+        guide_look(ui, "dyn_look", &mut d.color, &mut d.style);
+        if ui.button(tr("options.reset")).clicked() {
+            *d = crate::live_guides::DynamicOptions::default();
+        }
     });
 }
 

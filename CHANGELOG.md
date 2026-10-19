@@ -6,6 +6,22 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Alignment guides (View > Alignment Guides, Alt+Shift+A) now work:
+  while moving, drawing or resizing, lines show where the selection or
+  the pointer lines up with other objects' edges and centres, the page
+  or margin lines, and the move snaps there; equal gaps between
+  neighbours snap and are marked, and a box being drawn or resized
+  takes another object's width or height, marked on both. In the
+  Multipage View the other pages' objects count too. Off by default (the code default was
+  on). Options > Alignment Guides sets the object (the selection or
+  each object), edges, centres, page, margins with offset and inset,
+  equal spacing, equal sizes, colour and line style.
+- Dynamic guides (View > Dynamic Guides, Alt+Shift+D) now work: guides
+  at chosen angles run from the snap points the pointer acquired and
+  from the line's start; points snap onto them and their crossings,
+  with the distance and angle beside the pointer and optional tick
+  marks. Options > Dynamic Guides sets the angles, tip, ticks, colour
+  and line style. Both also sit in the standard bar's Snap To list.
 - Text: Chinese, Japanese, Korean and other input methods work while
   typing on the canvas and in table cells (the text being composed shows
   at the caret). Break Apart (Ctrl+K) on artistic text splits it into

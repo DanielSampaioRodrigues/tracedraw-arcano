@@ -683,6 +683,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     extrude_bar::draw_handles(app, &painter);
     crop_bar::draw_area(app, &painter, canvas_rect);
     canvas::draw_docker_preview(app, &painter);
+    canvas::draw_live_guides(app, &painter, canvas_rect);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);
     context::context_menu(app, ui, &response);

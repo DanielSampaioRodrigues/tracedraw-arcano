@@ -8,8 +8,8 @@
 | Snap to baseline grid | off; baselines from the page top (see `rulers-grid-guidelines.md`) |
 | Snap to pixels | off; whole pixels of the document resolution from the page corner |
 | Snap to page | on: the page's corners, edge midpoints, centre and edges |
-| Dynamic guides | off (Alt+Shift+D); angles 0, 45, 90, 135 |
-| Alignment guides | off (Alt+Shift+A) |
+| Dynamic guides | off (Alt+Shift+D); angles 0, 45, 90, 135; see `live-guides.md` |
+| Alignment guides | off (Alt+Shift+A); edges, centres, the page, equal spacing; see `live-guides.md` |
 | Snap modes | all on: node, intersection, midpoint, quadrant, tangent, perpendicular, edge, centre, text baseline |
 | Snap location marks, screen tip | on |
 
@@ -38,7 +38,8 @@ placed.
 
 Within the radius, a point (node, intersection, midpoint, quadrant,
 tangent, perpendicular, centre) wins, the nearest one, an equal distance
-going to the mode listed first; then guidelines (horizontal, vertical,
+going to the mode listed first; then alignment guides and dynamic guides
+when they are on (`live-guides.md`); then guidelines (horizontal, vertical,
 angled), the baseline grid, the document grid and pixels; then the
 nearest edge or text baseline. The mark of the point snapped to is drawn
 in black on a white halo, with the mode's name beside it in the
@@ -71,5 +72,5 @@ snap to everything except guidelines.
 
 The standard bar's Snap To opens a list of Pixels, Document Grid,
 Baseline Grid, Guidelines, Objects and Page, each a check box that turns
-that snapping on or off. The list stays open while boxes are ticked; its
+that snapping on or off, then Alignment Guides and Dynamic Guides. The list stays open while boxes are ticked; its
 X, a click outside or Esc closes it.

@@ -515,6 +515,12 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 ui.checkbox(&mut app.snap.guides, tr("menu.view.snap_guidelines"));
                 ui.checkbox(&mut app.snap.objects, tr("menu.view.snap_objects"));
                 ui.checkbox(&mut app.snap.page, tr("menu.view.snap_page"));
+                ui.separator();
+                ui.checkbox(
+                    &mut app.snap.alignment_guides,
+                    tr("menu.view.alignment_guides"),
+                );
+                ui.checkbox(&mut app.snap.dynamic_guides, tr("menu.view.dynamic_guides"));
             });
         std_sep(ui);
         // Options opens its list of option pages.

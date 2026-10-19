@@ -613,6 +613,7 @@ impl App {
 
     pub fn canvas_input(&mut self, response: &Response, mods: Modifiers) {
         self.snap_mark.set(None);
+        self.clear_live_guides();
         self.pointer_screen = response.ctx.pointer_latest_pos();
         let hover = response.hover_pos();
         let pointer = hover.map(|h| self.view.to_page(h));

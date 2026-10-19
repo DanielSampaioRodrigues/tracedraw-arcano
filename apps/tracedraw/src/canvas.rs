@@ -1959,6 +1959,163 @@ pub fn draw_snap_mark(app: &App, painter: &Painter) {
     }
 }
 
+/// A line in a guide's style.
+fn guide_line(
+    painter: &Painter,
+    a: Pos2,
+    b: Pos2,
+    stroke: EStroke,
+    style: crate::live_guides::GuideStyle,
+) {
+    use crate::live_guides::GuideStyle as S;
+    match style {
+        S::Solid => {
+            painter.line_segment([a, b], stroke);
+        }
+        S::Dashed => {
+            painter.extend(egui::Shape::dashed_line(&[a, b], stroke, 6.0, 4.0));
+        }
+        S::Dotted => {
+            painter.extend(egui::Shape::dashed_line(&[a, b], stroke, 1.5, 3.0));
+        }
+    }
+}
+
+/// Text haloed in white, so it reads on any drawing; `at` is its bottom
+/// left corner, or its bottom right with `right`.
+fn haloed_text(painter: &Painter, at: Pos2, text: String, color: Color32, right: bool) {
+    let font = egui::FontId::proportional(11.0);
+    let halo = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
+    let size = halo.size();
+    let at = at - egui::vec2(if right { size.x } else { 0.0 }, size.y);
+    for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+        painter.galley(at + egui::vec2(dx, dy), halo.clone(), Color32::WHITE);
+    }
+    let galley = painter.layout_no_wrap(text, font, color);
+    painter.galley(at, galley, color);
+}
+
+/// This frame's alignment lines, equal gaps and dynamic guide, one pixel
+/// wide in screen space, clipped to the canvas.
+pub fn draw_live_guides(app: &App, painter: &Painter, canvas: ERect) {
+    let Ok(o) = app.live_guides.try_borrow() else {
+        return;
+    };
+    if o.is_empty() {
+        return;
+    }
+    let painter = painter.with_clip_rect(canvas);
+    let a = &app.settings.snap.align;
+    let [r, g, b] = a.color;
+    let stroke = EStroke::new(1.0, Color32::from_rgb(r, g, b));
+    for l in &o.lines {
+        let (p, q) = (app.view.to_screen(l.a), app.view.to_screen(l.b));
+        // A little past both ends.
+        let d = q - p;
+        let u = if d.length() > 0.5 {
+            d.normalized()
+        } else {
+            egui::Vec2::ZERO
+        };
+        guide_line(&painter, p - u * 6.0, q + u * 6.0, stroke, a.style);
+    }
+    for l in &o.gaps {
+        let (p, q) = (app.view.to_screen(l.a), app.view.to_screen(l.b));
+        let d = q - p;
+        if d.length() < 0.5 {
+            continue;
+        }
+        let n = egui::vec2(-d.y, d.x).normalized() * 4.0;
+        painter.line_segment([p, q], stroke);
+        painter.line_segment([p - n, p + n], stroke);
+        painter.line_segment([q - n, q + n], stroke);
+    }
+    for l in &o.sizes {
+        // Outside the box: below a width, left of a height.
+        let (p, q) = (app.view.to_screen(l.a), app.view.to_screen(l.b));
+        let d = q - p;
+        if d.length() < 0.5 {
+            continue;
+        }
+        let off = if d.x.abs() >= d.y.abs() {
+            egui::vec2(0.0, 7.0)
+        } else {
+            egui::vec2(-7.0, 0.0)
+        };
+        let (p, q) = (p + off, q + off);
+        let u = d.normalized();
+        let n = egui::vec2(-u.y, u.x) * 4.0;
+        painter.line_segment([p, q], stroke);
+        painter.line_segment([p - n, p + n], stroke);
+        painter.line_segment([q - n, q + n], stroke);
+        // Two strokes across the middle: the same size.
+        let m = p + d * 0.5;
+        for k in [-1.5, 1.5] {
+            let c = m + u * k;
+            painter.line_segment([c - n * 0.75, c + n * 0.75], stroke);
+        }
+    }
+    if let Some(h) = o.dynamic {
+        let dopt = &app.settings.snap.dynamic;
+        let [r, g, b] = dopt.color;
+        let color = Color32::from_rgb(r, g, b);
+        let stroke = EStroke::new(1.0, color);
+        let view = app.view.visible_page_rect(canvas);
+        let mut guides = vec![(h.anchor, h.angle)];
+        if let Some((c, ang)) = h.cross {
+            // The other guide through the crossing.
+            guides.push((c, ang));
+        }
+        for (anchor, angle) in guides {
+            if let Some(s) = crate::live_guides::guide_in_view(anchor, angle, view) {
+                guide_line(
+                    &painter,
+                    app.view.to_screen(s.a),
+                    app.view.to_screen(s.b),
+                    stroke,
+                    dopt.style,
+                );
+            }
+        }
+        // The anchor: a small cross.
+        let c = app.view.to_screen(h.anchor);
+        for (dx, dy) in [(-4.0, -4.0), (4.0, -4.0)] {
+            painter.line_segment([c + egui::vec2(dx, dy), c - egui::vec2(dx, dy)], stroke);
+        }
+        let to = app.view.to_screen(h.point);
+        if dopt.ticks {
+            let along = to - c;
+            if along.length() > 0.5 {
+                let n = egui::vec2(-along.y, along.x).normalized() * 3.0;
+                // Ticks closer than 3 px would be a smear: skip them.
+                let step_px = dopt.tick_mm.max(0.01) as f32 * app.view.zoom;
+                if step_px >= 3.0 {
+                    for t in crate::live_guides::ticks(h.anchor, h.point, dopt.tick_mm, 1000) {
+                        let s = app.view.to_screen(t);
+                        painter.line_segment([s - n, s + n], stroke);
+                    }
+                }
+            }
+        }
+        if dopt.tooltip {
+            let u = app.units;
+            let text = format!(
+                "{:.2} {}, {:.1}\u{00B0}",
+                u.world_from_mm(h.distance()),
+                u.short(),
+                h.bearing()
+            );
+            // Beside the guide, on its upper side, clear of the pointer.
+            let a = h.angle.to_radians() as f32;
+            let mut n = egui::vec2(a.sin(), a.cos());
+            if n.y > 0.0 || (n.y.abs() < 1e-3 && n.x < 0.0) {
+                n = -n;
+            }
+            haloed_text(&painter, to + n * 14.0, text, color, n.x < -0.01);
+        }
+    }
+}
+
 /// A snap mark in black over a wider white copy of itself.
 fn draw_snap_glyph_halo(painter: &Painter, c: Pos2, mode: crate::snap_points::SnapMode) {
     // The halo: the same mark, thicker, in white.

@@ -4,6 +4,7 @@
 //! the grids, which win over edges and text baselines.
 
 use crate::app::App;
+use crate::live_guides;
 use crate::snap_points::{self, Geo, Target};
 use tracedraw_core::{
     document::GuideLine,
@@ -34,11 +35,35 @@ impl Default for SnapSettings {
             page: true,
             pixels: false,
             baseline_grid: false,
-            alignment_guides: true,
+            alignment_guides: false,
             dynamic_guides: false,
             off: false,
         }
     }
+}
+
+/// At most this many acquired anchors of dynamic guides.
+const MAX_ANCHORS: usize = 4;
+/// At most this many object boxes for alignment guides.
+const MAX_BOXES: usize = 20_000;
+
+/// What the alignment targets were built from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignKey {
+    doc: usize,
+    revision: u64,
+    page: tracedraw_core::PageId,
+    exclude: Vec<ShapeId>,
+    view: Option<[f64; 4]>,
+    multipage: bool,
+    options: live_guides::AlignOptions,
+}
+
+/// The alignment targets of the last frame and what they were built from.
+#[derive(Debug, Clone)]
+pub struct AlignCache {
+    key: AlignKey,
+    targets: std::rc::Rc<live_guides::AlignTargets>,
 }
 
 impl App {
@@ -257,12 +282,22 @@ impl App {
     /// the selection snaps to other objects, not to the selection's own
     /// points).
     pub fn snap_point_excluding(&self, p: Point, exclude: &[ShapeId]) -> Point {
-        if !self.snap_enabled() {
+        if self.snap.off {
             return p;
         }
-        if let Some(t) = self.object_snap(p, exclude, true, false) {
-            self.snap_mark.set(Some(t));
-            return t.point;
+        let enabled = self.snap_enabled();
+        if enabled {
+            if let Some(t) = self.object_snap(p, exclude, true, false) {
+                self.acquire_anchor(t);
+                self.snap_mark.set(Some(t));
+                return t.point;
+            }
+        }
+        if let Some(q) = self.live_guide_point(p, exclude, enabled) {
+            return q;
+        }
+        if !enabled {
+            return p;
         }
         let (xs, ys) = self.snap_candidates(exclude, true, false);
         let axis = Point::new(
@@ -351,16 +386,354 @@ impl App {
     /// otherwise an edge or the centre of its bounds onto a guideline, the
     /// grid, the page or another object's bounds.
     pub fn snap_move_from(&self, source: Option<Point>, bounds: Rect, d: Vec2) -> Vec2 {
-        if !self.snap_enabled() {
+        if self.snap.off {
             return d;
         }
-        if let Some(src) = source {
+        let enabled = self.snap_enabled();
+        if let (true, Some(src)) = (enabled, source) {
             if let Some(t) = self.object_snap(src + d, &self.selection, true, true) {
+                self.acquire_anchor(t);
                 self.snap_mark.set(Some(t));
                 return t.point - src;
             }
         }
-        self.snap_move(bounds, d)
+        let snapped = if enabled {
+            self.snap_move(bounds, d)
+        } else {
+            d
+        };
+        self.live_guide_move(source, bounds, d, snapped)
+    }
+
+    /// Alignment guides on a move (edges, centres, margins and equal
+    /// gaps, which win over the grid and guidelines on their axis), else
+    /// a dynamic guide for the grabbed point (the selection's snap point,
+    /// else its centre); the guides to draw at the place reached.
+    fn live_guide_move(&self, source: Option<Point>, bounds: Rect, d: Vec2, snapped: Vec2) -> Vec2 {
+        let o = &self.settings.snap.align;
+        let tol = self.snap_tolerance();
+        let mut out = snapped;
+        let mut aligned = false;
+        let moving: Vec<Rect> = if o.each_object {
+            self.selected_shapes()
+                .iter()
+                .map(|s| self.visual_bounds(s))
+                .collect()
+        } else {
+            vec![bounds]
+        };
+        if self.alignment_guides_on() && !moving.is_empty() {
+            let t = self.align_targets(&self.selection);
+            let m = live_guides::align_move(&moving, d, &t, o, tol);
+            if let Some(dx) = m.dx {
+                out.x = d.x + dx;
+                aligned = true;
+            }
+            if let Some(dy) = m.dy {
+                out.y = d.y + dy;
+                aligned = true;
+            }
+        }
+        if !aligned && self.dynamic_guides_on() {
+            let grab = source.unwrap_or_else(|| bounds.center());
+            let mut anchors = self.dynamic_anchors();
+            live_guides::acquire(&mut anchors, grab, MAX_ANCHORS + 1);
+            if let Some(h) = self.dynamic_hit(grab + d, &anchors) {
+                self.set_overlay(Vec::new(), Vec::new(), Some(h));
+                return h.point - grab;
+            }
+        }
+        if self.alignment_guides_on() {
+            // The lines of what lines up where the move ends, whichever
+            // snapping put it there.
+            let t = self.align_targets(&self.selection);
+            let at: Vec<Rect> = moving.iter().map(|r| *r + out).collect();
+            let lines = live_guides::lines_for(&at, &t, o);
+            let gaps = match (
+                o.equal_spacing,
+                at.iter().copied().reduce(|a, b| a.union(b)),
+            ) {
+                (true, Some(w)) => {
+                    let mut g = live_guides::equal_gaps(w, &t.boxes, true);
+                    g.extend(live_guides::equal_gaps(w, &t.boxes, false));
+                    g
+                }
+                _ => Vec::new(),
+            };
+            self.set_overlay(lines, gaps, None);
+        }
+        out
+    }
+
+    pub fn alignment_guides_on(&self) -> bool {
+        self.snap.alignment_guides && !self.snap.off
+    }
+
+    pub fn dynamic_guides_on(&self) -> bool {
+        self.snap.dynamic_guides && !self.snap.off
+    }
+
+    fn set_overlay(
+        &self,
+        lines: Vec<live_guides::Seg>,
+        gaps: Vec<live_guides::Seg>,
+        dynamic: Option<live_guides::DynHit>,
+    ) {
+        self.put_overlay(live_guides::Overlay {
+            lines,
+            gaps,
+            sizes: Vec::new(),
+            dynamic,
+        });
+    }
+
+    fn put_overlay(&self, overlay: live_guides::Overlay) {
+        if let Ok(mut o) = self.live_guides.try_borrow_mut() {
+            *o = overlay;
+        }
+    }
+
+    /// Forget this frame's guides (each frame computes them again).
+    pub fn clear_live_guides(&self) {
+        self.set_overlay(Vec::new(), Vec::new(), None);
+    }
+
+    /// The page area in view, when the canvas has been laid out.
+    fn view_area(&self) -> Option<Rect> {
+        self.canvas_rect
+            .is_positive()
+            .then(|| self.view.visible_page_rect(self.canvas_rect))
+    }
+
+    /// The boxes of the visible objects on the page in view (leaving out
+    /// `exclude`) and the values they offer, from the cache while nothing
+    /// changed.
+    fn align_targets(&self, exclude: &[ShapeId]) -> std::rc::Rc<live_guides::AlignTargets> {
+        let o = &self.settings.snap.align;
+        let view = self.view_area();
+        let key = AlignKey {
+            doc: self.doc() as *const _ as usize,
+            revision: self.engine.revision(),
+            page: self.page,
+            exclude: exclude.to_vec(),
+            view: view.map(|v| [v.x0, v.y0, v.x1, v.y1]),
+            multipage: self.multipage,
+            options: o.clone(),
+        };
+        if let Ok(c) = self.align_cache.try_borrow() {
+            if let Some(c) = c.as_ref().filter(|c| c.key == key) {
+                return c.targets.clone();
+            }
+        }
+        let outside = |b: Rect| {
+            view.map(|v| b.x1 < v.x0 || b.x0 > v.x1 || b.y1 < v.y0 || b.y0 > v.y1)
+                .unwrap_or(false)
+        };
+        // The current page at its place, and in the Multipage View the
+        // other pages in view, each moved to where it is displayed.
+        let mut pages = vec![(self.page, self.page_rect())];
+        if self.multipage {
+            pages.extend(
+                self.multipage_layout()
+                    .into_iter()
+                    .filter(|(id, r)| *id != self.page && !outside(*r)),
+            );
+        }
+        let mut boxes = Vec::new();
+        let doc = self.doc();
+        'pages: for (id, r) in &pages {
+            let shift = if *id == self.page {
+                Vec2::ZERO
+            } else {
+                Vec2::new(r.x0, r.y0)
+            };
+            let layers = doc.layers_for_page(*id).unwrap_or_default();
+            for sh in layers
+                .into_iter()
+                .filter(|l| l.visible)
+                .flat_map(|l| &l.shapes)
+            {
+                if !sh.visible || exclude.contains(&sh.id) {
+                    continue;
+                }
+                let b = self.visual_bounds(sh) + shift;
+                if outside(b) {
+                    continue;
+                }
+                boxes.push(b);
+                if boxes.len() >= MAX_BOXES {
+                    break 'pages;
+                }
+            }
+        }
+        let page_rects: Vec<Rect> = if o.page {
+            pages.iter().map(|(_, r)| *r).collect()
+        } else {
+            Vec::new()
+        };
+        let targets = std::rc::Rc::new(live_guides::AlignTargets::new(boxes, &page_rects, o));
+        if let Ok(mut c) = self.align_cache.try_borrow_mut() {
+            *c = Some(AlignCache {
+                key,
+                targets: targets.clone(),
+            });
+        }
+        targets
+    }
+
+    /// Remember a point snapped to (a node, a centre, a midpoint...) as
+    /// an anchor of dynamic guides.
+    fn acquire_anchor(&self, t: Target) {
+        use snap_points::SnapMode as M;
+        if !self.dynamic_guides_on()
+            || !matches!(
+                t.mode,
+                M::Node | M::Intersection | M::Midpoint | M::Quadrant | M::Center
+            )
+        {
+            return;
+        }
+        if let Ok(mut a) = self.guide_anchors.try_borrow_mut() {
+            live_guides::acquire(&mut a, t.point, MAX_ANCHORS);
+        }
+    }
+
+    /// The anchors of dynamic guides: the points acquired that are in
+    /// view, and the start of the line being drawn.
+    fn dynamic_anchors(&self) -> Vec<Point> {
+        let view = self.view_area();
+        let mut out: Vec<Point> = self
+            .guide_anchors
+            .try_borrow()
+            .map(|a| a.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| view.map(|v| v.contains(*p)).unwrap_or(true))
+            .collect();
+        if let Some(from) = self.snap_from() {
+            live_guides::acquire(&mut out, from, MAX_ANCHORS + 1);
+        }
+        out
+    }
+
+    /// The dynamic guide `p` snaps to (and its tick, when ticks snap).
+    fn dynamic_hit(&self, p: Point, anchors: &[Point]) -> Option<live_guides::DynHit> {
+        let o = &self.settings.snap.dynamic;
+        let tol = self.snap_tolerance();
+        let h = live_guides::dynamic_snap(p, anchors, &o.clean_angles(), tol)?;
+        Some(if o.ticks && o.snap_ticks {
+            live_guides::snap_to_tick(h, o.tick_mm.max(0.01), tol)
+        } else {
+            h
+        })
+    }
+
+    /// The box being drawn or resized: its fixed point, how many times the
+    /// pointer's distance its size is (2 from the centre) and the axes the
+    /// handle changes.
+    fn size_context(&self) -> Option<(Point, f64, (bool, bool))> {
+        use crate::app::{Drag, Handle};
+        match &self.drag {
+            Drag::Box {
+                start, from_center, ..
+            } => Some((*start, if *from_center { 2.0 } else { 1.0 }, (true, true))),
+            Drag::Scale {
+                handle,
+                anchor,
+                start_bounds,
+                mods,
+                ..
+            } => {
+                let (anchor, factor) = if mods.from_center {
+                    (start_bounds.center(), 2.0)
+                } else {
+                    (*anchor, 1.0)
+                };
+                let axes = match handle {
+                    Handle::E | Handle::W => (true, false),
+                    Handle::N | Handle::S => (false, true),
+                    _ => (true, true),
+                };
+                Some((anchor, factor, axes))
+            }
+            _ => None,
+        }
+    }
+
+    /// Alignment guides for a point (a drawing tool's pointer, a scale
+    /// handle): its x or y onto other objects' edges or centres (the other
+    /// coordinate still snaps to guidelines and the grids), else onto a
+    /// dynamic guide. Not while turning the selection.
+    fn live_guide_point(&self, p: Point, exclude: &[ShapeId], enabled: bool) -> Option<Point> {
+        if matches!(
+            self.drag,
+            crate::app::Drag::Rotate { .. } | crate::app::Drag::Pivot
+        ) {
+            return None;
+        }
+        let tol = self.snap_tolerance();
+        if self.alignment_guides_on() {
+            let t = self.align_targets(exclude);
+            let (mut x, mut y, mut lines) = live_guides::align_point(p, &t, tol);
+            // Equal sizes while a box is drawn or resized: on each axis the
+            // nearer of an alignment and a size match wins.
+            let mut sizes = Vec::new();
+            if let (true, Some((anchor, factor, axes))) =
+                (self.settings.snap.align.equal_size, self.size_context())
+            {
+                let (sx, sy, _) = live_guides::size_snap(p, anchor, factor, axes, &t, tol);
+                let wins = |s: Option<f64>, a: Option<f64>, v: f64| match (s, a) {
+                    (Some(s), Some(a)) => (s - v).abs() <= (a - v).abs(),
+                    (Some(_), None) => true,
+                    _ => false,
+                };
+                let (wx, wy) = (wins(sx, x, p.x), wins(sy, y, p.y));
+                if wx {
+                    x = sx;
+                    // Vertical lines belong to the x axis.
+                    lines.retain(|l| (l.a.x - l.b.x).abs() > 1e-9);
+                }
+                if wy {
+                    y = sy;
+                    lines.retain(|l| (l.a.y - l.b.y).abs() > 1e-9);
+                }
+                if wx || wy {
+                    // The marks of the place reached.
+                    let q = Point::new(x.unwrap_or(p.x), y.unwrap_or(p.y));
+                    let (_, _, marks) =
+                        live_guides::size_snap(q, anchor, factor, (wx, wy), &t, 1e-6);
+                    sizes = marks;
+                }
+            }
+            if x.is_some() || y.is_some() {
+                let (xs, ys) = if enabled {
+                    self.snap_candidates(exclude, true, false)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                let q = Point::new(
+                    x.or_else(|| self.snap_axis(p.x, &xs, true).filter(|_| enabled))
+                        .unwrap_or(p.x),
+                    y.or_else(|| self.snap_axis(p.y, &ys, false).filter(|_| enabled))
+                        .unwrap_or(p.y),
+                );
+                self.put_overlay(live_guides::Overlay {
+                    lines,
+                    gaps: Vec::new(),
+                    sizes,
+                    dynamic: None,
+                });
+                return Some(q);
+            }
+        }
+        if self.dynamic_guides_on() {
+            let anchors = self.dynamic_anchors();
+            if let Some(h) = self.dynamic_hit(p, &anchors) {
+                self.set_overlay(Vec::new(), Vec::new(), Some(h));
+                return Some(h.point);
+            }
+        }
+        None
     }
 
     /// Snap a translation of the selection so an edge or centre of its
@@ -588,6 +961,165 @@ mod tests {
         // Far from it, it lets go.
         let d = app.snap_move_from(src, b, Vec2::new(50.0, 60.0));
         assert!((d.x - 50.0).abs() < 1e-9, "{d:?}");
+    }
+
+    #[test]
+    fn alignment_guides_pull_a_drawing_point_and_respect_snapping_off() {
+        let mut app = app();
+        app.settings.snap.threshold_px = 2.0;
+        // Only the alignment guides act.
+        app.snap.objects = false;
+        app.snap.guides = false;
+        rect(&mut app, 100.0, 100.0, 140.0, 120.0);
+        let p = Point::new(141.5, 170.0);
+        // Off by default: nothing moves.
+        assert!(!SnapSettings::default().alignment_guides);
+        assert_eq!(app.snap_point(p), p);
+        assert!(app.live_guides.borrow().is_empty());
+        app.snap.alignment_guides = true;
+        assert_eq!(app.snap_point(p), Point::new(140.0, 170.0));
+        {
+            let o = app.live_guides.borrow();
+            assert_eq!(o.lines.len(), 1, "{o:?}");
+            let l = o.lines[0];
+            assert!((l.a.x - 140.0).abs() < 1e-9 && (l.b.x - 140.0).abs() < 1e-9);
+            assert!((l.a.y - 100.0).abs() < 1e-9 && (l.b.y - 170.0).abs() < 1e-9);
+        }
+        // The centre lines up too, on both axes at once.
+        assert_eq!(
+            app.snap_point(Point::new(119.0, 121.0)),
+            Point::new(120.0, 120.0)
+        );
+        // Alt+Q: no snapping, no guides.
+        app.clear_live_guides();
+        app.snap.off = true;
+        assert_eq!(app.snap_point(p), p);
+        assert!(app.live_guides.borrow().is_empty());
+        // A move aligns the moved box's edges with the other box.
+        app.snap.off = false;
+        let moving = rect(&mut app, 10.0, 10.0, 30.0, 30.0);
+        app.select(vec![moving]);
+        let b = app.selection_bounds().unwrap();
+        let d = app.snap_move_from(None, b, Vec2::new(0.0, 91.0));
+        assert!((b.y1 + d.y - 120.0).abs() < 1e-9, "{d:?}");
+        assert!(!app.live_guides.borrow().lines.is_empty());
+        // The boxes are measured once while nothing changes.
+        let first = app.align_cache.borrow().as_ref().map(|c| c.targets.clone());
+        app.snap_move_from(None, b, Vec2::new(0.0, 90.5));
+        let second = app.align_cache.borrow().as_ref().map(|c| c.targets.clone());
+        assert!(matches!((first, second), (Some(a), Some(b)) if std::rc::Rc::ptr_eq(&a, &b)));
+    }
+
+    #[test]
+    fn equal_sizes_snap_while_drawing_and_resizing() {
+        use crate::app::{Drag, Handle};
+        let mut app = app();
+        app.settings.snap.threshold_px = 2.0;
+        app.snap.objects = false;
+        app.snap.guides = false;
+        app.snap.alignment_guides = true;
+        // 40 x 20 mm.
+        rect(&mut app, 100.0, 100.0, 140.0, 120.0);
+        // Drawing a box from (10, 200): 41 x 21.5 becomes 40 x 20.
+        app.drag = Drag::Box {
+            start: Point::new(10.0, 200.0),
+            current: Point::new(10.0, 200.0),
+            from_center: false,
+        };
+        assert_eq!(
+            app.snap_point(Point::new(51.0, 221.5)),
+            Point::new(50.0, 220.0)
+        );
+        assert_eq!(app.live_guides.borrow().sizes.len(), 4);
+        // Not while hovering before the press.
+        app.drag = Drag::None;
+        app.clear_live_guides();
+        let p = Point::new(51.0, 221.5);
+        assert_eq!(app.snap_point(p), p);
+        // Resizing with the right side handle: only the width.
+        let id = rect(&mut app, 10.0, 10.0, 30.0, 30.0);
+        app.select(vec![id]);
+        let b = app.selection_bounds().unwrap();
+        app.drag = Drag::Scale {
+            handle: Handle::E,
+            anchor: Point::new(b.x0, b.center().y),
+            start_bounds: b,
+            current: Point::new(b.x1, b.center().y),
+            grab: Vec2::ZERO,
+            mods: Default::default(),
+        };
+        let q = app.snap_point_excluding(Point::new(49.0, 21.0), &[id]);
+        assert_eq!(q, Point::new(50.0, 21.0));
+        assert_eq!(app.live_guides.borrow().sizes.len(), 2);
+        // The option turns it off.
+        app.settings.snap.align.equal_size = false;
+        let p = Point::new(49.0, 21.0);
+        assert_eq!(app.snap_point_excluding(p, &[id]), p);
+    }
+
+    #[test]
+    fn the_multipage_view_aligns_with_objects_of_the_other_pages() {
+        let mut app = app();
+        app.settings.snap.threshold_px = 2.0;
+        app.snap.objects = false;
+        app.snap.guides = false;
+        app.snap.alignment_guides = true;
+        let first = app.page;
+        app.add_page();
+        let second = app.doc().pages[1].id;
+        app.page = second;
+        rect(&mut app, 10.0, 10.0, 50.0, 30.0);
+        app.page = first;
+        app.set_multipage(true);
+        let r = app
+            .multipage_layout()
+            .into_iter()
+            .find(|(id, _)| *id == second)
+            .map(|(_, r)| r)
+            .expect("the second page");
+        // The rectangle's right side as displayed.
+        let right = r.x0 + 50.0;
+        let p = Point::new(right + 1.5, r.y0 + 170.0);
+        let q = app.snap_point(p);
+        assert!((q.x - right).abs() < 1e-9, "{q:?}");
+        // Without the Multipage View the other page is not in sight.
+        app.set_multipage(false);
+        assert_eq!(app.snap_point(p), p);
+    }
+
+    #[test]
+    fn dynamic_guides_come_from_acquired_points() {
+        let mut app = app();
+        app.settings.snap.threshold_px = 2.0;
+        app.snap.dynamic_guides = true;
+        rect(&mut app, 100.0, 100.0, 140.0, 120.0);
+        // Resting on the corner acquires it.
+        assert_eq!(
+            app.snap_point(Point::new(100.5, 100.5)),
+            Point::new(100.0, 100.0)
+        );
+        assert_eq!(*app.guide_anchors.borrow(), vec![Point::new(100.0, 100.0)]);
+        // Away from the object, near the 45 degree guide from it.
+        app.clear_live_guides();
+        let q = app.snap_point(Point::new(150.5, 149.0));
+        assert!(
+            (q.x - 149.75).abs() < 1e-9 && (q.y - 149.75).abs() < 1e-9,
+            "{q:?}"
+        );
+        let h = app.live_guides.borrow().dynamic.expect("a guide");
+        assert_eq!(h.anchor, Point::new(100.0, 100.0));
+        assert!((h.angle - 45.0).abs() < 1e-9);
+        // Only the angles chosen: without 45 the point stays.
+        app.settings.snap.dynamic.angles = vec![0.0, 90.0];
+        let p = Point::new(150.5, 149.0);
+        assert_eq!(app.snap_point(p), p);
+        // Dynamic guides off, or snapping off: nothing.
+        app.settings.snap.dynamic.angles = vec![45.0];
+        app.snap.off = true;
+        assert_eq!(app.snap_point(p), p);
+        app.snap.off = false;
+        app.snap.dynamic_guides = false;
+        assert_eq!(app.snap_point(p), p);
     }
 
     #[test]
