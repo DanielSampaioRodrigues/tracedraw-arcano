@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text fitted to a closed path stands on its outside, upright and
+  centred on its top, instead of starting at its right end on the
+  inside; the Text tool starts text on a path when clicked on its
+  outline.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

@@ -381,6 +381,22 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   at once. Otherwise the status bar asks for a click on the path (a
   right-click cancels): the selected text goes on it, or with no text
   selected an empty text starts on the path, ready to type.
+- The text itself goes on the path (no copy is left behind) and stays
+  selected as one object, drawn in its fill. On an open path the letters
+  follow the path from its start with the text's alignment. On a closed
+  path the path is followed clockwise from its highest point, so the
+  letters stand on its outside, upright to the curve, and the text is
+  centred on that highest point (its alignment becomes centred and the
+  offset half the path's length); Mirror puts it inside, reading the
+  other way.
+- With the Text tool, a click on the outline of a path (within 4 pixels;
+  not a text, a bitmap or a group) starts an empty text on that path,
+  placed the same way, ready to type. A click elsewhere starts an
+  artistic text as before
+  (`ops2::tests::closed_paths_turn_clockwise_and_start_at_the_top`,
+  `ops2::tests::text_fitted_to_an_ellipse_sits_centred_on_its_top_outside`,
+  `ops2::tests::text_on_a_straight_line_stands_on_it_from_the_start`,
+  `ops2::tests::the_text_tool_on_a_paths_outline_starts_text_on_it`).
 - Change Case opens a dialog with Sentence case, lowercase, UPPERCASE,
   Title Case and tOGGLE cASE; it needs a text selected.
 

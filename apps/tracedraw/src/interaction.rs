@@ -1279,6 +1279,8 @@ impl App {
                         self.text_set_caret_at(idx, false);
                     }
                 }
+                // On a path's outline the text starts on the path.
+                _ if self.start_text_on_path_at(p) => {}
                 _ => {
                     let p = self.snap_point(p);
                     self.start_text(p, None);
