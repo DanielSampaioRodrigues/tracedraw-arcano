@@ -1696,7 +1696,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     if item(ui, "menu.file.document_properties", "", doc) {
-        app.dialog = Dialog::DocumentProperties;
+        app.dialog = Dialog::DocumentProperties(Box::default());
     }
     sep(ui);
     if item(ui, "menu.file.exit", "Alt+F4", true) {

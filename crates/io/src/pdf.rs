@@ -1458,6 +1458,12 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
         let meta = pdf.stream("/Type /Metadata /Subtype /XML", xmp.as_bytes());
         let _ = write!(catalog, " /Metadata {meta} 0 R");
     }
+    // The drawing's language (Document Properties), for readers and
+    // screen readers.
+    let lang = doc.metadata.language.trim();
+    if !lang.is_empty() && lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        let _ = write!(catalog, " /Lang ({lang})");
+    }
     catalog.push_str(" >>");
     pdf.objects[0] = catalog.into_bytes();
     match security {
@@ -2161,9 +2167,11 @@ mod pdfx_tests {
         doc.metadata.author = "Ana".into();
         doc.metadata.subject = "Spring sale".into();
         doc.metadata.keywords = "sale, poster".into();
+        doc.metadata.language = "pt-BR".into();
         let text = String::from_utf8_lossy(&document_to_pdf(&doc)).into_owned();
         assert!(text.contains("/Author (Ana)") && text.contains("/Subject (Spring sale)"));
         assert!(text.contains("/Keywords (sale, poster)"));
+        assert!(text.contains("/Lang (pt-BR)"));
         // An empty value given in the options leaves the entry out; PDF/X
         // repeats the rest in its metadata.
         let opts = PdfOptions {

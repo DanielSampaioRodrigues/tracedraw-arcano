@@ -595,7 +595,7 @@ pub enum Dialog {
         shape: tracedraw_core::ShapeId,
         name: String,
     },
-    DocumentProperties,
+    DocumentProperties(Box<crate::ui::doc_properties::DocPropsState>),
     ConfirmClose,
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
@@ -910,7 +910,7 @@ pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
 /// Names of the dialogs' multi-line fields, where Enter inserts a line.
 const MULTILINE_NAMES: [&str; 2] = ["dialog_multiline_qr", "dialog_multiline_notes"];
 
-fn multiline_id(i: usize) -> egui::Id {
+pub(crate) fn multiline_id(i: usize) -> egui::Id {
     egui::Id::new(MULTILINE_NAMES[i.min(MULTILINE_NAMES.len() - 1)])
 }
 
@@ -1121,7 +1121,9 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
-        Dialog::DocumentProperties => document_properties(app, ctx, &mut close),
+        Dialog::DocumentProperties(st) => {
+            crate::ui::doc_properties::dialog(app, ctx, st, &mut close)
+        }
         Dialog::ConfirmClose => {
             let text = trf("dialog.save_changes_to", &[("name", &app.document_name())]);
             let (yes, no, cancel) = (tr("dialog.yes"), tr("dialog.no"), tr("dialog.cancel"));
@@ -2230,88 +2232,6 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     ui.indent("bleed_checks", |ui| {
         ui.add_space(2.0);
         ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"));
-    });
-}
-
-fn document_properties(app: &mut App, ctx: &Context, close: &mut bool) {
-    window(ctx, tr("menu.file.document_properties")).show(ctx, |ui| {
-        let mut md = app.doc().metadata.clone();
-        let mut title = app.doc().title.clone();
-        let mut changed = false;
-        egui::Grid::new("docprops").num_columns(2).show(ui, |ui| {
-            ui.label(tr("dialog.title"));
-            if ui.text_edit_singleline(&mut title).lost_focus() {
-                app.run(Command::SetTitle {
-                    title: title.clone(),
-                });
-            }
-            ui.end_row();
-            for (k, v) in [
-                ("dialog.author", &mut md.author),
-                ("dialog.subject", &mut md.subject),
-                ("dialog.keywords", &mut md.keywords),
-                ("dialog.copyright", &mut md.copyright),
-            ] {
-                ui.label(tr(k));
-                changed |= ui.text_edit_singleline(v).lost_focus();
-                ui.end_row();
-            }
-            ui.label(tr("dialog.notes"));
-            changed |= ui
-                .add(egui::TextEdit::multiline(&mut md.notes).id(multiline_id(1)))
-                .lost_focus();
-            ui.end_row();
-            ui.label(tr("dialog.rating"));
-            ui.horizontal(|ui| {
-                for i in 1..=5u8 {
-                    if ui.selectable_label(md.rating >= i, "\u{2605}").clicked() {
-                        md.rating = i;
-                        changed = true;
-                    }
-                }
-            });
-            ui.end_row();
-        });
-        if changed {
-            app.run(Command::SetMetadata {
-                metadata: md.clone(),
-            });
-        }
-        ui.separator();
-        let doc = app.doc();
-        ui.label(trf(
-            "dialog.pages_n",
-            &[("n", &doc.pages.len().to_string())],
-        ));
-        let objects: usize = doc.all_layers().map(|l| l.shapes.len()).sum();
-        ui.label(trf("dialog.objects_n", &[("n", &objects.to_string())]));
-        if let Some(f) = &app.file {
-            ui.label(format!("{}: {}", tr("dialog.file"), f.display()));
-        }
-        ui.label(format!(
-            "{}: {} / {}",
-            tr("dialog.color_profiles"),
-            app.settings.color.rgb_profile,
-            app.settings.color.cmyk_profile
-        ));
-        let mut fonts = std::collections::BTreeSet::new();
-        for s in doc.all_layers().flat_map(|l| &l.shapes) {
-            if let ShapeKind::Text { spans, .. } = &s.kind {
-                for sp in spans {
-                    fonts.insert(sp.font_family.clone());
-                }
-            }
-        }
-        if !fonts.is_empty() {
-            ui.label(format!(
-                "{}: {}",
-                tr("dialog.fonts"),
-                fonts.into_iter().collect::<Vec<_>>().join(", ")
-            ));
-        }
-        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
-            *close = true;
-        }
     });
 }
 
@@ -4376,7 +4296,7 @@ mod tests {
                 layer,
                 name: "Layer".into(),
             },
-            Dialog::DocumentProperties,
+            Dialog::DocumentProperties(Box::default()),
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
             Dialog::Updates,

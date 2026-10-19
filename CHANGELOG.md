@@ -6,6 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Document Properties: language, title, subject, author, copyright,
+  tags, notes and a rating list, applied on OK in one undo step, over a
+  report of the file, the document, its colour settings, objects and
+  points, text, bitmaps, styles, effects, fills, outlines, colour models
+  and symbols. PDF files carry the language.
+
 ## 0.9.4 (2026-10-19)
 
 - Color Management Settings: Document and Default tabs, the drawing's
