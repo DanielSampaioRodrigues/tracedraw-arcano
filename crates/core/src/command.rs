@@ -585,7 +585,28 @@ impl Command {
             }
             Command::SetLayerLocked { layer, locked } => doc.layer_mut(*layer)?.locked = *locked,
 
-            Command::AddShape { layer, shape } => doc.layer_mut(*layer)?.shapes.push(shape.clone()),
+            Command::AddShape { layer, shape } => {
+                // Ids minted on a copy of the drawing (a script's) stay
+                // ahead of the ones this drawing gives out next.
+                fn highest(s: &Shape) -> u64 {
+                    let inner = match &s.kind {
+                        ShapeKind::Group { children } => {
+                            children.iter().map(highest).max().unwrap_or(0)
+                        }
+                        ShapeKind::ClipFrame { frame, contents } => contents
+                            .iter()
+                            .map(highest)
+                            .max()
+                            .unwrap_or(0)
+                            .max(highest(frame)),
+                        _ => 0,
+                    };
+                    s.id.raw().max(inner)
+                }
+                let top = highest(shape);
+                doc.layer_mut(*layer)?.shapes.push(shape.clone());
+                doc.ids_mut().reserve(top);
+            }
             Command::DeleteShapes { shapes } => {
                 for id in shapes {
                     any(doc, *id)?;

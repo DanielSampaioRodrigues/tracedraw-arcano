@@ -60,4 +60,11 @@ impl IdSource {
     pub fn shape(&mut self) -> ShapeId {
         ShapeId(self.next())
     }
+
+    /// Make sure later allocations come after `used`, an id given out
+    /// elsewhere (a shape added with an id minted on a copy of the
+    /// document, as scripts do).
+    pub fn reserve(&mut self, used: u64) {
+        self.next = self.next.max(used);
+    }
 }

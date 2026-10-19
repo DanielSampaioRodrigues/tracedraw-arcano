@@ -16,6 +16,8 @@
 //! undo step. Scripts an AI service wrote run untrusted
 //! ([`run_untrusted`]): without file access, with limits, all or nothing.
 
+mod vg;
+
 use crate::app::App;
 use boa_engine::{
     js_string, native_function::NativeFunction, object::ObjectInitializer, Context, JsData,
@@ -38,6 +40,15 @@ struct HostInner {
     output: Vec<String>,
     next_id: u64,
     trust: Trust,
+    /// The drawing's file, when it has one (`Document.FullFileName`).
+    file: Option<String>,
+    /// The object model of VBA macros (see `scripting/vg.rs`) instead of
+    /// TraceDraw's own JavaScript one.
+    vg: bool,
+    /// What the app shows that macros read: see [`vg::AppView`].
+    view: vg::AppView,
+    /// The status line text a macro left (`Application.Status`).
+    status: Option<String>,
 }
 
 /// How far a script is trusted.
@@ -68,8 +79,16 @@ unsafe impl boa_engine::gc::Trace for Host {
 }
 impl JsData for Host {}
 
-const PRELUDE: &str = r#"
+/// What both object models share: the call into the host and printing.
+const COMMON: &str = r#"
 function __call(m, a) { return JSON.parse(__td(m, JSON.stringify(a || {}))); }
+function print(...a) { __call('log', {text: a.map(String).join(' ')}); }
+const console = { log: print, error: print, warn: print, info: print };
+function MsgBox(t) { print(t); }
+"#;
+
+/// TraceDraw's own JavaScript object model (lengths in millimetres).
+const PRELUDE: &str = r#"
 class Color {
   constructor(v) { this.v = v || {model:'rgb', r:0, g:0, b:0}; }
   static RGB(r, g, b) { return new Color({model:'rgb', r:r/255, g:g/255, b:b/255}); }
@@ -279,14 +298,23 @@ const ActiveDocument = Application.ActiveDocument;
 const ActivePage = Application.ActivePage;
 const ActiveLayer = Application.ActiveLayer;
 const ActiveSelection = Application.ActiveSelection;
-function print(...a) { __call('log', {text: a.map(String).join(' ')}); }
-const console = { log: print, error: print, warn: print, info: print };
-function MsgBox(t) { print(t); }
 "#;
 
 /// Run a script against the app; returns the printed lines.
 pub fn run(app: &mut App, src: &str) -> Result<Vec<String>, String> {
     run_with(app, src, Trust::User, "Script").map(|(output, _)| output)
+}
+
+/// Run JavaScript written against the object model VBA macros use (what
+/// the VBA compiler produces): `Application`, `ActiveDocument`, `Shapes`
+/// with 1-based items, lengths in `ActiveDocument.Unit` and the `cdr*`
+/// constants (`scripting/vg.rs`). Its changes are one undo step named
+/// `label`, kept up to an error like a script's. Returns the printed
+/// lines.
+// Called by the VBA macro runner (another part of the app).
+#[allow(dead_code)]
+pub fn run_vgcore(app: &mut App, src: &str, label: &'static str) -> Result<Vec<String>, String> {
+    run_host(app, src, Trust::User, label, true).map(|(output, _)| output)
 }
 
 /// Run a script an AI service wrote: no file access, loops, call depth
@@ -311,6 +339,10 @@ fn host_for(app: &App, trust: Trust) -> HostInner {
         output: Vec::new(),
         next_id: app.engine.document().ids().peek_next(),
         trust,
+        file: app.file.as_ref().map(|f| f.display().to_string()),
+        vg: false,
+        view: vg::AppView::of(app),
+        status: None,
     }
 }
 
@@ -343,6 +375,7 @@ fn evaluate_with(
     debug: Option<DebugState>,
 ) -> Result<Evaluated, String> {
     let trust = inner.trust;
+    let trust_vg = inner.vg;
     let mut ctx = Context::default();
     if let Some(debug) = debug {
         ctx.insert_data(DebugHandle(std::rc::Rc::new(debug)));
@@ -378,7 +411,10 @@ fn evaluate_with(
         )
         .map_err(|e| e.to_string())?;
     }
-    ctx.eval(Source::from_bytes(PRELUDE))
+    let prelude = if trust_vg { vg::PRELUDE } else { PRELUDE };
+    ctx.eval(Source::from_bytes(COMMON))
+        .map_err(|e| format!("prelude: {e}"))?;
+    ctx.eval(Source::from_bytes(prelude))
         .map_err(|e| format!("prelude: {e}"))?;
     let mut result = ctx.eval(Source::from_bytes(src)).map_err(|e| e.to_string());
     if let (Ok(_), Some(call)) = (&result, call) {
@@ -411,12 +447,24 @@ fn run_with(
     trust: Trust,
     label: &'static str,
 ) -> Result<(Vec<String>, usize), String> {
+    run_host(app, src, trust, label, false)
+}
+
+fn run_host(
+    app: &mut App,
+    src: &str,
+    trust: Trust,
+    label: &'static str,
+    vg: bool,
+) -> Result<(Vec<String>, usize), String> {
+    let mut host = host_for(app, trust);
+    host.vg = vg;
     let Evaluated {
         inner,
         result,
         shown,
         ..
-    } = evaluate(host_for(app, trust), src, None, None)?;
+    } = evaluate(host, src, None, None)?;
     let mut output = inner.output;
     match result {
         Ok(_) => {
@@ -435,6 +483,9 @@ fn run_with(
         }
     }
     let changes = inner.commands.len();
+    if let Some(s) = inner.status {
+        app.status = s;
+    }
     apply(app, inner.commands, inner.selection, inner.page, label);
     Ok((output, changes))
 }
@@ -481,6 +532,10 @@ fn blank_host(doc: Document, trust: Trust) -> HostInner {
         output: Vec::new(),
         next_id,
         trust,
+        file: None,
+        vg: false,
+        view: vg::AppView::default(),
+        status: None,
     }
 }
 
@@ -722,6 +777,22 @@ fn debug_pause(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult
 /// Run a script under the debugger on a worker thread: it pauses at the
 /// `breakpoints` (lines) and, after Step, at every statement. Desktop only.
 pub fn start_debug(app: &App, src: &str, breakpoints: &[u32]) -> Result<DebugRun, String> {
+    start_debug_with(app, src, breakpoints, false)
+}
+
+/// [`start_debug`] for JavaScript compiled from a VBA macro: it runs
+/// against the object model VBA macros use (`scripting/vg.rs`).
+#[allow(dead_code)]
+pub fn start_debug_vgcore(app: &App, src: &str, breakpoints: &[u32]) -> Result<DebugRun, String> {
+    start_debug_with(app, src, breakpoints, true)
+}
+
+fn start_debug_with(
+    app: &App,
+    src: &str,
+    breakpoints: &[u32],
+    vg: bool,
+) -> Result<DebugRun, String> {
     use std::sync::{mpsc::channel, Arc, Mutex};
     let (code, lines) = crate::script_debug::instrument(src);
     let set: std::collections::BTreeSet<u32> = breakpoints
@@ -731,7 +802,8 @@ pub fn start_debug(app: &App, src: &str, breakpoints: &[u32]) -> Result<DebugRun
     let breakpoints = Arc::new(Mutex::new(set));
     let (ctl_tx, ctl_rx) = channel();
     let (ev_tx, ev_rx) = channel();
-    let inner = host_for(app, Trust::User);
+    let mut inner = host_for(app, Trust::User);
+    inner.vg = vg;
     let bps = breakpoints.clone();
     let handle = std::thread::Builder::new()
         .name("script-debug".into())
@@ -841,10 +913,11 @@ impl HostInner {
     }
 
     fn new_id(&mut self) -> ShapeId {
-        // Ids must match what the engine will allocate when the batch replays:
-        // the engine allocates from the same source in the same order.
-        let id = ShapeId(self.next_id);
-        self.next_id += 1;
+        // Minted from the drawing's own counter: adding the shape when the
+        // batch replays keeps the app's counter past it (see
+        // `Command::AddShape`).
+        let id = self.doc.ids_mut().shape();
+        self.next_id = id.raw() + 1;
         id
     }
 
@@ -1194,11 +1267,14 @@ impl HostInner {
             }
             "duplicate" => {
                 let id = id_arg(a, "id")?;
-                let mut s = self.shape(id)?;
-                let (layer, _) = self.doc.locate(ShapeId(id)).map_err(|e| e.to_string())?;
-                s.transform =
-                    Affine::translate((num(a, "dx", 0.0), num(a, "dy", 0.0))) * s.transform;
-                self.add(layer, s)?
+                let s = self.shape(id)?;
+                let layer = self.layer_of(ShapeId(id))?;
+                let mut copy = self.fresh_ids(s);
+                copy.transform =
+                    Affine::translate((num(a, "dx", 0.0), num(a, "dy", 0.0))) * copy.transform;
+                let new = copy.id;
+                self.run(Command::AddShape { layer, shape: copy })?;
+                json!({"id": new.raw()})
             }
             "curve_info" | "curve_nodes" => {
                 let s = self.shape(id_arg(a, "id")?)?;
@@ -1408,8 +1484,7 @@ impl HostInner {
                 if ids.len() < 2 {
                     return Err("group needs two objects".into());
                 }
-                let gid = self.new_id();
-                self.run(Command::Group { shapes: ids })?;
+                let gid = self.group_shapes(&ids)?;
                 json!({"id": gid.raw()})
             }
             "align" => {
@@ -1697,7 +1772,10 @@ impl HostInner {
                 crate::files::write(p, data).map_err(|e| e.to_string())?;
                 json!({})
             }
-            other => return Err(format!("unknown method {other}")),
+            other => match self.vg_call(other, a)? {
+                Some(v) => v,
+                None => return Err(format!("unknown method {other}")),
+            },
         })
     }
 }
