@@ -1,7 +1,8 @@
-//! Tools > Border and Grommet: finishing for large-format prints. Grows
-//! the page by a border on every side (mirrored or stretched page edges,
-//! or a solid colour), keeps the design centred, and places grommet
-//! marks (hairline circles) along the edges on a new layer.
+//! Tools > Border and Grommet: finishing for large-format prints. Takes
+//! the page (or the selection's box), grows it by a border on every side
+//! (mirrored or stretched edges, or a solid colour), keeps the design
+//! inside, and places grommet marks (hairline circles) along the chosen
+//! edges on a new layer. See docs/behavior/border-and-grommet.md.
 
 use crate::app::App;
 use tracedraw_core::{
@@ -10,25 +11,26 @@ use tracedraw_core::{
     Color, Command, Fill, Shape, Stroke,
 };
 
+/// What the border and grommets go around.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Page,
+    /// The selection's box becomes the page.
+    Selection,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderKind {
-    None,
     Mirror,
     Stretch,
     Solid,
 }
 
 impl BorderKind {
-    pub const ALL: [BorderKind; 4] = [
-        BorderKind::None,
-        BorderKind::Mirror,
-        BorderKind::Stretch,
-        BorderKind::Solid,
-    ];
+    pub const ALL: [BorderKind; 3] = [BorderKind::Mirror, BorderKind::Stretch, BorderKind::Solid];
 
     pub fn key(self) -> &'static str {
         match self {
-            BorderKind::None => "border_grommet.border_none",
             BorderKind::Mirror => "border_grommet.border_mirror",
             BorderKind::Stretch => "border_grommet.border_stretch",
             BorderKind::Solid => "border_grommet.border_solid",
@@ -45,25 +47,41 @@ pub struct GrommetParams {
     /// Place a fixed number per edge instead of one every `spacing_mm`.
     pub by_count: bool,
     pub spacing_mm: f64,
+    /// Grommets per edge in count mode, corners included.
     pub count_per_edge: u32,
-    pub corners_only: bool,
+    /// Where they go: the four corners, and along each edge.
+    pub corners: bool,
+    pub top: bool,
+    pub bottom: bool,
+    pub left: bool,
+    pub right: bool,
+    /// Centre them in the border (when there is one) instead of at the
+    /// margin from the outer edge.
+    pub use_border: bool,
 }
 
 impl Default for GrommetParams {
     fn default() -> Self {
         GrommetParams {
-            diameter_mm: 12.0,
-            margin_mm: 10.0,
-            by_count: false,
+            diameter_mm: 6.35,
+            margin_mm: 31.75,
+            by_count: true,
             spacing_mm: 500.0,
             count_per_edge: 4,
-            corners_only: false,
+            corners: true,
+            top: true,
+            bottom: true,
+            left: true,
+            right: true,
+            use_border: false,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BorderGrommetState {
+    pub source: Source,
+    pub add_border: bool,
     pub border: BorderKind,
     pub width_mm: f64,
     pub color: Color,
@@ -74,10 +92,12 @@ pub struct BorderGrommetState {
 impl Default for BorderGrommetState {
     fn default() -> Self {
         BorderGrommetState {
+            source: Source::Page,
+            add_border: false,
             border: BorderKind::Mirror,
-            width_mm: 25.0,
+            width_mm: 31.75,
             color: Color::WHITE,
-            grommets: true,
+            grommets: false,
             grommet: GrommetParams::default(),
         }
     }
@@ -86,10 +106,24 @@ impl Default for BorderGrommetState {
 impl BorderGrommetState {
     /// Border width actually added (zero when the border is off).
     pub fn border_mm(&self) -> f64 {
-        if self.border == BorderKind::None {
-            0.0
-        } else {
+        if self.add_border {
             self.width_mm.max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Something to add: a border or grommets.
+    pub fn does_something(&self) -> bool {
+        self.border_mm() > 0.0 || self.grommets
+    }
+
+    /// The grommet centres on the final page of `size`.
+    pub fn grommets_on(&self, size: Size) -> Vec<Point> {
+        if self.grommets {
+            grommet_centers(size, &self.grommet, self.border_mm())
+        } else {
+            Vec::new()
         }
     }
 
@@ -100,10 +134,15 @@ impl BorderGrommetState {
     }
 }
 
-/// Grommet centres for a page of `size`, corners first, then the edges,
-/// without duplicates. Empty when the page is too small for the margin.
-pub fn grommet_centers(size: Size, g: &GrommetParams) -> Vec<Point> {
-    let m = g.margin_mm.max(0.0) + g.diameter_mm.max(0.0) / 2.0;
+/// Grommet centres for a page of `size` with a border of `border_mm`,
+/// corners first, then the chosen edges, without duplicates. Empty when
+/// the page is too small for the margin.
+pub fn grommet_centers(size: Size, g: &GrommetParams, border_mm: f64) -> Vec<Point> {
+    let m = if g.use_border && border_mm > 0.0 {
+        border_mm / 2.0
+    } else {
+        g.margin_mm.max(0.0) + g.diameter_mm.max(0.0) / 2.0
+    };
     let (x0, x1) = (m, size.width - m);
     let (y0, y1) = (m, size.height - m);
     if x1 < x0 || y1 < y0 {
@@ -118,16 +157,15 @@ pub fn grommet_centers(size: Size, g: &GrommetParams) -> Vec<Point> {
             out.push(p);
         }
     };
-    for p in [
-        Point::new(x0, y1),
-        Point::new(x1, y1),
-        Point::new(x0, y0),
-        Point::new(x1, y0),
-    ] {
-        push(p);
-    }
-    if g.corners_only {
-        return out;
+    if g.corners {
+        for p in [
+            Point::new(x0, y1),
+            Point::new(x1, y1),
+            Point::new(x0, y0),
+            Point::new(x1, y0),
+        ] {
+            push(p);
+        }
     }
     let count_along = |len: f64| -> usize {
         if g.by_count {
@@ -140,15 +178,24 @@ pub fn grommet_centers(size: Size, g: &GrommetParams) -> Vec<Point> {
     };
     let nx = count_along(x1 - x0);
     let ny = count_along(y1 - y0);
+    // Page coordinates run upwards: y1 is the top edge.
     for i in 0..nx {
         let x = x0 + (x1 - x0) * i as f64 / (nx - 1) as f64;
-        push(Point::new(x, y1));
-        push(Point::new(x, y0));
+        if g.top {
+            push(Point::new(x, y1));
+        }
+        if g.bottom {
+            push(Point::new(x, y0));
+        }
     }
     for i in 0..ny {
         let y = y0 + (y1 - y0) * i as f64 / (ny - 1) as f64;
-        push(Point::new(x0, y));
-        push(Point::new(x1, y));
+        if g.left {
+            push(Point::new(x0, y));
+        }
+        if g.right {
+            push(Point::new(x1, y));
+        }
     }
     out
 }
@@ -240,8 +287,9 @@ fn edge_images(img: &image::RgbaImage, bpx: u32, mirror: bool) -> Vec<image::Rgb
 }
 
 /// Rasterise the current page (white background) at a resolution that
-/// keeps the longest side at or under about 4000 pixels.
-fn render_page(app: &App) -> Option<(image::RgbaImage, f64)> {
+/// keeps the longest side at or under about 4000 pixels, cut to `area`
+/// (page millimetres, y up) when it is not the whole page.
+fn render_page(app: &App, area: Rect) -> Option<(image::RgbaImage, f64)> {
     let size = app.page_size();
     let longest = size.width.max(size.height).max(1.0);
     let dpi = (4000.0 * 25.4 / longest).clamp(10.0, 150.0);
@@ -249,7 +297,38 @@ fn render_page(app: &App) -> Option<(image::RgbaImage, f64)> {
     let (w, h) = (pm.width(), pm.height());
     // The background is opaque white, so premultiplied data is plain RGBA.
     let img = image::RgbaImage::from_raw(w, h, pm.data().to_vec())?;
-    Some((img, dpi))
+    let page = Rect::new(0.0, 0.0, size.width, size.height);
+    if area == page {
+        return Some((img, dpi));
+    }
+    let a = area.intersect(page);
+    let px = |mm: f64| (mm * dpi / 25.4).round().max(0.0) as u32;
+    let (x, y) = (px(a.x0).min(w), px(size.height - a.y1).min(h));
+    let (cw, ch) = (
+        px(a.width()).min(w - x).max(1),
+        px(a.height()).min(h - y).max(1),
+    );
+    if x >= w || y >= h {
+        return None;
+    }
+    Some((
+        image::imageops::crop_imm(&img, x, y, cw, ch).to_image(),
+        dpi,
+    ))
+}
+
+/// What the border goes around, in page millimetres: the page, or the
+/// selection's box (`None` with nothing selected).
+pub fn source_area(app: &App, source: Source) -> Option<Rect> {
+    match source {
+        Source::Page => {
+            let s = app.page_size();
+            Some(Rect::new(0.0, 0.0, s.width, s.height))
+        }
+        Source::Selection => app
+            .selection_bounds()
+            .filter(|r| r.width() > 1e-6 && r.height() > 1e-6),
+    }
 }
 
 fn bitmap_shape(app: &mut App, rect: Rect, img: &image::RgbaImage, name: &str) -> Option<Shape> {
@@ -275,14 +354,22 @@ fn bitmap_shape(app: &mut App, rect: Rect, img: &image::RgbaImage, name: &str) -
 /// border and grommets on a new layer. Returns the number of grommets.
 pub fn apply(app: &mut App, st: &BorderGrommetState) -> usize {
     let page = app.page;
-    let old = app.page_size();
+    let Some(area) = source_area(app, st.source) else {
+        return 0;
+    };
+    let old = area.size();
     let b = st.border_mm();
     let new_size = st.final_size(old);
+    let page_rect = {
+        let s = app.page_size();
+        Rect::new(0.0, 0.0, s.width, s.height)
+    };
+    let reshaped = b > 0.0 || area != page_rect;
 
     // Edge images come from the page as it is now, before anything moves.
     let edges = match st.border {
         BorderKind::Mirror | BorderKind::Stretch if b > 0.0 => {
-            render_page(app).map(|(img, dpi)| {
+            render_page(app, area).map(|(img, dpi)| {
                 let bpx = (b * dpi / 25.4).round().max(1.0) as u32;
                 edge_images(&img, bpx, st.border == BorderKind::Mirror)
             })
@@ -291,7 +378,7 @@ pub fn apply(app: &mut App, st: &BorderGrommetState) -> usize {
     };
 
     let mut cmds = Vec::new();
-    if b > 0.0 {
+    if reshaped {
         cmds.push(Command::ResizePage {
             page,
             size: new_size,
@@ -310,7 +397,7 @@ pub fn apply(app: &mut App, st: &BorderGrommetState) -> usize {
         if !ids.is_empty() {
             cmds.push(Command::TransformShapes {
                 shapes: ids,
-                transform: Affine::translate((b, b)),
+                transform: Affine::translate((b - area.x0, b - area.y0)),
             });
         }
     }
@@ -335,8 +422,8 @@ pub fn apply(app: &mut App, st: &BorderGrommetState) -> usize {
     let mut shapes: Vec<Shape> = Vec::new();
     let border_name = crate::i18n::tr("border_grommet.object_border");
     match st.border {
-        BorderKind::None => {}
-        BorderKind::Solid if b > 0.0 => {
+        _ if b <= 0.0 => {}
+        BorderKind::Solid => {
             let outer = Rect::new(0.0, 0.0, new_size.width, new_size.height);
             let inner = Rect::new(b, b, old.width + b, old.height + b);
             let id = app.engine.new_shape_id();
@@ -367,7 +454,7 @@ pub fn apply(app: &mut App, st: &BorderGrommetState) -> usize {
     if st.grommets {
         let d = st.grommet.diameter_mm.max(0.1);
         let name = crate::i18n::tr("border_grommet.object_grommet");
-        for c in grommet_centers(new_size, &st.grommet) {
+        for c in st.grommets_on(new_size) {
             let id = app.engine.new_shape_id();
             let mut s = Shape::new(
                 id,
@@ -408,17 +495,20 @@ mod tests {
             by_count,
             spacing_mm: 100.0,
             count_per_edge: 3,
-            corners_only: false,
+            ..Default::default()
         }
     }
 
     #[test]
     fn corners_only_gives_four_inset_by_margin_and_radius() {
         let g = GrommetParams {
-            corners_only: true,
+            top: false,
+            bottom: false,
+            left: false,
+            right: false,
             ..params(false)
         };
-        let pts = grommet_centers(Size::new(300.0, 200.0), &g);
+        let pts = grommet_centers(Size::new(300.0, 200.0), &g, 0.0);
         assert_eq!(pts.len(), 4);
         assert!(pts.contains(&Point::new(10.0, 190.0)));
         assert!(pts.contains(&Point::new(290.0, 10.0)));
@@ -428,7 +518,7 @@ mod tests {
     fn spacing_mode_fills_each_edge() {
         // 300 x 200 page, usable span 280 x 180 at 100 mm spacing:
         // 3 along the top and bottom (0, 140, 280), 2 along the sides.
-        let pts = grommet_centers(Size::new(300.0, 200.0), &params(false));
+        let pts = grommet_centers(Size::new(300.0, 200.0), &params(false), 0.0);
         assert_eq!(pts.len(), 6, "{pts:?}");
         assert!(pts.contains(&Point::new(150.0, 190.0)));
         assert!(pts.contains(&Point::new(150.0, 10.0)));
@@ -439,7 +529,7 @@ mod tests {
 
     #[test]
     fn count_mode_places_n_per_edge() {
-        let pts = grommet_centers(Size::new(300.0, 200.0), &params(true));
+        let pts = grommet_centers(Size::new(300.0, 200.0), &params(true), 0.0);
         // 3 per edge, 4 edges, 4 shared corners: 8.
         assert_eq!(pts.len(), 8, "{pts:?}");
         assert!(pts.contains(&Point::new(10.0, 100.0)));
@@ -448,17 +538,21 @@ mod tests {
 
     #[test]
     fn too_small_a_page_gives_nothing() {
-        assert!(grommet_centers(Size::new(10.0, 10.0), &params(true)).is_empty());
+        assert!(grommet_centers(Size::new(10.0, 10.0), &params(true), 0.0).is_empty());
         let zero = GrommetParams {
             spacing_mm: 0.0,
             ..params(false)
         };
-        assert_eq!(grommet_centers(Size::new(300.0, 200.0), &zero).len(), 4);
+        assert_eq!(
+            grommet_centers(Size::new(300.0, 200.0), &zero, 0.0).len(),
+            4
+        );
     }
 
     #[test]
     fn final_size_and_border_rects() {
         let st = BorderGrommetState {
+            add_border: true,
             border: BorderKind::Solid,
             width_mm: 20.0,
             ..Default::default()
@@ -468,7 +562,7 @@ mod tests {
             Size::new(140.0, 90.0)
         );
         let off = BorderGrommetState {
-            border: BorderKind::None,
+            add_border: false,
             ..st.clone()
         };
         assert_eq!(
@@ -487,6 +581,32 @@ mod tests {
     }
 
     #[test]
+    fn grommets_go_on_the_chosen_edges_or_in_the_border() {
+        let size = Size::new(300.0, 200.0);
+        // Top edge only, 3 per edge: three along the top, none elsewhere.
+        let top = GrommetParams {
+            corners: false,
+            bottom: false,
+            left: false,
+            right: false,
+            ..params(true)
+        };
+        let pts = grommet_centers(size, &top, 0.0);
+        assert_eq!(pts.len(), 3, "{pts:?}");
+        assert!(pts.iter().all(|p| (p.y - 190.0).abs() < 1e-9));
+        // In a 40 mm border: centred 20 mm from the outer edge.
+        let in_border = GrommetParams {
+            use_border: true,
+            ..params(true)
+        };
+        let pts = grommet_centers(size, &in_border, 40.0);
+        assert!(pts.contains(&Point::new(20.0, 20.0)), "{pts:?}");
+        // Without a border the margin applies.
+        let pts = grommet_centers(size, &in_border, 0.0);
+        assert!(pts.contains(&Point::new(10.0, 10.0)), "{pts:?}");
+    }
+
+    #[test]
     fn edge_images_have_the_strip_sizes() {
         let mut img = image::RgbaImage::from_pixel(10, 6, image::Rgba([255, 255, 255, 255]));
         img.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
@@ -502,5 +622,55 @@ mod tests {
         // A border wider than the image is clamped, never panics.
         let e = edge_images(&img, 50, true);
         assert_eq!((e[0].width(), e[0].height()), (10, 6));
+    }
+
+    #[test]
+    fn the_selection_becomes_the_page_inside_its_border() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(30.0, 40.0, 90.0, 70.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("a rectangle");
+        app.select(vec![id]);
+        let area = source_area(&app, Source::Selection).expect("selection box");
+        let st = BorderGrommetState {
+            source: Source::Selection,
+            add_border: true,
+            border: BorderKind::Solid,
+            width_mm: 10.0,
+            grommets: true,
+            grommet: GrommetParams {
+                use_border: true,
+                by_count: true,
+                count_per_edge: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(st.does_something());
+        let n = apply(&mut app, &st);
+        let size = app.page_size();
+        assert!(
+            (size.width - (area.width() + 20.0)).abs() < 1e-6,
+            "{size:?}"
+        );
+        assert!(
+            (size.height - (area.height() + 20.0)).abs() < 1e-6,
+            "{size:?}"
+        );
+        // The box's corner sits at the border's inner corner.
+        let moved = app.doc().find_shape(id).expect("kept").clone();
+        let b = app.visual_bounds(&moved);
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-6 && (b.y0 - 10.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // Two per edge in the border: the four corners.
+        assert_eq!(n, 4);
+        // Nothing to do: neither a border nor grommets.
+        assert!(!BorderGrommetState::default().does_something());
     }
 }

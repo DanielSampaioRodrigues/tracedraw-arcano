@@ -904,7 +904,7 @@ impl Default for PanelPrefs {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ColorPrefs {
     pub rgb_profile: String,
@@ -917,6 +917,54 @@ pub struct ColorPrefs {
     pub rgb_profile_path: String,
     #[serde(default)]
     pub cmyk_profile_path: String,
+    /// The default grayscale profile (name, and file when loaded).
+    pub gray_profile: String,
+    pub gray_profile_path: String,
+    /// The colour preset the defaults came from (Default tab).
+    pub preset: String,
+    /// Presets the user saved.
+    pub presets: Vec<ColorPreset>,
+    /// New drawings' primary colour mode: "CMYK" or "RGB".
+    pub primary_color_mode: String,
+    /// The colour engine: the ICC engine, or the built-in formulas.
+    pub builtin_engine: bool,
+    /// Converting CMYK to CMYK keeps colours made of black ink only.
+    pub preserve_pure_black: bool,
+    /// Converting neutral greys to CMYK uses black ink only.
+    pub map_gray_to_black: bool,
+    /// Open policy per colour space: 0 use the drawing's embedded profile,
+    /// 1 assign the default profile (values kept), 2 convert to the
+    /// default profile.
+    pub open_rgb: u8,
+    pub open_cmyk: u8,
+    pub open_gray: u8,
+    pub warn_open_mismatch: bool,
+    pub warn_open_missing: bool,
+    /// Import and paste policy per colour space: 0 convert to the
+    /// drawing's profile, 1 assign the drawing's profile (values kept).
+    pub import_rgb: u8,
+    pub import_cmyk: u8,
+    pub import_gray: u8,
+    pub warn_import_mismatch: bool,
+    pub warn_import_missing: bool,
+    /// How spot colours are defined: 0 Lab values, 1 CMYK values, 2 RGB
+    /// values (their process stand-in on screen and in conversions).
+    pub spot_definition: u8,
+}
+
+/// A saved set of colour defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ColorPreset {
+    pub name: String,
+    pub rgb_profile: String,
+    pub rgb_profile_path: String,
+    pub cmyk_profile: String,
+    pub cmyk_profile_path: String,
+    pub gray_profile: String,
+    pub gray_profile_path: String,
+    pub primary_color_mode: String,
+    pub intent: String,
 }
 
 impl Default for ColorPrefs {
@@ -929,6 +977,25 @@ impl Default for ColorPrefs {
             proof_profile: "Generic CMYK (open)".into(),
             rgb_profile_path: String::new(),
             cmyk_profile_path: String::new(),
+            gray_profile: "Gray Gamma 2.2".into(),
+            gray_profile_path: String::new(),
+            preset: String::new(),
+            presets: Vec::new(),
+            primary_color_mode: "CMYK".into(),
+            builtin_engine: false,
+            preserve_pure_black: false,
+            map_gray_to_black: true,
+            open_rgb: 0,
+            open_cmyk: 0,
+            open_gray: 0,
+            warn_open_mismatch: false,
+            warn_open_missing: false,
+            import_rgb: 0,
+            import_cmyk: 1,
+            import_gray: 0,
+            warn_import_mismatch: false,
+            warn_import_missing: false,
+            spot_definition: 0,
         }
     }
 }

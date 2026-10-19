@@ -1037,6 +1037,10 @@ pub enum Action {
     ShowGuidelines,
     /// Launch other tools: a window.
     Launch,
+    /// A cloud with an arrow down (open from the Git repository) or up
+    /// (save to it as a commit).
+    GitPull,
+    GitPush,
 }
 
 /// The New button's green badge with a white plus.
@@ -1405,6 +1409,43 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
                 painter.line_segment([p(r, 6.5, t + 2.0), p(r, 6.5, t + 3.0)], thin);
             }
             eye(painter);
+        }
+        Action::GitPull | Action::GitPush => {
+            // A cloud: a flat base and three bumps.
+            painter.add(epaint::PathShape::line(
+                vec![
+                    p(r, 4.5, 11.5),
+                    p(r, 2.6, 11.0),
+                    p(r, 1.5, 9.4),
+                    p(r, 2.0, 7.6),
+                    p(r, 3.6, 6.8),
+                    p(r, 4.4, 4.6),
+                    p(r, 6.6, 3.2),
+                    p(r, 9.2, 3.4),
+                    p(r, 11.0, 5.2),
+                    p(r, 13.2, 5.6),
+                    p(r, 14.5, 7.6),
+                    p(r, 14.2, 10.0),
+                    p(r, 12.6, 11.4),
+                    p(r, 11.5, 11.5),
+                ],
+                s,
+            ));
+            let (tip, tail) = if a == Action::GitPull {
+                (14.6, 8.0)
+            } else {
+                (8.0, 14.6)
+            };
+            painter.line_segment([p(r, 8.0, tail), p(r, 8.0, tip)], s);
+            let dir = if a == Action::GitPull { -1.0 } else { 1.0 };
+            painter.add(epaint::PathShape::line(
+                vec![
+                    p(r, 5.8, tip + 2.2 * dir),
+                    p(r, 8.0, tip),
+                    p(r, 10.2, tip + 2.2 * dir),
+                ],
+                s,
+            ));
         }
         Action::Launch => {
             painter.rect_stroke(

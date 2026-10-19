@@ -55,6 +55,7 @@ fn std_button(
         },
     );
     std_frame(ui, rect, enabled && resp.hovered(), pressed);
+    let resp = resp.on_hover_ui(|ui| rich_tip(ui, tip));
     icons::draw_action(
         ui.painter(),
         egui::Rect::from_center_size(rect.center(), Vec2::splat(STD_ICON)),
@@ -65,7 +66,24 @@ fn std_button(
             Tokens::icon_off()
         },
     );
-    resp.on_hover_text(tip)
+    resp
+}
+
+/// A button's tip: the title (with its shortcut) in bold on the first
+/// line, what it does under it.
+pub(crate) fn rich_tip(ui: &mut Ui, tip: &str) {
+    let (title, desc) = tip.split_once('\n').unwrap_or((tip, ""));
+    ui.set_max_width(280.0);
+    ui.label(egui::RichText::new(title).font(crate::theme::bold(12.0)));
+    if !desc.is_empty() {
+        ui.label(egui::RichText::new(desc).size(12.0));
+    }
+}
+
+/// The tip of the standard bar's button `key`: its title and the
+/// description kept under `key_desc`.
+fn tip(key: &str) -> String {
+    format!("{}\n{}", tr(key), tr(&format!("{key}_desc")))
 }
 
 /// The small arrow after a button that opens its list.
@@ -208,10 +226,10 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 1.0;
         ui.set_min_height(STD);
         let doc = app.has_document();
-        if std_button(ui, icons::Action::New, &tr("toolbar.new"), true, false).clicked() {
+        if std_button(ui, icons::Action::New, &tip("toolbar.new"), true, false).clicked() {
             app.request_new_document();
         }
-        if std_button(ui, icons::Action::Open, &tr("toolbar.open"), true, false).clicked() {
+        if std_button(ui, icons::Action::Open, &tip("toolbar.open"), true, false).clicked() {
             app.open_dialog();
         }
         // Recent drawings behind the Open arrow.
@@ -235,25 +253,51 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
-        if std_button(ui, icons::Action::Save, &tr("toolbar.save"), doc, false).clicked() {
+        if std_button(ui, icons::Action::Save, &tip("toolbar.save"), doc, false).clicked() {
             app.save(false);
         }
-        if std_button(ui, icons::Action::Print, &tr("toolbar.print"), doc, false).clicked() {
+        // The drawing's Git repository: open a file from it, or save the
+        // drawing to it as a commit.
+        if std_button(
+            ui,
+            icons::Action::GitPull,
+            &tip("toolbar.git_pull"),
+            true,
+            false,
+        )
+        .clicked()
+        {
+            app.github.status.clear();
+            app.dialog = crate::ui::dialogs::Dialog::GithubOpen(app.github_form(false));
+        }
+        if std_button(
+            ui,
+            icons::Action::GitPush,
+            &tip("toolbar.git_push"),
+            doc,
+            false,
+        )
+        .clicked()
+        {
+            app.github.status.clear();
+            app.dialog = crate::ui::dialogs::Dialog::GithubSave(app.github_form(true));
+        }
+        if std_button(ui, icons::Action::Print, &tip("toolbar.print"), doc, false).clicked() {
             app.print();
         }
         std_sep(ui);
         let has = doc && !app.selection.is_empty();
-        if std_button(ui, icons::Action::Cut, &tr("toolbar.cut"), has, false).clicked() {
+        if std_button(ui, icons::Action::Cut, &tip("toolbar.cut"), has, false).clicked() {
             app.cut();
         }
-        if std_button(ui, icons::Action::Copy, &tr("toolbar.copy"), has, false).clicked() {
+        if std_button(ui, icons::Action::Copy, &tip("toolbar.copy"), has, false).clicked() {
             app.copy_with_system();
         }
         let can_paste = doc && app.clipboard.is_some();
         if std_button(
             ui,
             icons::Action::Paste,
-            &tr("toolbar.paste"),
+            &tip("toolbar.paste"),
             can_paste,
             false,
         )
@@ -275,7 +319,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::Undo,
-            &tr("toolbar.undo"),
+            &tip("toolbar.undo"),
             !undo_steps.is_empty(),
             false,
         )
@@ -299,7 +343,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::Redo,
-            &tr("toolbar.redo"),
+            &tip("toolbar.redo"),
             !redo_steps.is_empty(),
             false,
         )
@@ -321,16 +365,32 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 }
             });
         std_sep(ui);
-        if std_button(ui, icons::Action::Import, &tr("toolbar.import"), doc, false).clicked() {
+        if std_button(
+            ui,
+            icons::Action::Import,
+            &tip("toolbar.import"),
+            doc,
+            false,
+        )
+        .clicked()
+        {
             app.import();
         }
-        if std_button(ui, icons::Action::Export, &tr("toolbar.export"), doc, false).clicked() {
+        if std_button(
+            ui,
+            icons::Action::Export,
+            &tip("toolbar.export"),
+            doc,
+            false,
+        )
+        .clicked()
+        {
             app.export();
         }
         if std_button(
             ui,
             icons::Action::Pdf,
-            &tr("menu.file.publish_to_pdf"),
+            &tip("toolbar.publish_pdf"),
             doc,
             false,
         )
@@ -345,7 +405,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::Fullscreen,
-            &tr("toolbar.fullscreen_preview"),
+            &tip("toolbar.fullscreen_preview"),
             doc,
             false,
         )
@@ -357,7 +417,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::ShowRulers,
-            &tr("toolbar.show_rulers"),
+            &tip("toolbar.show_rulers"),
             doc,
             app.show_rulers,
         )
@@ -368,7 +428,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::ShowGrid,
-            &tr("toolbar.show_grid"),
+            &tip("toolbar.show_grid"),
             doc,
             app.show_grid,
         )
@@ -379,7 +439,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::ShowGuidelines,
-            &tr("toolbar.show_guidelines"),
+            &tip("toolbar.show_guidelines"),
             doc,
             app.show_guides,
         )
@@ -391,7 +451,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if std_button(
             ui,
             icons::Action::SnapOff,
-            &tr("toolbar.snap_off"),
+            &tip("toolbar.snap_off"),
             doc,
             app.snap.off,
         )
@@ -443,18 +503,17 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 ui.checkbox(&mut app.snap.page, tr("menu.view.snap_page"));
             });
         std_sep(ui);
-        if std_button(
+        // Options opens its list of option pages.
+        let options = std_button(
             ui,
             icons::Action::Options,
-            &tr("toolbar.options"),
+            &tip("toolbar.options"),
             true,
             false,
-        )
-        .clicked()
-        {
-            app.options_page = crate::ui::dialogs::OptionsPage::General;
-            app.dialog = crate::ui::dialogs::Dialog::Options;
-        }
+        );
+        egui::Popup::menu(&options)
+            .id(egui::Id::new("options_button_menu"))
+            .show(|ui| crate::ui::menus::options_items(app, ui));
         std_sep(ui);
         // Launch: the other tools that come with the editor.
         let (rect, launch) = ui.allocate_exact_size(Vec2::new(108.0, STD), egui::Sense::click());
@@ -497,7 +556,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                     ui.close();
                 }
                 if ui.button(tr("menu.tools.color_management")).clicked() {
-                    app.dialog = crate::ui::dialogs::Dialog::ColorManagement;
+                    app.dialog = crate::ui::dialogs::Dialog::ColorManagement(Default::default());
                     ui.close();
                 }
             });
@@ -541,7 +600,16 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
         Tokens::text_dim(),
         egui::Stroke::NONE,
     ));
-    let resp = resp.on_hover_text(tr("toolbar.ai_generate_tip"));
+    let resp = resp.on_hover_ui(|ui| {
+        rich_tip(
+            ui,
+            &format!(
+                "{}\n{}",
+                tr("toolbar.ai_generate"),
+                tr("toolbar.ai_generate_tip")
+            ),
+        )
+    });
     // The arrow is a button of its own: it opens the list.
     let arrow_rect =
         egui::Rect::from_min_max(egui::pos2(rect.right() - 18.0, rect.top()), rect.max);

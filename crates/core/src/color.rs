@@ -80,6 +80,17 @@ pub mod engine {
         *slot = None;
     }
 
+    static MAP_GRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+    /// Neutral greys converted to CMYK use black ink only (on by default).
+    pub fn set_map_gray_to_black(on: bool) {
+        MAP_GRAY.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn map_gray_to_black() -> bool {
+        MAP_GRAY.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// The installed ICC engine, if any.
     pub fn icc() -> Option<Arc<IccEngine>> {
         ICC.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -373,6 +384,25 @@ impl Color {
         }
         if let Color::Spot { .. } = self {
             return self.process().convert_to(model);
+        }
+        // A neutral grey goes to black ink only, when asked.
+        if model == "CMYK" && engine::map_gray_to_black() {
+            let grey = match self {
+                Color::Gray { v } => Some(v),
+                Color::Rgb { r, g, b } if (r - g).abs() < 1e-4 && (g - b).abs() < 1e-4 => Some(r),
+                _ => None,
+            };
+            if let Some(v) = grey {
+                // The press model's black for that grey, without colour inks.
+                let v = v.clamp(0.0, 1.0);
+                let [_, _, _, k] = crate::press::srgb_to_cmyk([v, v, v]);
+                return Color::Cmyk {
+                    c: 0.0,
+                    m: 0.0,
+                    y: 0.0,
+                    k,
+                };
+            }
         }
         if let Some(icc) = engine::icc() {
             let managed = match (self, model) {

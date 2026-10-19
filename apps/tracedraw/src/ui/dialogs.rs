@@ -619,6 +619,9 @@ pub enum Dialog {
     CreateTable {
         rows: u32,
         cols: u32,
+        /// The table's size in millimetres.
+        width: f64,
+        height: f64,
     },
     QrCode(QrState),
     PasteSpecial(PasteSpecialState),
@@ -643,7 +646,7 @@ pub enum Dialog {
     Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
-    ColorManagement,
+    ColorManagement(Box<crate::ui::color_management::ColorManagementState>),
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
@@ -881,6 +884,26 @@ pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     ok
 }
 
+/// Where a dialog's "?" button leads.
+pub(crate) const HELP_URL: &str =
+    "https://github.com/igtoth/tracedraw/blob/main/docs/behavior/README.md";
+
+/// "?" on the left, OK and Cancel on the right, as dialogs with help
+/// have them. Returns (OK pressed, "?" pressed).
+pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
+    let mut help = false;
+    let mut ok = false;
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        help = ui
+            .add_sized([27.0, 27.0], egui::Button::new("?"))
+            .on_hover_text(tr("dialog.help"))
+            .clicked();
+        ok = ok_cancel(ui, close);
+    });
+    (ok, help)
+}
+
 /// Names of the dialogs' multi-line fields, where Enter inserts a line.
 const MULTILINE_NAMES: [&str; 2] = ["dialog_multiline_qr", "dialog_multiline_notes"];
 
@@ -924,6 +947,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         app.shortcut_editor.capture = None;
     }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
+    if !matches!(dialog, Dialog::None) {
+        crate::ui::chrome::modal_blocker(ctx);
+    }
     let mut close = false;
     match &mut dialog {
         Dialog::None => {}
@@ -1389,20 +1415,63 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::GithubOpen(f) => crate::ui::github_dialogs::open_dialog(app, ctx, f, &mut close),
         Dialog::GithubSave(f) => crate::ui::github_dialogs::save_dialog(app, ctx, f, &mut close),
         Dialog::GithubHistory => crate::ui::github_dialogs::history_dialog(app, ctx, &mut close),
-        Dialog::CreateTable { rows, cols } => {
+        Dialog::CreateTable {
+            rows,
+            cols,
+            width,
+            height,
+        } => {
+            let units = app.units;
+            let mut help = false;
             window(ctx, tr("dialog.create_table")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.rows"));
-                    ui.add(egui::DragValue::new(rows).range(1..=200));
-                    ui.label(tr("dialog.columns"));
-                    ui.add(egui::DragValue::new(cols).range(1..=200));
-                });
-                if ok_cancel(ui, &mut close) {
+                egui::Grid::new("create_table")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        let label = |ui: &mut Ui, key: &str| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(tr(key));
+                                },
+                            );
+                        };
+                        label(ui, "dialog.table_rows");
+                        ui.add_sized([120.0, 22.0], egui::DragValue::new(rows).range(1..=200));
+                        ui.end_row();
+                        label(ui, "dialog.table_columns");
+                        ui.add_sized([120.0, 22.0], egui::DragValue::new(cols).range(1..=200));
+                        ui.end_row();
+                        for (key, mm) in [
+                            ("dialog.height", &mut *height),
+                            ("dialog.width", &mut *width),
+                        ] {
+                            label(ui, key);
+                            let mut v = units.from_mm(*mm);
+                            if ui
+                                .add_sized(
+                                    [120.0, 22.0],
+                                    egui::DragValue::new(&mut v)
+                                        .speed(0.1)
+                                        .max_decimals(3)
+                                        .range(units.from_mm(1.0)..=units.from_mm(5000.0))
+                                        .suffix(format!(" {}", units.short())),
+                                )
+                                .changed()
+                            {
+                                *mm = units.to_mm(v);
+                            }
+                            ui.end_row();
+                        }
+                    });
+                let (ok, h) = help_ok_cancel(ui, &mut close);
+                help = h;
+                if ok {
                     app.table_rows = *rows;
                     app.table_cols = *cols;
+                    app.table_size = (*width, *height);
                     let page = app.page_rect();
-                    let w = (page.width() * 0.6).max(10.0);
-                    let h = (*rows as f64 * 10.0).min(page.height() * 0.6);
+                    let (w, h) = (*width, *height);
                     let c = page.center();
                     let rect =
                         Rect::new(c.x - w / 2.0, c.y - h / 2.0, c.x + w / 2.0, c.y + h / 2.0);
@@ -1417,6 +1486,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                     }
                 }
             });
+            if help {
+                app.open_url(HELP_URL);
+            }
         }
         Dialog::PasteSpecial(st) => {
             if !st.loaded {
@@ -1855,7 +1927,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
         Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
-        Dialog::ColorManagement => color_management_dialog(app, ctx, &mut close),
+        Dialog::ColorManagement(st) => {
+            crate::ui::color_management::dialog(app, ctx, st, &mut close)
+        }
         Dialog::FontManager(st) => font_manager_dialog(app, ctx, st, &mut close),
         Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
         Dialog::NewDocument(st) => {
@@ -4208,224 +4282,331 @@ fn border_grommet_dialog(
     st: &mut crate::border_grommet::BorderGrommetState,
     close: &mut bool,
 ) {
-    use crate::border_grommet::BorderKind;
+    use crate::border_grommet::{BorderKind, Source};
     let units = app.units;
-    let page = app.page_size();
+    let has_selection = crate::border_grommet::source_area(app, Source::Selection).is_some();
+    if !has_selection {
+        st.source = Source::Page;
+    }
+    let area = crate::border_grommet::source_area(app, st.source);
     let mut ok = false;
-    window(ctx, tr("border_grommet.title")).show(ctx, |ui| {
-        ui.set_min_width(360.0);
-        ui.horizontal(|ui| {
-            ui.label(tr("border_grommet.border_type"));
-            egui::ComboBox::from_id_salt("bg_kind")
-                .selected_text(tr(st.border.key()))
-                .show_ui(ui, |ui| {
-                    for k in BorderKind::ALL {
-                        ui.selectable_value(&mut st.border, k, tr(k.key()));
-                    }
-                });
-        });
-        if st.border != BorderKind::None {
-            unit_value(
-                ui,
-                &tr("border_grommet.border_width"),
-                &mut st.width_mm,
-                units,
-            );
-            st.width_mm = st.width_mm.max(0.0);
+    let mut help = false;
+    let length = |ui: &mut Ui, mm: &mut f64, min: f64| {
+        let mut v = units.from_mm(*mm);
+        if ui
+            .add_sized(
+                [90.0, 22.0],
+                egui::DragValue::new(&mut v)
+                    .speed(0.1)
+                    .max_decimals(3)
+                    .suffix(format!(" {}", units.short())),
+            )
+            .changed()
+        {
+            *mm = units.to_mm(v).max(min);
         }
-        if st.border == BorderKind::Solid {
-            ui.horizontal(|ui| {
-                ui.label(tr("border_grommet.border_color"));
-                let [r, g, b] = st.color.to_rgb8();
-                let mut rgb = [r, g, b];
-                if ui.color_edit_button_srgb(&mut rgb).changed() {
-                    st.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+    };
+    window(ctx, tr("border_grommet.title")).show(ctx, |ui| {
+        ui.horizontal_top(|ui| {
+            border_grommet_preview(ui, st, area, units);
+            ui.vertical(|ui| {
+                ui.set_width(250.0);
+                group(ui, &tr("border_grommet.source"), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.radio_value(
+                            &mut st.source,
+                            Source::Page,
+                            tr("border_grommet.source_page"),
+                        );
+                        ui.add_enabled_ui(has_selection, |ui| {
+                            ui.radio_value(
+                                &mut st.source,
+                                Source::Selection,
+                                tr("border_grommet.source_selection"),
+                            );
+                        });
+                    });
+                });
+                group(ui, &tr("border_grommet.border"), |ui| {
+                    ui.checkbox(&mut st.add_border, tr("border_grommet.add_border"));
+                    ui.add_enabled_ui(st.add_border, |ui| {
+                        egui::Grid::new("bg_border").num_columns(2).show(ui, |ui| {
+                            ui.label(tr("border_grommet.type"));
+                            egui::ComboBox::from_id_salt("bg_kind")
+                                .selected_text(tr(st.border.key()))
+                                .show_ui(ui, |ui| {
+                                    for k in BorderKind::ALL {
+                                        ui.selectable_value(&mut st.border, k, tr(k.key()));
+                                    }
+                                });
+                            ui.end_row();
+                            ui.label(tr("border_grommet.size"));
+                            length(ui, &mut st.width_mm, 0.0);
+                            ui.end_row();
+                            if st.border == BorderKind::Solid {
+                                ui.label(tr("border_grommet.border_color"));
+                                let [r, g, b] = st.color.to_rgb8();
+                                let mut rgb = [r, g, b];
+                                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                                    st.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                                }
+                                ui.end_row();
+                            }
+                        });
+                    });
+                });
+                group(ui, &tr("border_grommet.grommet"), |ui| {
+                    ui.checkbox(&mut st.grommets, tr("border_grommet.add_grommets"));
+                    ui.add_enabled_ui(st.grommets, |ui| {
+                        let g = &mut st.grommet;
+                        ui.add_enabled_ui(st.add_border, |ui| {
+                            ui.checkbox(&mut g.use_border, tr("border_grommet.use_border"));
+                        });
+                        egui::Grid::new("bg_grommet").num_columns(2).show(ui, |ui| {
+                            ui.label(tr("border_grommet.size"));
+                            length(ui, &mut g.diameter_mm, 0.1);
+                            ui.end_row();
+                            ui.label(tr("border_grommet.margin"));
+                            ui.add_enabled_ui(!(g.use_border && st.add_border), |ui| {
+                                length(ui, &mut g.margin_mm, 0.0);
+                            });
+                            ui.end_row();
+                        });
+                        ui.separator();
+                        ui.label(egui::RichText::new(tr("border_grommet.placement")).strong());
+                        ui.horizontal(|ui| {
+                            for (i, (on, key)) in [
+                                (&mut g.corners, "border_grommet.place_corners"),
+                                (&mut g.top, "border_grommet.place_top"),
+                                (&mut g.bottom, "border_grommet.place_bottom"),
+                                (&mut g.left, "border_grommet.place_left"),
+                                (&mut g.right, "border_grommet.place_right"),
+                            ]
+                            .into_iter()
+                            .enumerate()
+                            {
+                                if placement_button(ui, i, *on)
+                                    .on_hover_text(tr(key))
+                                    .clicked()
+                                {
+                                    *on = !*on;
+                                }
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut g.by_count, true, tr("border_grommet.number"));
+                            ui.add_enabled_ui(g.by_count, |ui| {
+                                ui.add(egui::DragValue::new(&mut g.count_per_edge).range(2..=200));
+                            });
+                        });
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut g.by_count, false, tr("border_grommet.spacing"));
+                            ui.add_enabled_ui(!g.by_count, |ui| {
+                                length(ui, &mut g.spacing_mm, 1.0);
+                            });
+                        });
+                    });
+                });
+            });
+        });
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            help = ui
+                .add_sized([27.0, 27.0], egui::Button::new("?"))
+                .on_hover_text(tr("dialog.help"))
+                .clicked();
+            if ui
+                .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.reset")))
+                .clicked()
+            {
+                *st = Default::default();
+            }
+            let can = st.does_something() && area.is_some();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                    .clicked()
+                {
+                    *close = true;
+                }
+                if ui
+                    .add_enabled(
+                        can,
+                        egui::Button::new(tr("dialog.ok")).min_size(egui::vec2(100.0, 27.0)),
+                    )
+                    .clicked()
+                    || (can && enter_pressed(ui))
+                {
+                    ok = true;
+                    *close = true;
                 }
             });
-        }
-        ui.separator();
-        ui.checkbox(&mut st.grommets, tr("border_grommet.grommets"));
-        if st.grommets {
-            let g = &mut st.grommet;
-            unit_value(
-                ui,
-                &tr("border_grommet.diameter"),
-                &mut g.diameter_mm,
-                units,
-            );
-            unit_value(ui, &tr("border_grommet.margin"), &mut g.margin_mm, units);
-            g.diameter_mm = g.diameter_mm.max(0.1);
-            g.margin_mm = g.margin_mm.max(0.0);
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut g.by_count, false, tr("border_grommet.by_spacing"));
-                ui.add_enabled_ui(!g.by_count, |ui| {
-                    let mut v = units.from_mm(g.spacing_mm);
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut v)
-                                .speed(1.0)
-                                .suffix(format!(" {}", units.short())),
-                        )
-                        .changed()
-                    {
-                        g.spacing_mm = units.to_mm(v).max(1.0);
-                    }
-                });
-            });
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut g.by_count, true, tr("border_grommet.by_count"));
-                ui.add_enabled_ui(g.by_count, |ui| {
-                    ui.add(egui::DragValue::new(&mut g.count_per_edge).range(2..=200));
-                });
-            });
-            ui.checkbox(&mut g.corners_only, tr("border_grommet.corners_only"));
-        }
-        ui.separator();
-        let final_size = st.final_size(page);
-        let n = if st.grommets {
-            crate::border_grommet::grommet_centers(final_size, &st.grommet).len()
-        } else {
-            0
-        };
-        ui.label(trf(
-            "border_grommet.preview",
-            &[
-                ("n", &n.to_string()),
-                ("w", &format!("{:.1}", units.from_mm(final_size.width))),
-                ("h", &format!("{:.1}", units.from_mm(final_size.height))),
-                ("u", units.short()),
-            ],
-        ));
-        ok = ok_cancel(ui, close);
+        });
     });
+    if help {
+        app.open_url(HELP_URL);
+    }
     if ok {
         let n = crate::border_grommet::apply(app, st);
         app.status = trf("border_grommet.done", &[("n", &n.to_string())]);
     }
 }
 
-fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
-    let mut load_rgb = false;
-    let mut load_cmyk = false;
-    window(ctx, tr("menu.tools.color_management")).show(ctx, |ui| {
-        let c = &mut app.settings.color;
-        egui::Grid::new("cm").num_columns(2).show(ui, |ui| {
-            ui.label(tr("dialog.rgb_profile"));
-            egui::ComboBox::from_id_salt("rgbp")
-                .selected_text(c.rgb_profile.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "sRGB IEC61966-2.1",
-                        "Adobe RGB (1998)",
-                        "Display P3",
-                        "ProPhoto RGB",
-                    ] {
-                        if ui.selectable_label(c.rgb_profile == p, p).clicked() {
-                            c.rgb_profile = p.into();
-                            c.rgb_profile_path.clear();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label("");
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.load_icc")).clicked() {
-                    load_rgb = true;
-                }
-                ui.label(
-                    egui::RichText::new(if c.rgb_profile_path.is_empty() {
-                        tr("dialog.builtin_profile")
-                    } else {
-                        c.rgb_profile_path.clone()
-                    })
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-                );
-            });
-            ui.end_row();
-            ui.label(tr("dialog.cmyk_profile"));
-            egui::ComboBox::from_id_salt("cmykp")
-                .selected_text(c.cmyk_profile.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "Generic CMYK (open)",
-                        "Coated FOGRA39 (user)",
-                        "US Web Coated SWOP (user)",
-                        "Japan Color 2001 Coated (user)",
-                    ] {
-                        if ui.selectable_label(c.cmyk_profile == p, p).clicked() {
-                            c.cmyk_profile = p.into();
-                            c.cmyk_profile_path.clear();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label("");
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.load_icc")).clicked() {
-                    load_cmyk = true;
-                }
-                ui.label(
-                    egui::RichText::new(if c.cmyk_profile_path.is_empty() {
-                        tr("dialog.builtin_profile")
-                    } else {
-                        c.cmyk_profile_path.clone()
-                    })
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-                );
-            });
-            ui.end_row();
-            ui.label(tr("dialog.rendering_intent"));
-            egui::ComboBox::from_id_salt("intent")
-                .selected_text(c.intent.clone())
-                .show_ui(ui, |ui| {
-                    for p in [
-                        "Relative colorimetric",
-                        "Absolute colorimetric",
-                        "Perceptual",
-                        "Saturation",
-                    ] {
-                        if ui.selectable_label(c.intent == p, p).clicked() {
-                            c.intent = p.into();
-                        }
-                    }
-                });
-            ui.end_row();
-            ui.label(tr("dialog.black_point"));
-            ui.checkbox(&mut c.black_point_compensation, "");
-            ui.end_row();
-            ui.label(tr("dialog.proof_profile"));
-            ui.text_edit_singleline(&mut c.proof_profile);
-            ui.end_row();
+/// A titled box around a group of fields.
+fn group(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+        .inner_margin(egui::Margin::same(6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new(title).strong());
+            add(ui);
         });
-        ui.label(
-            egui::RichText::new(tr("dialog.color_management_hint"))
-                .color(Tokens::text_dim())
-                .size(11.0),
+    ui.add_space(4.0);
+}
+
+/// One of the placement buttons: a page with its corners (0), or its
+/// top (1), bottom (2), left (3) or right (4) edge marked; pressed when on.
+fn placement_button(ui: &mut Ui, which: usize, on: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+    let p = ui.painter();
+    let fill = if on {
+        crate::theme::Tokens::tool_hover()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let edge = if on || resp.hovered() {
+        Tokens::ACCENT
+    } else {
+        egui::Color32::from_gray(0xB0)
+    };
+    p.rect(
+        rect,
+        2.0,
+        fill,
+        egui::Stroke::new(1.0, edge),
+        egui::StrokeKind::Inside,
+    );
+    let page = rect.shrink(6.0);
+    p.rect_stroke(
+        page,
+        0.0,
+        egui::Stroke::new(1.0, Tokens::text()),
+        egui::StrokeKind::Inside,
+    );
+    let dot = |p: &egui::Painter, x: f32, y: f32| {
+        p.circle_filled(egui::pos2(x, y), 1.4, Tokens::text());
+    };
+    let (l, r, t, b) = (
+        page.left() + 2.0,
+        page.right() - 2.0,
+        page.top() + 2.0,
+        page.bottom() - 2.0,
+    );
+    let mid_x = (l + r) / 2.0;
+    let mid_y = (t + b) / 2.0;
+    match which {
+        0 => [(l, t), (r, t), (l, b), (r, b)]
+            .iter()
+            .for_each(|&(x, y)| dot(p, x, y)),
+        1 => [l, mid_x, r].iter().for_each(|&x| dot(p, x, t)),
+        2 => [l, mid_x, r].iter().for_each(|&x| dot(p, x, b)),
+        3 => [t, mid_y, b].iter().for_each(|&y| dot(p, l, y)),
+        _ => [t, mid_y, b].iter().for_each(|&y| dot(p, r, y)),
+    }
+    resp
+}
+
+/// The preview: the final page, its border, the original area dashed and
+/// the grommets, with the final size under it.
+fn border_grommet_preview(
+    ui: &mut Ui,
+    st: &crate::border_grommet::BorderGrommetState,
+    area: Option<Rect>,
+    units: Units,
+) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(560.0, 440.0), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect(
+        rect,
+        0.0,
+        egui::Color32::WHITE,
+        egui::Stroke::new(1.0, egui::Color32::BLACK),
+        egui::StrokeKind::Inside,
+    );
+    let Some(area) = area else {
+        return;
+    };
+    let b = st.border_mm();
+    let size = st.final_size(area.size());
+    let room = rect.shrink2(egui::vec2(30.0, 40.0));
+    let scale = (room.width() as f64 / size.width.max(1e-6))
+        .min(room.height() as f64 / size.height.max(1e-6)) as f32;
+    let outer = egui::Rect::from_center_size(
+        room.center(),
+        egui::vec2(size.width as f32 * scale, size.height as f32 * scale),
+    );
+    // Final page millimetres (y up) to the preview.
+    let at = |x: f64, y: f64| {
+        egui::pos2(
+            outer.left() + x as f32 * scale,
+            outer.bottom() - y as f32 * scale,
+        )
+    };
+    let band = match st.border {
+        crate::border_grommet::BorderKind::Solid => {
+            let [r, g, bl] = st.color.to_rgb8();
+            egui::Color32::from_rgb(r, g, bl)
+        }
+        _ => egui::Color32::from_gray(0xE4),
+    };
+    p.rect(
+        outer,
+        0.0,
+        if b > 0.0 { band } else { egui::Color32::WHITE },
+        egui::Stroke::new(1.0, egui::Color32::from_gray(0x80)),
+        egui::StrokeKind::Inside,
+    );
+    let inner = egui::Rect::from_two_pos(at(b, b), at(b + area.width(), b + area.height()));
+    p.rect_filled(inner, 0.0, egui::Color32::WHITE);
+    let blue = egui::Color32::from_rgb(0x33, 0x33, 0xFF);
+    for (a, c) in [
+        (inner.left_top(), inner.right_top()),
+        (inner.right_top(), inner.right_bottom()),
+        (inner.right_bottom(), inner.left_bottom()),
+        (inner.left_bottom(), inner.left_top()),
+    ] {
+        p.extend(egui::Shape::dashed_line(
+            &[a, c],
+            egui::Stroke::new(1.0, blue),
+            4.0,
+            3.0,
+        ));
+    }
+    let radius = (st.grommet.diameter_mm as f32 * scale / 2.0).max(2.0);
+    for c in st.grommets_on(size) {
+        p.circle_stroke(
+            at(c.x, c.y),
+            radius,
+            egui::Stroke::new(1.0, egui::Color32::BLACK),
         );
-        ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
-        ui.horizontal(|ui| {
-            if ui.button(tr("dialog.ok")).clicked() || enter_pressed(ui) {
-                app.apply_color_settings();
-                app.save_settings();
-                *close = true;
-            }
-            if ui.button(tr("dialog.cancel")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if load_rgb {
-        app.load_icc_profile(false);
     }
-    if load_cmyk {
-        app.load_icc_profile(true);
-    }
+    let fmt = |mm: f64| format!("{:.2} {}", units.from_mm(mm), units.short());
+    p.text(
+        rect.left_bottom() + egui::vec2(10.0, -8.0),
+        egui::Align2::LEFT_BOTTOM,
+        trf(
+            "border_grommet.size_text",
+            &[("h", &fmt(size.height)), ("w", &fmt(size.width))],
+        ),
+        egui::FontId::proportional(12.0),
+        Tokens::text(),
+    );
 }
 
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {
     egui::Window::new(tr("menu.tools.font_manager"))
+        .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(true)
         .default_width(560.0)
@@ -4676,7 +4857,12 @@ mod tests {
             Dialog::Export(ExportState::default()),
             Dialog::Print(PrintState::default()),
             Dialog::PrintMerge(PrintMergeState::default()),
-            Dialog::CreateTable { rows: 3, cols: 4 },
+            Dialog::CreateTable {
+                rows: 3,
+                cols: 4,
+                width: 75.0,
+                height: 100.0,
+            },
             Dialog::QrCode(QrState::default()),
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),
@@ -4724,7 +4910,7 @@ mod tests {
             Dialog::Grammar(GrammarState::default()),
             Dialog::Autocorrect(AutocorrectState::default()),
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
-            Dialog::ColorManagement,
+            Dialog::ColorManagement(Default::default()),
             Dialog::FontManager(FontManagerState::default()),
             Dialog::PaletteEditor(PaletteEditorState::default()),
             Dialog::NewDocument(crate::new_document::NewDocState::from_settings(
@@ -4757,6 +4943,61 @@ mod tests {
         }
         let mut out = ctx.run_ui(input, |ui| show(app, &ui.ctx().clone()));
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn create_new_table_takes_rows_columns_and_size() {
+        let mut app = App::headless();
+        app.dialog = Dialog::CreateTable {
+            rows: 5,
+            cols: 2,
+            width: 80.0,
+            height: 50.0,
+        };
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert!(matches!(app.dialog, Dialog::None));
+        let table = app
+            .selection
+            .first()
+            .and_then(|id| app.doc().find_shape(*id))
+            .and_then(|s| match &s.kind {
+                ShapeKind::Table(t) => Some(t.clone()),
+                _ => None,
+            })
+            .expect("a table");
+        assert_eq!((table.row_heights.len(), table.col_widths.len()), (5, 2));
+        let r = table.rect;
+        assert!(
+            (r.width() - 80.0).abs() < 1e-6 && (r.height() - 50.0).abs() < 1e-6,
+            "{r:?}"
+        );
+        assert_eq!(app.table_size, (80.0, 50.0));
+    }
+
+    #[test]
+    fn an_open_dialog_takes_the_clicks_outside_it() {
+        let mut app = App::headless();
+        app.dialog = Dialog::CreateTable {
+            rows: 3,
+            cols: 4,
+            width: 75.0,
+            height: 100.0,
+        };
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, false);
+        let blocker = egui::LayerId::new(egui::Order::Middle, egui::Id::new("modal_blocker"));
+        assert_eq!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
+        assert_eq!(ctx.layer_id_at(egui::pos2(1390.0, 890.0)), Some(blocker));
+        // The dialog itself is above it.
+        let centre = ctx.layer_id_at(egui::pos2(700.0, 450.0)).expect("a layer");
+        assert_eq!(centre.order, egui::Order::Foreground);
+        app.dialog = Dialog::None;
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, false);
+        assert_ne!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
     }
 
     /// Every dialog can be drawn with a rectangle, text and a bitmap in the

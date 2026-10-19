@@ -1827,12 +1827,18 @@ impl App {
     }
 
     pub fn keyboard(&mut self, ctx: &egui::Context) {
-        // Table cell typing has priority while a cell is active.
-        if self.table_edit.is_some() && self.tool == Tool::Table && self.table_keyboard(ctx) {
+        let dialog_open = !matches!(self.dialog, crate::ui::dialogs::Dialog::None);
+        // Table cell typing has priority while a cell is active (not
+        // behind a dialog, which owns the keyboard).
+        if !dialog_open
+            && self.table_edit.is_some()
+            && self.tool == Tool::Table
+            && self.table_keyboard(ctx)
+        {
             return;
         }
         // Text typing has priority.
-        if self.text_edit.is_some() {
+        if self.text_edit.is_some() && !dialog_open {
             self.text_keyboard(ctx);
             return;
         }

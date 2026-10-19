@@ -2122,6 +2122,10 @@ pub struct Metadata {
     pub bleed: f64,
     pub rgb_profile: String,
     pub cmyk_profile: String,
+    /// The drawing's grayscale profile name (empty: the default one).
+    pub gray_profile: String,
+    /// The drawing's rendering intent (empty: the default one).
+    pub rendering_intent: String,
     /// Colour mode effects (blends, transparencies) and exports default to.
     pub primary_color_mode: PrimaryColorMode,
     pub grid: GridSettings,
