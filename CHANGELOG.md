@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Document Properties: language, title, subject, author, copyright,
+  tags, notes and a rating list, applied on OK in one undo step, over a
+  report of the file, the document, its colour settings, objects and
+  points, text, bitmaps, styles, effects, fills, outlines, colour models
+  and symbols. PDF files carry the language.
 - Files dropped on the window open or import: with a drawing shown they
   are imported into it in the middle of the view, otherwise each opens
   in its own tab (a picture gets a new drawing). `.psd` and every other

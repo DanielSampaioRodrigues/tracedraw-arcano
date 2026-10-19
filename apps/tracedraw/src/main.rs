@@ -40,6 +40,7 @@ mod defaults;
 mod describe;
 mod dimensions;
 mod distort_tool;
+mod doc_stats;
 mod documents;
 mod drawing_scale;
 mod drop_files;

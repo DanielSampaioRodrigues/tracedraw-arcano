@@ -2496,6 +2496,9 @@ pub struct Symbol {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Metadata {
+    /// The drawing's language (a language tag such as "en-US"; empty: not
+    /// set).
+    pub language: String,
     pub author: String,
     pub subject: String,
     pub keywords: String,
