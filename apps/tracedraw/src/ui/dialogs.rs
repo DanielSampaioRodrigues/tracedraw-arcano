@@ -11,7 +11,7 @@ use egui::{Context, Ui};
 use tracedraw_core::{
     document::ShapeKind,
     geometry::{Rect, Size},
-    Color, Command, Fill,
+    Color, Command,
 };
 
 pub use crate::ui::options::OptionsPage;
