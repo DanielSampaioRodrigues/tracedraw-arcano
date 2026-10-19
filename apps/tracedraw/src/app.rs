@@ -732,6 +732,20 @@ pub struct Pivots {
     pub several: std::collections::HashMap<Vec<ShapeId>, (f64, f64)>,
 }
 
+/// The extensions File > Open reads.
+pub const OPEN_EXTENSIONS: &[&str] = &[
+    "cdr", "cdt", "cdrt", "cmx", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf",
+    "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
+];
+
+/// The extensions File > Import reads (besides those of installed script
+/// filters).
+pub const IMPORT_EXTENSIONS: &[&str] = &[
+    "cdr", "cdt", "cdrt", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf", "psd",
+    "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg", "bmp",
+    "gif", "webp", "tif", "tiff",
+];
+
 pub struct App {
     pub engine: Engine,
     pub page: PageId,
@@ -4073,14 +4087,7 @@ impl App {
 
     pub fn open_dialog(&mut self) {
         crate::files::Dialog::new()
-            .add_filter(
-                crate::i18n::tr("file.all_supported"),
-                &[
-                    "cdr", "cdt", "cdrt", "cmx", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps",
-                    "prn", "dxf", "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf",
-                    "docx",
-                ],
-            )
+            .add_filter(crate::i18n::tr("file.all_supported"), OPEN_EXTENSIONS)
             .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
             .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
@@ -4974,13 +4981,7 @@ impl App {
     }
 
     pub fn import(&mut self) {
-        let mut all: Vec<String> = [
-            "cdr", "cdt", "cdrt", "cmx", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn", "dxf",
-            "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg",
-            "jpeg", "bmp", "gif", "webp", "tif", "tiff",
-        ]
-        .map(String::from)
-        .to_vec();
+        let mut all: Vec<String> = IMPORT_EXTENSIONS.iter().map(|e| e.to_string()).collect();
         let scripted: Vec<_> = self
             .settings
             .script_filters
@@ -5030,19 +5031,31 @@ impl App {
     }
 
     pub fn import_path(&mut self, path: &std::path::Path) {
+        let at = (self.settings.formats.import_place == crate::prefs::ImportPlace::ViewCenter)
+            .then(|| self.view_center());
+        self.import_path_placed(path, at);
+    }
+
+    /// The middle of the drawing window, page space.
+    pub fn view_center(&self) -> Point {
+        self.view.visible_page_rect(self.canvas_rect).center()
+    }
+
+    /// Import `path` like File > Import; `at` puts the middle of what came
+    /// there instead of where the file has it.
+    pub fn import_path_placed(&mut self, path: &std::path::Path, at: Option<Point>) {
         let before = self.selection.clone();
         self.import_path_as_in_file(path);
-        if self.settings.formats.import_place != crate::prefs::ImportPlace::ViewCenter
-            || self.selection == before
-            || self.selection.is_empty()
-        {
+        let Some(at) = at else {
+            return;
+        };
+        if self.selection == before || self.selection.is_empty() {
             return;
         }
         let Some(b) = self.selection_bounds() else {
             return;
         };
-        let view = self.view.visible_page_rect(self.canvas_rect).center();
-        let d = view - b.center();
+        let d = at - b.center();
         if !(d.x.is_finite() && d.y.is_finite()) {
             return;
         }

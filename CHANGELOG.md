@@ -256,6 +256,10 @@ full, row-by-row status.
   is let go (#188).
 - A right click while dragging an object no longer drops the copy at
   once: the outline follows the pointer until the left button goes up.
+- Files dropped on the window open or import: with a drawing shown they
+  are imported into it in the middle of the view, otherwise each opens
+  in its own tab (a picture gets a new drawing). `.psd` and every other
+  format File > Open and File > Import read are supported.
 
 ## 0.9.4 (2026-10-19)
 
