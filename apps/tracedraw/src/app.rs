@@ -369,6 +369,12 @@ pub enum Drag {
         start: Point,
         current: Point,
     },
+    /// Sliding the selected fitted text along its path (and away from
+    /// it) with the Pick tool.
+    AlongPath {
+        start: Point,
+        current: Point,
+    },
     /// Moving the selection.
     Move {
         /// Where the drag began.

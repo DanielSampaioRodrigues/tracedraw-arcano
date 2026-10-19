@@ -803,6 +803,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 crate::ui::connector_bar::connector_bar(app, ui);
             }
+            Tool::Pick | Tool::FreeformPick if app.fitted_text().is_some() => {
+                // A text fitted to a path: the object fields, then how it
+                // follows the path.
+                object_properties(app, ui);
+                vsep(ui);
+                crate::ui::text_path_bar::text_path_bar(app, ui);
+            }
             Tool::Pick | Tool::FreeformPick
                 if shapes
                     .iter()

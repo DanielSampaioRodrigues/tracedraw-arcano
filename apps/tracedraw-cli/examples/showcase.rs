@@ -743,6 +743,7 @@ fn typography(dir: &Path) {
             offset: 4.0,
             distance: 1.6,
             mirror: false,
+            ..Default::default()
         }),
     });
     on.fill = Fill::Solid(hex("#1F2437"));

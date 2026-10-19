@@ -33,6 +33,16 @@ full, row-by-row status.
   preset shapes in a grid) and Blend panels are laid out anew; blends
   gain spacing along a path, loop, along the full path, acceleration of
   sizes and clockwise or counterclockwise colours.
+- Text on a path has its own property bar: text orientation (rotated,
+  vertical or horizontal skew, upright), vertical placement (baseline,
+  ascender, descender, centred), placement along the path, distance,
+  offset, both mirrors and Straighten Text. Dragging a fitted text slides
+  it along its path; refitting a text to another path of the same kind
+  no longer shows the old letters.
+- Text fitted to a closed path stands on its outside, upright and
+  centred on its top, instead of starting at its right end on the
+  inside; the Text tool starts text on a path when clicked on its
+  outline.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

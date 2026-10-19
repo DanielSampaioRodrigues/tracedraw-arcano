@@ -590,6 +590,7 @@ fn text_on_a_path_is_written_as_its_outline() {
             offset: 0.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         });
     }
     doc.pages[0].layers[0].shapes = vec![t];
