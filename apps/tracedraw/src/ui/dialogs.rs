@@ -420,28 +420,7 @@ pub struct PasteSpecialState {
     pub choice: u8,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BarcodeState {
-    pub symbology: crate::barcode::Symbology,
-    pub text: String,
-    pub height_mm: f64,
-    pub module_mm: f64,
-    pub show_text: bool,
-    pub error: String,
-}
-
-impl Default for BarcodeState {
-    fn default() -> Self {
-        BarcodeState {
-            symbology: crate::barcode::Symbology::Code128,
-            text: "TRACEDRAW-2026".into(),
-            height_mm: 15.0,
-            module_mm: 0.33,
-            show_text: true,
-            error: String::new(),
-        }
-    }
-}
+pub use crate::ui::barcode_wizard::BarcodeState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceState {
@@ -1549,117 +1528,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::Barcode(st) => {
-            window(ctx, tr("dialog.barcode")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.barcode_type"));
-                    egui::ComboBox::from_id_salt("barcode_sym")
-                        .selected_text(st.symbology.name())
-                        .show_ui(ui, |ui| {
-                            for s in crate::barcode::Symbology::ALL {
-                                ui.selectable_value(&mut st.symbology, s, s.name());
-                            }
-                        });
-                });
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.barcode_text"));
-                    ui.text_edit_singleline(&mut st.text);
-                });
-                unit_value(ui, &tr("dialog.bar_height"), &mut st.height_mm, app.units);
-                unit_value(ui, &tr("dialog.module_width"), &mut st.module_mm, app.units);
-                ui.checkbox(&mut st.show_text, tr("dialog.show_text"));
-                if !st.error.is_empty() {
-                    ui.colored_label(egui::Color32::RED, &st.error);
-                }
-                if ok_cancel(ui, &mut close) {
-                    match crate::barcode::encode(st.symbology, &st.text) {
-                        Ok(modules) => {
-                            let m = st.module_mm.max(0.05);
-                            let h = st.height_mm.max(1.0);
-                            let total_w = modules.len() as f64 * m;
-                            let page = app.page_rect();
-                            let c = page.center();
-                            let x0 = c.x - total_w / 2.0;
-                            let y0 = c.y - h / 2.0;
-                            let mut path = tracedraw_core::geometry::BezPath::new();
-                            for (start, width) in crate::barcode::bars(&modules) {
-                                let r = Rect::new(
-                                    x0 + start as f64 * m,
-                                    y0,
-                                    x0 + (start + width) as f64 * m,
-                                    y0 + h,
-                                );
-                                path.extend(tracedraw_core::geometry::rect_path(r, 0.0));
-                            }
-                            let Some(layer) = app.active_layer() else {
-                                return;
-                            };
-                            let mut cmds = Vec::new();
-                            let mut ids = Vec::new();
-                            let bars_id = app.engine.new_shape_id();
-                            let mut bars = tracedraw_core::document::Shape::new(
-                                bars_id,
-                                ShapeKind::Path { path, closed: true },
-                            );
-                            bars.fill = Fill::Solid(Color::BLACK);
-                            bars.stroke = None;
-                            bars.name = Some(st.symbology.name().to_string());
-                            ids.push(bars_id);
-                            cmds.push(Command::AddShape { layer, shape: bars });
-                            if st.show_text {
-                                let text_id = app.engine.new_shape_id();
-                                let size_pt = (h * 0.2 * 72.0 / 25.4).clamp(5.0, 12.0);
-                                let mut label = tracedraw_core::document::Shape::new(
-                                    text_id,
-                                    ShapeKind::Text {
-                                        spans: vec![tracedraw_core::TextSpan::new(
-                                            st.text.clone(),
-                                            app.text_font.clone(),
-                                            size_pt,
-                                        )],
-                                        origin: tracedraw_core::geometry::Point::new(
-                                            c.x,
-                                            y0 - size_pt * 25.4 / 72.0 * 1.1,
-                                        ),
-                                        frame: None,
-                                        align: tracedraw_core::TextAlign::Center,
-                                        para: Default::default(),
-                                        on_path: None,
-                                    },
-                                );
-                                label.fill = Fill::Solid(Color::BLACK);
-                                label.stroke = None;
-                                ids.push(text_id);
-                                cmds.push(Command::AddShape {
-                                    layer,
-                                    shape: label,
-                                });
-                                cmds.push(Command::Group {
-                                    shapes: ids.clone(),
-                                });
-                            }
-                            if let Err(e) = app.engine.run_batch("Insert Barcode", &cmds) {
-                                app.status = e.to_string();
-                            }
-                            let last = app
-                                .doc()
-                                .page(app.page)
-                                .ok()
-                                .and_then(|p| p.layers.iter().find(|l| l.id == layer))
-                                .and_then(|l| l.shapes.last())
-                                .map(|s| s.id);
-                            if let Some(id) = last {
-                                app.select(vec![id]);
-                            }
-                        }
-                        Err(key) => {
-                            st.error = tr(key);
-                            close = false;
-                        }
-                    }
-                }
-            });
-        }
+        Dialog::Barcode(st) => crate::ui::barcode_wizard::dialog(app, ctx, st, &mut close),
         Dialog::QrCode(st) => {
             window(ctx, tr("dialog.qr_code")).show(ctx, |ui| {
                 ui.label(tr("dialog.qr_text"));

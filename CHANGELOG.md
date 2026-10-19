@@ -15,6 +15,12 @@ full, row-by-row status.
 - The standard bar's Options button opens the list of option pages; its
   buttons show their title, shortcut and what they do; two buttons open
   from and save to the drawing's Git repository.
+- Object > Insert > Barcode is a three-step Barcode Wizard with a sample
+  preview: Codabar, Code 39, Code 128, EAN-13, EAN-8, UPC-A, UPC-E and
+  Interleaved 2 of 5 (with EAN and UPC add-ons); printer resolution, bar
+  width reduction, magnification, bar height, wide to narrow ratio,
+  check character and quiet zone; font, size, weight, alignment and the
+  text options.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,
