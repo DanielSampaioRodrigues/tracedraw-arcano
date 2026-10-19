@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dialogs can be dragged by their title bar; they open centred (or where they were left, with Center dialog boxes off).
+
 - CMX files: text exported in several colours is read with each part in its colour and place (the long instruction form, character styles and per character styles are read), and version 8 `.cdr` files from the bidirectional edition read their paragraph text (#187).
 
 - Tables: cells are selected by dragging across them, Ctrl+click,
