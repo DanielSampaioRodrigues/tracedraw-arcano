@@ -19,9 +19,29 @@ use tracedraw_core::{
 pub struct ClipboardContent {
     pub text: Option<String>,
     pub image: Option<image::RgbaImage>,
+    /// Files copied in a file manager.
+    pub files: Vec<std::path::PathBuf>,
 }
 
 impl ClipboardContent {
+    pub fn is_empty(&self) -> bool {
+        self.text.is_none() && self.image.is_none() && self.files.is_empty()
+    }
+
+    /// A summary of the content, to tell whether the clipboard changed
+    /// since TraceDraw copied.
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.text.hash(&mut h);
+        self.image
+            .as_ref()
+            .map(|i| (i.width(), i.height(), i.as_raw()))
+            .hash(&mut h);
+        self.files.hash(&mut h);
+        h.finish()
+    }
+
     pub fn is_svg(&self) -> bool {
         self.text
             .as_deref()
@@ -48,7 +68,25 @@ pub fn read_system() -> ClipboardContent {
     let image = cb.get_image().ok().and_then(|img| {
         image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())
     });
-    ClipboardContent { text, image }
+    let files = cb
+        .get()
+        .file_list()
+        .unwrap_or_default()
+        .into_iter()
+        .map(without_line_end)
+        .collect();
+    ClipboardContent { text, image, files }
+}
+
+/// A path from a copied file list without the carriage return its line
+/// may keep: the list's lines end in CR LF and the clipboard library
+/// splits it at LF only.
+#[cfg(not(target_arch = "wasm32"))]
+fn without_line_end(path: std::path::PathBuf) -> std::path::PathBuf {
+    match path.to_str() {
+        Some(s) if s.ends_with(['\r', '\n']) => s.trim_end_matches(['\r', '\n']).into(),
+        _ => path,
+    }
 }
 
 /// Put text on the system clipboard (best effort).
@@ -84,9 +122,30 @@ impl App {
 
     /// Copy to the internal clipboard and, as SVG, to the system clipboard.
     pub fn copy_with_system(&mut self) {
+        // Nothing selected: the last copy stays as it was.
+        let Some(svg) = self.selection_svg() else {
+            return;
+        };
         self.copy();
-        if let Some(svg) = self.selection_svg() {
-            write_text(&svg);
+        write_text(&svg);
+        self.mark_system_clipboard(Some(&svg));
+    }
+
+    /// Remember what the system clipboard holds right after a copy here
+    /// (`written`: the text the copy put there), so that a paste can tell
+    /// whether something was copied elsewhere since.
+    pub fn mark_system_clipboard(&mut self, written: Option<&str>) {
+        // A browser hands the clipboard only to paste events: what was
+        // written is what a paste event brings back.
+        let now = match written {
+            Some(text) if crate::files::WEB => ClipboardContent {
+                text: Some(text.to_string()),
+                ..Default::default()
+            },
+            _ => read_system(),
+        };
+        if let Some(cb) = self.clipboard.as_mut() {
+            cb.system = now.fingerprint();
         }
     }
 
@@ -150,14 +209,39 @@ impl App {
         }
     }
 
-    /// Ctrl+V: the internal clipboard first, then whatever the system offers
-    /// (SVG as objects, an image as a bitmap, text as artistic text).
+    /// Edit > Paste: what was copied last, here or in another
+    /// application.
     pub fn paste_any(&mut self) {
-        if self.clipboard.is_some() {
-            self.paste();
+        self.paste_with_event_text(None);
+    }
+
+    /// Ctrl+V, with the text of the paste event when there was one (a
+    /// browser offers the clipboard's text only that way).
+    pub fn paste_with_event_text(&mut self, text: Option<String>) {
+        let mut content = read_system();
+        if crate::files::WEB {
+            content.text = text.filter(|t| !t.is_empty());
+        }
+        self.paste_from(content);
+    }
+
+    /// Paste the objects copied here while the system clipboard still
+    /// holds what that copy left there; otherwise what the system offers:
+    /// files are imported, SVG becomes objects, an image a bitmap, text
+    /// artistic text.
+    pub fn paste_from(&mut self, content: ClipboardContent) {
+        if let Some(cb) = &self.clipboard {
+            if content.is_empty() || cb.system == content.fingerprint() {
+                self.paste();
+                return;
+            }
+        }
+        if !content.files.is_empty() {
+            for path in &content.files {
+                self.import_path(path);
+            }
             return;
         }
-        let content = read_system();
         if content.is_svg() {
             if let Some(t) = content.text {
                 self.paste_as_svg(&t);
@@ -315,5 +399,132 @@ impl App {
         let mut data = s.data;
         data.retain(|(k, _)| k != "bitmap.link");
         self.run(Command::SetObjectData { shape: id, data });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shape_count(app: &App) -> usize {
+        app.doc().all_layers().map(|l| l.shapes.len()).sum()
+    }
+
+    /// A drawing with one rectangle, copied here; the system clipboard
+    /// then held `system`.
+    fn copied(system: &ClipboardContent) -> App {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.copy();
+        if let Some(cb) = app.clipboard.as_mut() {
+            cb.system = system.fingerprint();
+        }
+        app
+    }
+
+    fn svg_text() -> ClipboardContent {
+        ClipboardContent {
+            text: Some("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".into()),
+            ..Default::default()
+        }
+    }
+
+    fn picture() -> ClipboardContent {
+        ClipboardContent {
+            image: Some(image::RgbaImage::from_pixel(
+                3,
+                2,
+                image::Rgba([1, 2, 3, 255]),
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn is_bitmap(app: &App) -> bool {
+        app.selected_shapes()
+            .first()
+            .is_some_and(|s| matches!(s.kind, ShapeKind::Bitmap { .. }))
+    }
+
+    #[test]
+    fn the_copy_here_is_pasted_while_the_system_clipboard_still_holds_it() {
+        let mut app = copied(&svg_text());
+        app.paste_from(svg_text());
+        assert_eq!(shape_count(&app), 2);
+        assert!(matches!(
+            app.selected_shapes().first().map(|s| &s.kind),
+            Some(ShapeKind::Rect { .. })
+        ));
+        // No system clipboard (a session without one): the copy here.
+        app.paste_from(ClipboardContent::default());
+        assert_eq!(shape_count(&app), 3);
+    }
+
+    #[test]
+    fn a_picture_copied_elsewhere_afterwards_wins_over_the_copy_here() {
+        let mut app = copied(&svg_text());
+        app.paste_from(picture());
+        assert_eq!(shape_count(&app), 2);
+        assert!(is_bitmap(&app), "the picture, not the rectangle");
+        // Text copied elsewhere becomes text.
+        app.paste_from(ClipboardContent {
+            text: Some("Hello".into()),
+            ..Default::default()
+        });
+        assert!(matches!(
+            app.selected_shapes().first().map(|s| &s.kind),
+            Some(ShapeKind::Text { .. })
+        ));
+    }
+
+    #[test]
+    fn files_copied_in_a_file_manager_are_imported() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-paste-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("dot.png");
+        image::RgbaImage::from_pixel(4, 2, image::Rgba([0, 120, 215, 255]))
+            .save(&path)
+            .expect("png");
+        let mut app = copied(&svg_text());
+        app.paste_from(ClipboardContent {
+            files: vec![path],
+            ..Default::default()
+        });
+        assert_eq!(shape_count(&app), 2);
+        assert!(is_bitmap(&app));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn copied_file_paths_lose_the_line_end() {
+        use std::path::PathBuf;
+        assert_eq!(
+            without_line_end(PathBuf::from("/home/a/b c.psd\r")),
+            PathBuf::from("/home/a/b c.psd")
+        );
+        assert_eq!(
+            without_line_end(PathBuf::from("/home/a.png")),
+            PathBuf::from("/home/a.png")
+        );
+    }
+
+    #[test]
+    fn the_fingerprint_follows_the_content() {
+        let empty = ClipboardContent::default();
+        assert!(empty.is_empty());
+        assert_eq!(
+            empty.fingerprint(),
+            ClipboardContent::default().fingerprint()
+        );
+        assert_ne!(empty.fingerprint(), svg_text().fingerprint());
+        assert_ne!(svg_text().fingerprint(), picture().fingerprint());
+        assert!(!picture().is_empty());
     }
 }

@@ -531,7 +531,9 @@ impl App {
         self.clipboard = Some(crate::app::Clipboard {
             shapes,
             styles: self.doc().object_styles.clone(),
+            system: 0,
         });
+        self.mark_system_clipboard(None);
         true
     }
 
