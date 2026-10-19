@@ -1810,7 +1810,8 @@ impl<'a> Ctx<'a> {
         let align = match align.unwrap_or(0) {
             2 => TextAlign::Center,
             3 => TextAlign::Right,
-            4 | 5 => TextAlign::Justify,
+            4 => TextAlign::Justify,
+            5 => TextAlign::ForceJustify,
             _ => TextAlign::Left,
         };
         Some(ShapeKind::Text {
@@ -3737,6 +3738,7 @@ fn text_on(
             offset: 0.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         };
         return (tp, TextAlign::Left, 0.0);
     };
@@ -3750,6 +3752,7 @@ fn text_on(
         offset: 0.0,
         distance: if mirror { -distance } else { distance },
         mirror,
+        ..Default::default()
     };
     let total = tp.baseline().length();
     let mut at = f64::from(s.offset) * UNIT_MM * per_mm;
@@ -3900,6 +3903,7 @@ fn distance_to_path(path: &BezPath, p: Point) -> Option<f64> {
         offset: 0.0,
         distance: 0.0,
         mirror: false,
+        ..Default::default()
     };
     nearest_on(&tp.baseline(), p).map(|(_, d)| d)
 }
@@ -3952,6 +3956,7 @@ fn fit_text_at(t: &mut Shape, curve: &Shape, anchor: Anchor) -> bool {
         offset: 0.0,
         distance: 0.0,
         mirror: false,
+        ..Default::default()
     };
     let Some((at, _)) = nearest_on(&tp.baseline(), target) else {
         return false;

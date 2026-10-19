@@ -176,6 +176,13 @@ const STYLE_ALIGNS: [(TextAlign, u32); 4] = [
 
 /// The style of text with this alignment.
 fn style_for(align: TextAlign) -> u32 {
+    // The style table holds the four common alignments; forced
+    // justification takes the justified style, no alignment the left one.
+    let align = match align {
+        TextAlign::ForceJustify => TextAlign::Justify,
+        TextAlign::None => TextAlign::Left,
+        a => a,
+    };
     STYLE_ALIGNS
         .iter()
         .position(|(a, _)| *a == align)
@@ -2560,10 +2567,12 @@ fn full_text_style(sp: Option<&TextSpan>, fill: Option<&Fill>, align: TextAlign)
 /// full justify (5 forced).
 fn justify_code(align: TextAlign) -> u32 {
     match align {
+        TextAlign::None => 0,
         TextAlign::Left => 1,
         TextAlign::Center => 2,
         TextAlign::Right => 3,
         TextAlign::Justify => 4,
+        TextAlign::ForceJustify => 5,
     }
 }
 

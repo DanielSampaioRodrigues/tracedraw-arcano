@@ -26,12 +26,16 @@ later, and removing the last one gives the original back.
 
 ## Effects menu
 
-- The groups in alphabetical order of their English names: 3D Effects,
-  Adjust, Art Strokes, Blur, Camera, Color Transform, Contour,
-  Correction, Creative, Custom, Distort, Noise, Sharpen, Texture,
-  Transform. Items with settings end in "...". Below them Brush Strokes,
-  Bevel, Blend, Contour, Envelope, Extrude, Lens, Picture Mosaic and
-  Vector Mosaic.
+- Flatten Effects first, then a line, then the groups in alphabetical
+  order of their English names: 3D Effects, Adjust, Art Strokes, Blur,
+  Camera, Color Transform, Contour, Correction, Creative, Custom,
+  Distort, Noise, Sharpen, Texture, Transform. Each item shows the
+  effect as its picture; items with settings end in "...". Below a
+  second line the effect panels: Brush Strokes, Bevel, Blend, Contour
+  (Ctrl+F9), Envelope (Ctrl+F7), Extrude, Lens (Alt+F3), Picture Mosaic
+  and Vector Mosaic. Each opens its panel and is checked while the
+  panel's tab is in the shown docker column
+  (`ui::menus::tests::effects_menu_checks_the_open_effect_panels`).
 - The bitmap groups are on for any selection (see "On vector objects").
 - An item without settings (Auto Adjust, Desaturate, Invert Colors)
   adds the effect to every selected object at once. The others open the
@@ -418,7 +422,7 @@ Checks: `fx::tests::bitmap_effects_on_a_vector_object_draw_its_picture`,
 
 ## Effect Picker
 
-Effects > Effect Picker opens a floating window (it stays open while
+Window > Effect Picker opens a floating window (it stays open while
 you work) with every bitmap effect as a tile: the effect applied with
 its default settings to a 64-pixel landscape, and its name below.
 
@@ -436,3 +440,24 @@ its default settings to a 64-pixel landscape, and its name below.
 
 The bitmap's context menu writes its pixels, the effects in its stack
 included, to a PNG file (a download in the browser).
+
+## Bitmap Mask docker
+
+Bitmaps > Bitmap Mask opens the docker:
+
+- An eyedropper (the Color Eyedropper tool; each colour it samples
+  fills the selected slot and ticks it) and "Select colours from
+  bitmap" (the ten colours the first selected bitmap uses most, near
+  colours merged, fill the slots).
+- Ten colour slots: a check box (in use), the colour (click to select
+  the slot) and its tolerance.
+- Save mask and Open mask (`.msk` text files: one line per slot, "1
+  #rrggbb tolerance"), and Delete (the selected slot back to empty).
+- Tolerance: a slider and a field, 0 to 100 %, for the selected slot; a
+  pixel matches a slot when each of its channels is within the
+  tolerance (% of 255) of the slot's colour.
+- Colors: Hide selected (matching pixels become transparent) or Show
+  selected (only matching pixels stay, the default).
+- Apply, on the selected bitmaps, one undo step each; enabled with a
+  bitmap selected and a slot in use.
+- Checks: `bitmap_fx::tests::a_bitmap_mask_hides_or_keeps_its_colours`.

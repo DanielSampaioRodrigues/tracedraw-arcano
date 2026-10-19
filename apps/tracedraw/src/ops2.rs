@@ -1174,16 +1174,41 @@ impl App {
         }
     }
 
-    /// Bitmaps > Bitmap Mask: make the given colours transparent.
-    pub fn bitmap_color_mask(&mut self, colors: &[Color], tolerance: u8) {
-        let rgb: Vec<[u8; 3]> = colors.iter().map(|c| c.to_rgb8()).collect();
+    /// The Bitmap Mask docker's Apply: hide (or keep only) the colours of
+    /// the slots in use in the selected bitmaps. True when a bitmap changed.
+    pub fn apply_bitmap_mask(&mut self) -> bool {
+        let slots = self.mask.active();
+        if slots.is_empty() {
+            return false;
+        }
+        let hide = self.mask.hide;
+        let mut changed = false;
         for (id, rect, _, _, png) in self.bitmap_shapes() {
             let Some(img) = crate::bitmap_fx::decode(&png) else {
                 continue;
             };
-            let out = crate::bitmap_fx::color_mask(&img, &rgb, tolerance);
+            let out = crate::bitmap_fx::mask_bitmap(&img, &slots, hide);
             self.replace_bitmap(id, rect, &out);
+            changed = true;
         }
+        changed
+    }
+
+    /// "Select colours from bitmap": fill the slots with the colours the
+    /// first selected bitmap uses most, each in use.
+    pub fn mask_colors_from_bitmap(&mut self) -> bool {
+        let Some((_, _, _, _, png)) = self.bitmap_shapes().into_iter().next() else {
+            return false;
+        };
+        let Some(img) = crate::bitmap_fx::decode(&png) else {
+            return false;
+        };
+        let colors = crate::bitmap_fx::main_colors(&img, crate::bitmap_fx::MASK_SLOTS);
+        for (slot, c) in self.mask.slots.iter_mut().zip(colors) {
+            slot.on = true;
+            slot.color = Color::rgb8(c[0], c[1], c[2]);
+        }
+        true
     }
 
     /// Object > Convert to Bitmap: rasterise the selection at `dpi`.
@@ -1538,6 +1563,9 @@ impl App {
     /// Text > Fit Text to Path from the menu: a text and a path selected
     /// go together at once; otherwise the next click picks the path.
     pub fn begin_fit_text_to_path(&mut self) {
+        // A text being typed is finished first, so it goes on the path as
+        // typed and the typing does not carry on into a stale layout.
+        self.finish_text();
         let shapes = self.selected_shapes();
         let texts = shapes
             .iter()
@@ -1555,7 +1583,7 @@ impl App {
     /// or with no text selected a new empty text starts on it, ready to
     /// type.
     pub fn fit_text_to_picked_path(&mut self, path_id: ShapeId) {
-        let Ok((_, curve)) = self.doc().shape(path_id) else {
+        let Ok(curve) = self.doc().shape(path_id).map(|(_, s)| s.clone()) else {
             return;
         };
         if matches!(curve.kind, ShapeKind::Text { .. }) {
@@ -1563,7 +1591,6 @@ impl App {
             self.pending_text_path = true;
             return;
         }
-        let path = curve.page_path();
         let text = self
             .selected_shapes()
             .iter()
@@ -1575,6 +1602,8 @@ impl App {
             return;
         }
         self.finish_text();
+        let (path, closed) = path_for_text(&curve.page_path());
+        let (align, offset) = placement_on(&path, closed, self.text_align);
         let span = TextSpan {
             bold: self.text_bold,
             italic: self.text_italic,
@@ -1588,13 +1617,14 @@ impl App {
             spans: vec![span],
             origin: Point::ZERO,
             frame: None,
-            align: self.text_align,
+            align,
             para,
             on_path: Some(tracedraw_core::TextOnPath {
                 path,
-                offset: 0.0,
+                offset,
                 distance: 0.0,
                 mirror: false,
+                ..Default::default()
             }),
         }) {
             self.text_edit = Some(crate::app::TextEdit::at_end(id, 0));
@@ -1627,9 +1657,11 @@ impl App {
         else {
             return;
         };
-        // Path in the text's local space.
-        let path = text.transform.inverse() * curve.page_path();
-        let path = Affine::translate(-origin.to_vec2()) * path;
+        // The path turned and started as text sits on it (in page space,
+        // where outside and top are seen), then in the text's local space.
+        let (page_path, closed) = path_for_text(&curve.page_path());
+        let path = Affine::translate(-origin.to_vec2()) * (text.transform.inverse() * page_path);
+        let (align, offset) = placement_on(&path, closed, align);
         self.run(Command::SetShapeKind {
             shape: text.id,
             kind: ShapeKind::Text {
@@ -1640,13 +1672,42 @@ impl App {
                 para,
                 on_path: Some(tracedraw_core::TextOnPath {
                     path,
-                    offset: 0.0,
+                    offset,
                     distance: 0.0,
                     mirror: false,
+                    ..Default::default()
                 }),
             },
         });
         self.selection = vec![text.id];
+    }
+
+    /// The Text tool clicked on the outline of a path (not a text): a new
+    /// text starts on that path. True when it did.
+    pub fn start_text_on_path_at(&mut self, p: Point) -> bool {
+        let tolerance = 4.0 / f64::from(self.view.zoom).max(1e-6);
+        let Some(id) = self.hit_test(p) else {
+            return false;
+        };
+        let Ok((_, s)) = self.doc().shape(id) else {
+            return false;
+        };
+        if matches!(
+            s.kind,
+            ShapeKind::Text { .. } | ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }
+        ) {
+            return false;
+        }
+        let path = s.page_path();
+        let near = path.segments().any(|seg| {
+            kurbo::ParamCurveNearest::nearest(&seg, p, 1e-3).distance_sq <= tolerance * tolerance
+        });
+        if !near {
+            return false;
+        }
+        self.selection.clear();
+        self.fit_text_to_picked_path(id);
+        true
     }
 
     /// Text > Straighten Text on text fitted to a path: it comes off the
@@ -1784,34 +1845,6 @@ impl App {
     pub fn apply_text_font(&mut self, family: &str) {
         self.text_font = family.to_string();
         self.apply_text_style();
-    }
-
-    /// Replace the spans of a text object (Text docker edits).
-    pub fn set_text_spans(&mut self, id: ShapeId, spans: Vec<TextSpan>) {
-        let Some(s) = self.doc().find_shape(id).cloned() else {
-            return;
-        };
-        if let ShapeKind::Text {
-            origin,
-            frame,
-            align,
-            para,
-            on_path,
-            ..
-        } = s.kind
-        {
-            self.run(Command::SetShapeKind {
-                shape: id,
-                kind: ShapeKind::Text {
-                    spans,
-                    origin,
-                    frame,
-                    align,
-                    para,
-                    on_path,
-                },
-            });
-        }
     }
 
     // ----- scripts -----------------------------------------------------------------------
@@ -2046,6 +2079,127 @@ fn tiny_skia_white(w: u32, h: u32) -> tiny_skia::Pixmap {
     pm
 }
 
+/// The path text is fitted to, in page space: its first subpath, and for a
+/// closed one turned to run clockwise (so the letters stand on its
+/// outside) and started at its highest point. Returns the path and whether
+/// it is closed.
+pub fn path_for_text(path: &BezPath) -> (BezPath, bool) {
+    use kurbo::{ParamCurve, ParamCurveExtrema, PathSeg};
+    let mut first = BezPath::new();
+    let mut closed = false;
+    for el in path.elements() {
+        match el {
+            tracedraw_core::geometry::PathEl::MoveTo(_) if !first.elements().is_empty() => break,
+            tracedraw_core::geometry::PathEl::ClosePath => {
+                closed = true;
+                break;
+            }
+            e => first.push(*e),
+        }
+    }
+    let mut segs: Vec<PathSeg> = first.segments().collect();
+    if let (Some(a), Some(b)) = (segs.first(), segs.last()) {
+        if (a.start() - b.end()).hypot() < 1e-6 && segs.len() > 1 {
+            closed = true;
+        }
+    }
+    if !closed || segs.is_empty() {
+        return (first, false);
+    }
+    if let (Some(a), Some(b)) = (segs.first(), segs.last()) {
+        if (a.start() - b.end()).hypot() >= 1e-6 {
+            segs.push(PathSeg::Line(tracedraw_core::geometry::Line::new(
+                b.end(),
+                a.start(),
+            )));
+        }
+    }
+    // Shoelace over the flattened outline: positive runs anticlockwise
+    // (y up), whose left side, where letters stand, is the inside.
+    let mut area = 0.0;
+    let mut prev: Option<Point> = None;
+    let mut start: Option<Point> = None;
+    tracedraw_core::geometry::flatten(&first, 0.1, &mut |el| match el {
+        tracedraw_core::geometry::PathEl::MoveTo(p) => {
+            start = Some(p);
+            prev = Some(p);
+        }
+        tracedraw_core::geometry::PathEl::LineTo(p) => {
+            if let Some(q) = prev {
+                area += q.x * p.y - p.x * q.y;
+            }
+            prev = Some(p);
+        }
+        _ => {}
+    });
+    if let (Some(q), Some(p)) = (prev, start) {
+        area += q.x * p.y - p.x * q.y;
+    }
+    if area > 0.0 {
+        segs = segs.iter().rev().map(|s| s.reverse()).collect();
+    }
+    // The highest point: the segment and parameter where y is largest.
+    let mut best = (0usize, 0.0f64, f64::NEG_INFINITY);
+    for (i, seg) in segs.iter().enumerate() {
+        let mut ts = vec![0.0, 1.0];
+        ts.extend(seg.extrema());
+        for t in ts {
+            let y = seg.eval(t).y;
+            if y > best.2 + 1e-9 {
+                best = (i, t, y);
+            }
+        }
+    }
+    let (k, t, _) = best;
+    let mut order: Vec<PathSeg> = Vec::new();
+    if t < 1.0 - 1e-9 {
+        order.push(segs[k].subsegment(t..1.0));
+    }
+    order.extend(segs[k + 1..].iter().copied());
+    order.extend(segs[..k].iter().copied());
+    if t > 1e-9 {
+        order.push(segs[k].subsegment(0.0..t));
+    }
+    let mut out = BezPath::new();
+    if let Some(s0) = order.first() {
+        out.move_to(s0.start());
+    }
+    for seg in order {
+        match seg {
+            PathSeg::Line(l) => out.line_to(l.p1),
+            PathSeg::Quad(q) => out.quad_to(q.p1, q.p2),
+            PathSeg::Cubic(c) => out.curve_to(c.p1, c.p2, c.p3),
+        }
+    }
+    out.close_path();
+    (out, true)
+}
+
+/// Where text fitted to `path` (its local space) is placed: on a closed
+/// path centred on the start (the highest point), on an open one with the
+/// text's own alignment from the start. Returns the alignment and offset.
+pub fn placement_on(
+    path: &BezPath,
+    closed: bool,
+    align: tracedraw_core::TextAlign,
+) -> (tracedraw_core::TextAlign, f64) {
+    if !closed {
+        return (align, 0.0);
+    }
+    let total = tracedraw_core::TextOnPath {
+        path: path.clone(),
+        offset: 0.0,
+        distance: 0.0,
+        mirror: false,
+        ..Default::default()
+    }
+    .baseline()
+    .length();
+    // Centred text starts (total - width) / 2 along; half the length more
+    // brings its middle round to the start.
+    (tracedraw_core::TextAlign::Center, total / 2.0)
+}
+
 pub fn apply_case(text: &str, mode: CaseMode) -> String {
     match mode {
         CaseMode::Lower => text.to_lowercase(),
@@ -2125,6 +2279,7 @@ impl App {
             path: None,
             rotate_on_path: false,
             end_id: Some(end.id),
+            options: self.blend_options,
         });
         let cmds = vec![Command::SetEffects {
             shape: start.id,
@@ -2331,6 +2486,134 @@ mod tests {
             )
         });
         assert!(fitted);
+    }
+
+    use kurbo::ParamCurve as _;
+
+    fn fitted(app: &App, id: ShapeId) -> tracedraw_core::TextOnPath {
+        app.doc()
+            .shape(id)
+            .ok()
+            .and_then(|(_, s)| match &s.kind {
+                ShapeKind::Text { on_path, .. } => on_path.clone(),
+                _ => None,
+            })
+            .expect("text on a path")
+    }
+
+    #[test]
+    fn closed_paths_turn_clockwise_and_start_at_the_top() {
+        // A kurbo ellipse runs anticlockwise from its right end.
+        let e =
+            tracedraw_core::geometry::Ellipse::new((90.0, 130.0), (50.0, 30.0), 0.0).to_path(0.01);
+        let (path, closed) = path_for_text(&e);
+        assert!(closed);
+        let seg = path.segments().next().expect("a segment");
+        let start = seg.start();
+        assert!(
+            (start.x - 90.0).abs() < 0.05 && (start.y - 160.0).abs() < 0.05,
+            "{start:?}"
+        );
+        // Clockwise (y up): it heads right from the top.
+        assert!(seg.eval(0.01).x > start.x, "{:?}", seg.eval(0.01));
+        // An open path is kept as it runs.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        let (open, closed) = path_for_text(&line);
+        assert!(!closed);
+        assert_eq!(open, line);
+    }
+
+    #[test]
+    fn text_fitted_to_an_ellipse_sits_centred_on_its_top_outside() {
+        tracedraw_text::install();
+        let mut app = App::headless();
+        let e = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: tracedraw_core::geometry::Rect::new(40.0, 100.0, 140.0, 160.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.start_text(Point::new(60.0, 200.0), None);
+        app.text_insert("sasadsa");
+        app.finish_text();
+        let t = app.selection[0];
+        app.selection = vec![t, e];
+        app.begin_fit_text_to_path();
+        assert_eq!(app.selection, vec![t]);
+        // Still one text and the ellipse: the text itself went on the path.
+        let count: usize = app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum();
+        assert_eq!(count, 2);
+        let tp = fitted(&app, t);
+        assert!(tp.baseline().is_closed());
+        if tracedraw_text::fonts().families().is_empty() {
+            return;
+        }
+        let s = app.doc().shape(t).expect("text").1.clone();
+        let b = app.visual_bounds(&s);
+        // Centred over the top of the ellipse, on its outside, upright.
+        assert!((b.center().x - 90.0).abs() < 1.0, "{b:?}");
+        assert!(b.y0 > 155.0 && b.y0 < 161.0, "{b:?}");
+        assert!(b.height() < 10.0, "{b:?}");
+    }
+
+    #[test]
+    fn text_on_a_straight_line_stands_on_it_from_the_start() {
+        tracedraw_text::install();
+        let mut app = App::headless();
+        let mut line = BezPath::new();
+        line.move_to((10.0, 50.0));
+        line.line_to((90.0, 50.0));
+        let l = app
+            .new_shape(ShapeKind::Path {
+                path: line,
+                closed: false,
+            })
+            .expect("line");
+        app.start_text(Point::new(10.0, 120.0), None);
+        app.text_insert("Line");
+        app.finish_text();
+        let t = app.selection[0];
+        app.selection = vec![t, l];
+        app.begin_fit_text_to_path();
+        let tp = fitted(&app, t);
+        assert!(!tp.baseline().is_closed());
+        assert_eq!(tp.offset, 0.0);
+        if tracedraw_text::fonts().families().is_empty() {
+            return;
+        }
+        let s = app.doc().shape(t).expect("text").1.clone();
+        let b = app.visual_bounds(&s);
+        assert!((b.x0 - 10.0).abs() < 1.5, "{b:?}");
+        assert!(b.y0 > 49.0 && b.y0 < 51.0, "{b:?}");
+        assert!(b.height() < 8.0 && b.width() > b.height(), "{b:?}");
+    }
+
+    #[test]
+    fn the_text_tool_on_a_paths_outline_starts_text_on_it() {
+        let mut app = App::headless();
+        let e = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: tracedraw_core::geometry::Rect::new(40.0, 100.0, 140.0, 160.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        let _ = e;
+        // Inside, far from the outline: not on the path.
+        app.selection.clear();
+        assert!(!app.start_text_on_path_at(Point::new(90.0, 130.0)));
+        // On the outline at the top.
+        assert!(app.start_text_on_path_at(Point::new(90.0, 160.0)));
+        let t = app.selection[0];
+        assert!(app.text_edit.is_some());
+        let tp = fitted(&app, t);
+        let start = tp.path.segments().next().expect("segment").start();
+        assert!((start.y - 160.0).abs() < 0.05, "{start:?}");
     }
 
     #[test]

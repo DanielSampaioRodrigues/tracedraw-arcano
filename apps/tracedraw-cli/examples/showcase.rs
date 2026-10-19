@@ -332,6 +332,7 @@ fn poster(dir: &Path) -> Document {
         path: None,
         rotate_on_path: false,
         end_id: None,
+        options: Default::default(),
     });
     b.add(glint, "Sun reflection");
 
@@ -513,6 +514,7 @@ fn effects(dir: &Path) {
         path: None,
         rotate_on_path: false,
         end_id: None,
+        options: Default::default(),
     });
     b.add(start, "Blend");
 
@@ -741,6 +743,7 @@ fn typography(dir: &Path) {
             offset: 4.0,
             distance: 1.6,
             mirror: false,
+            ..Default::default()
         }),
     });
     on.fill = Fill::Solid(hex("#1F2437"));

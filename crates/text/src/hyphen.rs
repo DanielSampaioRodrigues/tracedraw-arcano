@@ -4,7 +4,24 @@
 //! else. Minimum 2 letters before and 3 after a break by default.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
+
+/// Words with hyphens the user placed (custom optional hyphens): the word
+/// in lower case and its break points, used before the patterns.
+fn custom() -> &'static RwLock<HashMap<String, Vec<usize>>> {
+    static CUSTOM: OnceLock<RwLock<HashMap<String, Vec<usize>>>> = OnceLock::new();
+    CUSTOM.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// Replace the custom optional hyphens: each word (any case) with the
+/// character counts after which it may break.
+pub fn set_custom(defs: Vec<(String, Vec<usize>)>) {
+    let mut map = custom().write().unwrap_or_else(|e| e.into_inner());
+    map.clear();
+    for (w, p) in defs {
+        map.insert(w.to_lowercase(), p);
+    }
+}
 
 const MIN_BEFORE: usize = 2;
 const MIN_AFTER: usize = 3;
@@ -54,6 +71,18 @@ fn patterns(lang: &str) -> &'static Patterns {
 /// Words with a capital letter (names, acronyms) are not broken.
 pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
     let chars: Vec<char> = word.chars().collect();
+    // The user's own hyphens win, capitals or not.
+    if let Some(p) = custom()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&word.to_lowercase())
+    {
+        return p
+            .iter()
+            .copied()
+            .filter(|&i| i > 0 && i < chars.len())
+            .collect();
+    }
     if chars.len() < MIN_BEFORE + MIN_AFTER
         || !chars.iter().all(|c| c.is_alphabetic())
         || chars.iter().any(|c| c.is_uppercase())

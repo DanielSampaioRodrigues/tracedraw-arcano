@@ -13,12 +13,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
-        text_outline::TextRequest, DocumentFont, ParagraphStyle, TextAlign, TextOnPath, TextSpan,
-        VerticalAlign,
+        text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
+        PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _},
 };
 
+pub mod catalog;
 pub mod hyphen;
 
 /// Points to millimetres.
@@ -72,6 +73,9 @@ pub fn install() {
                 end_char: l.end_char,
                 x: l.edges.first().copied().unwrap_or(0.0),
                 baseline: l.baseline,
+                ascent: l.ascent,
+                descent: l.descent,
+                edges: l.edges.clone(),
             })
             .collect()
     });
@@ -289,7 +293,7 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
 }
 
 /// How a family's fonts are built, for the icons of font lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FontKind {
     /// TrueType outlines.
     TrueType,
@@ -620,6 +624,8 @@ struct HyphenGlyph {
 /// Vertical metrics of a span's face at its size, mm.
 #[derive(Clone, Copy, Default)]
 struct Metrics {
+    /// The font size, mm.
+    size: f64,
     ascent: f64,
     descent: f64,
     line_height: f64,
@@ -1157,6 +1163,71 @@ impl FontSystem {
         None
     }
 
+    /// The characters `family`'s regular face draws, in code point order
+    /// (empty when the family is unknown). For the Glyphs docker.
+    pub fn char_coverage(&self, family: &str) -> Vec<char> {
+        let Some(id) = self.face_for(family, false, false) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return Vec::new();
+        };
+        let mut out: Vec<char> = Vec::new();
+        if let Some(cmap) = face.tables().cmap {
+            for sub in cmap.subtables {
+                if !sub.is_unicode() {
+                    continue;
+                }
+                sub.codepoints(|cp| {
+                    if let Some(c) = char::from_u32(cp) {
+                        if !c.is_control() && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
+                            out.push(c);
+                        }
+                    }
+                });
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// The OpenType features among `candidates` that draw `ch` with
+    /// another glyph in `family` (its alternates, for the Glyphs docker).
+    pub fn glyph_variants(&self, family: &str, ch: char, candidates: &[&str]) -> Vec<String> {
+        let Some(id) = self.face_for(family, false, false) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Some(hb) = rustybuzz::Face::from_slice(&data, index) else {
+            return Vec::new();
+        };
+        let shape = |features: &[rustybuzz::Feature]| -> Vec<u32> {
+            let mut buffer = rustybuzz::UnicodeBuffer::new();
+            buffer.push_str(&ch.to_string());
+            buffer.guess_segment_properties();
+            rustybuzz::shape(&hb, features, buffer)
+                .glyph_infos()
+                .iter()
+                .map(|g| g.glyph_id)
+                .collect()
+        };
+        let plain = shape(&[]);
+        candidates
+            .iter()
+            .filter(|tag| {
+                let t = rustybuzz::ttf_parser::Tag::from_bytes_lossy(tag.as_bytes());
+                shape(&[rustybuzz::Feature::new(t, 1, ..)]) != plain
+            })
+            .map(|t| t.to_string())
+            .collect()
+    }
+
     /// Sorted list of the family names available: those installed on
     /// this machine and those documents brought.
     pub fn families(&self) -> Vec<String> {
@@ -1356,13 +1427,34 @@ impl FontSystem {
             req.align,
             req.para,
             req.on_path
-                .map(|p| format!(
-                    "{:?}|{}|{}|{}",
-                    p.path.elements().len(),
-                    p.offset,
-                    p.distance,
-                    p.mirror
-                ))
+                .map(|p| {
+                    // The whole path, not just its size: two ellipses have
+                    // the same number of elements.
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    for el in p.path.elements() {
+                        for pt in [el.end_point()].into_iter().flatten().chain(match el {
+                            tracedraw_core::geometry::PathEl::QuadTo(a, _) => vec![*a],
+                            tracedraw_core::geometry::PathEl::CurveTo(a, b, _) => vec![*a, *b],
+                            _ => Vec::new(),
+                        }) {
+                            pt.x.to_bits().hash(&mut h);
+                            pt.y.to_bits().hash(&mut h);
+                        }
+                        std::mem::discriminant(el).hash(&mut h);
+                    }
+                    format!(
+                        "{:x}|{}|{}|{}|{}|{}|{:?}|{:?}",
+                        h.finish(),
+                        p.offset,
+                        p.distance,
+                        p.mirror,
+                        p.mirror_h,
+                        p.mirror_v,
+                        p.orientation,
+                        p.vertical
+                    )
+                })
                 .unwrap_or_default(),
             req.spans
                 .iter()
@@ -1429,6 +1521,7 @@ impl FontSystem {
         let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
             let s = span.size_pt * PT_MM;
             return Metrics {
+                size: s,
                 ascent: s * 0.8,
                 descent: s * 0.2,
                 line_height: s * 1.2,
@@ -1450,6 +1543,7 @@ impl FontSystem {
         let ul = face.underline_metrics();
         let st = face.strikeout_metrics();
         Metrics {
+            size: span.size_pt * PT_MM,
             ascent: asc,
             descent: desc,
             line_height: asc + desc + gap,
@@ -1896,7 +1990,7 @@ impl FontSystem {
                     // A drop cap takes the first glyph out of the first
                     // line and narrows the lines beside it.
                     let cap = glyphs.first().filter(|_| para.drop_cap_lines > 1).map(|g| {
-                        let step = m.line_height * para.leading_pct / 100.0;
+                        let step = para.line_step(m.line_height, m.size);
                         let n = para.drop_cap_lines as f64;
                         let (scale, _) = drop_cap_placement(&g.path, n, step, 0.0, m.ascent);
                         DropCap {
@@ -1970,7 +2064,7 @@ impl FontSystem {
 
         for (li, line) in lines.iter().enumerate() {
             let m = line.metrics;
-            let step = m.line_height * para.leading_pct / 100.0;
+            let step = para.line_step(m.line_height, m.size);
             // Paragraph spacing.
             let mut advance_y = if artistic {
                 if line.para == 0 && line.first_in_para {
@@ -2062,11 +2156,13 @@ impl FontSystem {
             let hyphen_w = line.hyphen.as_ref().map(|h| h.advance).unwrap_or(0.0);
             let total_w = content_w + hyphen_w;
             let (dx, space_extra) = match req.align {
-                TextAlign::Left => (0.0, 0.0),
+                TextAlign::Left | TextAlign::None => (0.0, 0.0),
                 TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, 0.0),
                 TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), 0.0),
-                TextAlign::Justify => {
-                    if line.last_in_para || n_spaces == 0 || !avail.is_finite() {
+                TextAlign::Justify | TextAlign::ForceJustify => {
+                    // Forced justification spreads the last line too.
+                    let last = line.last_in_para && req.align == TextAlign::Justify;
+                    if last || n_spaces == 0 || !avail.is_finite() {
                         (0.0, 0.0)
                     } else {
                         (0.0, (avail - total_w).max(0.0) / n_spaces as f64)
@@ -2257,6 +2353,7 @@ fn line_metrics(glyphs: &[Glyph], metrics: &[Metrics], fallback: Metrics) -> Met
         m.ascent = m.ascent.max(gm.ascent);
         m.descent = m.descent.max(gm.descent);
         m.line_height = m.line_height.max(gm.line_height);
+        m.size = m.size.max(gm.size);
     }
     m
 }
@@ -2532,6 +2629,21 @@ fn place_on_path(
             TextAlign::Right => total - text_w,
             _ => 0.0,
         };
+    // The line of the letters that sits on the path, as a shift of the
+    // letters (y up) before they are placed.
+    let m = &line.metrics;
+    let lift = match tp.vertical {
+        PathTextVertical::Baseline => 0.0,
+        PathTextVertical::Ascender => -m.ascent,
+        PathTextVertical::Descender => m.descent,
+        PathTextVertical::Center => (m.descent - m.ascent) / 2.0,
+    };
+    // One mirror on: the letters are flipped across the baseline.
+    let flip = if tp.flipped() {
+        Affine::scale_non_uniform(1.0, -1.0)
+    } else {
+        Affine::IDENTITY
+    };
     let mut pen = start;
     for g in &line.glyphs {
         let mid = pen + g.advance / 2.0;
@@ -2539,13 +2651,35 @@ fn place_on_path(
         let Some((p, dir)) = baseline.at(mid) else {
             continue;
         };
+        let along = letter_frame(tp.orientation, dir);
         let place = Affine::translate(p.to_vec2())
-            * Affine::rotate(dir.y.atan2(dir.x))
-            * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset));
+            * along
+            * flip
+            * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset + lift));
         let gp = place * g.path.as_ref().clone();
         out.extend(gp.elements().iter().copied());
     }
     out
+}
+
+/// How a letter centred at a point of the path with unit direction `dir`
+/// is turned or sheared there (before the letter's own flip).
+fn letter_frame(o: PathTextOrientation, dir: tracedraw_core::geometry::Vec2) -> Affine {
+    // The direction's horizontal part, kept away from zero so a nearly
+    // vertical stretch of path does not shear a letter to a line.
+    let cx = if dir.x.abs() < 0.2 {
+        0.2_f64.copysign(if dir.x == 0.0 { 1.0 } else { dir.x })
+    } else {
+        dir.x
+    };
+    match o {
+        PathTextOrientation::Rotate => Affine::rotate(dir.y.atan2(dir.x)),
+        PathTextOrientation::Upright => Affine::IDENTITY,
+        // x follows the path's slope, y stays vertical.
+        PathTextOrientation::VerticalSkew => Affine::new([1.0, dir.y / cx, 0.0, 1.0, 0.0, 0.0]),
+        // x stays horizontal, y leans along the path's normal.
+        PathTextOrientation::HorizontalSkew => Affine::new([1.0, 0.0, -dir.y / cx, 1.0, 0.0, 0.0]),
+    }
 }
 
 struct OutlineSink {
@@ -2602,6 +2736,7 @@ mod tests {
             underline: false,
             strikethrough: false,
             fill: None,
+            background: None,
             features: Vec::new(),
         }
     }
@@ -2903,6 +3038,120 @@ mod tests {
     }
 
     #[test]
+    fn forced_justification_spreads_the_last_line_too() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq");
+        let para = ParagraphStyle::default();
+        let lay = |align| {
+            f.layout(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: Some(Size::new(30.0, 100.0)),
+                align,
+                para: &para,
+                on_path: None,
+            })
+        };
+        let last_width = |l: &TextLayout| {
+            let line = l.lines.last().expect("lines");
+            line.edges.last().copied().unwrap_or(0.0) - line.edges.first().copied().unwrap_or(0.0)
+        };
+        let full = lay(TextAlign::Justify);
+        let forced = lay(TextAlign::ForceJustify);
+        assert!(full.lines.len() > 1);
+        assert!(last_width(&forced) > last_width(&full) + 1.0);
+        // No alignment lays out as left.
+        assert_eq!(
+            lay(TextAlign::None).baselines,
+            lay(TextAlign::Left).baselines
+        );
+    }
+
+    #[test]
+    fn line_spacing_in_points_and_in_percent_of_the_size() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one\ntwo");
+        let gap = |para: ParagraphStyle| {
+            let l = f.layout(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: Some(Size::new(100.0, 100.0)),
+                align: TextAlign::Left,
+                para: &para,
+                on_path: None,
+            });
+            l.lines[0].baseline - l.lines[1].baseline
+        };
+        let pts = gap(ParagraphStyle {
+            leading_unit: tracedraw_core::LeadingUnit::Points,
+            leading_pct: 36.0,
+            ..ParagraphStyle::default()
+        });
+        assert!((pts - 36.0 * PT_MM).abs() < 1e-6, "{pts}");
+        let size = s.size_pt * PT_MM;
+        let pct = gap(ParagraphStyle {
+            leading_unit: tracedraw_core::LeadingUnit::PercentPointSize,
+            leading_pct: 150.0,
+            ..ParagraphStyle::default()
+        });
+        assert!((pct - 1.5 * size).abs() < 1e-6, "{pct}");
+    }
+
+    #[test]
+    fn character_backgrounds_cover_their_characters() {
+        if !has_fonts() {
+            return;
+        }
+        install();
+        let mut a = span("ab");
+        a.background = Some(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            255, 255, 0,
+        )));
+        let b = span("cd");
+        let kind = tracedraw_core::ShapeKind::Text {
+            spans: vec![a, b],
+            origin: Point::new(10.0, 20.0),
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        let rects = tracedraw_core::document::text_backgrounds(&kind);
+        assert_eq!(rects.len(), 1);
+        let r = rects[0].0;
+        assert!((r.x0 - 10.0).abs() < 1e-6, "{r:?}");
+        assert!(r.y0 < 20.0 && r.y1 > 20.0, "{r:?}");
+        // The background stops where "cd" starts.
+        let whole = tracedraw_core::document::text_outline::lines(
+            &tracedraw_core::document::text_outline::TextRequest {
+                spans: match &kind {
+                    tracedraw_core::ShapeKind::Text { spans, .. } => spans,
+                    _ => unreachable!(),
+                },
+                frame: None,
+                align: TextAlign::Left,
+                para: &ParagraphStyle::default(),
+                on_path: None,
+            },
+        )
+        .expect("lines");
+        let end = whole[0].edges.last().copied().unwrap_or(0.0) + 10.0;
+        assert!(r.x1 < end - 0.5, "{r:?} {end}");
+    }
+
+    #[test]
+    fn custom_hyphens_come_before_the_patterns() {
+        hyphen::set_custom(vec![("zebracorn".into(), vec![3])]);
+        assert_eq!(hyphen::break_points("Zebracorn"), vec![3]);
+        hyphen::set_custom(Vec::new());
+        assert_ne!(hyphen::break_points("zebracorn"), vec![3]);
+    }
+
+    #[test]
     fn baseline_grid_snaps_every_baseline_to_the_pitch() {
         if !has_fonts() {
             return;
@@ -3043,6 +3292,7 @@ mod tests {
             offset: 0.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         };
         let l = f.layout(&TextRequest {
             spans: &[s],
@@ -3084,6 +3334,7 @@ mod tests {
             offset: 0.0,
             distance: 2.0,
             mirror: false,
+            ..Default::default()
         };
         let above = on_path(f, "Fit", &tp, TextAlign::Center);
         tp.mirror = true;
@@ -3100,6 +3351,146 @@ mod tests {
         }
         assert!(above.bounding_box().y0 > 1.5);
         assert!(below.bounding_box().y1 < -1.5);
+    }
+
+    fn flat_line() -> BezPath {
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((100.0, 0.0));
+        line
+    }
+
+    #[test]
+    fn the_letters_line_on_the_path_follows_the_vertical_placement() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut tp = TextOnPath {
+            path: flat_line(),
+            ..Default::default()
+        };
+        let base = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        // Baseline: "g" hangs below, "H" stands above.
+        assert!(base.y0 < -0.3 && base.y1 > 2.0, "{base:?}");
+        tp.vertical = PathTextVertical::Ascender;
+        let asc = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(asc.y1 <= 0.05 && asc.y1 > -1.5, "{asc:?}");
+        tp.vertical = PathTextVertical::Descender;
+        let desc = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(desc.y0 >= -0.05 && desc.y0 < 1.0, "{desc:?}");
+        tp.vertical = PathTextVertical::Center;
+        let mid = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(mid.y0 < 0.0 && mid.y1 > 0.0, "{mid:?}");
+        assert!((mid.y0 + mid.y1).abs() < base.height() * 0.5, "{mid:?}");
+    }
+
+    #[test]
+    fn single_mirrors_flip_the_letters_and_both_turn_them_round() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut tp = TextOnPath {
+            path: flat_line(),
+            distance: 2.0,
+            ..Default::default()
+        };
+        let plain = on_path(f, "L", &tp, TextAlign::Left);
+        // Vertical mirror: the same letter upside down below the line.
+        tp.set_mirrors(false, true);
+        let v = on_path(f, "L", &tp, TextAlign::Left);
+        let flipped = Affine::scale_non_uniform(1.0, -1.0) * plain.clone();
+        let ends = |p: &BezPath| -> Vec<Point> {
+            p.elements().iter().filter_map(|e| e.end_point()).collect()
+        };
+        for (a, b) in ends(&v).iter().zip(ends(&flipped).iter()) {
+            assert!((*a - *b).hypot() < 1e-6, "{a:?} {b:?}");
+        }
+        // Horizontal mirror: above the line, reading from its end.
+        tp.set_mirrors(true, false);
+        let h = on_path(f, "L", &tp, TextAlign::Left).bounding_box();
+        assert!(h.y0 > 1.5 && h.x1 > 95.0, "{h:?}");
+        // Both: the old mirror, turned half round below the line.
+        tp.set_mirrors(true, true);
+        let both = on_path(f, "L", &tp, TextAlign::Left).bounding_box();
+        assert!(both.y1 < -1.5 && both.x1 > 95.0, "{both:?}");
+        assert_eq!(tp.mirrors(), (true, true));
+    }
+
+    #[test]
+    fn upright_and_skewed_letters_keep_their_strokes_straight() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        // A 45 degree line.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((100.0, 100.0));
+        let mut tp = TextOnPath {
+            path: line,
+            ..Default::default()
+        };
+        let straight = f.outline(&[span("I")]).path.bounding_box();
+        let rotated = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        tp.orientation = PathTextOrientation::Upright;
+        let upright = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        // Upright: the letter keeps its own size; turned, its box grows.
+        assert!(
+            (upright.width() - straight.width()).abs() < 1e-6,
+            "{upright:?}"
+        );
+        assert!(
+            (upright.height() - straight.height()).abs() < 1e-6,
+            "{upright:?}"
+        );
+        assert!(rotated.width() > straight.width() + 1.0, "{rotated:?}");
+        // Vertical skew keeps the height; horizontal skew keeps the width
+        // of each horizontal slice and leans the letter.
+        tp.orientation = PathTextOrientation::VerticalSkew;
+        let vs = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        assert!((vs.width() - straight.width()).abs() < 1e-6, "{vs:?}");
+        assert!(vs.height() > straight.height(), "{vs:?}");
+        tp.orientation = PathTextOrientation::HorizontalSkew;
+        let hs = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        assert!((hs.height() - straight.height()).abs() < 1e-6, "{hs:?}");
+        assert!(hs.width() > straight.width() + 1.0, "{hs:?}");
+    }
+
+    #[test]
+    fn a_text_refitted_to_another_path_of_the_same_kind_is_laid_out_again() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let e = |cx: f64| {
+            tracedraw_core::geometry::Ellipse::new((cx, 0.0), (40.0, 20.0), 0.0).to_path(0.01)
+        };
+        let s = span("same");
+        let para = ParagraphStyle::default();
+        let first = TextOnPath {
+            path: e(0.0),
+            ..Default::default()
+        };
+        let second = TextOnPath {
+            path: e(200.0),
+            ..Default::default()
+        };
+        assert_eq!(first.path.elements().len(), second.path.elements().len());
+        let out = |tp: &TextOnPath| {
+            f.outline_cached(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: None,
+                align: TextAlign::Left,
+                para: &para,
+                on_path: Some(tp),
+            })
+            .bounding_box()
+        };
+        let a = out(&first);
+        let b = out(&second);
+        assert!(b.x0 > a.x1, "{a:?} {b:?}");
     }
 
     #[test]
@@ -3121,6 +3512,7 @@ mod tests {
             offset: 395.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         };
         let b = on_path(f, "MMMMMM", &tp, TextAlign::Left).bounding_box();
         // On along the first side, not heaped at the corner.

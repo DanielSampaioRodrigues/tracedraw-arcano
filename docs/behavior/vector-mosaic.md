@@ -11,13 +11,20 @@ top of the selection, in one undo step ("Vector Mosaic"), and selects it.
 |---|---|---|---|
 | Density | 10 | 1 to 100 | Tiles per inch along the rows and columns: the pitch is `25.4 / density` mm |
 | Scale | 1 | 0.1 to 5 | Tile size factor: a tile is `pitch x scale` across |
-| Screen angle | 0° | -90 to 90 | The rows turned counter-clockwise |
-| Keep original | on | | Off deletes the selection after the mosaic is made |
-| Limit colors | off, 8 | 2 to 256 | The tiles' colours reduced to at most that many (median cut) |
-| Method | Uniform (white matte) | | How tiles follow the source, below |
+| Screen angle | 30° | -90 to 90 | The rows turned counter-clockwise |
+| Keep original | off | | Off deletes the selection after the mosaic is made |
+| Limit colors | on, 16 | 2 to 256 | The tiles' colours reduced to at most that many (median cut) |
+| Method | Size modulation 1 (opacity) | | How tiles follow the source, below |
 | Merge adjacent | 1 | 1 to 36 | The most tiles of one colour combined into one |
-| Weld adjacent overlap | off | | One curve per colour instead of one object per tile |
+| Weld adjacent overlap | on | | One curve per colour instead of one object per tile |
 | Shape | Circle | Circle, Square, Custom | The tile; squares and custom tiles turn with the screen |
+
+The defaults are checked by `vector_mosaic::tests::the_defaults_match_the_panel`.
+
+The panel lays these out as labelled rows: Density, Scale, Screen angle
+and Keep original, then Limit colors with its number, then the Tracking
+section (Method, Merge adjacent, Weld adjacent overlap), then Shape with
+Select beside it, the preview under them, and a full-width Apply.
 
 The preview under Shape shows the tile. For Custom, select a closed curve
 and click Select: its outline, fitted to a unit square, becomes the tile

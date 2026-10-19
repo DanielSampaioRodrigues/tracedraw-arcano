@@ -489,10 +489,24 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             Tokens::text_dim(),
             egui::Stroke::NONE,
         ));
+        // The list stays open while its boxes are ticked; the X or a click
+        // outside closes it.
         egui::Popup::menu(&snap_resp)
             .id(egui::Id::new("snap_to_menu"))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                ui.checkbox(&mut app.snap.pixels, tr("menu.view.snap_pixels"));
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut app.snap.pixels, tr("menu.view.snap_pixels"));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(egui::Button::new("\u{2715}").frame(false))
+                            .on_hover_text(tr("toolbar.snap_close"))
+                            .clicked()
+                        {
+                            ui.close();
+                        }
+                    });
+                });
                 ui.checkbox(&mut app.snap.grid, tr("menu.view.snap_document_grid"));
                 ui.checkbox(
                     &mut app.snap.baseline_grid,
@@ -802,6 +816,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 object_properties(app, ui);
                 vsep(ui);
                 crate::ui::connector_bar::connector_bar(app, ui);
+            }
+            Tool::Pick | Tool::FreeformPick if app.fitted_text().is_some() => {
+                // A text fitted to a path: the object fields, then how it
+                // follows the path.
+                object_properties(app, ui);
+                vsep(ui);
+                crate::ui::text_path_bar::text_path_bar(app, ui);
             }
             Tool::Pick | Tool::FreeformPick
                 if shapes

@@ -1,6 +1,12 @@
 # Picture Mosaic
 
-Effects > Picture Mosaic opens the Picture Mosaic panel, which recreates
+Effects > Picture Mosaic opens the Picture Mosaic panel (sections:
+Reference with what is selected and Keep original; Library with the
+picture count, the folder and Browse; Grid with Columns, the Rows they
+give and Blending; Allow duplicates with the tile spacing beside it;
+Output with Composition, Edges, Output priority, the resolution, and
+the artwork's and one tile's width and height in pixels, editable when
+the priority sets them; and a full-width Apply), which recreates
 the selected objects (vector or bitmap, any number) as a mosaic of
 pictures from an image library. Apply makes
 the mosaic on top of the selection in one undo step ("Picture Mosaic") and

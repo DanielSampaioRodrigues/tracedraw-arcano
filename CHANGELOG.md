@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.9.4 (2026-10-19)
+
 - Color Management Settings: Document and Default tabs, the drawing's
   current profiles, assign or convert new RGB, CMYK and grayscale
   profiles chosen from the profiles found on the computer, primary mode
@@ -15,6 +17,65 @@ full, row-by-row status.
 - The standard bar's Options button opens the list of option pages; its
   buttons show their title, shortcut and what they do; two buttons open
   from and save to the drawing's Git repository.
+- Object > Insert > Barcode is a three-step Barcode Wizard with a sample
+  preview: Codabar, Code 39, Code 128, EAN-13, EAN-8, UPC-A, UPC-E and
+  Interleaved 2 of 5 (with EAN and UPC add-ons); printer resolution, bar
+  width reduction, magnification, bar height, wide to narrow ratio,
+  check character and quiet zone; font, size, weight, alignment and the
+  text options.
+- QR codes are live objects: Object > Insert > QR Code places one at
+  once, and Properties edits its kind of content (URL, email, phone,
+  SMS, contact, text, location) and fields, pixel and background fills,
+  pixel outline and pixel size, with Validate reading the code back.
+- Effects menu: Flatten Effects, the effect groups, then the effect
+  panels, each checked while open (Effect Picker moves to the Window
+  menu); Object > Create keeps Arrowhead and Pattern Fill, which asks
+  for a vector or bitmap pattern. The Picture Mosaic, Vector Mosaic,
+  Extrude (pages with a type picture and Measure from), Envelope (24
+  preset shapes in a grid) and Blend panels are laid out anew; blends
+  gain spacing along a path, loop, along the full path, acceleration of
+  sizes and clockwise or counterclockwise colours.
+- Text on a path has its own property bar: text orientation (rotated,
+  vertical or horizontal skew, upright), vertical placement (baseline,
+  ascender, descender, centred), placement along the path, distance,
+  offset, both mirrors and Straighten Text. Dragging a fitted text slides
+  it along its path; refitting a text to another path of the same kind
+  no longer shows the old letters.
+- Text fitted to a closed path stands on its outside, upright and
+  centred on its top, instead of starting at its right end on the
+  inside; the Text tool starts text on a path when clicked on its
+  outline.
+- Font Manager: a window of its own with libraries (installed fonts,
+  added folders, Favorites and collections), filters by status,
+  embedding rights, technology, weight, width, style, scripts and
+  OpenType features, a sample text and search, every face drawn in
+  itself and grouped by family, details, and installing font files for
+  TraceDraw.
+- Text docker laid out in Character, Paragraph and Frame sections with
+  the buttons that show it from a section on, Apply to default text and
+  the row boxes: style list, range kerning, text fill, character
+  background and outline rows, six alignments (no alignment and forced
+  justification added), line spacing in % of the character height,
+  points or % of the size, and the frame's background colour.
+- Glyphs docker: recent glyphs, font and range lists, a grid of the
+  font's glyphs with their alternates.
+- Text > Writing Tools is one dialog with Spell Checker, Grammar and
+  Thesaurus tabs; the grammar checker also flags "a"/"an" before the
+  wrong sound and sentences with no end mark.
+- Text > Custom Optional Hyphens: words hyphenated by hand break only
+  there, turned on for text typed, pasted or imported with them.
+- Publish to PDF opens PDF Settings with General, Color, Document,
+  Objects, Prepress, Security and issues tabs: the file name, every open
+  drawing or a page list as the range, the page size of the selection,
+  and PDF presets saved with "+" and deleted with "-".
+- Export lists formats as "EXT - Description (*.ext)", JPG, PDF, AI and
+  PNG first; "Do not show filter dialog" skips the dialog next time, and
+  PDF and AI take a title and tags.
+- The Snap To list stays open while its boxes are ticked and has a close
+  button.
+- Bitmap Mask docker: ten colour slots with their own tolerance, the
+  eyedropper and "Select colours from bitmap", saved and opened masks,
+  and Hide selected or Show selected.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

@@ -35,7 +35,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Shaping => crate::ui::shaping_docker::shaping(app, ui),
         DockerTab::StepAndRepeat => step_and_repeat(app, ui),
         DockerTab::Text => crate::ui::text_docker::text_docker(app, ui),
-        DockerTab::Glyphs => glyphs(app, ui),
+        DockerTab::Glyphs => crate::ui::glyphs_docker::glyphs(app, ui),
         DockerTab::Color => crate::ui::color_docker::color(app, ui),
         DockerTab::ColorStyles => color_styles(app, ui),
         DockerTab::ObjectStyles => object_styles(app, ui),
@@ -116,63 +116,6 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         .clicked()
     {
         app.step_and_repeat_apply();
-    }
-}
-
-fn glyphs(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        ui.label(tr("docker.font"));
-        crate::ui::font_list::text_font_list(app, ui, "glyphs_font", 180.0);
-    });
-    ui.horizontal(|ui| {
-        ui.label(tr("docker.filter"));
-        ui.text_edit_singleline(&mut app.glyph_filter);
-    });
-    let blocks: [(&str, u32, u32); 8] = [
-        ("Basic Latin", 0x20, 0x7E),
-        ("Latin-1", 0xA0, 0xFF),
-        ("Latin Extended", 0x100, 0x17F),
-        ("Greek", 0x391, 0x3C9),
-        ("Cyrillic", 0x410, 0x44F),
-        ("Punctuation", 0x2010, 0x205E),
-        ("Currency", 0x20A0, 0x20BF),
-        ("Arrows and symbols", 0x2190, 0x21FF),
-    ];
-    let filter = app.glyph_filter.to_lowercase();
-    let mut insert: Option<char> = None;
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for (name, from, to) in blocks {
-            if !filter.is_empty() && !name.to_lowercase().contains(&filter) {
-                continue;
-            }
-            ui.label(egui::RichText::new(name).strong().size(11.0));
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(1.0, 1.0);
-                for cp in from..=to {
-                    let Some(ch) = char::from_u32(cp) else {
-                        continue;
-                    };
-                    if ch.is_control() {
-                        continue;
-                    }
-                    let b = egui::Button::new(egui::RichText::new(ch.to_string()).size(14.0))
-                        .min_size(egui::vec2(22.0, 22.0));
-                    if ui.add(b).on_hover_text(format!("U+{cp:04X}")).clicked() {
-                        insert = Some(ch);
-                    }
-                }
-            });
-        }
-    });
-    if let Some(ch) = insert {
-        if app.text_edit.is_some() {
-            app.insert_text(&ch.to_string());
-        } else {
-            let c = app.page_rect().center();
-            app.start_text(c, None);
-            app.text_insert(&ch.to_string());
-            app.finish_text();
-        }
     }
 }
 
@@ -948,52 +891,283 @@ fn lens(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("docker.lens_hint"));
 }
 
-fn blend(app: &mut App, ui: &mut Ui) {
-    let cur = app.selected_blends().into_iter().next().map(|(_, e)| e);
-    let (mut steps, mut accel_o, mut accel_c, mut rot, mut rotate_on_path) = match &cur {
-        Some(Effect::Blend {
-            steps,
-            accel_objects,
-            accel_colors,
-            rotation,
-            rotate_on_path,
-            ..
-        }) => (
-            *steps,
-            *accel_objects,
-            *accel_colors,
-            *rotation,
-            *rotate_on_path,
-        ),
-        _ => (app.blend_steps, 0.0, 0.0, 0.0, false),
+/// A small picture button of the Blend docker; true when clicked.
+fn blend_pic(
+    ui: &mut Ui,
+    tip: &str,
+    on: bool,
+    enabled: bool,
+    draw: impl Fn(&egui::Painter, egui::Rect, Color32),
+) -> bool {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
+    let resp = resp.on_hover_text(tip);
+    let p = ui.painter();
+    if on {
+        p.rect_filled(r, 2.0, crate::theme::Tokens::tool_hover());
+        p.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.0, Tokens::ACCENT),
+            egui::StrokeKind::Inside,
+        );
+    } else if resp.hovered() && enabled {
+        p.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.0, Tokens::border()),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let ink = if enabled {
+        Tokens::text()
+    } else {
+        Tokens::text_dim()
     };
+    draw(p, r.shrink(5.0), ink);
+    enabled && resp.clicked()
+}
+
+use egui::Color32;
+
+/// The Blend docker: steps or spacing, rotation with Loop, the path
+/// options, the acceleration of objects and colours (with Apply to
+/// sizing, Link acceleration and Reset), the way the colours turn, and
+/// Apply for two selected objects.
+fn blend(app: &mut App, ui: &mut Ui) {
+    use crate::ui::docker_form::{section, wide_button};
+    use tracedraw_core::live::{BlendOptions, ColorBlend};
+    let cur = app.selected_blends().into_iter().next().map(|(_, e)| e);
+    let (mut steps, mut accel_o, mut accel_c, mut rot, mut rotate_on_path, has_path, mut opt) =
+        match &cur {
+            Some(Effect::Blend {
+                steps,
+                accel_objects,
+                accel_colors,
+                rotation,
+                rotate_on_path,
+                path,
+                options,
+                ..
+            }) => (
+                *steps,
+                *accel_objects,
+                *accel_colors,
+                *rotation,
+                *rotate_on_path,
+                path.is_some(),
+                *options,
+            ),
+            _ => (
+                app.blend_steps,
+                0.0,
+                0.0,
+                0.0,
+                false,
+                false,
+                app.blend_options,
+            ),
+        };
     let mut changed = false;
+    let mut spacing_mm = opt.spacing.unwrap_or(app.blend_spacing_mm);
+    // Steps or spacing: spacing needs a path.
+    ui.horizontal(|ui| {
+        let by_spacing = opt.spacing.is_some();
+        if blend_pic(
+            ui,
+            &tr("docker.blend_by_steps"),
+            !by_spacing,
+            true,
+            |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let pts = [
+                    r.left_bottom(),
+                    egui::pos2(r.left() + r.width() / 3.0, r.bottom()),
+                    egui::pos2(r.left() + r.width() / 3.0, r.center().y),
+                    egui::pos2(r.left() + 2.0 * r.width() / 3.0, r.center().y),
+                    egui::pos2(r.left() + 2.0 * r.width() / 3.0, r.top()),
+                    r.right_top(),
+                ];
+                p.add(egui::Shape::line(pts.to_vec(), s));
+            },
+        ) && by_spacing
+        {
+            opt.spacing = None;
+            changed = true;
+        }
+        if blend_pic(
+            ui,
+            &tr("docker.blend_by_spacing"),
+            by_spacing,
+            has_path,
+            |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let y = r.center().y;
+                p.line_segment([egui::pos2(r.left(), y), egui::pos2(r.right(), y)], s);
+                for x in [r.left(), r.right()] {
+                    p.line_segment([egui::pos2(x, y - 4.0), egui::pos2(x, y + 4.0)], s);
+                }
+            },
+        ) && !by_spacing
+        {
+            opt.spacing = Some(spacing_mm);
+            changed = true;
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.steps"));
+        changed |= ui
+            .add_enabled(
+                opt.spacing.is_none(),
+                egui::DragValue::new(&mut steps).range(1..=999),
+            )
+            .changed();
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_spacing"));
+        let units = app.units;
+        let mut v = units.from_mm(spacing_mm);
+        if ui
+            .add_enabled(
+                opt.spacing.is_some(),
+                egui::DragValue::new(&mut v)
+                    .speed(0.1)
+                    .max_decimals(3)
+                    .suffix(format!(" {}", units.short())),
+            )
+            .changed()
+        {
+            spacing_mm = units.to_mm(v).max(0.01);
+            opt.spacing = Some(spacing_mm);
+            changed = true;
+        }
+    });
+    app.blend_spacing_mm = spacing_mm;
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.rotation"));
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut rot)
+                    .range(-3600.0..=3600.0)
+                    .speed(1.0)
+                    .max_decimals(1)
+                    .suffix("\u{b0}"),
+            )
+            .changed();
+    });
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut steps, 1..=200).text(tr("docker.steps")),
-        ))
+        .add_enabled(
+            rot != 0.0,
+            egui::Checkbox::new(&mut opt.loop_rotation, tr("docker.blend_loop")),
+        )
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut rot, -360.0..=360.0)
-                .text(tr("docker.rotation"))
-                .suffix("°"),
-        ))
+        .add_enabled(
+            has_path,
+            egui::Checkbox::new(&mut opt.full_path, tr("docker.blend_full_path")),
+        )
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut accel_o, -1.0..=1.0).text(tr("docker.object_acceleration")),
-        ))
+        .add_enabled(
+            has_path,
+            egui::Checkbox::new(&mut rotate_on_path, tr("docker.rotate_all_objects")),
+        )
         .changed();
+    section(ui, Some(&tr("docker.blend_acceleration")));
+    ui.spacing_mut().slider_width = (ui.available_width() - 80.0).clamp(80.0, 200.0);
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_object"));
+        if ui
+            .add(crate::ui::Rail(
+                egui::Slider::new(&mut accel_o, -1.0..=1.0).show_value(false),
+            ))
+            .changed()
+        {
+            changed = true;
+            if app.blend_link_accel {
+                accel_c = accel_o;
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.blend_color"));
+        if ui
+            .add_enabled(
+                !app.blend_link_accel,
+                crate::ui::Rail(egui::Slider::new(&mut accel_c, -1.0..=1.0).show_value(false)),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+    });
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut accel_c, -1.0..=1.0).text(tr("docker.color_acceleration")),
-        ))
+        .checkbox(&mut opt.accel_sizing, tr("docker.blend_apply_sizing"))
         .changed();
-    changed |= ui
-        .checkbox(&mut rotate_on_path, tr("docker.rotate_all_objects"))
-        .changed();
+    let mut link = app.blend_link_accel;
+    if ui
+        .checkbox(&mut link, tr("docker.blend_link_accel"))
+        .changed()
+    {
+        app.blend_link_accel = link;
+        if link && accel_c != accel_o {
+            accel_c = accel_o;
+            changed = true;
+        }
+    }
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .add_enabled(
+                accel_o != 0.0 || accel_c != 0.0,
+                egui::Button::new(tr("docker.reset")).min_size(egui::vec2(90.0, 22.0)),
+            )
+            .clicked()
+        {
+            accel_o = 0.0;
+            accel_c = 0.0;
+            changed = true;
+        }
+    });
+    section(ui, Some(&tr("docker.blend_color_blend")));
+    ui.horizontal(|ui| {
+        for (how, key) in [
+            (ColorBlend::Direct, "docker.blend_direct"),
+            (ColorBlend::Clockwise, "docker.blend_clockwise"),
+            (
+                ColorBlend::CounterClockwise,
+                "docker.blend_counterclockwise",
+            ),
+        ] {
+            let on = opt.color_blend == how;
+            if blend_pic(ui, &tr(key), on, true, |p, r, c| {
+                let s = egui::Stroke::new(1.3, c);
+                let ctr = r.center();
+                let rad = r.width().min(r.height()) / 2.0;
+                match how {
+                    ColorBlend::Direct => {
+                        p.line_segment([r.left_bottom(), r.right_top()], s);
+                    }
+                    _ => {
+                        let pts: Vec<egui::Pos2> = (0..=12)
+                            .map(|k| {
+                                let a = std::f32::consts::PI * (0.15 + 1.4 * k as f32 / 12.0);
+                                let a = if how == ColorBlend::Clockwise { -a } else { a };
+                                ctr + egui::vec2(a.cos(), a.sin()) * rad
+                            })
+                            .collect();
+                        let end = *pts.last().unwrap_or(&ctr);
+                        p.add(egui::Shape::line(pts, s));
+                        p.circle_filled(end, 2.2, c);
+                    }
+                }
+            }) && !on
+            {
+                opt.color_blend = how;
+                changed = true;
+            }
+        }
+    });
     app.blend_steps = steps;
+    app.blend_options = BlendOptions { ..opt };
     if let Some(Effect::Blend { .. }) = cur {
         if changed {
             app.change_blends("Blend", |e| {
@@ -1004,6 +1178,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
                     accel_colors,
                     rotation,
                     rotate_on_path: r,
+                    options,
                     ..
                 } = &mut e
                 {
@@ -1012,11 +1187,13 @@ fn blend(app: &mut App, ui: &mut Ui) {
                     *accel_colors = accel_c;
                     *rotation = rot;
                     *r = rotate_on_path;
+                    *options = opt;
                 }
                 Some(e)
             });
         }
-        ui.horizontal(|ui| {
+        section(ui, None);
+        ui.horizontal_wrapped(|ui| {
             if ui.button(tr("docker.new_path")).clicked() {
                 app.pending_blend_path = true;
                 app.status = tr("status.click_blend_path");
@@ -1030,10 +1207,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
         });
     } else {
         let two = app.selection.len() == 2;
-        if ui
-            .add_enabled(two, egui::Button::new(tr("docker.apply")))
-            .clicked()
-        {
+        if wide_button(ui, &tr("docker.apply"), two) {
             app.blend_selection(steps, accel_o, accel_c, rot);
         }
         if !two {
@@ -1048,9 +1222,7 @@ fn contour(app: &mut App, ui: &mut Ui) {
 }
 
 fn extrude(app: &mut App, ui: &mut Ui) {
-    crate::ui::extrude_bar::extrude_controls(app, ui);
-    crate::ui::extrude_bar::extrude_space(app, ui);
-    crate::ui::extrude_bar::extrude_actions(app, ui);
+    crate::ui::extrude_bar::extrude_docker(app, ui);
 }
 
 fn bevel(app: &mut App, ui: &mut Ui) {
@@ -1199,47 +1371,220 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("docker.brush_strokes_hint"));
 }
 
+/// A square icon button drawn by `paint`, with its tip.
+fn icon_btn(
+    ui: &mut Ui,
+    enabled: bool,
+    tip: &str,
+    paint: impl FnOnce(&egui::Painter, egui::Rect, egui::Color32),
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), sense);
+    if enabled && resp.hovered() {
+        ui.painter()
+            .rect_filled(r, 2.0, crate::theme::Tokens::tool_hover());
+    }
+    let color = if enabled {
+        crate::theme::Tokens::icon()
+    } else {
+        crate::theme::Tokens::icon_off()
+    };
+    paint(ui.painter(), r.shrink(5.0), color);
+    resp.on_hover_text(tip)
+}
+
+/// Bitmaps > Bitmap Mask: ten colour slots (in use, colour, tolerance),
+/// hide or show the colours in use, Apply on the selected bitmaps.
 fn bitmap_mask(app: &mut App, ui: &mut Ui) {
+    use crate::bitmap_fx::MASK_SLOTS;
     let has_bitmap = app
         .selected_shapes()
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }));
-    ui.label(tr("docker.bitmap_mask_hint"));
-    let mut remove = None;
-    for (i, c) in app.mask_colors.iter_mut().enumerate() {
-        ui.horizontal(|ui| {
-            color_button(ui, c);
-            ui.label(c.to_hex());
-            if ui.small_button("x").clicked() {
-                remove = Some(i);
+    // A colour sampled with the eyedropper goes into the picked slot.
+    if app.mask.picking {
+        if let Some(c) = app.eyedropper_color {
+            if app.mask.seen != Some(c) {
+                let i = app.mask.picked.min(MASK_SLOTS - 1);
+                app.mask.slots[i].color = c;
+                app.mask.slots[i].on = true;
+                app.mask.seen = Some(c);
             }
-        });
-    }
-    if let Some(i) = remove {
-        app.mask_colors.remove(i);
+        }
     }
     ui.horizontal(|ui| {
-        if ui.button(tr("docker.add_color")).clicked() {
-            app.mask_colors
-                .push(app.eyedropper_color.unwrap_or(Color::WHITE));
-        }
-        if ui.button(tr("docker.eyedropper")).clicked() {
+        if icon_btn(ui, true, &tr("docker.mask_eyedropper"), |p, r, c| {
+            crate::ui::icons::draw(p, r, crate::tools::Tool::ColorEyedropper, c)
+        })
+        .clicked()
+        {
+            app.mask.picking = true;
+            app.mask.seen = app.eyedropper_color;
             app.set_tool(crate::tools::Tool::ColorEyedropper);
         }
+        if icon_btn(ui, has_bitmap, &tr("docker.mask_from_bitmap"), |p, r, c| {
+            // A bitmap with a grid of samples.
+            p.rect_stroke(r, 0.0, egui::Stroke::new(1.2, c), egui::StrokeKind::Inside);
+            for i in 1..3 {
+                let t = i as f32 / 3.0;
+                p.line_segment(
+                    [
+                        r.lerp_inside(egui::vec2(t, 0.0)),
+                        r.lerp_inside(egui::vec2(t, 1.0)),
+                    ],
+                    egui::Stroke::new(0.8, c),
+                );
+                p.line_segment(
+                    [
+                        r.lerp_inside(egui::vec2(0.0, t)),
+                        r.lerp_inside(egui::vec2(1.0, t)),
+                    ],
+                    egui::Stroke::new(0.8, c),
+                );
+            }
+        })
+        .clicked()
+        {
+            app.mask_colors_from_bitmap();
+        }
     });
-    ui.add(crate::ui::Rail(
-        egui::Slider::new(&mut app.mask_tolerance, 0..=255).text(tr("docker.tolerance")),
-    ));
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+        .inner_margin(egui::Margin::same(2))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("mask_slots")
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for i in 0..MASK_SLOTS {
+                        let picked = app.mask.picked == i;
+                        let row = ui.horizontal(|ui| {
+                            let slot = &mut app.mask.slots[i];
+                            ui.checkbox(&mut slot.on, "");
+                            let (r, resp) = ui.allocate_exact_size(
+                                egui::vec2((ui.available_width() - 40.0).max(60.0), 16.0),
+                                egui::Sense::click(),
+                            );
+                            let [cr, cg, cb] = slot.color.to_rgb8();
+                            ui.painter().rect(
+                                r,
+                                0.0,
+                                egui::Color32::from_rgb(cr, cg, cb),
+                                egui::Stroke::new(
+                                    if picked { 2.0 } else { 1.0 },
+                                    if picked {
+                                        crate::theme::Tokens::ACCENT
+                                    } else {
+                                        egui::Color32::from_gray(0xA0)
+                                    },
+                                ),
+                                egui::StrokeKind::Inside,
+                            );
+                            ui.label(slot.tolerance.to_string());
+                            resp.clicked()
+                        });
+                        if row.inner {
+                            app.mask.picked = i;
+                        }
+                    }
+                });
+        });
+    ui.horizontal(|ui| {
+        if icon_btn(ui, true, &tr("docker.mask_save"), |p, r, c| {
+            crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Save, c)
+        })
+        .clicked()
+        {
+            let text = app.mask.to_text();
+            if let Some(path) = crate::files::Dialog::new()
+                .add_filter(tr("docker.mask_file"), &["msk"])
+                .set_file_name("mask.msk".to_string())
+                .save_path()
+            {
+                if let Err(e) = crate::files::write(&path, text) {
+                    app.status = e.to_string();
+                }
+            }
+        }
+        if icon_btn(ui, true, &tr("docker.mask_open"), |p, r, c| {
+            crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Open, c)
+        })
+        .clicked()
+        {
+            crate::files::Dialog::new()
+                .add_filter(tr("docker.mask_file"), &["msk"])
+                .pick_file(app, |app, path| match crate::files::read(&path) {
+                    Ok(bytes) => {
+                        if !app.mask.read_text(&String::from_utf8_lossy(&bytes)) {
+                            app.status = tr("docker.mask_bad_file");
+                        }
+                    }
+                    Err(e) => app.status = e.to_string(),
+                });
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let i = app.mask.picked.min(MASK_SLOTS - 1);
+            let used = app.mask.slots[i] != crate::bitmap_fx::MaskSlot::default();
+            if icon_btn(ui, used, &tr("docker.mask_delete"), |p, r, c| {
+                // A bin.
+                let s = egui::Stroke::new(1.2, c);
+                p.line_segment(
+                    [
+                        r.left_top() + egui::vec2(0.0, 3.0),
+                        r.right_top() + egui::vec2(0.0, 3.0),
+                    ],
+                    s,
+                );
+                p.rect_stroke(
+                    egui::Rect::from_min_max(
+                        r.left_top() + egui::vec2(2.5, 4.0),
+                        r.right_bottom() - egui::vec2(2.5, 0.0),
+                    ),
+                    1.0,
+                    s,
+                    egui::StrokeKind::Inside,
+                );
+            })
+            .clicked()
+            {
+                app.mask.slots[i] = Default::default();
+            }
+        });
+    });
+    ui.add_space(4.0);
+    ui.label(tr("docker.tolerance"));
+    ui.horizontal(|ui| {
+        let i = app.mask.picked.min(MASK_SLOTS - 1);
+        let tol = &mut app.mask.slots[i].tolerance;
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(tol, 0..=100).show_value(false),
+        ));
+        ui.add(egui::DragValue::new(tol).range(0..=100).suffix(" %"));
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.mask_colors"));
+        ui.vertical(|ui| {
+            ui.radio_value(&mut app.mask.hide, true, tr("docker.mask_hide"));
+            ui.radio_value(&mut app.mask.hide, false, tr("docker.mask_show"));
+        });
+    });
+    ui.add_space(4.0);
+    let can = has_bitmap && !app.mask.active().is_empty();
     if ui
         .add_enabled(
-            has_bitmap && !app.mask_colors.is_empty(),
-            egui::Button::new(tr("docker.apply")),
+            can,
+            egui::Button::new(tr("docker.apply")).min_size(egui::vec2(ui.available_width(), 26.0)),
         )
         .clicked()
     {
-        let colors = app.mask_colors.clone();
-        let tol = app.mask_tolerance;
-        app.bitmap_color_mask(&colors, tol);
+        app.apply_bitmap_mask();
+    }
+    if !has_bitmap {
+        dim(ui, tr("docker.bitmap_mask_hint"));
     }
 }
 

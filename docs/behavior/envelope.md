@@ -92,10 +92,18 @@ nothing selected, how to start.
 
 ## Panel
 
-The four modes as pictures with the chosen one's name and what it does;
-Add New Envelope (which also takes the Envelope tool), Copy Envelope
-Properties, Clear Envelope, Break Apart; the mapping list; Keep Lines;
-the presets as buttons; a line on editing the frame.
+A full-width Add New (which also takes the Envelope tool); "Choose a
+preset" over a white grid of 24 preset shapes, four to a row, drawn as
+their outlines (square, arched top, circle, pill, parallelogram,
+trapezoid, hexagons, octagons, flag, heart, pinched square, four-point
+star, barrel, rounded rectangle, cushion, diamond, lens, badge, wavy
+rectangle, cross, cloud and speech bubble); a click puts that shape on
+each selected object as its envelope (in place of its last one), one
+undo step. Under a line the four modes as pictures with the mapping
+list at the right; under another line Keep Lines, Copy Envelope
+Properties and Clear Envelope as pictures. The shapes are outlines in
+the unit square whose corners map the object's box
+(`envelope_shapes::tests::every_preset_makes_a_frame_with_four_increasing_corners`).
 
 ## Selection and picking
 

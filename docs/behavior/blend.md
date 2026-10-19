@@ -8,9 +8,27 @@ Intermediate objects between a start and an end object.
 | Rotation | 0 degrees | -3600..3600 (the panel: -360..360) |
 | Acceleration (objects, colours) | 0 (linear) | -1..1 (the bar: -100..100 %) |
 | Path | none | any curve (the panel's New path), "rotate all objects" |
+| Spacing (along a path) | off, 5 mm | the steps follow from the path's length: `floor(length / spacing) - 1`, 1 to 999 |
+| Loop | off | the rotation turns the steps about the middle between the two objects |
+| Blend along full path | off | along a path, the first and last steps sit on the path's ends |
+| Apply to sizing | off | the object acceleration changes the steps' sizes too |
+| Color blend | Direct | Direct (straight through RGB), Clockwise (hue increasing), Counterclockwise (hue decreasing), through HSB |
 
-Not yet: spacing along a path, a colour direction other than direct, a
-loop, mapping nodes, splitting and fusing.
+Not yet: mapping nodes, splitting and fusing.
+
+## Panel (Effects > Blend)
+
+Two picture buttons choose Steps or Spacing (Spacing only for a blend
+on a path), then the Steps and Spacing fields (the one not chosen is
+greyed), Rotation, Loop (with a rotation), Blend along full path and
+Rotate all objects (with a path). Under "Acceleration" the Object and
+Color sliders, Apply to sizing, Link acceleration (the colour slider
+follows the object one and is greyed) and Reset (both back to even).
+Under "Color Blend" three picture buttons: Direct, Clockwise and
+Counterclockwise. With a blend selected every change applies live and
+New path, Clear Blend and Break Apart follow; otherwise a full-width
+Apply blends the two selected objects with these settings
+(`tracedraw_core::live::tests::blend_options_change_the_steps`).
 
 ## Property bar (Blend tool)
 

@@ -1,27 +1,22 @@
 //! The Vector Mosaic docker (Effects > Vector Mosaic): density, scale and
-//! screen angle, Keep original, Limit colors, the tracking options
-//! (method, merge adjacent, weld adjacent overlap), the tile shape with
-//! its preview and Select for a custom curve, and Apply.
+//! screen angle with Keep original source, Limit colors, the Tracking
+//! section (method, merge adjacent, weld adjacent overlap), the tile shape
+//! with Select for a custom curve and its preview, and a full-width
+//! Apply.
 
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::docker_form::{indented, row, section, wide_button};
 use crate::vector_mosaic::{unit_tile, TileShape, TrackMethod};
 use egui::{Color32, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Shape as _};
 
-fn heading(ui: &mut Ui, key: &str) {
-    ui.add_space(4.0);
-    ui.label(egui::RichText::new(tr(key)).strong());
-}
-
 /// The tile's preview: the shape at the screen angle in a small box.
 fn preview(ui: &mut Ui, app: &App) {
     let s = &app.vector_mosaic;
-    let (r, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width().min(220.0), 80.0),
-        Sense::hover(),
-    );
+    // A square box under the shape row, in the field column.
+    let (r, _) = ui.allocate_exact_size(Vec2::new(100.0, 100.0), Sense::hover());
     let painter = ui.painter_at(r);
     painter.rect_filled(r, 0.0, Color32::WHITE);
     painter.rect_stroke(
@@ -78,84 +73,84 @@ fn preview(ui: &mut Ui, app: &App) {
 }
 
 pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
-    ui.spacing_mut().slider_width = 130.0;
-    egui::Grid::new("vector_mosaic_grid")
-        .num_columns(2)
-        .spacing([8.0, 6.0])
-        .show(ui, |ui| {
-            let s = &mut app.vector_mosaic;
-            ui.label(tr("docker.vector_mosaic_density"));
+    ui.spacing_mut().slider_width = 110.0;
+    {
+        let s = &mut app.vector_mosaic;
+        row(ui, &tr("docker.vector_mosaic_density"), |ui| {
             ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.density, 1.0..=100.0).max_decimals(1),
             ));
-            ui.end_row();
-            ui.label(tr("docker.vector_mosaic_scale"));
+        });
+        row(ui, &tr("docker.vector_mosaic_scale"), |ui| {
             ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.scale, 0.1..=5.0)
                     .step_by(0.05)
                     .max_decimals(2),
             ));
-            ui.end_row();
-            ui.label(tr("docker.vector_mosaic_angle"));
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut s.angle, -90.0..=90.0)
-                    .suffix("\u{b0}")
-                    .max_decimals(1),
-            ));
-            ui.end_row();
         });
-    let s = &mut app.vector_mosaic;
-    ui.checkbox(
-        &mut s.keep_original,
-        tr("docker.vector_mosaic_keep_original"),
-    );
-    ui.horizontal(|ui| {
-        ui.checkbox(&mut s.limit_colors, tr("docker.vector_mosaic_limit_colors"));
-        ui.add_enabled(
-            s.limit_colors,
-            egui::DragValue::new(&mut s.colors).range(2..=256),
-        );
-    });
-    heading(ui, "docker.vector_mosaic_tracking");
-    egui::Grid::new("vector_mosaic_tracking")
-        .num_columns(2)
-        .spacing([8.0, 6.0])
-        .show(ui, |ui| {
-            ui.label(tr("docker.vector_mosaic_method"));
+        row(ui, &tr("docker.vector_mosaic_angle"), |ui| {
+            ui.add(
+                egui::DragValue::new(&mut s.angle)
+                    .range(-90.0..=90.0)
+                    .speed(0.5)
+                    .max_decimals(1)
+                    .suffix("\u{b0}"),
+            );
+        });
+        indented(ui, |ui| {
+            ui.checkbox(
+                &mut s.keep_original,
+                tr("docker.vector_mosaic_keep_original"),
+            );
+        });
+        section(ui, None);
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut s.limit_colors, tr("docker.vector_mosaic_limit_colors"));
+            ui.add_enabled(
+                s.limit_colors,
+                egui::DragValue::new(&mut s.colors).range(2..=256),
+            );
+        });
+        section(ui, Some(&tr("docker.vector_mosaic_tracking")));
+        row(ui, &tr("docker.vector_mosaic_method"), |ui| {
             egui::ComboBox::from_id_salt("vector_mosaic_method")
                 .selected_text(tr(s.method.key()))
-                .width(170.0)
+                .width(ui.available_width().clamp(120.0, 190.0))
                 .show_ui(ui, |ui| {
                     for m in TrackMethod::ALL {
                         ui.selectable_value(&mut s.method, m, tr(m.key()));
                     }
                 });
-            ui.end_row();
-            ui.label(tr("docker.vector_mosaic_merge"));
+        });
+        row(ui, &tr("docker.vector_mosaic_merge"), |ui| {
             ui.add(egui::DragValue::new(&mut s.merge).range(1..=36));
-            ui.end_row();
         });
-    ui.checkbox(&mut s.weld, tr("docker.vector_mosaic_weld"));
-    heading(ui, "docker.vector_mosaic_shape");
-    egui::ComboBox::from_id_salt("vector_mosaic_shape")
-        .selected_text(tr(s.shape.key()))
-        .width(170.0)
-        .show_ui(ui, |ui| {
-            for t in TileShape::ALL {
-                ui.selectable_value(&mut s.shape, t, tr(t.key()));
-            }
-        });
-    preview(ui, app);
-    // Select: the first selected closed curve becomes the custom tile.
+        ui.checkbox(&mut s.weld, tr("docker.vector_mosaic_weld"));
+    }
+    // Shape: the list, Select (a custom curve from the selection) beside
+    // it, and the preview under them.
     let custom = app.vector_mosaic.shape == TileShape::Custom;
-    if ui
-        .add_enabled(
-            custom && !app.selection.is_empty(),
-            egui::Button::new(tr("docker.vector_mosaic_select")),
-        )
-        .on_hover_text(tr("docker.vector_mosaic_select_tip"))
-        .clicked()
-    {
+    let mut select = false;
+    row(ui, &tr("docker.vector_mosaic_shape"), |ui| {
+        let s = &mut app.vector_mosaic;
+        egui::ComboBox::from_id_salt("vector_mosaic_shape")
+            .selected_text(tr(s.shape.key()))
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for t in TileShape::ALL {
+                    ui.selectable_value(&mut s.shape, t, tr(t.key()));
+                }
+            });
+        select = ui
+            .add_enabled(
+                custom && !app.selection.is_empty(),
+                egui::Button::new(tr("docker.vector_mosaic_select")),
+            )
+            .on_hover_text(tr("docker.vector_mosaic_select_tip"))
+            .clicked();
+    });
+    indented(ui, |ui| preview(ui, app));
+    if select {
         let tile = app
             .selected_shapes()
             .first()
@@ -167,15 +162,9 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
             None => app.status = tr("status.vector_mosaic_no_curve"),
         }
     }
-    ui.add_space(8.0);
+    let custom = app.vector_mosaic.shape == TileShape::Custom;
     let ready = !app.selection.is_empty() && (!custom || app.vector_mosaic.custom.is_some());
-    if ui
-        .add_enabled(
-            ready,
-            egui::Button::new(tr("docker.apply")).min_size(Vec2::new(90.0, 24.0)),
-        )
-        .clicked()
-    {
+    if wide_button(ui, &tr("docker.apply"), ready) {
         let s = app.vector_mosaic.clone();
         app.apply_vector_mosaic(&s);
     }

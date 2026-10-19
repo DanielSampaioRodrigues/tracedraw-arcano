@@ -111,6 +111,10 @@ pub struct Settings {
     /// Options > Display.
     #[serde(default = "default_true")]
     pub show_tooltips: bool,
+    /// The Font Manager's folders, installed files, Favorites and
+    /// collections.
+    #[serde(default)]
+    pub font_manager: crate::ui::font_manager::FontManagerPrefs,
     #[serde(default)]
     pub hide_bbox_curve_tools: bool,
     /// Options > Display: the Pick tool selects and drags the nodes of a
@@ -225,6 +229,29 @@ pub struct Settings {
     /// "frame").
     #[serde(default)]
     pub text_sections_closed: Vec<String>,
+    /// The Text docker's first section shown (0 Character, 1 Paragraph,
+    /// 2 Frame): the buttons at its top show from that section on.
+    #[serde(default)]
+    pub text_docker_from: u8,
+    /// The Text docker shows the boxes at the right of its rows, which
+    /// pick what "Apply to default text" takes.
+    #[serde(default)]
+    pub text_docker_checks: bool,
+    /// The rows ticked for "Apply to default text" ("font", "size" ...).
+    #[serde(default)]
+    pub text_docker_ticked: Vec<String>,
+    /// The Glyphs docker's recent glyphs, newest first: (font, glyph).
+    #[serde(default)]
+    pub recent_glyphs: Vec<(String, String)>,
+    /// Custom optional hyphens: (language, word, hyphenated word).
+    #[serde(default)]
+    pub custom_hyphens: Vec<(String, String, String)>,
+    /// Text typed (finished) or pasted and imported with a defined word
+    /// turns hyphenation on, so the custom hyphens break its lines.
+    #[serde(default = "default_true")]
+    pub hyphens_when_typing: bool,
+    #[serde(default = "default_true")]
+    pub hyphens_when_pasting: bool,
     /// The font lists' sample size, in points.
     #[serde(default = "default_font_sample")]
     pub font_sample_px: f32,
@@ -1025,6 +1052,7 @@ impl Default for Settings {
             startup: Startup::default(),
             undo_levels: default_undo_levels(),
             show_tooltips: true,
+            font_manager: Default::default(),
             hide_bbox_curve_tools: false,
             node_tracking: false,
             preview_page_border: true,
@@ -1074,6 +1102,13 @@ impl Default for Settings {
             recent_fonts: Vec::new(),
             properties_closed: Vec::new(),
             text_sections_closed: Vec::new(),
+            text_docker_from: 0,
+            text_docker_checks: false,
+            text_docker_ticked: Vec::new(),
+            recent_glyphs: Vec::new(),
+            custom_hyphens: Vec::new(),
+            hyphens_when_typing: true,
+            hyphens_when_pasting: true,
             font_sample_px: default_font_sample(),
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),

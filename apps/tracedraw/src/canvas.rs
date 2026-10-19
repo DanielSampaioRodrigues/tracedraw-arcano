@@ -172,6 +172,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 dashed_selection_line(painter, &pts);
             }
         }
+        Drag::AlongPath { start, current } => {
+            draw_along_path(app, painter, *start, *current);
+        }
         Drag::ZoomBox { start, current } => {
             let r = view.rect_to_screen(Rect::from_points(*start, *current));
             let stroke = EStroke::new(1.0, Tokens::SELECTION);
@@ -791,6 +794,47 @@ pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
             painter.add(egui::Shape::line(pts.clone(), halo));
             painter.add(egui::Shape::line(pts, line));
         }
+    }
+}
+
+/// A fitted text dragged along its path: its letters where they would go,
+/// outlined in blue, the line they would stand on dashed, and the
+/// distance from the path and offset along it by the pointer.
+fn draw_along_path(app: &App, painter: &Painter, start: Point, current: Point) {
+    let Some((letters, line)) = app.along_path_preview(start, current) else {
+        return;
+    };
+    let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
+    let stroke = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
+    for (mut pts, closed) in flatten(&letters, &app.view) {
+        if closed {
+            if let Some(first) = pts.first().copied() {
+                pts.push(first);
+            }
+        }
+        painter.add(egui::Shape::line(pts.clone(), halo));
+        painter.add(egui::Shape::line(pts, stroke));
+    }
+    for (pts, _) in flatten(&line, &app.view) {
+        dashed_polyline(painter, &pts, stroke, 4.0, 3.0);
+    }
+    if let Some(ft) = app.along_path_settings(start, current) {
+        let u = app.units;
+        let text = format!(
+            "{}: {:.2} {u}   {}: {:.2} {u}",
+            crate::i18n::tr("toolbar.path_distance"),
+            u.from_mm(ft.on_path.distance),
+            crate::i18n::tr("toolbar.path_offset"),
+            u.from_mm(ft.on_path.offset),
+            u = u.short()
+        );
+        painter.text(
+            app.view.to_screen(current) + egui::vec2(14.0, 14.0),
+            egui::Align2::LEFT_TOP,
+            text,
+            egui::FontId::proportional(11.0),
+            Tokens::DRAG_OUTLINE,
+        );
     }
 }
 

@@ -11,7 +11,7 @@ use egui::{Context, Ui};
 use tracedraw_core::{
     document::ShapeKind,
     geometry::{Rect, Size},
-    Color, Command, Fill,
+    Color, Command,
 };
 
 pub use crate::ui::options::OptionsPage;
@@ -55,6 +55,9 @@ pub struct ExportState {
     pub output_condition: String,
     /// An installed script filter chosen instead of `format`, by name.
     pub script: Option<String>,
+    /// The file's title and tags (keywords), for formats that keep them.
+    pub title: String,
+    pub tags: String,
 }
 
 impl Default for ExportState {
@@ -72,6 +75,8 @@ impl Default for ExportState {
             bleed_mm: 0.0,
             output_condition: "FOGRA39".into(),
             script: None,
+            title: String::new(),
+            tags: String::new(),
         }
     }
 }
@@ -119,6 +124,63 @@ pub const EXPORT_FORMATS: [(&str, &str); 18] = [
     ("PostScript", "ps"),
     ("PRN", "prn"),
 ];
+
+/// The formats the Export list offers first, by index into
+/// [`EXPORT_FORMATS`]: JPG, PDF, AI and PNG.
+pub const EXPORT_COMMON: [usize; 4] = [3, 1, 9, 2];
+
+/// The file name patterns of an export format.
+pub fn export_patterns(ext: &str) -> &'static str {
+    match ext {
+        "jpg" => "*.jpg;*.jpeg",
+        "tif" => "*.tif;*.tiff",
+        "svg" => "*.svg",
+        "pdf" => "*.pdf",
+        "png" => "*.png",
+        "bmp" => "*.bmp",
+        "webp" => "*.webp",
+        "gif" => "*.gif",
+        "eps" => "*.eps",
+        "ai" => "*.ai",
+        "dxf" => "*.dxf",
+        "html" => "*.html;*.htm",
+        "emf" => "*.emf",
+        "wmf" => "*.wmf",
+        "plt" => "*.plt",
+        "psd" => "*.psd",
+        "ps" => "*.ps",
+        "prn" => "*.prn",
+        _ => "*.*",
+    }
+}
+
+/// "JPG - JPEG Bitmaps (*.jpg;*.jpeg)": the Export list's line for the
+/// format at `i`.
+pub fn export_format_label(i: usize) -> String {
+    let (_, ext) = EXPORT_FORMATS[i.min(EXPORT_FORMATS.len() - 1)];
+    format!(
+        "{} - {} ({})",
+        ext.to_ascii_uppercase(),
+        tr(&format!("export.fmt_{ext}")),
+        export_patterns(ext)
+    )
+}
+
+/// The Export list: the common formats, then every format by extension.
+/// `None` marks the separator.
+pub fn export_format_order() -> Vec<Option<usize>> {
+    let mut all: Vec<usize> = (0..EXPORT_FORMATS.len()).collect();
+    all.sort_by_key(|i| EXPORT_FORMATS[*i].1);
+    let mut out: Vec<Option<usize>> = EXPORT_COMMON.iter().map(|i| Some(*i)).collect();
+    out.push(None);
+    out.extend(all.into_iter().map(Some));
+    out
+}
+
+/// Formats whose files keep a title and keywords (tags).
+pub fn export_keeps_properties(ext: &str) -> bool {
+    matches!(ext, "pdf" | "ai")
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintState {
@@ -402,13 +464,6 @@ pub struct FindReplaceState {
     pub cursor: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct QrState {
-    pub text: String,
-    pub size_mm: f64,
-    pub error: String,
-}
-
 /// Paste Special: the system clipboard is read once when the dialog opens.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PasteSpecialState {
@@ -420,28 +475,7 @@ pub struct PasteSpecialState {
     pub choice: u8,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BarcodeState {
-    pub symbology: crate::barcode::Symbology,
-    pub text: String,
-    pub height_mm: f64,
-    pub module_mm: f64,
-    pub show_text: bool,
-    pub error: String,
-}
-
-impl Default for BarcodeState {
-    fn default() -> Self {
-        BarcodeState {
-            symbology: crate::barcode::Symbology::Code128,
-            text: "TRACEDRAW-2026".into(),
-            height_mm: 15.0,
-            module_mm: 0.33,
-            show_text: true,
-            error: String::new(),
-        }
-    }
-}
+pub use crate::ui::barcode_wizard::BarcodeState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceState {
@@ -499,15 +533,6 @@ impl OpenNotes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SpellState {
-    pub unknown: Vec<(tracedraw_core::ShapeId, String)>,
-    pub cursor: usize,
-    pub replacement: String,
-    pub checked: bool,
-    pub dictionary_words: usize,
-}
-
 /// Text > Encode.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EncodeState {
@@ -516,36 +541,12 @@ pub struct EncodeState {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ThesaurusState {
-    /// Word typed or taken from the selection.
-    pub word: String,
-    /// Word as it appears in the text (keeps its capitalisation on replace).
-    pub original: String,
-    pub target: Option<tracedraw_core::ShapeId>,
-    pub looked_up: Option<String>,
-    pub meanings: Vec<crate::thesaurus::Meaning>,
-    pub selected: Option<String>,
-    pub started: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct GrammarState {
-    pub findings: Vec<(tracedraw_core::ShapeId, crate::grammar::Finding)>,
-    pub checked: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AutocorrectState {
     pub new_from: String,
     pub new_to: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct FontManagerState {
-    pub filter: String,
-    pub sample: String,
-    pub selected: Option<String>,
-}
+pub use crate::ui::font_manager::FontManagerState;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PaletteEditorState {
@@ -616,6 +617,10 @@ pub enum Dialog {
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
+    /// Object > Create > Pattern Fill: a vector or a bitmap pattern.
+    CreatePattern {
+        vector: bool,
+    },
     CreateTable {
         rows: u32,
         cols: u32,
@@ -623,7 +628,6 @@ pub enum Dialog {
         width: f64,
         height: f64,
     },
-    QrCode(QrState),
     PasteSpecial(PasteSpecialState),
     Barcode(BarcodeState),
     ConvertToBitmap(crate::bitmap_modes::ConvertOptions),
@@ -640,10 +644,9 @@ pub enum Dialog {
     TextStatistics,
     /// Text > Change Case: the case picked, applied on OK.
     ChangeCase(crate::ops2::CaseMode),
-    SpellCheck(SpellState),
-    Thesaurus(ThesaurusState),
+    WritingTools(crate::ui::writing_tools::WritingToolsState),
+    CustomHyphens(crate::ui::writing_tools::CustomHyphensState),
     Encode(EncodeState),
-    Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
     ColorManagement(Box<crate::ui::color_management::ColorManagementState>),
@@ -1415,6 +1418,20 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::GithubOpen(f) => crate::ui::github_dialogs::open_dialog(app, ctx, f, &mut close),
         Dialog::GithubSave(f) => crate::ui::github_dialogs::save_dialog(app, ctx, f, &mut close),
         Dialog::GithubHistory => crate::ui::github_dialogs::history_dialog(app, ctx, &mut close),
+        Dialog::CreatePattern { vector } => {
+            window(ctx, tr("dialog.create_pattern")).show(ctx, |ui| {
+                ui.label(tr("dialog.create_pattern_type"));
+                ui.radio_value(vector, true, tr("dialog.create_pattern_vector"));
+                ui.radio_value(vector, false, tr("dialog.create_pattern_bitmap"));
+                if ok_cancel(ui, &mut close) {
+                    if *vector {
+                        app.create_vector_pattern_from_selection();
+                    } else {
+                        app.create_pattern_from_selection();
+                    }
+                }
+            });
+        }
         Dialog::CreateTable {
             rows,
             cols,
@@ -1549,164 +1566,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::Barcode(st) => {
-            window(ctx, tr("dialog.barcode")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.barcode_type"));
-                    egui::ComboBox::from_id_salt("barcode_sym")
-                        .selected_text(st.symbology.name())
-                        .show_ui(ui, |ui| {
-                            for s in crate::barcode::Symbology::ALL {
-                                ui.selectable_value(&mut st.symbology, s, s.name());
-                            }
-                        });
-                });
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.barcode_text"));
-                    ui.text_edit_singleline(&mut st.text);
-                });
-                unit_value(ui, &tr("dialog.bar_height"), &mut st.height_mm, app.units);
-                unit_value(ui, &tr("dialog.module_width"), &mut st.module_mm, app.units);
-                ui.checkbox(&mut st.show_text, tr("dialog.show_text"));
-                if !st.error.is_empty() {
-                    ui.colored_label(egui::Color32::RED, &st.error);
-                }
-                if ok_cancel(ui, &mut close) {
-                    match crate::barcode::encode(st.symbology, &st.text) {
-                        Ok(modules) => {
-                            let m = st.module_mm.max(0.05);
-                            let h = st.height_mm.max(1.0);
-                            let total_w = modules.len() as f64 * m;
-                            let page = app.page_rect();
-                            let c = page.center();
-                            let x0 = c.x - total_w / 2.0;
-                            let y0 = c.y - h / 2.0;
-                            let mut path = tracedraw_core::geometry::BezPath::new();
-                            for (start, width) in crate::barcode::bars(&modules) {
-                                let r = Rect::new(
-                                    x0 + start as f64 * m,
-                                    y0,
-                                    x0 + (start + width) as f64 * m,
-                                    y0 + h,
-                                );
-                                path.extend(tracedraw_core::geometry::rect_path(r, 0.0));
-                            }
-                            let Some(layer) = app.active_layer() else {
-                                return;
-                            };
-                            let mut cmds = Vec::new();
-                            let mut ids = Vec::new();
-                            let bars_id = app.engine.new_shape_id();
-                            let mut bars = tracedraw_core::document::Shape::new(
-                                bars_id,
-                                ShapeKind::Path { path, closed: true },
-                            );
-                            bars.fill = Fill::Solid(Color::BLACK);
-                            bars.stroke = None;
-                            bars.name = Some(st.symbology.name().to_string());
-                            ids.push(bars_id);
-                            cmds.push(Command::AddShape { layer, shape: bars });
-                            if st.show_text {
-                                let text_id = app.engine.new_shape_id();
-                                let size_pt = (h * 0.2 * 72.0 / 25.4).clamp(5.0, 12.0);
-                                let mut label = tracedraw_core::document::Shape::new(
-                                    text_id,
-                                    ShapeKind::Text {
-                                        spans: vec![tracedraw_core::TextSpan::new(
-                                            st.text.clone(),
-                                            app.text_font.clone(),
-                                            size_pt,
-                                        )],
-                                        origin: tracedraw_core::geometry::Point::new(
-                                            c.x,
-                                            y0 - size_pt * 25.4 / 72.0 * 1.1,
-                                        ),
-                                        frame: None,
-                                        align: tracedraw_core::TextAlign::Center,
-                                        para: Default::default(),
-                                        on_path: None,
-                                    },
-                                );
-                                label.fill = Fill::Solid(Color::BLACK);
-                                label.stroke = None;
-                                ids.push(text_id);
-                                cmds.push(Command::AddShape {
-                                    layer,
-                                    shape: label,
-                                });
-                                cmds.push(Command::Group {
-                                    shapes: ids.clone(),
-                                });
-                            }
-                            if let Err(e) = app.engine.run_batch("Insert Barcode", &cmds) {
-                                app.status = e.to_string();
-                            }
-                            let last = app
-                                .doc()
-                                .page(app.page)
-                                .ok()
-                                .and_then(|p| p.layers.iter().find(|l| l.id == layer))
-                                .and_then(|l| l.shapes.last())
-                                .map(|s| s.id);
-                            if let Some(id) = last {
-                                app.select(vec![id]);
-                            }
-                        }
-                        Err(key) => {
-                            st.error = tr(key);
-                            close = false;
-                        }
-                    }
-                }
-            });
-        }
-        Dialog::QrCode(st) => {
-            window(ctx, tr("dialog.qr_code")).show(ctx, |ui| {
-                ui.label(tr("dialog.qr_text"));
-                ui.add(egui::TextEdit::multiline(&mut st.text).id(multiline_id(0)));
-                if st.size_mm <= 0.0 {
-                    st.size_mm = 30.0;
-                }
-                unit_value(ui, &tr("dialog.size"), &mut st.size_mm, app.units);
-                if !st.error.is_empty() {
-                    ui.colored_label(egui::Color32::RED, &st.error);
-                }
-                if ok_cancel(ui, &mut close) {
-                    match qr_path(&st.text, st.size_mm) {
-                        Ok(path) => {
-                            let page = app.page_rect();
-                            let c = page.center();
-                            let p = tracedraw_core::geometry::Affine::translate((
-                                c.x - st.size_mm / 2.0,
-                                c.y - st.size_mm / 2.0,
-                            )) * path;
-                            if let Some(id) = app.new_shape(ShapeKind::Path {
-                                path: p,
-                                closed: true,
-                            }) {
-                                app.run(Command::SetFill {
-                                    shapes: vec![id],
-                                    fill: Fill::Solid(Color::BLACK),
-                                });
-                                app.run(Command::SetStroke {
-                                    shapes: vec![id],
-                                    stroke: None,
-                                });
-                                app.run(Command::SetShapeName {
-                                    shape: id,
-                                    name: Some("QR code".into()),
-                                });
-                                app.select(vec![id]);
-                            }
-                        }
-                        Err(e) => {
-                            st.error = e;
-                            close = false;
-                        }
-                    }
-                }
-            });
-        }
+        Dialog::Barcode(st) => crate::ui::barcode_wizard::dialog(app, ctx, st, &mut close),
         Dialog::ConvertToBitmap(o) => {
             window(ctx, tr("dialog.convert_to_bitmap")).show(ctx, |ui| {
                 convert_fields(app, ui, o);
@@ -1921,10 +1781,11 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::SpellCheck(st) => spell_dialog(app, ctx, st, &mut close),
-        Dialog::Thesaurus(st) => thesaurus_dialog(app, ctx, st, &mut close),
+        Dialog::WritingTools(st) => crate::ui::writing_tools::dialog(app, ctx, st, &mut close),
+        Dialog::CustomHyphens(st) => {
+            crate::ui::writing_tools::custom_hyphens_dialog(app, ctx, st, &mut close)
+        }
         Dialog::Encode(st) => encode_dialog(app, ctx, st, &mut close),
-        Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
         Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
         Dialog::ColorManagement(st) => {
@@ -2587,6 +2448,25 @@ fn export_preview_box(app: &App, ui: &mut Ui, st: &ExportState, size: egui::Vec2
     preview.bytes
 }
 
+/// Ask for the file and export to it with `st`'s choices.
+pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
+    let (name, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+    let stem = app
+        .file
+        .as_ref()
+        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "Graphic1".into());
+    crate::files::Dialog::new()
+        .add_filter(name, &[ext])
+        .set_file_name(format!("{stem}.{ext}"))
+        .save_file(app, |app, path| {
+            match crate::export::export(app, &path, st) {
+                Ok(msg) => app.status = msg,
+                Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+            }
+        });
+}
+
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {
     window(
         ctx,
@@ -2620,14 +2500,23 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     }
                     let shown = match &st.script {
                         Some(n) => n.clone(),
-                        None => EXPORT_FORMATS[st.format].0.to_string(),
+                        None => export_format_label(st.format),
                     };
                     egui::ComboBox::from_id_salt("exp_fmt")
                         .selected_text(shown)
+                        .width(300.0)
+                        .height(520.0)
                         .show_ui(ui, |ui| {
-                            for (i, (n, _)) in EXPORT_FORMATS.iter().enumerate() {
+                            for entry in export_format_order() {
+                                let Some(i) = entry else {
+                                    ui.separator();
+                                    continue;
+                                };
                                 if ui
-                                    .selectable_label(st.script.is_none() && st.format == i, *n)
+                                    .selectable_label(
+                                        st.script.is_none() && st.format == i,
+                                        export_format_label(i),
+                                    )
                                     .clicked()
                                 {
                                     st.format = i;
@@ -2737,6 +2626,24 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 if !st.selection_only && st.format != 1 && st.format != 11 {
                     ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
                 }
+                if !st.web {
+                    ui.checkbox(
+                        &mut app.settings.formats.skip_export_dialog,
+                        tr("dialog.skip_export_dialog"),
+                    )
+                    .on_hover_text(tr("dialog.skip_export_dialog_tip"));
+                }
+                if !scripted && export_keeps_properties(EXPORT_FORMATS[st.format].1) {
+                    egui::Grid::new("exp_props").num_columns(2).show(ui, |ui| {
+                        ui.label(tr("dialog.title"));
+                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.title));
+                        ui.end_row();
+                        ui.label(tr("dialog.tags"));
+                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.tags))
+                            .on_hover_text(tr("dialog.tags_tip"));
+                        ui.end_row();
+                    });
+                }
                 if let Some(bytes) = estimate.filter(|_| !scripted) {
                     ui.add_space(6.0);
                     ui.label(
@@ -2777,22 +2684,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     });
                 return;
             }
-            let (name, ext) = EXPORT_FORMATS[st.format];
-            let _ = name;
-            let stem = app
-                .file
-                .as_ref()
-                .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "Graphic1".into());
-            crate::files::Dialog::new()
-                .add_filter(name, &[ext])
-                .set_file_name(format!("{stem}.{ext}"))
-                .save_file(app, |app, path| {
-                    match crate::export::export(app, &path, st) {
-                        Ok(msg) => app.status = msg,
-                        Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
-                    }
-                });
+            export_with_file_dialog(app, st);
             if st.remember {
                 app.settings.formats.remember(st);
                 app.settings.save();
@@ -3816,88 +3708,6 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
     }
 }
 
-fn spell_dialog(app: &mut App, ctx: &Context, st: &mut SpellState, close: &mut bool) {
-    if !st.checked {
-        let (unknown, words) = crate::spell::check_document(app);
-        st.unknown = unknown;
-        st.dictionary_words = words;
-        st.checked = true;
-        st.cursor = 0;
-        st.replacement = st
-            .unknown
-            .first()
-            .map(|(_, w)| w.clone())
-            .unwrap_or_default();
-    }
-    window(ctx, tr("dialog.spell_check")).show(ctx, |ui| {
-        if st.dictionary_words == 0 {
-            ui.colored_label(
-                egui::Color32::from_rgb(180, 80, 0),
-                tr("dialog.no_dictionary"),
-            );
-        }
-        if st.unknown.is_empty() {
-            ui.label(tr("dialog.spell_done"));
-        } else if let Some((id, word)) = st.unknown.get(st.cursor).cloned() {
-            ui.label(trf("dialog.not_in_dictionary", &[("w", &word)]));
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.replace_with"));
-                ui.text_edit_singleline(&mut st.replacement);
-            });
-            let suggestions = crate::spell::suggest(&word);
-            ui.horizontal_wrapped(|ui| {
-                for s in suggestions {
-                    if ui.small_button(&s).clicked() {
-                        st.replacement = s;
-                    }
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.replace")).clicked() {
-                    crate::spell::replace_word(app, id, &word, &st.replacement);
-                    st.unknown.remove(st.cursor);
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-                if ui.button(tr("dialog.skip")).clicked() {
-                    st.cursor += 1;
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-                if ui.button(tr("dialog.add_to_dictionary")).clicked() {
-                    crate::spell::add_user_word(&word);
-                    let w = word.clone();
-                    st.unknown.retain(|(_, x)| *x != w);
-                    st.replacement = st
-                        .unknown
-                        .get(st.cursor)
-                        .map(|(_, w)| w.clone())
-                        .unwrap_or_default();
-                }
-            });
-            if st.cursor >= st.unknown.len() {
-                st.unknown.clear();
-            }
-        }
-        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
-            *close = true;
-        }
-    });
-}
-
-fn thesaurus_lookup(app: &App, st: &mut ThesaurusState) {
-    let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
-    st.meanings = th.lookup(&st.word).to_vec();
-    st.looked_up = Some(st.word.trim().to_string());
-    st.selected = None;
-}
-
 fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut bool) {
     use crate::encode::Encoding;
     let original = app.selected_text_content();
@@ -3950,225 +3760,6 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
     });
     if apply {
         app.reencode_selected_text(st.from, st.to);
-    }
-}
-
-fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close: &mut bool) {
-    if !st.started {
-        st.started = true;
-        if let Some(s) = app.text_shapes().first() {
-            if let ShapeKind::Text { spans, .. } = &s.kind {
-                let text: String = spans.iter().map(|x| x.text.as_str()).collect();
-                if let Some(w) = crate::thesaurus::first_word(&text) {
-                    st.word = w.clone();
-                    st.original = w;
-                    st.target = Some(s.id);
-                }
-            }
-        }
-        if !st.word.is_empty() {
-            thesaurus_lookup(app, st);
-        }
-    }
-    let mut pick_file = false;
-    let mut relookup: Option<String> = None;
-    let mut replace: Option<(tracedraw_core::ShapeId, String)> = None;
-    window(ctx, tr("dialog.thesaurus")).show(ctx, |ui| {
-        ui.set_min_width(360.0);
-        let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
-        match &th.source {
-            crate::thesaurus::Source::BuiltIn => {
-                ui.colored_label(
-                    egui::Color32::from_rgb(180, 80, 0),
-                    tr("thesaurus.built_in_note"),
-                );
-            }
-            crate::thesaurus::Source::File(p) => {
-                ui.label(trf(
-                    "thesaurus.source_file",
-                    &[
-                        ("path", &p.display().to_string()),
-                        ("n", &th.len().to_string()),
-                    ],
-                ));
-            }
-        }
-        ui.horizontal(|ui| {
-            ui.label(tr("thesaurus.word"));
-            let r = ui.text_edit_singleline(&mut st.word);
-            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button(tr("thesaurus.look_up")).clicked() || enter {
-                thesaurus_lookup(app, st);
-            }
-        });
-        ui.separator();
-        if let Some(w) = &st.looked_up {
-            if st.meanings.is_empty() {
-                ui.label(trf("thesaurus.no_entry", &[("w", w)]));
-            } else {
-                egui::ScrollArea::vertical()
-                    .max_height(260.0)
-                    .show(ui, |ui| {
-                        for m in &st.meanings {
-                            ui.label(
-                                egui::RichText::new(format!("({})", m.pos))
-                                    .italics()
-                                    .color(Tokens::text_dim()),
-                            );
-                            ui.horizontal_wrapped(|ui| {
-                                for syn in &m.synonyms {
-                                    let on = st.selected.as_deref() == Some(syn.as_str());
-                                    let r = ui.selectable_label(on, syn);
-                                    if r.clicked() {
-                                        st.selected = Some(syn.clone());
-                                    }
-                                    if r.double_clicked() {
-                                        relookup = Some(syn.clone());
-                                    }
-                                }
-                            });
-                        }
-                    });
-            }
-        }
-        if st.target.is_none() {
-            ui.label(
-                egui::RichText::new(tr("thesaurus.no_text_selected")).color(Tokens::text_dim()),
-            );
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            let can_replace = st.target.is_some() && st.selected.is_some();
-            if ui
-                .add_enabled(can_replace, egui::Button::new(tr("dialog.replace")))
-                .clicked()
-            {
-                if let (Some(id), Some(sel)) = (st.target, st.selected.clone()) {
-                    replace = Some((id, sel));
-                }
-            }
-            if ui.button(tr("thesaurus.pick_file")).clicked() {
-                pick_file = true;
-            }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if let Some(w) = relookup {
-        st.word = w;
-        thesaurus_lookup(app, st);
-    }
-    if let Some((id, sel)) = replace {
-        let repl = crate::thesaurus::match_case(&st.original, &sel);
-        crate::spell::replace_word(app, id, &st.original, &repl);
-        app.status = trf("thesaurus.replaced", &[("a", &st.original), ("b", &repl)]);
-        st.original = repl.clone();
-        st.word = repl;
-        thesaurus_lookup(app, st);
-    }
-    if pick_file {
-        crate::files::Dialog::new()
-            .add_filter("MyThes", &["dat"])
-            .pick_into("thesaurus_file");
-    }
-    if let Some(p) = crate::files::take_picked("thesaurus_file") {
-        app.settings.thesaurus_file = Some(p);
-        app.settings.save();
-        thesaurus_lookup(app, st);
-    }
-}
-
-fn grammar_options() -> crate::grammar::Options {
-    crate::grammar::Options::for_language(&crate::i18n::language())
-}
-
-fn grammar_dialog(app: &mut App, ctx: &Context, st: &mut GrammarState, close: &mut bool) {
-    if !st.checked {
-        st.findings = crate::grammar::check_document(app, grammar_options());
-        st.checked = true;
-    }
-    let mut fix: Option<(tracedraw_core::ShapeId, crate::grammar::Fix)> = None;
-    let mut fix_all = false;
-    window(ctx, tr("dialog.grammar")).show(ctx, |ui| {
-        ui.set_min_width(420.0);
-        ui.label(egui::RichText::new(tr("grammar.scope_note")).color(Tokens::text_dim()));
-        if st.findings.is_empty() {
-            ui.label(tr("grammar.no_issues"));
-        } else {
-            ui.label(trf(
-                "grammar.issues_found",
-                &[("n", &st.findings.len().to_string())],
-            ));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for (i, (id, f)) in st.findings.iter().enumerate() {
-                        ui.push_id(i, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    let rule = if f.rule == crate::grammar::Rule::LongSentence {
-                                        trf(
-                                            f.rule.key(),
-                                            &[(
-                                                "n",
-                                                &crate::grammar::LONG_SENTENCE_WORDS.to_string(),
-                                            )],
-                                        )
-                                    } else {
-                                        tr(f.rule.key())
-                                    };
-                                    ui.label(egui::RichText::new(rule).strong());
-                                    let mut s: String = f.sentence.chars().take(90).collect();
-                                    if s.chars().count() < f.sentence.chars().count() {
-                                        s.push_str("...");
-                                    }
-                                    ui.label(egui::RichText::new(s).color(Tokens::text_dim()));
-                                });
-                                if let Some(x) = &f.fix {
-                                    if ui.button(tr("grammar.fix")).clicked() {
-                                        fix = Some((*id, x.clone()));
-                                    }
-                                }
-                            });
-                            ui.separator();
-                        });
-                    }
-                });
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button(tr("grammar.check_again")).clicked() {
-                st.checked = false;
-            }
-            let any_fix = st.findings.iter().any(|(_, f)| f.fix.is_some());
-            if ui
-                .add_enabled(any_fix, egui::Button::new(tr("grammar.fix_all")))
-                .clicked()
-            {
-                fix_all = true;
-            }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if let Some((id, x)) = fix {
-        crate::grammar::apply_fix_to_shape(app, id, &x);
-        st.checked = false;
-    }
-    if fix_all {
-        // One fix at a time, re-checking in between so offsets stay valid.
-        for _ in 0..500 {
-            let findings = crate::grammar::check_document(app, grammar_options());
-            let Some((id, f)) = findings.into_iter().find(|(_, f)| f.fix.is_some()) else {
-                break;
-            };
-            if let Some(x) = f.fix {
-                crate::grammar::apply_fix_to_shape(app, id, &x);
-            }
-        }
-        st.checked = false;
     }
 }
 
@@ -4605,68 +4196,7 @@ fn border_grommet_preview(
 }
 
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {
-    egui::Window::new(tr("menu.tools.font_manager"))
-        .order(egui::Order::Foreground)
-        .collapsible(false)
-        .resizable(true)
-        .default_width(560.0)
-        .default_height(420.0)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            if st.sample.is_empty() {
-                st.sample = tr("dialog.font_sample");
-            }
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.filter"));
-                ui.text_edit_singleline(&mut st.filter);
-                ui.label(tr("dialog.sample_text"));
-                ui.text_edit_singleline(&mut st.sample);
-            });
-            let missing: Vec<String> = app.missing_fonts.clone();
-            if !missing.is_empty() {
-                ui.colored_label(
-                    egui::Color32::from_rgb(180, 80, 0),
-                    trf(
-                        "dialog.missing_fonts",
-                        &[("f", &crate::ops2::with_stand_ins(&missing))],
-                    ),
-                );
-            }
-            let filter = st.filter.to_lowercase();
-            let families: Vec<String> = app
-                .font_families
-                .iter()
-                .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
-                .cloned()
-                .collect();
-            ui.label(trf("dialog.fonts_n", &[("n", &families.len().to_string())]));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for f in families {
-                        let selected = st.selected.as_deref() == Some(f.as_str());
-                        let r = ui.selectable_label(selected, format!("{f}    {}", st.sample));
-                        if r.clicked() {
-                            st.selected = Some(f.clone());
-                        }
-                        if r.double_clicked() {
-                            app.text_font = f.clone();
-                            app.apply_text_font(&f);
-                        }
-                    }
-                });
-            ui.horizontal(|ui| {
-                if let Some(f) = st.selected.clone() {
-                    if ui.button(tr("dialog.use_font")).clicked() {
-                        app.text_font = f.clone();
-                        app.apply_text_font(&f);
-                    }
-                }
-                if ui.button(tr("dialog.close")).clicked() {
-                    *close = true;
-                }
-            });
-        });
+    crate::ui::font_manager::dialog(app, ctx, st, close);
 }
 
 fn palette_editor_dialog(
@@ -4863,7 +4393,8 @@ mod tests {
                 width: 75.0,
                 height: 100.0,
             },
-            Dialog::QrCode(QrState::default()),
+            Dialog::CreatePattern { vector: true },
+            Dialog::CreatePattern { vector: false },
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),
             Dialog::ConvertToBitmap(crate::bitmap_modes::ConvertOptions {
@@ -4904,10 +4435,11 @@ mod tests {
             Dialog::TextDropCap,
             Dialog::TextStatistics,
             Dialog::ChangeCase(crate::ops2::CaseMode::Sentence),
-            Dialog::SpellCheck(SpellState::default()),
-            Dialog::Thesaurus(ThesaurusState::default()),
+            Dialog::WritingTools(Default::default()),
+            Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(1)),
+            Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(2)),
+            Dialog::CustomHyphens(Default::default()),
             Dialog::Encode(EncodeState::default()),
-            Dialog::Grammar(GrammarState::default()),
             Dialog::Autocorrect(AutocorrectState::default()),
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
             Dialog::ColorManagement(Default::default()),
@@ -4998,6 +4530,28 @@ mod tests {
         frame(&ctx, &mut app, false);
         frame(&ctx, &mut app, false);
         assert_ne!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
+    }
+
+    #[test]
+    fn the_export_list_puts_the_common_formats_first() {
+        let order = export_format_order();
+        let ext = |i: Option<usize>| i.map(|i| EXPORT_FORMATS[i].1);
+        let head: Vec<_> = order.iter().take(5).map(|i| ext(*i)).collect();
+        assert_eq!(
+            head,
+            vec![Some("jpg"), Some("pdf"), Some("ai"), Some("png"), None]
+        );
+        let rest: Vec<&str> = order[5..].iter().filter_map(|i| ext(*i)).collect();
+        let mut sorted = rest.clone();
+        sorted.sort();
+        assert_eq!(rest, sorted);
+        assert_eq!(rest.len(), EXPORT_FORMATS.len());
+        let jpg = export_format_label(3);
+        assert!(
+            jpg.starts_with("JPG - ") && jpg.ends_with("(*.jpg;*.jpeg)"),
+            "{jpg}"
+        );
+        assert!(export_keeps_properties("pdf") && !export_keeps_properties("png"));
     }
 
     /// Every dialog can be drawn with a rectangle, text and a bitmap in the
