@@ -62,6 +62,18 @@ full, row-by-row status.
   wrong sound and sentences with no end mark.
 - Text > Custom Optional Hyphens: words hyphenated by hand break only
   there, turned on for text typed, pasted or imported with them.
+- Publish to PDF opens PDF Settings with General, Color, Document,
+  Objects, Prepress, Security and issues tabs: the file name, every open
+  drawing or a page list as the range, the page size of the selection,
+  and PDF presets saved with "+" and deleted with "-".
+- Export lists formats as "EXT - Description (*.ext)", JPG, PDF, AI and
+  PNG first; "Do not show filter dialog" skips the dialog next time, and
+  PDF and AI take a title and tags.
+- The Snap To list stays open while its boxes are ticked and has a close
+  button.
+- Bitmap Mask docker: ten colour slots with their own tolerance, the
+  eyedropper and "Select colours from bitmap", saved and opened masks,
+  and Hide selected or Show selected.
 - Border and Grommet: a preview of the final page, Source (page or
   selection), Add border with type and size, Add grommets with Use
   border area, size and margin, placement on the corners and each edge,

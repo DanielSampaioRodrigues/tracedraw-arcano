@@ -440,3 +440,24 @@ its default settings to a 64-pixel landscape, and its name below.
 
 The bitmap's context menu writes its pixels, the effects in its stack
 included, to a PNG file (a download in the browser).
+
+## Bitmap Mask docker
+
+Bitmaps > Bitmap Mask opens the docker:
+
+- An eyedropper (the Color Eyedropper tool; each colour it samples
+  fills the selected slot and ticks it) and "Select colours from
+  bitmap" (the ten colours the first selected bitmap uses most, near
+  colours merged, fill the slots).
+- Ten colour slots: a check box (in use), the colour (click to select
+  the slot) and its tolerance.
+- Save mask and Open mask (`.msk` text files: one line per slot, "1
+  #rrggbb tolerance"), and Delete (the selected slot back to empty).
+- Tolerance: a slider and a field, 0 to 100 %, for the selected slot; a
+  pixel matches a slot when each of its channels is within the
+  tolerance (% of 255) of the slot's colour.
+- Colors: Hide selected (matching pixels become transparent) or Show
+  selected (only matching pixels stay, the default).
+- Apply, on the selected bitmaps, one undo step each; enabled with a
+  bitmap selected and a slot in use.
+- Checks: `bitmap_fx::tests::a_bitmap_mask_hides_or_keeps_its_colours`.

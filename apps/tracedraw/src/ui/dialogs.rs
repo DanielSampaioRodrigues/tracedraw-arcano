@@ -55,6 +55,9 @@ pub struct ExportState {
     pub output_condition: String,
     /// An installed script filter chosen instead of `format`, by name.
     pub script: Option<String>,
+    /// The file's title and tags (keywords), for formats that keep them.
+    pub title: String,
+    pub tags: String,
 }
 
 impl Default for ExportState {
@@ -72,6 +75,8 @@ impl Default for ExportState {
             bleed_mm: 0.0,
             output_condition: "FOGRA39".into(),
             script: None,
+            title: String::new(),
+            tags: String::new(),
         }
     }
 }
@@ -119,6 +124,63 @@ pub const EXPORT_FORMATS: [(&str, &str); 18] = [
     ("PostScript", "ps"),
     ("PRN", "prn"),
 ];
+
+/// The formats the Export list offers first, by index into
+/// [`EXPORT_FORMATS`]: JPG, PDF, AI and PNG.
+pub const EXPORT_COMMON: [usize; 4] = [3, 1, 9, 2];
+
+/// The file name patterns of an export format.
+pub fn export_patterns(ext: &str) -> &'static str {
+    match ext {
+        "jpg" => "*.jpg;*.jpeg",
+        "tif" => "*.tif;*.tiff",
+        "svg" => "*.svg",
+        "pdf" => "*.pdf",
+        "png" => "*.png",
+        "bmp" => "*.bmp",
+        "webp" => "*.webp",
+        "gif" => "*.gif",
+        "eps" => "*.eps",
+        "ai" => "*.ai",
+        "dxf" => "*.dxf",
+        "html" => "*.html;*.htm",
+        "emf" => "*.emf",
+        "wmf" => "*.wmf",
+        "plt" => "*.plt",
+        "psd" => "*.psd",
+        "ps" => "*.ps",
+        "prn" => "*.prn",
+        _ => "*.*",
+    }
+}
+
+/// "JPG - JPEG Bitmaps (*.jpg;*.jpeg)": the Export list's line for the
+/// format at `i`.
+pub fn export_format_label(i: usize) -> String {
+    let (_, ext) = EXPORT_FORMATS[i.min(EXPORT_FORMATS.len() - 1)];
+    format!(
+        "{} - {} ({})",
+        ext.to_ascii_uppercase(),
+        tr(&format!("export.fmt_{ext}")),
+        export_patterns(ext)
+    )
+}
+
+/// The Export list: the common formats, then every format by extension.
+/// `None` marks the separator.
+pub fn export_format_order() -> Vec<Option<usize>> {
+    let mut all: Vec<usize> = (0..EXPORT_FORMATS.len()).collect();
+    all.sort_by_key(|i| EXPORT_FORMATS[*i].1);
+    let mut out: Vec<Option<usize>> = EXPORT_COMMON.iter().map(|i| Some(*i)).collect();
+    out.push(None);
+    out.extend(all.into_iter().map(Some));
+    out
+}
+
+/// Formats whose files keep a title and keywords (tags).
+pub fn export_keeps_properties(ext: &str) -> bool {
+    matches!(ext, "pdf" | "ai")
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintState {
@@ -2386,6 +2448,25 @@ fn export_preview_box(app: &App, ui: &mut Ui, st: &ExportState, size: egui::Vec2
     preview.bytes
 }
 
+/// Ask for the file and export to it with `st`'s choices.
+pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
+    let (name, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+    let stem = app
+        .file
+        .as_ref()
+        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "Graphic1".into());
+    crate::files::Dialog::new()
+        .add_filter(name, &[ext])
+        .set_file_name(format!("{stem}.{ext}"))
+        .save_file(app, |app, path| {
+            match crate::export::export(app, &path, st) {
+                Ok(msg) => app.status = msg,
+                Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+            }
+        });
+}
+
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {
     window(
         ctx,
@@ -2419,14 +2500,23 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     }
                     let shown = match &st.script {
                         Some(n) => n.clone(),
-                        None => EXPORT_FORMATS[st.format].0.to_string(),
+                        None => export_format_label(st.format),
                     };
                     egui::ComboBox::from_id_salt("exp_fmt")
                         .selected_text(shown)
+                        .width(300.0)
+                        .height(520.0)
                         .show_ui(ui, |ui| {
-                            for (i, (n, _)) in EXPORT_FORMATS.iter().enumerate() {
+                            for entry in export_format_order() {
+                                let Some(i) = entry else {
+                                    ui.separator();
+                                    continue;
+                                };
                                 if ui
-                                    .selectable_label(st.script.is_none() && st.format == i, *n)
+                                    .selectable_label(
+                                        st.script.is_none() && st.format == i,
+                                        export_format_label(i),
+                                    )
                                     .clicked()
                                 {
                                     st.format = i;
@@ -2536,6 +2626,24 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 if !st.selection_only && st.format != 1 && st.format != 11 {
                     ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
                 }
+                if !st.web {
+                    ui.checkbox(
+                        &mut app.settings.formats.skip_export_dialog,
+                        tr("dialog.skip_export_dialog"),
+                    )
+                    .on_hover_text(tr("dialog.skip_export_dialog_tip"));
+                }
+                if !scripted && export_keeps_properties(EXPORT_FORMATS[st.format].1) {
+                    egui::Grid::new("exp_props").num_columns(2).show(ui, |ui| {
+                        ui.label(tr("dialog.title"));
+                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.title));
+                        ui.end_row();
+                        ui.label(tr("dialog.tags"));
+                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.tags))
+                            .on_hover_text(tr("dialog.tags_tip"));
+                        ui.end_row();
+                    });
+                }
                 if let Some(bytes) = estimate.filter(|_| !scripted) {
                     ui.add_space(6.0);
                     ui.label(
@@ -2576,22 +2684,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     });
                 return;
             }
-            let (name, ext) = EXPORT_FORMATS[st.format];
-            let _ = name;
-            let stem = app
-                .file
-                .as_ref()
-                .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "Graphic1".into());
-            crate::files::Dialog::new()
-                .add_filter(name, &[ext])
-                .set_file_name(format!("{stem}.{ext}"))
-                .save_file(app, |app, path| {
-                    match crate::export::export(app, &path, st) {
-                        Ok(msg) => app.status = msg,
-                        Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
-                    }
-                });
+            export_with_file_dialog(app, st);
             if st.remember {
                 app.settings.formats.remember(st);
                 app.settings.save();
@@ -4437,6 +4530,28 @@ mod tests {
         frame(&ctx, &mut app, false);
         frame(&ctx, &mut app, false);
         assert_ne!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
+    }
+
+    #[test]
+    fn the_export_list_puts_the_common_formats_first() {
+        let order = export_format_order();
+        let ext = |i: Option<usize>| i.map(|i| EXPORT_FORMATS[i].1);
+        let head: Vec<_> = order.iter().take(5).map(|i| ext(*i)).collect();
+        assert_eq!(
+            head,
+            vec![Some("jpg"), Some("pdf"), Some("ai"), Some("png"), None]
+        );
+        let rest: Vec<&str> = order[5..].iter().filter_map(|i| ext(*i)).collect();
+        let mut sorted = rest.clone();
+        sorted.sort();
+        assert_eq!(rest, sorted);
+        assert_eq!(rest.len(), EXPORT_FORMATS.len());
+        let jpg = export_format_label(3);
+        assert!(
+            jpg.starts_with("JPG - ") && jpg.ends_with("(*.jpg;*.jpeg)"),
+            "{jpg}"
+        );
+        assert!(export_keeps_properties("pdf") && !export_keeps_properties("png"));
     }
 
     /// Every dialog can be drawn with a rectangle, text and a bitmap in the

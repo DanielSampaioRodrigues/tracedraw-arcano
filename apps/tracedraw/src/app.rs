@@ -1087,8 +1087,9 @@ pub struct App {
     pub media_spacing: f64,
     pub media_pressure: f64,
     pub media_smoothing: f64,
-    pub mask_colors: Vec<Color>,
-    pub mask_tolerance: u8,
+    /// The Bitmap Mask docker: its colour slots, the slot picked, hide or
+    /// show the colours, and the eyedropper filling the picked slot.
+    pub mask: crate::bitmap_fx::MaskSettings,
     pub font_filter: String,
     /// Envelope/perspective node being dragged with the Shape tool: (shape, index).
     pub effect_node_drag: Option<(ShapeId, usize)>,
@@ -1842,8 +1843,7 @@ impl App {
             media_spacing: 8.0,
             media_pressure: 0.5,
             media_smoothing: 25.0,
-            mask_colors: Vec::new(),
-            mask_tolerance: 20,
+            mask: Default::default(),
             font_filter: String::new(),
             effect_node_drag: None,
             effect_node_stepped: false,
@@ -4624,7 +4624,13 @@ impl App {
     /// every format, starting with the choices of Options > Global > File
     /// Formats.
     pub fn export(&mut self) {
-        self.dialog = crate::ui::dialogs::Dialog::Export(self.settings.formats.state());
+        let st = self.settings.formats.state();
+        // "Do not show filter dialog": straight to the file.
+        if self.settings.formats.skip_export_dialog {
+            crate::ui::dialogs::export_with_file_dialog(self, &st);
+            return;
+        }
+        self.dialog = crate::ui::dialogs::Dialog::Export(st);
     }
 
     /// After a drawing opened: say which objects could not be read and
