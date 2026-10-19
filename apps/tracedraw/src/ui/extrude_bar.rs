@@ -351,109 +351,6 @@ pub fn draw_handles(app: &App, painter: &Painter) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tracedraw_core::{geometry::Rect, live::Effect, ShapeKind};
-
-    #[test]
-    fn the_bar_and_the_panel_draw_for_every_kind() {
-        let ctx = crate::theme::ui_context();
-        let mut app = App::headless();
-        app.tool = crate::tools::Tool::Extrude;
-        let id = app
-            .new_shape(ShapeKind::Rect {
-                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
-                radius: 0.0,
-                corners: None,
-            })
-            .expect("square");
-        let frame = |app: &mut App, panel: bool| {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1600.0, 400.0),
-                )),
-                ..Default::default()
-            };
-            let mut out = ctx.run_ui(input, |ui| {
-                if panel {
-                    ui.vertical(|ui| {
-                        extrude_controls(app, ui);
-                        extrude_space(app, ui);
-                        extrude_actions(app, ui);
-                    });
-                } else {
-                    ui.horizontal(|ui| extrude_bar(app, ui));
-                }
-                draw_handles(app, ui.painter());
-            });
-            out.textures_delta.clear();
-        };
-        for k in ExtrudeKind::ALL {
-            for c in ExtrudeColor::ALL {
-                app.extrude.kind = k;
-                app.extrude.color = c;
-                frame(&mut app, false);
-            }
-        }
-        // A selected extrusion shows as the controls' values.
-        app.select(vec![id]);
-        app.extrude.kind = ExtrudeKind::BigBack;
-        app.add_extrusion();
-        app.extrude.kind = ExtrudeKind::FrontParallel;
-        frame(&mut app, true);
-        assert_eq!(app.extrude.kind, ExtrudeKind::BigBack);
-        assert_eq!(app.extrusion_handles().len(), 1);
-        // The turn, the lights and the bevel go to the effect and come
-        // back from it.
-        app.extrude.rotation = [10.0, 20.0, 30.0];
-        app.extrude.elevation = 40.0;
-        app.extrude.lights[1] = (true, crate::extrude_tool::NEW_LIGHT);
-        app.extrude.bevel = 1.5;
-        app.apply_extrude_settings();
-        frame(&mut app, true);
-        frame(&mut app, false);
-        let Some(Effect::Extrude { space, bevel, .. }) = app
-            .selected_shapes()
-            .first()
-            .and_then(|s| {
-                s.effects
-                    .iter()
-                    .find(|e| matches!(e, Effect::Extrude { .. }))
-            })
-            .cloned()
-        else {
-            panic!("no extrusion");
-        };
-        assert_eq!(space.rotation, [10.0, 20.0, 30.0]);
-        assert_eq!(space.lights.len(), 1);
-        assert!((bevel - 1.5).abs() < 1e-9);
-        let mut back = crate::extrude_tool::ExtrudeSettings::default();
-        back.take(
-            &Effect::Extrude {
-                depth: Default::default(),
-                vanishing: None,
-                amount: 0.0,
-                shade_from: None,
-                shade_to: None,
-                light_angle: 0.0,
-                light_intensity: 0.0,
-                bevel,
-                kind: None,
-                on_object: false,
-                solid: None,
-                space,
-            },
-            Default::default(),
-            Default::default(),
-        );
-        assert!(back.lights[0].0);
-        assert!(!back.lights[1].0);
-        assert_eq!(back.elevation, 40.0);
-    }
-}
-
 /// The Extrude docker's pages.
 pub const EXTRUDE_PAGES: [&str; 5] = [
     "extrude.page_camera",
@@ -842,4 +739,107 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
     ui.add_space(6.0);
     ui.separator();
     extrude_actions(app, ui);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracedraw_core::{geometry::Rect, live::Effect, ShapeKind};
+
+    #[test]
+    fn the_bar_and_the_panel_draw_for_every_kind() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.tool = crate::tools::Tool::Extrude;
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("square");
+        let frame = |app: &mut App, panel: bool| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 400.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                if panel {
+                    ui.vertical(|ui| {
+                        extrude_controls(app, ui);
+                        extrude_space(app, ui);
+                        extrude_actions(app, ui);
+                    });
+                } else {
+                    ui.horizontal(|ui| extrude_bar(app, ui));
+                }
+                draw_handles(app, ui.painter());
+            });
+            out.textures_delta.clear();
+        };
+        for k in ExtrudeKind::ALL {
+            for c in ExtrudeColor::ALL {
+                app.extrude.kind = k;
+                app.extrude.color = c;
+                frame(&mut app, false);
+            }
+        }
+        // A selected extrusion shows as the controls' values.
+        app.select(vec![id]);
+        app.extrude.kind = ExtrudeKind::BigBack;
+        app.add_extrusion();
+        app.extrude.kind = ExtrudeKind::FrontParallel;
+        frame(&mut app, true);
+        assert_eq!(app.extrude.kind, ExtrudeKind::BigBack);
+        assert_eq!(app.extrusion_handles().len(), 1);
+        // The turn, the lights and the bevel go to the effect and come
+        // back from it.
+        app.extrude.rotation = [10.0, 20.0, 30.0];
+        app.extrude.elevation = 40.0;
+        app.extrude.lights[1] = (true, crate::extrude_tool::NEW_LIGHT);
+        app.extrude.bevel = 1.5;
+        app.apply_extrude_settings();
+        frame(&mut app, true);
+        frame(&mut app, false);
+        let Some(Effect::Extrude { space, bevel, .. }) = app
+            .selected_shapes()
+            .first()
+            .and_then(|s| {
+                s.effects
+                    .iter()
+                    .find(|e| matches!(e, Effect::Extrude { .. }))
+            })
+            .cloned()
+        else {
+            panic!("no extrusion");
+        };
+        assert_eq!(space.rotation, [10.0, 20.0, 30.0]);
+        assert_eq!(space.lights.len(), 1);
+        assert!((bevel - 1.5).abs() < 1e-9);
+        let mut back = crate::extrude_tool::ExtrudeSettings::default();
+        back.take(
+            &Effect::Extrude {
+                depth: Default::default(),
+                vanishing: None,
+                amount: 0.0,
+                shade_from: None,
+                shade_to: None,
+                light_angle: 0.0,
+                light_intensity: 0.0,
+                bevel,
+                kind: None,
+                on_object: false,
+                solid: None,
+                space,
+            },
+            Default::default(),
+            Default::default(),
+        );
+        assert!(back.lights[0].0);
+        assert!(!back.lights[1].0);
+        assert_eq!(back.elevation, 40.0);
+    }
 }
