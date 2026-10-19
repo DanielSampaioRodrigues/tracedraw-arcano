@@ -25,8 +25,6 @@ pub enum TableOp {
     DistributeCols,
     Merge,
     Unmerge,
-    SplitRows,
-    SplitCols,
 }
 
 /// Cell editing state: which table and which cells are selected, plus the
@@ -440,7 +438,7 @@ impl App {
 
     /// The active cell's text as the shape `Table::expand` draws it, in
     /// table-local space.
-    fn cell_text_shape(&self) -> Option<tracedraw_core::Shape> {
+    pub(crate) fn cell_text_shape(&self) -> Option<tracedraw_core::Shape> {
         let e = self.table_edit.as_ref()?;
         let (_, s) = self.doc().shape(e.shape).ok()?;
         let ShapeKind::Table(t) = &s.kind else {
@@ -448,7 +446,7 @@ impl App {
         };
         let (r, c) = e.cells.first().copied()?;
         let cell = t.cells.iter().find(|cell| cell.row == r && cell.col == c)?;
-        let inner = t.cell_rect(cell).inset(-t.padding);
+        let inner = t.cell_inner(cell);
         let spans = if cell.text.is_empty() {
             self.cell_spans_for_edit()?
         } else {
@@ -533,7 +531,7 @@ impl App {
                         Key::Backspace => self.cell_delete_backward(),
                         Key::Delete => self.cell_delete_forward(),
                         Key::Enter => self.cell_insert("\n"),
-                        Key::Tab => self.table_next_cell(shift),
+                        Key::Tab => self.table_tab(shift, ctrl),
                         Key::ArrowLeft => self.cell_move(CaretMove::Left, shift),
                         Key::ArrowRight => self.cell_move(CaretMove::Right, shift),
                         Key::ArrowUp => self.cell_move(CaretMove::Up, shift),
@@ -542,7 +540,7 @@ impl App {
                         Key::End if ctrl => self.cell_move(CaretMove::TextEnd, shift),
                         Key::Home => self.cell_move(CaretMove::LineStart, shift),
                         Key::End => self.cell_move(CaretMove::LineEnd, shift),
-                        Key::A if ctrl => self.cell_select_all(),
+                        Key::A if ctrl => self.table_select_all(),
                         Key::B if ctrl => {
                             let on = !self.text_bold;
                             self.text_bold = on;
@@ -581,38 +579,15 @@ impl App {
         let (ar, ac) = sel.first().copied().unwrap_or((0, 0));
         match op {
             TableOp::RowAbove | TableOp::RowBelow => {
-                let at = if op == TableOp::RowAbove { ar } else { ar + 1 };
-                let h = t.row_heights.get(ar as usize).copied().unwrap_or(10.0);
-                t.row_heights.insert(at as usize, h);
-                for c in t.cells.iter_mut() {
-                    if c.row >= at {
-                        c.row += 1;
-                    } else if c.row + c.row_span > at {
-                        c.row_span += 1;
-                    }
-                }
-                for col in 0..t.cols() {
-                    if !t.covered(at, col) {
-                        t.cells.push(blank(at, col));
-                    }
-                }
+                // As many rows as the selection covers.
+                let n = self.table_selection_extent().0;
+                self.table_insert_rows(n, op == TableOp::RowBelow);
+                return;
             }
             TableOp::ColLeft | TableOp::ColRight => {
-                let at = if op == TableOp::ColLeft { ac } else { ac + 1 };
-                let w = t.col_widths.get(ac as usize).copied().unwrap_or(20.0);
-                t.col_widths.insert(at as usize, w);
-                for c in t.cells.iter_mut() {
-                    if c.col >= at {
-                        c.col += 1;
-                    } else if c.col + c.col_span > at {
-                        c.col_span += 1;
-                    }
-                }
-                for row in 0..t.rows() {
-                    if !t.covered(row, at) {
-                        t.cells.push(blank(row, at));
-                    }
-                }
+                let n = self.table_selection_extent().1;
+                self.table_insert_cols(n, op == TableOp::ColRight);
+                return;
             }
             TableOp::SelectCell => {
                 let len = cell_text(&t, ar, ac).chars().count();
@@ -676,26 +651,21 @@ impl App {
                 self.selection.clear();
                 return;
             }
-            TableOp::DistributeRows => {
-                let h = t.rect.height() / t.rows() as f64;
-                for r in t.row_heights.iter_mut() {
-                    *r = h;
-                }
-            }
-            TableOp::DistributeCols => {
-                let w = t.rect.width() / t.cols() as f64;
-                for c in t.col_widths.iter_mut() {
-                    *c = w;
-                }
+            TableOp::DistributeRows | TableOp::DistributeCols => {
+                self.table_distribute(op == TableOp::DistributeRows);
+                return;
             }
             TableOp::Merge => {
                 if sel.len() < 2 {
                     return;
                 }
-                let r0 = sel.iter().map(|s| s.0).min().unwrap_or(0);
-                let r1 = sel.iter().map(|s| s.0).max().unwrap_or(0);
-                let c0 = sel.iter().map(|s| s.1).min().unwrap_or(0);
-                let c1 = sel.iter().map(|s| s.1).max().unwrap_or(0);
+                // The block the selection spans, grown over merged cells.
+                let Some((r0, r1, c0, c1)) = t
+                    .span_of(&sel)
+                    .and_then(|(r0, r1, c0, c1)| t.span_of(&t.block_cells((r0, c0), (r1, c1))))
+                else {
+                    return;
+                };
                 // Text of all merged cells joined by spaces.
                 let mut text: Vec<TextSpan> = Vec::new();
                 for c in &t.cells {
@@ -703,9 +673,11 @@ impl App {
                         text.extend(c.text.iter().cloned());
                     }
                 }
+                let upper_left = t.cell_index(r0, c0).and_then(|i| t.cells.get(i)).cloned();
                 t.cells
                     .retain(|c| !(c.row >= r0 && c.row <= r1 && c.col >= c0 && c.col <= c1));
-                let mut merged = blank(r0, c0);
+                // The merged cell keeps the upper-left cell's formatting.
+                let mut merged = upper_left.unwrap_or_else(|| blank(r0, c0));
                 merged.row_span = r1 - r0 + 1;
                 merged.col_span = c1 - c0 + 1;
                 merged.text = text;
@@ -725,49 +697,6 @@ impl App {
                             b.fill = cell.fill.clone();
                         }
                         t.cells.push(b);
-                    }
-                }
-            }
-            TableOp::SplitRows => {
-                // Split the active row in two equal rows.
-                let h = t.row_heights.get(ar as usize).copied().unwrap_or(10.0) / 2.0;
-                if let Some(x) = t.row_heights.get_mut(ar as usize) {
-                    *x = h;
-                }
-                t.row_heights.insert(ar as usize + 1, h);
-                for c in t.cells.iter_mut() {
-                    if c.row > ar {
-                        c.row += 1;
-                    } else if c.row + c.row_span > ar + 1 {
-                        c.row_span += 1;
-                    }
-                }
-                for col in 0..t.cols() {
-                    if !t.covered(ar + 1, col)
-                        && !t.cells.iter().any(|c| c.row == ar + 1 && c.col == col)
-                    {
-                        t.cells.push(blank(ar + 1, col));
-                    }
-                }
-            }
-            TableOp::SplitCols => {
-                let w = t.col_widths.get(ac as usize).copied().unwrap_or(20.0) / 2.0;
-                if let Some(x) = t.col_widths.get_mut(ac as usize) {
-                    *x = w;
-                }
-                t.col_widths.insert(ac as usize + 1, w);
-                for c in t.cells.iter_mut() {
-                    if c.col > ac {
-                        c.col += 1;
-                    } else if c.col + c.col_span > ac + 1 {
-                        c.col_span += 1;
-                    }
-                }
-                for row in 0..t.rows() {
-                    if !t.covered(row, ac + 1)
-                        && !t.cells.iter().any(|c| c.row == row && c.col == ac + 1)
-                    {
-                        t.cells.push(blank(row, ac + 1));
                     }
                 }
             }
@@ -872,15 +801,7 @@ impl App {
 }
 
 fn blank(row: u32, col: u32) -> TableCell {
-    TableCell {
-        row,
-        col,
-        row_span: 1,
-        col_span: 1,
-        text: Vec::new(),
-        fill: None,
-        align: tracedraw_core::TextAlign::Left,
-    }
+    tracedraw_core::table::blank_cell(row, col)
 }
 
 /// Grow the cell's row so its text fits (rows grow downwards and never
@@ -893,7 +814,7 @@ fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
     if cell.text.is_empty() {
         return;
     }
-    let inner = t.cell_rect(cell).inset(-t.padding);
+    let inner = t.cell_inner(cell);
     let para = tracedraw_core::ParagraphStyle::default();
     let layout =
         tracedraw_text::fonts().layout(&tracedraw_core::document::text_outline::TextRequest {
@@ -906,7 +827,8 @@ fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
             para: &para,
             on_path: None,
         });
-    let needed = -layout.bounds.y0 + 2.0 * t.padding + 0.01;
+    let margins = t.cell_rect(cell).height() - inner.height();
+    let needed = -layout.bounds.y0 + margins + 0.01;
     let have = t.cell_rect(cell).height();
     let last = (cell.row + cell.row_span).saturating_sub(1) as usize;
     if needed.is_finite() && needed > have + 1e-6 {

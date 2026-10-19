@@ -6,7 +6,7 @@ use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::icons;
 use egui::{Ui, Vec2};
-use tracedraw_core::{document::ShapeKind, geometry::Rect, Command, Fill};
+use tracedraw_core::{document::ShapeKind, geometry::Rect, Fill};
 
 fn vsep(ui: &mut Ui) {
     ui.add(egui::Separator::default().vertical().spacing(6.0));
@@ -1034,109 +1034,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::CommonShapes => common_shapes_bar(app, ui),
-            Tool::Table => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.rows"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=100));
-                ui.label(
-                    egui::RichText::new(tr("toolbar.columns"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=100));
-                vsep(ui);
-                // Cell fill, border width and colour: edit the selected table,
-                // else the defaults for the next one.
-                let selected = app.selected_table();
-                let mut fill = selected
-                    .as_ref()
-                    .map(|(_, t)| t.cell_fill.clone())
-                    .unwrap_or_else(|| app.table_fill.clone());
-                let mut border = selected
-                    .as_ref()
-                    .map(|(_, t)| t.border.clone())
-                    .unwrap_or_else(|| app.table_border.clone());
-                let mut changed = false;
-                ui.label(
-                    egui::RichText::new(tr("toolbar.attr_fill"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                let mut has_fill = !matches!(fill, Fill::None);
-                if ui.checkbox(&mut has_fill, "").changed() {
-                    fill = if has_fill {
-                        Fill::Solid(tracedraw_core::Color::WHITE)
-                    } else {
-                        Fill::None
-                    };
-                    changed = true;
-                }
-                if let Fill::Solid(c) = fill {
-                    let mut rgb = c.to_rgb8();
-                    if ui.color_edit_button_srgb(&mut rgb).changed() {
-                        fill = Fill::Solid(tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]));
-                        changed = true;
-                    }
-                }
-                vsep(ui);
-                ui.label(
-                    egui::RichText::new(tr("toolbar.border"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                let mut width = border.as_ref().map(|b| b.width).unwrap_or(0.0);
-                let r = ui.add(
-                    crate::ui::field::NumField::new(&mut width)
-                        .range(0.0..=20.0)
-                        .speed(0.05)
-                        .fixed_decimals(3)
-                        .suffix(" mm"),
-                );
-                if r.changed() {
-                    border = if width <= 0.0 {
-                        None
-                    } else {
-                        let mut b = border.clone().unwrap_or_else(|| {
-                            tracedraw_core::Stroke::hairline(tracedraw_core::Color::BLACK)
-                        });
-                        b.width = width;
-                        Some(b)
-                    };
-                    changed = true;
-                }
-                if let Some(b) = &mut border {
-                    let mut rgb = b.color.to_rgb8();
-                    if ui.color_edit_button_srgb(&mut rgb).changed() {
-                        b.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
-                        changed = true;
-                    }
-                }
-                if changed {
-                    match selected {
-                        Some((id, mut t)) => {
-                            t.cell_fill = fill;
-                            t.border = border;
-                            app.run(Command::SetShapeKind {
-                                shape: id,
-                                kind: ShapeKind::Table(t),
-                            });
-                        }
-                        None => {
-                            app.table_fill = fill;
-                            app.table_border = border;
-                        }
-                    }
-                }
-                vsep(ui);
-                ui.label(
-                    egui::RichText::new(tr("toolbar.drag_to_draw_table"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-            }
+            Tool::Table => crate::ui::table_bar::table_bar(app, ui),
             Tool::PainterlyBrush => crate::painterly_tool::painterly_bar(app, ui),
             Tool::BrushStrokes => {
                 ui.label(
@@ -2023,7 +1921,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
 
 /// The alignment: a button with the alignment's picture dropping the
 /// alignments.
-fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
+pub(crate) fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
     use crate::ui::propbar::{draw_pic, pic_button, Pic};
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("text_align_list");

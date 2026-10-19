@@ -4,7 +4,6 @@
 //! docs/features.md.
 
 use crate::app::{App, Drag};
-use crate::i18n::tr;
 use crate::tools::Tool;
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
@@ -138,28 +137,9 @@ impl App {
                     }
                 }
             }
-            Tool::Table => {
-                // Click inside an existing table edits that cell; anywhere else
-                // drags out a new table.
-                let over_table = self.hit_test(p).and_then(|id| {
-                    let (_, s) = self.doc().shape(id).ok()?;
-                    matches!(s.kind, ShapeKind::Table(_)).then_some((id, s.transform))
-                });
-                if response.clicked_by(PointerButton::Primary) {
-                    if let Some((id, t)) = over_table {
-                        let local = t.inverse() * p;
-                        self.table_click(id, local, mods.shift);
-                        self.select(vec![id]);
-                        self.status = tr("table.type_hint");
-                        return;
-                    }
-                    self.table_edit = None;
-                }
-                if response.drag_started_by(PointerButton::Primary) && over_table.is_some() {
-                    return;
-                }
-                self.box_like_input(response, p, mods)
-            }
+            // Cells, lines and edge pointers of a table; elsewhere a drag
+            // draws a new table (`table_tool.rs`).
+            Tool::Table => self.table_tool_input(response, p, mods),
             Tool::Spiral | Tool::CommonShapes => self.box_like_input(response, p, mods),
             Tool::BrushStrokes | Tool::PainterlyBrush => {
                 if self.tool == Tool::PainterlyBrush && response.clicked_by(PointerButton::Primary)
@@ -206,7 +186,7 @@ impl App {
         }
     }
 
-    fn box_like_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+    pub(crate) fn box_like_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
         if response.drag_started_by(PointerButton::Primary) {
             self.drag = Drag::Box {

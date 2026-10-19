@@ -31,6 +31,7 @@ mod press;
 pub mod shadow;
 pub mod shaping;
 pub mod style;
+pub mod table;
 pub mod text_flow;
 
 pub use color::Color;
@@ -54,6 +55,7 @@ pub use style::{
     Mesh, MeshNode, OutlinePosition, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
     WidthNode,
 };
+pub use table::{BorderSet, CellBorders, CellMargins, CellSide, EdgeBorder, TableHit};
 pub use text_flow::{TextWrap, WrapMode, WrapSide};
 
 /// Convenience result type for the core crate.

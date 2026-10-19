@@ -1913,6 +1913,11 @@ impl App {
     /// every selected text object (the alignment goes through
     /// [`App::apply_text_align`]).
     pub fn apply_text_style(&mut self) {
+        // With table cells selected, their text takes the style.
+        if self.table_edit.is_some() {
+            self.cells_apply_text_style();
+            return;
+        }
         // While editing with a selection, only the selected characters
         // change, and only in what the bar changed from the character it
         // shows (a new size keeps the selection's fonts).

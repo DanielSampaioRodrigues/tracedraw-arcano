@@ -13,6 +13,9 @@ pub struct Settings {
     pub recent_files: Vec<PathBuf>,
     pub workspace: String,
     pub show_welcome_on_start: bool,
+    /// Options > Tools > Table: what Tab does in a cell.
+    #[serde(default)]
+    pub table: crate::table_tool::TablePrefs,
     pub units: String,
     pub nudge_mm: f64,
     /// Shift+Arrow distance (super nudge), mm.
@@ -1080,6 +1083,7 @@ impl Default for Settings {
             recent_files: Vec::new(),
             workspace: "default".into(),
             show_welcome_on_start: true,
+            table: Default::default(),
             units: "mm".into(),
             nudge_mm: 2.54,
             super_nudge_mm: default_super_nudge(),

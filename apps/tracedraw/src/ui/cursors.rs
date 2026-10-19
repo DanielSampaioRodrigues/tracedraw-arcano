@@ -61,6 +61,11 @@ pub enum ToolCursor {
         radius: f32,
         square: bool,
     },
+    /// The Table tool over a row (pointing right) or column (pointing
+    /// down) pointer at the table's edge: a click selects it.
+    TableArrow {
+        down: bool,
+    },
 }
 
 /// What a curve tool's press would do besides drawing.
@@ -293,6 +298,7 @@ pub fn for_tool(
         }
         Tool::Pick | Tool::FreeformPick => ToolCursor::System(egui::CursorIcon::Default),
         Tool::Shape => shape_cursor(app, pos),
+        Tool::Table => app.table_cursor(pos),
         // Over an envelope's node or handle: the Shape tool's arrow.
         Tool::Envelope
             if app.envelope_drag.is_some()
@@ -454,7 +460,45 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
             curve_mark_sign(painter, p, mark);
         }
         ToolCursor::Nib { radius, square } => nib(painter, p, radius, square),
+        ToolCursor::TableArrow { down } => table_arrow(painter, p, down),
     }
+}
+
+/// A short thick arrow with its tip at the hot spot, pointing right (a
+/// row) or down (a column), black on a white halo.
+fn table_arrow(painter: &Painter, tip: Pos2, down: bool) {
+    let pts = |l: f32, w: f32| -> Vec<Pos2> {
+        let raw = [
+            (0.0, 0.0),
+            (-6.0, -5.0),
+            (-6.0, -2.0),
+            (-l, -2.0),
+            (-l, 2.0),
+            (-6.0, 2.0),
+            (-6.0, 5.0),
+        ];
+        raw.iter()
+            .map(|(x, y)| {
+                let (x, y) = (*x * w, *y * w);
+                if down {
+                    tip + Vec2::new(-y, x)
+                } else {
+                    tip + Vec2::new(x, y)
+                }
+            })
+            .collect()
+    };
+    let shape = pts(13.0, 1.0);
+    painter.add(Shape::closed_line(shape.clone(), Stroke::new(3.0, HALO)));
+    let head: Vec<Pos2> = shape
+        .iter()
+        .take(3)
+        .copied()
+        .chain([shape[5], shape[6]])
+        .collect();
+    painter.add(Shape::convex_polygon(head, INK, Stroke::NONE));
+    let tail = vec![shape[2], shape[3], shape[4], shape[5]];
+    painter.add(Shape::convex_polygon(tail, INK, Stroke::NONE));
 }
 
 /// The tool's icon below and to the right of the cross hair, on a light

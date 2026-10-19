@@ -409,6 +409,11 @@ fn width_name(pt: f64) -> String {
 /// Edit the selected text's spans with `f`: the characters selected while
 /// editing, else every span of every selected text object (one undo step).
 pub(crate) fn edit_spans(app: &mut App, f: impl Fn(&mut TextSpan) + Clone) {
+    // Table cells being edited take the change.
+    if app.table_edit.is_some() {
+        app.cells_apply_style(f);
+        return;
+    }
     if app.text_edit.as_ref().is_some_and(|te| te.has_selection()) {
         app.text_apply_style(f);
         return;
@@ -531,10 +536,12 @@ pub(crate) fn apply_to_default(app: &mut App) {
 
 /// Draw the docker.
 pub fn text_docker(app: &mut App, ui: &mut Ui) {
-    let first = app
-        .selected_shapes()
-        .into_iter()
-        .find(|s| matches!(s.kind, ShapeKind::Text { .. }));
+    // The active table cell shows as the text it holds.
+    let first = app.active_cell_text_shape().or_else(|| {
+        app.selected_shapes()
+            .into_iter()
+            .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+    });
     let from = (app.settings.text_docker_from as usize).min(SECTIONS.len() - 1);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -828,6 +835,11 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
 /// The text fill: the selected characters' colour while editing, else the
 /// text objects' fill (span colours give way to it).
 fn set_text_fill(app: &mut App, fill: Option<Fill>) {
+    if app.table_edit.is_some() {
+        let f = Some(fill.unwrap_or(Fill::None));
+        app.cells_apply_style(move |sp| sp.fill = f.clone());
+        return;
+    }
     if app.text_selection_active() {
         app.apply_fill(fill.unwrap_or(Fill::None));
         return;

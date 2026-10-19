@@ -2912,6 +2912,13 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
                 app.table_op(op);
             }
         }
+        sep(ui);
+        if item(ui, "menu.table.insert_rows", "", in_table) {
+            app.open_table_count(crate::ui::table_bar::TableCountKind::InsertRows);
+        }
+        if item(ui, "menu.table.insert_columns", "", in_table) {
+            app.open_table_count(crate::ui::table_bar::TableCountKind::InsertCols);
+        }
     });
     sub(ui, "menu.table.select", |ui| {
         for (key, op) in [
@@ -2966,10 +2973,10 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
         app.table_op(crate::table::TableOp::Unmerge);
     }
     if item(ui, "menu.table.split_into_rows", "", in_table) {
-        app.table_op(crate::table::TableOp::SplitRows);
+        app.open_table_count(crate::ui::table_bar::TableCountKind::SplitRows);
     }
     if item(ui, "menu.table.split_into_columns", "", in_table) {
-        app.table_op(crate::table::TableOp::SplitCols);
+        app.open_table_count(crate::ui::table_bar::TableCountKind::SplitCols);
     }
 }
 

@@ -1159,6 +1159,8 @@ pub struct App {
     pub glyph_font: String,
     pub glyph_range: usize,
     pub table_edit: Option<crate::table::TableEdit>,
+    /// The Table tool's drag and bar choices.
+    pub table_ui: crate::table_tool::TableUi,
     pub missing_fonts: Vec<String>,
     /// Thumbnails of recent drawings loaded for the Welcome Screen (none
     /// when a drawing has no thumbnail).
@@ -1958,6 +1960,7 @@ impl App {
             glyph_font: String::new(),
             glyph_range: 0,
             table_edit: None,
+            table_ui: Default::default(),
             missing_fonts: Vec::new(),
             shaping_op: crate::ops::Shaping::Weld,
             shaping_leave: crate::settings::PanelPrefs::default().shaping_leave,
@@ -3825,6 +3828,10 @@ impl App {
             if matches!(self.tool, Tool::MeshFill | Tool::Shape) && self.color_mesh_node(*c) {
                 return;
             }
+        }
+        // With the Table tool, a colour fills the selected cells.
+        if self.tool == Tool::Table && self.table_set_cell_fill(Some(fill.clone())) {
+            return;
         }
         // Monochrome bitmaps take the colour as their background.
         if let Fill::Solid(c) = &fill {

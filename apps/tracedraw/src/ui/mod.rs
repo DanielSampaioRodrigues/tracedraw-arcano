@@ -81,6 +81,7 @@ pub mod shelf_docker;
 pub mod status;
 pub mod straighten_dialog;
 pub mod symmetry_bar;
+pub mod table_bar;
 pub mod tabs;
 pub mod template_dialog;
 pub mod text_docker;

@@ -634,6 +634,8 @@ pub enum Dialog {
     CreatePattern {
         vector: bool,
     },
+    /// Table > Insert > Rows / Columns, Split into Rows / Columns: how many.
+    TableCount(crate::ui::table_bar::TableCountState),
     CreateTable {
         rows: u32,
         cols: u32,
@@ -984,6 +986,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::LineStyle(st) => crate::ui::line_style::dialog(app, ctx, st, &mut close),
         Dialog::BitmapBw(s) => crate::ui::bitmap_dialogs::bw_dialog(app, ctx, s, &mut close),
         Dialog::TimeTracker(st) => crate::ui::time_tracker::dialog(app, ctx, st, &mut close),
+        Dialog::TableCount(st) => crate::ui::table_bar::count_dialog(app, ctx, st, &mut close),
         Dialog::Preflight(st) => crate::ui::preflight_dialog::dialog(app, ctx, st, &mut close),
         Dialog::PublishPdf(st) => crate::ui::publish_pdf::dialog(app, ctx, st, &mut close),
         Dialog::PdfPassword(st) => crate::ui::pdf_password::dialog(app, ctx, st, &mut close),
@@ -4388,6 +4391,16 @@ mod tests {
                 width: 75.0,
                 height: 100.0,
             },
+            Dialog::TableCount(crate::ui::table_bar::TableCountState {
+                kind: crate::ui::table_bar::TableCountKind::InsertRows,
+                count: 2,
+                after: true,
+            }),
+            Dialog::TableCount(crate::ui::table_bar::TableCountState {
+                kind: crate::ui::table_bar::TableCountKind::SplitCols,
+                count: 3,
+                after: false,
+            }),
             Dialog::CreatePattern { vector: true },
             Dialog::CreatePattern { vector: false },
             Dialog::PasteSpecial(PasteSpecialState::default()),

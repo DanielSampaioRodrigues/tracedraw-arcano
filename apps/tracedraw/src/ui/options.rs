@@ -2115,6 +2115,24 @@ fn table_page(app: &mut App, ui: &mut Ui) {
         row_label(ui, &tr("options.columns"));
         ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=99));
         ui.end_row();
+        row_label(ui, &tr("options.table_tab_key"));
+        ui.vertical(|ui| {
+            let p = &mut app.settings.table;
+            ui.radio_value(&mut p.tab_inserts_tab, false, tr("options.table_tab_moves"));
+            ui.radio_value(
+                &mut p.tab_inserts_tab,
+                true,
+                tr("options.table_tab_inserts"),
+            );
+        });
+        ui.end_row();
+        row_label(ui, &tr("options.table_tab_order"));
+        ui.vertical(|ui| {
+            let p = &mut app.settings.table;
+            ui.radio_value(&mut p.tab_by_columns, false, tr("options.table_tab_rows"));
+            ui.radio_value(&mut p.tab_by_columns, true, tr("options.table_tab_columns"));
+        });
+        ui.end_row();
     });
 }
 

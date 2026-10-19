@@ -6,6 +6,18 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Tables: cells are selected by dragging across them, Ctrl+click,
+  Shift+click, the row and column arrows at the left and top edges, the
+  corner and Ctrl+A; selected whole rows or columns move by dragging;
+  row and column lines resize by dragging, and W and H on the bar size
+  the selected cells. Insert adds as many rows or columns as are
+  selected, and Insert Rows, Insert Columns and Split into N ask how
+  many. Selected cells get their own background (also from the
+  palette), borders per edge (all, outside, inside, top, bottom, left,
+  right, inner) with width, colour and style, and the bar's and Text
+  docker's text settings; tables get margins per side and separated
+  borders. Options > Tools > Table chooses the Tab order and whether
+  Tab types a tab.
 - Outline widths are shown and typed in a unit of their own, points by
   default (millimetres, centimetres, inches or pixels on request), and
   the width list offers round values in it.
