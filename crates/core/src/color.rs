@@ -393,11 +393,14 @@ impl Color {
                 _ => None,
             };
             if let Some(v) = grey {
+                // The press model's black for that grey, without colour inks.
+                let v = v.clamp(0.0, 1.0);
+                let [_, _, _, k] = crate::press::srgb_to_cmyk([v, v, v]);
                 return Color::Cmyk {
                     c: 0.0,
                     m: 0.0,
                     y: 0.0,
-                    k: (1.0 - v).clamp(0.0, 1.0),
+                    k,
                 };
             }
         }
