@@ -1599,6 +1599,7 @@ impl App {
                 offset,
                 distance: 0.0,
                 mirror: false,
+                ..Default::default()
             }),
         }) {
             self.text_edit = Some(crate::app::TextEdit::at_end(id, 0));
@@ -1649,6 +1650,7 @@ impl App {
                     offset,
                     distance: 0.0,
                     mirror: false,
+                    ..Default::default()
                 }),
             },
         });
@@ -2192,6 +2194,7 @@ pub fn placement_on(
         offset: 0.0,
         distance: 0.0,
         mirror: false,
+        ..Default::default()
     }
     .baseline()
     .length();

@@ -962,9 +962,34 @@ impl Table {
     }
 }
 
+/// How the letters of a text on a path follow it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum PathTextOrientation {
+    /// Each letter turned to the path's direction.
+    #[default]
+    Rotate,
+    /// Upright strokes stay vertical; the letter's width leans with the path.
+    VerticalSkew,
+    /// Horizontal strokes stay horizontal; the letter's height leans with
+    /// the path's normal.
+    HorizontalSkew,
+    /// Letters stay upright, only moved along the path.
+    Upright,
+}
+
+/// Which line of the letters sits on the path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum PathTextVertical {
+    #[default]
+    Baseline,
+    Ascender,
+    Descender,
+    Center,
+}
+
 /// Text fitted to a path: glyphs follow `path` (local space). The letters
 /// stand on the path's [`baseline`](TextOnPath::baseline).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct TextOnPath {
     pub path: BezPath,
     /// Start offset along the baseline, mm (with centred or right-aligned
@@ -979,14 +1004,58 @@ pub struct TextOnPath {
     /// way (the path is followed from its end back to its start).
     #[serde(default)]
     pub mirror: bool,
+    /// Mirror horizontally: the text reads backwards along the path, its
+    /// letters mirrored (combined with `mirror`, which is both mirrors).
+    #[serde(default)]
+    pub mirror_h: bool,
+    /// Mirror vertically: the letters flipped to the other side of the
+    /// path, upside down (combined with `mirror`).
+    #[serde(default)]
+    pub mirror_v: bool,
+    #[serde(default)]
+    pub orientation: PathTextOrientation,
+    #[serde(default)]
+    pub vertical: PathTextVertical,
 }
 
 impl TextOnPath {
+    /// The horizontal and vertical mirrors in effect (`mirror` is both).
+    pub fn mirrors(&self) -> (bool, bool) {
+        (self.mirror ^ self.mirror_h, self.mirror ^ self.mirror_v)
+    }
+
+    /// The same text with its mirrors set to `h` and `v` (stored in the
+    /// separate fields, `mirror` cleared).
+    pub fn set_mirrors(&mut self, h: bool, v: bool) {
+        self.mirror = false;
+        self.mirror_h = h;
+        self.mirror_v = v;
+    }
+
+    /// The letters are drawn flipped across the baseline (one mirror on).
+    pub fn flipped(&self) -> bool {
+        let (h, v) = self.mirrors();
+        h ^ v
+    }
+
     /// The line the letters stand on: the first subpath of `path`,
-    /// followed backwards when mirrored, moved `distance` to its left.
-    /// Offsets and advances are measured along it.
+    /// followed backwards when mirrored horizontally, moved `distance` to
+    /// the side the letters' tops point to. Offsets and advances are
+    /// measured along it.
     pub fn baseline(&self) -> Baseline {
-        Baseline::new(&self.path, self.distance, self.mirror)
+        let (h, _) = self.mirrors();
+        let d = if self.flipped() {
+            -self.distance
+        } else {
+            self.distance
+        };
+        Baseline::new(&self.path, d, h)
+    }
+
+    /// The path itself as the text follows it (no distance), for finding
+    /// where along and how far from it a point is.
+    pub fn guide(&self) -> Baseline {
+        Baseline::new(&self.path, 0.0, self.mirrors().0)
     }
 }
 
@@ -1116,6 +1185,27 @@ impl Baseline {
     /// Length from start to end.
     pub fn length(&self) -> f64 {
         self.lengths.last().copied().unwrap_or(0.0)
+    }
+
+    /// The arc length of the point nearest `p` and how far `p` is from
+    /// it, positive to the left of the direction (where letters stand).
+    pub fn nearest(&self, p: Point) -> Option<(f64, f64)> {
+        let mut best: Option<(f64, f64, f64)> = None;
+        for (i, w) in self.points.windows(2).enumerate() {
+            let v = w[1] - w[0];
+            let len2 = v.hypot2();
+            if len2 <= 0.0 {
+                continue;
+            }
+            let t = ((p - w[0]).dot(v) / len2).clamp(0.0, 1.0);
+            let q = w[0] + v * t;
+            let d = (p - q).hypot();
+            if !matches!(best, Some((_, _, bd)) if bd <= d) {
+                let side = v.cross(p - q).signum();
+                best = Some((self.lengths[i] + t * len2.sqrt(), d * side, d));
+            }
+        }
+        best.map(|(s, d, _)| (s, d))
     }
 
     /// The path is closed: positions past the end continue from the start.

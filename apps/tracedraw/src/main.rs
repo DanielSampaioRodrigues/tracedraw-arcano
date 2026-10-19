@@ -115,6 +115,7 @@ mod templates;
 mod text_editing;
 mod text_frames;
 mod text_nodes;
+mod text_path;
 mod textflow;
 mod theme;
 mod thesaurus;

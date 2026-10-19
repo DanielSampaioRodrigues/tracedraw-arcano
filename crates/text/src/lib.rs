@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
-        text_outline::TextRequest, DocumentFont, ParagraphStyle, TextAlign, TextOnPath, TextSpan,
-        VerticalAlign,
+        text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
+        PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _},
 };
@@ -1356,13 +1356,34 @@ impl FontSystem {
             req.align,
             req.para,
             req.on_path
-                .map(|p| format!(
-                    "{:?}|{}|{}|{}",
-                    p.path.elements().len(),
-                    p.offset,
-                    p.distance,
-                    p.mirror
-                ))
+                .map(|p| {
+                    // The whole path, not just its size: two ellipses have
+                    // the same number of elements.
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    for el in p.path.elements() {
+                        for pt in [el.end_point()].into_iter().flatten().chain(match el {
+                            tracedraw_core::geometry::PathEl::QuadTo(a, _) => vec![*a],
+                            tracedraw_core::geometry::PathEl::CurveTo(a, b, _) => vec![*a, *b],
+                            _ => Vec::new(),
+                        }) {
+                            pt.x.to_bits().hash(&mut h);
+                            pt.y.to_bits().hash(&mut h);
+                        }
+                        std::mem::discriminant(el).hash(&mut h);
+                    }
+                    format!(
+                        "{:x}|{}|{}|{}|{}|{}|{:?}|{:?}",
+                        h.finish(),
+                        p.offset,
+                        p.distance,
+                        p.mirror,
+                        p.mirror_h,
+                        p.mirror_v,
+                        p.orientation,
+                        p.vertical
+                    )
+                })
                 .unwrap_or_default(),
             req.spans
                 .iter()
@@ -2532,6 +2553,21 @@ fn place_on_path(
             TextAlign::Right => total - text_w,
             _ => 0.0,
         };
+    // The line of the letters that sits on the path, as a shift of the
+    // letters (y up) before they are placed.
+    let m = &line.metrics;
+    let lift = match tp.vertical {
+        PathTextVertical::Baseline => 0.0,
+        PathTextVertical::Ascender => -m.ascent,
+        PathTextVertical::Descender => m.descent,
+        PathTextVertical::Center => (m.descent - m.ascent) / 2.0,
+    };
+    // One mirror on: the letters are flipped across the baseline.
+    let flip = if tp.flipped() {
+        Affine::scale_non_uniform(1.0, -1.0)
+    } else {
+        Affine::IDENTITY
+    };
     let mut pen = start;
     for g in &line.glyphs {
         let mid = pen + g.advance / 2.0;
@@ -2539,13 +2575,35 @@ fn place_on_path(
         let Some((p, dir)) = baseline.at(mid) else {
             continue;
         };
+        let along = letter_frame(tp.orientation, dir);
         let place = Affine::translate(p.to_vec2())
-            * Affine::rotate(dir.y.atan2(dir.x))
-            * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset));
+            * along
+            * flip
+            * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset + lift));
         let gp = place * g.path.as_ref().clone();
         out.extend(gp.elements().iter().copied());
     }
     out
+}
+
+/// How a letter centred at a point of the path with unit direction `dir`
+/// is turned or sheared there (before the letter's own flip).
+fn letter_frame(o: PathTextOrientation, dir: tracedraw_core::geometry::Vec2) -> Affine {
+    // The direction's horizontal part, kept away from zero so a nearly
+    // vertical stretch of path does not shear a letter to a line.
+    let cx = if dir.x.abs() < 0.2 {
+        0.2_f64.copysign(if dir.x == 0.0 { 1.0 } else { dir.x })
+    } else {
+        dir.x
+    };
+    match o {
+        PathTextOrientation::Rotate => Affine::rotate(dir.y.atan2(dir.x)),
+        PathTextOrientation::Upright => Affine::IDENTITY,
+        // x follows the path's slope, y stays vertical.
+        PathTextOrientation::VerticalSkew => Affine::new([1.0, dir.y / cx, 0.0, 1.0, 0.0, 0.0]),
+        // x stays horizontal, y leans along the path's normal.
+        PathTextOrientation::HorizontalSkew => Affine::new([1.0, 0.0, -dir.y / cx, 1.0, 0.0, 0.0]),
+    }
 }
 
 struct OutlineSink {
@@ -3043,6 +3101,7 @@ mod tests {
             offset: 0.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         };
         let l = f.layout(&TextRequest {
             spans: &[s],
@@ -3084,6 +3143,7 @@ mod tests {
             offset: 0.0,
             distance: 2.0,
             mirror: false,
+            ..Default::default()
         };
         let above = on_path(f, "Fit", &tp, TextAlign::Center);
         tp.mirror = true;
@@ -3100,6 +3160,146 @@ mod tests {
         }
         assert!(above.bounding_box().y0 > 1.5);
         assert!(below.bounding_box().y1 < -1.5);
+    }
+
+    fn flat_line() -> BezPath {
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((100.0, 0.0));
+        line
+    }
+
+    #[test]
+    fn the_letters_line_on_the_path_follows_the_vertical_placement() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut tp = TextOnPath {
+            path: flat_line(),
+            ..Default::default()
+        };
+        let base = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        // Baseline: "g" hangs below, "H" stands above.
+        assert!(base.y0 < -0.3 && base.y1 > 2.0, "{base:?}");
+        tp.vertical = PathTextVertical::Ascender;
+        let asc = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(asc.y1 <= 0.05 && asc.y1 > -1.5, "{asc:?}");
+        tp.vertical = PathTextVertical::Descender;
+        let desc = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(desc.y0 >= -0.05 && desc.y0 < 1.0, "{desc:?}");
+        tp.vertical = PathTextVertical::Center;
+        let mid = on_path(f, "Hxg", &tp, TextAlign::Left).bounding_box();
+        assert!(mid.y0 < 0.0 && mid.y1 > 0.0, "{mid:?}");
+        assert!((mid.y0 + mid.y1).abs() < base.height() * 0.5, "{mid:?}");
+    }
+
+    #[test]
+    fn single_mirrors_flip_the_letters_and_both_turn_them_round() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut tp = TextOnPath {
+            path: flat_line(),
+            distance: 2.0,
+            ..Default::default()
+        };
+        let plain = on_path(f, "L", &tp, TextAlign::Left);
+        // Vertical mirror: the same letter upside down below the line.
+        tp.set_mirrors(false, true);
+        let v = on_path(f, "L", &tp, TextAlign::Left);
+        let flipped = Affine::scale_non_uniform(1.0, -1.0) * plain.clone();
+        let ends = |p: &BezPath| -> Vec<Point> {
+            p.elements().iter().filter_map(|e| e.end_point()).collect()
+        };
+        for (a, b) in ends(&v).iter().zip(ends(&flipped).iter()) {
+            assert!((*a - *b).hypot() < 1e-6, "{a:?} {b:?}");
+        }
+        // Horizontal mirror: above the line, reading from its end.
+        tp.set_mirrors(true, false);
+        let h = on_path(f, "L", &tp, TextAlign::Left).bounding_box();
+        assert!(h.y0 > 1.5 && h.x1 > 95.0, "{h:?}");
+        // Both: the old mirror, turned half round below the line.
+        tp.set_mirrors(true, true);
+        let both = on_path(f, "L", &tp, TextAlign::Left).bounding_box();
+        assert!(both.y1 < -1.5 && both.x1 > 95.0, "{both:?}");
+        assert_eq!(tp.mirrors(), (true, true));
+    }
+
+    #[test]
+    fn upright_and_skewed_letters_keep_their_strokes_straight() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        // A 45 degree line.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((100.0, 100.0));
+        let mut tp = TextOnPath {
+            path: line,
+            ..Default::default()
+        };
+        let straight = f.outline(&[span("I")]).path.bounding_box();
+        let rotated = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        tp.orientation = PathTextOrientation::Upright;
+        let upright = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        // Upright: the letter keeps its own size; turned, its box grows.
+        assert!(
+            (upright.width() - straight.width()).abs() < 1e-6,
+            "{upright:?}"
+        );
+        assert!(
+            (upright.height() - straight.height()).abs() < 1e-6,
+            "{upright:?}"
+        );
+        assert!(rotated.width() > straight.width() + 1.0, "{rotated:?}");
+        // Vertical skew keeps the height; horizontal skew keeps the width
+        // of each horizontal slice and leans the letter.
+        tp.orientation = PathTextOrientation::VerticalSkew;
+        let vs = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        assert!((vs.width() - straight.width()).abs() < 1e-6, "{vs:?}");
+        assert!(vs.height() > straight.height(), "{vs:?}");
+        tp.orientation = PathTextOrientation::HorizontalSkew;
+        let hs = on_path(f, "I", &tp, TextAlign::Left).bounding_box();
+        assert!((hs.height() - straight.height()).abs() < 1e-6, "{hs:?}");
+        assert!(hs.width() > straight.width() + 1.0, "{hs:?}");
+    }
+
+    #[test]
+    fn a_text_refitted_to_another_path_of_the_same_kind_is_laid_out_again() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let e = |cx: f64| {
+            tracedraw_core::geometry::Ellipse::new((cx, 0.0), (40.0, 20.0), 0.0).to_path(0.01)
+        };
+        let s = span("same");
+        let para = ParagraphStyle::default();
+        let first = TextOnPath {
+            path: e(0.0),
+            ..Default::default()
+        };
+        let second = TextOnPath {
+            path: e(200.0),
+            ..Default::default()
+        };
+        assert_eq!(first.path.elements().len(), second.path.elements().len());
+        let out = |tp: &TextOnPath| {
+            f.outline_cached(&TextRequest {
+                spans: std::slice::from_ref(&s),
+                frame: None,
+                align: TextAlign::Left,
+                para: &para,
+                on_path: Some(tp),
+            })
+            .bounding_box()
+        };
+        let a = out(&first);
+        let b = out(&second);
+        assert!(b.x0 > a.x1, "{a:?} {b:?}");
     }
 
     #[test]
@@ -3121,6 +3321,7 @@ mod tests {
             offset: 395.0,
             distance: 0.0,
             mirror: false,
+            ..Default::default()
         };
         let b = on_path(f, "MMMMMM", &tp, TextAlign::Left).bounding_box();
         // On along the first side, not heaped at the corner.

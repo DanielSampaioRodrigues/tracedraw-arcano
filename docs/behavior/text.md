@@ -305,6 +305,18 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `length - width` for right-aligned text, and turned to the baseline's
   direction there. On a closed path positions wrap round past the start;
   on an open one they stop at its ends.
+- Text on path, its letters: the line of the letters put on the path is
+  the baseline, the ascender (shifted down by the ascent), the descender
+  (shifted up by the descent) or the centre between them. Rotated letters
+  turn to the path's direction; upright letters do not turn; vertical
+  skew shears each letter so its width follows the path's slope and its
+  upright strokes stay vertical; horizontal skew keeps horizontal strokes
+  level and leans the upright ones along the path's normal (the slope's
+  horizontal part is kept at least 0.2 so steep stretches do not flatten
+  a letter). Mirror vertically flips the letters to the other side of
+  the path, upside down; mirror horizontally reads the text from the
+  path's end, letters mirrored; both together turn the text half round
+  onto the other side, reading the other way (the older single mirror).
 - Fit text to frame: scale size so the paragraph fills the frame height.
 
 ## Checks
@@ -330,7 +342,13 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 - `document::tests::text_baselines_wrap_round_closed_paths_and_move_by_the_distance`,
   `document::tests::open_text_baselines_stop_at_their_ends_and_corners_keep_the_distance`
   (core), `tests::mirrored_text_on_a_path_reads_along_its_other_side` and
-  `tests::text_on_a_closed_path_continues_past_its_start` (text crate).
+  `tests::text_on_a_closed_path_continues_past_its_start`,
+  `tests::the_letters_line_on_the_path_follows_the_vertical_placement`,
+  `tests::single_mirrors_flip_the_letters_and_both_turn_them_round`,
+  `tests::upright_and_skewed_letters_keep_their_strokes_straight` and
+  `tests::a_text_refitted_to_another_path_of_the_same_kind_is_laid_out_again`
+  (text crate: the outline cache keys a fitted text on its whole path,
+  not on the path's number of elements).
 - `tests::fonts_are_found_by_their_legacy_family_names`,
   `tests::a_drawing_brings_every_face_of_a_family`,
 - `tests::missing_fonts_get_stand_ins_with_the_same_widths_or_style`,
@@ -389,6 +407,30 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   centred on that highest point (its alignment becomes centred and the
   offset half the path's length); Mirror puts it inside, reading the
   other way.
+- With the Pick tool, a text fitted to a path shows its own property
+  bar after the object fields: Text orientation (Rotated letters,
+  Vertical skew, Horizontal skew, Upright letters), Vertical placement
+  (Baseline, Ascender, Descender on path, Centred on path), Text
+  placement (start, centre or end of the path, the text's alignment),
+  Distance from path and Offset along path in the document's units,
+  Mirror horizontally and Mirror vertically (pressed while on) and
+  Straighten Text. Each change is one undo step and is stored with the
+  text, so the bar shows it again when the text is selected again
+  (`text_path::tests::the_bar_settings_edit_the_text_with_undo_and_come_back_on_reselect`).
+- A selected fitted text draws as usual, in its fill, with the selection
+  handles. Dragging it with the Pick tool slides it along the path and
+  away from it instead of moving it off the path: while the button is
+  held its letters show outlined in blue where they would go, the line
+  they would stand on dashed, and the distance and offset by the
+  pointer; on release the offset grows by the way the pointer went along
+  the path (the short way round a closed one) and the distance by the
+  way it went across, towards the letters' tops
+  (`text_path::tests::dragging_moves_the_text_along_and_away_from_the_path`).
+- Fit Text to Path with no text selected leaves nothing behind: an empty
+  text started on the path and left without typing is removed, a typed
+  one is the only text and sits on the path, and choosing the command
+  while an empty text is being typed removes that text first
+  (`text_path::tests::fit_text_to_path_with_nothing_selected_leaves_no_stray_text`).
 - With the Text tool, a click on the outline of a path (within 4 pixels;
   not a text, a bitmap or a group) starts an empty text on that path,
   placed the same way, ready to type. A click elsewhere starts an

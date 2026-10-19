@@ -74,6 +74,7 @@ pub mod symmetry_bar;
 pub mod tabs;
 pub mod template_dialog;
 pub mod text_docker;
+pub mod text_path_bar;
 pub mod time_tracker;
 pub mod toolbar;
 pub mod toolbox;

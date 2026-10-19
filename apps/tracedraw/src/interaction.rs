@@ -496,6 +496,14 @@ impl App {
 
     /// Start moving the selection from `p` (page).
     fn start_move(&mut self, p: Point) {
+        // A text fitted to a path slides along it instead.
+        if self.fitted_text().is_some() {
+            self.drag = Drag::AlongPath {
+                start: p,
+                current: p,
+            };
+            return;
+        }
         self.drag = Drag::Move {
             start: p,
             last: p,
@@ -1144,6 +1152,7 @@ impl App {
             _ => p,
         };
         match &mut self.drag {
+            Drag::AlongPath { current, .. } => *current = p,
             Drag::Move { last, total, .. } => {
                 if let Some((np, nt)) = snapped_move {
                     *last = np;
@@ -1613,6 +1622,7 @@ impl App {
                     self.finish_transform(Affine::translate(total));
                 }
             }
+            Drag::AlongPath { start, current } => self.finish_along_path(start, current),
             Drag::Pivot => {}
             Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. } => {
                 if let Some(t) = self.preview_transform_of(&drag) {
