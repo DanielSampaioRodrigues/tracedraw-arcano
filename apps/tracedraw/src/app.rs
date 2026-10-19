@@ -591,9 +591,62 @@ pub struct CurveInProgress {
     pub dragging_handle: bool,
     /// B-Spline tool: the nodes are control points the curve runs near.
     pub bspline: bool,
+    /// Nodes made cusps (clicking the last node again, C while pulling a
+    /// handle, a click after a dragged node): their incoming handle as it
+    /// was frozen (`None`: the segment arrives straight), no longer the
+    /// mirror of their outgoing one.
+    pub in_handles: std::collections::BTreeMap<usize, Option<Point>>,
+    /// A press on the first node closes the curve: while it is dragged,
+    /// where the pointer is (it pulls the closing segment's handle at the
+    /// first node; the first node's own outgoing handle stays).
+    pub closing: Option<Point>,
+    /// Alt held while a handle is pulled moves the node instead: the last
+    /// pointer position of that move.
+    pub alt_from: Option<Point>,
 }
 
 impl CurveInProgress {
+    /// The incoming handle of node `i`: frozen for a cusp, else the mirror
+    /// of its outgoing handle about the node.
+    pub fn in_handle(&self, i: usize) -> Option<Point> {
+        if let Some(h) = self.in_handles.get(&i) {
+            return *h;
+        }
+        let (p, out) = *self.nodes.get(i)?;
+        out.map(|o| p - (o - p))
+    }
+
+    /// Make the last node a cusp: its incoming handle stays as it is now
+    /// and it has no outgoing handle, so the next segment leaves it
+    /// straight (unless a new handle is pulled).
+    pub fn cusp_last(&mut self) {
+        let Some(i) = self.nodes.len().checked_sub(1) else {
+            return;
+        };
+        let incoming = self.in_handle(i);
+        self.in_handles.insert(i, incoming);
+        self.nodes[i].1 = None;
+    }
+
+    /// Freeze the last node's incoming handle where it is, so pulling its
+    /// handle further moves the outgoing side only (C while dragging).
+    pub fn freeze_last_in(&mut self) {
+        let Some(i) = self.nodes.len().checked_sub(1) else {
+            return;
+        };
+        let incoming = self.in_handle(i);
+        self.in_handles.insert(i, incoming);
+    }
+
+    /// The handle the closing drag gives the first node for the closing
+    /// segment: the mirror of the pointer about the first node, like a
+    /// handle pulled out of it (`None` for a press without a drag).
+    pub fn closing_handle(&self) -> Option<Point> {
+        let first = self.nodes.first()?.0;
+        let p = self.closing?;
+        ((p - first).hypot() > 1e-9).then(|| first - (p - first))
+    }
+
     /// Path through the nodes, optionally extended to a preview point.
     pub fn path(&self, preview: Option<Point>) -> tracedraw_core::BezPath {
         self.path_closed(preview, false)
@@ -607,6 +660,17 @@ impl CurveInProgress {
         }
         let mut path = self.open_path(preview);
         if closed {
+            // The closing segment: curved when the last node leaves with a
+            // handle or the closing drag pulled one at the first node.
+            let last = self.nodes.len().saturating_sub(1);
+            if let (Some((first, _)), Some((end, end_out))) =
+                (self.nodes.first().copied(), self.nodes.last().copied())
+            {
+                let into = self.closing_handle();
+                if self.smooth && last > 0 && (end_out.is_some() || into.is_some()) {
+                    path.curve_to(end_out.unwrap_or(end), into.unwrap_or(first), first);
+                }
+            }
             path.close_path();
         }
         path
@@ -628,7 +692,11 @@ impl CurveInProgress {
                 continue;
             }
             let (prev, prev_out) = nodes[i - 1];
-            let cur_in = nodes[i].1.map(|out| *p - (out - *p));
+            let cur_in = if i < self.nodes.len() {
+                self.in_handle(i)
+            } else {
+                None
+            };
             match (self.smooth, prev_out, cur_in) {
                 (false, _, _) | (true, None, None) => path.line_to(*p),
                 (true, po, ci) => path.curve_to(po.unwrap_or(prev), ci.unwrap_or(*p), *p),
@@ -679,6 +747,9 @@ pub struct App {
     /// A right click during a move, scale, rotation or skew: on release
     /// the change goes to copies and the originals stay.
     pub drag_copy: bool,
+    /// The Pen or Bezier tool is dragging a node of the selected curve
+    /// (as the Shape tool does), not drawing.
+    pub pen_editing: bool,
     pub curve: Option<CurveInProgress>,
     pub text_edit: Option<TextEdit>,
     /// The last colours picked for a fill and for an outline (the
@@ -1601,6 +1672,7 @@ impl App {
             pivots: Pivots::default(),
             drag: Drag::None,
             drag_copy: false,
+            pen_editing: false,
             curve: None,
             text_edit: None,
             current_colors: (Color::BLACK, Color::WHITE),

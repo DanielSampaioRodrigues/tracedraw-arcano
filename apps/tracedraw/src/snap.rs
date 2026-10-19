@@ -600,6 +600,7 @@ mod tests {
             smooth: false,
             dragging_handle: false,
             bspline: false,
+            ..Default::default()
         });
         let p = app.snap_point(Point::new(125.8, 99.5));
         assert_eq!(p, Point::new(125.0, 100.0));

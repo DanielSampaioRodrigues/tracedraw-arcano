@@ -85,6 +85,17 @@ pub fn object_info(app: &App) -> String {
                     let n = tracedraw_core::nodes::nodes(path).len();
                     return trf("status.curve_nodes", &[("n", &n.to_string())]);
                 }
+                // A rectangle, ellipse or polygon is still that object,
+                // not a curve: say so, and what its nodes do.
+                let hint = match &s.kind {
+                    ShapeKind::Rect { .. } => Some("status.shape_rectangle"),
+                    ShapeKind::Ellipse { .. } => Some("status.shape_ellipse"),
+                    ShapeKind::Polygon { .. } => Some("status.shape_polygon"),
+                    _ => None,
+                };
+                if let Some(key) = hint {
+                    return tr(key);
+                }
             }
             let mut kind = match &s.kind {
                 ShapeKind::Path { .. } => tr("kind.curve"),

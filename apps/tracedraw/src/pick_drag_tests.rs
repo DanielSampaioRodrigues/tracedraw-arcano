@@ -1839,3 +1839,282 @@ fn bspline_clicks_place_control_points_of_a_smooth_curve() {
     assert!(near(c.p0, pts[0]) && near(c.p3, pts[3]), "{c:?}");
     assert!(near(c.p1, pts[1]) && near(c.p2, pts[2]), "{c:?}");
 }
+
+/// A curve tool's drag from `from` to `to`, node placed at the press.
+fn pull(ctx: &egui::Context, app: &mut App, from: Point, to: Point) {
+    let (a, b) = (app.view.to_screen(from), app.view.to_screen(to));
+    drag(ctx, app, a, b, Modifiers::NONE, Vec::new());
+    for _ in 0..20 {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    }
+}
+
+fn click_page(ctx: &egui::Context, app: &mut App, p: Point) {
+    let at = app.view.to_screen(p);
+    click_at(ctx, app, at, Modifiers::NONE);
+}
+
+fn cubic(seg: tracedraw_core::geometry::PathSeg) -> tracedraw_core::geometry::CubicBez {
+    match seg {
+        tracedraw_core::geometry::PathSeg::Cubic(c) => c,
+        other => panic!("a cubic: {other:?}"),
+    }
+}
+
+fn near(a: Point, b: Point) -> bool {
+    (a - b).hypot() < 0.6
+}
+
+#[test]
+fn a_pen_click_after_a_pulled_node_gives_a_straight_segment() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let (a, b, c) = (
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 150.0),
+        Point::new(180.0, 150.0),
+    );
+    click_page(&ctx, &mut app, a);
+    pull(&ctx, &mut app, b, Point::new(150.0, 170.0));
+    click_page(&ctx, &mut app, c);
+    app.finish_curve();
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    // Into the pulled node: a curve arriving along its mirrored handle.
+    let s0 = cubic(segs[0]);
+    assert!(near(s0.p2, Point::new(130.0, 130.0)), "{s0:?}");
+    // Out of it after a plain click: straight, the node a cusp.
+    assert!(
+        matches!(segs[1], tracedraw_core::geometry::PathSeg::Line(_)),
+        "{segs:?}"
+    );
+}
+
+#[test]
+fn clicking_the_last_node_again_makes_it_a_cusp() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let (a, b, c) = (
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 150.0),
+        Point::new(180.0, 150.0),
+    );
+    click_page(&ctx, &mut app, a);
+    pull(&ctx, &mut app, b, Point::new(150.0, 170.0));
+    // The pointer over the last node shows that a click edits it.
+    let over = app.view.to_screen(b);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(over)],
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(over)),
+        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::EditNode)
+    );
+    click_page(&ctx, &mut app, b);
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(2));
+    // The next node is pulled: the segment leaves the cusp without a
+    // handle and arrives along the new one; the segment before keeps its
+    // curve into the cusp.
+    pull(&ctx, &mut app, c, Point::new(190.0, 130.0));
+    app.finish_curve();
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    let s0 = cubic(segs[0]);
+    assert!(near(s0.p2, Point::new(130.0, 130.0)), "{s0:?}");
+    let s1 = cubic(segs[1]);
+    assert!(near(s1.p1, b), "{s1:?}");
+    assert!(near(s1.p2, Point::new(170.0, 170.0)), "{s1:?}");
+}
+
+#[test]
+fn dragging_from_the_first_node_shapes_only_the_closing_segment() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    let a_out = Point::new(110.0, 170.0);
+    pull(&ctx, &mut app, a, a_out);
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(150.0, 190.0),
+        Point::new(170.0, 190.0),
+    );
+    click_page(&ctx, &mut app, Point::new(160.0, 130.0));
+    // The pointer over the first node shows a close.
+    let over = app.view.to_screen(a);
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(over)),
+        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::Close)
+    );
+    pull(&ctx, &mut app, a, Point::new(90.0, 140.0));
+    assert!(app.curve.is_none());
+    let path = last_path(&app);
+    let segs: Vec<_> = path.segments().collect();
+    // The first node keeps its own outgoing handle.
+    let s0 = cubic(segs[0]);
+    assert!(near(s0.p1, a_out), "{s0:?}");
+    // The closing segment arrives at the first node along the mirror of
+    // the drag.
+    let last = segs
+        .iter()
+        .rev()
+        .find_map(|s| match s {
+            tracedraw_core::geometry::PathSeg::Cubic(c) if near(c.p3, a) => Some(*c),
+            _ => None,
+        })
+        .expect("a curved closing segment");
+    assert!(near(last.p2, Point::new(110.0, 160.0)), "{last:?}");
+    assert!(near(last.p1, Point::new(160.0, 130.0)), "{last:?}");
+}
+
+/// A curve from (100, 100) through (150, 100) to (200, 100), selected,
+/// with the Shape tool.
+fn line_curve(ctx: &egui::Context, app: &mut App) -> ShapeId {
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((100.0, 100.0));
+    path.line_to((150.0, 100.0));
+    path.line_to((200.0, 100.0));
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![id]);
+    for _ in 0..2 {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    }
+    id
+}
+
+fn node_count(app: &App, id: ShapeId) -> usize {
+    match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => tracedraw_core::nodes::nodes(path).len(),
+        _ => 0,
+    }
+}
+
+#[test]
+fn the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve() {
+    let (ctx, mut app, _) = setup();
+    let id = line_curve(&ctx, &mut app);
+    app.set_tool(Tool::Pen);
+    use crate::ui::cursors::CurveMark;
+    let on_segment = app.view.to_screen(Point::new(125.0, 100.0));
+    let on_node = app.view.to_screen(Point::new(150.0, 100.0));
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_segment)),
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::AddNode)
+    );
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(on_node)),
+        ToolCursor::CurveBadge(Tool::Pen, CurveMark::EditNode)
+    );
+    click_at(&ctx, &mut app, on_segment, Modifiers::NONE);
+    assert_eq!(node_count(&app, id), 4);
+    assert!(app.curve.is_none(), "no new curve was started");
+    // Dragging the middle node moves it.
+    let to = app.view.to_screen(Point::new(150.0, 130.0));
+    drag(&ctx, &mut app, on_node, to, Modifiers::NONE, Vec::new());
+    assert!(!app.pen_editing);
+    let path = match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => unreachable!(),
+    };
+    assert!(
+        tracedraw_core::nodes::nodes(&path)
+            .iter()
+            .any(|n| near(n.pos, Point::new(150.0, 130.0))),
+        "{path:?}"
+    );
+}
+
+#[test]
+fn nodes_are_taken_within_the_pick_distance_and_a_near_miss_keeps_the_selection() {
+    let (ctx, mut app, _) = setup();
+    let id = line_curve(&ctx, &mut app);
+    app.set_tool(Tool::Shape);
+    // A press 4 screen pixels off the middle node takes it.
+    let node = app.view.to_screen(Point::new(150.0, 100.0));
+    let from = node + egui::vec2(3.0, 2.5);
+    let to = app.view.to_screen(Point::new(150.0, 120.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let moved = match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => tracedraw_core::nodes::nodes(path)
+            .iter()
+            .any(|n| (n.pos.y - 100.0).abs() > 5.0),
+        _ => false,
+    };
+    assert!(moved, "the node moved");
+    let _ = app.undo();
+    // A click 10 pixels from the end node and the segment: a near miss,
+    // the curve stays selected.
+    let end = app.view.to_screen(Point::new(200.0, 100.0));
+    let miss = end + egui::vec2(10.0, 0.0);
+    click_at(&ctx, &mut app, miss, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    // Clearly on empty canvas: the selection goes.
+    let far = end + egui::vec2(120.0, 120.0);
+    click_at(&ctx, &mut app, far, Modifiers::NONE);
+    assert!(app.selection.is_empty());
+}
+
+#[test]
+fn the_shape_tool_says_a_rectangle_is_still_a_rectangle() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(
+        crate::ui::status::object_info(&app),
+        crate::i18n::tr("status.shape_rectangle")
+    );
+    app.select(vec![id]);
+    app.convert_to_curves();
+    let info = crate::ui::status::object_info(&app);
+    assert!(info.contains('4'), "{info}");
+    assert_ne!(info, crate::i18n::tr("status.shape_rectangle"));
+}
+
+#[test]
+fn rounded_corners_keep_their_size_when_relative_scaling_is_off() {
+    let (ctx, mut app, id) = setup();
+    for fixed in [true, false] {
+        let mut c = tracedraw_core::Corners::uniform(5.0, tracedraw_core::CornerKind::Round);
+        c.fixed = fixed;
+        let _ = app.engine.run(&tracedraw_core::Command::SetShapeKind {
+            shape: id,
+            kind: ShapeKind::rect_with_corners(Rect::new(10.0, 10.0, 60.0, 40.0), c),
+        });
+        let _ = app.engine.run(&tracedraw_core::Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::IDENTITY,
+        });
+        app.select(vec![id]);
+        app.set_tool(Tool::Pick);
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        // Twice as wide and high with the corner handle.
+        let from = handle(&app, Handle::NE);
+        let b = bounds(&app, id);
+        let target = Point::new(b.x0 + 2.0 * b.width(), b.y0 + 2.0 * b.height());
+        let to = app.view.to_screen(target);
+        drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+        let r = app
+            .doc()
+            .find_shape(id)
+            .and_then(|s| s.page_corners())
+            .expect("corners")
+            .radii[0];
+        if fixed {
+            assert!(close(r, 5.0), "fixed: {r}");
+        } else {
+            assert!(r > 8.0, "relative: {r}");
+        }
+        let _ = app.undo();
+    }
+}

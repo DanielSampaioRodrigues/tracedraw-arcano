@@ -19,12 +19,32 @@ meets the start) `Path` objects with the toolbox defaults.
 
 ## Bezier and Pen
 
-- Click places a cusp node; click-drag places a smooth node and pulls
-  its handle out symmetrically (the handle follows the pointer while the
-  button is down).
-- Double-click or Enter finishes; Esc discards the curve being drawn;
-  clicking the first node (within the join distance, 5 screen pixels by
-  default, once the curve has three nodes) closes the curve.
+- Click-drag places a smooth node and pulls its handle out
+  symmetrically (the handle follows the pointer while the button is
+  down). C while pulling makes it a cusp: the incoming handle stays where
+  it is and only the outgoing one follows. Alt while pulling moves the
+  node itself, its handles with it.
+- A plain click places a node with a straight segment to it: a node
+  pulled before becomes a cusp, the segment leaving it straight (its
+  incoming handle stays). Clicking the last node again (within the join
+  distance) makes it a cusp without adding a node.
+- Double-click or Enter finishes; Esc discards the curve being drawn.
+  A press on the first node (within the join distance, 5 screen pixels
+  by default, once the curve has three nodes) closes the curve: a click
+  closes it with a straight segment from the last node; a drag from the
+  first node pulls the closing segment's handle at the first node (the
+  mirror of the pointer, as a pulled handle), and the first node's own
+  outgoing handle stays as it was.
+- With no curve being drawn and one curve selected, the Pen and Bezier
+  tools edit it: a click on a segment (within the pick distance) adds a
+  node there, a press on a node that is not an end node drags it as the
+  Shape tool does (end nodes continue the curve, see below).
+- The pointer: the cross hair with the tool's sign to start a new
+  curve; with a node and a line going on from it over an end node of the
+  selected curve (continue it); a ring over the first node (close); a
+  plus over a segment of the selected curve (add a node); a hollow node
+  over one of its nodes, or over the last node of the curve being drawn
+  (edit the node, or make it a cusp).
 - Snapping applies to every placed node.
 - Ctrl: the next node goes in steps of the constrain angle from the last
   one (keeping how far the pointer reaches along that direction), and a
@@ -136,6 +156,10 @@ Medium (first), High, Highest; kept in the preferences
 
 ## Checks
 
+- `pick_drag_tests::a_pen_click_after_a_pulled_node_gives_a_straight_segment`
+- `pick_drag_tests::clicking_the_last_node_again_makes_it_a_cusp`
+- `pick_drag_tests::dragging_from_the_first_node_shapes_only_the_closing_segment`
+- `pick_drag_tests::the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve`
 - `curve_join::tests` (from either end, closing, two subpaths made one,
   reversing curves, in the curve's own space with one undo step)
 - `ui::cursors::tests::tools_get_their_cursors` (join and close signs)

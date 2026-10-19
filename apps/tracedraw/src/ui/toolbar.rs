@@ -2088,6 +2088,31 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     // Rectangles, ellipses and polygons: the Shape tool edits them through
     // their own controls (corners, pie and arc, points), as with their tools.
     let shapes = app.selected_shapes();
+    // The kind of the object being edited first, so a rectangle still
+    // being one reads apart from a curve.
+    let kind_label = |ui: &mut Ui, key: &str| {
+        ui.label(
+            egui::RichText::new(tr(key))
+                .strong()
+                .color(Tokens::text_dim()),
+        );
+    };
+    if let Some(first) = shapes.first() {
+        let key = match first.kind {
+            ShapeKind::Rect { .. } => Some("kind.rectangle"),
+            ShapeKind::Ellipse { .. } => Some("kind.ellipse"),
+            ShapeKind::Polygon { .. } => Some("toolbar.kind_polygon"),
+            ShapeKind::Path { .. } => Some("kind.curve"),
+            _ => None,
+        };
+        let same = shapes
+            .iter()
+            .all(|s| std::mem::discriminant(&s.kind) == std::mem::discriminant(&first.kind));
+        if let (Some(key), true) = (key, same) {
+            kind_label(ui, key);
+            crate::ui::propbar::sep(ui);
+        }
+    }
     if !shapes.is_empty()
         && shapes.iter().all(|s| {
             matches!(

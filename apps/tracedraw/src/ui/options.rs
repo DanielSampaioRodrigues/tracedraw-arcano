@@ -864,6 +864,17 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
         ui.end_row();
     });
     ui.checkbox(&mut n.show_direction, tr("options.show_curve_direction"));
+    ui.horizontal(|ui| {
+        ui.label(tr("options.node_pick_distance"));
+        ui.add(
+            egui::DragValue::new(&mut n.pick_distance)
+                .range(2.0..=20.0)
+                .speed(0.2)
+                .max_decimals(0)
+                .suffix(" px"),
+        )
+        .on_hover_text(tr("options.node_pick_distance_tip"));
+    });
     chrome::section(ui, &tr("options.colors"));
     grid("node_colors").show(ui, |ui| {
         row_label(ui, &tr("options.main_color"));

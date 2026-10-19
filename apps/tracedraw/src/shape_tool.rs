@@ -11,8 +11,6 @@ use tracedraw_core::{
     Command, ShapeId,
 };
 
-const NODE_PX: f64 = 5.0;
-
 /// Keep a move horizontal (`Some(true)`) or vertical (`Some(false)`);
 /// `None` leaves it free.
 fn constrain_axis(d: &mut Vec2, horizontal: Option<bool>) {
@@ -151,7 +149,7 @@ impl App {
     /// A selected picture's corner under the pointer: the picture and the
     /// corner (0 to 3, in [`bitmap_corners`] order).
     fn bitmap_corner_at(&self, p: Point) -> Option<(ShapeId, usize)> {
-        let tol = NODE_PX / self.view.zoom as f64;
+        let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
         self.selected_shapes().iter().find_map(|s| {
             bitmap_corners(s)?
                 .iter()
@@ -227,7 +225,7 @@ impl App {
 
     /// Node under the pointer among selected curves.
     pub fn node_at(&self, p: Point) -> Option<NodeHit> {
-        let tol = NODE_PX / self.view.zoom as f64;
+        let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
         for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
@@ -245,13 +243,40 @@ impl App {
         None
     }
 
+    /// `p` lies within three pick distances of a node, a control handle
+    /// of a chosen node or a rectangle, ellipse or polygon node of the
+    /// selection: a press there that took nothing is a near miss.
+    pub(crate) fn near_selected_nodes(&self, p: Point) -> bool {
+        let reach = 3.0 * self.settings.nodes.pick_px() / self.view.zoom as f64;
+        for id in &self.node_targets() {
+            let Some((path, _, t)) = self.path_of(*id) else {
+                continue;
+            };
+            let lp = t.inverse() * p;
+            for n in nodes::nodes(&path) {
+                let chosen = self.node_selection.contains(&(*id, n.index));
+                let mut spots = vec![n.pos];
+                if chosen {
+                    spots.extend(n.ctrl_in);
+                    spots.extend(n.ctrl_out);
+                }
+                if spots.iter().any(|q| (*q - lp).hypot() <= reach) {
+                    return true;
+                }
+            }
+        }
+        self.selected_shapes()
+            .iter()
+            .any(|s| crate::kind_nodes::node_at(s, p, reach).is_some())
+    }
+
     /// A rectangle, ellipse or polygon node of the selection under the
     /// pointer, with its object.
     pub fn kind_node_at(
         &self,
         p: Point,
     ) -> Option<(tracedraw_core::Shape, crate::kind_nodes::KindNode)> {
-        let tol = NODE_PX / self.view.zoom as f64;
+        let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
         self.selected_shapes()
             .into_iter()
             .find_map(|s| crate::kind_nodes::node_at(&s, p, tol).map(|n| (s, n)))
@@ -259,7 +284,7 @@ impl App {
 
     /// Control handle under the pointer, for selected nodes only.
     pub(crate) fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
-        let tol = NODE_PX / self.view.zoom as f64;
+        let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
         for (id, index) in &self.node_selection {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
@@ -653,6 +678,12 @@ impl App {
                 return;
             }
             self.segment_spot = None;
+            // A press on a control handle, or a near miss of a node or a
+            // handle of the selected curves, keeps the selection: only a
+            // click clearly on empty canvas deselects.
+            if self.ctrl_handle_at(p).is_some() || self.near_selected_nodes(p) {
+                return;
+            }
             match self.hit_test(p) {
                 Some(id) => {
                     if mods.shift {
@@ -694,7 +725,7 @@ impl App {
 
     /// Nearest segment of a selected curve within a few pixels.
     pub(crate) fn segment_at(&self, p: Point) -> Option<(ShapeId, usize, f64)> {
-        let tol = 6.0 / self.view.zoom as f64;
+        let tol = (self.settings.nodes.pick_px() + 1.0) / self.view.zoom as f64;
         let mut best: Option<(ShapeId, usize, f64, f64)> = None;
         for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {

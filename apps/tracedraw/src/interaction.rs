@@ -1,6 +1,16 @@
 //! Pointer and keyboard handling on the canvas, per tool.
 
 use crate::app::{App, CurveInProgress, Drag, Handle};
+
+/// What a Pen or Bezier press would edit on the selected curve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PenEdit {
+    /// One of its nodes: dragged like with the Shape tool.
+    Node,
+    /// A segment (curve, segment index, place along it): a click adds a
+    /// node there.
+    Segment(tracedraw_core::ShapeId, usize, f64),
+}
 use crate::tools::Tool;
 use egui::{Key, Modifiers, PointerButton, Response};
 use tracedraw_core::{
@@ -1386,6 +1396,7 @@ impl App {
                 smooth: false,
                 dragging_handle: false,
                 bspline: false,
+                ..Default::default()
             });
             c.nodes.push((p, None));
             if c.nodes.len() >= 2 {
@@ -1410,10 +1421,22 @@ impl App {
         }
     }
 
-    /// Bezier/Pen: click places a cusp node, click-and-drag pulls out a
-    /// smooth handle. Polyline and 2-point line place straight segments.
-    /// Double-click or Enter finishes; clicking the start node closes.
+    /// Bezier/Pen: click places a node with a straight segment to it (a
+    /// node that was pulled before becomes a cusp: the segment leaves it
+    /// straight), click-and-drag pulls out a smooth handle (C while
+    /// pulling makes the node a cusp: only the outgoing handle follows;
+    /// Alt moves the node). Clicking the last node again makes it a cusp.
+    /// Polyline and 2-point line place straight segments. Double-click or
+    /// Enter finishes; a press on the first node closes the curve, and
+    /// dragging from it shapes the closing segment only.
     fn curve_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        // With no curve being drawn, the Pen and Bezier tools edit the
+        // selected curve: a click on a segment adds a node, a node is
+        // dragged like with the Shape tool.
+        if self.pen_edit_input(response, p, mods) {
+            return;
+        }
+        let raw = p;
         let p = self.snap_point(p);
         // Ctrl: the new node in steps of the constrain angle from the last
         // one (a dragged handle, from its node).
@@ -1435,65 +1458,203 @@ impl App {
             self.finish_curve();
             return;
         }
+        let reach = self.settings.curves.join_px() / self.view.zoom as f64;
+        let near = |q: Point| (q - raw).hypot() <= reach;
         let start_close = self
             .curve
             .as_ref()
-            .and_then(|c| c.nodes.first().map(|n| n.0))
-            .map(|s| {
-                (s - p).hypot() <= self.settings.curves.join_px() / self.view.zoom as f64
-                    && self
-                        .curve
-                        .as_ref()
-                        .map(|c| c.nodes.len() >= 3)
-                        .unwrap_or(false)
-            })
-            .unwrap_or(false);
-        if response.drag_started_by(PointerButton::Primary)
-            || response.clicked_by(PointerButton::Primary)
-        {
+            .is_some_and(|c| c.nodes.len() >= 3 && c.nodes.first().is_some_and(|n| near(n.0)));
+        let on_last = smooth
+            && self
+                .curve
+                .as_ref()
+                .is_some_and(|c| c.nodes.len() >= 2 && c.nodes.last().is_some_and(|n| near(n.0)));
+        if response.clicked_by(PointerButton::Primary) {
             if start_close {
-                // Close the curve onto its start node.
-                if let Some(c) = self.curve.take() {
-                    let path = c.path_closed(None, true);
-                    if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
-                        self.select(vec![id]);
-                    }
+                // A click on the first node closes the curve; the closing
+                // segment leaves the last node straight.
+                if let Some(mut c) = self.curve.take() {
+                    c.cusp_last();
+                    c.closing = None;
+                    self.close_curve(c);
                 }
                 return;
             }
+            if on_last {
+                // Clicking the last node again makes it a cusp.
+                if let Some(c) = &mut self.curve {
+                    c.cusp_last();
+                    c.dragging_handle = false;
+                }
+                return;
+            }
+        }
+        if response.drag_started_by(PointerButton::Primary) && start_close {
+            // Dragging from the first node shapes the closing segment.
+            if let Some(c) = &mut self.curve {
+                c.closing = Some(raw);
+                c.dragging_handle = false;
+            }
+            return;
+        }
+        if response.drag_started_by(PointerButton::Primary)
+            || response.clicked_by(PointerButton::Primary)
+        {
             let c = self.curve.get_or_insert_with(|| CurveInProgress {
                 nodes: Vec::new(),
                 smooth,
                 dragging_handle: false,
                 bspline,
+                ..Default::default()
             });
             c.smooth = smooth;
             c.bspline = bspline;
-            if response.drag_started_by(PointerButton::Primary) {
-                c.nodes.push((p, None));
-                c.dragging_handle = true;
-            } else if !c.dragging_handle {
+            let drag = response.drag_started_by(PointerButton::Primary);
+            if !drag && smooth {
+                // A click: the segment to the new node is straight, so a
+                // node pulled before becomes a cusp.
+                c.cusp_last();
+            }
+            if drag || !c.dragging_handle {
                 c.nodes.push((p, None));
             }
-            c.dragging_handle = response.drag_started_by(PointerButton::Primary);
+            c.dragging_handle = drag;
+            c.alt_from = None;
             if self.tool == Tool::TwoPointLine && c.nodes.len() == 2 {
                 self.finish_curve();
             }
         }
         if response.dragged_by(PointerButton::Primary) {
+            let c_pressed = response.ctx.input(|i| i.key_pressed(egui::Key::C));
             if let Some(c) = &mut self.curve {
-                if c.dragging_handle && smooth {
-                    if let Some(last) = c.nodes.last_mut() {
-                        last.1 = Some(p);
+                if c.closing.is_some() {
+                    c.closing = Some(raw);
+                } else if c.dragging_handle && smooth {
+                    if c_pressed {
+                        c.freeze_last_in();
+                    }
+                    if mods.alt {
+                        // Alt: the node moves with its handles.
+                        let from = c.alt_from.unwrap_or(p);
+                        let d = p - from;
+                        let i = c.nodes.len() - 1;
+                        if let Some(last) = c.nodes.last_mut() {
+                            last.0 += d;
+                            last.1 = last.1.map(|h| h + d);
+                        }
+                        if let Some(Some(h)) = c.in_handles.get_mut(&i) {
+                            *h += d;
+                        }
+                        c.alt_from = Some(p);
+                    } else {
+                        c.alt_from = None;
+                        if let Some(last) = c.nodes.last_mut() {
+                            last.1 = Some(p);
+                        }
                     }
                 }
             }
         }
         if response.drag_stopped_by(PointerButton::Primary) {
+            if self.curve.as_ref().is_some_and(|c| c.closing.is_some()) {
+                if let Some(mut c) = self.curve.take() {
+                    c.closing = Some(raw);
+                    self.close_curve(c);
+                }
+                return;
+            }
             if let Some(c) = &mut self.curve {
                 c.dragging_handle = false;
+                c.alt_from = None;
             }
         }
+    }
+
+    /// The curve being drawn, closed onto its first node, becomes a
+    /// curve object and is selected.
+    fn close_curve(&mut self, c: CurveInProgress) {
+        let path = c.path_closed(None, true);
+        if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
+            self.select(vec![id]);
+        }
+    }
+
+    /// The Pen and Bezier tools with no curve being drawn and one curve
+    /// selected: a click on one of its segments adds a node there, and a
+    /// press on one of its nodes (not an end node, which continues the
+    /// curve) drags it as the Shape tool does. True when it took the
+    /// input.
+    fn pen_edit_input(&mut self, response: &Response, p: Point, mods: Modifiers) -> bool {
+        if self.pen_editing {
+            self.shape_input(response, p, mods);
+            // The drag ends with the button (`canvas_input` ends it).
+            if response.drag_stopped() || !response.ctx.input(|i| i.pointer.primary_down()) {
+                self.pen_editing = false;
+            }
+            return true;
+        }
+        if !matches!(self.tool, Tool::Bezier | Tool::Pen) || self.curve.is_some() {
+            return false;
+        }
+        match self.pen_edit_at(p) {
+            Some(PenEdit::Node) if response.drag_started_by(PointerButton::Primary) => {
+                self.pen_editing = true;
+                self.shape_input(response, p, mods);
+                true
+            }
+            Some(PenEdit::Node) if response.clicked_by(PointerButton::Primary) => true,
+            Some(PenEdit::Segment(id, index, t)) if response.clicked_by(PointerButton::Primary) => {
+                if let Some(ShapeKind::Path { path, closed }) =
+                    self.doc().find_shape(id).map(|s| s.kind.clone())
+                {
+                    let np = tracedraw_core::nodes::add_node(&path, index, t);
+                    if self
+                        .engine
+                        .run_with_label(
+                            &Command::SetShapeKind {
+                                shape: id,
+                                kind: ShapeKind::Path { path: np, closed },
+                            },
+                            "Add Node",
+                        )
+                        .is_ok()
+                    {
+                        self.node_selection = vec![(id, index)];
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// What a Pen or Bezier press at `p` would edit on the selected curve
+    /// when no curve is being drawn: a node (not an end node of an open
+    /// curve, where a new line continues it) or a segment.
+    pub(crate) fn pen_edit_at(&self, p: Point) -> Option<PenEdit> {
+        if !matches!(self.tool, Tool::Bezier | Tool::Pen) || self.curve.is_some() {
+            return None;
+        }
+        let [id] = self.selection.as_slice() else {
+            return None;
+        };
+        let shape = self.doc().shape_on_page(*id)?;
+        let ShapeKind::Path { path, .. } = &shape.kind else {
+            return None;
+        };
+        if self.on_join_end(p) {
+            return None;
+        }
+        let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
+        let lp = shape.transform.inverse() * p;
+        if tracedraw_core::nodes::nodes(path)
+            .iter()
+            .any(|n| (n.pos - lp).hypot() <= tol)
+        {
+            return Some(PenEdit::Node);
+        }
+        let (index, t, d) = tracedraw_core::nodes::nearest_segment(path, lp)?;
+        (d <= tol).then_some(PenEdit::Segment(*id, index, t))
     }
 
     fn fill_input(&mut self, response: &Response, p: Point) {

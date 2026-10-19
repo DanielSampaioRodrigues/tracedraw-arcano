@@ -528,6 +528,10 @@ pub struct NodePrefs {
     pub unselected_filled: bool,
     /// An arrow at the start node shows the curve's direction.
     pub show_direction: bool,
+    /// How near, in screen pixels, a press must land on a node or a
+    /// control handle to take it (Shape tool, and the curve tools'
+    /// nodes).
+    pub pick_distance: f32,
 }
 
 impl Default for NodePrefs {
@@ -541,7 +545,21 @@ impl Default for NodePrefs {
             secondary_rgb: [0xFF, 0x00, 0x00],
             unselected_filled: true,
             show_direction: false,
+            pick_distance: 6.0,
         }
+    }
+}
+
+impl NodePrefs {
+    /// The pick distance in screen pixels, kept sensible and never less
+    /// than the node marker reaches.
+    pub fn pick_px(&self) -> f64 {
+        let set = if self.pick_distance.is_finite() {
+            self.pick_distance.clamp(2.0, 20.0)
+        } else {
+            6.0
+        };
+        f64::from(set.max(self.size.px() / 2.0 + 1.0))
     }
 }
 

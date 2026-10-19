@@ -45,6 +45,7 @@ whatever tool is active.
   Turning it on or off keeps the corners as they look. The size is
   measured against the rectangle's own scaling: scaling a group scales
   its rectangles' corners, and ungrouping keeps them as they look.
+  Checked by `pick_drag_tests::rounded_corners_keep_their_size_when_relative_scaling_is_off`.
 - The sizes on the bar are page sizes in the ruler unit; with relative
   scaling on a stretched rectangle shows the smaller of its two scales.
 - Double-clicking the tool button draws a page frame: a rectangle the

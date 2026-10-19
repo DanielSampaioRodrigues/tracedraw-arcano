@@ -20,6 +20,17 @@ at its control point (the curve tools show the handles of the curve
 being drawn the same way). The arrow showing the curve's
 direction is off by default (Options > Nodes and Handles).
 
+## Taking nodes and handles
+
+A press takes a node, or a control handle of a chosen node, within the
+pick distance of it: Options > Nodes and Handles > Pick distance, 6
+screen pixels by default (never less than the node marker reaches). A
+segment of a selected curve is taken a pixel further out. A click that
+takes nothing but lands within three pick distances of a node or a
+handle of the selected curves (or a node of a selected rectangle,
+ellipse or polygon) is a near miss: the selection stays. Only a click
+further out on empty canvas deselects.
+
 ## Snapping
 
 A dragged node snaps like a point placed by a drawing tool: to the
@@ -130,7 +141,13 @@ step.
 
 Rectangles, ellipses and polygons show these nodes and the property bar
 shows their controls (corners, pie and arc, points) while the Shape tool
-is active. Each drag is one undo step. Other objects show a Convert to
+is active, after the object's kind ("Rectangle", "Ellipse", "Polygon";
+a curve shows "Curve" before the node buttons). The status bar says so
+too: "Rectangle: drag a corner node to round the corners (Ctrl+Q
+converts to curves)", and the like for ellipses and polygons, where a
+curve shows "Curve: n Nodes". The curve being edited is also drawn in
+the node colour with a larger first node, which a rectangle, ellipse or
+polygon never has. Each drag is one undo step. Other objects show a Convert to
 Curves button.
 
 ## Text
@@ -151,6 +168,8 @@ Reduce Nodes, Curve smoothness.
 
 ## Checks
 
+- `pick_drag_tests::nodes_are_taken_within_the_pick_distance_and_a_near_miss_keeps_the_selection`
+- `pick_drag_tests::the_shape_tool_says_a_rectangle_is_still_a_rectangle`
 - `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`
 - `pick_drag_tests::dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes`
 - `nodes::tests::bending_a_segment_moves_its_point_and_keeps_the_ends` (core)
