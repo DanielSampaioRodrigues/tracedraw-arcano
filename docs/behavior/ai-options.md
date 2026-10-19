@@ -47,13 +47,19 @@ stays editable, and a typed one shows as "Custom (typed address)".
 | LM Studio (this computer) | `http://localhost:1234/v1/chat/completions` | no (drawings only) |
 | llama.cpp server (this computer) | `http://localhost:8080/v1/chat/completions` | no (drawings only) |
 | vLLM (this computer) | `http://localhost:8000/v1/chat/completions` | no (drawings only) |
+| OpenCode Zen | `https://opencode.ai/zen/v1/chat/completions` | no (drawings only) |
+| OpenCode Go | `https://opencode.ai/zen/go/v1/chat/completions` | no (drawings only) |
 | Custom (typed address) | the user's, OpenAI-compatible | OpenAI Images API at the same base (the address without `/chat/completions`) when an image model is entered; left empty, no pictures |
 
 Which service can make pictures follows from the address
 (`ai::AiPrefs::image_support`): the Messages API never; an
 OpenAI-compatible address at `https://api.openai.com/v1` is OpenAI, one
 on `https://generativelanguage.googleapis.com/` is Gemini, one of the
-four local presets above makes drawings only, and any other is Custom.
+four local presets or the two OpenCode presets above makes drawings
+only, and any other is Custom. Every request to an address on
+`https://opencode.ai/` also carries an `x-opencode-session` header: one
+id made when the program starts and sent with each request of that run,
+which those services require to count a run's requests together.
 For a service that makes drawings only the Image model row is hidden
 and one line says so. A service at an address of the user's needs no
 key.

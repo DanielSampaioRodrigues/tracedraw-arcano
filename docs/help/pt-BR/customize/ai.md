@@ -15,9 +15,9 @@ no seu computador não custam nada.
 
 Na página **Serviço**, configure um serviço de IA para todos os recursos de IA:
 
-1. Escolha uma **Predefinição**: Anthropic, OpenAI, Google Gemini ou um
-   servidor de modelos no seu computador (Ollama, LM Studio, servidor
-   llama.cpp, vLLM). Uma predefinição preenche o tipo de serviço e o endereço;
+1. Escolha uma **Predefinição**: Anthropic, OpenAI, Google Gemini, OpenCode
+   Zen, OpenCode Go ou um servidor de modelos no seu computador (Ollama, LM
+   Studio, servidor llama.cpp, vLLM). Uma predefinição preenche o tipo de serviço e o endereço;
    **Personalizado** aceita qualquer endereço que fale a mesma linguagem das
    conclusões de chat da OpenAI.
 2. Digite a **chave de API** da sua conta nesse serviço (servidores locais não

@@ -14,8 +14,9 @@ billed by your service; local model servers on your computer cost nothing.
 
 On the **Service** page, set up one AI service for every AI feature:
 
-1. Choose a **Preset**: Anthropic, OpenAI, Google Gemini, or a model server on
-   your computer (Ollama, LM Studio, llama.cpp server, vLLM). A preset fills in
+1. Choose a **Preset**: Anthropic, OpenAI, Google Gemini, OpenCode Zen,
+   OpenCode Go, or a model server on your computer (Ollama, LM Studio,
+   llama.cpp server, vLLM). A preset fills in
    the kind of service and the address; **Custom** takes any address that
    speaks the same language as OpenAI's chat completions.
 2. Type the **API key** of your account with that service (local servers need

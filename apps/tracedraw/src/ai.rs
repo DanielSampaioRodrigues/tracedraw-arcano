@@ -82,7 +82,7 @@ impl Provider {
 
 /// Ready-made connections: the i18n key of the name, the kind of service
 /// and its address. The address stays editable after one is picked.
-pub const PRESETS: [(&str, Provider, &str); 7] = [
+pub const PRESETS: [(&str, Provider, &str); 9] = [
     ("aipreset.anthropic", Provider::Anthropic, ""),
     ("aipreset.openai", Provider::OpenAiCompatible, ""),
     (
@@ -110,7 +110,45 @@ pub const PRESETS: [(&str, Provider, &str); 7] = [
         Provider::OpenAiCompatible,
         "http://localhost:8000/v1/chat/completions",
     ),
+    (
+        "aipreset.opencode_zen",
+        Provider::OpenAiCompatible,
+        "https://opencode.ai/zen/v1/chat/completions",
+    ),
+    (
+        "aipreset.opencode_go",
+        Provider::OpenAiCompatible,
+        "https://opencode.ai/zen/go/v1/chat/completions",
+    ),
 ];
+
+/// The host of the OpenCode Zen and Go services, which want every
+/// request to name the session it belongs to.
+const OPENCODE_HOST: &str = "https://opencode.ai/";
+
+/// True when requests go to the OpenCode services.
+fn is_opencode(prefs: &AiPrefs) -> bool {
+    prefs
+        .endpoint()
+        .to_ascii_lowercase()
+        .starts_with(OPENCODE_HOST)
+}
+
+/// One id for this run of the program, sent as the session of every
+/// request to the OpenCode services so they are counted together.
+fn session_id() -> &'static str {
+    use std::hash::{BuildHasher, Hasher};
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        let nanos = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u128(nanos);
+        format!("tracedraw-{:016x}{:08x}", h.finish(), nanos as u32)
+    })
+}
 
 /// The preset the connection matches, if any.
 pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
@@ -119,13 +157,16 @@ pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
     })
 }
 
-/// The presets for model servers on this computer that only write text
-/// (no pictures): Ollama, LM Studio, llama.cpp and vLLM.
-const CHAT_ONLY_PRESETS: [&str; 4] = [
+/// The presets that only write text (no pictures): the model servers on
+/// this computer (Ollama, LM Studio, llama.cpp and vLLM) and the
+/// OpenCode services.
+const CHAT_ONLY_PRESETS: [&str; 6] = [
     "aipreset.ollama",
     "aipreset.lm_studio",
     "aipreset.llama_cpp",
     "aipreset.vllm",
+    "aipreset.opencode_zen",
+    "aipreset.opencode_go",
 ];
 
 /// Google's API host: chat at its OpenAI-compatible address, pictures
@@ -465,6 +506,9 @@ fn headers(prefs: &AiPrefs, key: &str) -> Vec<(String, String)> {
         Provider::OpenAiCompatible => {
             if !key.is_empty() {
                 headers.push(("authorization".to_string(), format!("Bearer {key}")));
+            }
+            if is_opencode(prefs) {
+                headers.push(("x-opencode-session".to_string(), session_id().to_string()));
             }
         }
     }
@@ -943,6 +987,50 @@ mod tests {
         assert_eq!(body["messages"].as_array().map(Vec::len), Some(4));
         let r = build_request(&prefs, "k2", &messages);
         assert_eq!(header(&r, "authorization").as_deref(), Some("Bearer k2"));
+        assert!(header(&r, "x-opencode-session").is_none());
+    }
+
+    #[test]
+    fn opencode_requests_name_their_session() {
+        let messages = vec![(Role::User, "Request: a".to_string())];
+        let header = |r: &HttpRequest, name: &str| {
+            r.headers
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+        };
+        let mut ids = Vec::new();
+        for key in ["aipreset.opencode_zen", "aipreset.opencode_go"] {
+            let (_, provider, endpoint) = PRESETS
+                .iter()
+                .find(|(k, _, _)| *k == key)
+                .copied()
+                .expect("preset");
+            let prefs = AiPrefs {
+                provider,
+                endpoint: endpoint.to_string(),
+                model: "glm-5.1".into(),
+                ..AiPrefs::default()
+            };
+            assert_eq!(preset_of(&prefs).map(|i| PRESETS[i].0), Some(key));
+            let r = build_request(&prefs, "k", &messages);
+            assert_eq!(r.url, endpoint);
+            assert_eq!(header(&r, "authorization").as_deref(), Some("Bearer k"));
+            let id = header(&r, "x-opencode-session").expect("session header");
+            assert!(id.starts_with("tracedraw-") && id.len() > 20, "{id}");
+            ids.push(id);
+        }
+        assert_eq!(
+            AiPrefs {
+                provider: Provider::OpenAiCompatible,
+                endpoint: PRESETS[7].2.into(),
+                ..AiPrefs::default()
+            }
+            .image_support(),
+            ImageSupport::None
+        );
+        // One session for the whole run, the same on every request.
+        assert_eq!(ids[0], ids[1]);
     }
 
     #[test]

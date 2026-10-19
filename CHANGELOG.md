@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- AI service presets for OpenCode Zen and OpenCode Go (drawings only); requests to them carry the `x-opencode-session` header those services require, one id per run (#173).
+
 - Dialogs can be dragged by their title bar; they open centred (or where they were left, with Center dialog boxes off).
 
 - CMX files: text exported in several colours is read with each part in its colour and place (the long instruction form, character styles and per character styles are read), and version 8 `.cdr` files from the bidirectional edition read their paragraph text (#187).
