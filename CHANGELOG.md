@@ -6,6 +6,13 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Page tab menu: six rows with a picture each and no separators (Rename
+  Page..., Insert Page After, Insert Page Before, Duplicate Page...,
+  Delete Page, Switch Page Orientation); Page Size and Page Background
+  stay in the Layout menu. Duplicate Page... (also in the Layout menu and
+  the Pages panel) opens a dialog: insert the copy before or after the
+  selected page, and copy the layers only or with their contents. The
+  copy becomes the current page and one undo removes it.
 - Rectangles: new rectangles keep their corner size when resized
   (Relative corner scaling is off by default on the property bar and in
   Options > Toolbox > Rectangle tool), so a rounded rectangle stretched in

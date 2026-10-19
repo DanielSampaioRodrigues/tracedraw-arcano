@@ -1799,8 +1799,7 @@ fn pages(app: &mut App, ui: &mut Ui) {
             app.delete_page();
         }
         if ui.button(tr("menu.layout.duplicate_page")).clicked() {
-            let page = app.page;
-            app.run(Command::DuplicatePage { page });
+            app.dialog = crate::ui::dialogs::Dialog::duplicate_page();
         }
         if ui
             .selectable_label(app.page_sorter, tr("menu.view.page_sorter"))

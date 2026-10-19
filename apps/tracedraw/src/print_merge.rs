@@ -290,10 +290,7 @@ pub fn perform(app: &mut App, st: &PrintMergeState) {
         Ok(p) => p.clone(),
         Err(_) => return,
     };
-    let cmds: Vec<Command> = rows
-        .iter()
-        .map(|_| Command::DuplicatePage { page })
-        .collect();
+    let cmds: Vec<Command> = rows.iter().map(|_| Command::duplicate_page(page)).collect();
     if let Err(e) = app.engine.run_batch("Print Merge", &cmds) {
         app.status = e.to_string();
         return;

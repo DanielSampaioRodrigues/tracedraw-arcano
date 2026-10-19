@@ -31,8 +31,23 @@ to it. Its buttons [[menu.layout.insert_page]], [[menu.layout.delete_page]] and
 
 ![The Insert Page dialog box](../../img/pages-layout-pages-insert-page.png)
 
-[[menu.layout.duplicate_page]] copies the current page with its objects, and
 [[menu.layout.delete_page]] deletes pages.
+
+## Duplicating a page {#duplicate-page}
+
+1. Choose [[menu.layout > menu.layout.duplicate_page]], or right-click the
+   page tab and choose [[menu.layout.duplicate_page]].
+2. Under [[dialog.insert_new_page]], choose
+   [[dialog.before_selected_page]] or [[dialog.after_selected_page]].
+3. Choose [[dialog.copy_layers_only]] for a page with the same layers and
+   nothing on them, or [[dialog.copy_layers_and_contents]] to copy the
+   objects too.
+4. Click [[dialog.ok]]. The copy becomes the current page;
+   [[menu.edit > menu.edit.undo]] removes it.
+
+The page tab menu also has [[page_tab.insert_after]],
+[[page_tab.insert_before]], [[page_tab.delete]] and
+[[menu.layout.switch_orientation]].
 
 ## Renaming a page {#rename-page}
 

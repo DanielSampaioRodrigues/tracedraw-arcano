@@ -5500,6 +5500,22 @@ impl App {
         self.fit_pending = true;
     }
 
+    /// Duplicate the current page before or after it, with its layers
+    /// only or with their contents too; the copy becomes the current page.
+    pub fn duplicate_page(&mut self, before: bool, contents: bool) {
+        let page = self.page;
+        let old: Vec<_> = self.doc().pages.iter().map(|p| p.id).collect();
+        self.run(Command::DuplicatePage {
+            page,
+            before,
+            contents,
+        });
+        let new = self.doc().pages.iter().position(|p| !old.contains(&p.id));
+        if let Some(i) = new {
+            self.goto_page(i);
+        }
+    }
+
     pub fn delete_page(&mut self) {
         let page = self.page;
         self.run(Command::DeletePage { page });

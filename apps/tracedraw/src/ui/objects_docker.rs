@@ -1112,7 +1112,7 @@ mod tests {
         assert_eq!(app.selection, vec![id]);
         // Page 2 is even: the layer does not show there.
         let page = app.page;
-        app.run(Command::DuplicatePage { page });
+        app.run(Command::duplicate_page(page));
         app.page = app.doc().pages[1].id;
         assert_eq!(app.hit_test(inside), None);
         app.page = page;

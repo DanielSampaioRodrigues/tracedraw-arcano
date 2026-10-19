@@ -472,47 +472,45 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PageTabAction {
     Rename,
-    InsertBefore,
     InsertAfter,
+    InsertBefore,
     Duplicate,
     Delete,
     SwitchOrientation,
-    PageSize,
-    Background,
 }
 
-/// The menu of a page tab, for the current page.
-fn page_tab_menu(app: &App, ui: &mut Ui) -> Option<PageTabAction> {
-    use crate::ui::menus::{item, sep};
-    use PageTabAction as A;
-    let mut out = None;
-    let mut pick = |ui: &mut Ui, key: &str, enabled: bool, a: A| {
-        if item(ui, key, "", enabled) {
-            out = Some(a);
-            ui.close();
-        }
-    };
-    pick(ui, "menu.layout.rename_page", true, A::Rename);
-    sep(ui);
-    pick(ui, "page_tab.insert_before", true, A::InsertBefore);
-    pick(ui, "page_tab.insert_after", true, A::InsertAfter);
-    pick(ui, "page_tab.duplicate", true, A::Duplicate);
-    pick(ui, "page_tab.delete", app.doc().pages.len() > 1, A::Delete);
-    sep(ui);
-    pick(
-        ui,
+/// The rows of the page tab menu, in order, by their label keys. Every
+/// row has a picture and the menu has no separators; the page size and
+/// background stay in the Layout menu. An ellipsis marks the rows that
+/// open a dialog.
+pub(crate) const PAGE_TAB_MENU: [(&str, PageTabAction); 6] = [
+    ("menu.layout.rename_page", PageTabAction::Rename),
+    ("page_tab.insert_after", PageTabAction::InsertAfter),
+    ("page_tab.insert_before", PageTabAction::InsertBefore),
+    ("menu.layout.duplicate_page", PageTabAction::Duplicate),
+    ("page_tab.delete", PageTabAction::Delete),
+    (
         "menu.layout.switch_orientation",
-        true,
-        A::SwitchOrientation,
-    );
-    pick(ui, "menu.layout.page_size", true, A::PageSize);
-    pick(ui, "menu.layout.page_background", true, A::Background);
+        PageTabAction::SwitchOrientation,
+    ),
+];
+
+/// The menu of a page tab, for the current page.
+pub(crate) fn page_tab_menu(app: &App, ui: &mut Ui) -> Option<PageTabAction> {
+    let mut out = None;
+    for (key, action) in PAGE_TAB_MENU {
+        let enabled = action != PageTabAction::Delete || app.doc().pages.len() > 1;
+        // A clicked row closes the menu itself.
+        if crate::ui::menus::item(ui, key, "", enabled) {
+            out = Some(action);
+        }
+    }
     out
 }
 
 /// Carry out a page tab menu command on the current page.
 pub(crate) fn apply_page_tab_action(app: &mut App, action: PageTabAction) {
-    use crate::ui::dialogs::{Dialog, OptionsPage};
+    use crate::ui::dialogs::Dialog;
     use tracedraw_core::Command;
     match action {
         PageTabAction::Rename => {
@@ -525,16 +523,7 @@ pub(crate) fn apply_page_tab_action(app: &mut App, action: PageTabAction) {
         }
         PageTabAction::InsertBefore => app.insert_page(false),
         PageTabAction::InsertAfter => app.insert_page(true),
-        PageTabAction::Duplicate => {
-            let page = app.page;
-            let before = app.doc().pages.len();
-            app.run(Command::DuplicatePage { page });
-            // The copy becomes the current page.
-            if app.doc().pages.len() > before {
-                let idx = app.page_index() + 1;
-                app.goto_page(idx);
-            }
-        }
+        PageTabAction::Duplicate => app.dialog = Dialog::duplicate_page(),
         PageTabAction::Delete => {
             if app.doc().pages.len() > 1 {
                 app.delete_page();
@@ -549,18 +538,6 @@ pub(crate) fn apply_page_tab_action(app: &mut App, action: PageTabAction) {
             });
             app.fit_pending = true;
         }
-        PageTabAction::PageSize => {
-            let s = app.page_size();
-            app.dialog = Dialog::PageSize {
-                width: s.width,
-                height: s.height,
-                all_pages: true,
-            };
-        }
-        PageTabAction::Background => {
-            app.dialog = Dialog::Options;
-            app.options_page = OptionsPage::Background;
-        }
     }
 }
 
@@ -571,6 +548,7 @@ mod tests {
     #[test]
     fn the_page_tab_menu_inserts_duplicates_turns_and_deletes_pages() {
         use super::{apply_page_tab_action, PageTabAction as A};
+        use crate::ui::dialogs::Dialog;
         let mut app = App::headless();
         let first = app.page;
         apply_page_tab_action(&mut app, A::InsertAfter);
@@ -582,7 +560,18 @@ mod tests {
         assert_eq!(app.page_index(), 0);
         assert_eq!(app.doc().pages[1].id, first);
         app.goto_page(1);
+        // Duplicate opens its dialog with the defaults and changes nothing yet.
         apply_page_tab_action(&mut app, A::Duplicate);
+        assert_eq!(app.doc().pages.len(), 3);
+        assert_eq!(
+            app.dialog,
+            Dialog::DuplicatePage {
+                before: false,
+                contents: true
+            }
+        );
+        app.dialog = Dialog::None;
+        app.duplicate_page(false, true);
         assert_eq!(app.doc().pages.len(), 4);
         assert_eq!(app.page_index(), 2);
         let s = app.page_size();
@@ -592,14 +581,214 @@ mod tests {
         apply_page_tab_action(&mut app, A::Delete);
         assert_eq!(app.doc().pages.len(), 3);
         apply_page_tab_action(&mut app, A::Rename);
-        assert!(matches!(
-            app.dialog,
-            crate::ui::dialogs::Dialog::RenamePage { .. }
-        ));
+        assert!(matches!(app.dialog, Dialog::RenamePage { .. }));
         // The last page is never deleted.
         let mut one = App::headless();
         apply_page_tab_action(&mut one, A::Delete);
         assert_eq!(one.doc().pages.len(), 1);
+    }
+
+    fn frame(ctx: &egui::Context, f: impl FnOnce(&mut egui::Ui)) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut f = Some(f);
+        let mut out = ctx.run_ui(input, |ui| {
+            if let Some(f) = f.take() {
+                f(ui);
+            }
+        });
+        out.textures_delta.clear();
+    }
+
+    /// The rows as the menu draws them, found by clicking each in turn.
+    fn replayed_rows(app: &App) -> Vec<(String, super::PageTabAction)> {
+        use crate::ui::menus::replay;
+        let ctx = crate::theme::ui_context();
+        let mut out = Vec::new();
+        for i in 0.. {
+            replay::start(i);
+            let mut action = None;
+            frame(&ctx, |ui| action = super::page_tab_menu(app, ui));
+            let (hit, rows) = replay::finish();
+            if let (Some(k), Some(a)) = (hit, action) {
+                out.push((k, a));
+            }
+            if i + 1 >= rows {
+                break;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_page_tab_menu_has_six_rows_in_order_each_with_a_picture() {
+        use super::PageTabAction as A;
+        use crate::i18n::tr;
+        let mut app = App::headless();
+        app.insert_page(true);
+        let rows = replayed_rows(&app);
+        let keys: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "menu.layout.rename_page",
+                "page_tab.insert_after",
+                "page_tab.insert_before",
+                "menu.layout.duplicate_page",
+                "page_tab.delete",
+                "menu.layout.switch_orientation",
+            ]
+        );
+        let actions: Vec<A> = rows.iter().map(|(_, a)| *a).collect();
+        assert_eq!(
+            actions,
+            [
+                A::Rename,
+                A::InsertAfter,
+                A::InsertBefore,
+                A::Duplicate,
+                A::Delete,
+                A::SwitchOrientation
+            ]
+        );
+        // Every row has a picture; the two insert rows have their own.
+        use crate::ui::menu_glyphs::{for_key, Glyph};
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, |ui| {
+            let r = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(16.0, 16.0));
+            for k in &keys {
+                assert!(
+                    crate::ui::menus::draw_menu_picture(ui.painter(), r, k, egui::Color32::GRAY),
+                    "{k} has no picture"
+                );
+            }
+        });
+        assert_eq!(
+            for_key("page_tab.insert_after"),
+            Some(Glyph::PageInsertAfter)
+        );
+        assert_eq!(
+            for_key("page_tab.insert_before"),
+            Some(Glyph::PageInsertBefore)
+        );
+        assert_eq!(for_key("page_tab.delete"), Some(Glyph::PageDelete));
+        assert_eq!(
+            for_key("menu.layout.duplicate_page"),
+            Some(Glyph::PageDuplicate)
+        );
+        // An ellipsis only where a dialog opens.
+        for (k, a) in &rows {
+            let dialog = matches!(a, A::Rename | A::Duplicate);
+            assert_eq!(tr(k).ends_with("..."), dialog, "{k}: {}", tr(k));
+        }
+        // With one page, Delete is greyed and cannot be hit.
+        let one = App::headless();
+        let keys: Vec<String> = replayed_rows(&one).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(keys.len(), 5);
+        assert!(!keys.iter().any(|k| k == "page_tab.delete"));
+    }
+
+    #[test]
+    fn the_page_tab_menu_has_no_separators() {
+        // The menu is exactly as tall as six rows stacked.
+        let app = App::headless();
+        let ctx = crate::theme::ui_context();
+        let mut heights = [0.0f32; 3];
+        frame(&ctx, |ui| {
+            let mut measure = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
+                ui.vertical(|ui| f(ui)).response.rect.height()
+            };
+            heights[0] = measure(ui, &mut |ui| {
+                crate::ui::menus::item(ui, "menu.layout.rename_page", "", true);
+            });
+            heights[1] = measure(ui, &mut |ui| {
+                crate::ui::menus::item(ui, "menu.layout.rename_page", "", true);
+                crate::ui::menus::item(ui, "menu.layout.rename_page", "", true);
+            });
+            heights[2] = measure(ui, &mut |ui| {
+                super::page_tab_menu(&app, ui);
+            });
+        });
+        let step = heights[1] - heights[0];
+        let six = heights[0] + 5.0 * step;
+        assert!(
+            (heights[2] - six).abs() < 0.5,
+            "menu {} vs six rows {six}",
+            heights[2]
+        );
+    }
+
+    #[test]
+    fn the_duplicate_page_dialog_puts_the_copy_where_asked_and_undoes() {
+        use crate::ui::dialogs::Dialog;
+        let mut app = App::headless();
+        let first = app.page;
+        app.new_shape(tracedraw_core::ShapeKind::Rect {
+            rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("shape");
+        let count = |app: &App, i: usize| -> usize {
+            app.doc().pages[i]
+                .layers
+                .iter()
+                .map(|l| l.shapes.len())
+                .sum()
+        };
+        assert_eq!(
+            Dialog::duplicate_page(),
+            Dialog::DuplicatePage {
+                before: false,
+                contents: true
+            }
+        );
+        // Before, layers only: the copy is first, current and empty.
+        app.duplicate_page(true, false);
+        assert_eq!(app.doc().pages.len(), 2);
+        assert_eq!(app.page_index(), 0);
+        assert_ne!(app.page, first);
+        assert_eq!(app.doc().pages[1].id, first);
+        assert_eq!(count(&app, 0), 0);
+        assert_eq!(count(&app, 1), 1);
+        assert_eq!(
+            app.doc().pages[0].layers.len(),
+            app.doc().pages[1].layers.len()
+        );
+        app.undo();
+        assert_eq!(app.doc().pages.len(), 1);
+        // After, with contents: the copy follows and is current.
+        app.page = first;
+        app.duplicate_page(false, true);
+        assert_eq!(app.doc().pages.len(), 2);
+        assert_eq!(app.page_index(), 1);
+        assert_eq!(app.doc().pages[0].id, first);
+        assert_eq!(count(&app, 1), 1);
+    }
+
+    #[test]
+    fn layout_duplicate_page_opens_the_dialog() {
+        use crate::ui::dialogs::Dialog;
+        use crate::ui::menus::replay;
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        for i in 0.. {
+            replay::start(i);
+            frame(&ctx, |ui| crate::ui::menus::layout_menu(&mut app, ui));
+            let (hit, rows) = replay::finish();
+            if hit.as_deref() == Some("menu.layout.duplicate_page") {
+                break;
+            }
+            assert!(i + 1 < rows, "no Duplicate Page row");
+            app.dialog = Dialog::None;
+        }
+        assert_eq!(app.dialog, Dialog::duplicate_page());
+        assert_eq!(app.doc().pages.len(), 1);
     }
 
     #[test]

@@ -34,11 +34,18 @@ From the left, after the ruler's width:
    make it current.
 2. The page tabs: one slanted tab per page, the current one white; a click
    goes to the page, a double click renames it. A right click makes the
-   page current and opens its menu: Rename Page, Insert Page Before,
-   Insert Page After, Duplicate Page (the copy becomes current), Delete
-   Page (greyed when it is the only page), Switch Page Orientation, Page
-   Size and Page Background
-   (`ui::window_bars::tests::the_page_tab_menu_inserts_duplicates_turns_and_deletes_pages`).
+   page current and opens its menu, six rows with a picture each and no
+   separators: Rename Page... (a page with a text cursor), Insert Page
+   After and Insert Page Before (two pages side by side, the new one with
+   a green plus, on the right or on the left, under an arrow toward it),
+   Duplicate Page... (two pages with a green plus; opens the Duplicate
+   Page dialog, see [pages.md](pages.md)), Delete Page (a page with a red
+   cross; greyed when it is the only page) and Switch Page Orientation.
+   Only the rows that open a dialog end in an ellipsis. Page size and
+   background are in the Layout menu
+   (`ui::window_bars::tests::the_page_tab_menu_has_six_rows_in_order_each_with_a_picture`,
+   `the_page_tab_menu_has_no_separators`,
+   `the_page_tab_menu_inserts_duplicates_turns_and_deletes_pages`).
 3. A dotted splitter: dragging it shares the row between the page tabs and
    the horizontal scrollbar (45 % for the tabs by default).
 4. The horizontal scrollbar.

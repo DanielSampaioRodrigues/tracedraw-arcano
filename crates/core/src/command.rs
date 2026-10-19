@@ -282,9 +282,17 @@ pub enum Command {
         page: PageId,
         name: String,
     },
-    /// Copy a page (layers, shapes with fresh ids, guides) right after it.
+    /// Copy a page (layers, guides, background) next to it. `before` puts
+    /// the copy in front of the page instead of after it; without
+    /// `contents` the copied layers are empty, otherwise their shapes are
+    /// copied with fresh ids. Older scripts that name only the page get a
+    /// copy with its contents after it.
     DuplicatePage {
         page: PageId,
+        #[serde(default)]
+        before: bool,
+        #[serde(default = "yes")]
+        contents: bool,
     },
     RenameLayer {
         layer: LayerId,
@@ -325,7 +333,22 @@ fn node_count(kind: &ShapeKind) -> usize {
     }
 }
 
+/// Serde default for flags that are on when a saved command leaves them out.
+fn yes() -> bool {
+    true
+}
+
 impl Command {
+    /// Duplicate `page` with its contents, the copy after it (Print Merge
+    /// and older callers).
+    pub fn duplicate_page(page: PageId) -> Command {
+        Command::DuplicatePage {
+            page,
+            before: false,
+            contents: true,
+        }
+    }
+
     /// True for commands that change state kept outside the undo history
     /// (the Time Tracker's records): the engine applies them without an
     /// undo step, and undo and redo leave that state alone.
@@ -991,7 +1014,11 @@ impl Command {
                 }
             }
             Command::RenamePage { page, name } => doc.page_mut(*page)?.name = name.clone(),
-            Command::DuplicatePage { page } => {
+            Command::DuplicatePage {
+                page,
+                before,
+                contents,
+            } => {
                 let idx = doc
                     .pages
                     .iter()
@@ -1006,8 +1033,10 @@ impl Command {
                     nl.visible = l.visible;
                     nl.printable = l.printable;
                     nl.locked = l.locked;
-                    for s in &l.shapes {
-                        nl.shapes.push(reid_shape(s, doc));
+                    if *contents {
+                        for s in &l.shapes {
+                            nl.shapes.push(reid_shape(s, doc));
+                        }
                     }
                     layers.push(nl);
                 }
@@ -1019,7 +1048,8 @@ impl Command {
                     guides: src.guides.clone(),
                     background: src.background.clone(),
                 };
-                doc.pages.insert(idx + 1, copy);
+                let at = if *before { idx } else { idx + 1 };
+                doc.pages.insert(at, copy);
             }
             Command::RenameLayer { layer, name } => doc.layer_mut(*layer)?.name = name.clone(),
             Command::ReorderLayer { layer, index } => {
@@ -1660,12 +1690,65 @@ mod tests {
         Command::AddShape { layer, shape: a }
             .apply(&mut doc)
             .unwrap();
-        Command::DuplicatePage { page }.apply(&mut doc).unwrap();
+        Command::duplicate_page(page).apply(&mut doc).unwrap();
         assert_eq!(doc.pages.len(), 2);
         let copy = &doc.pages[1];
         assert_eq!(copy.layers[0].shapes.len(), 1);
         assert_ne!(copy.layers[0].shapes[0].id, ia);
         assert_ne!(copy.layers[0].id, layer);
+    }
+
+    #[test]
+    fn duplicate_page_goes_before_or_after_with_or_without_contents() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let page = doc.pages[0].id;
+        let a = rect(&mut doc, 0.0);
+        Command::AddShape { layer, shape: a }
+            .apply(&mut doc)
+            .unwrap();
+        let mut eng = crate::Engine::new(doc);
+        eng.run(&Command::DuplicatePage {
+            page,
+            before: true,
+            contents: false,
+        })
+        .unwrap();
+        let d = eng.document();
+        assert_eq!(d.pages.len(), 2);
+        // The copy is in front of the original, with its layers but empty.
+        assert_eq!(d.pages[1].id, page);
+        let copy = &d.pages[0];
+        assert_ne!(copy.id, page);
+        assert_eq!(copy.layers.len(), d.pages[1].layers.len());
+        assert_eq!(copy.layers[0].name, d.pages[1].layers[0].name);
+        assert!(copy.layers.iter().all(|l| l.shapes.is_empty()));
+        assert_eq!(d.pages[1].layers[0].shapes.len(), 1);
+        // One undo step takes it away again.
+        eng.undo().unwrap();
+        assert_eq!(eng.document().pages.len(), 1);
+        assert_eq!(eng.document().pages[0].id, page);
+        eng.run(&Command::DuplicatePage {
+            page,
+            before: false,
+            contents: true,
+        })
+        .unwrap();
+        let d = eng.document();
+        assert_eq!(d.pages[0].id, page);
+        assert_eq!(d.pages[1].layers[0].shapes.len(), 1);
+        // An unknown page is an error, not a panic.
+        assert!(Command::duplicate_page(PageId(9999))
+            .apply(&mut Document::default())
+            .is_err());
+    }
+
+    #[test]
+    fn a_saved_duplicate_page_without_options_copies_contents_after() {
+        let page = Document::default().pages[0].id;
+        let json = serde_json::json!({ "cmd": "duplicate_page", "page": page });
+        let cmd: Command = serde_json::from_value(json).unwrap();
+        assert_eq!(cmd, Command::duplicate_page(page));
     }
 
     #[test]

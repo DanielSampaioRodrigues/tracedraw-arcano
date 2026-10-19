@@ -580,6 +580,12 @@ pub enum Dialog {
         count: u32,
         after: bool,
     },
+    /// Layout > Duplicate Page and the page tab menu: where the copy goes
+    /// and whether the layers keep their objects.
+    DuplicatePage {
+        before: bool,
+        contents: bool,
+    },
     PageSize {
         width: f64,
         height: f64,
@@ -864,6 +870,17 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
     }
 }
 
+impl Dialog {
+    /// The Duplicate Page dialog with its defaults: after the selected
+    /// page, layers with their contents.
+    pub fn duplicate_page() -> Dialog {
+        Dialog::DuplicatePage {
+            before: false,
+            contents: true,
+        }
+    }
+}
+
 /// A dialog window in the dialogs' chrome (white title bar with a close
 /// button, grey body), sized to its content and centred.
 pub(crate) fn window(_ctx: &Context, title: String) -> crate::ui::chrome::Window {
@@ -1055,6 +1072,28 @@ pub fn show(app: &mut App, ctx: &Context) {
                     app.goto_page(target);
                 }
             });
+        }
+        Dialog::DuplicatePage { before, contents } => {
+            let mut help = false;
+            window(ctx, tr("dialog.duplicate_page")).show(ctx, |ui| {
+                ui.label(tr("dialog.insert_new_page"));
+                ui.indent("duplicate_page_where", |ui| {
+                    ui.radio_value(before, true, tr("dialog.before_selected_page"));
+                    ui.radio_value(before, false, tr("dialog.after_selected_page"));
+                });
+                ui.add_space(6.0);
+                ui.radio_value(contents, false, tr("dialog.copy_layers_only"));
+                ui.radio_value(contents, true, tr("dialog.copy_layers_and_contents"));
+                let (ok, h) = help_ok_cancel(ui, &mut close);
+                help = h;
+                if ok {
+                    let (b, c) = (*before, *contents);
+                    app.duplicate_page(b, c);
+                }
+            });
+            if help {
+                app.open_dialog_help();
+            }
         }
         Dialog::PageSize {
             width,
@@ -4312,6 +4351,7 @@ mod tests {
                 count: 1,
                 after: true,
             },
+            Dialog::duplicate_page(),
             Dialog::PageSize {
                 width: 210.0,
                 height: 297.0,

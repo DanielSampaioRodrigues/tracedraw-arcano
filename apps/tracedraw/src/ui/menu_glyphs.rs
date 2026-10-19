@@ -41,6 +41,8 @@ pub enum Glyph {
     Repeat,
     // Layout
     PageInsert,
+    PageInsertAfter,
+    PageInsertBefore,
     PageDelete,
     PageRename,
     PageGoto,
@@ -163,7 +165,9 @@ pub fn for_key(key: &str) -> Option<Glyph> {
         "menu.edit.paste_special" | "menu.edit.paste_in_view" => PasteSpecial,
         "menu.edit.repeat" => Repeat,
         "menu.layout.insert_page" => PageInsert,
-        "menu.layout.delete_page" => PageDelete,
+        "menu.layout.delete_page" | "page_tab.delete" => PageDelete,
+        "page_tab.insert_after" => PageInsertAfter,
+        "page_tab.insert_before" => PageInsertBefore,
         "menu.layout.rename_page" => PageRename,
         "menu.layout.go_to_page" => PageGoto,
         "menu.layout.duplicate_page" => PageDuplicate,
@@ -634,6 +638,23 @@ pub fn draw(painter: &Painter, r: Rect, g: Glyph, color: Color32) {
         PageDuplicate => {
             page(4.5, 0.5, 14.0, 11.5);
             page(1.5, 3.5, 11.0, 15.0);
+            plus(12.0, 12.0, 2.8);
+        }
+        PageInsertAfter | PageInsertBefore => {
+            // Two pages side by side: the current one with lines of
+            // text, the new one empty with a green plus, on the right
+            // for After and on the left for Before.
+            let after = g == PageInsertAfter;
+            let (old, new) = if after { (0.5, 8.5) } else { (8.5, 0.5) };
+            page(old, 4.5, old + 7.0, 15.5);
+            for y in [9.0, 11.0, 13.0] {
+                line((old + 1.5, y), (old + 5.5, y), thin);
+            }
+            page(new, 4.5, new + 7.0, 15.5);
+            plus(new + 3.5, 10.5, 2.4);
+            // A small arrow over the pair toward the new page.
+            let (a, b) = if after { (4.0, 12.0) } else { (12.0, 4.0) };
+            arrow((a, 2.2), (b, 2.2), Stroke::new(1.0 * k, blue));
         }
         PageOrientation => {
             rect(1.5, 4.0, 14.5, 12.0, paper, s);

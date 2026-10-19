@@ -33,8 +33,23 @@ e [[menu.layout.duplicate_page]] agem sobre a página atual, e
 
 ![A caixa de diálogo Inserir página](../../img/pages-layout-pages-insert-page.png)
 
-[[menu.layout.duplicate_page]] copia a página atual com os objetos, e
 [[menu.layout.delete_page]] exclui páginas.
+
+## Duplicar uma página {#duplicate-page}
+
+1. Escolha [[menu.layout > menu.layout.duplicate_page]], ou clique com o
+   botão direito na guia da página e escolha [[menu.layout.duplicate_page]].
+2. Em [[dialog.insert_new_page]], escolha [[dialog.before_selected_page]]
+   ou [[dialog.after_selected_page]].
+3. Escolha [[dialog.copy_layers_only]] para uma página com as mesmas
+   camadas e nada nelas, ou [[dialog.copy_layers_and_contents]] para
+   copiar também os objetos.
+4. Clique em [[dialog.ok]]. A cópia passa a ser a página atual;
+   [[menu.edit > menu.edit.undo]] a remove.
+
+O menu da guia da página também tem [[page_tab.insert_after]],
+[[page_tab.insert_before]], [[page_tab.delete]] e
+[[menu.layout.switch_orientation]].
 
 ## Renomear uma página {#rename-page}
 
