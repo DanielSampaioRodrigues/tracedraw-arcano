@@ -60,7 +60,12 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 output_profile: pdfx_profile(app, standard),
                 output_condition: st.output_condition.clone(),
                 bleed_mm: if ext == "pdf" { st.bleed_mm } else { 0.0 },
-                title: Some(app.document_title().trim_end_matches('*').to_string()),
+                title: Some(if st.title.trim().is_empty() {
+                    app.document_title().trim_end_matches('*').to_string()
+                } else {
+                    st.title.trim().to_string()
+                }),
+                keywords: (!st.tags.trim().is_empty()).then(|| st.tags.trim().to_string()),
                 flatten_dpi: st.dpi.max(72.0),
                 ..Default::default()
             };

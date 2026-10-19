@@ -66,3 +66,10 @@ snap to everything except guidelines.
 - `snap::tests::a_move_carries_its_snap_point_onto_another_object`
 - `snap::tests::lines_snap_to_tangent_and_perpendicular_points_from_their_start`
 - `snap_points::tests` (each mode, the page, priorities)
+
+## Snap To list
+
+The standard bar's Snap To opens a list of Pixels, Document Grid,
+Baseline Grid, Guidelines, Objects and Page, each a check box that turns
+that snapping on or off. The list stays open while boxes are ticked; its
+X, a click outside or Esc closes it.

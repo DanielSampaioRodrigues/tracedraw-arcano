@@ -42,3 +42,17 @@ Office presets start with their own (see `options.md`).
 - `export::tests::the_export_preview_shows_the_page_and_estimates_the_size`
 - `export::tests::sizes_read_in_kilobytes_and_megabytes`
 - `ui::dialogs::tests::a_pixel_size_sets_the_resolution_that_gives_it`
+
+## Format list and file properties
+
+- The Format list shows each format as "EXT - Description (*.ext)": JPG,
+  PDF, AI and PNG first, a separator, then every format in the order of
+  its extension, then installed script filters.
+- Under the format's settings: Selected only, All pages, and "Do not
+  show filter dialog": when on, File > Export (Ctrl+E) goes straight to
+  the file with the last choices (Options > Global > File Formats keeps
+  them); Export for Web and for Office still show their dialog.
+- PDF and AI files: Title (the drawing's title when empty) and Tags,
+  written as the file's title and keywords.
+- Checks: `ui::dialogs::tests::the_export_list_puts_the_common_formats_first`.
+

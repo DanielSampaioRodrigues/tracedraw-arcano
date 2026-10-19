@@ -1174,16 +1174,41 @@ impl App {
         }
     }
 
-    /// Bitmaps > Bitmap Mask: make the given colours transparent.
-    pub fn bitmap_color_mask(&mut self, colors: &[Color], tolerance: u8) {
-        let rgb: Vec<[u8; 3]> = colors.iter().map(|c| c.to_rgb8()).collect();
+    /// The Bitmap Mask docker's Apply: hide (or keep only) the colours of
+    /// the slots in use in the selected bitmaps. True when a bitmap changed.
+    pub fn apply_bitmap_mask(&mut self) -> bool {
+        let slots = self.mask.active();
+        if slots.is_empty() {
+            return false;
+        }
+        let hide = self.mask.hide;
+        let mut changed = false;
         for (id, rect, _, _, png) in self.bitmap_shapes() {
             let Some(img) = crate::bitmap_fx::decode(&png) else {
                 continue;
             };
-            let out = crate::bitmap_fx::color_mask(&img, &rgb, tolerance);
+            let out = crate::bitmap_fx::mask_bitmap(&img, &slots, hide);
             self.replace_bitmap(id, rect, &out);
+            changed = true;
         }
+        changed
+    }
+
+    /// "Select colours from bitmap": fill the slots with the colours the
+    /// first selected bitmap uses most, each in use.
+    pub fn mask_colors_from_bitmap(&mut self) -> bool {
+        let Some((_, _, _, _, png)) = self.bitmap_shapes().into_iter().next() else {
+            return false;
+        };
+        let Some(img) = crate::bitmap_fx::decode(&png) else {
+            return false;
+        };
+        let colors = crate::bitmap_fx::main_colors(&img, crate::bitmap_fx::MASK_SLOTS);
+        for (slot, c) in self.mask.slots.iter_mut().zip(colors) {
+            slot.on = true;
+            slot.color = Color::rgb8(c[0], c[1], c[2]);
+        }
+        true
     }
 
     /// Object > Convert to Bitmap: rasterise the selection at `dpi`.

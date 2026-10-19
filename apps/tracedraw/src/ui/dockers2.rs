@@ -1199,47 +1199,220 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("docker.brush_strokes_hint"));
 }
 
+/// A square icon button drawn by `paint`, with its tip.
+fn icon_btn(
+    ui: &mut Ui,
+    enabled: bool,
+    tip: &str,
+    paint: impl FnOnce(&egui::Painter, egui::Rect, egui::Color32),
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), sense);
+    if enabled && resp.hovered() {
+        ui.painter()
+            .rect_filled(r, 2.0, crate::theme::Tokens::tool_hover());
+    }
+    let color = if enabled {
+        crate::theme::Tokens::icon()
+    } else {
+        crate::theme::Tokens::icon_off()
+    };
+    paint(ui.painter(), r.shrink(5.0), color);
+    resp.on_hover_text(tip)
+}
+
+/// Bitmaps > Bitmap Mask: ten colour slots (in use, colour, tolerance),
+/// hide or show the colours in use, Apply on the selected bitmaps.
 fn bitmap_mask(app: &mut App, ui: &mut Ui) {
+    use crate::bitmap_fx::MASK_SLOTS;
     let has_bitmap = app
         .selected_shapes()
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }));
-    ui.label(tr("docker.bitmap_mask_hint"));
-    let mut remove = None;
-    for (i, c) in app.mask_colors.iter_mut().enumerate() {
-        ui.horizontal(|ui| {
-            color_button(ui, c);
-            ui.label(c.to_hex());
-            if ui.small_button("x").clicked() {
-                remove = Some(i);
+    // A colour sampled with the eyedropper goes into the picked slot.
+    if app.mask.picking {
+        if let Some(c) = app.eyedropper_color {
+            if app.mask.seen != Some(c) {
+                let i = app.mask.picked.min(MASK_SLOTS - 1);
+                app.mask.slots[i].color = c;
+                app.mask.slots[i].on = true;
+                app.mask.seen = Some(c);
             }
-        });
-    }
-    if let Some(i) = remove {
-        app.mask_colors.remove(i);
+        }
     }
     ui.horizontal(|ui| {
-        if ui.button(tr("docker.add_color")).clicked() {
-            app.mask_colors
-                .push(app.eyedropper_color.unwrap_or(Color::WHITE));
-        }
-        if ui.button(tr("docker.eyedropper")).clicked() {
+        if icon_btn(ui, true, &tr("docker.mask_eyedropper"), |p, r, c| {
+            crate::ui::icons::draw(p, r, crate::tools::Tool::ColorEyedropper, c)
+        })
+        .clicked()
+        {
+            app.mask.picking = true;
+            app.mask.seen = app.eyedropper_color;
             app.set_tool(crate::tools::Tool::ColorEyedropper);
         }
+        if icon_btn(ui, has_bitmap, &tr("docker.mask_from_bitmap"), |p, r, c| {
+            // A bitmap with a grid of samples.
+            p.rect_stroke(r, 0.0, egui::Stroke::new(1.2, c), egui::StrokeKind::Inside);
+            for i in 1..3 {
+                let t = i as f32 / 3.0;
+                p.line_segment(
+                    [
+                        r.lerp_inside(egui::vec2(t, 0.0)),
+                        r.lerp_inside(egui::vec2(t, 1.0)),
+                    ],
+                    egui::Stroke::new(0.8, c),
+                );
+                p.line_segment(
+                    [
+                        r.lerp_inside(egui::vec2(0.0, t)),
+                        r.lerp_inside(egui::vec2(1.0, t)),
+                    ],
+                    egui::Stroke::new(0.8, c),
+                );
+            }
+        })
+        .clicked()
+        {
+            app.mask_colors_from_bitmap();
+        }
     });
-    ui.add(crate::ui::Rail(
-        egui::Slider::new(&mut app.mask_tolerance, 0..=255).text(tr("docker.tolerance")),
-    ));
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+        .inner_margin(egui::Margin::same(2))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("mask_slots")
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for i in 0..MASK_SLOTS {
+                        let picked = app.mask.picked == i;
+                        let row = ui.horizontal(|ui| {
+                            let slot = &mut app.mask.slots[i];
+                            ui.checkbox(&mut slot.on, "");
+                            let (r, resp) = ui.allocate_exact_size(
+                                egui::vec2((ui.available_width() - 40.0).max(60.0), 16.0),
+                                egui::Sense::click(),
+                            );
+                            let [cr, cg, cb] = slot.color.to_rgb8();
+                            ui.painter().rect(
+                                r,
+                                0.0,
+                                egui::Color32::from_rgb(cr, cg, cb),
+                                egui::Stroke::new(
+                                    if picked { 2.0 } else { 1.0 },
+                                    if picked {
+                                        crate::theme::Tokens::ACCENT
+                                    } else {
+                                        egui::Color32::from_gray(0xA0)
+                                    },
+                                ),
+                                egui::StrokeKind::Inside,
+                            );
+                            ui.label(slot.tolerance.to_string());
+                            resp.clicked()
+                        });
+                        if row.inner {
+                            app.mask.picked = i;
+                        }
+                    }
+                });
+        });
+    ui.horizontal(|ui| {
+        if icon_btn(ui, true, &tr("docker.mask_save"), |p, r, c| {
+            crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Save, c)
+        })
+        .clicked()
+        {
+            let text = app.mask.to_text();
+            if let Some(path) = crate::files::Dialog::new()
+                .add_filter(tr("docker.mask_file"), &["msk"])
+                .set_file_name("mask.msk".to_string())
+                .save_path()
+            {
+                if let Err(e) = crate::files::write(&path, text) {
+                    app.status = e.to_string();
+                }
+            }
+        }
+        if icon_btn(ui, true, &tr("docker.mask_open"), |p, r, c| {
+            crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Open, c)
+        })
+        .clicked()
+        {
+            crate::files::Dialog::new()
+                .add_filter(tr("docker.mask_file"), &["msk"])
+                .pick_file(app, |app, path| match crate::files::read(&path) {
+                    Ok(bytes) => {
+                        if !app.mask.read_text(&String::from_utf8_lossy(&bytes)) {
+                            app.status = tr("docker.mask_bad_file");
+                        }
+                    }
+                    Err(e) => app.status = e.to_string(),
+                });
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let i = app.mask.picked.min(MASK_SLOTS - 1);
+            let used = app.mask.slots[i] != crate::bitmap_fx::MaskSlot::default();
+            if icon_btn(ui, used, &tr("docker.mask_delete"), |p, r, c| {
+                // A bin.
+                let s = egui::Stroke::new(1.2, c);
+                p.line_segment(
+                    [
+                        r.left_top() + egui::vec2(0.0, 3.0),
+                        r.right_top() + egui::vec2(0.0, 3.0),
+                    ],
+                    s,
+                );
+                p.rect_stroke(
+                    egui::Rect::from_min_max(
+                        r.left_top() + egui::vec2(2.5, 4.0),
+                        r.right_bottom() - egui::vec2(2.5, 0.0),
+                    ),
+                    1.0,
+                    s,
+                    egui::StrokeKind::Inside,
+                );
+            })
+            .clicked()
+            {
+                app.mask.slots[i] = Default::default();
+            }
+        });
+    });
+    ui.add_space(4.0);
+    ui.label(tr("docker.tolerance"));
+    ui.horizontal(|ui| {
+        let i = app.mask.picked.min(MASK_SLOTS - 1);
+        let tol = &mut app.mask.slots[i].tolerance;
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(tol, 0..=100).show_value(false),
+        ));
+        ui.add(egui::DragValue::new(tol).range(0..=100).suffix(" %"));
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.mask_colors"));
+        ui.vertical(|ui| {
+            ui.radio_value(&mut app.mask.hide, true, tr("docker.mask_hide"));
+            ui.radio_value(&mut app.mask.hide, false, tr("docker.mask_show"));
+        });
+    });
+    ui.add_space(4.0);
+    let can = has_bitmap && !app.mask.active().is_empty();
     if ui
         .add_enabled(
-            has_bitmap && !app.mask_colors.is_empty(),
-            egui::Button::new(tr("docker.apply")),
+            can,
+            egui::Button::new(tr("docker.apply")).min_size(egui::vec2(ui.available_width(), 26.0)),
         )
         .clicked()
     {
-        let colors = app.mask_colors.clone();
-        let tol = app.mask_tolerance;
-        app.bitmap_color_mask(&colors, tol);
+        app.apply_bitmap_mask();
+    }
+    if !has_bitmap {
+        dim(ui, tr("docker.bitmap_mask_hint"));
     }
 }
 

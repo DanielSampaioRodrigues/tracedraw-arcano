@@ -1,22 +1,54 @@
 # Publish to PDF
 
-File > Publish to PDF... (also on the standard toolbar) opens a dialog for
-the PDF of the active drawing; OK asks where to save it (in the browser
-the file is downloaded). The dialog is `ui/publish_pdf.rs`; the file comes
-from `tracedraw_io::pdf` and its protection from
-`tracedraw_io::pdf_crypt`.
+File > Publish to PDF... (also on the standard toolbar) opens the PDF
+Settings dialog for the active drawing, with the tabs General, Color,
+Document, Objects, Prepress, Security and the issues tab, then "?", OK
+and Cancel. OK writes the file named on General (in the browser the file
+is downloaded). The dialog is `ui/publish_pdf.rs`; the file comes from
+`tracedraw_io::pdf` and its protection from `tracedraw_io::pdf_crypt`.
 
 ## General
 
-- Pages: All pages (with their count, the default), Current page, or
-  Selected objects (only with a selection; a page the size of the
-  selection's bounds).
+- File name: the drawing's folder and name with `.pdf` (else the last
+  folder used), and Browse... to pick another.
+- Export range: Current document (every page, the default), Documents
+  (every page of every open drawing, one drawing after the other; only
+  with more than one open; symbols are renumbered so each drawing's
+  instances keep theirs), Current Page, Pages with a list such as
+  `1-3, 5` (pages that do not exist are left out; a list that names no
+  page is refused), and Selection (only with a selection).
+- Page size, for Selection: Defined by document (the page with the
+  selected objects only) or Defined by selected objects (a page the size
+  of the selection's bounds, the default).
+- PDF preset: Document Distribution, Web, Prepress (PDF/X-4), PDF/X-1a,
+  PDF/X-3, then the presets saved with "+" (it asks a name; a built-in
+  name is not taken; the same name replaces the preset). "-" deletes the
+  chosen saved preset. A preset sets the compatibility, output
+  condition, flattening resolution, bookmarks and bleed.
 - Compatibility: PDF 1.4, PDF/X-1a:2003, PDF/X-3:2003 or PDF/X-4.
-- Bleed: the drawing's bleed (Document Properties) to start with, 0 to
-  50 mm.
-- For PDF/X: Output condition (FOGRA39 by default), Flatten
-  transparency at (300 dpi, X-1a and X-3 only) and the note about the
-  output intent's profile (the CMYK profile of Colour Management).
+
+## Color
+
+For PDF/X: Output condition (FOGRA39 by default) and the note about the
+output intent's profile (the CMYK profile of Colour Management). A plain
+PDF keeps the drawing's colours as they are.
+
+## Objects
+
+Flatten transparency at (300 dpi), for PDF/X-1a and X-3 only; greyed
+for the others, which keep transparency live.
+
+## Prepress
+
+Bleed: the drawing's bleed (Document Properties) to start with, 0 to
+50 mm, around every page (trim box the page, media box the page and the
+bleed).
+
+## Issues
+
+What the preflight finds in the drawing (`preflight.md`), each with its
+warning or note sign and its page. The tab is titled "No Issues" when
+there are none, "Issues (n)" otherwise.
 
 ## Document
 
@@ -45,9 +77,10 @@ a PDF/X level picked the page says so and its fields are disabled.
   content, Add comments, Fill in forms, Insert, delete and rotate pages,
   Text access for screen readers. All allowed by default.
 
-OK refuses, naming the problem in red and showing the Security page,
-when a password that is asked for is empty or when the two passwords are
-the same. The passwords are never kept; the other choices are kept in
+OK refuses, naming the problem in red and showing the page to fix: the
+Security page when a password that is asked for is empty or the two
+passwords are the same, General when the page list names no page or
+there is no file name. The passwords are never kept; the other choices are kept in
 the preferences (`publish_pdf`) for next time.
 
 ### How a file is protected
@@ -81,6 +114,9 @@ print, hq-print, copy, modify, annotate, forms, assemble, accessibility;
 it needs the owner password).
 
 ## Checks
+
+- Page lists, presets, the selection at its size or on the page, and every open drawing
+  (`ui::publish_pdf::tests::page_lists_presets_and_what_goes_in`).
 
 - `ui::publish_pdf::tests::the_dialog_starts_from_the_drawing_and_checks_the_passwords`
 - `ui::publish_pdf::tests::publishing_writes_the_pages_with_bookmarks_and_protection`
