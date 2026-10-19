@@ -355,7 +355,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 let pts: Vec<Pos2> = q.iter().map(|p| view.to_screen(*p)).collect();
                 painter.add(egui::Shape::convex_polygon(
                     pts,
-                    Color32::from_rgba_unmultiplied(0x00, 0x78, 0xD7, 70),
+                    TEXT_SELECTION,
                     EStroke::NONE,
                 ));
             }
@@ -1099,22 +1099,38 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
     }
 }
 
-/// Paragraph text frames: dashed grey lines (Text > Show Text Frames),
-/// blue for the selected texts and the one being edited.
+/// The shade over selected characters of a text being edited: a
+/// see-through grey, so coloured letters keep their colour under it.
+pub(crate) const TEXT_SELECTION: Color32 = Color32::from_rgba_premultiplied(64, 64, 64, 80);
+
+/// A text that does not fit: its frame is red.
+const OVERFLOW_RED: Color32 = Color32::from_rgb(220, 30, 30);
+
+/// The colour of a paragraph frame's dashed line: red when its text does
+/// not fit, black while it is being edited, blue while selected, else
+/// grey (Text > Show Text Frames).
+pub(crate) fn text_frame_color(f: &crate::text_frames::ShownFrame) -> Color32 {
+    if f.overflow {
+        OVERFLOW_RED
+    } else if f.editing {
+        Color32::BLACK
+    } else if f.chosen {
+        Tokens::SELECTION
+    } else {
+        Color32::from_gray(150)
+    }
+}
+
+/// Paragraph text frames: dashed lines in the colour `text_frame_color`
+/// gives.
 fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
     // A text that does not fit: red, with a tab holding a down arrow
     // below the frame's middle.
-    let red = Color32::from_rgb(220, 30, 30);
+    let red = OVERFLOW_RED;
     for f in app.shown_text_frames(preview) {
         let mut pts: Vec<Pos2> = f.corners.iter().map(|p| app.view.to_screen(*p)).collect();
         pts.push(pts[0]);
-        let color = if f.overflow {
-            red
-        } else if f.chosen {
-            Tokens::SELECTION
-        } else {
-            Color32::from_gray(150)
-        };
+        let color = text_frame_color(&f);
         painter.extend(egui::Shape::dashed_line(
             &pts,
             EStroke::new(1.0, color),

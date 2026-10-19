@@ -161,6 +161,15 @@ fn write_unlinked(
         let _ = writeln!(out, "{pad}</g>");
         return;
     }
+    // Characters with their own fill or outline: one text a look.
+    if let Some(parts) = shape.text_parts() {
+        let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
+        for p in &parts {
+            write_unlinked(p, symbols, parent, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        return;
+    }
     let transform = parent * shape.transform;
     if let ShapeKind::Group { children } = &shape.kind {
         let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
@@ -735,6 +744,35 @@ mod tests {
         assert!(svg.contains("<a href=\"mailto:a@b.c\">"));
         assert_eq!(svg.matches("<a ").count(), 2);
         assert_eq!(svg.matches("</a>").count(), 2);
+    }
+
+    /// Characters with their own colour: the text goes out as one part
+    /// a look, in a group, each part with its colour.
+    #[test]
+    fn characters_with_their_own_colour_are_written_in_parts() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut red = tracedraw_core::TextSpan::new("b", "Any", 12.0);
+        red.fill = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![tracedraw_core::TextSpan::new("a", "Any", 12.0), red],
+                origin: tracedraw_core::Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        assert!(svg.contains(&format!("<g id=\"{}\">", id.raw())), "{svg}");
+        assert!(svg.contains("fill=\"#0000ff\""), "{svg}");
+        assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
     }
 
     #[test]

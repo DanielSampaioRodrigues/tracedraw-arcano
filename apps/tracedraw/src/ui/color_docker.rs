@@ -200,7 +200,7 @@ fn hue_strip(p: &Painter, r: Rect) {
 
 /// The color viewer: drag in the square for saturation and brightness,
 /// in the strip for the hue. Some((h, s, b)) when changed.
-fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f32)> {
+pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f32)> {
     let (_, s, b) = color.to_hsb();
     let (s, b) = (s as f32, b as f32);
     let side = (ui.available_width() - 34.0).clamp(80.0, 220.0);
@@ -288,7 +288,7 @@ fn slider(
 }
 
 /// The sliders of the color's model. True when one moved.
-fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
+pub(crate) fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
     let mut changed = false;
     match c {
         Color::Rgb { r, g, b } => {

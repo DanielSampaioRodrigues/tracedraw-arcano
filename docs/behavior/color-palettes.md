@@ -58,6 +58,12 @@ to Deep Blue 60 60 0 60).
   colour panel or a dialog) joins the document palette, in the same undo
   step as the change. The palette menu's Automatically Update turns that
   off (also in Options > Customization > Color Palette).
+- A colour dragged in a colour picker (Properties > Fill > Uniform):
+  the object shows each colour the pointer passes over, but the whole
+  drag is one undo step and only the colour it ends on joins the
+  document palette, when the button is let go.
+- With characters selected in a text being edited, a swatch colours
+  only them (see `text.md`, Character colours).
 - The eyedropper waits for a click on the drawing and adds the colour
   under the pointer; with Ctrl it keeps sampling. Esc or a right click
   stops it.
@@ -88,6 +94,7 @@ update the document palette (on).
 - `ui::palette::tests::mixing_moves_a_tenth_of_the_way`
 - `ui::palette::tests::applying_a_colour_adds_it_to_the_document_palette_in_the_same_step`
 - `ui::palette::tests::rows_fit_whole_swatches`
+- `ui::dockers::tests::a_fill_dragged_in_the_picker_is_one_step_and_one_palette_colour`
 - `color_drop::tests` (fill inside, outline on the edge, No Color, an
   object without a fill, the document palette)
 - `tracedraw_core` `engine::tests::amending_joins_the_last_step_only_right_after_it`

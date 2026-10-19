@@ -8,8 +8,8 @@ use crate::app::App;
 use tracedraw_core::document::text_outline::TextRequest;
 use tracedraw_core::geometry::{Affine, Point, Rect};
 use tracedraw_core::{
-    spans_apply, spans_char_count, spans_delete, spans_insert, spans_text, Command, ShapeId,
-    ShapeKind, TextSpan,
+    spans_apply, spans_char_count, spans_delete, spans_insert, spans_text, Color, Command, Fill,
+    ShapeId, ShapeKind, Stroke, TextSpan,
 };
 use tracedraw_text::TextLayout;
 
@@ -88,6 +88,13 @@ impl App {
     /// Replace the spans of the text being edited. Keystrokes collapse
     /// into one undo step per text object.
     pub fn set_edit_spans(&mut self, spans: Vec<TextSpan>) {
+        self.set_edit_spans_as(spans, "Edit Text", true);
+    }
+
+    /// Replace the spans of the text being edited as an undo step named
+    /// `label`; with `merge` it takes the place of a step of that name
+    /// just before it.
+    fn set_edit_spans_as(&mut self, spans: Vec<TextSpan>, label: &'static str, merge: bool) {
         let Some(te) = self.text_edit.clone() else {
             return;
         };
@@ -115,7 +122,7 @@ impl App {
             para,
             on_path,
         };
-        if self.engine.undo_label() == Some("Edit Text") {
+        if merge && self.engine.undo_label() == Some(label) {
             let _ = self.engine.undo();
         }
         let _ = self.engine.run_with_label(
@@ -123,7 +130,7 @@ impl App {
                 shape: te.shape,
                 kind,
             },
-            "Edit Text",
+            label,
         );
         if self.is_linked_frame(te.shape) {
             self.reflow_chain(te.shape);
@@ -490,6 +497,83 @@ impl App {
         self.set_edit_spans(spans);
     }
 
+    /// Characters are selected in the text being edited: a colour picked
+    /// (a palette swatch, the Properties fill, the Color docker) goes to
+    /// them instead of the whole object.
+    pub fn text_selection_active(&self) -> bool {
+        self.text_edit.as_ref().is_some_and(|te| te.has_selection()) && self.edit_spans().is_some()
+    }
+
+    /// The selected characters get their own fill, as an undo step of its
+    /// own ("Character Fill"). False (nothing done) without a selection.
+    pub fn text_apply_fill(&mut self, fill: Fill) -> bool {
+        self.text_style_selection("Character Fill", move |sp| sp.fill = Some(fill.clone()))
+    }
+
+    /// The selected characters get their own outline in `color` (from
+    /// their outline, else the object's, else the default pen); `None`
+    /// takes the outline off them. One undo step ("Character Outline").
+    pub fn text_apply_outline_color(&mut self, color: Option<Color>) -> bool {
+        let base = self
+            .text_edit
+            .as_ref()
+            .and_then(|te| self.doc().find_shape(te.shape))
+            .and_then(|s| s.stroke.clone());
+        self.text_style_selection("Character Outline", move |sp| {
+            sp.outline = Some(match color {
+                Some(c) => {
+                    let mut st = sp
+                        .outline
+                        .clone()
+                        .filter(|o| o.width > 0.0)
+                        .or_else(|| base.clone())
+                        .unwrap_or_default();
+                    st.color = c;
+                    st
+                }
+                // Width 0: no outline on these characters.
+                None => Stroke {
+                    width: 0.0,
+                    ..Stroke::default()
+                },
+            });
+        })
+    }
+
+    /// Apply `f` to the selected characters only, as an undo step named
+    /// `label`.
+    fn text_style_selection(&mut self, label: &'static str, f: impl Fn(&mut TextSpan)) -> bool {
+        if !self.text_selection_active() {
+            return false;
+        }
+        let (Some(te), Some(mut spans)) = (self.text_edit.clone(), self.edit_spans()) else {
+            return false;
+        };
+        let (a, b) = te.selection();
+        spans_apply(&mut spans, a, b, f);
+        self.set_edit_spans_as(spans, label, false);
+        true
+    }
+
+    /// The span the property bar shows while editing: the one of the
+    /// character before the caret (the first span at the start).
+    pub fn text_span_at_caret(&self) -> Option<TextSpan> {
+        let te = self.text_edit.as_ref()?;
+        let spans = self.edit_spans()?;
+        let at = te.caret.saturating_sub(1);
+        let mut seen = 0usize;
+        spans
+            .iter()
+            .find(|sp| {
+                let n = sp.char_count();
+                let hit = at < seen + n;
+                seen += n;
+                hit
+            })
+            .or_else(|| spans.first())
+            .cloned()
+    }
+
     /// The selected text (empty without a selection).
     pub fn text_selected(&self) -> String {
         let Some(te) = self.text_edit.as_ref() else {
@@ -687,6 +771,110 @@ mod tests {
         assert_eq!(app.text_selected(), "adef");
         app.text_select_word_at(2);
         assert_eq!(app.text_selected(), "adef");
+    }
+
+    /// Text "abcdef" with "cd" selected, typed in one step.
+    fn text_with_cd_selected() -> App {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.start_text(Point::new(0.0, 0.0), None);
+        app.text_insert("abcdef");
+        app.text_move(CaretMove::LineStart, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, true);
+        app.text_move(CaretMove::Right, true);
+        assert_eq!(app.text_selected(), "cd");
+        app
+    }
+
+    fn edited_shape(app: &App) -> tracedraw_core::Shape {
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        app.doc().find_shape(id).cloned().expect("text")
+    }
+
+    #[test]
+    fn a_colour_picked_with_characters_selected_colours_only_them() {
+        let mut app = text_with_cd_selected();
+        let object_fill = edited_shape(&app).fill.clone();
+        let red = Color::rgb8(255, 0, 0);
+        // A palette swatch (left click): the fill of "cd" only.
+        app.apply_fill(Fill::Solid(red));
+        let spans = app.edit_spans().expect("spans");
+        let texts: Vec<&str> = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["ab", "cd", "ef"]);
+        assert_eq!(spans[1].fill, Some(Fill::Solid(red)));
+        assert!(spans[0].fill.is_none() && spans[2].fill.is_none());
+        assert_eq!(edited_shape(&app).fill, object_fill);
+        // Its own step, not merged into the typing, and the colour is in
+        // the document palette.
+        assert_eq!(app.engine.undo_label(), Some("Character Fill"));
+        assert!(app.doc().palette.contains(&red));
+        // A right click: the outline of "cd" only, from the default pen.
+        let blue = Color::rgb8(0, 0, 255);
+        app.apply_outline_color(Some(blue));
+        let spans = app.edit_spans().expect("spans");
+        let o = spans[1].outline.clone().expect("outline");
+        assert_eq!(o.color, blue);
+        assert!(o.width > 0.0);
+        assert!(spans[0].outline.is_none() && spans[2].outline.is_none());
+        assert_eq!(app.engine.undo_label(), Some("Character Outline"));
+        // The no-colour swatch takes the outline off them.
+        app.apply_outline_color(None);
+        let spans = app.edit_spans().expect("spans");
+        assert!(spans[1].outline.as_ref().is_some_and(|o| o.width <= 0.0));
+        // Each colour is one undo step; undoing them leaves the typing.
+        for _ in 0..3 {
+            let _ = app.engine.undo();
+        }
+        assert_eq!(app.engine.undo_label(), Some("Edit Text"));
+        let spans = app.edit_spans().expect("spans");
+        assert!(spans
+            .iter()
+            .all(|s| s.fill.is_none() && s.outline.is_none()));
+        assert_eq!(spans_text(&spans), "abcdef");
+    }
+
+    #[test]
+    fn without_a_character_selection_the_colour_goes_to_the_object() {
+        let mut app = text_with_cd_selected();
+        app.text_move(CaretMove::LineEnd, false);
+        let red = Color::rgb8(255, 0, 0);
+        app.apply_fill(Fill::Solid(red));
+        assert_eq!(edited_shape(&app).fill, Fill::Solid(red));
+        let spans = app.edit_spans().expect("spans");
+        assert!(spans.iter().all(|s| s.fill.is_none()));
+    }
+
+    #[test]
+    fn the_bar_changes_only_what_it_changed_on_the_selection() {
+        let mut app = text_with_cd_selected();
+        // "d" in another font first.
+        app.text_move(CaretMove::LineStart, false);
+        for _ in 0..3 {
+            app.text_move(CaretMove::Right, false);
+        }
+        app.text_move(CaretMove::Right, true);
+        assert_eq!(app.text_selected(), "d");
+        app.text_apply_style(|s| s.font_family = "Other".into());
+        app.text_move(CaretMove::LineStart, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, true);
+        app.text_move(CaretMove::Right, true);
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        app.sync_text_defaults_from(id);
+        // A new size keeps both fonts; it reaches the selection only.
+        app.text_size_pt = 40.0;
+        app.apply_text_style();
+        let spans = app.edit_spans().expect("spans");
+        let by_text = |t: &str| spans.iter().find(|s| s.text == t).cloned().expect(t);
+        assert!((by_text("c").size_pt - 40.0).abs() < 1e-9, "{spans:?}");
+        assert!((by_text("d").size_pt - 40.0).abs() < 1e-9);
+        assert_eq!(by_text("d").font_family, "Other");
+        assert_ne!(by_text("c").font_family, "Other");
+        assert!((by_text("ab").size_pt - 40.0).abs() > 1e-9);
+        assert!((by_text("ef").size_pt - 40.0).abs() > 1e-9);
     }
 
     #[test]

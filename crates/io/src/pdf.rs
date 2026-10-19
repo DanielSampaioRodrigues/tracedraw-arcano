@@ -572,6 +572,13 @@ impl PageWriter<'_> {
             }
             return;
         }
+        // Characters with their own fill or outline: one text a look.
+        if let Some(parts) = shape.text_parts() {
+            for p in &parts {
+                self.shape(p, parent);
+            }
+            return;
+        }
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {

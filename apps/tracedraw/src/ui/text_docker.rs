@@ -828,9 +828,8 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
 /// The text fill: the selected characters' colour while editing, else the
 /// text objects' fill (span colours give way to it).
 fn set_text_fill(app: &mut App, fill: Option<Fill>) {
-    if app.text_edit.as_ref().is_some_and(|te| te.has_selection()) {
-        let f = Some(fill.unwrap_or(Fill::None));
-        app.text_apply_style(move |sp| sp.fill = f.clone());
+    if app.text_selection_active() {
+        app.apply_fill(fill.unwrap_or(Fill::None));
         return;
     }
     let has_span_fills = app.selected_shapes().iter().any(|s| match &s.kind {

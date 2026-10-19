@@ -95,8 +95,34 @@ concatenated spans; the layout's line boxes give its place on the page.
 | Esc | finish editing and return to the Pick tool; an empty text is removed |
 
 The property bar's font, size and style buttons act on the selected
-characters while a selection exists, and show the style at the caret. All
-the keystrokes of one editing session are one "Edit Text" undo step.
+characters while a selection exists, and show the style at the caret
+(the character before it). On a selection a button changes only what it
+changes from the style shown: a new size keeps the selected characters'
+fonts and styles, a new font keeps their sizes. All the keystrokes of
+one editing session are one "Edit Text" undo step.
+
+### Character colours
+
+- With characters selected while editing (artistic or paragraph text),
+  a colour picked anywhere goes to them only: a palette or document
+  palette swatch (click: their fill; right click: their outline), the
+  Properties docker's fill, the Text docker's fill and the Color
+  docker. Without a selection the colour goes to the whole object as
+  usual.
+- Each such change is its own undo step ("Character Fill", "Character
+  Outline"), not part of the typing, and the colour joins the document
+  palette in that step.
+- A character outline starts from the characters' own outline, else
+  the object's, else the default pen, in the new colour; No Color (an
+  outline of width 0) takes the outline off those characters only.
+- Characters without their own fill or outline take the object's. The
+  text is drawn (on the canvas, in exports to bitmaps, SVG and PDF) in
+  one part per look: each part lays out the whole text and draws only
+  its own characters, so letters keep their places. Character
+  backgrounds are drawn once under all parts; the drop shadow comes
+  with the first part.
+- Colours of characters read from `.cdr` files (the fill of each run of
+  characters) are drawn the same way.
 
 **Input methods** (Chinese, Japanese, Korean and the others): while text
 or a table cell is edited on the canvas, the system's input method is
@@ -433,6 +459,13 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 
 ## Checks
 
+- Character colours: `text_editing::tests::a_colour_picked_with_characters_selected_colours_only_them`,
+  `text_editing::tests::without_a_character_selection_the_colour_goes_to_the_object`,
+  `text_editing::tests::the_bar_changes_only_what_it_changed_on_the_selection`,
+  `tracedraw_core` `document::tests::characters_with_their_own_colours_are_drawn_in_one_part_per_look`,
+  `document::tests::character_outlines_are_saved_and_layout_only_is_not`,
+  `tracedraw_render` `tests::characters_are_drawn_in_their_own_colours`,
+  `tests::spans_only_laid_out_keep_their_room_but_are_not_drawn` (text crate).
 - The Text docker: `ui::text_docker::tests::the_sections_open_close_and_draw_for_any_text`,
   `ui::text_docker::tests::vertical_alignment_is_kept_with_the_text`,
   `ui::text_docker::tests::section_buttons_boxes_and_apply_to_default`,

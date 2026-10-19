@@ -16,6 +16,8 @@ pub struct ShownFrame {
     pub corners: [Point; 4],
     /// The text is selected or being edited.
     pub chosen: bool,
+    /// The text is being edited (its frame is drawn black).
+    pub editing: bool,
     /// The text does not fit (drawn red, with a tab below).
     pub overflow: bool,
 }
@@ -205,6 +207,7 @@ impl App {
             out.push(ShownFrame {
                 corners: c,
                 chosen,
+                editing: editing == Some(s.id),
                 overflow: self.text_overflows(s),
             });
         }
@@ -293,6 +296,30 @@ mod tests {
         let s = app.doc().shape(id).expect("shape").1.clone();
         assert!(app.text_overflows(&s));
         assert!(app.shown_text_frames(None)[0].overflow);
+    }
+
+    #[test]
+    fn the_frame_being_edited_is_drawn_black_and_a_selected_one_blue() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        tracedraw_text::install();
+        app.start_text(Point::new(20.0, 20.0), Some(Size::new(60.0, 30.0)));
+        app.text_insert("Words");
+        let f = app.shown_text_frames(None);
+        assert!(f[0].editing && f[0].chosen);
+        assert_eq!(crate::canvas::text_frame_color(&f[0]), egui::Color32::BLACK);
+        let id = app.selection[0];
+        app.finish_text();
+        app.select(vec![id]);
+        let f = app.shown_text_frames(None);
+        assert!(!f[0].editing && f[0].chosen);
+        assert_eq!(
+            crate::canvas::text_frame_color(&f[0]),
+            crate::theme::Tokens::SELECTION
+        );
+        // The selected characters' shade is a see-through grey.
+        let [r, g, b, a] = crate::canvas::TEXT_SELECTION.to_array();
+        assert!(r == g && g == b && a > 0 && a < 255);
     }
 
     #[test]

@@ -19,6 +19,7 @@ pub mod callout_bar;
 pub mod chrome;
 pub mod color_docker;
 pub mod color_management;
+pub mod color_picker;
 pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
@@ -198,6 +199,15 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 }
 
 pub fn root(app: &mut App, ui: &mut Ui) {
+    root_frame(app, ui);
+    // A fill dragged in a colour picker ends with the button (after this
+    // frame's last change).
+    if !ui.ctx().input(|i| i.pointer.any_down()) {
+        app.end_live_fill();
+    }
+}
+
+fn root_frame(app: &mut App, ui: &mut Ui) {
     // Dockers set their canvas previews again each frame they are shown;
     // the document palette says where it is when it is drawn.
     app.docker_preview.clear();

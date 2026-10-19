@@ -292,29 +292,26 @@ fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
 /// [`color_row`] for objects whose colours differ when `mixed`: no colour
 /// is shown, and the one picked goes to all of them.
 fn color_row_mixed(ui: &mut Ui, label: &str, c: &mut Color, mixed: bool) -> bool {
-    let [r, g, b] = c.to_rgb8();
-    let mut rgb = [r, g, b];
-    let changed = ui
-        .horizontal(|ui| {
-            ui.label(label);
-            let resp = ui.color_edit_button_srgb(&mut rgb);
-            if mixed {
-                crate::ui::field::mixed_swatch(ui, resp.rect);
-                crate::ui::field::mixed_note(ui);
-            } else {
-                ui.label(
-                    egui::RichText::new(crate::app::color_description(*c))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-            }
-            resp.changed()
-        })
-        .inner;
-    if changed {
-        *c = Color::rgb8(rgb[0], rgb[1], rgb[2]);
-    }
-    changed
+    ui.horizontal(|ui| {
+        ui.label(label);
+        // The picker opens beside the swatch and keeps the colour's
+        // model.
+        let before = ui.cursor().min;
+        let ch = crate::ui::color_picker::color_button(ui, c);
+        let swatch = egui::Rect::from_min_size(before, egui::vec2(40.0, 18.0));
+        if mixed {
+            crate::ui::field::mixed_swatch(ui, swatch);
+            crate::ui::field::mixed_note(ui);
+        } else {
+            ui.label(
+                egui::RichText::new(crate::app::color_description(*c))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            );
+        }
+        ch
+    })
+    .inner
 }
 
 /// Give the selection these further fills and outlines (one undo step).
@@ -580,7 +577,14 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 let mut fill = old.clone();
                 let mut touched = Vec::new();
                 if fill_editor_mixed(ui, &mut fill, &mix, &mut touched) {
-                    app.patch_selection_fill(&old, &fill, &touched);
+                    // Dragging in the picker: one step, and the colour
+                    // joins the document palette on release.
+                    let live = app.live_fill.is_some() || ui.input(|i| i.pointer.any_down());
+                    if live && !matches!(fill, Fill::Fountain(_)) {
+                        app.apply_fill_live(fill);
+                    } else {
+                        app.patch_selection_fill(&old, &fill, &touched);
+                    }
                 }
                 extra_fills(app, ui, first);
             }
@@ -2023,6 +2027,65 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// Dragging in the fill colour picker: every colour passed over shows
+    /// on the object, but the drag is one undo step and only the colour
+    /// it ends on joins the document palette, when the button is let go.
+    #[test]
+    fn a_fill_dragged_in_the_picker_is_one_step_and_one_palette_colour() {
+        use tracedraw_core::Color;
+        let mut app = App::headless();
+        app.settings.palette.auto_update_document = true;
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.select(vec![id]);
+        let before_fill = app.doc().find_shape(id).expect("shape").fill.clone();
+        let steps = |app: &App| app.engine.history_labels().0.len();
+        let n = steps(&app);
+        let palette = app.doc().palette.clone();
+        let colours = [
+            Color::rgb8(250, 10, 10),
+            Color::rgb8(10, 250, 10),
+            Color::rgb8(10, 10, 250),
+        ];
+        for c in colours {
+            app.apply_fill_live(Fill::Solid(c));
+            assert_eq!(
+                app.doc().find_shape(id).expect("shape").fill,
+                Fill::Solid(c)
+            );
+            assert_eq!(steps(&app), n + 1, "one step for the drag");
+            assert_eq!(app.doc().palette, palette, "nothing added while dragging");
+        }
+        // A frame with the button up ends the drag: the last colour only.
+        let ctx = crate::theme::ui_context();
+        draw(&ctx, &mut app);
+        assert!(app.live_fill.is_none());
+        let added: Vec<Color> = app
+            .doc()
+            .palette
+            .iter()
+            .filter(|c| !palette.contains(c))
+            .copied()
+            .collect();
+        assert_eq!(added, vec![colours[2]]);
+        assert_eq!(steps(&app), n + 1);
+        // One undo takes the whole drag back, palette colour included.
+        app.undo();
+        assert_eq!(app.doc().find_shape(id).expect("shape").fill, before_fill);
+        assert_eq!(app.doc().palette, palette);
+        // A new drag after other work starts its own step.
+        app.apply_fill_live(Fill::Solid(colours[0]));
+        app.end_live_fill();
+        app.apply_fill_live(Fill::Solid(colours[1]));
+        app.end_live_fill();
+        assert_eq!(steps(&app), n + 2);
     }
 
     /// Every text the frame painted.

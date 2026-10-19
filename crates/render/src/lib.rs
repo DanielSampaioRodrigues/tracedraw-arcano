@@ -358,6 +358,13 @@ impl Renderer<'_> {
             }
             return;
         }
+        // Characters with their own fill or outline: one text a look.
+        if let Some(parts) = shape.text_parts() {
+            for p in &parts {
+                self.draw_shape(p, parent);
+            }
+            return;
+        }
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
@@ -2093,6 +2100,75 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    /// A stand-in text engine: character `i` of the text is a square from
+    /// (10 i, 0) to (10 i + 8, 8) mm; characters only laid out are left
+    /// out.
+    fn square_letters(req: &tracedraw_core::document::text_outline::TextRequest) -> BezPath {
+        let mut p = BezPath::new();
+        let mut i = 0usize;
+        for sp in req.spans {
+            for _ in sp.text.chars() {
+                if !sp.layout_only {
+                    let x = 10.0 * i as f64;
+                    p.extend(Rect::new(x, 0.0, x + 8.0, 8.0).to_path(0.01));
+                }
+                i += 1;
+            }
+        }
+        p
+    }
+
+    #[test]
+    fn characters_are_drawn_in_their_own_colours() {
+        tracedraw_core::document::text_outline::set(square_letters);
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let mut b = tracedraw_core::TextSpan::new("b", "Any", 12.0);
+        b.fill = Some(Fill::Solid(red));
+        let mut c = tracedraw_core::TextSpan::new("c", "Any", 12.0);
+        c.outline = Some(tracedraw_core::Stroke::new(blue, 3.0));
+        let mut t = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![
+                    tracedraw_core::TextSpan::new("a", "Any", 12.0),
+                    b,
+                    c,
+                    tracedraw_core::TextSpan::new("d", "Any", 12.0),
+                ],
+                origin: tracedraw_core::Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        t.transform = Affine::translate((10.0, 10.0));
+        t.fill = Fill::Solid(Color::BLACK);
+        t.stroke = None;
+        let (doc, page) = doc_with(vec![t]);
+        let opts = RenderOptions {
+            width: 100,
+            height: 100,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 100.0,
+            },
+            ..RenderOptions::default()
+        };
+        let pm = render_page(&doc, page, &opts).unwrap();
+        // Letters at x 10, 20, 30, 40 mm; their middles at y 86 on screen.
+        assert_eq!(px(&pm, 14, 86), (0, 0, 0));
+        assert_eq!(px(&pm, 24, 86), (255, 0, 0));
+        assert_eq!(px(&pm, 34, 86), (0, 0, 0));
+        // The third letter's own outline, on its edge.
+        assert_eq!(px(&pm, 30, 86), (0, 0, 255));
+        assert_eq!(px(&pm, 44, 86), (0, 0, 0));
+        // Between the letters nothing is drawn.
+        assert_eq!(pm.pixel(19, 86).unwrap().alpha(), 0);
     }
 
     /// A further fill paints over the fill, a further outline over the

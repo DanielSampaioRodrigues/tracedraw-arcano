@@ -696,6 +696,16 @@ pub struct TextSpan {
     /// box, from descent to ascent); `None` = no background.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<Fill>,
+    /// Per-span outline override (character outline); `None` = the
+    /// object's outline. An outline of width 0 or less takes the
+    /// object's outline off these characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Stroke>,
+    /// Laid out but not drawn: set only on the parts a text with its own
+    /// character colours is drawn in (see [`Shape::text_parts`]), never
+    /// saved.
+    #[serde(skip)]
+    pub layout_only: bool,
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
@@ -727,6 +737,8 @@ impl TextSpan {
             strikethrough: false,
             fill: None,
             background: None,
+            outline: None,
+            layout_only: false,
             features: Vec::new(),
             paragraph: None,
         }
@@ -1839,6 +1851,66 @@ impl Shape {
         s.parked_effects.clear();
         s.opacity = 1.0;
         Some(s)
+    }
+
+    /// A text whose characters have their own fill or outline, as the
+    /// texts it is drawn in: one per look (fill and outline), in the order
+    /// the looks first appear, each laid out as the whole text with the
+    /// other characters left undrawn (`TextSpan::layout_only`). The
+    /// character backgrounds and the frame background are left out of the
+    /// parts (they are drawn once under the text) and only the first part
+    /// keeps the shadow. `None` for other shapes and for text whose
+    /// characters all take the object's fill and outline.
+    pub fn text_parts(&self) -> Option<Vec<Shape>> {
+        let ShapeKind::Text { spans, .. } = &self.kind else {
+            return None;
+        };
+        if spans.iter().any(|s| s.layout_only)
+            || spans
+                .iter()
+                .all(|s| s.fill.is_none() && s.outline.is_none())
+        {
+            return None;
+        }
+        let look = |s: &TextSpan| -> (Fill, Option<Stroke>) {
+            let fill = s.fill.clone().unwrap_or_else(|| self.fill.clone());
+            let stroke = match &s.outline {
+                Some(o) if o.width > 0.0 => Some(o.clone()),
+                Some(_) => None,
+                None => self.stroke.clone(),
+            };
+            (fill, stroke)
+        };
+        let mut looks: Vec<(Fill, Option<Stroke>)> = Vec::new();
+        for s in spans.iter().filter(|s| s.char_count() > 0) {
+            let l = look(s);
+            if !looks.contains(&l) {
+                looks.push(l);
+            }
+        }
+        let parts = looks
+            .into_iter()
+            .enumerate()
+            .map(|(i, (fill, stroke))| {
+                let mut part = self.clone();
+                if let ShapeKind::Text { spans, para, .. } = &mut part.kind {
+                    for s in spans.iter_mut() {
+                        s.layout_only = look(s) != (fill.clone(), stroke.clone());
+                        s.background = None;
+                        s.fill = None;
+                        s.outline = None;
+                    }
+                    para.frame_fill = None;
+                }
+                part.fill = fill;
+                part.stroke = stroke;
+                if i > 0 {
+                    part.shadow = None;
+                }
+                part
+            })
+            .collect();
+        Some(parts)
     }
 
     /// A fingerprint of what a bitmap-effect picture is made from: the
@@ -4805,5 +4877,103 @@ mod tests {
             shape: text(20, "In Symbol"),
         });
         assert_eq!(doc.font_families_used(), vec!["In Symbol", "Inner", "Top"]);
+    }
+
+    #[test]
+    fn characters_with_their_own_colours_are_drawn_in_one_part_per_look() {
+        use crate::color::Color;
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        let mut a = TextSpan::new("ab", "Arial", 12.0);
+        a.background = Some(Fill::Solid(Color::rgb8(0, 255, 0)));
+        let mut b = TextSpan::new("cd", "Arial", 12.0);
+        b.fill = Some(red.clone());
+        let mut c = TextSpan::new("ef", "Arial", 12.0);
+        c.outline = Some(Stroke {
+            width: 0.0,
+            ..Stroke::default()
+        });
+        let d = TextSpan::new("gh", "Arial", 12.0);
+        let mut shape = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![a, b, c, d],
+                origin: Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        shape.fill = Fill::Solid(Color::BLACK);
+        shape.shadow = Some(Shadow::default());
+        let parts = shape.text_parts().expect("parts");
+        // Black with the outline (ab, gh), red (cd), black without it (ef).
+        assert_eq!(parts.len(), 3);
+        let drawn = |p: &Shape| -> String {
+            match &p.kind {
+                ShapeKind::Text { spans, .. } => spans
+                    .iter()
+                    .filter(|s| !s.layout_only)
+                    .map(|s| s.text.as_str())
+                    .collect(),
+                _ => String::new(),
+            }
+        };
+        assert_eq!(drawn(&parts[0]), "abgh");
+        assert_eq!(parts[0].fill, Fill::Solid(Color::BLACK));
+        assert!(parts[0].stroke.is_some() && parts[0].shadow.is_some());
+        assert_eq!(drawn(&parts[1]), "cd");
+        assert_eq!(parts[1].fill, red);
+        assert!(parts[1].shadow.is_none());
+        assert_eq!(drawn(&parts[2]), "ef");
+        assert!(parts[2].stroke.is_none());
+        // Every part lays out the whole text, with no overrides or
+        // backgrounds left, so it is not split again.
+        for p in &parts {
+            let ShapeKind::Text { spans, .. } = &p.kind else {
+                panic!("text");
+            };
+            assert_eq!(spans_text(spans), "abcdefgh");
+            assert!(spans
+                .iter()
+                .all(|s| s.fill.is_none() && s.background.is_none()));
+            assert!(p.text_parts().is_none());
+        }
+        // A plain text and other shapes have no parts.
+        let mut plain = shape.clone();
+        if let ShapeKind::Text { spans, .. } = &mut plain.kind {
+            spans.iter_mut().for_each(|s| {
+                s.fill = None;
+                s.outline = None;
+            });
+        }
+        assert!(plain.text_parts().is_none());
+        let rect = Shape::new(
+            ShapeId(2),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        assert!(rect.text_parts().is_none());
+    }
+
+    #[test]
+    fn character_outlines_are_saved_and_layout_only_is_not() {
+        let mut s = TextSpan::new("a", "Arial", 12.0);
+        s.outline = Some(Stroke::default());
+        s.layout_only = true;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(!json.contains("layout_only"), "{json}");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back.outline, Some(Stroke::default()));
+        assert!(!back.layout_only);
+        // Older files without the field read as no override.
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false}"#,
+        )
+        .expect("old");
+        assert_eq!(old.outline, None);
     }
 }

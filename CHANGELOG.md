@@ -189,6 +189,17 @@ full, row-by-row status.
   report of the file, the document, its colour settings, objects and
   points, text, bitmaps, styles, effects, fills, outlines, colour models
   and symbols. PDF files carry the language.
+- Characters selected in an artistic or paragraph text being edited take
+  a colour picked from a palette, the document palette, the Properties
+  docker's fill or the Color docker as their own fill (right click: their
+  own outline), each its own undo step; the rest of the text keeps the
+  object's colours. Characters with their own colours are now drawn in
+  them on screen and in bitmap, SVG and PDF exports, so the per-character
+  colours of opened `.cdr` files show too (#187). The property bar's
+  font, size and style change only what they change on a selection.
+- Dragging in the Properties fill colour picker is one undo step and
+  adds only the final colour to the document palette, when the button
+  is let go (#188).
 
 ## 0.9.4 (2026-10-19)
 
