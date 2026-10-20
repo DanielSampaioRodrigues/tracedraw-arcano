@@ -86,7 +86,7 @@ Properties.
 | Double-click node | delete |
 | Double-click a rectangle, ellipse or polygon | it becomes a curve; pictures, text, groups and clip frames stay as they are |
 | Drag a picture's corner | the picture goes into a clip frame of its rectangle (Crop Bitmap) and the corner moves as a node of that frame; a clip frame's frame shows its nodes and edits like any curve, so a cropped picture can be reshaped further |
-| Delete | delete selected nodes |
+| Delete | delete selected nodes; when a deleted node sat between segments and either side was a curve, one cubic is refitted from the segment before to the segment after (least squares with the old end tangents held, Graphics Gems), so the curve is kept rather than collapsing to the far handles; a node between two straight segments leaves a straight join |
 | + / - | with nodes chosen: a node in the middle of each segment ending at them / delete them (without chosen nodes they zoom) |
 | C, S, Y (with nodes chosen) | C turns cusp nodes smooth and the others cusp, S symmetrical nodes smooth and the others symmetrical, Y makes them symmetrical; while nodes are chosen these letters do not align objects or pick tools. The type chosen is kept with the curve (saved in `.tdraw`), so a cusp node may keep aligned handles and its handles still move apart; nodes never given a type read as their handles do (aligned: smooth; aligned and of equal length: symmetrical), and a curve that gains or loses nodes goes back to that |
 | Home, End (with nodes chosen) | the first or last node of the curve |

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: deleting a node between segments now refits a single curve from the neighbour before to the neighbour after when either side is a curve, so the shape is kept instead of reshaping (or going straight). A node between two straight segments still leaves a straight join (#241, #228).
+
 ## 0.10.0 (2026-10-20)
 
 - The `.tdraw` format is version 0 again: the 1 written by 0.5 to 0.9 had the same layout and is read as 0, and Save As shows "v0" with nothing to choose. The next real change of layout will be version 2.

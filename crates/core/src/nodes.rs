@@ -334,6 +334,113 @@ pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
 }
 
 /// Delete a node; the neighbouring segments are joined.
+/// The cubic that element `el`, starting at `start`, draws. Lines are raised
+/// to cubics with evenly spaced control points; only segments that carry a
+/// point come back.
+fn element_cubic(start: Point, el: PathEl) -> Option<kurbo::CubicBez> {
+    use kurbo::CubicBez;
+    match el {
+        PathEl::LineTo(p) => Some(CubicBez::new(
+            start,
+            start.lerp(p, 1.0 / 3.0),
+            start.lerp(p, 2.0 / 3.0),
+            p,
+        )),
+        PathEl::CurveTo(c1, c2, p) => Some(CubicBez::new(start, c1, c2, p)),
+        _ => None,
+    }
+}
+
+/// A unit vector, or `None` when the input is too short to have a direction.
+fn unit(v: Vec2) -> Option<Vec2> {
+    let len = v.hypot();
+    (len > 1e-9).then(|| v / len)
+}
+
+/// Fit one cubic from `p0` to `p3` to the ordered sample points `pts`,
+/// holding the end tangents `t1` (unit, leaving `p0`) and `t2` (unit,
+/// leaving `p3` back along the curve). The control points come out as
+/// `p0 + a1 * t1` and `p3 + a2 * t2`, the two lengths from a least-squares
+/// fit with fixed endpoints and tangents (Graphics Gems). A degenerate fit
+/// falls back to a third of the chord.
+fn fit_cubic(p0: Point, p3: Point, t1: Vec2, t2: Vec2, pts: &[Point]) -> (Point, Point) {
+    use kurbo::ParamCurveNearest;
+    let fallback = ((p3 - p0).hypot() / 3.0).max(1e-6);
+    if pts.len() < 2 {
+        return (p0 + t1 * fallback, p3 + t2 * fallback);
+    }
+    // Chord-length parameters in [0, 1].
+    let mut u = Vec::with_capacity(pts.len());
+    let mut acc = 0.0;
+    u.push(0.0);
+    for w in pts.windows(2) {
+        acc += (w[1] - w[0]).hypot();
+        u.push(acc);
+    }
+    if acc <= 1e-9 {
+        return (p0 + t1 * fallback, p3 + t2 * fallback);
+    }
+    for x in u.iter_mut() {
+        *x /= acc;
+    }
+    // Solve for the two handle lengths, then reparameterize the samples onto
+    // the fitted curve and solve again: a couple of passes pull the fit close
+    // to the samples where plain chord length is off.
+    let mut handles = (p0 + t1 * fallback, p3 + t2 * fallback);
+    for pass in 0..3 {
+        let (mut c00, mut c01, mut c11, mut x0, mut x1) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (pt, &ui) in pts.iter().zip(u.iter()) {
+            let b1 = 3.0 * ui * (1.0 - ui).powi(2);
+            let b2 = 3.0 * ui * ui * (1.0 - ui);
+            let a0 = t1 * b1;
+            let a1 = t2 * b2;
+            c00 += a0.dot(a0);
+            c01 += a0.dot(a1);
+            c11 += a1.dot(a1);
+            // The curve with both control points pinned to the endpoints,
+            // which the two handle lengths then correct towards the samples.
+            let b03 = (1.0 - ui).powi(3) + b1;
+            let b23 = b2 + ui.powi(3);
+            let base = p0.to_vec2() * b03 + p3.to_vec2() * b23;
+            let tmp = pt.to_vec2() - base;
+            x0 += a0.dot(tmp);
+            x1 += a1.dot(tmp);
+        }
+        let det = c00 * c11 - c01 * c01;
+        let (mut a1, mut a2) = if det.abs() < 1e-12 {
+            (fallback, fallback)
+        } else {
+            ((x0 * c11 - c01 * x1) / det, (c00 * x1 - x0 * c01) / det)
+        };
+        if !(a1.is_finite() && a1 > 1e-6) {
+            a1 = fallback;
+        }
+        if !(a2.is_finite() && a2 > 1e-6) {
+            a2 = fallback;
+        }
+        handles = (p0 + t1 * a1, p3 + t2 * a2);
+        if pass == 2 {
+            break;
+        }
+        // Reparameterize: move each u towards the nearest point on the fit.
+        let cubic = kurbo::CubicBez::new(p0, handles.0, handles.1, p3);
+        for (pt, ui) in pts.iter().zip(u.iter_mut()) {
+            *ui = cubic.nearest(*pt, 1e-6).t;
+        }
+    }
+    handles
+}
+
+/// Sample `cubic` at `n` parameters, skipping `t = 0` when `skip_start` so a
+/// shared join is not sampled twice.
+fn sample_cubic(cubic: kurbo::CubicBez, n: usize, skip_start: bool, out: &mut Vec<Point>) {
+    use kurbo::ParamCurve;
+    let start = if skip_start { 1 } else { 0 };
+    for i in start..=n {
+        out.push(cubic.eval(i as f64 / n as f64));
+    }
+}
+
 pub fn delete_node(path: &BezPath, index: usize) -> BezPath {
     let mut els: Vec<PathEl> = normalize(path).elements().to_vec();
     if index >= els.len() {
@@ -375,12 +482,52 @@ pub fn delete_node(path: &BezPath, index: usize) -> BezPath {
             }
         }
         PathEl::LineTo(_) | PathEl::CurveTo(..) | PathEl::QuadTo(..) => {
-            // If the next segment is a curve, keep its end handle.
-            let removed = els.remove(index);
-            if let (PathEl::CurveTo(c1, _, _), Some(PathEl::CurveTo(_, c2, p))) =
-                (removed, els.get(index).copied())
-            {
-                els[index] = PathEl::CurveTo(c1, c2, p);
+            // The node to delete (B) ends segment `index` (A to B); segment
+            // `index + 1` (B to C) carries on. When either side is a curve,
+            // refit one cubic A to C to the old A-B-C shape so the curve is
+            // kept, instead of collapsing to the far handles (which cut a
+            // corner, or a straight line when a neighbour was a line).
+            let seg_a = els[index];
+            let a = prev_point(&els, index);
+            let next = els.get(index + 1).copied();
+            let refit = match (seg_a, next) {
+                (PathEl::LineTo(_), Some(PathEl::LineTo(_))) => None,
+                (_, Some(nx)) => {
+                    let b = end_point(&seg_a);
+                    match (b, element_cubic(a, seg_a), b.and_then(|b| element_cubic(b, nx))) {
+                        (Some(_), Some(ca), Some(cb)) => Some((ca, cb)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some((ca, cb)) = refit {
+                let c = cb.p3;
+                let t1 = unit(ca.p1 - ca.p0)
+                    .or_else(|| unit(ca.p2 - ca.p0))
+                    .or_else(|| unit(ca.p3 - ca.p0))
+                    .or_else(|| unit(c - a))
+                    .unwrap_or(Vec2::new(1.0, 0.0));
+                let t2 = unit(cb.p2 - cb.p3)
+                    .or_else(|| unit(cb.p1 - cb.p3))
+                    .or_else(|| unit(cb.p0 - cb.p3))
+                    .or_else(|| unit(a - c))
+                    .unwrap_or(Vec2::new(-1.0, 0.0));
+                let mut pts = Vec::new();
+                sample_cubic(ca, 8, false, &mut pts);
+                sample_cubic(cb, 8, true, &mut pts);
+                let (h1, h2) = fit_cubic(a, c, t1, t2, &pts);
+                els[index + 1] = PathEl::CurveTo(h1, h2, c);
+                els.remove(index);
+            } else {
+                // Two lines, or no following segment: drop the node and keep
+                // a straight join, carrying the next curve's end handle.
+                let removed = els.remove(index);
+                if let (PathEl::CurveTo(c1, _, _), Some(PathEl::CurveTo(_, c2, p))) =
+                    (removed, els.get(index).copied())
+                {
+                    els[index] = PathEl::CurveTo(c1, c2, p);
+                }
             }
         }
         PathEl::ClosePath => {}
@@ -1304,6 +1451,67 @@ mod tests {
                 .filter(|e| matches!(e, PathEl::CurveTo(..)))
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn deleting_a_node_on_a_curve_keeps_the_shape() {
+        // Split a curve, then delete the inserted node: the single curve
+        // comes back, matching the original closely, not cutting a corner.
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.curve_to((10.0, 30.0), (30.0, 30.0), (40.0, 0.0));
+        let split = add_node(&p, 1, 0.5);
+        assert_eq!(nodes(&split).len(), 3);
+        let back = delete_node(&split, 1);
+        assert_eq!(nodes(&back).len(), 2);
+        assert!(
+            matches!(back.elements()[1], PathEl::CurveTo(..)),
+            "got {:?}",
+            back.elements()[1]
+        );
+        // The rebuilt curve follows the original within a small tolerance
+        // (chord-length fitting, not an exact inverse of the split).
+        for i in 0..=10 {
+            let t = i as f64 / 10.0;
+            let a = point_on_segment(&p, 1, t).unwrap();
+            let d = nearest_segment(&back, a).unwrap().2;
+            assert!(d < 0.3, "round trip off by {d} at t={t}");
+        }
+        // It still bulges towards the old apex, nowhere near the straight
+        // chord between the two remaining nodes.
+        let mid = point_on_segment(&back, 1, 0.5).unwrap();
+        assert!(mid.y > 15.0, "curve collapsed towards the chord: {mid:?}");
+    }
+
+    #[test]
+    fn deleting_a_node_between_a_line_and_a_curve_keeps_a_curve() {
+        // sample() is a line then a curve, closed. Deleting the node where
+        // they meet must not turn the join into a straight line.
+        let q = delete_node(&sample(), 1);
+        assert_eq!(nodes(&q).len(), 2);
+        assert!(
+            matches!(q.elements()[1], PathEl::CurveTo(..)),
+            "got {:?}",
+            q.elements()[1]
+        );
+    }
+
+    #[test]
+    fn deleting_a_corner_of_a_polyline_stays_straight() {
+        // With a line on both sides there is no curve to keep: a plain join.
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((20.0, 8.0));
+        p.line_to((30.0, 0.0));
+        let q = delete_node(&p, 2);
+        assert_eq!(nodes(&q).len(), 3);
+        assert!(
+            q.elements()
+                .iter()
+                .all(|e| !matches!(e, PathEl::CurveTo(..))),
+            "a line join turned into a curve: {q:?}"
         );
     }
 
