@@ -34,7 +34,12 @@ meets the start) `Path` objects with the toolbox defaults.
 - Double-click or Enter finishes; with the Bezier tool Space finishes
   too and then, being the Pick tool's key, switches to Pick (checked by
   `pick_drag_tests::space_finishes_a_bezier_curve_then_picks`); Esc
-  discards the curve being drawn.
+  discards the curve being drawn. While it is drawn, Ctrl+Z takes back
+  the last press that changed it (a node placed, a handle pulled, a
+  click on a node), one at a time until the curve is gone, and then the
+  document's own history; Ctrl+Shift+Z puts the steps back one by one.
+  The finished curve is one step of the document's history
+  (`pick_drag_tests::ctrl_z_takes_back_pen_nodes_one_by_one`).
   A press on the first node (within the join distance, 5 screen pixels
   by default, once the curve has three nodes; with the Pen and Auto
   add/delete on, within the larger of the join and pick distances, so

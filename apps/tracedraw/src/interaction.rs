@@ -1533,6 +1533,12 @@ impl App {
             self.finish_curve();
             return;
         }
+        // Every press that changes the curve is a step Ctrl+Z takes back.
+        if response.clicked_by(PointerButton::Primary)
+            || response.drag_started_by(PointerButton::Primary)
+        {
+            self.curve_step();
+        }
         let reach = self.curve_end_reach_px() / self.view.zoom as f64;
         let near = |q: Point| (q - raw).hypot() <= reach;
         let start_close = self
@@ -1666,6 +1672,7 @@ impl App {
     /// The curve being drawn, closed onto its first node, becomes a
     /// curve object and is selected.
     fn close_curve(&mut self, c: CurveInProgress) {
+        self.curve_steps.clear();
         let path = c.path_closed(None, true);
         if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
             self.select(vec![id]);
@@ -2654,6 +2661,7 @@ impl App {
                 self.focus_up();
             }
             self.curve = None;
+            self.curve_steps.clear();
             self.dimension_points.clear();
             self.eyedropper_reset();
             self.pending_palette_sample = false;

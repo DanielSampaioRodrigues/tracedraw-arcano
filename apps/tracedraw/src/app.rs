@@ -583,6 +583,23 @@ pub enum Drag {
     },
 }
 
+/// Steps of the curve being drawn, for Ctrl+Z and Ctrl+Shift+Z while
+/// drawing: how it was before each press that changed it (`None`: before
+/// its first node), and the states undone. Cleared when the curve is
+/// finished, closed or dropped.
+#[derive(Debug, Clone, Default)]
+pub struct CurveSteps {
+    pub undo: Vec<Option<CurveInProgress>>,
+    pub redo: Vec<Option<CurveInProgress>>,
+}
+
+impl CurveSteps {
+    pub fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+    }
+}
+
 /// Bezier / polyline tool in progress.
 #[derive(Debug, Clone, Default)]
 pub struct CurveInProgress {
@@ -775,6 +792,8 @@ pub struct App {
     /// down (see `interaction::paste_without_text`).
     pub paste_seen: bool,
     pub curve: Option<CurveInProgress>,
+    /// Undo and redo steps of `curve`, node by node.
+    pub curve_steps: CurveSteps,
     pub text_edit: Option<TextEdit>,
     /// Text an input method is composing at the caret (Chinese, Japanese,
     /// Korean and other input methods), shown underlined until it is
@@ -1849,6 +1868,7 @@ impl App {
             transform: Default::default(),
             node_selection: Vec::new(),
             segment_spot: None,
+            curve_steps: CurveSteps::default(),
             snap: crate::snap::SnapSettings::default(),
             snap_mark: std::cell::Cell::new(None),
             live_guides: Default::default(),
@@ -3487,6 +3507,7 @@ impl App {
     /// when it starts or ends on one of its end nodes, otherwise it becomes
     /// a curve of its own (see `curve_join.rs`).
     pub fn finish_curve(&mut self) {
+        self.curve_steps.clear();
         let Some(c) = self.curve.take() else { return };
         if c.nodes.len() < 2 {
             return;
@@ -4047,6 +4068,11 @@ impl App {
     }
 
     pub fn undo(&mut self) {
+        // While a curve is drawn, a step of it goes first.
+        if self.curve_undo_step() {
+            return;
+        }
+        self.curve_steps.clear();
         self.finish_text();
         match self.engine.undo() {
             Ok(l) => self.status = crate::i18n::trf("status.undo_n", &[("l", l)]),
@@ -4057,6 +4083,10 @@ impl App {
     }
 
     pub fn redo(&mut self) {
+        if self.curve_redo_step() {
+            return;
+        }
+        self.curve_steps.clear();
         match self.engine.redo() {
             Ok(l) => self.status = crate::i18n::trf("status.redo_n", &[("l", l)]),
             Err(e) => self.status = e.to_string(),

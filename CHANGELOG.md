@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Curve tools (Pen, Bezier and the others drawing node by node): Ctrl+Z while a curve is drawn takes back the last node, handle pull or click on a node, one at a time, before going on to the document's history; Ctrl+Shift+Z puts them back (#233).
+
 - Shape tool: Join now makes the two chosen end nodes one node halfway between them, with no straight segment added: the ends of one curve close it there, ends of two curves make one curve. Dropping a dragged end node on another end node joins them the same way (#254).
 
 - Pen: with Auto add/delete on, a click by the first node of the curve being drawn closes the curve again instead of deleting that node; the first and last nodes now answer within the larger of the join and pick distances (#238).

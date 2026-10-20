@@ -229,6 +229,44 @@ impl App {
         }
     }
 
+    /// Before a press changes the curve being drawn: keep how it was, so
+    /// Ctrl+Z takes the change back. A new curve starts a fresh list.
+    pub(crate) fn curve_step(&mut self) {
+        if self.curve.is_none() {
+            self.curve_steps.undo.clear();
+        }
+        self.curve_steps.undo.push(self.curve.clone());
+        self.curve_steps.redo.clear();
+    }
+
+    /// Ctrl+Z while a curve is drawn: back one step (the last node, handle
+    /// pull or click on a node); before the first node the curve is gone.
+    /// False when no curve is being drawn.
+    pub fn curve_undo_step(&mut self) -> bool {
+        if self.curve.is_none() {
+            return false;
+        }
+        let Some(before) = self.curve_steps.undo.pop() else {
+            return false;
+        };
+        let now = std::mem::replace(&mut self.curve, before);
+        self.curve_steps.redo.push(now);
+        self.status = crate::i18n::trf("status.undo_n", &[("l", "Curve Node")]);
+        true
+    }
+
+    /// Ctrl+Shift+Z after [`Self::curve_undo_step`]: the step again. False
+    /// when nothing of the curve was undone.
+    pub fn curve_redo_step(&mut self) -> bool {
+        let Some(after) = self.curve_steps.redo.pop() else {
+            return false;
+        };
+        let now = std::mem::replace(&mut self.curve, after);
+        self.curve_steps.undo.push(now);
+        self.status = crate::i18n::trf("status.redo_n", &[("l", "Curve Node")]);
+        true
+    }
+
     /// The Pen with automatic adding and deleting on, a curve being drawn
     /// and the pointer at `p`: the node a click deletes (not the last
     /// one, which a click makes a cusp, nor the first once a click there

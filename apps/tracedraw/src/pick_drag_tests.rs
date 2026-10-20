@@ -3050,3 +3050,54 @@ fn the_move_goes_on_after_a_right_click() {
     assert!(close(b.y0, 10.0 + moved.y), "{b:?} {moved:?}");
     assert!(!app.transforming());
 }
+
+#[test]
+fn ctrl_z_takes_back_pen_nodes_one_by_one() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Pen);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let undo_before = app.engine.undo_label();
+    for q in [
+        Point::new(20.0, 60.0),
+        Point::new(60.0, 60.0),
+        Point::new(40.0, 90.0),
+    ] {
+        let at = app.view.to_screen(q);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    let count = |app: &App| app.curve.as_ref().map(|c| c.nodes.len());
+    assert_eq!(count(&app), Some(3));
+    let ctrl = Modifiers::COMMAND | Modifiers::CTRL;
+    let press = |ctx: &egui::Context, app: &mut App, mods: Modifiers| {
+        frame(ctx, app, vec![key(egui::Key::Z, mods)], mods);
+    };
+    // Ctrl+Z takes the last node back, Ctrl+Shift+Z puts it again.
+    press(&ctx, &mut app, ctrl);
+    assert_eq!(count(&app), Some(2));
+    press(&ctx, &mut app, ctrl | Modifiers::SHIFT);
+    assert_eq!(count(&app), Some(3));
+    // Node by node until the curve is gone; the document is untouched.
+    for want in [Some(2), Some(1), None] {
+        press(&ctx, &mut app, ctrl);
+        assert_eq!(count(&app), want);
+    }
+    assert!(app.doc().find_shape(id).is_some());
+    assert_eq!(app.engine.undo_label(), undo_before);
+    // Redo brings the nodes back one by one.
+    press(&ctx, &mut app, ctrl | Modifiers::SHIFT);
+    assert_eq!(count(&app), Some(1));
+    press(&ctx, &mut app, ctrl | Modifiers::SHIFT);
+    assert_eq!(count(&app), Some(2));
+    // Once the curve is finished it is one step of the document's history.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.curve.is_none());
+    assert_ne!(app.engine.undo_label(), undo_before);
+    press(&ctx, &mut app, ctrl);
+    assert!(app.curve.is_none());
+    assert_eq!(app.engine.undo_label(), undo_before);
+}
