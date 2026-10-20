@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dimension tools: Ctrl keeps the leg being given (the second point of a linear dimension, each side of an angular one) to steps of the constrain angle, preview included (#251).
+
 - Options > Customization > Commands: tools take shortcuts with Ctrl, Alt and Shift like menu commands, and Alt with a letter given to a command no longer opens a menu (#248); Delete also removes a built-in shortcut, leaving the command without one (#249); Reset to defaults resets only the category shown, and a separate Reset all shortcuts asks first (#250).
 
 - A right click on a locked object (with the Pick tool) opens a menu with Unlock Object, which unlocks and selects it, and Unlock All Objects; the object stays unselected and uneditable until then (#256).

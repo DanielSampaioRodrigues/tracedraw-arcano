@@ -3179,3 +3179,40 @@ fn removed_and_alt_shortcuts_act_on_the_keyboard() {
     );
     assert_eq!(app.tool, Tool::Ellipse);
 }
+
+#[test]
+fn ctrl_keeps_a_dimension_leg_to_the_constrain_angle() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::ParallelDimension);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let ctrl = Modifiers::COMMAND | Modifiers::CTRL;
+    let first = Point::new(100.0, 150.0);
+    let at = app.view.to_screen(first);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.dimension_points.len(), 1);
+    let a = app.dimension_points[0];
+    // A second point a little off the horizontal, Ctrl held: the leg lies
+    // on it.
+    let off = Point::new(160.0, 154.0);
+    let at = app.view.to_screen(off);
+    click_at(&ctx, &mut app, at, ctrl);
+    assert_eq!(app.dimension_points.len(), 2);
+    let b = app.dimension_points[1];
+    assert!((b.y - a.y).abs() < 1e-6, "{a:?} {b:?}");
+    assert!(b.x > a.x + 50.0);
+    // Without Ctrl the point is taken as it is.
+    app.dimension_points = vec![a];
+    let at = app.view.to_screen(off);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let free = app.dimension_points[1];
+    assert!((free.y - a.y).abs() > 2.0, "{free:?}");
+    // The angular tool keeps each side from the vertex.
+    app.set_tool(Tool::AngularDimension);
+    app.dimension_points = vec![first];
+    let near_vertical = Point::new(103.0, 200.0);
+    let at = app.view.to_screen(near_vertical);
+    click_at(&ctx, &mut app, at, ctrl);
+    let side = app.dimension_points[1];
+    assert!((side.x - first.x).abs() < 1e-6, "{side:?}");
+}
