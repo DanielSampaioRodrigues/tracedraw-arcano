@@ -215,6 +215,20 @@ impl CurveInProgress {
 }
 
 impl App {
+    /// How near (screen pixels) the pointer must be to the first or last
+    /// node of the curve being drawn for a click to close the curve or to
+    /// act on the last node. With the Pen's automatic adding and deleting
+    /// on it reaches at least as far as a node is picked for deleting, so
+    /// a click by the first node closes the curve and never deletes it.
+    pub fn curve_end_reach_px(&self) -> f64 {
+        let join = self.settings.curves.join_px();
+        if self.tool == Tool::Pen && self.settings.curves.pen_auto_add_delete {
+            join.max(self.settings.nodes.pick_px())
+        } else {
+            join
+        }
+    }
+
     /// The Pen with automatic adding and deleting on, a curve being drawn
     /// and the pointer at `p`: the node a click deletes (not the last
     /// one, which a click makes a cusp, nor the first once a click there
@@ -228,7 +242,7 @@ impl App {
             return None;
         }
         let zoom = f64::from(self.view.zoom.max(1e-6));
-        let join = self.settings.curves.join_px() / zoom;
+        let join = self.curve_end_reach_px() / zoom;
         let last = c.nodes.len().checked_sub(1)?;
         // The first and last nodes keep their own meaning.
         if (c.nodes[last].0 - p).hypot() <= join {
@@ -395,6 +409,28 @@ mod tests {
         assert_eq!(d.in_handles.get(&1).copied(), Some(Some(h)));
         assert!(!d.delete_node(9));
         assert_eq!(d.insert_node(0, 0.5), None);
+    }
+
+    #[test]
+    fn the_first_node_is_kept_for_closing_with_auto_add_delete() {
+        let mut app = App::headless();
+        app.set_tool(Tool::Pen);
+        app.view.zoom = 4.0;
+        app.settings.curves.pen_auto_add_delete = true;
+        app.curve = Some(sample());
+        // Pick reach wider than the join reach: the gap between the two
+        // used to delete the first node instead of closing the curve.
+        app.settings.curves.join_px = 3.0;
+        app.settings.nodes.pick_distance = 10.0;
+        let reach = app.curve_end_reach_px();
+        assert!(reach >= app.settings.nodes.pick_px());
+        // 2.0 mm off at zoom 4 is 8 px: past the join reach, within pick.
+        let by_first = pt(2.0, 0.0);
+        assert_eq!(app.pen_auto_at(by_first), None);
+        assert!((by_first - pt(0.0, 0.0)).hypot() * 4.0 <= reach);
+        // Without auto add and delete the join reach alone counts.
+        app.settings.curves.pen_auto_add_delete = false;
+        assert_eq!(app.curve_end_reach_px(), app.settings.curves.join_px());
     }
 
     #[test]

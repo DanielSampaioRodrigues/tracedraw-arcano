@@ -36,7 +36,9 @@ meets the start) `Path` objects with the toolbox defaults.
   `pick_drag_tests::space_finishes_a_bezier_curve_then_picks`); Esc
   discards the curve being drawn.
   A press on the first node (within the join distance, 5 screen pixels
-  by default, once the curve has three nodes) closes the curve: a click
+  by default, once the curve has three nodes; with the Pen and Auto
+  add/delete on, within the larger of the join and pick distances, so
+  the first node is never deleted instead) closes the curve: a click
   closes it with a straight segment from the last node; a drag from the
   first node pulls the closing segment's handle at the first node (the
   mirror of the pointer, as a pulled handle), and the first node's own

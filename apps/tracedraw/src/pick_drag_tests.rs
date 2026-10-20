@@ -1297,6 +1297,50 @@ fn delete_removes_a_clicked_segment_and_keeps_its_nodes() {
 }
 
 #[test]
+fn the_pen_closes_on_its_first_node_with_auto_add_delete_on() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    app.set_tool(Tool::Pen);
+    app.settings.curves.pen_auto_add_delete = true;
+    // A pick reach wider than the join reach, as with large nodes.
+    app.settings.curves.join_px = 3.0;
+    app.settings.nodes.pick_distance = 10.0;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for q in [
+        Point::new(20.0, 20.0),
+        Point::new(60.0, 20.0),
+        Point::new(40.0, 50.0),
+    ] {
+        let at = app.view.to_screen(q);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(3));
+    // A click 7 px off the first node: beyond the join reach, within the
+    // pick reach. It closes the curve; it used to delete the first node.
+    let first = app.view.to_screen(Point::new(20.0, 20.0));
+    click_at(
+        &ctx,
+        &mut app,
+        first + egui::vec2(7.0, 0.0),
+        Modifiers::NONE,
+    );
+    assert!(app.curve.is_none(), "still drawing: {:?}", app.curve);
+    let made = app.selected_shapes();
+    let path = match made.first().map(|s| &s.kind) {
+        Some(ShapeKind::Path { path, .. }) => path.clone(),
+        other => panic!("no curve made: {other:?}"),
+    };
+    assert!(
+        path.elements()
+            .iter()
+            .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath)),
+        "{path:?}"
+    );
+    assert_eq!(tracedraw_core::nodes::nodes(&path).len(), 3);
+}
+
+#[test]
 fn node_keys_in_the_shape_tool() {
     let (ctx, mut app, id) = setup();
     // A curve with a smooth-able middle node.

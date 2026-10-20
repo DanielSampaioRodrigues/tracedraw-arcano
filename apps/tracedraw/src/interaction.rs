@@ -1533,7 +1533,7 @@ impl App {
             self.finish_curve();
             return;
         }
-        let reach = self.settings.curves.join_px() / self.view.zoom as f64;
+        let reach = self.curve_end_reach_px() / self.view.zoom as f64;
         let near = |q: Point| (q - raw).hypot() <= reach;
         let start_close = self
             .curve
