@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- PDF, print, PostScript, EPS and SVG: an outline set behind the fill is painted first and the fill over it, as on screen; a white outline behind black letters no longer covers them, so black text no longer prints white (#235, #191).
+
 - Windows: at interface size 100 % the text is as large as the system's own (12 px at 100 % scaling), as the setting says; it was 10.4 px. A size raised to make up for it may be set back to 100 % (#229).
 
 - Blend: the steps lie between the two objects in the stacking order; a front object blended to one behind it no longer has the steps drawn over it (#232).
