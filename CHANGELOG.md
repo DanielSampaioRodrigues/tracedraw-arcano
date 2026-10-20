@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Welcome Screen: the property bar (page size, orientation, units, nudge, duplicate offset), the toolbox, Snap To and the standard bar's drawing commands are pale, also with drawings open behind it; New, Open, Options, Launch and AI Generate stay on (#246).
+
 - Transformations, Rotate: the centre of rotation moved on the canvas is the centre the docker turns about (and shows with Relative center off), and after Apply the new copies keep it, so repeated rotated copies go round one point instead of drifting (#230).
 
 - Dimension tools: Ctrl keeps the leg being given (the second point of a linear dimension, each side of an angular one) to steps of the constrain angle, preview included (#251).

@@ -3216,3 +3216,29 @@ fn ctrl_keeps_a_dimension_leg_to_the_constrain_angle() {
     let side = app.dimension_points[1];
     assert!((side.x - first.x).abs() < 1e-6, "{side:?}");
 }
+
+#[test]
+fn the_page_bar_does_nothing_on_the_welcome_screen() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let size = |app: &App| {
+        let p = app.doc().page(app.page).expect("page");
+        (p.size.width, p.size.height)
+    };
+    let portrait = size(&app);
+    assert!(portrait.1 > portrait.0, "{portrait:?}");
+    // The page bar's landscape button.
+    let landscape = egui::pos2(408.0, 87.0);
+    // The Welcome Screen shown (the drawing behind it): the bar is pale.
+    app.show_welcome = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, landscape, Modifiers::NONE);
+    assert_eq!(size(&app), portrait);
+    // Back on the drawing, the same click turns the page.
+    app.show_welcome = false;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, landscape, Modifiers::NONE);
+    let turned = size(&app);
+    assert!(turned.0 > turned.1, "{turned:?}");
+}
