@@ -1146,6 +1146,27 @@ pub fn node_run(
 /// open subpaths make one subpath. `None` when either is not an end of an
 /// open subpath.
 pub fn connect_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
+    link_ends(path, a, b, false)
+}
+
+/// Join two end nodes into one (the Shape tool's Join): both move to the
+/// point halfway between them, their handles along, and become a single
+/// node with no segment added. The two ends of one open subpath close it
+/// there; ends of two open subpaths make one subpath running through the
+/// joined node. `None` when either is not an end of an open subpath, or
+/// both are the same end.
+pub fn join_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
+    let n = normalize(path);
+    let els = n.elements();
+    let (pa, pb) = (end_point(els.get(a)?)?, end_point(els.get(b)?)?);
+    let mid = pa.lerp(pb, 0.5);
+    let moved = move_node(&move_node(&n, a, mid - pa), b, mid - pb);
+    link_ends(&moved, a, b, true)
+}
+
+/// Shared by [`connect_ends`] and [`join_ends`]: with `fuse` the ends meet
+/// without a segment between them (they lie on one point already).
+fn link_ends(path: &BezPath, a: usize, b: usize, fuse: bool) -> Option<BezPath> {
     let subs = split_segments(path);
     // (subpath, is the end rather than the start)
     let find = |x: usize| -> Option<(usize, bool)> {
@@ -1194,6 +1215,7 @@ pub fn connect_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
     let mut joined = first;
     for el in second.elements() {
         match *el {
+            PathEl::MoveTo(_) if fuse => {}
             PathEl::MoveTo(p) => joined.line_to(p),
             other => joined.push(other),
         }
@@ -1790,5 +1812,72 @@ mod segment_tests {
         p.close_path();
         assert_eq!(delete_segment(&p, 0), p);
         assert_eq!(delete_segment(&p, 99), p);
+    }
+
+    #[test]
+    fn joining_ends_of_two_subpaths_fuses_them_without_a_segment() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.curve_to((3.0, 5.0), (7.0, 5.0), (10.0, 0.0));
+        p.move_to((12.0, 0.0));
+        p.curve_to((15.0, -5.0), (18.0, -5.0), (20.0, 0.0));
+        let j = join_ends(&p, 1, 2).expect("joined");
+        // One subpath, still two curves: no straight segment between.
+        assert_eq!(
+            j.elements(),
+            &[
+                PathEl::MoveTo(Point::new(0.0, 0.0)),
+                PathEl::CurveTo(
+                    Point::new(3.0, 5.0),
+                    Point::new(8.0, 5.0),
+                    Point::new(11.0, 0.0)
+                ),
+                PathEl::CurveTo(
+                    Point::new(14.0, -5.0),
+                    Point::new(18.0, -5.0),
+                    Point::new(20.0, 0.0)
+                ),
+            ]
+        );
+        // Either order, and a start joined to a start (the first subpath
+        // runs the other way round).
+        assert_eq!(nodes(&join_ends(&p, 2, 1).expect("joined")).len(), 3);
+        assert_eq!(nodes(&join_ends(&p, 0, 2).expect("joined")).len(), 3);
+    }
+
+    #[test]
+    fn joining_the_two_ends_of_one_subpath_closes_it_at_one_node() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((10.0, 10.0));
+        p.line_to((1.0, 9.0));
+        let j = join_ends(&p, 0, 3).expect("joined");
+        assert!(matches!(j.elements().last(), Some(PathEl::ClosePath)));
+        // Three nodes: the two ends are one now, and no line was added.
+        let ns = nodes(&j);
+        assert_eq!(ns.len(), 3);
+        assert_eq!(ns[0].pos, Point::new(0.5, 4.5));
+        let drawn = j
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::LineTo(_) | PathEl::CurveTo(..)))
+            .count();
+        assert_eq!(drawn, 3);
+    }
+
+    #[test]
+    fn joining_needs_two_ends_of_open_subpaths() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((20.0, 0.0));
+        // A middle node is not an end; one end with itself is nothing.
+        assert!(join_ends(&p, 0, 1).is_none());
+        assert!(join_ends(&p, 2, 2).is_none());
+        assert!(join_ends(&p, 0, 99).is_none());
+        let mut c = p.clone();
+        c.close_path();
+        assert!(join_ends(&c, 0, 2).is_none());
     }
 }

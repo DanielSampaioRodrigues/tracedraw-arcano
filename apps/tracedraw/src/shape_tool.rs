@@ -1030,27 +1030,102 @@ impl App {
         if self.node_selection.len() != 2 {
             return;
         }
-        let (a, ia) = self.node_selection[0];
-        let (b, ib) = self.node_selection[1];
-        if a == b {
-            // Same curve: close it.
-            if let Some((path, _, _)) = self.path_of(a) {
-                let np = nodes::close_subpath(&path, ia.min(ib));
-                self.run(Command::SetShapeKind {
-                    shape: a,
-                    kind: ShapeKind::Path {
-                        path: np,
-                        closed: true,
-                    },
-                });
-            }
+        let (a, b) = (self.node_selection[0], self.node_selection[1]);
+        if self.join_nodes(a, b) {
             self.node_selection.clear();
-            return;
         }
-        // Different curves: combine them with a connecting line.
-        self.selection = vec![a, b];
-        self.join_two_curves();
-        self.node_selection.clear();
+    }
+
+    /// Join end node `a` with end node `b` into one node halfway between
+    /// them, with no segment added: the ends of one open subpath close it,
+    /// ends of two subpaths (of one curve, or of two curves, which become
+    /// one curve keeping `a`'s place and look) make one subpath. One undo
+    /// step (Join Nodes). False, and nothing changes, when either is not an
+    /// end of an open subpath.
+    pub(crate) fn join_nodes(&mut self, a: (ShapeId, usize), b: (ShapeId, usize)) -> bool {
+        let (sa, ia) = a;
+        let (sb, ib) = b;
+        let Some((pa, _, ta)) = self.path_of(sa) else {
+            return false;
+        };
+        let (combined, jb) = if sa == sb {
+            (pa, ib)
+        } else {
+            let Some((pb, _, tb)) = self.path_of(sb) else {
+                return false;
+            };
+            // The second curve drawn into the first one's space, after it.
+            let mut both = nodes::normalize(&pa);
+            let offset = both.elements().len();
+            for el in (ta.inverse() * tb * nodes::normalize(&pb)).elements() {
+                both.push(*el);
+            }
+            (both, ib + offset)
+        };
+        let Some(joined) = nodes::join_ends(&combined, ia, jb) else {
+            return false;
+        };
+        let closed = every_subpath_closed(&joined);
+        let mut cmds = vec![Command::SetShapeKind {
+            shape: sa,
+            kind: ShapeKind::Path {
+                path: joined,
+                closed,
+            },
+        }];
+        if sa != sb {
+            cmds.push(Command::DeleteShapes { shapes: vec![sb] });
+            self.selection.retain(|id| *id != sb);
+        }
+        if let Err(e) = self.engine.run_batch("Join Nodes", &cmds) {
+            self.status = e.to_string();
+            return false;
+        }
+        true
+    }
+
+    /// After dragging one end node: dropped on another end node of a
+    /// selected curve (within the pick distance), the two are joined, the
+    /// curve dropped onto keeping its place and look.
+    pub(crate) fn join_dropped_end_node(&mut self) {
+        let [(id, index)] = self.node_selection[..] else {
+            return;
+        };
+        let Some((path, _, t)) = self.path_of(id) else {
+            return;
+        };
+        let Some(at) = nodes::nodes(&path)
+            .into_iter()
+            .find(|n| n.index == index)
+            .map(|n| t * n.pos)
+        else {
+            return;
+        };
+        let tol = (self.settings.nodes.pick_px() + 1.0) / self.view.zoom as f64;
+        let mut near: Vec<((ShapeId, usize), f64)> = Vec::new();
+        for other in self.node_targets() {
+            let Some((op, _, ot)) = self.path_of(other) else {
+                continue;
+            };
+            for n in nodes::nodes(&op) {
+                if (other, n.index) == (id, index) {
+                    continue;
+                }
+                let d = (ot * n.pos - at).hypot();
+                if d <= tol {
+                    near.push(((other, n.index), d));
+                }
+            }
+        }
+        near.sort_by(|a, b| a.1.total_cmp(&b.1));
+        // The nearest end node of an open subpath; the curve dropped onto
+        // keeps its place and look.
+        for (target, _) in near {
+            if self.join_nodes(target, (id, index)) {
+                self.node_selection.clear();
+                return;
+            }
+        }
     }
 
     /// Extract the subpath holding the first selected node into its own object.
@@ -1421,4 +1496,24 @@ mod bitmap_node_tests {
             corners: None,
         }));
     }
+}
+
+/// Whether every subpath of `p` ends with a close.
+fn every_subpath_closed(p: &BezPath) -> bool {
+    let mut open = false;
+    let mut any = false;
+    for el in p.elements() {
+        match el {
+            tracedraw_core::geometry::PathEl::MoveTo(_) => {
+                if open {
+                    return false;
+                }
+                open = true;
+                any = true;
+            }
+            tracedraw_core::geometry::PathEl::ClosePath => open = false,
+            _ => {}
+        }
+    }
+    any && !open
 }

@@ -2010,6 +2010,7 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NodeLasso { points } => self.finish_node_lasso(&points),
+            Drag::NodeMove { begun: true, .. } => self.join_dropped_end_node(),
             Drag::NodeMove { .. }
             | Drag::NodeTransform { .. }
             | Drag::SegmentBend { .. }

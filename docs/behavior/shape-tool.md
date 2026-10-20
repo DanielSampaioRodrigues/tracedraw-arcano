@@ -92,7 +92,8 @@ Properties.
 | Home, End (with nodes chosen) | the first or last node of the curve |
 | Arrow keys (with nodes chosen) | move the chosen nodes by the nudge distance (Shift: super nudge, Ctrl: micro nudge), one undo step per press |
 | Break (property bar) | split the subpath at the node |
-| Join (property bar) | join two end nodes into one |
+| Join (property bar) | join two selected end nodes into one node halfway between them, their handles moving along and no segment added: the two ends of one open subpath close it there, ends of two subpaths make one subpath, and ends on two curves make one curve (the first chosen keeps its place and look); one undo step (Join Nodes) |
+| Drop an end node on another | dragging one end node and letting go within the pick distance of an end node of a selected curve joins the two as Join does; the curve dropped onto keeps its place and look |
 | Extend Curve to Close | two selected end nodes are joined by a straight segment: the ends of one subpath close it, ends of two subpaths make one |
 | Extract Subpath | the subpath of the selected node becomes its own curve |
 | Reduce nodes | RDP simplification (0.3 screen pixels) of the curves with selected nodes, else of every selected curve |

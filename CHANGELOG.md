@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: Join now makes the two chosen end nodes one node halfway between them, with no straight segment added: the ends of one curve close it there, ends of two curves make one curve. Dropping a dragged end node on another end node joins them the same way (#254).
+
 - Pen: with Auto add/delete on, a click by the first node of the curve being drawn closes the curve again instead of deleting that node; the first and last nodes now answer within the larger of the join and pick distances (#238).
 
 - Shape tool: a click on a segment now chooses the segment itself (drawn highlighted with its handles) instead of showing its end node as chosen, and Delete removes just that segment: an open curve splits there, a closed one opens there, the nodes stay (#240).

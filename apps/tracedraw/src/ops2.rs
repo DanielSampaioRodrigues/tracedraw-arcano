@@ -929,62 +929,6 @@ impl App {
         }
     }
 
-    /// The Shape tool's Join of two end nodes on different curves: one
-    /// curve, the second one's path drawn on from the first one's end.
-    pub fn join_two_curves(&mut self) {
-        let shapes: Vec<Shape> = self
-            .selected_shapes()
-            .into_iter()
-            .filter(|s| matches!(s.kind, ShapeKind::Path { closed: false, .. }))
-            .collect();
-        if shapes.len() < 2 {
-            return;
-        }
-        let mut joined = BezPath::new();
-        let mut first = true;
-        for s in &shapes {
-            let p = s.page_path();
-            for el in p.elements() {
-                match el {
-                    kurbo::PathEl::MoveTo(pt) => {
-                        if first {
-                            joined.move_to(*pt);
-                            first = false;
-                        } else {
-                            joined.line_to(*pt);
-                        }
-                    }
-                    other => joined.push(*other),
-                }
-            }
-        }
-        let keep = shapes[0].id;
-        let others: Vec<ShapeId> = shapes[1..].iter().map(|s| s.id).collect();
-        let mut cmds = vec![
-            Command::TransformShapes {
-                shapes: vec![keep],
-                transform: shapes[0].transform.inverse() * Affine::IDENTITY,
-            },
-            Command::SetShapeKind {
-                shape: keep,
-                kind: ShapeKind::Path {
-                    path: joined,
-                    closed: false,
-                },
-            },
-        ];
-        // The joined path is in page space: reset the kept shape's transform.
-        cmds[0] = Command::TransformShapes {
-            shapes: vec![keep],
-            transform: shapes[0].transform.inverse(),
-        };
-        cmds.push(Command::DeleteShapes { shapes: others });
-        if let Err(e) = self.engine.run_batch("Join Curves", &cmds) {
-            self.status = e.to_string();
-        }
-        self.selection = vec![keep];
-    }
-
     /// The Join Curves docker: join the open ends of the selected curves
     /// (and the open subpaths inside them) that lie within the gap
     /// tolerance, nearest first, with the chosen joint. The result takes

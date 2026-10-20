@@ -1248,6 +1248,113 @@ fn dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes() {
     assert!(after.iter().any(|q| (*q - spot).hypot() < 0.3), "{after:?}");
 }
 
+/// Two open curves for the join tests, the rectangle of `setup` gone.
+fn two_open_curves(ctx: &egui::Context, app: &mut App, id: ShapeId) -> (ShapeId, ShapeId) {
+    app.select(vec![id]);
+    app.delete_selection();
+    let mut a = tracedraw_core::BezPath::new();
+    a.move_to((10.0, 10.0));
+    a.curve_to((15.0, 20.0), (25.0, 20.0), (30.0, 10.0));
+    let mut b = tracedraw_core::BezPath::new();
+    b.move_to((44.0, 10.0));
+    b.line_to((60.0, 30.0));
+    let a = app
+        .new_shape(ShapeKind::Path {
+            path: a,
+            closed: false,
+        })
+        .expect("curve a");
+    let b = app
+        .new_shape(ShapeKind::Path {
+            path: b,
+            closed: false,
+        })
+        .expect("curve b");
+    app.select(vec![a, b]);
+    app.set_tool(Tool::Shape);
+    frame(ctx, app, Vec::new(), Modifiers::NONE);
+    (a, b)
+}
+
+fn curve_path(app: &App, id: ShapeId) -> tracedraw_core::BezPath {
+    match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    }
+}
+
+#[test]
+fn join_fuses_two_end_nodes_of_two_curves_without_a_line() {
+    use tracedraw_core::geometry::PathEl;
+    let (ctx, mut app, id) = setup();
+    let (a, b) = two_open_curves(&ctx, &mut app, id);
+    // The end of a (element 1) and the start of b (element 0).
+    app.node_selection = vec![(a, 1), (b, 0)];
+    app.join_selected_nodes();
+    // One curve is left, one subpath through the joined node, no line.
+    assert!(app.doc().find_shape(b).is_none());
+    let p = curve_path(&app, a);
+    assert_eq!(
+        p.elements(),
+        &[
+            PathEl::MoveTo(Point::new(10.0, 10.0)),
+            PathEl::CurveTo(
+                Point::new(15.0, 20.0),
+                Point::new(32.0, 20.0),
+                Point::new(37.0, 10.0)
+            ),
+            PathEl::LineTo(Point::new(60.0, 30.0)),
+        ]
+    );
+    // One undo step brings both curves back.
+    app.undo();
+    assert!(app.doc().find_shape(b).is_some());
+    assert_eq!(tracedraw_core::nodes::nodes(&curve_path(&app, a)).len(), 2);
+}
+
+#[test]
+fn join_of_the_two_ends_of_one_curve_closes_it_at_one_node() {
+    use tracedraw_core::geometry::PathEl;
+    let (ctx, mut app, id) = setup();
+    let (a, _) = two_open_curves(&ctx, &mut app, id);
+    let start = app.node_at(Point::new(10.0, 10.0)).expect("start");
+    let end = app.node_at(Point::new(30.0, 10.0)).expect("end");
+    app.node_selection = vec![(start.shape, start.index), (end.shape, end.index)];
+    app.join_selected_nodes();
+    let p = curve_path(&app, a);
+    assert!(
+        matches!(p.elements().last(), Some(PathEl::ClosePath)),
+        "{p:?}"
+    );
+    // The two ends are one node now: the curve has a single node.
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 1);
+    assert!(matches!(
+        app.doc().find_shape(a).map(|s| &s.kind),
+        Some(ShapeKind::Path { closed: true, .. })
+    ));
+}
+
+#[test]
+fn dropping_an_end_node_on_another_end_node_joins_them() {
+    let (ctx, mut app, id) = setup();
+    let (a, b) = two_open_curves(&ctx, &mut app, id);
+    // Drag the start of b onto the end of a.
+    let from = app.view.to_screen(Point::new(44.0, 10.0));
+    let to = app.view.to_screen(Point::new(30.0, 10.0));
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert!(app.doc().find_shape(b).is_none(), "b was not joined");
+    let p = curve_path(&app, a);
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 3);
+    assert_eq!(
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+            .count(),
+        1
+    );
+}
+
 #[test]
 fn delete_removes_a_clicked_segment_and_keeps_its_nodes() {
     let (ctx, mut app, id) = setup();
