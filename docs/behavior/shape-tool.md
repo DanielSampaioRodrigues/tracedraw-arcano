@@ -22,10 +22,14 @@ direction is off by default (Options > Nodes and Handles).
 
 ## Taking nodes and handles
 
-A press takes a node, or a control handle of a chosen node, within the
-pick distance of it: Options > Nodes and Handles > Pick distance, 6
-screen pixels by default (never less than the node marker reaches). A
-segment of a selected curve is taken a pixel further out. A click that
+A press takes the nearest node, or the nearest control handle of a
+chosen node, within the pick distance of it: Options > Nodes and
+Handles > Pick distance, 6 screen pixels by default (never less than
+the node marker reaches). A segment of a selected curve is taken a
+pixel further out. Distances are measured on the page, so a curve with
+a scale of its own (text converted to curves, for one) is picked like
+any other
+(`pick_drag_tests::the_shape_tool_takes_the_nearest_node_of_a_scaled_curve`). A click that
 takes nothing but lands within three pick distances of a node or a
 handle of the selected curves (or a node of a selected rectangle,
 ellipse or polygon) is a near miss: the selection stays. Only a click

@@ -3242,3 +3242,47 @@ fn the_page_bar_does_nothing_on_the_welcome_screen() {
     let turned = size(&app);
     assert!(turned.0 > turned.1, "{turned:?}");
 }
+
+#[test]
+fn the_shape_tool_takes_the_nearest_node_of_a_scaled_curve() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    // A small curve in its own units, then scaled ten times on the page,
+    // as text converted to curves can be: nodes 1 mm apart locally are
+    // 10 mm apart on the page.
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((2.0, 2.0));
+    path.line_to((3.0, 2.0));
+    path.line_to((4.0, 2.0));
+    path.line_to((4.0, 3.0));
+    let c = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![c]);
+    app.transform_selection(tracedraw_core::geometry::Affine::scale(10.0));
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let page = |x: f64, y: f64| Point::new(x * 10.0, y * 10.0);
+    // On each node, that node; a little off it, still the nearest.
+    for (i, q) in [
+        (0usize, page(2.0, 2.0)),
+        (1, page(3.0, 2.0)),
+        (2, page(4.0, 2.0)),
+        (3, page(4.0, 3.0)),
+    ] {
+        let hit = app.node_at(q).expect("node");
+        assert_eq!((hit.shape, hit.index), (c, i), "at {q:?}");
+        let off = Point::new(q.x + 0.4, q.y - 0.3);
+        assert_eq!(app.node_at(off).map(|h| h.index), Some(i), "near {q:?}");
+    }
+    // Halfway between two nodes (5 mm from each): beyond the pick
+    // distance, no node.
+    assert!(app.node_at(page(3.5, 2.0)).is_none());
+    // A segment is found on the page too: the middle of the last one.
+    let (_, seg, _) = app.segment_at(page(4.0, 2.5)).expect("segment");
+    assert_eq!(seg, 3);
+}
