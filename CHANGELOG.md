@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows: at interface size 100 % the text is as large as the system's own (12 px at 100 % scaling), as the setting says; it was 10.4 px. A size raised to make up for it may be set back to 100 % (#229).
+
 - Blend: the steps lie between the two objects in the stacking order; a front object blended to one behind it no longer has the steps drawn over it (#232).
 
 - CMYK drawings: new artistic and paragraph text is CMYK black, and an outline turned on in Properties is CMYK black, so their colour pickers start in CMYK; RGB drawings keep RGB black (#259).
