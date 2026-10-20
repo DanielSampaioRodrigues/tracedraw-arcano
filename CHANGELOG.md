@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: the size field shows the size as seen on the page after the text is scaled with the Pick tool (24 pt doubled reads 48 pt), and a size typed there is the size the text then shows (#243).
+
 - Pick tool: while a rectangle with rounded corners is resized, the preview outline keeps the corners round as the result will, instead of stretching them (#239).
 
 - Welcome Screen: the property bar (page size, orientation, units, nudge, duplicate offset), the toolbox, Snap To and the standard bar's drawing commands are pale, also with drawings open behind it; New, Open, Options, Launch and AI Generate stay on (#246).

@@ -3554,6 +3554,23 @@ impl App {
         }
     }
 
+    /// How much larger than its font size a text shows on the page: the
+    /// vertical scale of its transformation (with its groups'). A text
+    /// scaled with the Pick tool shows its size as seen, and a size typed
+    /// for it is the size it shows.
+    pub fn text_scale(&self, id: ShapeId) -> f64 {
+        let Some(s) = self.doc().find_shape(id) else {
+            return 1.0;
+        };
+        let parent = self.doc().parent_transform(id).unwrap_or(Affine::IDENTITY);
+        let k = tracedraw_core::document::axis_scale(parent * s.transform).1;
+        if k.is_finite() && k > 1e-9 {
+            k
+        } else {
+            1.0
+        }
+    }
+
     /// Property bar defaults follow the text object being edited.
     pub fn sync_text_defaults_from(&mut self, id: ShapeId) {
         let kind = self.doc().shape(id).map(|(_, s)| s.kind.clone());
@@ -3575,7 +3592,9 @@ impl App {
             });
             if let Some(sp) = span_at.or_else(|| spans.first()) {
                 self.text_font = sp.font_family.clone();
-                self.text_size_pt = sp.size_pt;
+                // The size as seen on the page, to the hundredth of a point.
+                let seen = sp.size_pt * self.text_scale(id);
+                self.text_size_pt = (seen * 100.0).round() / 100.0;
                 self.text_bold = sp.bold;
                 self.text_italic = sp.italic;
                 self.text_underline = sp.underline;
