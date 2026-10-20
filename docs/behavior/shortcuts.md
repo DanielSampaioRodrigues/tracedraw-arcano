@@ -109,12 +109,20 @@ name.
   commands and tools that lost it. Another command of yours with the
   same keys loses them. A command's built-in shortcut keeps working
   beside yours until another command takes it.
-- The menus show your shortcut in place of the built-in one. The x
-  beside a shortcut removes it; Reset to defaults removes all of them,
-  tool keys included. Shortcuts are kept in the preferences
-  (`shortcuts`: the menu item's key and the keys).
-- Tool keys are listed under Tools on the same page: a letter or
-  Shift+letter typed in the field, empty for none.
+- The menus show your shortcut in place of the built-in one. Delete
+  leaves the command without a shortcut, a built-in one too: it is
+  kept as an empty shortcut, the menus show none and its keys do
+  nothing. Reset to defaults gives back the built-in shortcuts of the
+  commands in the category shown (one menu, the toolbox or the
+  macros); with all commands shown it asks first, as Reset all
+  shortcuts does, which gives back every built-in shortcut, tool keys
+  included. Shortcuts are kept in the preferences (`shortcuts`: the
+  menu item's key or tool id and the keys, empty for none).
+- Tools are listed under the toolbox on the same page and take keys as
+  commands do: a key alone or with Ctrl, Alt and Shift. Alt and a
+  letter you give a command or tool runs it instead of opening the
+  menu with that access letter, and while the page waits for keys no
+  menu opens.
 
 ## Checks
 

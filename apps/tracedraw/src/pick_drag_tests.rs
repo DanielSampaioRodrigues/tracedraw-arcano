@@ -3144,3 +3144,38 @@ fn a_right_click_on_a_locked_object_offers_to_unlock_it() {
     right_click(&ctx, &mut app, empty);
     assert_eq!(app.context_locked, None);
 }
+
+#[test]
+fn removed_and_alt_shortcuts_act_on_the_keyboard() {
+    let (ctx, mut app, id) = setup();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let ctrl = Modifiers::COMMAND | Modifiers::CTRL;
+    let press = |ctx: &egui::Context, app: &mut App, k: egui::Key, mods: Modifiers| {
+        frame(ctx, app, vec![key(k, mods)], mods);
+    };
+    // Undo's Ctrl+Z removed: the key does nothing, nothing is undone.
+    app.settings
+        .shortcuts
+        .push(("menu.edit.undo".into(), String::new()));
+    let last = app.engine.undo_label();
+    assert!(last.is_some());
+    press(&ctx, &mut app, egui::Key::Z, ctrl);
+    assert_eq!(app.engine.undo_label(), last);
+    assert!(app.doc().find_shape(id).is_some());
+    // Given back: Ctrl+Z undoes again.
+    app.settings.shortcuts.clear();
+    press(&ctx, &mut app, egui::Key::Z, ctrl);
+    assert_ne!(app.engine.undo_label(), last);
+    // A tool takes Alt with a key as menu commands do.
+    app.settings
+        .shortcuts
+        .push(("ellipse".into(), "Alt+Shift+K".into()));
+    assert_ne!(app.tool, Tool::Ellipse);
+    press(
+        &ctx,
+        &mut app,
+        egui::Key::K,
+        Modifiers::ALT | Modifiers::SHIFT,
+    );
+    assert_eq!(app.tool, Tool::Ellipse);
+}

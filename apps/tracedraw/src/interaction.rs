@@ -2272,6 +2272,27 @@ impl App {
                 return;
             }
         }
+        // Built-in shortcuts the user removed (Options > Customization >
+        // Commands, Delete): their keys do nothing.
+        if self.settings.shortcuts.iter().any(|(_, v)| v.is_empty()) {
+            if self.shortcut_editor.entries.is_empty() {
+                self.shortcut_editor.entries = crate::ui::menus::commands(self, ctx);
+            }
+            let removed = presses.iter().any(|(key, mods)| {
+                let text = crate::shortcuts::format(*mods, *key);
+                self.shortcut_editor.entries.iter().any(|e| {
+                    crate::shortcuts::same(&e.shortcut, &text)
+                        && self
+                            .settings
+                            .shortcuts
+                            .iter()
+                            .any(|(id, v)| id == &e.key && v.is_empty())
+                })
+            });
+            if removed {
+                return;
+            }
+        }
 
         // Tools > Macros > Run Macro (Alt+Shift+F8: Alt+F8 is the
         // Transformations panel's Rotate) and Macro Editor.
@@ -2765,12 +2786,18 @@ impl App {
                     .map(|(_, v)| v.clone())
                     .or_else(|| t.shortcut().map(|s| s.to_string()));
                 let Some(label) = label else { continue };
-                if let Some((k, shift)) = Tool::parse_shortcut(&label) {
-                    let mods = if shift {
-                        Modifiers::SHIFT
-                    } else {
-                        Modifiers::NONE
-                    };
+                // Any of Ctrl, Alt and Shift with a key, as menu commands.
+                let keys = crate::shortcuts::parse(&label).or_else(|| {
+                    Tool::parse_shortcut(&label).map(|(k, shift)| {
+                        let mods = if shift {
+                            Modifiers::SHIFT
+                        } else {
+                            Modifiers::NONE
+                        };
+                        (mods, k)
+                    })
+                });
+                if let Some((mods, k)) = keys {
                     if pressed(k, mods) {
                         self.set_tool(*t);
                     }

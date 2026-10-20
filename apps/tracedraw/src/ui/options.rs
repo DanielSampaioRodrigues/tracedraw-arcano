@@ -1426,6 +1426,8 @@ pub struct ShortcutEditor {
     pub selected: Option<String>,
     /// The tab beside the list: General (false) or Shortcut Keys (true).
     pub keys_tab: bool,
+    /// Reset all shortcuts was pressed: the question is shown.
+    pub confirm_reset_all: bool,
 }
 
 /// The Commands page's category for the toolbox's tools.
@@ -1729,9 +1731,11 @@ fn command_general(app: &App, ui: &mut Ui, c: &CommandItem) {
     });
 }
 
-/// The keys that run `c` now: the user's, else the built-in ones.
+/// The keys that run `c` now: the user's, else the built-in ones. The
+/// user's may be empty: the command's shortcut was removed.
 fn current_keys(app: &App, c: &CommandItem) -> Vec<String> {
     match user_shortcut(app, &c.id) {
+        Some(k) if k.is_empty() => Vec::new(),
         Some(k) => vec![k],
         None if !c.built_in.is_empty() => vec![c.built_in.clone()],
         None => Vec::new(),
@@ -1759,9 +1763,6 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
         ui.ctx().memory_mut(|m| m.stop_text_input());
         button.surrender_focus();
     }
-    if c.tool.is_some() {
-        ui.label(egui::RichText::new(tr("options.shortcuts_hint")).color(Tokens::text_dim()));
-    }
     ui.add_space(6.0);
     ui.label(tr("options.current_shortcuts"));
     let custom = user_shortcut(app, &c.id);
@@ -1773,6 +1774,8 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
             ui.set_width(260.0);
             ui.set_min_height(70.0);
             match &custom {
+                // Removed: no keys.
+                Some(k) if k.is_empty() => {}
                 Some(k) => {
                     ui.label(k);
                 }
@@ -1782,30 +1785,72 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
                 None => {}
             }
         });
+    let has_keys = !current_keys(app, c).is_empty();
     ui.horizontal(|ui| {
         if ui
-            .add_enabled(custom.is_some(), egui::Button::new(tr("options.delete")))
+            .add_enabled(has_keys, egui::Button::new(tr("options.delete")))
             .on_hover_text(tr("options.clear_shortcut"))
             .clicked()
         {
-            app.settings.shortcuts.retain(|(k, _)| k != &c.id);
-            app.shortcut_editor.note = None;
+            remove_shortcut(app, c);
         }
+        // The commands of the category shown; with every command shown,
+        // the same as resetting all, so it asks first.
         if ui.button(tr("options.reset_shortcuts")).clicked() {
-            app.settings.shortcuts.clear();
-            app.shortcut_editor.note = None;
-            app.shortcut_editor.capture = None;
+            match app.shortcut_editor.category.clone() {
+                Some(category) => reset_category_shortcuts(app, &category),
+                None => app.shortcut_editor.confirm_reset_all = true,
+            }
         }
     });
+    if ui.button(tr("options.reset_all_shortcuts")).clicked() {
+        app.shortcut_editor.confirm_reset_all = true;
+    }
+    if app.shortcut_editor.confirm_reset_all {
+        ui.label(tr("options.reset_all_shortcuts_question"));
+        ui.horizontal(|ui| {
+            if ui.button(tr("dialog.reset")).clicked() {
+                app.settings.shortcuts.clear();
+                app.shortcut_editor.note = None;
+                app.shortcut_editor.capture = None;
+                app.shortcut_editor.confirm_reset_all = false;
+            }
+            if ui.button(tr("dialog.cancel")).clicked() {
+                app.shortcut_editor.confirm_reset_all = false;
+            }
+        });
+    }
     // What the last shortcut set took over.
     if let Some(note) = &app.shortcut_editor.note {
         ui.label(egui::RichText::new(note).color(Tokens::ACCENT));
     }
 }
 
+/// Leave `c` without a shortcut: the user's goes, and a built-in one is
+/// overridden by an empty shortcut, so its keys no longer run it.
+fn remove_shortcut(app: &mut App, c: &CommandItem) {
+    app.settings.shortcuts.retain(|(k, _)| k != &c.id);
+    if !c.built_in.is_empty() {
+        app.settings.shortcuts.push((c.id.clone(), String::new()));
+    }
+    app.shortcut_editor.note = None;
+}
+
+/// Reset to defaults on the Commands page: the shortcuts of the commands
+/// in `category` (a menu's title key, the toolbox or the macros) only.
+fn reset_category_shortcuts(app: &mut App, category: &str) {
+    let ids: Vec<String> = command_items(app, Some(category), "")
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    app.settings.shortcuts.retain(|(k, _)| !ids.contains(k));
+    app.shortcut_editor.note = None;
+    app.shortcut_editor.capture = None;
+}
+
 /// The command waiting for its keys takes the next key pressed (Shift,
-/// Ctrl and Alt alone keep it waiting); a tool takes a key or Shift+key
-/// only.
+/// Ctrl and Alt alone keep it waiting); tools take the same keys as
+/// menu commands.
 fn capture_keys(app: &mut App, ui: &mut Ui) {
     let Some(target) = app.shortcut_editor.capture.clone() else {
         return;
@@ -1828,13 +1873,7 @@ fn capture_keys(app: &mut App, ui: &mut Ui) {
         app.shortcut_editor.capture = None;
         return;
     }
-    let tool = crate::tools::Tool::ALL.iter().any(|t| t.id() == target);
-    let fits = if tool {
-        !(mods.ctrl || mods.alt || mods.command) && !crate::shortcuts::is_modifier(key)
-    } else {
-        crate::shortcuts::allowed(mods, key)
-    };
-    if fits {
+    if crate::shortcuts::allowed(mods, key) {
         let text = crate::shortcuts::format(mods, key);
         set_menu_shortcut(app, &target, &text);
         app.shortcut_editor.capture = None;
@@ -2539,6 +2578,63 @@ mod tests {
             .expect("open");
         set_menu_shortcut(&mut app, "menu.file.open", "Ctrl+Shift+O");
         assert_eq!(current_keys(&app, &open), vec!["Ctrl+Shift+O".to_string()]);
+    }
+
+    /// The app with the menu commands collected, as the Commands page has.
+    fn app_with_commands() -> App {
+        let mut app = App::headless();
+        let ctx = egui::Context::default();
+        let mut entries = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            entries = crate::ui::menus::commands(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        app.shortcut_editor.entries = entries;
+        app
+    }
+
+    #[test]
+    fn a_built_in_shortcut_can_be_removed() {
+        let mut app = app_with_commands();
+        let file = command_items(&app, Some("menu.file"), "");
+        let open = file
+            .iter()
+            .find(|c| c.id == "menu.file.open")
+            .cloned()
+            .expect("open");
+        assert_eq!(current_keys(&app, &open), vec!["Ctrl+O".to_string()]);
+        // Delete on a built-in shortcut: an empty one overrides it.
+        remove_shortcut(&mut app, &open);
+        assert!(current_keys(&app, &open).is_empty());
+        assert!(app
+            .settings
+            .shortcuts
+            .contains(&("menu.file.open".to_string(), String::new())));
+        // A user's own key on a command with none built in just goes.
+        let tool = command_items(&app, Some(TOOLBOX), "")
+            .into_iter()
+            .find(|c| c.built_in.is_empty())
+            .expect("a tool without a built-in key");
+        set_menu_shortcut(&mut app, &tool.id, "Alt+Shift+K");
+        assert_eq!(current_keys(&app, &tool), vec!["Alt+Shift+K".to_string()]);
+        remove_shortcut(&mut app, &tool);
+        assert!(current_keys(&app, &tool).is_empty());
+        assert!(!app.settings.shortcuts.iter().any(|(k, _)| k == &tool.id));
+    }
+
+    #[test]
+    fn reset_to_defaults_touches_the_category_shown_only() {
+        let mut app = app_with_commands();
+        set_menu_shortcut(&mut app, "menu.file.open", "Ctrl+Shift+O");
+        set_menu_shortcut(&mut app, "rectangle", "Alt+R");
+        reset_category_shortcuts(&mut app, TOOLBOX);
+        // The tool's key went, the menu command's stayed.
+        assert_eq!(
+            app.settings.shortcuts,
+            vec![("menu.file.open".to_string(), "Ctrl+Shift+O".to_string())]
+        );
+        reset_category_shortcuts(&mut app, "menu.file");
+        assert!(app.settings.shortcuts.is_empty());
     }
 
     #[test]

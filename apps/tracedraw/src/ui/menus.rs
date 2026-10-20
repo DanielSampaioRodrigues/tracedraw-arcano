@@ -1453,6 +1453,20 @@ fn menu_bar_style(style: &mut egui::Style) {
 
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
     set_highlight_new(app.highlight_whats_new);
+    // Alt and a letter the user gave a command keeps running that command
+    // instead of opening a menu; while Options waits for a shortcut's keys
+    // no menu opens either.
+    let capturing = app.shortcut_editor.capture.is_some();
+    let user_alt_keys: Vec<egui::Key> = app
+        .settings
+        .shortcuts
+        .iter()
+        .filter_map(|(_, v)| crate::shortcuts::parse(v))
+        .filter(|(m, _)| m.alt && !(m.ctrl || m.command || m.shift))
+        .map(|(_, k)| k)
+        .collect();
+    let blocked =
+        move |c: char| capturing || access::key_of(c).is_some_and(|k| user_alt_keys.contains(&k));
     egui::MenuBar::new()
         .style(menu_bar_style)
         .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
@@ -1503,7 +1517,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             titles.push(menu(ui, "menu.window", &mut |ui| window_menu(app, ui)));
             titles.push(menu(ui, "menu.help", &mut |ui| help_menu(app, ui)));
             switch_on_hover(ui.ctx(), &titles);
-            open_with_alt(ui.ctx(), &titles, &keys);
+            open_with_alt(ui.ctx(), &titles, &keys, &blocked);
         });
 }
 
@@ -1511,11 +1525,18 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
 /// over opening a menu.
 const ALT_TAKEN: [char; 5] = ['e', 's', 'x', 'q', 'z'];
 
-/// Alt and a title's access key open that menu (closing another one).
-fn open_with_alt(ctx: &egui::Context, titles: &[egui::Response], keys: &[char]) {
+/// Alt and a title's access key open that menu (closing another one),
+/// unless `blocked` keeps that letter for something else.
+fn open_with_alt(
+    ctx: &egui::Context,
+    titles: &[egui::Response],
+    keys: &[char],
+    blocked: &dyn Fn(char) -> bool,
+) {
     let popup_id = egui::Popup::default_response_id;
     let hit = keys.iter().zip(titles).find(|(c, _)| {
         !ALT_TAKEN.contains(c)
+            && !blocked(**c)
             && access::key_of(**c).is_some_and(|key| {
                 ctx.input(|i| {
                     i.events.iter().any(|e| {

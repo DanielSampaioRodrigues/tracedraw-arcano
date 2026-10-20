@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Customization > Commands: tools take shortcuts with Ctrl, Alt and Shift like menu commands, and Alt with a letter given to a command no longer opens a menu (#248); Delete also removes a built-in shortcut, leaving the command without one (#249); Reset to defaults resets only the category shown, and a separate Reset all shortcuts asks first (#250).
+
 - A right click on a locked object (with the Pick tool) opens a menu with Unlock Object, which unlocks and selects it, and Unlock All Objects; the object stays unselected and uneditable until then (#256).
 
 - Curve tools (Pen, Bezier and the others drawing node by node): Ctrl+Z while a curve is drawn takes back the last node, handle pull or click on a node, one at a time, before going on to the document's history; Ctrl+Shift+Z puts them back (#233).
