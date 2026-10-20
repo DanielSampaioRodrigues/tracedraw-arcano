@@ -6,7 +6,7 @@ use crate::app::{App, Drag};
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::ShapeKind,
-    geometry::{BezPath, Point, Rect, Vec2},
+    geometry::{BezPath, PathEl, Point, Rect, Vec2},
     nodes::{self, NodeType, Which},
     Command, ShapeId,
 };
@@ -670,8 +670,10 @@ impl App {
                 self.click_node((hit.shape, hit.index), mods);
                 return;
             }
-            // A click on a segment chooses it (its end node) and marks the
-            // spot, where Add Node puts the new node.
+            // A click on a segment chooses the segment: it is drawn
+            // highlighted, Delete removes it, and as its end node is the
+            // one chosen To Line and To Curve act on it. The spot clicked
+            // is marked; Add Node puts the new node there.
             if let Some((shape, index, t)) = self.segment_at(p) {
                 self.node_selection = vec![(shape, index)];
                 self.segment_spot = Some((shape, index, t));
@@ -719,6 +721,7 @@ impl App {
             }
         }
         self.node_selection = sel;
+        self.segment_spot = None;
         // Character nodes of selected texts too.
         self.choose_chars_in(|q| r.contains(q));
     }
@@ -828,6 +831,53 @@ impl App {
         if !cmds.is_empty() {
             let _ = self.engine.run_batch("Align Nodes", &cmds);
         }
+    }
+
+    /// The segment chosen by a click on it, as (curve, element drawing
+    /// it): the spot clicked is kept and its end node is the only node
+    /// chosen.
+    pub(crate) fn chosen_segment(&self) -> Option<(ShapeId, usize)> {
+        let (shape, index, _) = self.segment_spot?;
+        (self.node_selection == [(shape, index)]).then_some((shape, index))
+    }
+
+    /// Delete the chosen segment: an open curve splits there (or loses an
+    /// end), a closed one opens there; a curve left with no segment goes.
+    /// One undo step. False when no segment is chosen.
+    pub fn delete_chosen_segment(&mut self) -> bool {
+        let Some((id, index)) = self.chosen_segment() else {
+            return false;
+        };
+        let Some((path, closed, _)) = self.path_of(id) else {
+            return false;
+        };
+        let left = nodes::delete_segment(&path, index);
+        if left == path {
+            return false;
+        }
+        let drawn = left
+            .elements()
+            .iter()
+            .any(|e| !matches!(e, PathEl::MoveTo(_) | PathEl::ClosePath));
+        let cmd = if drawn {
+            let closed = closed
+                && left
+                    .elements()
+                    .iter()
+                    .any(|e| matches!(e, PathEl::ClosePath));
+            Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path { path: left, closed },
+            }
+        } else {
+            Command::DeleteShapes { shapes: vec![id] }
+        };
+        if let Err(e) = self.engine.run_with_label(&cmd, "Delete Segment") {
+            self.status = e.to_string();
+        }
+        self.node_selection.clear();
+        self.segment_spot = None;
+        true
     }
 
     pub fn delete_selected_nodes(&mut self) {
@@ -954,6 +1004,7 @@ impl App {
     }
 
     pub fn select_all_nodes(&mut self) {
+        self.segment_spot = None;
         let mut sel = Vec::new();
         for id in &self.node_targets() {
             if let Some((path, _, _)) = self.path_of(*id) {

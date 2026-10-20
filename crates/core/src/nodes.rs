@@ -494,7 +494,11 @@ pub fn delete_node(path: &BezPath, index: usize) -> BezPath {
                 (PathEl::LineTo(_), Some(PathEl::LineTo(_))) => None,
                 (_, Some(nx)) => {
                     let b = end_point(&seg_a);
-                    match (b, element_cubic(a, seg_a), b.and_then(|b| element_cubic(b, nx))) {
+                    match (
+                        b,
+                        element_cubic(a, seg_a),
+                        b.and_then(|b| element_cubic(b, nx)),
+                    ) {
                         (Some(_), Some(ca), Some(cb)) => Some((ca, cb)),
                         _ => None,
                     }
@@ -921,10 +925,14 @@ fn end_point(el: &PathEl) -> Option<Point> {
 /// A subpath as segments: each with the element that draws it (a line or
 /// curve to its end) and the node index at each end. A closing segment's
 /// end node is the subpath's start.
+/// A segment, its start and end nodes, and the element drawing it (its
+/// own index, or the `ClosePath` for a closing line).
+type Seg = (PathEl, usize, usize, usize);
+
 struct Segs {
     start: Point,
     start_index: usize,
-    segs: Vec<(PathEl, usize, usize)>,
+    segs: Vec<Seg>,
     closed: bool,
 }
 
@@ -947,7 +955,7 @@ fn split_segments(path: &BezPath) -> Vec<Segs> {
             }
             PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) => {
                 if let Some(s) = out.last_mut() {
-                    s.segs.push((*el, last_index, i));
+                    s.segs.push((*el, last_index, i, i));
                 }
                 last_index = i;
                 last = p;
@@ -957,7 +965,7 @@ fn split_segments(path: &BezPath) -> Vec<Segs> {
                 if let Some(s) = out.last_mut() {
                     if (last - s.start).hypot() > 1e-9 {
                         s.segs
-                            .push((PathEl::LineTo(s.start), last_index, s.start_index));
+                            .push((PathEl::LineTo(s.start), last_index, s.start_index, i));
                     } else if let Some(seg) = s.segs.last_mut() {
                         // The last segment ends on the start node.
                         seg.2 = s.start_index;
@@ -982,7 +990,7 @@ pub fn selected_segments(path: &BezPath, indices: &[usize]) -> BezPath {
         let mut at = sub.start;
         let mut open = false;
         let mut prev_end = usize::MAX;
-        for (el, from, to) in &sub.segs {
+        for (el, from, to, _) in &sub.segs {
             let picked = indices.contains(from) && indices.contains(to);
             if picked {
                 if !open || prev_end != *from {
@@ -1003,16 +1011,36 @@ pub fn selected_segments(path: &BezPath, indices: &[usize]) -> BezPath {
 /// The path without the segments `selected_segments` picks (the Shape
 /// tool's Cut): what is left becomes open subpaths.
 pub fn without_segments(path: &BezPath, indices: &[usize]) -> BezPath {
+    cut_segments(path, &|&(_, from, to, _)| {
+        indices.contains(&from) && indices.contains(&to)
+    })
+}
+
+/// The path without the one segment drawn by element `index` (a line, a
+/// curve, or the `ClosePath` of a closing line): an open subpath splits in
+/// two there (or loses an end), a closed one opens there. A path without
+/// that segment comes back unchanged.
+pub fn delete_segment(path: &BezPath, index: usize) -> BezPath {
+    let found = split_segments(path)
+        .iter()
+        .any(|sub| sub.segs.iter().any(|seg| seg.3 == index));
+    if !found {
+        return path.clone();
+    }
+    cut_segments(path, &|&(_, _, _, elem)| elem == index)
+}
+
+/// The path without the segments `picked` chooses; what is left of each
+/// touched subpath becomes open subpaths.
+fn cut_segments(path: &BezPath, picked: &dyn Fn(&Seg) -> bool) -> BezPath {
     let mut out = BezPath::new();
     for sub in split_segments(path) {
-        let picked =
-            |(_, from, to): &(PathEl, usize, usize)| indices.contains(from) && indices.contains(to);
         let n = sub.segs.len();
         let first_cut = sub.segs.iter().position(picked);
         let Some(first_cut) = first_cut else {
             // Untouched.
             out.move_to(sub.start);
-            for (el, _, _) in &sub.segs {
+            for (el, _, _, _) in &sub.segs {
                 out.push(*el);
             }
             if sub.closed {
@@ -1064,7 +1092,7 @@ pub fn node_run(
 ) -> Option<(Vec<usize>, bool)> {
     for sub in split_segments(path) {
         let mut ring: Vec<usize> = vec![sub.start_index];
-        for (_, _, to) in &sub.segs {
+        for (_, _, to, _) in &sub.segs {
             if *to != sub.start_index {
                 ring.push(*to);
             }
@@ -1139,7 +1167,7 @@ pub fn connect_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
     let to_path = |s: &Segs| -> BezPath {
         let mut p = BezPath::new();
         p.move_to(s.start);
-        for (el, _, _) in &s.segs {
+        for (el, _, _, _) in &s.segs {
             p.push(*el);
         }
         p
@@ -1682,5 +1710,85 @@ mod segment_tests {
         assert_eq!(nodes(&joined).len(), 4);
         // A middle node is not an end.
         assert!(connect_ends(&p, 1, 3).is_none());
+    }
+
+    fn moves(p: &BezPath) -> usize {
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count()
+    }
+
+    fn drawn(p: &BezPath) -> usize {
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::LineTo(_) | PathEl::CurveTo(..)))
+            .count()
+    }
+
+    #[test]
+    fn deleting_a_middle_segment_splits_an_open_curve() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((20.0, 0.0));
+        p.line_to((30.0, 0.0));
+        let q = delete_segment(&p, 2);
+        assert_eq!(moves(&q), 2, "{q:?}");
+        assert_eq!(drawn(&q), 2);
+        // Every node stays where it was.
+        assert_eq!(nodes(&q).len(), 4);
+        // An end segment just goes: one subpath is left.
+        let e = delete_segment(&p, 3);
+        assert_eq!(moves(&e), 1);
+        assert_eq!(drawn(&e), 2);
+    }
+
+    #[test]
+    fn deleting_a_segment_opens_a_closed_curve_there() {
+        // A square whose closing side is a ClosePath (element 4).
+        let mut sq = BezPath::new();
+        sq.move_to((0.0, 0.0));
+        sq.line_to((10.0, 0.0));
+        sq.line_to((10.0, 10.0));
+        sq.line_to((0.0, 10.0));
+        sq.close_path();
+        let open = delete_segment(&sq, 4);
+        assert!(!open
+            .elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::ClosePath)));
+        assert_eq!(moves(&open), 1);
+        assert_eq!(drawn(&open), 3);
+        assert_eq!(open.elements()[0], PathEl::MoveTo(Point::new(0.0, 0.0)));
+        // A side in the middle: the curve opens there and runs round.
+        let side = delete_segment(&sq, 2);
+        assert_eq!(moves(&side), 1);
+        assert_eq!(drawn(&side), 3);
+        assert_eq!(side.elements()[0], PathEl::MoveTo(Point::new(10.0, 10.0)));
+        // A closed smooth curve ending on its start loses one of its four.
+        let round = crate::geometry::smooth_path(
+            &[
+                Point::new(0.0, 0.0),
+                Point::new(10.0, 0.0),
+                Point::new(10.0, 10.0),
+                Point::new(0.0, 10.0),
+            ],
+            true,
+        );
+        let r = delete_segment(&round, 1);
+        assert_eq!(drawn(&r), 3);
+        assert!(!r.elements().iter().any(|e| matches!(e, PathEl::ClosePath)));
+    }
+
+    #[test]
+    fn deleting_a_missing_segment_changes_nothing() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.curve_to((15.0, 0.0), (20.0, 5.0), (20.0, 10.0));
+        p.close_path();
+        assert_eq!(delete_segment(&p, 0), p);
+        assert_eq!(delete_segment(&p, 99), p);
     }
 }

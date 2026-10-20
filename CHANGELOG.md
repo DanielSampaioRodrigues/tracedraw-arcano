@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: a click on a segment now chooses the segment itself (drawn highlighted with its handles) instead of showing its end node as chosen, and Delete removes just that segment: an open curve splits there, a closed one opens there, the nodes stay (#240).
+
 - Shape tool: deleting a node between segments now refits a single curve from the neighbour before to the neighbour after when either side is a curve, so the shape is kept instead of reshaping (or going straight). A node between two straight segments still leaves a straight join (#241, #228).
 
 ## 0.10.0 (2026-10-20)

@@ -446,6 +446,7 @@ impl App {
             (k + n - 1) % n
         };
         self.node_selection = vec![(id, list[next])];
+        self.segment_spot = None;
         true
     }
 
@@ -463,6 +464,7 @@ impl App {
         match end {
             Some(n) => {
                 self.node_selection = vec![(id, n.index)];
+                self.segment_spot = None;
                 true
             }
             None => false,

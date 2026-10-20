@@ -2577,6 +2577,8 @@ impl App {
             {
                 // The node goes; a corner stays (the status bar says so).
                 self.delete_selected_envelope_node();
+            } else if self.tool == Tool::Shape && self.delete_chosen_segment() {
+                // A segment clicked on went; its nodes stay.
             } else if self.tool == Tool::Shape && !self.node_selection.is_empty() {
                 self.delete_selected_nodes();
             } else if self.tool == Tool::VariableOutline && self.delete_variable_outline_node() {

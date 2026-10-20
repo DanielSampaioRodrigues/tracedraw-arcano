@@ -63,7 +63,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Shape tool: move nodes and handles, marquee select nodes, Elastic mode (farther nodes move less) | works |
 | Shape tool node selection (Ctrl+click toggles, Shift+click selects a run, Tab and Shift+Tab, rectangular or freehand marquee, double-click the tool selects all) | works (see `behavior/shape-tool.md`) |
 | Shape tool node transforms: Stretch and Scale, Rotate and Skew handles around the selected nodes; Reflect nodes horizontally and vertically | works (see `behavior/shape-tool.md`) |
-| Shape tool segments: Ctrl+C, Ctrl+X, Ctrl+D copy, cut and duplicate the segments between selected nodes; Extend Curve to Close; Curve smoothness slider | works (see `behavior/shape-tool.md`) |
+| Shape tool segments: a click chooses a segment and Delete removes it; Ctrl+C, Ctrl+X, Ctrl+D copy, cut and duplicate the segments between selected nodes; Extend Curve to Close; Curve smoothness slider | works (see `behavior/shape-tool.md`) |
 | Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes, twisted stars) | works (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |

@@ -1516,6 +1516,33 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let prefs = app.settings.nodes;
     let [r, g, b] = prefs.main_rgb;
     let main = Color32::from_rgb(r, g, b);
+    // The segment chosen by a click: drawn over in the main colour, with
+    // its handles.
+    let chosen_segment = app.chosen_segment();
+    if let Some((id, index)) = chosen_segment {
+        if let Some(s) = app.doc().shape_on_page(id) {
+            if let ShapeKind::Path { path, .. } = &s.kind {
+                let pts: Vec<Pos2> = (0..=32)
+                    .filter_map(|k| nodes::point_on_segment(path, index, k as f64 / 32.0))
+                    .map(|q| view.to_screen(s.transform * q))
+                    .collect();
+                painter.add(egui::Shape::line(pts, EStroke::new(3.0, main)));
+                if let Some(PathEl::CurveTo(c1, c2, _)) =
+                    nodes::normalize(path).elements().get(index).copied()
+                {
+                    let ends = (
+                        nodes::point_on_segment(path, index, 0.0),
+                        nodes::point_on_segment(path, index, 1.0),
+                    );
+                    if let (Some(a), Some(b)) = ends {
+                        let sp = |q| view.to_screen(s.transform * q);
+                        draw_control_handle(painter, sp(a), sp(c1), main);
+                        draw_control_handle(painter, sp(b), sp(c2), main);
+                    }
+                }
+            }
+        }
+    }
     // The spot clicked on a segment: a small round mark where Add Node
     // puts the node.
     if let Some((id, index, t)) = app.segment_spot {
@@ -1635,7 +1662,9 @@ fn draw_nodes(app: &App, painter: &Painter) {
             }
         }
         for n in all {
-            let selected = app.node_selection.contains(&(s.id, n.index));
+            // A chosen segment shows as the segment, not as its end node.
+            let selected = app.node_selection.contains(&(s.id, n.index))
+                && chosen_segment != Some((s.id, n.index));
             let p = view.to_screen(s.transform * n.pos);
             if selected {
                 for c in [n.ctrl_in, n.ctrl_out].into_iter().flatten() {

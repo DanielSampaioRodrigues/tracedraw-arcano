@@ -1249,6 +1249,54 @@ fn dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes() {
 }
 
 #[test]
+fn delete_removes_a_clicked_segment_and_keeps_its_nodes() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path_of = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    let before = path_of(&app);
+    let corners = |p: &tracedraw_core::BezPath| {
+        tracedraw_core::nodes::nodes(p)
+            .iter()
+            .map(|n| n.pos)
+            .collect::<Vec<_>>()
+    };
+    let has_close = |p: &tracedraw_core::BezPath| {
+        p.elements()
+            .iter()
+            .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
+    };
+    assert!(has_close(&before));
+    // A click on the right side chooses the segment, not a node.
+    let at = app.view.to_screen(Point::new(60.0, 32.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(app.chosen_segment().is_some());
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Delete, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // The side went: the curve is open there, every corner stays.
+    let after = path_of(&app);
+    assert!(!has_close(&after), "{after:?}");
+    let mut a = corners(&after);
+    let mut b = corners(&before);
+    let key_of = |p: &Point| ((p.x * 1000.0).round() as i64, (p.y * 1000.0).round() as i64);
+    a.sort_by_key(key_of);
+    b.sort_by_key(key_of);
+    assert_eq!(a, b);
+    assert!(app.chosen_segment().is_none());
+    // One undo step puts the side back.
+    app.undo();
+    assert_eq!(path_of(&app), before);
+}
+
+#[test]
 fn node_keys_in_the_shape_tool() {
     let (ctx, mut app, id) = setup();
     // A curve with a smooth-able middle node.
