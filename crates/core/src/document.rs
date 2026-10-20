@@ -2850,11 +2850,19 @@ impl DefaultKind {
 }
 
 impl Default for ObjectDefaults {
-    /// Graphics: no fill and a 0.2 mm CMYK black outline; text: a black
-    /// fill and no outline.
+    /// The defaults of a CMYK drawing (the default primary colour mode).
     fn default() -> Self {
+        ObjectDefaults::for_mode(PrimaryColorMode::Cmyk)
+    }
+}
+
+impl ObjectDefaults {
+    /// Graphics: no fill and a 0.2 mm CMYK black outline; text: a black
+    /// fill in the drawing's primary colour mode (CMYK or RGB black) and
+    /// no outline.
+    pub fn for_mode(mode: PrimaryColorMode) -> Self {
         let text = DefaultProperties {
-            fill: Fill::Solid(crate::Color::BLACK),
+            fill: Fill::Solid(mode.black()),
             stroke: None,
         };
         ObjectDefaults {
@@ -2986,6 +2994,16 @@ pub enum PrimaryColorMode {
     #[default]
     Cmyk,
     Rgb,
+}
+
+impl PrimaryColorMode {
+    /// Black in this mode: 100 % K in CMYK, RGB black in RGB.
+    pub fn black(self) -> crate::Color {
+        match self {
+            PrimaryColorMode::Cmyk => crate::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+            PrimaryColorMode::Rgb => crate::Color::BLACK,
+        }
+    }
 }
 
 impl Layer {

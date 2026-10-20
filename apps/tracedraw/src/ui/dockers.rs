@@ -1743,7 +1743,15 @@ fn outline_editor_mixed(
         .add(egui::Checkbox::new(&mut has, tr("docker.outline")).indeterminate(mix.presence))
         .changed()
     {
-        *stroke = if has { Some(Stroke::default()) } else { None };
+        *stroke = if has {
+            // Black in the drawing's primary colour mode.
+            Some(Stroke {
+                color: lib.black,
+                ..Stroke::default()
+            })
+        } else {
+            None
+        };
         changed = true;
     }
     let mut remove = false;
