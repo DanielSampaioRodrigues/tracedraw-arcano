@@ -2395,6 +2395,9 @@ impl App {
         };
         let mut effects = start.effects.clone();
         effects.retain(|e| !matches!(e, Effect::Blend { .. }));
+        // The steps lie between the two objects in the stacking order.
+        let mut options = self.blend_options;
+        options.steps_below = self.stacked_below(end.id, start.id);
         effects.push(Effect::Blend {
             end: Box::new(crate::blend_link::end_copy(&end)),
             steps,
@@ -2404,7 +2407,7 @@ impl App {
             path: None,
             rotate_on_path: false,
             end_id: Some(end.id),
-            options: self.blend_options,
+            options,
         });
         let cmds = vec![Command::SetEffects {
             shape: start.id,
