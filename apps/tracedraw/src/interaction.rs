@@ -190,6 +190,23 @@ impl App {
         self.hit_test_where(p, |_| false)
     }
 
+    /// The topmost visible object at `p` (on a visible, unlocked layer)
+    /// when that object is locked: what a right click there unlocks.
+    pub fn locked_at(&self, p: Point) -> Option<ShapeId> {
+        if self.focus_shape_on_page().is_some() {
+            return None;
+        }
+        let tol = 3.0 / self.view.zoom as f64;
+        self.page_layers()
+            .into_iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .find(|s| s.visible && self.shape_hit(s, p, tol))
+            .filter(|s| s.locked)
+            .map(|s| s.id)
+    }
+
     /// The topmost object at `p` that `skip` does not rule out.
     pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
         let tol = 3.0 / self.view.zoom as f64;

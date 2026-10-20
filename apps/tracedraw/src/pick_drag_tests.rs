@@ -3101,3 +3101,46 @@ fn ctrl_z_takes_back_pen_nodes_one_by_one() {
     assert!(app.curve.is_none());
     assert_eq!(app.engine.undo_label(), undo_before);
 }
+
+#[test]
+fn a_right_click_on_a_locked_object_offers_to_unlock_it() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.set_locked(true);
+    assert!(app.selection.is_empty());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let right_click = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+    };
+    // On the locked rectangle's outline: its menu opens for it, and it is
+    // not selected (so it cannot be dragged or edited).
+    let on = app.view.to_screen(Point::new(35.0, 10.0));
+    right_click(&ctx, &mut app, on);
+    assert!(app.context_menu.is_some());
+    assert_eq!(app.context_locked, Some(id));
+    assert!(app.selection.is_empty());
+    // Unlock Object: unlocked and selected.
+    app.unlock_object(id);
+    assert!(app.doc().find_shape(id).is_some_and(|s| !s.locked));
+    assert_eq!(app.selection, vec![id]);
+    // Away from it, or on an unlocked object, there is no locked object.
+    app.context_menu = None;
+    app.context_locked = None;
+    right_click(&ctx, &mut app, on);
+    assert_eq!(app.context_locked, None);
+    let empty = app.view.to_screen(Point::new(150.0, 150.0));
+    right_click(&ctx, &mut app, empty);
+    assert_eq!(app.context_locked, None);
+}

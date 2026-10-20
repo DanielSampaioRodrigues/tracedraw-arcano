@@ -307,6 +307,17 @@ impl App {
         }
     }
 
+    /// Unlock object `id` and select it.
+    pub fn unlock_object(&mut self, id: tracedraw_core::ShapeId) {
+        self.run(Command::SetLocked {
+            shapes: vec![id],
+            locked: false,
+        });
+        if self.doc().find_shape(id).is_some_and(|s| !s.locked) {
+            self.select(vec![id]);
+        }
+    }
+
     pub fn unlock_all(&mut self) {
         let ids: Vec<_> = self
             .doc()

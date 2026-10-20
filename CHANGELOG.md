@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- A right click on a locked object (with the Pick tool) opens a menu with Unlock Object, which unlocks and selects it, and Unlock All Objects; the object stays unselected and uneditable until then (#256).
+
 - Curve tools (Pen, Bezier and the others drawing node by node): Ctrl+Z while a curve is drawn takes back the last node, handle pull or click on a node, one at a time, before going on to the document's history; Ctrl+Shift+Z puts them back (#233).
 
 - Shape tool: Join now makes the two chosen end nodes one node halfway between them, with no straight segment added: the ends of one curve close it there, ends of two curves make one curve. Dropping a dragged end node on another end node joins them the same way (#254).

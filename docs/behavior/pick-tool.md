@@ -29,7 +29,10 @@ The toolbox button of each flyout shows the tool last used from it; the
 choice is kept between sessions (`toolbox` in the settings file).
 
 Hidden and locked objects, and the objects on hidden or locked layers,
-are never hit; of the others the topmost under the pointer is (the last
+are never hit (a right click on a locked object that is topmost under
+the pointer opens a menu of its own, Unlock Object, which unlocks and
+selects it, and Unlock All Objects; the object is not selected while
+locked); of the others the topmost under the pointer is (the last
 in the stacking order, which `.cdr` files keep: a text over a
 rectangle is hit before it). Treat all objects as filled (Options >
 Tools > Pick, and the property bar) is on by default, so an empty

@@ -7,7 +7,7 @@ use crate::tools::Tool;
 use crate::ui::dialogs::Dialog;
 use crate::ui::menus::{body, check, item, item_label, menu_popup_style, radio, sep, sub};
 use egui::{Response, Ui};
-use tracedraw_core::{document::ShapeKind, Command};
+use tracedraw_core::{document::ShapeKind, Command, ShapeId};
 
 fn ci(ui: &mut Ui, close: &mut bool, key: &str, shortcut: &str, enabled: bool) -> bool {
     let r = item(ui, key, shortcut, enabled);
@@ -59,7 +59,9 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
             let on_guide = app.selection.is_empty()
                 && matches!(app.tool, Tool::Pick | Tool::FreeformPick)
                 && app.guide_at(p).is_some();
-            if app.tool == Tool::Shape {
+            if let Some(locked) = app.context_locked {
+                locked_menu(app, ui, locked, &mut close);
+            } else if app.tool == Tool::Shape {
                 node_menu(app, ui, &mut close);
             } else if on_guide {
                 guide_menu(app, ui, &mut close);
@@ -73,6 +75,7 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
     if close || shown.is_none() {
         egui::Popup::close_id(&ctx, id);
         app.context_menu = None;
+        app.context_locked = None;
         ctx.data_mut(|d| d.remove::<egui::Pos2>(pos_id));
     }
     let _ = response;
@@ -117,6 +120,17 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
             form.load(app, &g.line);
             app.guide_form = form;
         }
+    }
+}
+
+/// Right-click on a locked object: only unlocking it (it is selected
+/// once unlocked) or every locked object of the page.
+fn locked_menu(app: &mut App, ui: &mut Ui, id: ShapeId, close: &mut bool) {
+    if ci(ui, close, "menu.object.unlock_object", "", true) {
+        app.unlock_object(id);
+    }
+    if ci(ui, close, "menu.object.unlock_all", "", true) {
+        app.unlock_all();
     }
 }
 
