@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties > Outline: dragging in the colour picker is one undo step and adds only the final colour to the document palette, when the button is let go, as the fill picker does (#258).
+
 - Shape tool: Smooth and Symmetrical now act on nodes beside a straight segment: next to a line the curve's handle lines up with it, and between two lines both become curves and the node is smoothed (#228).
 
 - Shape tool: a click takes the nearest node, handle or segment, measured on the page; on curves with a scale of their own, such as text converted to curves, a click no longer took a node far from the pointer (#242).
