@@ -4,8 +4,11 @@
 //! model. The popup opens next to the swatch, on its right when there is
 //! room and else on its left, and always stays inside the window. The
 //! colour keeps its model: a CMYK colour is edited in CMYK, an RGB one in
-//! RGB. A click outside the popup or Esc closes it.
+//! RGB, and a Model list switches it on demand (the colour converts and
+//! the object holds a colour of the new model). A click outside the
+//! popup or Esc closes it.
 
+use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Color32, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::Color;
@@ -123,6 +126,28 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
                         changed = true;
                     }
                     ui.add_space(6.0);
+                    // The model the colour is kept in, changed on demand:
+                    // the colour converts, and from then on the object
+                    // holds a colour of that model.
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(tr("docker.model"))
+                                .color(Tokens::text_dim())
+                                .size(11.0),
+                        );
+                        egui::ComboBox::from_id_salt(id.with("model"))
+                            .selected_text(model)
+                            .width(96.0)
+                            .show_ui(ui, |ui| {
+                                for m in crate::ui::color_docker::MODELS {
+                                    if ui.selectable_label(model == m, m).clicked() && model != m {
+                                        *c = c.convert_to(m);
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    });
+                    let model = edit_model(*c);
                     let mut m = c.convert_to(model);
                     if crate::ui::color_docker::sliders(ui, &mut m) {
                         *c = m;
@@ -196,6 +221,34 @@ mod tests {
         let swatch = Rect::from_min_size(Pos2::new(150.0, 100.0), Vec2::new(40.0, 18.0));
         let r = place(swatch, size, small);
         assert!(r.left() >= 4.0 && r.right() <= 296.0, "{r:?}");
+    }
+
+    /// The popup's model list offers every model the Colour docker does,
+    /// and a colour switched to one of them is kept in it from then on,
+    /// edited there (#286).
+    #[test]
+    fn the_model_can_be_changed_on_demand() {
+        let red = Color::rgb8(220, 30, 30);
+        for m in crate::ui::color_docker::MODELS {
+            let c = red.convert_to(m);
+            assert_eq!(c.model_name(), m);
+            assert_eq!(edit_model(c), m, "edited in the model chosen");
+            // Still the same colour to the eye (Grayscale keeps the
+            // lightness only, by its nature).
+            let [r, g, b] = c.to_rgb8();
+            if m == "Grayscale" {
+                assert!(r == g && g == b && r > 60 && r < 160, "{m}: {r} {g} {b}");
+            } else {
+                assert!(
+                    (r as i32 - 220).abs() < 8
+                        && (g as i32 - 30).abs() < 8
+                        && (b as i32 - 30).abs() < 8,
+                    "{m}: {r} {g} {b}"
+                );
+            }
+        }
+        assert!(crate::ui::color_docker::MODELS.contains(&"CMYK"));
+        assert!(crate::ui::color_docker::MODELS.contains(&"RGB"));
     }
 
     #[test]

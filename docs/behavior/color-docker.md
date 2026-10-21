@@ -41,3 +41,18 @@ until the selection changes again.
 - `ui::color_docker::tests::the_new_color_follows_the_selection`
 - `ui::color_docker::tests::hue_sliders_count_degrees`
 - `ui::color_docker::tests::the_docker_draws_every_view_and_model`
+
+## The colour picker popup
+
+The swatches of the Properties docker (fill, outline, the extra fills
+and outlines, the text's character colours) open a popup beside the
+swatch (`ui/color_picker.rs`): the viewer (saturation and brightness
+square with the hue strip), a **Model** list and the sliders of the
+colour's model. The colour is edited in its own model, a CMYK colour in
+CMYK and an RGB one in RGB; choosing another model in the list converts
+the colour and the object holds a colour of that model from then on,
+with the sliders changing to it. The list offers the docker's models
+(RGB, CMYK, HSB, HSL, Lab, Grayscale, YIQ); a spot ink or registration
+colour is edited in CMYK until another model is chosen. Esc or a click
+outside closes the popup
+(`ui::color_picker::tests::the_model_can_be_changed_on_demand`).

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour pickers (Properties fill and outline swatches and every other swatch that opens the popup): a Model list switches the colour's model on demand (RGB, CMYK, HSB, HSL, Lab, Grayscale, YIQ); the colour converts and the object keeps a colour of that model (#286).
+
 - AI options: the OpenCode preset goes to the Console Inference API (`https://opencode.ai/inference/openai/v1/chat/completions`), which has replaced the Zen and Go addresses; the Zen and Go models are chosen by name there, so the two presets are one (#173).
 
 ## 0.10.1 (2026-10-21)
