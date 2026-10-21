@@ -383,7 +383,7 @@ fn default_desktop() -> [u8; 3] {
 }
 
 /// How many one-time upgrades `Settings::upgrade` knows.
-const UPGRADES: u32 = 2;
+const UPGRADES: u32 = 3;
 
 fn default_outline_units() -> String {
     "pt".into()
@@ -1283,6 +1283,14 @@ impl Settings {
         if self.upgrades < 2 {
             self.tools.rect_corners.fixed = true;
         }
+        // Versions before the alignment and dynamic guides existed kept
+        // both switches on, with nothing behind them; once the guides
+        // came they lit up for everyone with an older file. Off once,
+        // as for a first start; turned on afterwards they stay on.
+        if self.upgrades < 3 {
+            self.snap.alignment_guides = false;
+            self.snap.dynamic_guides = false;
+        }
         self.upgrades = self.upgrades.max(UPGRADES);
         self.migrate_ai();
         self
@@ -1674,6 +1682,23 @@ mod tests {
             std::fs::read_to_string(root.join(".github/workflows/build.yml")).expect("workflow");
         assert!(workflow.contains(&format!("packaging\\windows\\portable\\{PORTABLE_DIR}")));
         assert!(workflow.contains(&format!("\\{PORTABLE_DIR}\",")));
+    }
+
+    /// A file from before the guides existed had both switches on with
+    /// nothing behind them: off once at upgrade, and left alone after.
+    #[test]
+    fn inherited_guide_switches_go_off_once() {
+        let old = migrated(
+            r#"{"upgrades": 2, "snap": {"alignment_guides": true, "dynamic_guides": true}}"#,
+        );
+        assert!(!old.snap.alignment_guides && !old.snap.dynamic_guides);
+        assert_eq!(old.upgrades, UPGRADES);
+        // Turned on by the user since: kept.
+        let kept = migrated(
+            r#"{"upgrades": 3, "snap": {"alignment_guides": true, "dynamic_guides": false}}"#,
+        );
+        assert!(kept.snap.alignment_guides && !kept.snap.dynamic_guides);
+        assert!(!Settings::default().snap.alignment_guides);
     }
 
     /// Preferences as an older version saved them, migrated as at start.

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Alignment and dynamic guides: preferences saved by a version from before the guides existed had both switches on with nothing behind them, so after the update the magenta alignment lines showed for everyone with an older configuration. They are switched off once at the update, as on a first start; switched on by hand afterwards they stay on.
+
 - Colour pickers (Properties fill and outline swatches and every other swatch that opens the popup): a Model list switches the colour's model on demand (RGB, CMYK, HSB, HSL, Lab, Grayscale, YIQ); the colour converts and the object keeps a colour of that model (#286).
 
 - AI options: the OpenCode preset goes to the Console Inference API (`https://opencode.ai/inference/openai/v1/chat/completions`), which has replaced the Zen and Go addresses; the Zen and Go models are chosen by name there, so the two presets are one (#173).
