@@ -34,6 +34,9 @@ pub struct PrintPrefs {
     #[serde(default = "yes")]
     pub preflight: bool,
     pub destination: usize,
+    /// The system printer printed to last (`destination` 0), `None` for
+    /// the PDF viewer.
+    pub printer: Option<String>,
     pub orientation: usize,
     #[serde(default = "yes")]
     pub collate: bool,
@@ -63,6 +66,7 @@ impl Default for PrintPrefs {
             remember_last: false,
             preflight: true,
             destination: st.destination,
+            printer: st.printer.clone(),
             orientation: st.orientation,
             collate: st.collate,
             spot_to_cmyk: st.spot_to_cmyk,
@@ -95,6 +99,7 @@ impl PrintPrefs {
             },
             landscape: self.landscape,
             destination: self.destination.min(2),
+            printer: self.printer.clone(),
             orientation: self.orientation.min(2),
             collate: self.collate,
             spot_to_cmyk: self.spot_to_cmyk,
@@ -130,6 +135,7 @@ impl PrintPrefs {
         self.landscape = st.landscape;
         self.gutter = st.gutter;
         self.destination = st.destination;
+        self.printer = st.printer.clone();
         self.orientation = st.orientation;
         self.collate = st.collate;
         self.spot_to_cmyk = st.spot_to_cmyk;

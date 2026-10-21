@@ -1,9 +1,26 @@
 # Printing
 
-File > Print (Ctrl+P) builds a print-ready PDF of the sheets and opens it
-in the system viewer, where the printer is chosen (in the browser the PDF
-is downloaded). `export::print` builds it; the sheets come from
+File > Print (Ctrl+P) builds a print-ready PDF of the sheets and sends
+it to the printer chosen in the dialog, or opens it in the system
+viewer, where the printer is chosen (in the browser the PDF is
+downloaded). `export::print` builds it; the sheets come from
 `imposition.rs`.
+
+## Printers
+
+The Printer list holds the system's printers, the default one first,
+then "System printer (through the PDF viewer)", "PDF file" and
+"PostScript file". The printers come from CUPS (Linux and macOS):
+`lpstat -p -d` lists them when the dialog opens (`printers.rs`,
+`parse_lpstat`), and a print on one of them hands the PDF to `lp -d`
+with the number of copies and their collation (`lp_args`) and the
+drawing's name as the job title; the status bar says "Sent to printer
+name", or what `lp` complained about. The dialog starts on the printer
+printed to last when the system still has it, else on the default
+printer, else on the PDF viewer (`starting_printer`); the printer is
+remembered with the other print choices (Options > Global > Printing).
+On Windows and in the browser the list has no printers and the print
+goes through the PDF viewer.
 
 ## Print dialog
 
@@ -16,8 +33,8 @@ preferences, and with the drawing's own bleed as the bleed limit when it
 has one.
 
 - General:
-  - Destination: Printer is the system printer (a PDF opened in the
-    system viewer, which owns the printer and the copy count; in the
+  - Destination: Printer is one of the system's printers (above), the
+    system PDF viewer (which owns the printer and the copy count; in the
     browser the PDF is downloaded), a PDF file or a PostScript file (saved
     where chosen). Orientation: Match orientation (the Layout tab's
     Landscape box), Portrait or Landscape, for fixed sheets.
@@ -99,6 +116,7 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
 
 ## Checks
 
+- `printers::tests::the_printer_list_is_read_from_lpstat`, `printers::tests::the_dialog_starts_on_the_remembered_printer_else_the_default`, `printers::tests::lp_is_told_the_printer_copies_and_title`
 - `export::tests::page_lists_and_ranges_pick_pages`
 - `export::tests::print_colour_options_change_the_sheets_objects`
 - `export::tests::copies_repeat_sheets_collated_or_not_and_ps_gets_its_level`

@@ -103,6 +103,7 @@ mod placeholder;
 mod preflight;
 mod prefs;
 mod print_merge;
+mod printers;
 mod qr;
 mod raster;
 mod recognize;

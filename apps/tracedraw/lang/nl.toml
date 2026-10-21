@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "Kies eerst een map als afbeeldingsbibliothee
 status.picture_mosaic_too_tall = "Te veel rijen voor deze vorm: gebruik minder kolommen"
 status.previous_page = "Vorige pagina"
 status.print_sent = "Afdruk-PDF geopend: {path}"
+status.print_sent_printer = "Verzonden naar printer {name}" # mt
 status.proof_off = "Proefkleuren uit"
 status.proof_on = "Proefkleuren aan"
 status.recording = "Macro opnemen... voer de opdrachten uit en stop daarna de opname"

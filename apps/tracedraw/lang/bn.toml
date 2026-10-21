@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "প্রথমে একটি ছবির
 status.picture_mosaic_too_tall = "এই আকৃতির জন্য অনেক বেশি সারি: কম কলাম ব্যবহার করুন"
 status.previous_page = "পূর্ববর্তী পৃষ্ঠা"
 status.print_sent = "প্রিন্ট PDF খোলা হয়েছে: {path}"
+status.print_sent_printer = "প্রিন্টার {name}-এ পাঠানো হয়েছে" # mt
 status.proof_off = "রঙ প্রুফ বন্ধ"
 status.proof_on = "রঙ প্রুফ চালু"
 status.recording = "ম্যাক্রো রেকর্ড হচ্ছে... কমান্ডগুলো চালান, তারপর রেকর্ডিং থামান"

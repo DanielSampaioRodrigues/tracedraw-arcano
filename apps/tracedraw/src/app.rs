@@ -5068,6 +5068,10 @@ impl App {
         if bleed > 0.0 {
             st.bleed_limit = bleed;
         }
+        // The system's printers, the dialog starting on the one printed
+        // to last, else the default one.
+        st.printers = crate::printers::system_printers();
+        st.printer = crate::printers::starting_printer(st.printer.as_deref(), &st.printers);
         self.dialog = crate::ui::dialogs::Dialog::Print(st);
     }
 

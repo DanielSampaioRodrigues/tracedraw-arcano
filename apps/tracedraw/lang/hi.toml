@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "पहले एक छवि लाइब�
 status.picture_mosaic_too_tall = "इस आकृति के लिए बहुत अधिक पंक्तियाँ: कम कॉलम उपयोग करें"
 status.previous_page = "पिछला पृष्ठ"
 status.print_sent = "प्रिंट PDF खोली गई: {path}"
+status.print_sent_printer = "प्रिंटर {name} को भेजा गया" # mt
 status.proof_off = "रंग प्रूफ़ बंद"
 status.proof_on = "रंग प्रूफ़ चालू"
 status.recording = "मैक्रो रिकॉर्ड हो रहा है... कमांड चलाएँ, फिर रिकॉर्डिंग रोकें"

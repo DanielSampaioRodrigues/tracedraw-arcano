@@ -302,15 +302,17 @@ fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u
     Ok(out.into_inner())
 }
 
-/// Print: build a PDF with the print options and open it in the system
-/// viewer, which owns the printer dialog.
+/// Print: build a PDF with the print options and send it to the chosen
+/// system printer, or open it in the system viewer, which owns the
+/// printer dialog.
 pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     let mut doc = print_sheets(app, st);
     if st.separations {
         doc = separations_doc(&doc);
     }
     let stem = app.document_title().trim_end_matches('*').to_string();
-    // Files get their copies inside; the system viewer handles the count.
+    // Files get their copies inside; the printer (lp) or the system
+    // viewer handles the count.
     if st.destination != 0 && st.copies > 1 {
         repeat_copies(&mut doc, st.copies.min(999) as usize, st.collate);
     }
@@ -347,9 +349,30 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
                 crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
                 return Ok(trf("status.print_sent", &[("path", &name)]));
             }
-            print_through_viewer(&name, pdf)
+            match &st.printer {
+                Some(printer) => print_on(printer, &name, pdf, st.copies, st.collate, &stem),
+                None => print_through_viewer(&name, pdf),
+            }
         }
     }
+}
+
+/// The print PDF sent to the system printer `printer` (`lp`), with the
+/// copies the dialog asked for.
+fn print_on(
+    printer: &str,
+    name: &str,
+    pdf: Vec<u8>,
+    copies: u32,
+    collate: bool,
+    title: &str,
+) -> Result<String, String> {
+    let dir = std::env::temp_dir().join("tracedraw-print");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+    crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
+    crate::printers::print_pdf(printer, &path, copies, collate, title)?;
+    Ok(trf("status.print_sent_printer", &[("name", printer)]))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

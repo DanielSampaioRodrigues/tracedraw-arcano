@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print: the Printer list holds the system's printers on Linux and macOS (CUPS), the default one first, and a print on one of them goes straight to it with its copies, instead of only through the PDF viewer; the printer is remembered for the next print (#300).
+
 - Save As: Embed fonts for TraceDraw files too: the installed fonts the text uses go into the `.tdraw` file when their licence allows it (one file per face), so the drawing keeps its letters on a machine without them; the box starts on for `.tdraw` and `.cdr` files alike (#275).
 
 - Bitmaps: a linked bitmap (an imported file, or one sent to the system image editor by Edit Bitmap) follows its file on the desktop: a save in the outside editor shows in the drawing within a second, as Update from Link does by hand (#284).

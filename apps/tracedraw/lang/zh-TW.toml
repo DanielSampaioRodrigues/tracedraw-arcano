@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "請先選擇影像庫資料夾"
 status.picture_mosaic_too_tall = "此形狀的列數過多：請減少欄數"
 status.previous_page = "上一頁"
 status.print_sent = "已開啟列印 PDF：{path}"
+status.print_sent_printer = "已傳送到印表機 {name}" # mt
 status.proof_off = "校樣色彩已關閉"
 status.proof_on = "校樣色彩已開啟"
 status.recording = "正在錄製巨集... 請執行命令，然後停止錄製"

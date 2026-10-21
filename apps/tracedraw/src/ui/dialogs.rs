@@ -211,9 +211,14 @@ pub struct PrintState {
     /// The dialog's tab: 0 General, 1 Color, 2 Composite, 3 Layout,
     /// 4 Prepress, 5 PostScript, 6 Issues.
     pub tab: usize,
-    /// 0 the system viewer (which prints), 1 a PDF file, 2 a PostScript
-    /// file.
+    /// 0 a printer (`printer`, else the system viewer, which prints),
+    /// 1 a PDF file, 2 a PostScript file.
     pub destination: usize,
+    /// The system printer the print goes to (a name from `printers`),
+    /// `None` for the system PDF viewer.
+    pub printer: Option<String>,
+    /// The printers the system has, as the dialog opened.
+    pub printers: Vec<crate::printers::Printer>,
     /// 0 as the pages are, 1 portrait, 2 landscape (fixed sheets).
     pub orientation: usize,
     /// 0 the whole drawing, 1 the current page, 2 the pages in `pages`,
@@ -415,6 +420,8 @@ impl Default for PrintState {
             preflight: None,
             tab: 0,
             destination: 0,
+            printer: None,
+            printers: Vec::new(),
             orientation: 0,
             range: 0,
             pages: String::new(),
@@ -2936,13 +2943,33 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) {
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
                 ui.label(tr("print.printer"));
+                // The system's printers (the default first), then the
+                // PDF viewer and the file destinations.
                 let dests = ["print.dest_viewer", "print.dest_pdf", "print.dest_ps"];
+                let on_printer = st.destination == 0 && st.printer.is_some();
+                let selected = match (&st.printer, st.destination) {
+                    (Some(p), 0) => p.clone(),
+                    _ => tr(dests[st.destination.min(2)]),
+                };
                 egui::ComboBox::from_id_salt("print_destination")
-                    .selected_text(tr(dests[st.destination.min(2)]))
+                    .selected_text(selected)
                     .width(300.0)
                     .show_ui(ui, |ui| {
+                        for p in st.printers.clone() {
+                            let is = on_printer && st.printer.as_deref() == Some(p.name.as_str());
+                            if ui.selectable_label(is, &p.name).clicked() {
+                                st.destination = 0;
+                                st.printer = Some(p.name.clone());
+                            }
+                        }
                         for (i, d) in dests.iter().enumerate() {
-                            ui.selectable_value(&mut st.destination, i, tr(d));
+                            let is = st.destination == i && (i != 0 || !on_printer);
+                            if ui.selectable_label(is, tr(d)).clicked() {
+                                st.destination = i;
+                                if i == 0 {
+                                    st.printer = None;
+                                }
+                            }
                         }
                     });
                 ui.end_row();

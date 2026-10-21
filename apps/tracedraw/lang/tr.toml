@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "Önce bir görüntü kitaplığı klasörü 
 status.picture_mosaic_too_tall = "Bu şekil için çok fazla satır: daha az sütun kullanın"
 status.previous_page = "Önceki sayfa"
 status.print_sent = "Yazdırma PDF'si açıldı: {path}"
+status.print_sent_printer = "{name} yazıcısına gönderildi" # mt
 status.proof_off = "Prova renkleri kapalı"
 status.proof_on = "Prova renkleri açık"
 status.recording = "Makro kaydediliyor... komutları çalıştırın, ardından kaydı durdurun"

@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "Choisissez d'abord un dossier de bibliothèq
 status.picture_mosaic_too_tall = "Trop de lignes pour cette forme : utilisez moins de colonnes"
 status.previous_page = "Page précédente"
 status.print_sent = "PDF d'impression ouvert : {path}"
+status.print_sent_printer = "Envoyé à l'imprimante {name}" # mt
 status.proof_off = "Épreuvage des couleurs désactivé"
 status.proof_on = "Épreuvage des couleurs activé"
 status.recording = "Enregistrement de la macro... exécutez les commandes, puis arrêtez l'enregistrement"

@@ -3064,6 +3064,7 @@ status.picture_mosaic_no_library = "Nejprve zvolte složku knihovny obrázků"
 status.picture_mosaic_too_tall = "Pro tento tvar je příliš mnoho řádků: použijte méně sloupců"
 status.previous_page = "Předchozí stránka"
 status.print_sent = "Tiskové PDF otevřeno: {path}"
+status.print_sent_printer = "Odesláno na tiskárnu {name}" # mt
 status.proof_off = "Nátisk barev vypnut"
 status.proof_on = "Nátisk barev zapnut"
 status.recording = "Nahrávání makra... proveďte příkazy a poté nahrávání zastavte"
