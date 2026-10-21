@@ -2229,6 +2229,28 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             ui.end_row();
         });
     ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(tr("options.fit_page"));
+        if ui
+            .add_enabled(
+                !app.selection.is_empty(),
+                egui::Button::new(tr("options.fit_page_selection")),
+            )
+            .clicked()
+        {
+            app.fit_page_to_selection();
+        }
+        if ui
+            .add_enabled(
+                app.drawing_bounds().is_some(),
+                egui::Button::new(tr("options.fit_page_drawing")),
+            )
+            .clicked()
+        {
+            app.fit_page_to_drawing();
+        }
+    });
+    ui.add_space(4.0);
     ui.indent("page_size_checks", |ui| {
         ui.checkbox(
             &mut app.options_current_only,

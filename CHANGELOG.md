@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Layout > Fit Page to Selection and Fit Page to Drawing (also on the Page Size options page): the page takes the size of the selection or of everything on it, and the objects move onto it; one undo step (#236).
+
 - Alignment and dynamic guides: preferences saved by a version from before the guides existed had both switches on with nothing behind them, so after the update the magenta alignment lines showed for everyone with an older configuration. They are switched off once at the update, as on a first start; switched on by hand afterwards they stay on.
 
 - Colour pickers (Properties fill and outline swatches and every other swatch that opens the popup): a Model list switches the colour's model on demand (RGB, CMYK, HSB, HSL, Lab, Grayscale, YIQ); the colour converts and the object keeps a colour of that model (#286).

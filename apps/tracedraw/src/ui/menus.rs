@@ -2060,6 +2060,22 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Layout;
     }
+    if item(
+        ui,
+        "menu.layout.fit_page_selection",
+        "",
+        !app.selection.is_empty(),
+    ) {
+        app.fit_page_to_selection();
+    }
+    if item(
+        ui,
+        "menu.layout.fit_page_drawing",
+        "",
+        app.drawing_bounds().is_some(),
+    ) {
+        app.fit_page_to_drawing();
+    }
     if item(ui, "menu.layout.page_background", "", true) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Background;

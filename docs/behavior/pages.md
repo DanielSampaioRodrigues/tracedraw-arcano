@@ -25,3 +25,15 @@ Tests: `command::tests::duplicate_page_goes_before_or_after_with_or_without_cont
 `command::tests::a_saved_duplicate_page_without_options_copies_contents_after`,
 `ui::window_bars::tests::the_duplicate_page_dialog_puts_the_copy_where_asked_and_undoes`,
 `ui::window_bars::tests::layout_duplicate_page_opens_the_dialog`.
+
+## Fit Page to Selection, Fit Page to Drawing
+
+Layout > Fit Page to Selection (pale with nothing selected) and Fit
+Page to Drawing (pale on an empty page), also as buttons on the
+Document Options > Page Size page: the current page takes the size of
+the selection's bounds (effects included), or of everything on the page,
+and the page's objects move so that box sits on the page from its
+bottom-left corner. One undo step (`App::fit_page_to_selection`,
+`fit_page_to_drawing`); a box under 0.1 mm does nothing and the status
+bar says so. Checked by
+`ops2::fit_page_tests::the_page_fits_the_selection_or_the_drawing`.

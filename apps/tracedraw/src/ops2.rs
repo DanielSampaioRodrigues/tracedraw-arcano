@@ -86,6 +86,71 @@ impl AlignTo {
 }
 
 impl App {
+    /// The bounds of everything drawn on the current page (its layers'
+    /// objects, effects included), page mm.
+    pub fn drawing_bounds(&self) -> Option<tracedraw_core::geometry::Rect> {
+        let doc = self.doc();
+        let page = doc.page(self.page).ok()?;
+        page.layers
+            .iter()
+            .flat_map(|l| l.shapes.iter())
+            .filter(|s| s.visible)
+            .map(|s| self.visual_bounds(s))
+            .reduce(|a, b| a.union(b))
+    }
+
+    /// Layout > Fit Page to Selection: the current page takes the size
+    /// of the selection's bounds and the page's objects move so the
+    /// selection sits on the page from its bottom-left corner; one undo
+    /// step. Nothing happens without a selection.
+    pub fn fit_page_to_selection(&mut self) {
+        if let Some(b) = self.selection_bounds() {
+            self.fit_page_to(b, "Fit Page to Selection");
+        }
+    }
+
+    /// Layout > Fit Page to Drawing: as [`Self::fit_page_to_selection`],
+    /// for everything on the page.
+    pub fn fit_page_to_drawing(&mut self) {
+        if let Some(b) = self.drawing_bounds() {
+            self.fit_page_to(b, "Fit Page to Drawing");
+        }
+    }
+
+    fn fit_page_to(&mut self, b: tracedraw_core::geometry::Rect, label: &'static str) {
+        use tracedraw_core::geometry::{Affine, Size, Vec2};
+        if !(b.width().is_finite() && b.height().is_finite()) || b.width() < 0.1 || b.height() < 0.1
+        {
+            self.status = crate::i18n::tr("status.fit_page_nothing");
+            return;
+        }
+        let page = self.page;
+        let shapes: Vec<ShapeId> = self
+            .doc()
+            .page(page)
+            .map(|p| {
+                p.layers
+                    .iter()
+                    .flat_map(|l| l.shapes.iter().map(|s| s.id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut cmds = vec![Command::ResizePage {
+            page,
+            size: Size::new(b.width(), b.height()),
+        }];
+        let shift = Vec2::new(-b.x0, -b.y0);
+        if shift.hypot() > 1e-9 && !shapes.is_empty() {
+            cmds.push(Command::TransformShapes {
+                shapes,
+                transform: Affine::translate(shift),
+            });
+        }
+        if let Err(e) = self.engine.run_batch(label, &cmds) {
+            self.status = e.to_string();
+        }
+    }
+
     // ----- layout ----------------------------------------------------------------
 
     /// Layout > Insert Page Number: an artistic text "1", "2"... on the
@@ -2993,5 +3058,64 @@ mod tests {
         // Less than the original size does nothing.
         app.inflate_bitmaps_by(100.0, 100.0);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+    }
+}
+
+#[cfg(test)]
+mod fit_page_tests {
+    use crate::app::App;
+    use tracedraw_core::geometry::Rect;
+    use tracedraw_core::ShapeKind;
+
+    fn rect(app: &mut App, r: Rect) -> tracedraw_core::ShapeId {
+        app.new_shape(ShapeKind::Rect {
+            rect: r,
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect")
+    }
+
+    /// Fit Page to Selection sizes the page to the selection and moves
+    /// the page's objects so the selection sits on it from the corner;
+    /// Fit Page to Drawing does the same for everything on the page. One
+    /// undo step each.
+    #[test]
+    fn the_page_fits_the_selection_or_the_drawing() {
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(30.0, 40.0, 80.0, 90.0));
+        let b = rect(&mut app, Rect::new(100.0, 100.0, 120.0, 110.0));
+        let bounds = |app: &App, id| app.doc().shape_on_page(id).expect("shape").bounds();
+        app.select(vec![a]);
+        let depth = app.engine.history_labels().0.len();
+        app.fit_page_to_selection();
+        let size = app.page_size();
+        assert!((size.width - 50.0).abs() < 1e-9 && (size.height - 50.0).abs() < 1e-9);
+        let ba = bounds(&app, a);
+        assert!(ba.x0.abs() < 1e-9 && ba.y0.abs() < 1e-9, "{ba:?}");
+        let bb = bounds(&app, b);
+        assert!(
+            (bb.x0 - 70.0).abs() < 1e-9 && (bb.y0 - 60.0).abs() < 1e-9,
+            "{bb:?}"
+        );
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        app.undo();
+        assert!((bounds(&app, a).x0 - 30.0).abs() < 1e-9);
+        assert!((app.page_size().width - 210.0).abs() < 1e-6);
+        // The whole drawing: 30..120 by 40..110.
+        app.select(Vec::new());
+        app.fit_page_to_drawing();
+        let size = app.page_size();
+        assert!((size.width - 90.0).abs() < 1e-9 && (size.height - 70.0).abs() < 1e-9);
+        assert!(bounds(&app, a).x0.abs() < 1e-9 && bounds(&app, a).y0.abs() < 1e-9);
+        let bb = bounds(&app, b);
+        assert!(
+            (bb.x1 - 90.0).abs() < 1e-9 && (bb.y1 - 70.0).abs() < 1e-9,
+            "{bb:?}"
+        );
+        // Nothing selected: Fit Page to Selection does nothing.
+        let before = app.engine.history_labels().0.len();
+        app.fit_page_to_selection();
+        assert_eq!(app.engine.history_labels().0.len(), before);
     }
 }
