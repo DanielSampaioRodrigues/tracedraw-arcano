@@ -245,10 +245,34 @@ fn guard_shortcuts() {
     guard.forget();
 }
 
+/// A right button pressed while the left one is held: the browser gives
+/// it as a pointer move, not a press, so egui never sees it; the mouse
+/// event (which the browser does send for every button) is noted for the
+/// drag (`interaction.rs`).
+fn watch_chorded_right_press() {
+    use wasm_bindgen::closure::Closure;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let watch = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        if crate::interaction::is_chorded_right_press(e.button(), e.buttons()) {
+            crate::interaction::note_chorded_right_press();
+            request_repaint();
+        }
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "mousedown",
+        watch.as_ref().unchecked_ref(),
+        true,
+    );
+    watch.forget();
+}
+
 /// Start the editor on the page's `<canvas id="tracedraw">`.
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     guard_shortcuts();
+    watch_chorded_right_press();
     register_fonts();
     tracedraw_text::install();
     load_font_list();

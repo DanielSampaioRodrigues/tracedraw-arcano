@@ -3286,3 +3286,87 @@ fn the_shape_tool_takes_the_nearest_node_of_a_scaled_curve() {
     let (_, seg, _) = app.segment_at(page(4.0, 2.5)).expect("segment");
     assert_eq!(seg, 3);
 }
+
+/// A browser gives a right button pressed while the left one is held as
+/// a pointer move, so it is noted outside egui's events (`web.rs`); the
+/// next frame of the drag takes it as the right click that leaves the
+/// original. The desktop never notes one.
+#[test]
+fn a_noted_chorded_right_press_leaves_the_original_too() {
+    assert!(crate::interaction::is_chorded_right_press(2, 3));
+    assert!(
+        !crate::interaction::is_chorded_right_press(2, 2),
+        "left not held"
+    );
+    assert!(
+        !crate::interaction::is_chorded_right_press(0, 1),
+        "the left button"
+    );
+    let (ctx, mut app, id) = setup();
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let to = from + egui::vec2(150.0, 0.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let mid = from + (to - from) * 0.5;
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(mid)],
+        Modifiers::NONE,
+    );
+    assert!(!app.drag_copy);
+    crate::interaction::note_chorded_right_press();
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(mid + egui::vec2(10.0, 0.0))],
+        Modifiers::NONE,
+    );
+    assert!(app.drag_copy, "the press is taken on the next frame");
+    assert_eq!(app.status, crate::i18n::tr("status.drag_copy_on"));
+    // Taken once: the next frame does not take it back.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(mid + egui::vec2(20.0, 0.0))],
+        Modifiers::NONE,
+    );
+    assert!(app.drag_copy);
+    // A second press takes it back, a third sets it again.
+    crate::interaction::note_chorded_right_press();
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(mid + egui::vec2(30.0, 0.0))],
+        Modifiers::NONE,
+    );
+    assert!(!app.drag_copy);
+    crate::interaction::note_chorded_right_press();
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(to)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(shape_count(&app), 2);
+    assert!(close(bounds(&app, id).x0, 10.0), "the original stays");
+    let copy = app.selection.first().copied().expect("copy");
+    assert_ne!(copy, id);
+    assert!(bounds(&app, copy).x0 > 15.0);
+}

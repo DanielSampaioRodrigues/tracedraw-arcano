@@ -185,6 +185,36 @@ fn paste_without_text(events: &[egui::Event], seen: &mut bool) -> bool {
     out
 }
 
+thread_local! {
+    /// A right button pressed while the left one is held, reported by the
+    /// windowing layer outside egui's events (see [`note_chorded_right_press`]).
+    static CHORDED_RIGHT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a mouse button event is the right button going down while the
+/// left one is held: `button` and `buttons` as the browser's mouse events
+/// give them (button 2 is the right one, bit 1 of `buttons` the left one
+/// held).
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn is_chorded_right_press(button: i16, buttons: u16) -> bool {
+    button == 2 && buttons & 1 != 0
+}
+
+/// Note a right button pressed during a left drag. A browser reports a
+/// button pressed while another is held as a pointer move, so egui never
+/// sees it; the browser build listens for the mouse event itself
+/// (`web.rs`) and the next frame takes the press as the right click that
+/// makes a move, scale, rotation or skew leave the original.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn note_chorded_right_press() {
+    CHORDED_RIGHT.with(|c| c.set(true));
+}
+
+/// The noted press, once.
+fn take_chorded_right_press() -> bool {
+    CHORDED_RIGHT.with(|c| c.replace(false))
+}
+
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
         self.hit_test_where(p, |_| false)
@@ -733,10 +763,10 @@ impl App {
         // A right click during a move, scale, rotation or skew: the change
         // goes to copies on release, the originals stay (again: not).
         if self.transforming() {
-            if response
+            let right_pressed = response
                 .ctx
-                .input(|i| i.pointer.button_pressed(PointerButton::Secondary))
-            {
+                .input(|i| i.pointer.button_pressed(PointerButton::Secondary));
+            if right_pressed || take_chorded_right_press() {
                 self.drag_copy = !self.drag_copy;
                 self.status = crate::i18n::tr(if self.drag_copy {
                     "status.drag_copy_on"

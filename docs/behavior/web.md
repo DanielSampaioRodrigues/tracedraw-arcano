@@ -59,6 +59,16 @@ for download size (`profile.web`, `opt-level = "s"`), runs on one thread
 (effects, tracing, mosaics and large exports keep the page busy until
 they finish) and a page has less memory than a program.
 
+## Mouse
+
+A right click during a move, scale, rotation or skew with the Pick tool
+leaves the original and gives the change to a copy, as on the desktop
+(`pick-tool.md`). A browser reports a button pressed while another is
+held as a pointer move, so the editor listens for the browser's own
+mouse event (`web.rs`, `interaction::note_chorded_right_press`) and
+takes it on the next frame; a second press takes the copy back. The
+browser's context menu does not open on the canvas.
+
 ## Keyboard
 
 The editor's shortcuts reach the editor instead of the browser: while
