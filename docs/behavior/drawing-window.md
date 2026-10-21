@@ -109,7 +109,31 @@ window shows.
 - Tiled and cascaded windows (above) draw each window of a drawing with
   its own view.
 
+## Drawing the page
+
+- The objects are rasterised with the CPU renderer into one texture the
+  size of the canvas (`raster.rs`), rendered anew only when the drawing,
+  the view, the canvas size or the drag preview changes.
+- Objects wholly outside the part of the page on screen are not drawn
+  (`render::Renderer::out_of_sight`): an object's bounds, grown by what
+  its outline may reach (twelve widths, scaled with the object), must
+  touch the visible page rectangle. Objects whose extent is not their
+  bounds (effects, drop shadows, symbols, the objects of a drag preview)
+  are always drawn. Zoomed into a page of ten thousand rectangles the
+  render takes less than half the time it did.
+- While the view moves (a pan, a scroll, a zoom) the last render is
+  shown moved or scaled into place at once, and the page is rendered
+  anew once the view has rested for 0.12 s (`raster::SETTLE_SECONDS`);
+  the part the last render did not cover stays blank until then. So a
+  page of thousands of objects pans at the screen's rate whatever its
+  size; a zoom looks coarse for that moment. The Pixels view never
+  shows a moved render.
+
 ## Checks
+
+- `tracedraw_render::culling_tests::objects_out_of_sight_are_skipped`
+- `raster::tests::a_moving_view_shows_the_last_render_until_it_rests`
+- `raster::tests::a_canvas_that_moves_renders_again`
 
 - `ui::windows::tests::windows_tile_and_cascade_inside_the_area`
 - `ui::windows::tests::tiled_windows_draw_every_drawing_and_switch`

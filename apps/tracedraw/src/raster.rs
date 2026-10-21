@@ -1,15 +1,27 @@
 //! Keeps the rasterized page as an egui texture, re-rendering only when the
-//! document, view, canvas size or drag preview changed.
+//! document, view, canvas size or drag preview changed. While the view
+//! moves (a pan, a scroll, a zoom) the last render is shown shifted or
+//! scaled into place and the page is rendered anew once the view has
+//! rested for a moment, so a page of thousands of objects pans smoothly.
 
 use crate::view::View;
 use egui::{ColorImage, Context, Rect, TextureHandle, TextureId, TextureOptions};
 use tracedraw_core::{geometry::Affine, Document, PageId, ShapeId};
 use tracedraw_render::{render_page, Preview, RenderOptions, ViewTransform};
 
+/// How long the view must rest, seconds, before a moved view is
+/// rendered anew instead of showing the last render moved into place.
+pub const SETTLE_SECONDS: f64 = 0.12;
+
 #[derive(Default)]
 pub struct Raster {
     texture: Option<TextureHandle>,
     key: Option<Key>,
+    /// The part of the page the texture shows, page mm.
+    page_rect: Option<tracedraw_core::geometry::Rect>,
+    /// While the view moves: the view last asked for and when (egui
+    /// time) it will be rendered if it stays.
+    settle: Option<(Key, f64)>,
     /// Proofed colours on a grid of screen colours (View > Proof Colors),
     /// made when first needed and dropped with the texture (the colour
     /// settings changed).
@@ -169,6 +181,7 @@ impl Raster {
     pub fn invalidate(&mut self) {
         self.key = None;
         self.proof = None;
+        self.settle = None;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -216,9 +229,31 @@ impl Raster {
         };
         if self.key.as_ref() == Some(&key) {
             if let Some(t) = &self.texture {
+                self.settle = None;
                 return Some((t.id(), screen));
             }
         }
+        // The view moved (pan, scroll, zoom) and nothing else changed:
+        // show the last render moved into place until the view rests.
+        if window.is_none() {
+            if let (Some(old), Some(t), Some(page_rect)) =
+                (self.key.as_ref(), self.texture.as_ref(), self.page_rect)
+            {
+                if old.same_but_view(&key) {
+                    let now = ctx.input(|i| i.time);
+                    let due = match &self.settle {
+                        Some((k, due)) if *k == key => *due,
+                        _ => now + SETTLE_SECONDS,
+                    };
+                    if now < due {
+                        self.settle = Some((key, due));
+                        ctx.request_repaint_after(std::time::Duration::from_secs_f64(due - now));
+                        return Some((t.id(), view.rect_to_screen(page_rect)));
+                    }
+                }
+            }
+        }
+        self.settle = None;
         let vt = match (window, pixel_dpi) {
             // One render pixel per document pixel, the window's top-left
             // one at the corner.
@@ -277,7 +312,33 @@ impl Raster {
             None => self.texture = Some(ctx.load_texture("page", image, filter)),
         }
         self.key = Some(key);
+        self.page_rect = (window.is_none()).then(|| {
+            tracedraw_core::geometry::Rect::new(
+                -vt.origin_x / vt.zoom,
+                (vt.origin_y - h as f64) / vt.zoom,
+                (w as f64 - vt.origin_x) / vt.zoom,
+                vt.origin_y / vt.zoom,
+            )
+        });
         self.texture.as_ref().map(|t| (t.id(), screen))
+    }
+}
+
+impl Key {
+    /// True when `other` shows the same drawing the same way, only from
+    /// another place or at another zoom (the canvas the same size).
+    fn same_but_view(&self, other: &Key) -> bool {
+        self.revision == other.revision
+            && self.page == other.page
+            && self.size == other.size
+            && self.preview == other.preview
+            && self.wireframe == other.wireframe
+            && self.simulate_overprints == other.simulate_overprints
+            && self.complex_effects == other.complex_effects
+            && self.proof == other.proof
+            && self.focus == other.focus
+            && self.pixels.is_none()
+            && other.pixels.is_none()
     }
 }
 
@@ -309,27 +370,136 @@ mod tests {
         assert!(half.b() <= 128);
     }
 
+    /// One frame at egui time `time`: the page texture for `view` on the
+    /// canvas `rect`.
+    fn pass(
+        ctx: &Context,
+        raster: &mut Raster,
+        doc: &Document,
+        view: &View,
+        rect: Rect,
+        time: f64,
+    ) -> (TextureId, Rect) {
+        let page = doc.pages[0].id;
+        let mut out = None;
+        let input = egui::RawInput {
+            time: Some(time),
+            ..Default::default()
+        };
+        let mut full = ctx.run_ui(input, |ui| {
+            out = raster.texture(
+                ui.ctx(),
+                doc,
+                page,
+                view,
+                rect,
+                None,
+                1,
+                false,
+                false,
+                false,
+                false,
+                None,
+                None,
+            );
+        });
+        full.textures_delta.clear();
+        out.expect("texture")
+    }
+
+    /// A pan or a zoom shows the last render moved or scaled into place
+    /// at once, and renders the page anew once the view has rested.
+    #[test]
+    fn a_moving_view_shows_the_last_render_until_it_rests() {
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let mut raster = Raster::default();
+        let view = View::default();
+        let (first, screen) = pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
+        assert_eq!(screen, rect);
+        let key = raster.key.clone();
+        // Panned 10 points right: the same texture, 10 points to the right,
+        // nothing rendered.
+        let mut moved = view;
+        moved.pan(egui::vec2(10.0, 0.0));
+        let (tex, screen) = pass(&ctx, &mut raster, &doc, &moved, rect, 0.01);
+        assert_eq!(tex, first);
+        assert_eq!(raster.key, key, "no new render yet");
+        assert!((screen.min.x - 10.0).abs() < 1e-3, "{screen:?}");
+        assert!(raster.settle.is_some());
+        // Zoomed: the texture scaled about the page, still the old one.
+        let mut zoomed = moved;
+        zoomed.zoom *= 2.0;
+        let (tex, screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, 0.05);
+        assert_eq!(tex, first);
+        assert!((screen.width() - 640.0).abs() < 1e-3, "{screen:?}");
+        // The view rests: rendered anew for where it is now.
+        let (_, screen) = pass(
+            &ctx,
+            &mut raster,
+            &doc,
+            &zoomed,
+            rect,
+            0.05 + SETTLE_SECONDS + 0.01,
+        );
+        assert_ne!(raster.key, key);
+        assert_eq!(screen, rect);
+        assert!(raster.settle.is_none());
+        // Moving on at once re-arms the wait from the latest move.
+        let mut again = zoomed;
+        again.pan(egui::vec2(0.0, 5.0));
+        let before = raster.key.clone();
+        pass(&ctx, &mut raster, &doc, &again, rect, 1.0);
+        pass(
+            &ctx,
+            &mut raster,
+            &doc,
+            &again,
+            rect,
+            1.0 + SETTLE_SECONDS / 2.0,
+        );
+        assert_eq!(raster.key, before);
+        pass(
+            &ctx,
+            &mut raster,
+            &doc,
+            &again,
+            rect,
+            1.0 + SETTLE_SECONDS + 0.01,
+        );
+        assert_ne!(raster.key, before);
+    }
+
     #[test]
     fn a_canvas_that_moves_renders_again() {
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
-        let page = doc.pages[0].id;
         let view = View::default();
         let mut raster = Raster::default();
         let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(320.0, 200.0));
-        let draw = |raster: &mut Raster, rect: Rect| {
-            raster.texture(
-                &ctx, &doc, page, &view, rect, None, 1, false, false, false, false, None, None,
-            )
-        };
-        assert!(draw(&mut raster, at(40.0, 160.0)).is_some());
+        pass(&ctx, &mut raster, &doc, &view, at(40.0, 160.0), 0.0);
         let first = raster.key.clone();
         // Same canvas, same view: the cached texture.
-        assert!(draw(&mut raster, at(40.0, 160.0)).is_some());
+        pass(&ctx, &mut raster, &doc, &view, at(40.0, 160.0), 0.01);
         assert_eq!(raster.key, first);
         // The canvas moves up by a bar's height and keeps its size: the
-        // page sits elsewhere inside it, so the key changes.
-        assert!(draw(&mut raster, at(40.0, 107.0)).is_some());
+        // page sits elsewhere inside it. The last render is shown where
+        // the page now is, and the page is rendered anew once the view
+        // rests, with the new offset.
+        let (_, screen) = pass(&ctx, &mut raster, &doc, &view, at(40.0, 107.0), 0.02);
+        assert_eq!(
+            screen,
+            view.rect_to_screen(raster.page_rect.expect("page rect"))
+        );
+        pass(
+            &ctx,
+            &mut raster,
+            &doc,
+            &view,
+            at(40.0, 107.0),
+            0.02 + SETTLE_SECONDS + 0.01,
+        );
         assert_ne!(raster.key, first);
         assert_eq!(
             raster.key.as_ref().map(|k| k.offset),

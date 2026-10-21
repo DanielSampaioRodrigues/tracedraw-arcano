@@ -214,12 +214,16 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
         bg_shape.stroke = None;
         r.draw_shape(&bg_shape, Affine::IDENTITY);
     }
+    let visible = visible_page_rect(opts);
     let layers = doc.layers_for_page(page.id).ok()?;
     for layer in layers {
         if !layer.visible {
             continue;
         }
         for shape in &layer.shapes {
+            if r.out_of_sight(shape, &visible) {
+                continue;
+            }
             let extra = r.child_transform(shape, Affine::IDENTITY);
             r.draw_shape(shape, extra);
         }
@@ -246,6 +250,19 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
     }
     Some(pixmap)
 }
+
+/// The part of the page the target shows, page millimetres.
+fn visible_page_rect(opts: &RenderOptions) -> Rect {
+    let inv = opts.view.affine().inverse();
+    let a = inv * Point::new(0.0, 0.0);
+    let b = inv * Point::new(opts.width as f64, opts.height as f64);
+    Rect::from_points(a, b)
+}
+
+/// How far an outline may reach past the path it follows, in widths:
+/// mitres, arrowheads, variable widths and calligraphic nibs all stay
+/// within this.
+const OUTLINE_REACH: f64 = 12.0;
 
 struct Renderer<'a> {
     pixmap: &'a mut Pixmap,
@@ -276,6 +293,39 @@ impl Renderer<'_> {
 
     /// The transform `child` is drawn with inside `transform`: the live
     /// drag preview's first when the child is being dragged.
+    /// True when nothing of `shape` can show in `visible` (page mm), so
+    /// it need not be drawn: its bounds, grown by what its outline may
+    /// reach, lie wholly outside. Objects whose extent is not their
+    /// bounds (effects, shadows, symbols, the drag preview) are always
+    /// drawn.
+    fn out_of_sight(&self, shape: &Shape, visible: &Rect) -> bool {
+        if !shape.visible {
+            return true;
+        }
+        if !shape.effects.is_empty()
+            || shape.shadow.is_some()
+            || matches!(shape.kind, ShapeKind::SymbolInstance { .. })
+            || self.preview.is_some_and(|p| p.shapes.contains(&shape.id))
+        {
+            return false;
+        }
+        let b = shape.bounds();
+        if !b.x0.is_finite() || !b.y0.is_finite() || !b.x1.is_finite() || !b.y1.is_finite() {
+            return false;
+        }
+        let scale = {
+            let c = shape.transform.as_coeffs();
+            (c[0] * c[0] + c[1] * c[1])
+                .sqrt()
+                .max((c[2] * c[2] + c[3] * c[3]).sqrt())
+                .max(1.0)
+        };
+        let width = shape.stroke.as_ref().map_or(0.0, |s| s.width.abs()) * scale;
+        let margin = width * OUTLINE_REACH + 1.0;
+        let b = b.inflate(margin, margin);
+        b.x1 < visible.x0 || b.x0 > visible.x1 || b.y1 < visible.y0 || b.y0 > visible.y1
+    }
+
     fn child_transform(&self, child: &Shape, transform: Affine) -> Affine {
         match self.preview {
             Some(p) if p.shapes.contains(&child.id) => p.transform * transform,
@@ -3642,5 +3692,96 @@ mod tests {
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let page = doc.pages[0].id;
         assert!(render_page_image(&doc, page, 96.0).is_some());
+    }
+}
+
+#[cfg(test)]
+mod culling_tests {
+    use super::*;
+    use tracedraw_core::document::{Shape, ShapeKind};
+
+    fn rect_shape(id: u64, r: Rect) -> Shape {
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(id),
+            ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(10, 20, 30));
+        s
+    }
+
+    /// Objects wholly outside the part of the page on screen are not
+    /// drawn (a page of thousands of objects pans at the cost of the
+    /// visible ones); an outline, a shadow or an effect that may reach
+    /// in keeps an object drawn.
+    #[test]
+    fn objects_out_of_sight_are_skipped() {
+        let opts = RenderOptions {
+            width: 400,
+            height: 300,
+            // 4 px per mm, the view's bottom-left at page (100, 100):
+            // page x 100..200, y 100..175 on screen.
+            view: ViewTransform {
+                zoom: 4.0,
+                origin_x: -400.0,
+                origin_y: 300.0 + 400.0,
+            },
+            ..RenderOptions::default()
+        };
+        let visible = visible_page_rect(&opts);
+        assert!((visible.x0 - 100.0).abs() < 1e-9 && (visible.x1 - 200.0).abs() < 1e-9);
+        assert!((visible.y0 - 100.0).abs() < 1e-9 && (visible.y1 - 175.0).abs() < 1e-9);
+        let mut pixmap = Pixmap::new(400, 300).unwrap();
+        let r = Renderer {
+            pixmap: &mut pixmap,
+            screen: opts.view.affine(),
+            zoom: 4.0,
+            flags: Flags::from_options(&opts),
+            symbols: &[],
+            preview: None,
+        };
+        let inside = rect_shape(1, Rect::new(120.0, 120.0, 130.0, 130.0));
+        let far = rect_shape(2, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let touching = rect_shape(3, Rect::new(90.0, 90.0, 100.5, 100.5));
+        assert!(!r.out_of_sight(&inside, &visible));
+        assert!(r.out_of_sight(&far, &visible));
+        assert!(!r.out_of_sight(&touching, &visible));
+        // Two millimetres short of the view, but a 1 mm outline reaches it.
+        let mut near = rect_shape(4, Rect::new(80.0, 120.0, 97.0, 130.0));
+        assert!(r.out_of_sight(&near, &visible));
+        near.stroke = Some(tracedraw_core::Stroke::new(
+            tracedraw_core::Color::BLACK,
+            1.0,
+        ));
+        assert!(!r.out_of_sight(&near, &visible));
+        // Scaled up five times: the outline reaches five times as far.
+        let mut scaled = rect_shape(5, Rect::new(10.0, 25.0, 15.0, 27.0));
+        scaled.transform = Affine::scale(5.0);
+        scaled.stroke = Some(tracedraw_core::Stroke::new(
+            tracedraw_core::Color::BLACK,
+            0.5,
+        ));
+        assert!(!r.out_of_sight(&scaled, &visible), "{:?}", scaled.bounds());
+        // A shadow may fall anywhere: drawn.
+        let mut shadowed = rect_shape(6, Rect::new(0.0, 0.0, 10.0, 10.0));
+        shadowed.shadow = Some(tracedraw_core::document::Shadow::default());
+        assert!(!r.out_of_sight(&shadowed, &visible));
+        // Hidden objects never draw.
+        let mut hidden = inside.clone();
+        hidden.visible = false;
+        assert!(r.out_of_sight(&hidden, &visible));
+        // Through the page render: the far object leaves no pixel.
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(300.0, 300.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        doc.layer_mut(layer).unwrap().shapes.push(far);
+        let px = render_page(&doc, page, &opts).unwrap();
+        assert!(px.pixels().iter().all(|p| p.alpha() == 0));
+        doc.layer_mut(layer).unwrap().shapes.push(inside);
+        let px = render_page(&doc, page, &opts).unwrap();
+        assert!(px.pixels().iter().any(|p| p.alpha() > 0));
     }
 }
