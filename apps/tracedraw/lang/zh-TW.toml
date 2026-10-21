@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "僅將頁面大小套用至目前頁面"
 toolbar.curve_finish_hint = "按 Enter 或按兩下即可完成曲線，按 Esc 可取消"
 toolbar.curve_smoothness = "曲線平滑度"
 toolbar.cusp_tip = "尖角節點：控點各自獨立移動"
+toolbar.guides_selected = "已選取 {n} 條輔助線" # mt
 toolbar.custom = "自訂"
 toolbar.cut = "剪下 (Ctrl+X)"
 toolbar.cut_desc = "剪下選取範圍並放到剪貼簿。"

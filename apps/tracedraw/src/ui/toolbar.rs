@@ -824,6 +824,11 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
         let shapes = app.selected_shapes();
         match app.tool {
             Tool::Shape => shape_tool_bar(app, ui),
+            Tool::Pick | Tool::FreeformPick
+                if shapes.is_empty() && !app.selected_guides.is_empty() =>
+            {
+                crate::ui::propbar::guide_bar(app, ui)
+            }
             Tool::Pick | Tool::FreeformPick if shapes.is_empty() => page_properties(app, ui),
             Tool::Pick | Tool::FreeformPick
                 if shapes

@@ -131,7 +131,16 @@ stand for a distance in the world (`drawing_scale.rs`):
   ruler origin shows the cross hair.
 - Delete removes the selected guidelines that are not locked.
 - Right-click on a guideline: Undo, Delete, Lock or Unlock, Properties
-  (opens the Guidelines panel with the guideline's values).
+  (opens the Guidelines panel with the guideline's values). A double
+  click on a guideline (where no object is) does the same: the panel
+  opens with that guideline selected alone and its values in the
+  fields (`App::open_guide_properties`).
+- Property bar: with guidelines selected and no object, the bar shows
+  the one selected guideline's type and its x, y and angle (counted
+  from the ruler origin, as the panel shows them); a value typed there
+  moves it at once (`propbar::guide_bar`, `App::set_selected_guide_line`).
+  With several selected it says how many. A locked guideline shows
+  "locked" and does not move.
 - Edit > Select All > Guidelines selects every guideline of the page.
 
 ### Guidelines panel
@@ -140,7 +149,12 @@ Show and Snap toggles, Guideline type (horizontal, vertical, angled), the
 x, y and angle fields (counted from the ruler origin), Add and Modify, the
 list of the page's guidelines of that type (Ctrl+click selects several),
 Delete, Lock or Unlock, and the colour and style of the selected
-guidelines (the default colour when none is selected).
+guidelines (the default colour when none is selected). The fields hold
+the values of the one selected guideline and follow the selection
+(`App::sync_guide_form`); a value typed in x, y or angle moves that
+guideline as soon as it is entered (Enter or leaving the field), with no
+need for Modify, which stays for a change of type and for Add's values
+(`guides::tests::typed_values_move_the_selected_guideline_and_the_panel_follows_it`).
 
 ### Document Options > Guidelines
 

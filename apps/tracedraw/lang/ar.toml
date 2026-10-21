@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "تطبيق حجم الصفحة على الصفحة �
 toolbar.curve_finish_hint = "Enter أو النقر المزدوج ينهي المنحنى، Esc يلغي"
 toolbar.curve_smoothness = "نعومة المنحنى"
 toolbar.cusp_tip = "عقدة حادة: المقابض تتحرك باستقلال"
+toolbar.guides_selected = "{n} خطوط إرشادية محددة" # mt
 toolbar.custom = "مخصص"
 toolbar.cut = "قص (Ctrl+X)"
 toolbar.cut_desc = "يقص التحديد ويضعه في الحافظة."

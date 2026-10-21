@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Применить размер только к те
 toolbar.curve_finish_hint = "Enter или двойной щелчок завершает кривую, Esc отменяет"
 toolbar.curve_smoothness = "Сглаживание кривой"
 toolbar.cusp_tip = "Острый узел: манипуляторы движутся независимо"
+toolbar.guides_selected = "Выбрано направляющих: {n}" # mt
 toolbar.custom = "Пользовательский"
 toolbar.cut = "Вырезать (Ctrl+X)"
 toolbar.cut_desc = "Вырезает выделение и помещает его в буфер обмена."

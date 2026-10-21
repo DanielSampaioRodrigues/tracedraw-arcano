@@ -1400,6 +1400,85 @@ pub(crate) fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// Pick tool with nothing selected: page size, orientation, the pages it
 /// applies to, units, nudge and duplicate distances, "treat as filled".
+/// The property bar with guidelines selected and no object: the kind of
+/// the one selected guideline and its x, y and angle (counted from the
+/// ruler origin, as the Guidelines panel shows them), each moving it as
+/// typed; with several selected, how many.
+pub fn guide_bar(app: &mut App, ui: &mut Ui) {
+    use crate::ui::layout_options::GuideKind;
+    use tracedraw_core::document::GuideLine;
+    let guides = app.page_guides();
+    let single = match app.selected_guides.as_slice() {
+        [i] => guides.get(*i).copied(),
+        _ => None,
+    };
+    let Some(g) = single else {
+        ui.label(crate::i18n::trf(
+            "toolbar.guides_selected",
+            &[("n", &app.selected_guides.len().to_string())],
+        ));
+        return;
+    };
+    let kind = GuideKind::of(&g.line);
+    ui.label(tr(kind.key()));
+    sep(ui);
+    let (o, _) = g.line.point_and_direction();
+    let r = app.to_ruler(o);
+    let (mut x, mut y) = (r.x, r.y);
+    let mut angle = match g.line {
+        GuideLine::Angled { angle, .. } => angle,
+        _ => 0.0,
+    };
+    let mut changed = false;
+    let unit = app.units.world_mm();
+    if kind != GuideKind::Horizontal {
+        ui.label(tr("guides.x"));
+        if let Some(v) = distance_in(ui, app, x, 90.0, Some(1.0), unit) {
+            x = v;
+            changed = true;
+        }
+    }
+    if kind != GuideKind::Vertical {
+        ui.label(tr("guides.y"));
+        if let Some(v) = distance_in(ui, app, y, 90.0, Some(1.0), unit) {
+            y = v;
+            changed = true;
+        }
+    }
+    if kind == GuideKind::Angled {
+        ui.label(tr("guides.angle"));
+        if ui
+            .add_sized(
+                [70.0, ROW],
+                egui::DragValue::new(&mut angle)
+                    .speed(1.0)
+                    .max_decimals(2)
+                    .suffix("°"),
+            )
+            .changed()
+        {
+            changed = true;
+        }
+    }
+    if g.locked {
+        sep(ui);
+        ui.label(tr("guides.locked"));
+    }
+    if changed {
+        let p = app.from_ruler(Point::new(x, y));
+        let line = match kind {
+            GuideKind::Horizontal => GuideLine::Horizontal { y: p.y },
+            GuideKind::Vertical => GuideLine::Vertical { x: p.x },
+            GuideKind::Angled => GuideLine::Angled {
+                x: p.x,
+                y: p.y,
+                angle,
+            },
+        };
+        app.set_selected_guide_line(line);
+    }
+}
+
 pub fn page_bar(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
     let presets = crate::ui::dialogs::paper_presets();

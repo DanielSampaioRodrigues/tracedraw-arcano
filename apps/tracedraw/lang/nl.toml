@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Paginaformaat alleen op de huidige pagina toepassen"
 toolbar.curve_finish_hint = "Enter of dubbelklikken rondt de curve af, Esc annuleert"
 toolbar.curve_smoothness = "Gladheid van curve"
 toolbar.cusp_tip = "Scherp knooppunt: grepen bewegen onafhankelijk"
+toolbar.guides_selected = "{n} hulplijnen geselecteerd" # mt
 toolbar.custom = "Aangepast"
 toolbar.cut = "Knippen (Ctrl+X)"
 toolbar.cut_desc = "Knipt de selectie en zet die op het klembord."

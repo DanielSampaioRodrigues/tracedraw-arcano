@@ -115,10 +115,8 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "menu.object.properties", "", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Guidelines;
-        if let Some(g) = selected.first().and_then(|i| guides.get(*i)) {
-            let mut form = app.guide_form;
-            form.load(app, &g.line);
-            app.guide_form = form;
+        if let Some(i) = selected.first().copied() {
+            app.open_guide_properties(i);
         }
     }
 }

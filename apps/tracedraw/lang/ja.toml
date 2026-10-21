@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "ページサイズを現在のページのみに適�
 toolbar.curve_finish_hint = "Enter またはダブルクリックで曲線を確定、Esc でキャンセル"
 toolbar.curve_smoothness = "カーブの滑らかさ"
 toolbar.cusp_tip = "カスプノード：ハンドルは独立して動く"
+toolbar.guides_selected = "{n} 本のガイドラインを選択" # mt
 toolbar.custom = "カスタム"
 toolbar.cut = "切り取り (Ctrl+X)"
 toolbar.cut_desc = "選択範囲を切り取ってクリップボードに置きます。"

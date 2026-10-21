@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Aplicar o tamanho de página apenas à página atual
 toolbar.curve_finish_hint = "Enter ou clique duplo finaliza a curva, Esc cancela"
 toolbar.curve_smoothness = "Suavidade da curva"
 toolbar.cusp_tip = "Nó agudo: as alças se movem de forma independente"
+toolbar.guides_selected = "{n} guias selecionadas" # mt
 toolbar.custom = "Personalizado"
 toolbar.cut = "Recortar (Ctrl+X)"
 toolbar.cut_desc = "Recorta a seleção e a coloca na área de transferência."

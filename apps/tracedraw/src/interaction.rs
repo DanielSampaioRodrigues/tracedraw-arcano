@@ -1224,6 +1224,13 @@ impl App {
                 self.open_page_options();
                 return;
             }
+            // A guideline where no object is: the Guidelines panel on it.
+            if self.hit_test(p).is_none() {
+                if let Some(i) = self.guide_at(p) {
+                    self.open_guide_properties(i);
+                    return;
+                }
+            }
             if let Some(id) = self.hit_test(p) {
                 // A group or clip frame: into focus mode.
                 if self.focus_on_double_click(id) {

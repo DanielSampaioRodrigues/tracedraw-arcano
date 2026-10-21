@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Sayfa boyutunu yalnızca geçerli sayfaya uygula"
 toolbar.curve_finish_hint = "Enter veya çift tıklama eğriyi bitirir, Esc iptal eder"
 toolbar.curve_smoothness = "Eğri düzgünlüğü"
 toolbar.cusp_tip = "Sivri düğüm: tutamaçlar bağımsız hareket eder"
+toolbar.guides_selected = "{n} kılavuz çizgisi seçildi" # mt
 toolbar.custom = "Özel"
 toolbar.cut = "Kes (Ctrl+X)"
 toolbar.cut_desc = "Seçimi keser ve panoya koyar."

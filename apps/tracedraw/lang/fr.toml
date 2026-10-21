@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Appliquer la taille de page à la page actuelle uniq
 toolbar.curve_finish_hint = "Entrée ou double-clic termine la courbe, Échap annule"
 toolbar.curve_smoothness = "Lissage de la courbe"
 toolbar.cusp_tip = "Nœud angulaire : les poignées bougent indépendamment"
+toolbar.guides_selected = "{n} repères sélectionnés" # mt
 toolbar.custom = "Personnalisé"
 toolbar.cut = "Couper (Ctrl+X)"
 toolbar.cut_desc = "Coupe la sélection et la place dans le presse-papiers."

@@ -1032,6 +1032,9 @@ pub struct App {
     pub guide_pivot: Point,
     /// The Guidelines docker's entry fields.
     pub guide_form: crate::ui::layout_options::GuideForm,
+    /// The guideline whose values the Guidelines panel's fields hold
+    /// (`sync_guide_form`); `None` with none or several selected.
+    pub guide_form_for: Option<usize>,
     /// Document Options > Guidelines presets section.
     pub guide_presets: crate::ui::layout_options::PresetForm,
     /// Document Options > Grid shows lines per unit instead of spacing.
@@ -1899,6 +1902,7 @@ impl App {
             guide_rotate: None,
             guide_pivot: Point::ZERO,
             guide_form: Default::default(),
+            guide_form_for: None,
             guide_presets: Default::default(),
             grid_frequency: false,
             settings: crate::settings::Settings::default(),

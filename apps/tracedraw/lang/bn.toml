@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "শুধু বর্তমান পৃষ্ঠ�
 toolbar.curve_finish_hint = "Enter বা ডাবল-ক্লিক বক্ররেখা শেষ করে, Esc বাতিল করে"
 toolbar.curve_smoothness = "বক্ররেখার মসৃণতা"
 toolbar.cusp_tip = "কাস্প নোড: হ্যান্ডল স্বাধীনভাবে চলে"
+toolbar.guides_selected = "{n}টি গাইডলাইন নির্বাচিত" # mt
 toolbar.custom = "কাস্টম"
 toolbar.cut = "কাট (Ctrl+X)"
 toolbar.cut_desc = "নির্বাচন কেটে ক্লিপবোর্ডে রাখে।"

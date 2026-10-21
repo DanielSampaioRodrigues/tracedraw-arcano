@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Guidelines: a value typed in the Guidelines panel's x, y or angle field moves the selected guideline as soon as it is entered, without the Modify button; the fields follow the selected guideline; a double click on a guideline opens the panel on it; and the property bar shows the selected guideline's type and position, where a typed value moves it too (#306).
+
 - Properties docker: with characters selected in the text being edited, Fill, Outline and Character show those characters' own values (the object's where they have none) and edit them alone; the docker showed the object's values and could not adjust the characters' (#304).
 
 - Curve tools: Options > Tools > Curve tools > Constrain angle key chooses the key that keeps the next segment to the constrain angle, Ctrl (as before), Shift or Alt (#247).

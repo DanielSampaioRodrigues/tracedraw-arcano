@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Použít velikost stránky pouze na aktuální strá
 toolbar.curve_finish_hint = "Enter nebo dvojité kliknutí křivku dokončí, Esc ji zruší"
 toolbar.curve_smoothness = "Hladkost křivky"
 toolbar.cusp_tip = "Hrotový uzel: úchyty se pohybují nezávisle"
+toolbar.guides_selected = "Vybráno vodítek: {n}" # mt
 toolbar.custom = "Vlastní"
 toolbar.cut = "Vyjmout (Ctrl+X)"
 toolbar.cut_desc = "Vyjme výběr a vloží ho do schránky."

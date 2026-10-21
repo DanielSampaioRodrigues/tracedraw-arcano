@@ -30,7 +30,7 @@ impl GuideKind {
         GuideKind::Angled,
     ];
 
-    fn key(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             GuideKind::Horizontal => "options.horizontal",
             GuideKind::Vertical => "options.vertical",
@@ -926,7 +926,12 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             .on_hover_text(tr("guides.snap_tip"));
     });
     ui.add_space(4.0);
+    app.sync_guide_form();
     let mut form = app.guide_form;
+    // A value typed in x, y or angle moves the one selected guideline
+    // as it is entered (Enter or leaving the field); Modify stays for
+    // a change of type.
+    let mut moved = false;
     ui.horizontal(|ui| {
         ui.label(tr("guides.type"));
         egui::ComboBox::from_id_salt("guide_type")
@@ -947,6 +952,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 row_label(ui, "guides.x");
                 if let Some(v) = distance_field(ui, units, form.x, 0.1) {
                     form.x = v;
+                    moved = true;
                 }
                 ui.end_row();
             }
@@ -954,22 +960,32 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 row_label(ui, "guides.y");
                 if let Some(v) = distance_field(ui, units, form.y, 0.1) {
                     form.y = v;
+                    moved = true;
                 }
                 ui.end_row();
             }
             if form.kind == GuideKind::Angled {
                 row_label(ui, "guides.angle");
-                ui.add_sized(
-                    [110.0, 20.0],
-                    egui::DragValue::new(&mut form.angle)
-                        .speed(1.0)
-                        .max_decimals(2)
-                        .suffix("°"),
-                );
+                if ui
+                    .add_sized(
+                        [110.0, 20.0],
+                        egui::DragValue::new(&mut form.angle)
+                            .speed(1.0)
+                            .max_decimals(2)
+                            .suffix("°"),
+                    )
+                    .changed()
+                {
+                    moved = true;
+                }
                 ui.end_row();
             }
         });
     app.guide_form = form;
+    if moved {
+        let line = form.line(app);
+        app.set_selected_guide_line(line);
+    }
     ui.horizontal(|ui| {
         if ui.button(tr("guides.add")).clicked() {
             let line = form.line(app);

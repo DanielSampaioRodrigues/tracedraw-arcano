@@ -147,6 +147,67 @@ impl App {
         }
     }
 
+    /// The line the one selected guideline takes (a value typed in the
+    /// Guidelines panel's fields or on the property bar). False when no
+    /// guideline or several are selected, or it is locked (the status
+    /// bar says so).
+    pub fn set_selected_guide_line(&mut self, line: GuideLine) -> bool {
+        let [i] = self.selected_guides.as_slice() else {
+            return false;
+        };
+        let i = *i;
+        let Some(g) = self.page_guides().get(i).copied() else {
+            return false;
+        };
+        if g.locked {
+            self.status = crate::i18n::tr("status.guideline_locked");
+            return false;
+        }
+        if g.line == line {
+            return true;
+        }
+        self.replace_guide(i, g.with_line(line), "Move Guideline");
+        true
+    }
+
+    /// The Guidelines panel for guideline `index`, as a double click on
+    /// it or Properties in its menu asks: the guideline selected (alone),
+    /// the panel shown with its values in the fields.
+    pub fn open_guide_properties(&mut self, index: usize) {
+        let Some(g) = self.page_guides().get(index).copied() else {
+            return;
+        };
+        if !self.selection.is_empty() {
+            self.select(Vec::new());
+        }
+        self.selected_guides = vec![index];
+        self.guide_rotate = None;
+        self.show_dockers = true;
+        self.docker_tab = crate::app::DockerTab::Guidelines;
+        self.guide_form_for = Some(index);
+        let mut form = self.guide_form;
+        form.load(self, &g.line);
+        self.guide_form = form;
+    }
+
+    /// The Guidelines panel's fields follow the one selected guideline:
+    /// when another one becomes the selection, its values load.
+    pub fn sync_guide_form(&mut self) {
+        let single = match self.selected_guides.as_slice() {
+            [i] => Some(*i),
+            _ => None,
+        };
+        if single == self.guide_form_for {
+            return;
+        }
+        self.guide_form_for = single;
+        if let Some(g) = single.and_then(|i| self.page_guides().get(i).copied()) {
+            let mut form = self.guide_form;
+            form.load(self, &g.line);
+            self.guide_form = form;
+        }
+    }
+
     pub fn delete_guide(&mut self, index: usize) {
         let page = self.page;
         self.run(Command::DeleteGuide { page, index });
@@ -426,6 +487,55 @@ mod tests {
         app.view.zoom = 1.0;
         app.canvas_rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         app
+    }
+
+    /// A value typed for the one selected guideline moves it at once (the
+    /// panel's fields, the property bar); a locked one stays and the
+    /// status bar says so; a double click opens the panel on it with its
+    /// values, and the fields follow the selection (#306).
+    #[test]
+    fn typed_values_move_the_selected_guideline_and_the_panel_follows_it() {
+        let mut app = app();
+        app.add_guide(Guide::horizontal(50.0));
+        app.add_guide(Guide::vertical(20.0));
+        app.selected_guides = vec![1];
+        assert!(app.set_selected_guide_line(GuideLine::Vertical { x: 35.0 }));
+        assert_eq!(app.page_guides()[1].line, GuideLine::Vertical { x: 35.0 });
+        assert_eq!(app.page_guides()[0].line, GuideLine::Horizontal { y: 50.0 });
+        // Several selected: nothing moves.
+        app.selected_guides = vec![0, 1];
+        assert!(!app.set_selected_guide_line(GuideLine::Vertical { x: 1.0 }));
+        // Locked: nothing moves, the status bar says so.
+        app.set_guides_locked(&[1], true);
+        app.selected_guides = vec![1];
+        app.status.clear();
+        assert!(!app.set_selected_guide_line(GuideLine::Vertical { x: 1.0 }));
+        assert_eq!(app.page_guides()[1].line, GuideLine::Vertical { x: 35.0 });
+        assert!(!app.status.is_empty());
+        // The panel on the horizontal guideline, its value in the field.
+        app.show_dockers = false;
+        app.open_guide_properties(0);
+        assert_eq!(app.selected_guides, vec![0]);
+        assert!(app.show_dockers);
+        assert_eq!(app.docker_tab, crate::app::DockerTab::Guidelines);
+        assert!((app.guide_form.y - app.to_ruler(Point::new(0.0, 50.0)).y).abs() < 1e-9);
+        // Selecting the other one by a click: the fields follow.
+        assert!(app.click_guide(Point::new(35.0, 10.0), false));
+        app.sync_guide_form();
+        assert!((app.guide_form.x - app.to_ruler(Point::new(35.0, 0.0)).x).abs() < 1e-9);
+        // The property bar draws for the selected guideline.
+        let ctx = crate::theme::ui_context();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 80.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            ui.horizontal(|ui| crate::ui::propbar::guide_bar(&mut app, ui));
+        });
+        out.textures_delta.clear();
     }
 
     #[test]

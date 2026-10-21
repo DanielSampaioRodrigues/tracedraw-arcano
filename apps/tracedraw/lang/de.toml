@@ -3351,6 +3351,7 @@ toolbar.current_page_tip = "Seitengröße nur auf die aktuelle Seite anwenden"
 toolbar.curve_finish_hint = "Eingabe oder Doppelklick beendet die Kurve, Esc bricht ab"
 toolbar.curve_smoothness = "Kurvenglättung"
 toolbar.cusp_tip = "Spitzer Knoten: Griffe bewegen sich unabhängig"
+toolbar.guides_selected = "{n} Hilfslinien ausgewählt" # mt
 toolbar.custom = "Benutzerdefiniert"
 toolbar.cut = "Ausschneiden (Strg+X)"
 toolbar.cut_desc = "Schneidet die Auswahl aus und legt sie in die Zwischenablage."
