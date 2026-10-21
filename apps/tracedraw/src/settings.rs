@@ -739,19 +739,34 @@ impl DocumentDefaults {
         doc.metadata.grid = self.grid;
         doc.metadata.rulers = self.rulers.clone();
         doc.metadata.guides = self.guides;
-        // Defaults never set otherwise (either mode's own, the RGB one
-        // being what earlier versions kept) follow the drawing's primary
-        // colour mode: new text is black in it.
-        use tracedraw_core::document::{ObjectDefaults, PrimaryColorMode};
-        let untouched = [PrimaryColorMode::Cmyk, PrimaryColorMode::Rgb]
-            .into_iter()
-            .any(|m| self.objects == ObjectDefaults::for_mode(m));
-        doc.defaults = if untouched {
-            ObjectDefaults::for_mode(doc.metadata.primary_color_mode)
-        } else {
-            self.objects.clone()
-        };
+        doc.defaults = defaults_for(&self.objects, doc.metadata.primary_color_mode);
     }
+}
+
+/// The stored object defaults as a drawing in `mode` takes them: a black
+/// text fill, RGB or CMYK, is the mode's black (new text is black in the
+/// drawing's own colour mode), whatever else the stored defaults hold
+/// (an earlier version's values, a paragraph style, an outline of one's
+/// own); any other colour stays as chosen.
+fn defaults_for(
+    stored: &tracedraw_core::ObjectDefaults,
+    mode: tracedraw_core::document::PrimaryColorMode,
+) -> tracedraw_core::ObjectDefaults {
+    use tracedraw_core::document::PrimaryColorMode;
+    use tracedraw_core::Fill;
+    let blacks = [
+        PrimaryColorMode::Cmyk.black(),
+        PrimaryColorMode::Rgb.black(),
+    ];
+    let mut out = stored.clone();
+    for props in [&mut out.artistic_text, &mut out.paragraph_text] {
+        if let Fill::Solid(c) = &mut props.fill {
+            if blacks.contains(c) {
+                *c = mode.black();
+            }
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1478,6 +1493,46 @@ fn default_focus_visibility() -> u8 {
 
 #[cfg(test)]
 mod tests {
+    /// Stored defaults from an earlier version (RGB black text, and any
+    /// other field of their time) give a CMYK drawing CMYK black text and
+    /// an RGB drawing RGB black text; a colour of the user's own stays.
+    #[test]
+    fn stored_black_text_defaults_follow_the_drawings_colour_mode() {
+        use tracedraw_core::document::{ObjectDefaults, PrimaryColorMode};
+        use tracedraw_core::{Color, Fill};
+        let mut old = ObjectDefaults::for_mode(PrimaryColorMode::Rgb);
+        // Something an earlier version kept differently: not "untouched".
+        old.paragraph.hyphenate = !old.paragraph.hyphenate;
+        let cmyk = super::defaults_for(&old, PrimaryColorMode::Cmyk);
+        assert_eq!(
+            cmyk.artistic_text.fill,
+            Fill::Solid(PrimaryColorMode::Cmyk.black())
+        );
+        assert_eq!(
+            cmyk.paragraph_text.fill,
+            Fill::Solid(PrimaryColorMode::Cmyk.black())
+        );
+        assert_eq!(cmyk.paragraph, old.paragraph, "the rest is kept");
+        let rgb = super::defaults_for(&old, PrimaryColorMode::Rgb);
+        assert_eq!(rgb.artistic_text.fill, Fill::Solid(Color::BLACK));
+        let mut red = old.clone();
+        red.artistic_text.fill = Fill::Solid(Color::rgb8(200, 0, 0));
+        let kept = super::defaults_for(&red, PrimaryColorMode::Cmyk);
+        assert_eq!(kept.artistic_text.fill, Fill::Solid(Color::rgb8(200, 0, 0)));
+        // Through the document defaults as a drawing opens.
+        let mut doc = tracedraw_core::Document::default();
+        doc.metadata.primary_color_mode = PrimaryColorMode::Cmyk;
+        let prefs = super::DocumentDefaults {
+            objects: old,
+            ..Default::default()
+        };
+        prefs.apply(&mut doc);
+        assert_eq!(
+            doc.defaults.artistic_text.fill,
+            Fill::Solid(PrimaryColorMode::Cmyk.black())
+        );
+    }
+
     #[test]
     fn the_desktop_text_size_and_high_contrast_are_followed_unless_turned_off() {
         use crate::system_prefs::{ContrastColors, SystemPrefs};

@@ -35,6 +35,13 @@ New objects take the fill and outline of their kind:
 - Tools > Save Settings as Default keeps the defaults for new drawings.
   Drawings saved before default properties existed open with a new
   drawing's.
+- The text defaults' black is the drawing's own: in a CMYK drawing new
+  text is CMYK black, in an RGB drawing RGB black. Defaults kept in the
+  configuration (by this version or an earlier one) whose text fill is
+  either black take the drawing's black when a drawing opens, whatever
+  else they hold; any other colour stays as chosen
+  (`settings::defaults_for`,
+  `settings::tests::stored_black_text_defaults_follow_the_drawings_colour_mode`).
 
 ## Styles
 

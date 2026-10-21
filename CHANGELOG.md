@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- CMYK drawings: the object defaults kept in the configuration file by an earlier version no longer keep new text RGB black; a black text default, RGB or CMYK, is the drawing's own black, while a colour of the user's own stays (#259).
+
 - Shaping (Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary): the result keeps the curve segments of the objects, with new nodes only where their outlines cross; it was made of hundreds of tiny straight lines, hard to edit and faceted when enlarged. Two welded circles now give a handful of curve segments. Crop, Knife and Eraser cuts keep the curves the same way (#252).
 
 - Shape brushes (Smooth, Smear, Twirl, Smudge, Roughen): a stroke reshapes only the stretch of the curve within the nib's reach and leaves the rest exactly as it was; it rebuilt the whole curve through points a few millimetres apart, so one stroke of Smooth over a freehand curve turned it into hundreds of nodes with the outline twisted and crossing itself. The reshaped stretch is fitted with few curves, and Smooth thins jags smaller than its rate before fitting (#227).
