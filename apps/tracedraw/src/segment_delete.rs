@@ -53,6 +53,21 @@ pub fn subs_of(path: &BezPath) -> Vec<Sub> {
 }
 
 /// `path` flattened into lines (a closed subpath's closing line too).
+/// How far a cutter reaches past its ends, mm: enough for rounding, far
+/// too little to see.
+const CUTTER_REACH: f64 = 1e-3;
+
+/// `line` lengthened by [`CUTTER_REACH`] at both ends (a point stays).
+fn stretched(line: Line) -> Line {
+    let d = line.p1 - line.p0;
+    let len = d.hypot();
+    if len < 1e-12 {
+        return line;
+    }
+    let e = d * (CUTTER_REACH / len);
+    Line::new(line.p0 - e, line.p1 + e)
+}
+
 fn lines_of(path: &BezPath) -> Vec<Line> {
     let mut out = Vec::new();
     let mut start = Point::ZERO;
@@ -109,7 +124,11 @@ pub fn crossings(subs: &[Sub], which: usize, cutters: &[Line]) -> Vec<f64> {
     let mut out = Vec::new();
     for (i, seg) in sub.segs.iter().enumerate() {
         let hit = |line: Line, out: &mut Vec<f64>| {
-            for h in seg.intersect_line(line) {
+            // A cutter ending on the outline (a piece left by an earlier
+            // cut) must count: the crossing lies at its very end, where
+            // rounding puts it a hair short as often as not, and the
+            // intersection drops a cutter parameter past its ends.
+            for h in seg.intersect_line(stretched(line)) {
                 if (-1e-9..=1.0 + 1e-9).contains(&h.line_t) {
                     out.push(i as f64 + h.segment_t.clamp(0.0, 1.0));
                 }
@@ -534,6 +553,77 @@ mod tests {
         assert!(app.doc().find_shape(h).is_none());
         // Far from any outline: nothing.
         assert!(!app.delete_virtual_segment_at(Point::new(500.0, 500.0)));
+    }
+
+    /// Two lines crossing: a stretch of one goes, then a stretch of the
+    /// other, which now crosses two pieces ending exactly on it. The
+    /// crossing must still be found (#227: the whole second line went).
+    #[test]
+    fn a_crossing_at_the_end_of_a_cut_piece_still_counts() {
+        let mut app = App::headless();
+        let a = line(&mut app, (0.0, 0.0), (30.0, 30.0));
+        let b = line(&mut app, (0.0, 30.0), (30.0, 0.0));
+        // The upper-left arm of a, up to the crossing at (15, 15).
+        assert!(app.delete_virtual_segment_at(Point::new(5.0, 5.0)));
+        let pa = path_of(&app, a);
+        assert!((pa.bounding_box().x0 - 15.0).abs() < 1e-6, "{pa:?}");
+        // The lower-left arm of b: only up to the crossing.
+        assert!(app.delete_virtual_segment_at(Point::new(5.0, 25.0)));
+        assert!(app.doc().find_shape(b).is_some(), "the whole of b went");
+        let pb = path_of(&app, b);
+        let bb = pb.bounding_box();
+        assert!(
+            (bb.x0 - 15.0).abs() < 1e-6 && (bb.x1 - 30.0).abs() < 1e-6,
+            "{pb:?}"
+        );
+    }
+
+    /// The same with lines drawn by hand (curves, as the Freehand tool
+    /// makes them): the crossing lies at the very end of the cut piece.
+    #[test]
+    fn a_crossing_at_the_end_of_a_cut_curve_piece_still_counts() {
+        let mut app = App::headless();
+        let curve = |app: &mut App, a: (f64, f64), b: (f64, f64)| -> ShapeId {
+            let mut p = BezPath::new();
+            p.move_to(a);
+            let (c1, c2) = (
+                (a.0 + (b.0 - a.0) / 3.0 + 0.3, a.1 + (b.1 - a.1) / 3.0 - 0.2),
+                (
+                    a.0 + (b.0 - a.0) * 2.0 / 3.0 - 0.1,
+                    a.1 + (b.1 - a.1) * 2.0 / 3.0 + 0.4,
+                ),
+            );
+            p.curve_to(c1, c2, b);
+            app.new_shape(ShapeKind::Path {
+                path: p,
+                closed: false,
+            })
+            .expect("curve")
+        };
+        let a = curve(&mut app, (11.3, 7.1), (87.9, 83.2));
+        let b = curve(&mut app, (9.2, 84.6), (88.1, 6.4));
+        assert!(app.delete_virtual_segment_at(Point::new(16.0, 11.8)));
+        assert!(app.doc().find_shape(a).is_some(), "the whole of a went");
+        assert!(app.delete_virtual_segment_at(Point::new(14.0, 80.0)));
+        assert!(app.doc().find_shape(b).is_some(), "the whole of b went");
+        let bb = path_of(&app, b).bounding_box();
+        assert!(bb.x0 > 40.0 && bb.x1 > 87.0, "{bb:?}");
+    }
+
+    /// A cutter that stops a hair short of the outline (as a piece left by
+    /// an earlier cut does, by rounding) still makes a crossing; one that
+    /// stops well short does not.
+    #[test]
+    fn a_cutter_ending_a_hair_short_of_the_outline_still_cuts() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((30.0, 30.0));
+        let subs = subs_of(&p);
+        let short = |gap: f64| vec![Line::new((0.0, 30.0), (15.0 - gap, 15.0 + gap))];
+        assert_eq!(crossings(&subs, 0, &short(1e-7)).len(), 1, "a hair short");
+        assert_eq!(crossings(&subs, 0, &short(-1e-7)).len(), 1, "a hair past");
+        assert_eq!(crossings(&subs, 0, &short(0.0)).len(), 1, "exactly on it");
+        assert!(crossings(&subs, 0, &short(0.5)).is_empty(), "well short");
     }
 
     #[test]

@@ -57,6 +57,9 @@
 - Crossings count against every visible object of the page's unlocked
   layers (flattened to 0.02 mm), the object's other subpaths and its
   own segments that are not next to each other (`segment_delete.rs`).
+  Each cutter reaches 0.001 mm past its ends, so a piece left by an
+  earlier cut, which ends on the outline it crossed, still cuts it
+  (`segment_delete::tests::a_cutter_ending_a_hair_short_of_the_outline_still_cuts`).
 - Click (within 5 screen pixels; the nearest outline, the topmost of
   equals): its virtual segment under the pointer is removed. Drag: every
   virtual segment lying wholly inside the rectangle (nine points along
