@@ -125,7 +125,7 @@ pub fn learn_background(img: &RgbaImage) -> Vec<BgColor> {
     // Farthest-point seeds: the first point, then the one farthest from
     // every centre so far, while it is far enough to be another colour.
     let mut centres: Vec<Lab> = vec![pts[0].1];
-    while centres.len() < 4 {
+    while centres.len() < 6 {
         let (far, d) = pts
             .iter()
             .map(|(_, l)| {
@@ -167,7 +167,7 @@ pub fn learn_background(img: &RgbaImage) -> Vec<BgColor> {
             .filter(|(_, m)| **m == k)
             .map(|((rgb, _), _)| rgb)
             .collect();
-        if mine.len() * 10 < pts.len() {
+        if mine.len() * 15 < pts.len() {
             continue;
         }
         let mut rgb = [0.0f32; 3];
@@ -213,14 +213,18 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
     let (wu, hu) = (w as usize, h as usize);
     let n = wu * hu;
     let centres: Vec<Lab> = bg.iter().map(|b| b.lab).collect();
-    // Distance to the nearest background colour, and which one.
+    // Each pixel in Lab, its distance to the nearest background colour,
+    // and which one.
+    let mut labs = vec![[0.0f32; 3]; n];
     let mut dist = vec![0.0f32; n];
     let mut which = vec![0u8; n];
     for (i, p) in img.pixels().enumerate() {
         if p.0[3] == 0 {
             continue;
         }
-        let (k, d2) = nearest(&centres, &lab([p.0[0], p.0[1], p.0[2]]));
+        let l = lab([p.0[0], p.0[1], p.0[2]]);
+        let (k, d2) = nearest(&centres, &l);
+        labs[i] = l;
         dist[i] = d2.sqrt();
         which[i] = k as u8;
     }
@@ -233,9 +237,18 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
     if s.contiguous {
         // Flood fill from the border: through background pixels freely,
         // and at most `rim` pixels into the ramp, so the fill takes the
-        // anti-aliased rim and stops at the subject.
+        // anti-aliased rim and stops at the subject. It also walks on
+        // from a background pixel to a neighbour of nearly the same
+        // colour (a step under `step`), while that neighbour is within
+        // `reach` of a background colour: so a backdrop that drifts
+        // (texture, a gradient the border did not show, a soft shadow)
+        // goes whole, while the subject's edge, a sharp step, stops it.
         let rim = 2 + s.softness.max(0.0).ceil() as u8;
+        let step2 = (tol / 3.0).max(3.0).powi(2);
+        let reach = (tol * 3.0).max(tol + band);
         let mut depth = vec![u8::MAX; n];
+        // Reached by such steps: background, whatever its distance.
+        let mut drifted = vec![false; n];
         let mut queue = VecDeque::new();
         let seed = |i: usize, depth: &mut Vec<u8>, queue: &mut VecDeque<usize>| {
             if depth[i] == u8::MAX && dist[i] < tol + band {
@@ -257,14 +270,24 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
             let (x, y) = (i % wu, i / wu);
             let here = depth[i];
             let mut visit = |j: usize| {
-                if depth[j] != u8::MAX || dist[j] >= tol + band {
+                if depth[j] != u8::MAX {
                     return;
                 }
-                let d = if dist[j] <= tol { 0 } else { here + 1 };
+                let near = dist[j] < tol + band;
+                // A step from solid background only, never from the rim.
+                let drift = here == 0
+                    && dist[j] < reach
+                    && img.get_pixel((j % wu) as u32, (j / wu) as u32).0[3] > 0
+                    && dist2(&labs[i], &labs[j]) <= step2;
+                if !near && !drift {
+                    return;
+                }
+                let d = if dist[j] <= tol || drift { 0 } else { here + 1 };
                 if d > rim {
                     return;
                 }
                 depth[j] = d;
+                drifted[j] = drift && dist[j] > tol;
                 queue.push_back(j);
             };
             if x > 0 {
@@ -281,7 +304,9 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
             }
         }
         for i in 0..n {
-            if depth[i] != u8::MAX {
+            if drifted[i] {
+                keep[i] = 0.0;
+            } else if depth[i] != u8::MAX {
                 keep[i] = ramp(dist[i]);
             }
         }
@@ -561,5 +586,49 @@ mod tests {
             })
             .count();
         assert!(partial >= 4, "{partial}");
+    }
+
+    /// A backdrop that drifts away from the colours its border shows (a
+    /// soft shadow under the subject, a texture) goes whole: the fill
+    /// walks on through small steps of colour, while the subject's edge,
+    /// a sharp step, stops it (#231).
+    #[test]
+    fn a_drifting_backdrop_goes_and_the_subject_stays() {
+        // A white backdrop with a grey shadow fading in over 30 px under
+        // a red disc, and a faint texture all over.
+        let img = RgbaImage::from_fn(120, 90, |x, y| {
+            let (dx, dy) = (x as f32 - 60.0, y as f32 - 40.0);
+            if (dx * dx + dy * dy).sqrt() < 20.0 {
+                return Rgba([200, 30, 30, 255]);
+            }
+            let (sx, sy) = (x as f32 - 60.0, y as f32 - 68.0);
+            let shade = (1.0 - ((sx / 40.0).powi(2) + (sy / 10.0).powi(2)).sqrt()).max(0.0);
+            let noise = ((x * 7 + y * 13) % 5) as i32 - 2;
+            let v = (250.0 - 90.0 * shade) as i32 + noise;
+            let v = v.clamp(0, 255) as u8;
+            Rgba([v, v, v.saturating_sub(4), 255])
+        });
+        let out = remove_background(&img, &BgSettings::default(), 1.0);
+        // The darkest of the shadow is 36 Delta E from white, past the
+        // tolerance and its band, yet gone.
+        assert_eq!(out.get_pixel(60, 68).0[3], 0, "{:?}", out.get_pixel(60, 68));
+        assert_eq!(out.get_pixel(3, 3).0[3], 0);
+        // The subject keeps its colour, to its edge.
+        assert_eq!(out.get_pixel(60, 40).0, [200, 30, 30, 255]);
+        assert_eq!(out.get_pixel(60, 24).0[3], 255);
+        // (Counted at half opacity: the feather softens the rim.)
+        let kept = out.pixels().filter(|p| p.0[3] >= 128).count();
+        let disc = (std::f32::consts::PI * 20.0 * 20.0) as usize;
+        assert!(
+            kept >= disc * 9 / 10 && kept <= disc * 11 / 10,
+            "{kept} vs {disc}"
+        );
+        // Everywhere mode (no fill) still goes by colour alone: the
+        // shadow's dark middle stays.
+        let s = BgSettings {
+            contiguous: false,
+            ..BgSettings::default()
+        };
+        assert_eq!(remove_background(&img, &s, 1.0).get_pixel(60, 68).0[3], 255);
     }
 }

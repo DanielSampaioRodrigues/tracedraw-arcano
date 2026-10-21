@@ -113,7 +113,8 @@ result inserts it. Pictures are named "AI-generated bitmap", vectors
 
 Object > AI Generate opens the docker in each mode (Create Image, Remix
 Image, Create Vector Graphic) and has Remove Background; a bitmap's
-context menu starts with Edit Bitmap, Remove Background, Quick Trace,
+context menu starts with Edit Bitmap, Remove Background... (on this
+computer), Remove Background, Quick Trace,
 Crop Bitmap and Remix with AI (the bitmap becomes the source).
 
 ## Remove Background

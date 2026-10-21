@@ -171,6 +171,16 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         ) {
             app.edit_bitmap_externally();
         }
+        // On this computer, no AI service needed (#231).
+        if ci(
+            ui,
+            close,
+            "menu.bitmaps.remove_background_local",
+            "",
+            app.selected_bitmap().is_some(),
+        ) {
+            app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(Default::default());
+        }
         if ci_tip(
             ui,
             close,
