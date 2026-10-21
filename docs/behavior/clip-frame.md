@@ -10,6 +10,18 @@ object, kept whole with its own transform, fill and outline; the
 contents keep their own page-space transforms. The frame's fill and
 outline are drawn, the contents are clipped to the frame's path.
 
+The clip frame keeps the id of the object it was made from; the frame
+inside it gets an id of its own (Place Inside Frame), so it can be
+found, painted and reshaped, and Extract Contents gives it the clip
+frame's id back. A fill or outline given to the clip frame (palette,
+Properties, the outline fields) goes to its frame, never to the
+contents (`for_group_deep`); the status bar and the Properties docker
+show the frame's fill and outline (`mixed::leaves`). With the Shape tool
+the clip frame's nodes are its frame's: the corner nodes of a rectangle
+frame round its corners, an ellipse frame takes a pie or arc, a curve
+frame is edited node by node, and the clip frame stays one
+(`App::shape_tool_shapes`, `node_target`).
+
 ## Commands
 
 - Place Inside Frame: with contents selected, click the frame; the
@@ -67,6 +79,9 @@ in place and lock work as for any clip frame. One undo step each.
   for the Text tool.
 
 ## Checks
+
+- `tracedraw_core::command::tests::a_clip_frames_frame_is_found_and_painted`
+- `pick_drag_tests::a_clip_frame_is_painted_and_reshaped_through_its_frame`
 
 - Given a locked clip frame, when the frame is moved by (10, 0), then the
   contents move by (10, 0).

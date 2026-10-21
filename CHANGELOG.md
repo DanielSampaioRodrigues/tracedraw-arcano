@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Clip frames: an object that holds others (Place Inside Frame) can be painted and reshaped again: a fill or outline goes to its frame, the status bar and Properties show the frame's, and the Shape tool edits the frame's nodes (a rectangle's corners round, an ellipse takes a pie or arc, a curve node by node) with the contents staying inside; the frame inside a clip frame now has an id of its own (#273).
+
 - Browser: a right click during a move, scale, rotation or skew leaves the original and gives the change to a copy, as on the desktop; the browser reports a button pressed while another is held as a move, so the click was lost (#278).
 
 - Shape brushes (Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen): the nib, the pointer's move and the settings' millimetres are measured on the page; on a scaled object (text converted to curves, a resized drawing) the brush reshaped the outline within a nib scaled with the object, so Smooth with a 10 mm nib could flatten 50 mm of a curve, and Smear moved it by a fifth of the drag (#227).

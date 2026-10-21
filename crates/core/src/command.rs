@@ -1030,7 +1030,11 @@ impl Command {
                     inner.push(doc.layer_mut(lid)?.shapes.remove(i));
                 }
                 let (flid, fi) = doc.locate(*frame)?;
-                let frame_shape = doc.layer_mut(flid)?.shapes.remove(fi);
+                let mut frame_shape = doc.layer_mut(flid)?.shapes.remove(fi);
+                // The clip frame keeps the object's id; the frame inside
+                // it gets one of its own, so it can be found, painted and
+                // reshaped (Extract Contents gives it the id back).
+                frame_shape.id = doc.ids_mut().shape();
                 let mut clip = Shape::new(
                     *frame,
                     ShapeKind::ClipFrame {
@@ -1243,12 +1247,18 @@ fn restyle(doc: &mut Document) {
 /// Run `f` on `shape` and, when it is a group, on everything inside it
 /// (groups within groups too), as a fill or outline given to a group
 /// reaches its objects.
+/// `f` on `shape` and on everything a group holds; on a clip frame also on
+/// its frame (the object that is drawn), not on its contents.
 fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
     f(shape);
-    if let ShapeKind::Group { children } = &mut shape.kind {
-        for c in children {
-            for_group_deep(c, f);
+    match &mut shape.kind {
+        ShapeKind::Group { children } => {
+            for c in children {
+                for_group_deep(c, f);
+            }
         }
+        ShapeKind::ClipFrame { frame, .. } => for_group_deep(frame, f),
+        _ => {}
     }
 }
 
@@ -1829,6 +1839,84 @@ mod tests {
             .unwrap();
         assert_eq!(doc.layer(layer).unwrap().shapes.len(), 2);
         assert!(doc.shape(ia).is_ok());
+    }
+
+    /// The frame inside a clip frame has an id of its own, so it can be
+    /// found and reshaped; a fill or outline given to the clip frame goes
+    /// to the frame (the object drawn), not to the contents; Extract
+    /// Contents gives the frame the clip frame's id back.
+    #[test]
+    fn a_clip_frames_frame_is_found_and_painted() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 5.0);
+        let (ia, ib) = (a.id, b.id);
+        Command::AddShape { layer, shape: a }
+            .apply(&mut doc)
+            .unwrap();
+        Command::AddShape { layer, shape: b }
+            .apply(&mut doc)
+            .unwrap();
+        Command::PlaceInside {
+            contents: vec![ia],
+            frame: ib,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let ShapeKind::ClipFrame { frame, .. } = &doc.shape(ib).unwrap().1.kind else {
+            panic!("not a clip frame");
+        };
+        let fid = frame.id;
+        assert_ne!(fid, ib);
+        assert!(matches!(
+            doc.find_shape(fid).unwrap().kind,
+            ShapeKind::Rect { .. }
+        ));
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        Command::SetFill {
+            shapes: vec![ib],
+            fill: red.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let stroke = Stroke {
+            width: 2.0,
+            ..Default::default()
+        };
+        Command::SetStroke {
+            shapes: vec![ib],
+            stroke: Some(stroke.clone()),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.find_shape(fid).unwrap().fill, red);
+        assert_eq!(doc.find_shape(fid).unwrap().stroke, Some(stroke));
+        assert_ne!(
+            doc.find_shape(ia).unwrap().fill,
+            red,
+            "the contents keep theirs"
+        );
+        // The frame can be reshaped by its id, and stays the frame.
+        Command::SetShapeKind {
+            shape: fid,
+            kind: ShapeKind::Rect {
+                rect: Rect::new(5.0, 5.0, 15.0, 15.0),
+                radius: 2.0,
+                corners: None,
+            },
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let ShapeKind::ClipFrame { frame, .. } = &doc.shape(ib).unwrap().1.kind else {
+            panic!("not a clip frame any more");
+        };
+        assert!(matches!(frame.kind, ShapeKind::Rect { radius, .. } if radius == 2.0));
+        Command::ExtractContents { clip: ib }
+            .apply(&mut doc)
+            .unwrap();
+        assert_eq!(doc.shape(ib).unwrap().1.fill, red);
+        assert!(doc.find_shape(fid).is_none());
     }
 
     #[test]

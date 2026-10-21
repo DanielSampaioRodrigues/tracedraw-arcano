@@ -3370,3 +3370,79 @@ fn a_noted_chorded_right_press_leaves_the_original_too() {
     assert_ne!(copy, id);
     assert!(bounds(&app, copy).x0 > 15.0);
 }
+
+#[test]
+fn a_clip_frame_is_painted_and_reshaped_through_its_frame() {
+    let (ctx, mut app, a) = setup();
+    let b = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(20.0, 15.0, 40.0, 30.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.place_inside(vec![b], a);
+    app.select(vec![a]);
+    let frame_of = |app: &App| match &app.doc().find_shape(a).expect("clip").kind {
+        ShapeKind::ClipFrame { frame, .. } => (**frame).clone(),
+        other => panic!("not a clip frame: {other:?}"),
+    };
+    let fid = frame_of(&app).id;
+    assert_ne!(fid, a);
+    // Painting.
+    let blue = tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(0, 0, 200));
+    app.apply_fill(blue.clone());
+    assert_eq!(frame_of(&app).fill, blue);
+    assert_eq!(
+        app.paint_targets()[0].fill,
+        blue,
+        "the readouts show the frame's"
+    );
+    assert_ne!(
+        app.doc().find_shape(b).expect("contents").fill,
+        blue,
+        "the contents keep theirs"
+    );
+    app.apply_outline_width(1.5);
+    assert_eq!(frame_of(&app).stroke.map(|s| s.width), Some(1.5));
+    // The Shape tool: the frame's corner node, dragged along the side,
+    // rounds the corners.
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (s, _) = app
+        .kind_node_at(Point::new(60.0, 40.0))
+        .expect("a corner node");
+    assert_eq!(s.id, fid);
+    let corner = app.view.to_screen(Point::new(60.0, 40.0));
+    let along = app.view.to_screen(Point::new(50.0, 40.0));
+    drag(&ctx, &mut app, corner, along, Modifiers::NONE, Vec::new());
+    let f = frame_of(&app);
+    assert!(
+        matches!(f.kind, ShapeKind::Rect { radius, .. } if radius > 5.0),
+        "{:?}",
+        f.kind
+    );
+    assert!(
+        app.doc().find_shape(b).is_some(),
+        "the contents are still inside"
+    );
+    // Still movable with the Pick tool.
+    app.set_tool(Tool::Pick);
+    app.select(vec![a]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let before = bounds(&app, a);
+    let from = app.view.to_screen(Point::new(15.0, 15.0));
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(100.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert!(bounds(&app, a).x0 > before.x0 + 5.0);
+    assert!(matches!(
+        app.doc().find_shape(a).expect("clip").kind,
+        ShapeKind::ClipFrame { .. }
+    ));
+}

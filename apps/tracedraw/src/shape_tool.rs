@@ -137,13 +137,25 @@ impl App {
     /// its frame.
     pub(crate) fn node_target(&self, id: ShapeId) -> ShapeId {
         match self.doc().find_shape(id).map(|s| &s.kind) {
-            Some(ShapeKind::ClipFrame { frame, .. })
-                if matches!(frame.kind, ShapeKind::Path { .. }) =>
-            {
-                frame.id
-            }
+            Some(ShapeKind::ClipFrame { frame, .. }) if frame.id != id => frame.id,
             _ => id,
         }
+    }
+
+    /// The selected objects as the Shape tool sees them: a clip frame
+    /// gives way to its frame, on the page (an old file whose frame shares
+    /// the clip frame's id shows the clip frame itself, which has no
+    /// nodes).
+    pub(crate) fn shape_tool_shapes(&self) -> Vec<tracedraw_core::Shape> {
+        self.selected_shapes()
+            .into_iter()
+            .map(|s| match &s.kind {
+                ShapeKind::ClipFrame { frame, .. } if frame.id != s.id => {
+                    self.doc().shape_on_page(frame.id).unwrap_or(s)
+                }
+                _ => s,
+            })
+            .collect()
     }
 
     /// A selected picture's corner under the pointer: the picture and the
@@ -269,7 +281,7 @@ impl App {
                 }
             }
         }
-        self.selected_shapes()
+        self.shape_tool_shapes()
             .iter()
             .any(|s| crate::kind_nodes::node_at(s, p, reach).is_some())
     }
@@ -281,7 +293,7 @@ impl App {
         p: Point,
     ) -> Option<(tracedraw_core::Shape, crate::kind_nodes::KindNode)> {
         let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
-        self.selected_shapes()
+        self.shape_tool_shapes()
             .into_iter()
             .find_map(|s| crate::kind_nodes::node_at(&s, p, tol).map(|n| (s, n)))
     }

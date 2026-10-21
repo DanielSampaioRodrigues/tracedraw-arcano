@@ -1562,14 +1562,8 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let [r, g, b] = prefs.secondary_rgb;
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();
-    for s in app.selected_shapes() {
-        // A clip frame (a cropped picture) shows its frame's nodes.
-        let s = match &s.kind {
-            ShapeKind::ClipFrame { frame, .. } if matches!(frame.kind, ShapeKind::Path { .. }) => {
-                app.doc().shape_on_page(frame.id).unwrap_or(s)
-            }
-            _ => s,
-        };
+    // A clip frame shows its frame's nodes.
+    for s in app.shape_tool_shapes() {
         // A picture shows a node at each corner; dragging one crops it.
         if let Some(corners) = crate::shape_tool::bitmap_corners(&s) {
             for p in corners {

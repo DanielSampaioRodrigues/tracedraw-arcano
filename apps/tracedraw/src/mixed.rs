@@ -23,6 +23,9 @@ fn leaves(s: &Shape, out: &mut Vec<Shape>) {
                 leaves(c, out);
             }
         }
+        // A clip frame's fill and outline are its frame's (the object
+        // drawn); the contents keep their own.
+        ShapeKind::ClipFrame { frame, .. } => leaves(frame, out),
         _ => out.push(s.clone()),
     }
 }
