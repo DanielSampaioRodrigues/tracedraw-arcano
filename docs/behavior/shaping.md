@@ -27,6 +27,27 @@ The result goes on top of the active layer and becomes the selection; an
 empty result changes nothing and the status bar says so. Each operation
 is one undo step.
 
+## Curves
+
+- The operations run on the outlines flattened to 0.02 mm (`i_overlay`),
+  and the curves of the objects are then put back into the result
+  (`shaping::recover_curves`): every vertex of the polygon result that
+  lies on an object's outline (within 0.03 mm, the crossing of two
+  flattened edges lies up to 0.02 mm off the curves) is placed on it, and
+  a stretch of vertices running along one subpath becomes that stretch
+  of the subpath itself, with its segments and handles. The result keeps
+  the Bezier segments of the objects, with new nodes only where their
+  outlines cross; two circles welded give a handful of curve segments,
+  not hundreds of tiny lines.
+- An edge that does not follow an object's outline (a chord across an
+  arc, as where a cut runs straight across a curve) stays a straight
+  line: a stretch is taken from the source only when the edges lie
+  within 0.04 mm of it, so the result is never worse than the polygon.
+  Nodes of the objects on the result stay nodes.
+- Checked by `shaping::tests::welding_circles_keeps_their_arcs`,
+  `shaping::tests::lines_and_arcs_both_come_back` and
+  `shaping::tests::a_chord_stays_a_line`.
+
 ## Panel
 
 - Seven picture buttons choose the operation; under them its name, a

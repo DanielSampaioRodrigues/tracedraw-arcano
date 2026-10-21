@@ -1,7 +1,9 @@
 //! Shaping: weld, trim, intersect, simplify, front-minus-back, back-minus-
-//! front and boundary. Implemented on flattened polygons with i_overlay,
-//! so curves become dense polylines (0.02 mm tolerance). A curve-preserving
-//! version is on the roadmap.
+//! front and boundary. Implemented on flattened polygons with i_overlay
+//! (0.02 mm tolerance); the curves of the sources are then put back into
+//! the result ([`recover_curves`]), so a result keeps the Bezier segments
+//! of the objects it came from, with new nodes only where their outlines
+//! cross.
 
 use crate::geometry::{BezPath, PathEl, Point};
 use i_overlay::core::fill_rule::FillRule as IFill;
@@ -76,7 +78,7 @@ pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
         Op::Exclude => OverlayRule::Xor,
     };
     let result = subj.overlay(&clp, rule, IFill::EvenOdd);
-    from_shapes(result)
+    recover_curves(&from_shapes(result), &[subject, clip])
 }
 
 /// Combine `subject` and `clip` as [`overlay`] does, each separate piece
@@ -92,9 +94,387 @@ pub fn overlay_parts(subject: &BezPath, clip: &BezPath, op: Op) -> Vec<BezPath> 
     };
     subj.overlay(&clp, rule, IFill::EvenOdd)
         .into_iter()
-        .map(|shape| from_shapes(vec![shape]))
+        .map(|shape| recover_curves(&from_shapes(vec![shape]), &[subject, clip]))
         .filter(|p| !p.elements().is_empty())
         .collect()
+}
+
+/// How near a vertex of a polygon result must lie to a source outline to
+/// count as lying on it, mm: where two flattened outlines cross, the
+/// crossing of the two chords lies up to [`TOL`] off either curve.
+const ON_SOURCE: f64 = 1.5 * TOL;
+
+/// A place on a source outline: the subpath, and its segment index plus
+/// the parameter within the segment, one number that runs on across the
+/// segment ends (a closed subpath's wraps back to 0).
+#[derive(Clone, Copy, Debug)]
+struct Place {
+    sub: usize,
+    u: f64,
+}
+
+/// A subpath of a source, ready for lookups.
+struct SourceSub {
+    segs: Vec<kurbo::PathSeg>,
+    closed: bool,
+    /// Each segment's box, grown by [`ON_SOURCE`].
+    boxes: Vec<kurbo::Rect>,
+}
+
+impl SourceSub {
+    fn len(&self) -> f64 {
+        self.segs.len() as f64
+    }
+
+    /// The place of `p` on segment `i` of this subpath, added to `out`
+    /// when it lies on it (two places coincide where it lies on a
+    /// segment end; the second is dropped).
+    fn place_on(&self, sub: usize, i: usize, p: Point, out: &mut Vec<Place>) {
+        use kurbo::ParamCurveNearest as _;
+        let (Some(seg), Some(bx)) = (self.segs.get(i), self.boxes.get(i)) else {
+            return;
+        };
+        if !bx.contains(p) {
+            return;
+        }
+        let near = seg.nearest(p, 1e-9);
+        if near.distance_sq > ON_SOURCE * ON_SOURCE {
+            return;
+        }
+        let n = self.len();
+        let mut u = i as f64 + near.t.clamp(0.0, 1.0);
+        // On a segment end: that end exactly, so no sliver of the
+        // segment is left over.
+        if (u - u.round()).abs() < 1e-6 {
+            u = u.round();
+        }
+        if self.closed && u >= n - 1e-9 {
+            u = 0.0;
+        }
+        if out
+            .iter()
+            .any(|q| q.sub == sub && self.delta(q.u, u).abs() < 1e-6)
+        {
+            return;
+        }
+        out.push(Place { sub, u });
+    }
+
+    /// From `a` to `b` along the subpath: the signed parameter distance,
+    /// the shorter way round for a closed one.
+    fn delta(&self, a: f64, b: f64) -> f64 {
+        let d = b - a;
+        if self.closed {
+            let n = self.len();
+            let d = d.rem_euclid(n);
+            if d > n / 2.0 {
+                d - n
+            } else {
+                d
+            }
+        } else {
+            d
+        }
+    }
+
+    /// The point `du` along from `u`.
+    fn at(&self, u: f64, du: f64) -> Point {
+        use kurbo::ParamCurve as _;
+        let n = self.len();
+        let mut v = u + du;
+        if self.closed {
+            v = v.rem_euclid(n);
+        }
+        let v = v.clamp(0.0, n);
+        let i = (v.floor() as usize).min(self.segs.len() - 1);
+        self.segs[i].eval(v - i as f64)
+    }
+
+    /// The pieces of the subpath from `u` on by `du` (back for a
+    /// negative `du`), appended to `out`, which stands at the start.
+    fn pieces(&self, u: f64, du: f64, out: &mut BezPath) {
+        use kurbo::{ParamCurve as _, PathSeg};
+        let n = self.len();
+        let count = self.segs.len();
+        let mut left = du.abs();
+        let mut cur = if self.closed { u.rem_euclid(n) } else { u };
+        let mut guard = 0;
+        while left > 1e-9 && guard < count + 2 {
+            guard += 1;
+            if du < 0.0 && self.closed && cur <= 1e-12 {
+                cur = n;
+            }
+            let (i, t0, t1, step) = if du > 0.0 {
+                let i = (cur.floor() as usize).min(count - 1);
+                let t0 = cur - i as f64;
+                let t1 = (t0 + left).min(1.0);
+                (i, t0, t1, t1 - t0)
+            } else {
+                let i = (cur.ceil() as usize).max(1).min(count) - 1;
+                let t1 = cur - i as f64;
+                let t0 = (t1 - left).max(0.0);
+                (i, t0, t1, t1 - t0)
+            };
+            if step <= 1e-12 {
+                break;
+            }
+            let mut piece = self.segs[i].subsegment(t0..t1);
+            if du < 0.0 {
+                piece = piece.reverse();
+            }
+            match piece {
+                PathSeg::Line(l) => out.line_to(l.p1),
+                PathSeg::Quad(q) => out.quad_to(q.p1, q.p2),
+                PathSeg::Cubic(c) => out.curve_to(c.p1, c.p2, c.p3),
+            }
+            left -= step;
+            cur = if du > 0.0 {
+                i as f64 + t1
+            } else {
+                i as f64 + t0
+            };
+            if self.closed {
+                cur = cur.rem_euclid(n);
+            } else if (du > 0.0 && cur >= n - 1e-12) || (du < 0.0 && cur <= 1e-12) {
+                break;
+            }
+        }
+    }
+}
+
+/// A stretch of the result lying along one source subpath: where it
+/// started on it, how far it has come, and which way.
+struct Run {
+    sub: usize,
+    u_start: f64,
+    du: f64,
+}
+
+/// A grid over the sources' segments, so the segments near a point are
+/// found without a look at every one (a block shadow welds thousands).
+struct SegmentGrid {
+    x0: f64,
+    y0: f64,
+    cell: f64,
+    nx: usize,
+    ny: usize,
+    /// Per cell: the (subpath, segment) pairs whose boxes cover it.
+    cells: Vec<Vec<(usize, usize)>>,
+}
+
+impl SegmentGrid {
+    fn new(subs: &[SourceSub]) -> Self {
+        let mut bounds: Option<kurbo::Rect> = None;
+        let mut count = 0usize;
+        for sub in subs {
+            for bx in &sub.boxes {
+                bounds = Some(bounds.map_or(*bx, |b| b.union(*bx)));
+                count += 1;
+            }
+        }
+        let bounds = bounds.unwrap_or(kurbo::Rect::ZERO);
+        // About one segment per cell, within reason.
+        let side = ((count as f64).sqrt().ceil() as usize).clamp(1, 512);
+        let cell = (bounds.width().max(bounds.height()) / side as f64).max(1e-6);
+        let nx = ((bounds.width() / cell).ceil() as usize).max(1);
+        let ny = ((bounds.height() / cell).ceil() as usize).max(1);
+        let mut grid = SegmentGrid {
+            x0: bounds.x0,
+            y0: bounds.y0,
+            cell,
+            nx,
+            ny,
+            cells: vec![Vec::new(); nx * ny],
+        };
+        for (k, sub) in subs.iter().enumerate() {
+            for (i, bx) in sub.boxes.iter().enumerate() {
+                let (cx0, cy0) = grid.cell_of(Point::new(bx.x0, bx.y0));
+                let (cx1, cy1) = grid.cell_of(Point::new(bx.x1, bx.y1));
+                for cy in cy0..=cy1 {
+                    for cx in cx0..=cx1 {
+                        grid.cells[cy * nx + cx].push((k, i));
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    fn cell_of(&self, p: Point) -> (usize, usize) {
+        let cx = ((p.x - self.x0) / self.cell).floor().max(0.0) as usize;
+        let cy = ((p.y - self.y0) / self.cell).floor().max(0.0) as usize;
+        (cx.min(self.nx - 1), cy.min(self.ny - 1))
+    }
+
+    /// The segments whose boxes may hold `p`.
+    fn near(&self, p: Point) -> &[(usize, usize)] {
+        if p.x < self.x0 || p.y < self.y0 {
+            return &[];
+        }
+        let (cx, cy) = self.cell_of(p);
+        if (p.x - self.x0) / self.cell >= self.nx as f64
+            || (p.y - self.y0) / self.cell >= self.ny as f64
+        {
+            return &[];
+        }
+        &self.cells[cy * self.nx + cx]
+    }
+}
+
+/// `result`, a polygon path made from the flattened `sources`, with the
+/// sources' curves put back: a vertex lying on a source outline is placed
+/// on it, and a stretch of consecutive vertices along one source subpath
+/// becomes that stretch of the subpath itself, segments, handles and all,
+/// instead of its flattening. Vertices on no source (none, as a rule) and
+/// edges that do not follow a source (a chord across an arc, a source
+/// edge the result leaves early) stay straight lines, so the result is
+/// never worse than the polygon.
+fn recover_curves(result: &BezPath, sources: &[&BezPath]) -> BezPath {
+    let curved = |p: &BezPath| {
+        p.elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::QuadTo(..) | PathEl::CurveTo(..)))
+    };
+    // Nothing to put back when the sources are polygons themselves.
+    if curved(result) || !sources.iter().any(|p| curved(p)) {
+        return result.clone();
+    }
+    let subs: Vec<SourceSub> = sources
+        .iter()
+        .flat_map(|p| subpath_segments(p))
+        .filter(|(segs, _)| !segs.is_empty())
+        .map(|(segs, closed)| {
+            use kurbo::Shape as _;
+            let boxes = segs
+                .iter()
+                .map(|s| s.bounding_box().inflate(ON_SOURCE, ON_SOURCE))
+                .collect();
+            SourceSub {
+                segs,
+                closed,
+                boxes,
+            }
+        })
+        .collect();
+    if subs.is_empty() {
+        return result.clone();
+    }
+    let grid = SegmentGrid::new(&subs);
+    // The contours of the result.
+    let mut contours: Vec<Vec<Point>> = Vec::new();
+    for el in result.elements() {
+        match *el {
+            PathEl::MoveTo(p) => contours.push(vec![p]),
+            PathEl::LineTo(p) => {
+                if let Some(c) = contours.last_mut() {
+                    c.push(p);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = BezPath::new();
+    for mut pts in contours {
+        if pts.len() > 1 && (pts[pts.len() - 1] - pts[0]).hypot() < 1e-9 {
+            pts.pop();
+        }
+        if pts.len() < 3 {
+            continue;
+        }
+        let n = pts.len();
+        let mut places: Vec<Vec<Place>> = pts
+            .iter()
+            .map(|p| {
+                let mut v = Vec::new();
+                for (k, i) in grid.near(*p) {
+                    subs[*k].place_on(*k, *i, *p, &mut v);
+                }
+                v
+            })
+            .collect();
+        // The contour starts where a run would end anyway (a crossing, a
+        // vertex on no source, or a source's own node), so a stretch of
+        // one source is not cut in two at an arbitrary vertex.
+        let boundary =
+            |pl: &Vec<Place>| pl.len() != 1 || pl.iter().any(|q| (q.u - q.u.round()).abs() < 1e-6);
+        if let Some(first) = (0..n).find(|k| boundary(&places[*k])) {
+            pts.rotate_left(first);
+            places.rotate_left(first);
+        }
+        out.move_to(pts[0]);
+        // The run ending at the vertex before the one in hand; `None` when
+        // that vertex was reached by a straight line.
+        let mut run: Option<Run> = None;
+        for k in 1..=n {
+            let prev = pts[k - 1];
+            let p = pts[k % n];
+            let here = &places[k % n];
+            let before = &places[(k - 1) % n];
+            // The step from `prev` to `p` along a source: `(place of prev,
+            // the parameter distance)`, when the source follows the edge.
+            let follows = |sub_k: usize, ua: f64, ub: f64| -> Option<f64> {
+                let sub = &subs[sub_k];
+                let du = sub.delta(ua, ub);
+                if du.abs() < 1e-9 {
+                    return None;
+                }
+                // The flattening put each edge within TOL of the curve; a
+                // chord across more of it lies farther from it.
+                let chord = kurbo::Line::new(prev, p);
+                for f in [0.25, 0.5, 0.75] {
+                    use kurbo::ParamCurveNearest as _;
+                    let q = sub.at(ua, du * f);
+                    if chord.nearest(q, 1e-9).distance_sq > (2.0 * TOL) * (2.0 * TOL) {
+                        return None;
+                    }
+                }
+                Some(du)
+            };
+            // Extend the run in hand?
+            let mut extended = false;
+            if let Some(r) = run.as_mut() {
+                let u_last = r.u_start + r.du;
+                let same = here
+                    .iter()
+                    .filter(|c| c.sub == r.sub)
+                    .find_map(|c| follows(r.sub, u_last, c.u));
+                if let Some(du) = same {
+                    if (du > 0.0) == (r.du > 0.0) {
+                        r.du += du;
+                        extended = true;
+                    }
+                }
+            }
+            if extended {
+                continue;
+            }
+            // Not along the run: the run ends at `prev`, drawn as it is.
+            if let Some(r) = run.take() {
+                subs[r.sub].pieces(r.u_start, r.du, &mut out);
+            }
+            // A new run from `prev` to `p` along a source both lie on?
+            let start = before.iter().find_map(|a| {
+                here.iter()
+                    .filter(|b| b.sub == a.sub)
+                    .find_map(|b| follows(a.sub, a.u, b.u).map(|du| (a.sub, a.u, du)))
+            });
+            match start {
+                Some((sub, u_start, du)) => run = Some(Run { sub, u_start, du }),
+                None => out.line_to(p),
+            }
+        }
+        if let Some(r) = run.take() {
+            subs[r.sub].pieces(r.u_start, r.du, &mut out);
+        }
+        // The close does the last straight edge back to the start.
+        if let Some(PathEl::LineTo(q)) = out.elements().last() {
+            if (*q - pts[0]).hypot() < 1e-9 {
+                out.pop();
+            }
+        }
+        out.close_path();
+    }
+    out
 }
 
 /// How an offset outline turns its corners.
@@ -884,7 +1264,7 @@ pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);
     let empty: Vec<Vec<[f64; 2]>> = Vec::new();
     let result = subj.overlay(&empty, OverlayRule::Subject, IFill::NonZero);
-    from_shapes(result)
+    recover_curves(&from_shapes(result), &[path])
 }
 
 #[cfg(test)]
@@ -1179,6 +1559,164 @@ mod tests {
         assert!(offset_with(&square(0.0), f64::NAN, Join::Miter)
             .elements()
             .is_empty());
+    }
+
+    fn circle(cx: f64, cy: f64, r: f64) -> BezPath {
+        use crate::geometry::Shape as _;
+        kurbo::Circle::new((cx, cy), r).to_path(1e-4)
+    }
+
+    /// The end points of a path's elements.
+    fn nodes(p: &BezPath) -> Vec<Point> {
+        p.elements()
+            .iter()
+            .filter_map(|e| match *e {
+                PathEl::MoveTo(q) | PathEl::LineTo(q) => Some(q),
+                PathEl::QuadTo(_, q) => Some(q),
+                PathEl::CurveTo(_, _, q) => Some(q),
+                PathEl::ClosePath => None,
+            })
+            .collect()
+    }
+
+    fn count(p: &BezPath, curves: bool) -> usize {
+        p.elements()
+            .iter()
+            .filter(|e| match e {
+                PathEl::LineTo(_) => !curves,
+                PathEl::QuadTo(..) | PathEl::CurveTo(..) => curves,
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Welding two circles keeps their arcs: the result is a few curve
+    /// segments with nodes only at the circles' own nodes and where they
+    /// cross, not hundreds of tiny lines.
+    #[test]
+    fn welding_circles_keeps_their_arcs() {
+        let (a, b) = (circle(0.0, 0.0, 10.0), circle(12.0, 0.0, 10.0));
+        let w = overlay(&a, &b, Op::Weld);
+        assert_eq!(count(&w, false), 0, "{w:?}");
+        let curves = count(&w, true);
+        assert!((4..=12).contains(&curves), "{curves} curve segments");
+        // The area of the union of two discs of radius 10, 12 apart.
+        let lens = 200.0 * (0.6f64).acos() - 6.0 * (400.0f64 - 144.0).sqrt();
+        let expect = 2.0 * std::f64::consts::PI * 100.0 - lens;
+        assert!((w.area().abs() - expect).abs() < 0.3, "{}", w.area());
+        for q in nodes(&w) {
+            let on_a = ((q - Point::new(0.0, 0.0)).hypot() - 10.0).abs();
+            let on_b = ((q - Point::new(12.0, 0.0)).hypot() - 10.0).abs();
+            assert!(on_a < 2e-3 || on_b < 2e-3, "{q:?} off both circles");
+        }
+        // Trim and Intersect the same way.
+        let t = overlay(&a, &b, Op::Trim);
+        assert_eq!(count(&t, false), 0, "{t:?}");
+        assert!((t.area().abs() - (std::f64::consts::PI * 100.0 - lens)).abs() < 0.3);
+        let i = overlay(&a, &b, Op::Intersect);
+        assert_eq!(count(&i, false), 0, "{i:?}");
+        assert!((i.area().abs() - lens).abs() < 0.3);
+        // Nodes at the two crossings and at the circles' own nodes on
+        // the lens, nowhere else.
+        assert!(count(&i, true) <= 7, "{} {i:?}", count(&i, true));
+        // The last piece ends at the start: no node is repeated.
+        assert_eq!(nodes(&i).len(), count(&i, true) + 1, "{i:?}");
+    }
+
+    /// A square and a circle: the result has the square's straight sides
+    /// and the circle's arcs, and nothing else.
+    #[test]
+    fn lines_and_arcs_both_come_back() {
+        let sq = square(0.0);
+        let c = circle(10.0, 5.0, 4.0);
+        let i = overlay(&sq, &c, Op::Intersect);
+        // The left half of the disc: one straight edge, the arc in a few pieces.
+        assert_eq!(count(&i, false), 1, "{i:?}");
+        assert!(count(&i, true) <= 4, "{i:?}");
+        assert!((i.area().abs() - std::f64::consts::PI * 8.0).abs() < 0.1);
+        // Polygons stay polygons: two squares side by side weld to a
+        // rectangle of four corners, none repeated.
+        let w = overlay(&square(0.0), &square(5.0), Op::Weld);
+        assert_eq!(count(&w, true), 0);
+        assert_eq!(count(&w, false), 3, "{w:?}");
+        assert_eq!(nodes(&w).len(), 4, "{w:?}");
+    }
+
+    /// Where the result cuts straight across a circle (a trim by a
+    /// half-plane), the cut is a line, not the arc it replaces.
+    #[test]
+    fn a_chord_stays_a_line() {
+        let c = circle(0.0, 0.0, 10.0);
+        let mut half = BezPath::new();
+        half.move_to((0.0, -20.0));
+        half.line_to((20.0, -20.0));
+        half.line_to((20.0, 20.0));
+        half.line_to((0.0, 20.0));
+        half.close_path();
+        let t = overlay(&c, &half, Op::Trim);
+        assert!(
+            (t.area().abs() - std::f64::consts::PI * 50.0).abs() < 0.2,
+            "{}",
+            t.area()
+        );
+        assert_eq!(count(&t, false), 1, "{t:?}");
+        let chord = t
+            .elements()
+            .iter()
+            .find_map(|e| match e {
+                PathEl::LineTo(q) => Some(*q),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            chord.x.abs() < 1e-3 && (chord.y.abs() - 10.0).abs() < 1e-3,
+            "{chord:?}"
+        );
+        // Simplify keeps curves too.
+        let s = simplify(&c);
+        assert_eq!(count(&s, false), 0, "{s:?}");
+    }
+
+    /// Polygon sources skip the curve recovery (a block shadow welds
+    /// thousands of them), and a curved source of thousands of segments
+    /// is looked up through the grid, not segment by segment: both are
+    /// quick.
+    #[test]
+    fn recovery_is_quick_on_big_inputs() {
+        let t = std::time::Instant::now();
+        // Many thin quads welded one by one, as a block shadow is made.
+        let mut solid = square(0.0);
+        for k in 0..300 {
+            let x = k as f64 * 0.1;
+            let mut quad = BezPath::new();
+            quad.move_to((x, 0.0));
+            quad.line_to((x + 0.3, 0.0));
+            quad.line_to((x + 0.3 + 20.0, 30.0));
+            quad.line_to((x + 20.0, 30.0));
+            quad.close_path();
+            solid = overlay(&solid, &quad, Op::Weld);
+        }
+        assert!(count(&solid, true) == 0);
+        // A curve of 4,000 segments against a circle.
+        let n = 4000;
+        let mut wavy = BezPath::new();
+        for k in 0..n {
+            let a = k as f64 / n as f64 * std::f64::consts::TAU;
+            let r = 50.0 + 3.0 * (a * 40.0).sin();
+            let q = Point::new(r * a.cos(), r * a.sin());
+            if k == 0 {
+                wavy.move_to(q);
+            } else {
+                let b = (k as f64 - 0.5) / n as f64 * std::f64::consts::TAU;
+                let rb = 50.0 + 3.0 * (b * 40.0).sin();
+                let m = Point::new(rb * b.cos(), rb * b.sin());
+                wavy.curve_to(m, m, q);
+            }
+        }
+        wavy.close_path();
+        let w = overlay(&wavy, &circle(30.0, 0.0, 40.0), Op::Weld);
+        assert!(count(&w, true) > 100, "{}", count(&w, true));
+        assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
     }
 
     #[test]
