@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Curve tools: Options > Tools > Curve tools > Constrain angle key chooses the key that keeps the next segment to the constrain angle, Ctrl (as before), Shift or Alt (#247).
+
 - Layout > Fit Page to Selection and Fit Page to Drawing (also on the Page Size options page): the page takes the size of the selection or of everything on it, and the objects move onto it; one undo step (#236).
 
 - Alignment and dynamic guides: preferences saved by a version from before the guides existed had both switches on with nothing behind them, so after the update the magenta alignment lines showed for everyone with an older configuration. They are switched off once at the update, as on a first start; switched on by hand afterwards they stay on.

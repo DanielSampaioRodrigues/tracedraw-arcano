@@ -245,7 +245,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         // Pen and Bezier: the segments placed in the outline the curve
         // will get, the Pen's dashed preview to the pointer, the nodes
         // and the last node's handles (see `pen_look`).
-        let ctrl = painter.ctx().input(|i| i.modifiers.ctrl);
+        let ctrl = painter.ctx().input(|i| app.constrain_held(&i.modifiers));
         let pointer = app
             .pointer_page
             .map(|p| app.curve_point(app.snap_point(p), ctrl));
@@ -297,9 +297,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             }
         }
     } else if let Some(c) = &app.curve {
-        // The pointer as the next node would take it (Ctrl: in steps of
-        // the constrain angle).
-        let ctrl = painter.ctx().input(|i| i.modifiers.ctrl);
+        // The pointer as the next node would take it (the constrain key:
+        // in steps of the constrain angle).
+        let ctrl = painter.ctx().input(|i| app.constrain_held(&i.modifiers));
         let preview = if c.dragging_handle {
             None
         } else {

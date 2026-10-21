@@ -2210,6 +2210,13 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
             tr("options.pen_auto_add_delete"),
         );
         ui.end_row();
+        row_label(ui, &tr("options.constrain_key"));
+        ui.horizontal(|ui| {
+            for k in crate::prefs::ConstrainKey::ALL {
+                ui.radio_value(&mut c.constrain_key, k, tr(k.i18n_key()));
+            }
+        });
+        ui.end_row();
     });
     ui.add_space(4.0);
     ui.label(egui::RichText::new(tr("options.join_hint")).color(crate::theme::Tokens::text_dim()));

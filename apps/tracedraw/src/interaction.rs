@@ -635,6 +635,12 @@ impl App {
     /// Where the next node of the curve being drawn goes for the pointer
     /// at `p`: with `ctrl` in steps of the constrain angle from the last
     /// node.
+    /// The constrain key (Options > Tools > Curve tools; Ctrl at first)
+    /// is among the modifiers held.
+    pub fn constrain_held(&self, mods: &Modifiers) -> bool {
+        self.settings.curves.constrain_key.held(mods)
+    }
+
     pub fn curve_point(&self, p: Point, ctrl: bool) -> Point {
         match self.curve.as_ref().and_then(|c| c.nodes.last()) {
             Some((last, _)) if ctrl => constrain_from(*last, p, self.settings.constrain_angle),
@@ -1518,7 +1524,7 @@ impl App {
         // A click, then another: a straight line between them (Ctrl keeps
         // it to steps of the constrain angle); Esc drops the first click.
         if response.clicked_by(PointerButton::Primary) && self.tool == Tool::Freehand {
-            let p = self.curve_point(self.snap_point(p), mods.ctrl);
+            let p = self.curve_point(self.snap_point(p), self.constrain_held(&mods));
             let c = self.curve.get_or_insert_with(|| CurveInProgress {
                 nodes: Vec::new(),
                 smooth: false,
@@ -1573,10 +1579,11 @@ impl App {
             .as_ref()
             .filter(|c| c.dragging_handle)
             .and_then(|c| c.nodes.last().map(|n| n.0));
+        let constrain = self.constrain_held(&mods);
         let p = match handle_from {
-            Some(node) if mods.ctrl => constrain_from(node, p, self.settings.constrain_angle),
+            Some(node) if constrain => constrain_from(node, p, self.settings.constrain_angle),
             Some(_) => p,
-            None => self.curve_point(p, mods.ctrl),
+            None => self.curve_point(p, constrain),
         };
         // B-Spline: each click (or the start of a drag) places a control
         // point; there are no handles to pull.

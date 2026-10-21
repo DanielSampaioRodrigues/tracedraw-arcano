@@ -93,6 +93,10 @@ meets the start) `Path` objects with the toolbox defaults.
 - Ctrl: the next node goes in steps of the constrain angle from the last
   one (keeping how far the pointer reaches along that direction), and a
   dragged handle in such steps around its node; the preview follows.
+  The key is Ctrl at first; Options > Tools > Curve tools > Constrain
+  angle key makes it Shift or Alt instead (`curves.constrain_key`), for
+  every curve tool and the Freehand tool's two-click lines
+  (`pick_drag_tests::the_constrain_key_can_be_shift_or_alt`).
 
 ## B-spline
 

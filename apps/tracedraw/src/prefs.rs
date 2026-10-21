@@ -325,6 +325,41 @@ pub struct CurvePrefs {
     /// Pen: a click on a segment (of the curve being drawn or of the
     /// selected curve) adds a node there, a click on a node deletes it.
     pub pen_auto_add_delete: bool,
+    /// The key held to keep the next segment (and a pulled handle) to
+    /// steps of the constrain angle while a curve is drawn.
+    #[serde(default)]
+    pub constrain_key: ConstrainKey,
+}
+
+/// The modifier key that constrains the angle while drawing curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConstrainKey {
+    #[default]
+    Ctrl,
+    Shift,
+    Alt,
+}
+
+impl ConstrainKey {
+    pub const ALL: [ConstrainKey; 3] = [ConstrainKey::Ctrl, ConstrainKey::Shift, ConstrainKey::Alt];
+
+    /// True when this key is among the modifiers held.
+    pub fn held(self, mods: &egui::Modifiers) -> bool {
+        match self {
+            ConstrainKey::Ctrl => mods.ctrl,
+            ConstrainKey::Shift => mods.shift,
+            ConstrainKey::Alt => mods.alt,
+        }
+    }
+
+    pub fn i18n_key(self) -> &'static str {
+        match self {
+            ConstrainKey::Ctrl => "options.key_ctrl",
+            ConstrainKey::Shift => "options.key_shift",
+            ConstrainKey::Alt => "options.key_alt",
+        }
+    }
 }
 
 impl Default for CurvePrefs {
@@ -334,6 +369,7 @@ impl Default for CurvePrefs {
             join_px: 5.0,
             pen_preview: true,
             pen_auto_add_delete: true,
+            constrain_key: ConstrainKey::Ctrl,
         }
     }
 }

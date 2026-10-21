@@ -3446,3 +3446,54 @@ fn a_clip_frame_is_painted_and_reshaped_through_its_frame() {
         ShapeKind::ClipFrame { .. }
     ));
 }
+
+/// The key that keeps a drawn segment to the constrain angle is chosen
+/// in Options > Tools > Curve tools: Ctrl at first, Shift or Alt on
+/// request; the others then do nothing of the kind (#247).
+#[test]
+fn the_constrain_key_can_be_shift_or_alt() {
+    let level = |app: &App| {
+        let pts: Vec<Point> = last_path(app)
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                tracedraw_core::geometry::PathEl::MoveTo(p)
+                | tracedraw_core::geometry::PathEl::LineTo(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        pts.len() == 2 && (pts[0].y - pts[1].y).abs() < 1e-6
+    };
+    for (key, mods, other) in [
+        (
+            crate::prefs::ConstrainKey::Shift,
+            Modifiers::SHIFT,
+            Modifiers::CTRL,
+        ),
+        (
+            crate::prefs::ConstrainKey::Alt,
+            Modifiers::ALT,
+            Modifiers::CTRL,
+        ),
+        (
+            crate::prefs::ConstrainKey::Ctrl,
+            Modifiers::CTRL,
+            Modifiers::SHIFT,
+        ),
+    ] {
+        let (ctx, mut app, _id) = setup();
+        app.settings.curves.constrain_key = key;
+        app.set_tool(Tool::Freehand);
+        let a = app.view.to_screen(Point::new(100.0, 100.0));
+        let b = app.view.to_screen(Point::new(160.0, 104.0));
+        click_at(&ctx, &mut app, a, Modifiers::NONE);
+        click_at(&ctx, &mut app, b, mods);
+        assert!(level(&app), "{key:?} held: level");
+        app.set_tool(Tool::Freehand);
+        let a = app.view.to_screen(Point::new(100.0, 150.0));
+        let b = app.view.to_screen(Point::new(160.0, 154.0));
+        click_at(&ctx, &mut app, a, Modifiers::NONE);
+        click_at(&ctx, &mut app, b, other);
+        assert!(!level(&app), "{key:?}: another key does not constrain");
+    }
+}
