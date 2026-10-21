@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Linked paragraph text frames: a copy of one frame (Duplicate, a right click during a move, Paste) is a frame of its own, so typing in it no longer flows into the original's next frame; a chain copied whole is a chain of the copies (#162).
+
 - Clip frames: an object that holds others (Place Inside Frame) can be painted and reshaped again: a fill or outline goes to its frame, the status bar and Properties show the frame's, and the Shape tool edits the frame's nodes (a rectangle's corners round, an ellipse takes a pie or arc, a curve node by node) with the contents staying inside; the frame inside a clip frame now has an id of its own (#273).
 
 - Browser: a right click during a move, scale, rotation or skew leaves the original and gives the change to a copy, as on the desktop; the browser reports a button pressed while another is held as a move, so the click was lost (#278).

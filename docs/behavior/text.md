@@ -177,6 +177,20 @@ any other object; the steps and sides follow the letters' outlines
   text scales as a whole. With other objects in the selection each is
   scaled as usual, all in one undo step.
 
+## Linked frames
+
+- Text > Paragraph Text Frame > Link: with two paragraph frames
+  selected, the first flows into the second; the chain's text lives in
+  its frames in order and overflow runs on into the next frame after
+  typing, linking and resizing (`textflow.rs`, links kept in the object
+  data as `text.next` and `text.prev`). Unlink leaves each frame with the
+  text it shows.
+- A copy of a frame (Duplicate, a right click during a move, Paste,
+  stamping) is a frame of its own, in no chain: typing in it does not
+  flow into the original's next frame. Frames of a chain copied together
+  (duplicated, pasted or imported as a set) are a chain of the copies
+  (`textflow::relink_copies`).
+
 ## Paragraph formatting
 
 - Alignment, line spacing, character and word spacing, space before and

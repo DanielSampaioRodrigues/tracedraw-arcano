@@ -8,9 +8,10 @@
 
 use crate::app::App;
 use crate::i18n::tr;
+use std::collections::HashMap;
 use tracedraw_core::{
     document::text_outline::TextRequest,
-    document::{ShapeKind, TextSpan},
+    document::{Shape, ShapeKind, TextSpan},
     Command, ShapeId,
 };
 
@@ -34,6 +35,83 @@ fn with_key(
         data.push((key.to_string(), v.raw().to_string()));
     }
     data
+}
+
+/// Take the chain links out of a copied object's data: a copy is not in
+/// its original's chain (see [`relink_copies`] for chains copied whole).
+pub fn without_links(data: &mut Vec<(String, String)>) {
+    data.retain(|(k, _)| k != NEXT && k != PREV);
+}
+
+/// Copies whose links were taken out, `copies[i]` made of `originals[i]`
+/// with the same structure (groups and clip frames copied member by
+/// member, in order): a link to a frame copied along points to its copy,
+/// so a chain copied whole stays a chain of the copies; a link to any
+/// other frame stays out.
+pub fn relink_copies(originals: &[Shape], copies: &mut [Shape]) {
+    fn map_ids(o: &Shape, c: &Shape, map: &mut HashMap<ShapeId, ShapeId>) {
+        map.insert(o.id, c.id);
+        match (&o.kind, &c.kind) {
+            (ShapeKind::Group { children: a }, ShapeKind::Group { children: b }) => {
+                for (x, y) in a.iter().zip(b) {
+                    map_ids(x, y, map);
+                }
+            }
+            (
+                ShapeKind::ClipFrame {
+                    frame: fa,
+                    contents: a,
+                },
+                ShapeKind::ClipFrame {
+                    frame: fb,
+                    contents: b,
+                },
+            ) => {
+                map_ids(fa, fb, map);
+                for (x, y) in a.iter().zip(b) {
+                    map_ids(x, y, map);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn relink(o: &Shape, c: &mut Shape, map: &HashMap<ShapeId, ShapeId>) {
+        for key in [NEXT, PREV] {
+            if let Some(to) = data_id(&o.data, key).and_then(|id| map.get(&id)) {
+                c.data = with_key(std::mem::take(&mut c.data), key, Some(*to));
+            }
+        }
+        match (&o.kind, &mut c.kind) {
+            (ShapeKind::Group { children: a }, ShapeKind::Group { children: b }) => {
+                for (x, y) in a.iter().zip(b) {
+                    relink(x, y, map);
+                }
+            }
+            (
+                ShapeKind::ClipFrame {
+                    frame: fa,
+                    contents: a,
+                },
+                ShapeKind::ClipFrame {
+                    frame: fb,
+                    contents: b,
+                },
+            ) => {
+                relink(fa, fb, map);
+                for (x, y) in a.iter().zip(b) {
+                    relink(x, y, map);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut map = HashMap::new();
+    for (o, c) in originals.iter().zip(copies.iter()) {
+        map_ids(o, c, &mut map);
+    }
+    for (o, c) in originals.iter().zip(copies.iter_mut()) {
+        relink(o, c, &map);
+    }
 }
 
 impl App {
@@ -290,5 +368,59 @@ mod tests {
         app.unlink_text_frames();
         assert_eq!(app.next_frame(a), None);
         assert_eq!(text_of(&app, a), ta);
+    }
+
+    /// A copy of one frame of a chain is a frame of its own: editing it
+    /// does not flow into the original's next frame. A chain copied whole
+    /// is a chain of the copies.
+    #[test]
+    fn copies_leave_the_chain_unless_copied_whole() {
+        tracedraw_text::install();
+        let mut app = App::headless();
+        let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty";
+        let a = frame(&mut app, long, 30.0, 8.0);
+        let b = frame(&mut app, "", 60.0, 60.0);
+        app.select(vec![a, b]);
+        app.link_text_frames();
+        let text_of = |app: &App, id: ShapeId| -> String {
+            match &app.doc().find_shape(id).unwrap().kind {
+                ShapeKind::Text { spans, .. } => spans.iter().map(|s| s.text.as_str()).collect(),
+                _ => String::new(),
+            }
+        };
+        let tb = text_of(&app, b);
+        // One frame copied: the copy is linked to nothing, and typing in
+        // it leaves the original's chain alone.
+        app.select(vec![a]);
+        app.duplicate();
+        let a2 = app.selection[0];
+        assert_ne!(a2, a);
+        assert!(!app.is_linked_frame(a2));
+        app.begin_text_edit(a2);
+        app.text_insert("more words here and there ");
+        assert_eq!(
+            text_of(&app, b),
+            tb,
+            "the original's next frame is untouched"
+        );
+        assert_eq!(app.next_frame(a), Some(b));
+        // The copy pasted: the same.
+        app.select(vec![b]);
+        app.copy();
+        app.paste();
+        let b2 = app.selection[0];
+        assert!(!app.is_linked_frame(b2));
+        // The whole chain copied: the copies are a chain of their own.
+        app.select(vec![a, b]);
+        app.duplicate();
+        let (a3, b3) = (app.selection[0], app.selection[1]);
+        assert_eq!(app.next_frame(a3), Some(b3));
+        assert_eq!(app.chain_of(b3), vec![a3, b3]);
+        assert_eq!(app.next_frame(a), Some(b), "the original chain stays");
+        // Copies of a copied chain are made with every other copy (reid):
+        // nothing links back to the originals.
+        app.select(vec![a3]);
+        app.duplicate();
+        assert!(!app.is_linked_frame(app.selection[0]));
     }
 }

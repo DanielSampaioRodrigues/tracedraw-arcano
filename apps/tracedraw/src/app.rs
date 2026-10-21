@@ -3686,11 +3686,16 @@ impl App {
         let mut ids = Vec::new();
         let mut cmds = Vec::new();
         let here = self.doc().object_styles.clone();
-        for s in cb.shapes {
+        let mut copies = Vec::new();
+        for s in &cb.shapes {
             let id = self.engine.new_shape_id();
-            let mut shape = reid(s, id, &mut self.engine);
+            let mut shape = reid(s.clone(), id, &mut self.engine);
             crate::styles::keep_links_to(&mut shape, &cb.styles, &here);
             ids.push(id);
+            copies.push(shape);
+        }
+        crate::textflow::relink_copies(&cb.shapes, &mut copies);
+        for shape in copies {
             cmds.push(Command::AddShape { layer, shape });
         }
         if let Err(e) = self.engine.run_batch("Paste", &cmds) {
@@ -3708,14 +3713,19 @@ impl App {
             return;
         };
         let mut ids = Vec::new();
-        let mut cmds = Vec::new();
-        for s in shapes {
+        let mut copies = Vec::new();
+        for s in &shapes {
             let id = self.engine.new_shape_id();
-            let mut shape = reid(s, id, &mut self.engine);
+            let mut shape = reid(s.clone(), id, &mut self.engine);
             shape.transform = Affine::translate(self.duplicate_offset) * shape.transform;
             ids.push(id);
-            cmds.push(Command::AddShape { layer, shape });
+            copies.push(shape);
         }
+        crate::textflow::relink_copies(&shapes, &mut copies);
+        let cmds: Vec<Command> = copies
+            .into_iter()
+            .map(|shape| Command::AddShape { layer, shape })
+            .collect();
         if cmds.is_empty() {
             return;
         }
@@ -5194,14 +5204,16 @@ impl App {
                 // The imported text keeps its letters; saving the drawing
                 // carries the fonts along.
                 self.add_carried_fonts(&doc.fonts);
-                let mut cmds = Vec::new();
                 let mut ids = Vec::new();
-                for s in doc
+                let originals: Vec<Shape> = doc
                     .pages
                     .iter()
                     .flat_map(|p| &p.layers)
                     .flat_map(|l| &l.shapes)
-                {
+                    .cloned()
+                    .collect();
+                let mut copies = Vec::new();
+                for s in &originals {
                     let id = self.engine.new_shape_id();
                     let mut shape = reid(s.clone(), id, &mut self.engine);
                     self.apply_import_policy(
@@ -5209,8 +5221,14 @@ impl App {
                         doc.cmyk_profile.as_ref(),
                     );
                     ids.push(id);
-                    cmds.push(Command::AddShape { layer, shape });
+                    copies.push(shape);
                 }
+                // Linked text frames imported together stay a chain.
+                crate::textflow::relink_copies(&originals, &mut copies);
+                let cmds: Vec<Command> = copies
+                    .into_iter()
+                    .map(|shape| Command::AddShape { layer, shape })
+                    .collect();
                 if let Err(e) = self.engine.run_batch("Import", &cmds) {
                     self.status = e.to_string();
                 }
@@ -5734,6 +5752,9 @@ pub fn reid_pub(s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
 
 fn reid(mut s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
     s.id = id;
+    // A copy is not in its original's text chain (duplicate, paste and
+    // import link the copies of a chain copied whole: `relink_copies`).
+    crate::textflow::without_links(&mut s.data);
     match &mut s.kind {
         ShapeKind::Group { children } => {
             for c in children.iter_mut() {
@@ -5757,6 +5778,7 @@ fn reid(mut s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
 /// Re-number a shape tree from an id source (documents built outside the engine).
 fn reid_with(mut s: Shape, ids: &mut tracedraw_core::id::IdSource) -> Shape {
     s.id = ids.shape();
+    crate::textflow::without_links(&mut s.data);
     match &mut s.kind {
         ShapeKind::Group { children } => {
             for c in children.iter_mut() {
