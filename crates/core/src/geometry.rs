@@ -232,13 +232,25 @@ pub fn smooth_path(points: &[Point], closed: bool) -> BezPath {
         pts[idx]
     };
     let segments = if closed { n } else { n - 1 };
+    // The tangent at a point runs from the point before to the one after
+    // and the handles along it are a third of the segment long, so a long
+    // segment next to a short one neither overshoots nor flattens.
+    let handle = |from: Point, along: Vec2, len: f64| -> Point {
+        let l = along.hypot();
+        if l < 1e-12 {
+            from
+        } else {
+            from + along * (len / (3.0 * l))
+        }
+    };
     for i in 0..segments {
         let p0 = get(i as isize - 1);
         let p1 = get(i as isize);
         let p2 = get(i as isize + 1);
         let p3 = get(i as isize + 2);
-        let c1 = p1 + (p2 - p0) / 6.0;
-        let c2 = p2 - (p3 - p1) / 6.0;
+        let len = (p2 - p1).hypot();
+        let c1 = handle(p1, p2 - p0, len);
+        let c2 = handle(p2, p1 - p3, len);
         path.curve_to(c1, c2, p2);
     }
     if closed {

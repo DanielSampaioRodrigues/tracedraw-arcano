@@ -218,10 +218,114 @@ pub fn subpaths(path: &BezPath) -> Vec<(BezPath, bool)> {
     out
 }
 
-/// A brush stroke step on each subpath the nib (`radius` around `at`)
-/// reaches: its points `max_len` apart go through `f` and come back as
-/// smooth curves (or straight lines with `sharp`). Subpaths out of reach
-/// stay exactly as they were.
+/// How far past the nib's edge a brush's rebuilt stretch runs, as a share
+/// of the nib: the points there do not move, so the rebuilt stretch
+/// joins the kept curve smoothly.
+const REACH_MARGIN: f64 = 0.25;
+
+/// The pieces of `seg` by whether they lie within `reach` of `at`: the
+/// stretch within reach (one piece, from the first place in reach to the
+/// last) and what lies before and after it, kept as it is.
+fn pieces_in_reach(seg: kurbo::PathSeg, at: Point, reach: f64) -> Vec<(kurbo::PathSeg, bool)> {
+    use kurbo::ParamCurve as _;
+    const SAMPLES: usize = 32;
+    let inside = |t: f64| (seg.eval(t) - at).hypot() <= reach;
+    let ts: Vec<f64> = (0..=SAMPLES).map(|k| k as f64 / SAMPLES as f64).collect();
+    let first = ts.iter().position(|t| inside(*t));
+    let last = ts.iter().rposition(|t| inside(*t));
+    let (Some(a), Some(b)) = (first, last) else {
+        return vec![(seg, false)];
+    };
+    // One sample out on each side, so the piece holds the crossing.
+    let t0 = ts[a.saturating_sub(1)];
+    let t1 = ts[(b + 1).min(SAMPLES)];
+    let mut out = Vec::new();
+    if t0 > 0.0 {
+        out.push((seg.subsegment(0.0..t0), false));
+    }
+    out.push((seg.subsegment(t0..t1), true));
+    if t1 < 1.0 {
+        out.push((seg.subsegment(t1..1.0), false));
+    }
+    out
+}
+
+/// A brush stroke step on each stretch of `path` the nib (`radius` around
+/// `at`) reaches: each run of segment pieces within the nib and a margin
+/// ([`REACH_MARGIN`]) goes through `rebuild` (with whether it is a whole
+/// closed subpath) and comes back in its place; the pieces out of reach,
+/// and the subpaths out of reach, stay exactly as they were. A closed
+/// subpath touched in part starts from a piece out of reach, so a run
+/// does not straddle its start.
+fn brush_runs(
+    path: &BezPath,
+    at: Point,
+    radius: f64,
+    mut rebuild: impl FnMut(&BezPath, bool) -> BezPath,
+) -> BezPath {
+    use crate::geometry::Shape as _;
+    use kurbo::ParamCurve as _;
+    let reach = radius * (1.0 + REACH_MARGIN);
+    let mut out = BezPath::new();
+    for (sub, closed) in subpaths(path) {
+        if !sub.bounding_box().inflate(reach, reach).contains(at) {
+            out.extend(sub.elements().iter().copied());
+            continue;
+        }
+        let mut pieces: Vec<(kurbo::PathSeg, bool)> = sub
+            .segments()
+            .flat_map(|seg| pieces_in_reach(seg, at, reach))
+            .collect();
+        if pieces.is_empty() {
+            out.extend(sub.elements().iter().copied());
+            continue;
+        }
+        let Some(first_free) = pieces.iter().position(|(_, touched)| !touched) else {
+            // The whole subpath is within reach.
+            let rebuilt = rebuild(&sub, closed);
+            out.extend(rebuilt.elements().iter().copied());
+            continue;
+        };
+        if !pieces.iter().any(|(_, touched)| *touched) {
+            out.extend(sub.elements().iter().copied());
+            continue;
+        }
+        if closed {
+            pieces.rotate_left(first_free);
+        }
+        out.move_to(pieces[0].0.start());
+        let mut i = 0;
+        while i < pieces.len() {
+            if !pieces[i].1 {
+                out.push(pieces[i].0.as_path_el());
+                i += 1;
+                continue;
+            }
+            let mut run = BezPath::new();
+            run.move_to(pieces[i].0.start());
+            while i < pieces.len() && pieces[i].1 {
+                run.push(pieces[i].0.as_path_el());
+                i += 1;
+            }
+            let rebuilt = rebuild(&run, false);
+            out.extend(
+                rebuilt
+                    .elements()
+                    .iter()
+                    .filter(|e| !matches!(e, PathEl::MoveTo(_)))
+                    .copied(),
+            );
+        }
+        if closed {
+            out.close_path();
+        }
+    }
+    out
+}
+
+/// A brush stroke step on each stretch the nib (`radius` around `at`)
+/// reaches (see [`brush_runs`]): its points `max_len` apart go through
+/// `f` and come back as smooth curves (or straight lines with `sharp`).
 fn brush_each(
     path: &BezPath,
     at: Point,
@@ -230,22 +334,40 @@ fn brush_each(
     sharp: bool,
     mut f: impl FnMut(Vec<Point>, bool) -> Vec<Point>,
 ) -> BezPath {
-    use crate::geometry::Shape as _;
-    let mut out = BezPath::new();
-    for (sub, closed) in subpaths(path) {
-        if !sub.bounding_box().inflate(radius, radius).contains(at) {
-            out.extend(sub.elements().iter().copied());
-            continue;
-        }
-        let pts = f(densify(&sub, max_len), closed);
-        let rebuilt = if sharp {
+    brush_runs(path, at, radius, |run, closed| {
+        let pts = f(densify(run, max_len), closed);
+        if sharp {
             crate::geometry::polyline_path(&pts, closed)
         } else {
-            crate::geometry::smooth_path(&pts, closed)
-        };
-        out.extend(rebuilt.elements().iter().copied());
+            fewer_curves(&crate::geometry::smooth_path(&pts, closed))
+        }
+    })
+}
+
+/// How far a brush's rebuilt curve may move when its many small curves
+/// are merged into few, mm.
+const MERGE_ACCURACY: f64 = 0.05;
+
+/// `path` (smooth curves through many close points) with its curves
+/// merged into as few as keep it within [`MERGE_ACCURACY`] (kurbo's curve
+/// fitter), so a brush stroke leaves a handful of nodes, not one every
+/// few millimetres. The path itself when the fit fails.
+fn fewer_curves(path: &BezPath) -> BezPath {
+    use kurbo::simplify::{simplify_bezpath, SimplifyOptLevel, SimplifyOptions};
+    let options = SimplifyOptions::default().opt_level(SimplifyOptLevel::Optimize);
+    let fitted = simplify_bezpath(path.elements().iter().copied(), MERGE_ACCURACY, &options);
+    let sane = !fitted.elements().is_empty()
+        && fitted.elements().iter().all(|e| match *e {
+            PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
+            PathEl::QuadTo(a, p) => a.is_finite() && p.is_finite(),
+            PathEl::CurveTo(a, b, p) => a.is_finite() && b.is_finite() && p.is_finite(),
+            PathEl::ClosePath => true,
+        });
+    if sane {
+        fitted
+    } else {
+        path.clone()
     }
-    out
 }
 
 /// Push points within `radius` of `at` along `delta` (Smear tool).
@@ -283,30 +405,14 @@ pub fn twirl(path: &BezPath, at: Point, angle: f64, radius: f64) -> BezPath {
     })
 }
 
-/// Reduce nodes near `at` (Smooth tool): simplify and re-smooth.
+/// Smooth tool: the stretch of the curve within the nib's reach is
+/// measured into points (a quarter of the nib apart), thinned to the
+/// points that matter within `tolerance` mm (Ramer-Douglas-Peucker, so
+/// jags smaller than that go) and fitted anew as a smooth curve through
+/// them. The rest of the curve is exactly as it was.
 pub fn smooth(path: &BezPath, at: Point, radius: f64, tolerance: f64) -> BezPath {
     brush_each(path, at, radius, radius / 4.0, false, |pts, _| {
-        // Only simplify the run of points near the brush; keep others exact.
-        let mut out: Vec<Point> = Vec::new();
-        let mut run: Vec<Point> = Vec::new();
-        let flush = |run: &mut Vec<Point>, out: &mut Vec<Point>| {
-            if run.len() > 2 {
-                out.extend(crate::geometry::simplify(run, tolerance));
-            } else {
-                out.append(run);
-            }
-            run.clear();
-        };
-        for p in pts {
-            if (p - at).hypot() < radius {
-                run.push(p);
-            } else {
-                flush(&mut run, &mut out);
-                out.push(p);
-            }
-        }
-        flush(&mut run, &mut out);
-        out
+        crate::geometry::simplify(&pts, tolerance.max(1e-3))
     })
 }
 
@@ -453,6 +559,125 @@ mod tests {
         };
         let (pulled, pushed) = (attract(&sq, c, 5.0, 1.0), attract(&sq, c, 5.0, -1.0));
         assert!(reach(&pulled) < 20.0 && reach(&pushed) > 20.0);
+    }
+
+    /// The nodes of a path's elements (end points).
+    fn node_points(p: &BezPath) -> Vec<Point> {
+        p.elements()
+            .iter()
+            .filter_map(|e| match *e {
+                PathEl::MoveTo(q) | PathEl::LineTo(q) => Some(q),
+                PathEl::QuadTo(_, q) | PathEl::CurveTo(_, _, q) => Some(q),
+                PathEl::ClosePath => None,
+            })
+            .collect()
+    }
+
+    /// A brush reshapes only the stretch within its reach: the segments
+    /// out of reach keep their nodes and handles exactly, so a stroke does
+    /// not turn a curve of a few nodes into hundreds (#227).
+    #[test]
+    fn brushes_leave_the_segments_out_of_reach_exactly() {
+        // A blob of eight nodes, as the Freehand tool fits one.
+        let pts: Vec<Point> = (0..8)
+            .map(|k| {
+                let a = k as f64 / 8.0 * std::f64::consts::TAU;
+                Point::new(100.0 + 40.0 * a.cos(), 100.0 + 25.0 * a.sin())
+            })
+            .collect();
+        for closed in [true, false] {
+            let blob = crate::geometry::smooth_path(&pts, closed);
+            let at = Point::new(140.0, 100.0);
+            for (name, out) in [
+                ("smear", smear(&blob, at, Vec2::new(2.0, 0.0), 6.0)),
+                ("twirl", twirl(&blob, at, 0.3, 6.0)),
+                ("smooth", smooth(&blob, at, 6.0, 0.3)),
+                ("roughen", roughen(&blob, at, 6.0, 1.0, 1.0)),
+            ] {
+                assert_eq!(subpaths(&out)[0].1, closed, "{name}");
+                // The elements lying more than 21.5 mm from the nib (start
+                // and end; the stretch in reach ends 21.2 mm out) are the
+                // originals.
+                let far = |p: &BezPath| -> Vec<PathEl> {
+                    let mut cur = Point::ZERO;
+                    let mut out = Vec::new();
+                    for e in p.elements() {
+                        let end = match *e {
+                            PathEl::MoveTo(q) | PathEl::LineTo(q) => q,
+                            PathEl::QuadTo(_, q) | PathEl::CurveTo(_, _, q) => q,
+                            PathEl::ClosePath => continue,
+                        };
+                        let keep = !matches!(e, PathEl::MoveTo(_))
+                            && (cur - at).hypot() > 21.5
+                            && (end - at).hypot() > 21.5;
+                        if keep {
+                            out.push(*e);
+                        }
+                        cur = end;
+                    }
+                    out
+                };
+                let kept = far(&out);
+                assert!(kept.len() >= 4, "{name}: {}", kept.len());
+                assert!(
+                    kept.iter().all(|e| blob.elements().contains(e)),
+                    "{name}: {kept:?}"
+                );
+                // Roughen's spikes are a millimetre apart across the nib.
+                let room = if name == "roughen" { 20 } else { 10 };
+                assert!(
+                    node_points(&out).len() <= node_points(&blob).len() + room,
+                    "{name}: {} nodes",
+                    node_points(&out).len()
+                );
+            }
+        }
+    }
+
+    /// Smooth fits the jagged stretch within the nib with a few curves,
+    /// within its tolerance; the rest of the line and the corner stay.
+    #[test]
+    fn smooth_fits_jagged_lines_within_the_nib() {
+        // A jagged line of 60 nodes along y = 0, then a right-angle turn.
+        let mut jagged = BezPath::new();
+        jagged.move_to(Point::new(0.0, 0.0));
+        for k in 1..=60 {
+            let y = if k % 2 == 0 { 0.1 } else { -0.1 };
+            jagged.line_to(Point::new(k as f64, y));
+        }
+        jagged.line_to(Point::new(60.0, -30.0));
+        let out = smooth(&jagged, Point::new(30.0, 0.0), 8.0, 0.3);
+        let nodes = node_points(&out);
+        // The stretch within reach (x within 22..38, 16 nodes) is a few now.
+        let within = |p: &BezPath| {
+            node_points(p)
+                .iter()
+                .filter(|q| q.x > 22.5 && q.x < 37.5)
+                .count()
+        };
+        assert!(
+            within(&out) <= 4,
+            "{} nodes left in the nib: {out:?}",
+            within(&out)
+        );
+        assert!(nodes.len() < node_points(&jagged).len() - 8);
+        // Still within tolerance of the line, and the corner is there.
+        for q in &nodes {
+            if q.x < 59.9 {
+                assert!(q.y.abs() <= 0.5, "{q:?}");
+            }
+        }
+        assert!(nodes.contains(&Point::new(60.0, -30.0)));
+        // The jags out of reach are as they were.
+        assert!(nodes.contains(&Point::new(10.0, 0.1)) && nodes.contains(&Point::new(50.0, 0.1)));
+        // The nib over the corner: the turn is still there, smoothed, and
+        // the far end of the line out of reach is as it was.
+        let out = smooth(&jagged, Point::new(60.0, 0.0), 8.0, 0.3);
+        let nodes = node_points(&out);
+        assert!(nodes.contains(&Point::new(60.0, -30.0)), "{out:?}");
+        assert!(nodes.contains(&Point::new(10.0, 0.1)), "{out:?}");
+        let b = out.bounding_box();
+        assert!(b.x1 < 62.0 && b.y0 > -30.1 && b.y1 < 1.5, "{b:?}");
     }
 
     #[test]

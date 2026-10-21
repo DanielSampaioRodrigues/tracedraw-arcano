@@ -15,11 +15,23 @@ next drag is another.
   10 mm nib reshapes 10 mm of a curve scaled five times, not 50 mm.
 - The effect falls off from full at the centre to nothing at the edge of
   the nib (`w = 1 - d / radius`).
-- Each subpath the nib reaches is measured into points (a third of the
-  nib apart for Smear and Twirl, a quarter for Smooth, the spike spacing
-  for Roughen), moved and fitted back into curves (Roughen: straight
-  lines, so the spikes stay sharp). Subpaths out of reach stay exactly as
-  they were; open curves stay open, closed ones closed.
+- Only the stretch of a curve within the nib's reach changes: the pieces
+  of segments within the nib and a quarter of its radius beyond (the
+  points there do not move, so the new stretch joins the old curve
+  smoothly) are measured into points (a
+  third of the nib apart for Smear and Twirl, a quarter for Smooth, the
+  spike spacing for Roughen), moved and fitted back into curves (Roughen:
+  straight lines, so the spikes stay sharp), and the fitted curves are
+  merged into as few as keep the stretch within 0.05 mm (kurbo's curve
+  fitter), so a stroke leaves a handful of nodes, not one every few
+  millimetres (`effects::brush_runs`, `fewer_curves`). The pieces out of
+  reach, and the subpaths out of reach, stay exactly as they were, nodes
+  and handles included; open curves stay open, closed ones closed (a
+  closed curve touched in part starts from a piece out of reach).
+- Curves fitted through points (`geometry::smooth_path`, also the
+  Freehand tool's) take the tangent at a point from its neighbours and
+  handles a third of each segment long, so a long segment next to a
+  short one neither overshoots nor flattens.
 
 ## Tools and their bars
 
@@ -29,7 +41,7 @@ object". The settings are kept in the preferences (`tools.brush_radius`,
 
 | Tool | Bar | What a step does |
 |---|---|---|
-| Smooth | Rate 1 to 100 % (20) | the run of points within the nib simplified within `0.05 + 1.45 (rate - 1) / 99` mm and re-fitted |
+| Smooth | Rate 1 to 100 % (20) | the stretch in reach thinned to the points that matter within `0.05 + 1.45 (rate - 1) / 99` mm (jags smaller than that go) and re-fitted as a smooth curve |
 | Smear | Pressure 1 to 100 % (100) | points move by the pointer's move times pressure times `w^2` |
 | Twirl | Speed 1 to 100 % (50); Counterclockwise or Clockwise (Alt or Shift while dragging turns the other way) | points turn about the pointer by `speed / 1000` rad per mm the pointer moved, times `w`; held still, it goes on as if the pointer moved 10 mm a second |
 | Attract and Repel | Speed 1 to 100 % (50); Attract or Repel (Alt or Shift while dragging swaps them) | nodes and control points move towards (away from) the pointer by `speed x 0.006` of the pointer's move times `w`, never past the middle; held still, it goes on as if the pointer moved 10 mm a second |
@@ -39,6 +51,8 @@ object". The settings are kept in the preferences (`tools.brush_radius`,
 ## Checks
 
 - `tracedraw_core::effects::tests::brushes_touch_only_the_subpaths_they_reach`
+- `tracedraw_core::effects::tests::brushes_leave_the_segments_out_of_reach_exactly`
+- `tracedraw_core::effects::tests::smooth_fits_jagged_lines_within_the_nib`
 - `brushes::tests::a_stroke_is_one_step_and_follows_the_settings`
 - `brushes::tests::attract_repel_and_twirl_follow_their_modes`
 - `brushes::page_space_tests::the_nib_is_measured_on_the_page_whatever_the_object_scale`

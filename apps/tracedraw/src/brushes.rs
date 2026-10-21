@@ -266,18 +266,27 @@ mod page_space_tests {
         id
     }
 
-    /// The points of the object's outline on the page.
+    /// Points along the object's outline on the page, half a millimetre
+    /// apart at most (a straight side gives points all along it).
     fn page_points(app: &App, id: ShapeId) -> Vec<Point> {
         let s = app.doc().shape_on_page(id).expect("shape");
         let ShapeKind::Path { path, .. } = &s.kind else {
             panic!("not a curve");
         };
-        let mut pts = Vec::new();
+        let mut verts = Vec::new();
         tracedraw_core::geometry::flatten(&(s.transform * path), 0.01, &mut |el| match el {
             tracedraw_core::geometry::PathEl::MoveTo(q)
-            | tracedraw_core::geometry::PathEl::LineTo(q) => pts.push(q),
+            | tracedraw_core::geometry::PathEl::LineTo(q) => verts.push(q),
             _ => {}
         });
+        let mut pts = Vec::new();
+        for w in verts.windows(2) {
+            let n = ((w[1] - w[0]).hypot() / 0.5).ceil().max(1.0) as usize;
+            for k in 0..n {
+                pts.push(w[0].lerp(w[1], k as f64 / n as f64));
+            }
+        }
+        pts.extend(verts.last().copied());
         pts
     }
 
