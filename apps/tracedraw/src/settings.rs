@@ -1663,6 +1663,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// The portable zip ships the settings folder (see the Package step
+    /// of the build workflow), under the name the program looks for.
+    #[test]
+    fn the_portable_zip_ships_the_settings_folder() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let folder = root.join("packaging/windows/portable").join(PORTABLE_DIR);
+        assert!(folder.join("README.txt").is_file(), "{folder:?}");
+        let workflow =
+            std::fs::read_to_string(root.join(".github/workflows/build.yml")).expect("workflow");
+        assert!(workflow.contains(&format!("packaging\\windows\\portable\\{PORTABLE_DIR}")));
+        assert!(workflow.contains(&format!("\\{PORTABLE_DIR}\",")));
+    }
+
     /// Preferences as an older version saved them, migrated as at start.
     fn migrated(json: &str) -> Settings {
         let s: Settings = serde_json::from_str(json).expect("old preferences");

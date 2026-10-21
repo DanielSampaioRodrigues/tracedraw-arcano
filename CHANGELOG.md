@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows portable zip: ships the `tracedraw-settings` folder beside the program, so the unzipped copy keeps its preferences there and writes nothing to %APPDATA% (#292).
+
 - CMYK drawings: the object defaults kept in the configuration file by an earlier version no longer keep new text RGB black; a black text default, RGB or CMYK, is the drawing's own black, while a colour of the user's own stays (#259).
 
 - Shaping (Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary): the result keeps the curve segments of the objects, with new nodes only where their outlines cross; it was made of hundreds of tiny straight lines, hard to edit and faceted when enlarged. Two welded circles now give a handful of curve segments. Crop, Knife and Eraser cuts keep the curves the same way (#252).

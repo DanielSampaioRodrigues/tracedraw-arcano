@@ -246,7 +246,11 @@ Windows; elsewhere nothing is read and the defaults apply):
 - `TRACEDRAW_CONFIG_DIR` when it is set.
 - Otherwise a folder called `tracedraw-settings` next to the program,
   when there is one: a portable copy (on a USB stick, say) keeps its
-  preferences there and leaves nothing on the computer.
+  preferences there and leaves nothing on the computer. The Windows
+  portable zip ships the folder (with a note inside saying what it is
+  for; `packaging/windows/portable`), so it is portable as unzipped;
+  deleting the folder makes that copy use the system's place
+  (`settings::tests::the_portable_zip_ships_the_settings_folder`).
 - Otherwise the system's place: `%APPDATA%\TraceDraw` on Windows,
   `~/Library/Application Support/TraceDraw` on macOS,
   `$XDG_CONFIG_HOME/tracedraw` (or `~/.config/tracedraw`) elsewhere; the

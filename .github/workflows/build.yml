@@ -184,7 +184,10 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $src = "target\${{ matrix.target }}\release"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DVersion=${{ steps.ver.outputs.version }} /DSrcDir="$PWD\$src" packaging\windows\tracedraw.iss
-          Compress-Archive -Path "$src\tracedraw.exe","$src\tracedraw-cli.exe",README.md,LICENSE-MIT,LICENSE-APACHE -DestinationPath "dist\tracedraw-${{ steps.ver.outputs.version }}-windows-x86_64-portable.zip"
+          # The portable zip carries the settings folder, so it keeps its
+          # preferences beside the program and writes nothing to %APPDATA%.
+          Copy-Item -Recurse -Force packaging\windows\portable\tracedraw-settings "$src\tracedraw-settings"
+          Compress-Archive -Path "$src\tracedraw.exe","$src\tracedraw-cli.exe","$src\tracedraw-settings",README.md,LICENSE-MIT,LICENSE-APACHE -DestinationPath "dist\tracedraw-${{ steps.ver.outputs.version }}-windows-x86_64-portable.zip"
 
       # The Microsoft Store package (the Store signs it). Attached to the
       # release once the Store identity variables are set; until then a
