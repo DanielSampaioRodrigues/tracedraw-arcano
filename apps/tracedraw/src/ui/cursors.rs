@@ -501,6 +501,14 @@ fn table_arrow(painter: &Painter, tip: Pos2, down: bool) {
     painter.add(Shape::convex_polygon(tail, INK, Stroke::NONE));
 }
 
+/// The colour of the tool's icon on the cursor's badge: the cursor's own
+/// ink, not the theme's icon colour, which is light on the dark themes
+/// and vanished on the badge's light patch (the badge then looked like a
+/// plain grey box, #244).
+fn badge_ink() -> Color32 {
+    INK
+}
+
 /// The tool's icon below and to the right of the cross hair, on a light
 /// patch so it reads on any drawing.
 fn badge(painter: &Painter, p: Pos2, tool: Tool) {
@@ -510,7 +518,7 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
         CornerRadius::same(3),
         Color32::from_white_alpha(200),
     );
-    crate::ui::icons::draw(painter, r, tool, crate::theme::Tokens::icon());
+    crate::ui::icons::draw(painter, r, tool, badge_ink());
 }
 
 /// Above and to the right of the cross hair: a node with the line going
@@ -853,6 +861,19 @@ fn bucket(painter: &Painter, spot: Pos2) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The badge's icon reads on its light patch under every theme: the
+    /// theme's icon colour is light on the dark ones.
+    #[test]
+    fn the_badge_icon_is_dark_under_every_theme() {
+        for theme in crate::theme::Theme::ALL {
+            crate::theme::set_theme(theme);
+            let ink = badge_ink();
+            let luma = 0.299 * ink.r() as f32 + 0.587 * ink.g() as f32 + 0.114 * ink.b() as f32;
+            assert!(luma < 80.0, "{theme:?}: {ink:?}");
+            assert_eq!(ink.a(), 255);
+        }
+    }
 
     #[test]
     fn tools_get_their_cursors() {

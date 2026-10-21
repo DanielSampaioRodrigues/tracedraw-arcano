@@ -55,4 +55,7 @@ Each tool's pointer says which tool is active (code: `ui/cursors.rs`):
 
 The cross hair, the arrows and the I-beam are the system's own; the
 icons, nibs and drawn pointers are painted by TraceDraw above the
-drawing. Nib outlines stay between 2 and 400 points on screen.
+drawing. The icon on the light patch is painted in the pointers' own
+black under every theme, not in the theme's icon colour, which is light
+on the dark themes (`cursors::tests::the_badge_icon_is_dark_under_every_theme`).
+Nib outlines stay between 2 and 400 points on screen.
