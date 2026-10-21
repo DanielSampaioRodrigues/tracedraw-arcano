@@ -1149,6 +1149,57 @@ impl FontSystem {
         std::borrow::Cow::Owned(out)
     }
 
+    /// The installed fonts the drawing's text uses, as fonts for it to
+    /// carry (Save As's Embed fonts): one file per face the text uses
+    /// (the family's regular face standing in for a bold or italic one it
+    /// lacks), only where the face's licence allows use in documents
+    /// (`usable_in_documents`), leaving out faces in collection files,
+    /// families that came with a document (`with_carried_fonts` keeps
+    /// those) and files the drawing already carries.
+    pub fn fonts_to_embed(&self, doc: &tracedraw_core::Document) -> Vec<DocumentFont> {
+        let mut out: Vec<DocumentFont> = Vec::new();
+        for (family, bold, italic) in doc.font_faces_used() {
+            if self.is_document_family(&family) {
+                continue;
+            }
+            let Some(data) = self.face_file(&family, bold, italic).or_else(|| {
+                (bold || italic)
+                    .then(|| self.face_file(&family, false, false))
+                    .flatten()
+            }) else {
+                continue;
+            };
+            let same = |f: &DocumentFont| Arc::ptr_eq(&f.data, &data) || f.data == data;
+            if doc.fonts.iter().any(same) || out.iter().any(same) {
+                continue;
+            }
+            if !usable_in_documents(&data) {
+                continue;
+            }
+            out.push(DocumentFont {
+                family: family.clone(),
+                data,
+            });
+        }
+        out
+    }
+
+    /// `doc` carrying, besides its own fonts, the installed fonts its
+    /// text uses that may be embedded (`fonts_to_embed`), so the saved
+    /// file keeps its letters on machines without them.
+    pub fn with_embedded_fonts<'d>(
+        &self,
+        doc: &'d tracedraw_core::Document,
+    ) -> std::borrow::Cow<'d, tracedraw_core::Document> {
+        let add = self.fonts_to_embed(doc);
+        if add.is_empty() {
+            return std::borrow::Cow::Borrowed(doc);
+        }
+        let mut out = doc.clone();
+        out.fonts.extend(add);
+        std::borrow::Cow::Owned(out)
+    }
+
     /// The family came with a document (it is not installed).
     pub fn is_document_family(&self, family: &str) -> bool {
         self.document_families
@@ -4381,6 +4432,69 @@ mod tests {
         let junk = DocumentFont::new("Junk", vec![1, 2, 3]);
         assert!(f.add_document_fonts(&[restricted, junk]).is_empty());
         assert!(!f.has_family("Junk"));
+    }
+
+    /// Save As's Embed fonts: the installed faces the text uses go with
+    /// the drawing when their licence allows it, each file once, the
+    /// regular face standing in for a style the family lacks; a family
+    /// that came with a document or a file already carried is not added
+    /// again (#275).
+    #[test]
+    fn installed_fonts_the_text_uses_are_embedded_when_their_licence_allows() {
+        const SELAWIK_BOLD: &[u8] =
+            include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+        let restricted = with_fs_type(QUICKSAND, 2);
+        let f = system_with(&[SELAWIK, SELAWIK_BOLD, &restricted]);
+        let text = |family: &str, bold: bool, italic: bool| {
+            let mut sp = TextSpan::new("Hi", family, 12.0);
+            sp.bold = bold;
+            sp.italic = italic;
+            tracedraw_core::Shape::new(
+                tracedraw_core::ShapeId(1),
+                tracedraw_core::ShapeKind::Text {
+                    spans: vec![sp],
+                    origin: Point::ZERO,
+                    frame: None,
+                    align: TextAlign::Left,
+                    para: ParagraphStyle::default(),
+                    on_path: None,
+                },
+            )
+        };
+        let mut doc = tracedraw_core::Document::default();
+        let shapes = &mut doc.pages[0].layers[0].shapes;
+        shapes.push(text("Selawik", false, false));
+        shapes.push(text("Selawik", true, false));
+        // Italic: the family has none, so its regular face goes (once).
+        shapes.push(text("Selawik", false, true));
+        // A restricted licence: left out. A family nobody has: nothing.
+        shapes.push(text("Quicksand", false, false));
+        shapes.push(text("Nowhere Sans", false, false));
+        let add = f.fonts_to_embed(&doc);
+        let mut families: Vec<&str> = add.iter().map(|d| d.family.as_str()).collect();
+        families.sort();
+        assert_eq!(families, ["Selawik", "Selawik"]);
+        let mut sizes: Vec<usize> = add.iter().map(|d| d.data.len()).collect();
+        sizes.sort();
+        let mut want = vec![SELAWIK.len(), SELAWIK_BOLD.len()];
+        want.sort();
+        assert_eq!(sizes, want);
+        let saved = f.with_embedded_fonts(&doc);
+        assert_eq!(saved.fonts.len(), 2);
+        // Saved again, the carried files are not added twice.
+        assert!(matches!(
+            f.with_embedded_fonts(&saved),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        // A family that came with a document is the carried fonts' business.
+        let g = system_with(&[]);
+        g.add_document_fonts(&[DocumentFont::new("Selawik", SELAWIK.to_vec())]);
+        assert!(g.fonts_to_embed(&doc).is_empty());
+        // Nothing to embed: the drawing is left as it is.
+        assert!(matches!(
+            g.with_embedded_fonts(&doc),
+            std::borrow::Cow::Borrowed(_)
+        ));
     }
 
     #[test]

@@ -315,6 +315,7 @@ dialog.color_profile_missing = "aucun"
 dialog.embed_fonts = "Incorporer les polices"
 dialog.embed_fonts_size = "Incorporer les polices ({size})"
 dialog.embed_fonts_later = "Les polices sont enregistrées à partir de la version 16, quand le texte utilise des polices dont la licence le permet."
+dialog.embed_fonts_none = "Le texte n'utilise aucune police installée dont la licence permet l'incorporation." # mt
 dialog.color_profile = "Profil de couleur : {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), expérimentale"

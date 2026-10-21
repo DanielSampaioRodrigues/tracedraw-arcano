@@ -315,6 +315,7 @@ dialog.color_profile_missing = "なし"
 dialog.embed_fonts = "フォントを埋め込む"
 dialog.embed_fonts_size = "フォントを埋め込む ({size})"
 dialog.embed_fonts_later = "バージョン 16 以降、ライセンスが許可するフォントをテキストが使うとき、フォントが保存されます。"
+dialog.embed_fonts_none = "埋め込みをライセンスが許可するインストール済みフォントをテキストは使っていません。" # mt
 dialog.color_profile = "カラープロファイル: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), 試験的"

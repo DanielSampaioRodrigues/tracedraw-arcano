@@ -38,7 +38,17 @@ One window, 760 px wide, the same on every system:
   the faces the text uses go into the file when their licence allows
   it; every face is listed in the file's font table either way. It is
   greyed below version 16 and when no face may be embedded. Both
-  choices stay for the next Save As and for Save.
+  choices stay for the next Save As and for Save. Embed fonts starts
+  on.
+- **Embed fonts (size)** for TraceDraw files: on (as it starts), the
+  installed fonts the text uses go into the `.tdraw` file, one file per
+  face (the regular face for a bold or italic the family lacks), where
+  the font's licence allows use in documents, so the drawing keeps its
+  letters on a machine without them; off, they are left out. Fonts that
+  came with a drawing (`docs/behavior/text.md`, Fonts that come with a
+  drawing) go along either way. The box is greyed when no such font may
+  be embedded. The choice stays for the next Save As and for Save
+  (`App::tdraw_embed_fonts`, `FontSystem::fonts_to_embed`).
 - Only the versions checked in other programs are offered (14 to 27).
 - **Title**, **Subject** and **Rating** (five stars; clicking the lit
   last star takes it off): the document's properties, also in File >
@@ -106,6 +116,14 @@ What each version's file holds is in `docs/cdr-format.md`, Writing.
   the box on, the version 27 file holds the profile, with the box off it
   does not, and the next Save As keeps the box off
   (`ui::save_as::tests::the_cmyk_profile_goes_along_unless_left_out`).
+- Text in an installed font whose licence allows embedding: Save As for
+  `.tdraw` shows the fonts' size with the box on; the file saved holds
+  the font, the one saved with the box off does not, and the next Save
+  As keeps the choice
+  (`ui::save_as::tests::installed_fonts_go_into_tdraw_files_unless_left_out`);
+  the faces picked, the licence rule and the stand-in regular face:
+  `tests::installed_fonts_the_text_uses_are_embedded_when_their_licence_allows`
+  in `crates/text`.
 - The dialog draws, folders open (`ui::save_as::tests::the_dialog_draws_and_opens_folders`),
   and the Linux folder names are read from the user's settings
   (`ui::save_as::tests::linux_folder_names_come_from_the_users_settings`).

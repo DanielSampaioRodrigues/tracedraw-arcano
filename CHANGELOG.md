@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save As: Embed fonts for TraceDraw files too: the installed fonts the text uses go into the `.tdraw` file when their licence allows it (one file per face), so the drawing keeps its letters on a machine without them; the box starts on for `.tdraw` and `.cdr` files alike (#275).
+
 - Bitmaps: a linked bitmap (an imported file, or one sent to the system image editor by Edit Bitmap) follows its file on the desktop: a save in the outside editor shows in the drawing within a second, as Update from Link does by hand (#284).
 
 - Guidelines: a value typed in the Guidelines panel's x, y or angle field moves the selected guideline as soon as it is entered, without the Modify button; the fields follow the selected guideline; a double click on a guideline opens the panel on it; and the property bar shows the selected guideline's type and position, where a typed value moves it too (#306).

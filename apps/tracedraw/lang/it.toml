@@ -315,6 +315,7 @@ dialog.color_profile_missing = "nessuno"
 dialog.embed_fonts = "Incorpora font"
 dialog.embed_fonts_size = "Incorpora font ({size})"
 dialog.embed_fonts_later = "I font vengono salvati dalla versione 16, quando il testo usa font la cui licenza lo consente."
+dialog.embed_fonts_none = "Il testo non usa alcun font installato la cui licenza consenta l'incorporamento." # mt
 dialog.color_profile = "Profilo colore: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), sperimentale"

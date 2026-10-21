@@ -50,6 +50,11 @@ pub struct SaveAsState {
     pub fonts_size: u64,
     /// The fonts go into the file (`.cdr` from version 16).
     pub embed_fonts: bool,
+    /// What embedding the installed fonts the text uses adds to a
+    /// `.tdraw` file, in bytes (0: none may be).
+    pub tdraw_fonts_size: u64,
+    /// The installed fonts the text uses go into the `.tdraw` file.
+    pub tdraw_embed_fonts: bool,
     pub title: String,
     pub subject: String,
     pub rating: u8,
@@ -112,6 +117,12 @@ impl SaveAsState {
             embed_profile: app.cdr_embed_profile,
             fonts_size: tracedraw_cdr::write::embedded_size(&crate::app::cdr_font_faces(doc)),
             embed_fonts: app.cdr_embed_fonts,
+            tdraw_fonts_size: tracedraw_text::fonts()
+                .fonts_to_embed(doc)
+                .iter()
+                .map(|f| f.data.len() as u64)
+                .sum(),
+            tdraw_embed_fonts: app.tdraw_embed_fonts,
             title: doc.title.clone(),
             subject: doc.metadata.subject.clone(),
             rating: doc.metadata.rating,
@@ -311,6 +322,7 @@ impl App {
             self.cdr_embed_fonts = st.embed_fonts;
             self.save_cdr_to(path, st.version);
         } else {
+            self.tdraw_embed_fonts = st.tdraw_embed_fonts;
             self.tdraw_version = Some(st.tdraw_version);
             self.save_to(path);
         }
@@ -707,6 +719,31 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                 });
             });
             ui.end_row();
+        } else {
+            // The installed fonts the text uses go into the file, where
+            // their licence allows it (fonts that came with a drawing go
+            // either way).
+            let can = st.tdraw_fonts_size > 0;
+            ui.label("");
+            ui.add_enabled_ui(can, |ui| {
+                let text = if can {
+                    trf(
+                        "dialog.embed_fonts_size",
+                        &[("size", &size_text(st.tdraw_fonts_size))],
+                    )
+                } else {
+                    tr("dialog.embed_fonts")
+                };
+                let mut on = st.tdraw_embed_fonts && can;
+                if ui
+                    .checkbox(&mut on, text)
+                    .on_disabled_hover_text(tr("dialog.embed_fonts_none"))
+                    .changed()
+                {
+                    st.tdraw_embed_fonts = on;
+                }
+            });
+            ui.end_row();
         }
         row_label(ui, &tr("dialog.title"));
         ui.horizontal(|ui| {
@@ -1068,6 +1105,75 @@ mod tests {
         // The choice stays for the next Save As.
         app.save_as_dialog();
         assert!(!state(&mut app).embed_profile);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Save As for `.tdraw` offers Embed fonts, on by default: the
+    /// installed fonts the text uses go into the file when their licence
+    /// allows it, and are left out when the box is cleared; the choice
+    /// stays for the next Save As (#275).
+    #[test]
+    fn installed_fonts_go_into_tdraw_files_unless_left_out() {
+        let fonts = tracedraw_text::fonts();
+        // A family of this machine whose face may be embedded.
+        let family = fonts.families().into_iter().find(|family| {
+            let mut doc = tracedraw_core::Document::default();
+            doc.pages[0].layers[0]
+                .shapes
+                .push(tracedraw_core::Shape::new(
+                    tracedraw_core::ShapeId(1),
+                    ShapeKind::Text {
+                        spans: vec![tracedraw_core::TextSpan::new("Hi", family, 12.0)],
+                        origin: tracedraw_core::geometry::Point::ZERO,
+                        frame: None,
+                        align: Default::default(),
+                        para: Default::default(),
+                        on_path: None,
+                    },
+                ));
+            !fonts.fonts_to_embed(&doc).is_empty()
+        });
+        let Some(family) = family else {
+            eprintln!("no installed font may be embedded here; nothing to check");
+            return;
+        };
+        let dir = temp_dir("save-as-fonts");
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Text {
+            spans: vec![tracedraw_core::TextSpan::new("Hi", &family, 12.0)],
+            origin: tracedraw_core::geometry::Point::ZERO,
+            frame: None,
+            align: Default::default(),
+            para: Default::default(),
+            on_path: None,
+        })
+        .expect("a layer");
+        assert!(app.tdraw_embed_fonts, "on by default");
+        let fonts_in = |path: &Path| -> usize {
+            let doc = tracedraw_io::load_native(path).expect("the file opens");
+            doc.fonts.len()
+        };
+        for (embed, name) in [(true, "with"), (false, "without")] {
+            app.save_as_dialog();
+            let st = state(&mut app);
+            assert!(!st.cdr);
+            assert!(st.tdraw_fonts_size > 0, "the size is shown");
+            assert!(st.tdraw_embed_fonts, "{name}: on by default, and kept");
+            st.tdraw_embed_fonts = embed;
+            st.open_dir(dir.clone());
+            st.name = name.into();
+            let mut st = st.clone();
+            assert!(app.finish_save_as(&mut st));
+            app.dialog = Dialog::None;
+            let path = dir.join(format!("{name}.tdraw"));
+            assert_eq!(fonts_in(&path), usize::from(embed), "{name}");
+            // The drawing itself carries nothing: the fonts are added to
+            // the file alone.
+            assert!(app.doc().fonts.is_empty());
+        }
+        // The choice stays for the next Save As.
+        app.save_as_dialog();
+        assert!(!state(&mut app).tdraw_embed_fonts);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

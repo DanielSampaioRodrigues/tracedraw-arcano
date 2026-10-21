@@ -315,6 +315,7 @@ dialog.color_profile_missing = "لا يوجد"
 dialog.embed_fonts = "تضمين الخطوط"
 dialog.embed_fonts_size = "تضمين الخطوط ({size})"
 dialog.embed_fonts_later = "تُحفظ الخطوط بدءًا من الإصدار 16 عندما يستخدم النص خطوطًا تسمح رخصتها بذلك."
+dialog.embed_fonts_none = "لا يستخدم النص أي خط مثبّت تسمح رخصته بالتضمين." # mt
 dialog.color_profile = "ملف تعريف الألوان: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), تجريبي"

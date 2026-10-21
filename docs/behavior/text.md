@@ -374,7 +374,11 @@ allowed); others are skipped with a log line and their text falls back
 like any missing font. The Fonts docker marks carried families
 "embedded" under "Fonts in document". Saving a drawing as `.tdraw` adds
 the carried fonts its text uses (text imported or pasted from another
-drawing), so the file keeps its letters on machines without them.
+drawing), so the file keeps its letters on machines without them, and,
+with Save As's Embed fonts on (as it starts), the installed fonts its
+text uses whose licence allows it (`FontSystem::fonts_to_embed`; see
+`files.md`, Save Drawing dialog). An embedded copy of an installed font
+is ignored where the font is installed.
 
 The missing-font check (status bar, Font Manager, preflight) looks at
 text everywhere in the drawing: on layers, in groups and clip frames,

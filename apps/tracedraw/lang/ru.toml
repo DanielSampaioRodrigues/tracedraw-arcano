@@ -315,6 +315,7 @@ dialog.color_profile_missing = "нет"
 dialog.embed_fonts = "Встроить шрифты"
 dialog.embed_fonts_size = "Встроить шрифты ({size})"
 dialog.embed_fonts_later = "Шрифты сохраняются начиная с версии 16, если текст использует шрифты, лицензия которых это разрешает."
+dialog.embed_fonts_none = "Текст не использует установленных шрифтов, лицензия которых разрешает встраивание." # mt
 dialog.color_profile = "Цветовой профиль: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), экспериментальная"

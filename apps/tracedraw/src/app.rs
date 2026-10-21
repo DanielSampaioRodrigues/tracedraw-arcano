@@ -837,6 +837,9 @@ pub struct App {
     /// Save As's choice: the fonts the text uses go into `.cdr` files
     /// (version 16 and later, faces whose licence allows it).
     pub cdr_embed_fonts: bool,
+    /// Save As's choice: the installed fonts the text uses go into
+    /// `.tdraw` files (faces whose licence allows it).
+    pub tdraw_embed_fonts: bool,
     pub status: String,
     pub fit_pending: bool,
     pub units: Units,
@@ -1792,7 +1795,8 @@ impl App {
             cdr_unsaved_version: None,
             tdraw_version: None,
             cdr_embed_profile: true,
-            cdr_embed_fonts: false,
+            cdr_embed_fonts: true,
+            tdraw_embed_fonts: true,
             status: String::new(),
             fit_pending: true,
             units: Units::Millimeters,
@@ -4718,13 +4722,19 @@ impl App {
             ))
         } else {
             // Fonts that came with other drawings go along (text imported
-            // or pasted from them).
+            // or pasted from them), and, with Embed fonts on, the
+            // installed fonts the text uses whose licence allows it.
             let version = self
                 .tdraw_version
                 .unwrap_or(tracedraw_core::document::TDRAW_FORMAT_VERSION);
-            tracedraw_text::fonts()
-                .with_carried_fonts(self.engine.document())
-                .to_json_version(version)
+            let fonts = tracedraw_text::fonts();
+            let carried = fonts.with_carried_fonts(self.engine.document());
+            let doc = if self.tdraw_embed_fonts {
+                fonts.with_embedded_fonts(&carried)
+            } else {
+                std::borrow::Cow::Borrowed(&*carried)
+            };
+            doc.to_json_version(version)
                 .map(String::into_bytes)
                 .map_err(|e| e.to_string())
         };
@@ -5927,7 +5937,7 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
         thumbnail: pages.first().cloned(),
         pages,
         fonts: cdr_font_faces(doc),
-        embed_fonts: false,
+        embed_fonts: true,
     }
 }
 

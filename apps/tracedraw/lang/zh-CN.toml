@@ -315,6 +315,7 @@ dialog.color_profile_missing = "无"
 dialog.embed_fonts = "嵌入字体"
 dialog.embed_fonts_size = "嵌入字体 ({size})"
 dialog.embed_fonts_later = "从版本 16 起，当文本使用许可允许的字体时，会保存字体。"
+dialog.embed_fonts_none = "文本没有使用任何许可允许嵌入的已安装字体。" # mt
 dialog.color_profile = "颜色配置文件: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), 实验性"

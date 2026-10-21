@@ -315,6 +315,7 @@ dialog.color_profile_missing = "yok"
 dialog.embed_fonts = "Yazı tiplerini göm"
 dialog.embed_fonts_size = "Yazı tiplerini göm ({size})"
 dialog.embed_fonts_later = "Yazı tipleri sürüm 16 ve sonrasında, metin lisansı izin veren yazı tiplerini kullandığında kaydedilir."
+dialog.embed_fonts_none = "Metin, lisansı gömmeye izin veren yüklü bir yazı tipi kullanmıyor." # mt
 dialog.color_profile = "Renk profili: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), deneysel"

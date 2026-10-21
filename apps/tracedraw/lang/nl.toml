@@ -315,6 +315,7 @@ dialog.color_profile_missing = "geen"
 dialog.embed_fonts = "Lettertypen insluiten"
 dialog.embed_fonts_size = "Lettertypen insluiten ({size})"
 dialog.embed_fonts_later = "Lettertypen worden opgeslagen vanaf versie 16, als de tekst lettertypen gebruikt waarvan de licentie dat toestaat."
+dialog.embed_fonts_none = "De tekst gebruikt geen geïnstalleerd lettertype waarvan de licentie insluiten toestaat." # mt
 dialog.color_profile = "Kleurprofiel: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
 dialog.cdr_version_item_experimental = "v{v} ({name}), experimenteel"
