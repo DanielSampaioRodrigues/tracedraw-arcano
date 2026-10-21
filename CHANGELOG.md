@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.10.1 (2026-10-21)
+
 - Drawing speed: objects outside the part of the page on screen are no longer drawn, and while the view pans, scrolls or zooms the last render is shown moved into place and the page is rendered anew once the view rests for a moment, so a drawing of thousands of objects pans at the screen's rate instead of redrawing every object on every frame (#253).
 
 - Pointers: with a dark theme the tool's icon on the drawing tools' cross hair showed as a plain grey box; the icon is now painted black on its light patch under every theme (#244).
