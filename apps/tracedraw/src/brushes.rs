@@ -52,35 +52,46 @@ impl App {
             let ShapeKind::Path { path, closed } = &s.kind else {
                 continue;
             };
-            let inv = s.transform.inverse();
-            let lp = inv * p;
-            let ld = (inv * (Point::ZERO + delta)) - (inv * Point::ZERO);
-            let new_path = match self.tool {
+            // The nib, its reach and the settings' millimetres are page
+            // measures, so the brush works on the outline as it lies on
+            // the page and the result is taken back into the object's own
+            // space; a scaled object (text converted to curves, a resized
+            // drawing) is reshaped within the nib as drawn, not within a
+            // nib scaled with it.
+            let page_path = s.transform * path;
+            let new_page = match self.tool {
                 Tool::Smear => effects::smear(
-                    path,
-                    lp,
-                    ld * BrushSettings::pressure(b.smear_pressure),
+                    &page_path,
+                    p,
+                    delta * BrushSettings::pressure(b.smear_pressure),
                     radius,
                 ),
-                Tool::Twirl => effects::twirl(path, lp, motion * b.twirl_rate() * turn, radius),
+                Tool::Twirl => {
+                    effects::twirl(&page_path, p, motion * b.twirl_rate() * turn, radius)
+                }
                 Tool::AttractRepel => {
-                    effects::attract(path, lp, radius, motion * b.attract_rate(swap))
+                    effects::attract(&page_path, p, radius, motion * b.attract_rate(swap))
                 }
                 Tool::Smudge => effects::smear(
-                    &effects::smooth(path, lp, radius, 0.2),
-                    lp,
-                    ld * BrushSettings::pressure(b.smudge_pressure),
+                    &effects::smooth(&page_path, p, radius, 0.2),
+                    p,
+                    delta * BrushSettings::pressure(b.smudge_pressure),
                     radius,
                 ),
-                Tool::Roughen => {
-                    effects::roughen(path, lp, radius, self.roughen_amount, b.roughen_spacing())
-                }
-                Tool::Smooth => effects::smooth(path, lp, radius, b.smooth_tolerance()),
+                Tool::Roughen => effects::roughen(
+                    &page_path,
+                    p,
+                    radius,
+                    self.roughen_amount,
+                    b.roughen_spacing(),
+                ),
+                Tool::Smooth => effects::smooth(&page_path, p, radius, b.smooth_tolerance()),
                 _ => continue,
             };
-            if &new_path == path {
+            if new_page == page_path {
                 continue;
             }
+            let new_path = s.transform.inverse() * new_page;
             cmds.push(Command::SetShapeKind {
                 shape: s.id,
                 kind: ShapeKind::Path {
@@ -234,5 +245,104 @@ mod tests {
             app.brush_step(Point::new(35.0, 35.0), false, 0.1);
         }
         assert_ne!(bounds(&app, id), before);
+    }
+}
+
+#[cfg(test)]
+mod page_space_tests {
+    use super::*;
+    use tracedraw_core::geometry::Affine;
+    use tracedraw_core::{Rect, ShapeId};
+
+    fn square(app: &mut App) -> ShapeId {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.select(vec![id]);
+        id
+    }
+
+    /// The points of the object's outline on the page.
+    fn page_points(app: &App, id: ShapeId) -> Vec<Point> {
+        let s = app.doc().shape_on_page(id).expect("shape");
+        let ShapeKind::Path { path, .. } = &s.kind else {
+            panic!("not a curve");
+        };
+        let mut pts = Vec::new();
+        tracedraw_core::geometry::flatten(&(s.transform * path), 0.01, &mut |el| match el {
+            tracedraw_core::geometry::PathEl::MoveTo(q)
+            | tracedraw_core::geometry::PathEl::LineTo(q) => pts.push(q),
+            _ => {}
+        });
+        pts
+    }
+
+    /// The nib is measured on the page: on a square scaled five times, a
+    /// smear with a 10 mm nib at the middle of the right side moves the
+    /// side within 10 mm of the pointer, not within 50 mm, and by the
+    /// pointer's move, not by five times it.
+    #[test]
+    fn the_nib_is_measured_on_the_page_whatever_the_object_scale() {
+        let mut app = App::headless();
+        let id = square(&mut app);
+        app.transform_selection(Affine::scale(5.0));
+        app.tool = Tool::Smear;
+        app.brush_radius = 10.0;
+        app.brush_begin(Point::new(200.0, 100.0));
+        app.brush_step(Point::new(202.0, 100.0), false, 0.0);
+        let pts = page_points(&app, id);
+        // The side well away from the nib (and from the corners, which
+        // the refit rounds a little) is where it was.
+        let far = pts
+            .iter()
+            .filter(|q| (5.0..=80.0).contains(&q.y) || (120.0..=195.0).contains(&q.y))
+            .map(|q| q.x)
+            .fold(0.0, f64::max);
+        assert!((far - 200.0).abs() < 1e-6, "far side moved to {far}");
+        // What the new curve was fitted through stays on the old side
+        // just past the nib.
+        let edge = pts
+            .iter()
+            .filter(|q| !(85.0..=115.0).contains(&q.y))
+            .map(|q| q.x)
+            .fold(0.0, f64::max);
+        assert!(edge < 200.5, "edge of the nib at {edge}");
+        let near = pts.iter().map(|q| q.x).fold(0.0, f64::max);
+        assert!(near > 201.0 && near < 202.5, "near side at {near}");
+    }
+
+    /// Smooth's tolerance is in page millimetres too: a stroke over a
+    /// scaled, jagged outline leaves the part outside the nib exactly as
+    /// it was.
+    #[test]
+    fn smooth_leaves_the_outline_outside_the_nib_alone() {
+        let mut app = App::headless();
+        let id = square(&mut app);
+        app.transform_selection(Affine::scale(5.0));
+        app.tool = Tool::Smooth;
+        app.brush_radius = 10.0;
+        app.brush_begin(Point::new(200.0, 100.0));
+        app.brush_step(Point::new(201.0, 100.0), false, 0.0);
+        let after = page_points(&app, id);
+        // The corners and the far sides are still where they were.
+        for q in [
+            Point::new(0.0, 0.0),
+            Point::new(200.0, 0.0),
+            Point::new(200.0, 200.0),
+            Point::new(0.0, 200.0),
+            Point::new(200.0, 60.0),
+            Point::new(200.0, 140.0),
+        ] {
+            let near = |pts: &[Point]| {
+                pts.iter()
+                    .map(|r| (*r - q).hypot())
+                    .fold(f64::INFINITY, f64::min)
+            };
+            assert!(near(&after) < 1e-3, "{q:?} left by {}", near(&after));
+        }
     }
 }

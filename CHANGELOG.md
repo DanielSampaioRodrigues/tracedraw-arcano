@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape brushes (Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen): the nib, the pointer's move and the settings' millimetres are measured on the page; on a scaled object (text converted to curves, a resized drawing) the brush reshaped the outline within a nib scaled with the object, so Smooth with a 10 mm nib could flatten 50 mm of a curve, and Smear moved it by a fifth of the drag (#227).
+
 - Segment Delete: after a stretch of one outline is deleted, the piece left ends on the outline it crossed; clicking that other outline now deletes only the stretch up to the crossing instead of the whole outline (#227).
 
 - PDF, print, PostScript, EPS and SVG: an outline set behind the fill is painted first and the fill over it, as on screen; a white outline behind black letters no longer covers them, so black text no longer prints white (#235, #191).

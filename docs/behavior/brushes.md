@@ -8,7 +8,11 @@ next drag is another.
 ## Common behaviour
 
 - The nib is a circle of the bar's Nib size (radius, 10 mm at first)
-  around the pointer in page space, taken into each object's own space.
+  around the pointer on the page. The brush works on the outline as it
+  lies on the page (the object's transform applied) and the result is
+  taken back into the object's own space, so the nib, the moves and the
+  settings' millimetres are what is seen whatever the object's scale: a
+  10 mm nib reshapes 10 mm of a curve scaled five times, not 50 mm.
 - The effect falls off from full at the centre to nothing at the edge of
   the nib (`w = 1 - d / radius`).
 - Each subpath the nib reaches is measured into points (a third of the
@@ -37,5 +41,7 @@ object". The settings are kept in the preferences (`tools.brush_radius`,
 - `tracedraw_core::effects::tests::brushes_touch_only_the_subpaths_they_reach`
 - `brushes::tests::a_stroke_is_one_step_and_follows_the_settings`
 - `brushes::tests::attract_repel_and_twirl_follow_their_modes`
+- `brushes::page_space_tests::the_nib_is_measured_on_the_page_whatever_the_object_scale`
+- `brushes::page_space_tests::smooth_leaves_the_outline_outside_the_nib_alone`
 - `ui::brush_bars::tests::brush_settings_scale_and_stay_in_range`
 - `ui::brush_bars::tests::every_brush_bar_draws`
