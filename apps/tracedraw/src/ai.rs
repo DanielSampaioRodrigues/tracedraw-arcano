@@ -82,7 +82,7 @@ impl Provider {
 
 /// Ready-made connections: the i18n key of the name, the kind of service
 /// and its address. The address stays editable after one is picked.
-pub const PRESETS: [(&str, Provider, &str); 9] = [
+pub const PRESETS: [(&str, Provider, &str); 8] = [
     ("aipreset.anthropic", Provider::Anthropic, ""),
     ("aipreset.openai", Provider::OpenAiCompatible, ""),
     (
@@ -111,19 +111,15 @@ pub const PRESETS: [(&str, Provider, &str); 9] = [
         "http://localhost:8000/v1/chat/completions",
     ),
     (
-        "aipreset.opencode_zen",
+        "aipreset.opencode",
         Provider::OpenAiCompatible,
-        "https://opencode.ai/zen/v1/chat/completions",
-    ),
-    (
-        "aipreset.opencode_go",
-        Provider::OpenAiCompatible,
-        "https://opencode.ai/zen/go/v1/chat/completions",
+        "https://opencode.ai/inference/openai/v1/chat/completions",
     ),
 ];
 
-/// The host of the OpenCode Zen and Go services, which want every
-/// request to name the session it belongs to.
+/// The host of the OpenCode service (its Console Inference API, at
+/// `/inference/<family>/...`; the Zen and Go models are served there),
+/// which wants every request to name the session it belongs to.
 const OPENCODE_HOST: &str = "https://opencode.ai/";
 
 /// True when requests go to the OpenCode services.
@@ -158,15 +154,13 @@ pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
 }
 
 /// The presets that only write text (no pictures): the model servers on
-/// this computer (Ollama, LM Studio, llama.cpp and vLLM) and the
-/// OpenCode services.
-const CHAT_ONLY_PRESETS: [&str; 6] = [
+/// this computer (Ollama, LM Studio, llama.cpp and vLLM) and OpenCode.
+const CHAT_ONLY_PRESETS: [&str; 5] = [
     "aipreset.ollama",
     "aipreset.lm_studio",
     "aipreset.llama_cpp",
     "aipreset.vllm",
-    "aipreset.opencode_zen",
-    "aipreset.opencode_go",
+    "aipreset.opencode",
 ];
 
 /// Google's API host: chat at its OpenAI-compatible address, pictures
@@ -1000,7 +994,7 @@ mod tests {
                 .map(|(_, v)| v.clone())
         };
         let mut ids = Vec::new();
-        for key in ["aipreset.opencode_zen", "aipreset.opencode_go"] {
+        for key in ["aipreset.opencode"] {
             let (_, provider, endpoint) = PRESETS
                 .iter()
                 .find(|(k, _, _)| *k == key)
@@ -1030,7 +1024,16 @@ mod tests {
             ImageSupport::None
         );
         // One session for the whole run, the same on every request.
-        assert_eq!(ids[0], ids[1]);
+        let again = build_request(
+            &AiPrefs {
+                provider: Provider::OpenAiCompatible,
+                endpoint: PRESETS[7].2.into(),
+                ..AiPrefs::default()
+            },
+            "k",
+            &messages,
+        );
+        assert_eq!(header(&again, "x-opencode-session"), ids.first().cloned());
     }
 
     #[test]

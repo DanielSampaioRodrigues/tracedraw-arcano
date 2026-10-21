@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- AI options: the OpenCode preset goes to the Console Inference API (`https://opencode.ai/inference/openai/v1/chat/completions`), which has replaced the Zen and Go addresses; the Zen and Go models are chosen by name there, so the two presets are one (#173).
+
 ## 0.10.1 (2026-10-21)
 
 - Drawing speed: objects outside the part of the page on screen are no longer drawn, and while the view pans, scrolls or zooms the last render is shown moved into place and the page is rendered anew once the view rests for a moment, so a drawing of thousands of objects pans at the screen's rate instead of redrawing every object on every frame (#253).
