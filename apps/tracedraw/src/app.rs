@@ -1083,6 +1083,10 @@ pub struct App {
     pub pending_command: Option<String>,
     /// When the last auto-backup ran (set on the first frame).
     pub last_auto_backup: Option<web_time::Instant>,
+    /// Linked bitmaps' files as last seen (`watch_linked_bitmaps`): the
+    /// modification time of each, and when they were last looked at.
+    pub linked_mtimes: std::collections::HashMap<ShapeId, std::time::SystemTime>,
+    pub linked_checked: Option<web_time::Instant>,
     /// Session recovery: this session's marker in the auto-backup folder
     /// (made on the first frame, desktop only).
     pub session: Option<crate::recovery::Session>,
@@ -1933,6 +1937,8 @@ impl App {
             shortcut_editor: Default::default(),
             pending_command: None,
             last_auto_backup: None,
+            linked_mtimes: Default::default(),
+            linked_checked: None,
             session: None,
             highlight_whats_new: false,
             updates: Default::default(),

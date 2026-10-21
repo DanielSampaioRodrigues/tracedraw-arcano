@@ -340,6 +340,8 @@ impl eframe::App for Shell {
         // Preferences changed this frame last without waiting for the
         // exit (the browser has none).
         app.autosave_settings(Some(ui.ctx()));
+        // Bitmaps edited outside follow their files.
+        app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
     }
 
     /// Keep the toolbox, dockers and other preferences for the next session.

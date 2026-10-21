@@ -4,6 +4,19 @@ File > Import (Ctrl+I) of a PNG, JPEG, BMP, GIF, TIFF or WebP file
 embeds the image as a bitmap object centred on the page and remembers
 the file (Bitmaps > Update from Link reads it again).
 
+## Linked files follow their changes
+
+A linked bitmap (an imported file, or one sent to the system image
+editor by Edit Bitmap) follows its file on the desktop: once a second
+the files' modification times are read, and a bitmap whose file changed
+since it was last seen is read again on the spot, as Update from Link
+does (`App::watch_linked_bitmaps`; one undo step per change, the status
+bar says "Bitmap updated from its file"). So a save in the outside
+editor shows in the drawing at once. A file seen for the first time is
+only remembered; a file that cannot be read is left alone. The browser
+has no files to watch
+(`clipboard::linked_watch_tests::a_linked_bitmap_is_read_again_when_its_file_changes`).
+
 ## Size
 
 The bitmap comes in at the resolution its file records, so a 300 dpi

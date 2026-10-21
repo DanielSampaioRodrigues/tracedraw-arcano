@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Bitmaps: a linked bitmap (an imported file, or one sent to the system image editor by Edit Bitmap) follows its file on the desktop: a save in the outside editor shows in the drawing within a second, as Update from Link does by hand (#284).
+
 - Guidelines: a value typed in the Guidelines panel's x, y or angle field moves the selected guideline as soon as it is entered, without the Modify button; the fields follow the selected guideline; a double click on a guideline opens the panel on it; and the property bar shows the selected guideline's type and position, where a typed value moves it too (#306).
 
 - Properties docker: with characters selected in the text being edited, Fill, Outline and Character show those characters' own values (the object's where they have none) and edit them alone; the docker showed the object's values and could not adjust the characters' (#304).

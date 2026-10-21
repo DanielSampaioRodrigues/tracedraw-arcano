@@ -348,8 +348,15 @@ impl App {
         let Some(id) = self.selected_bitmap() else {
             return;
         };
+        self.reload_linked_bitmap(id);
+    }
+
+    /// Re-read the file bitmap `id` is linked to into the object (Update
+    /// from Link, or the file changed on disk). False when it is not
+    /// linked or the file cannot be read (the status bar says so).
+    pub fn reload_linked_bitmap(&mut self, id: ShapeId) -> bool {
         let Some(path) = self.bitmap_link(id) else {
-            return;
+            return false;
         };
         let img = match crate::files::open_image(&path) {
             Ok(i) => i.to_rgba8(),
@@ -358,14 +365,14 @@ impl App {
                     "status.could_not_read",
                     &[("p", &path), ("e", &e.to_string())],
                 );
-                return;
+                return false;
             }
         };
         let Some(s) = self.doc().find_shape(id).cloned() else {
-            return;
+            return false;
         };
         let ShapeKind::Bitmap { rect, .. } = s.kind else {
-            return;
+            return false;
         };
         let (w, h) = img.dimensions();
         let mut png = Vec::new();
@@ -373,7 +380,7 @@ impl App {
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
             .is_err()
         {
-            return;
+            return false;
         }
         self.run(Command::SetShapeKind {
             shape: id,
@@ -386,6 +393,61 @@ impl App {
             },
         });
         self.status = tr("status.bitmap_updated");
+        true
+    }
+
+    /// Linked bitmaps (Edit Bitmap, an imported file) follow their file:
+    /// once a second the files' modification times are read, and a
+    /// bitmap whose file changed since it was last seen is read again, so
+    /// a save in the outside editor shows here at once. Desktop only.
+    /// `now` is the frame's time; `ctx` keeps a frame coming while the
+    /// watch is on.
+    pub fn watch_linked_bitmaps(&mut self, ctx: Option<&egui::Context>, now: web_time::Instant) {
+        if crate::files::WEB {
+            return;
+        }
+        let gap = std::time::Duration::from_secs(1);
+        if let Some(last) = self.linked_checked {
+            let since = now.duration_since(last);
+            if since < gap {
+                if let Some(ctx) = ctx {
+                    if !self.linked_mtimes.is_empty() {
+                        ctx.request_repaint_after(gap - since);
+                    }
+                }
+                return;
+            }
+        }
+        self.linked_checked = Some(now);
+        let linked: Vec<(ShapeId, String)> = self
+            .doc()
+            .all_layers()
+            .flat_map(|l| l.shapes.iter())
+            .filter_map(|s| {
+                s.data
+                    .iter()
+                    .find(|(k, _)| k == "bitmap.link")
+                    .map(|(_, v)| (s.id, v.clone()))
+            })
+            .collect();
+        self.linked_mtimes
+            .retain(|id, _| linked.iter().any(|(l, _)| l == id));
+        for (id, path) in linked {
+            let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified()) else {
+                continue;
+            };
+            match self.linked_mtimes.insert(id, modified) {
+                Some(seen) if seen != modified => {
+                    self.reload_linked_bitmap(id);
+                }
+                _ => {}
+            }
+        }
+        if let Some(ctx) = ctx {
+            if !self.linked_mtimes.is_empty() {
+                ctx.request_repaint_after(gap);
+            }
+        }
     }
 
     /// Bitmaps > Break Link: forget the file; the pixels stay embedded.
@@ -526,5 +588,71 @@ mod tests {
         assert_ne!(empty.fingerprint(), svg_text().fingerprint());
         assert_ne!(svg_text().fingerprint(), picture().fingerprint());
         assert!(!picture().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod linked_watch_tests {
+    use crate::app::App;
+    use tracedraw_core::geometry::Rect;
+    use tracedraw_core::{Command, ShapeKind};
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        tiny_skia::Pixmap::new(w, h)
+            .and_then(|p| p.encode_png().ok())
+            .unwrap_or_default()
+    }
+
+    /// A linked bitmap follows its file: a change on disk is read in on
+    /// the next check (once a second), as Update from Link does; a file
+    /// seen for the first time is only remembered (#284).
+    #[test]
+    fn a_linked_bitmap_is_read_again_when_its_file_changes() {
+        if crate::files::WEB {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("tracedraw-link-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("picture.png");
+        std::fs::write(&path, png(2, 2)).expect("png");
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+                width_px: 2,
+                height_px: 2,
+                png: png(2, 2),
+                fx: None,
+            })
+            .expect("bitmap");
+        app.run(Command::SetObjectData {
+            shape: id,
+            data: vec![("bitmap.link".into(), path.display().to_string())],
+        });
+        let width = |app: &App| match &app.doc().find_shape(id).expect("bitmap").kind {
+            ShapeKind::Bitmap { width_px, .. } => *width_px,
+            _ => 0,
+        };
+        let t0 = web_time::Instant::now();
+        app.watch_linked_bitmaps(None, t0);
+        assert_eq!(width(&app), 2, "first sight: remembered, not read");
+        // The file changes (its time stamp moved on by two seconds).
+        std::fs::write(&path, png(3, 3)).expect("png");
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|f| f.set_modified(later))
+            .expect("mtime");
+        // Within the second: not looked at yet.
+        app.watch_linked_bitmaps(None, t0 + std::time::Duration::from_millis(500));
+        assert_eq!(width(&app), 2);
+        app.watch_linked_bitmaps(None, t0 + std::time::Duration::from_millis(1100));
+        assert_eq!(width(&app), 3, "read again");
+        // Unchanged since: left alone (no new undo step).
+        let depth = app.engine.history_labels().0.len();
+        app.watch_linked_bitmaps(None, t0 + std::time::Duration::from_millis(2200));
+        assert_eq!(app.engine.history_labels().0.len(), depth);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
