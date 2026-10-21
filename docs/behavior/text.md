@@ -119,6 +119,13 @@ one editing session are one "Edit Text" undo step.
 - A character outline starts from the characters' own outline, else
   the object's, else the default pen, in the new colour; No Color (an
   outline of width 0) takes the outline off those characters only.
+- While characters are selected, the Properties docker's Fill and
+  Outline sections show those characters' own fill and outline (the
+  object's where they have none) and edit them alone, and the Character
+  section shows the span of the first selected character
+  (`App::text_selection_fill`, `text_selection_stroke`,
+  `text_selection_span`,
+  `text_editing::tests::the_selected_characters_show_their_own_fill_and_outline`).
 - Characters without their own fill or outline take the object's. The
   text is drawn (on the canvas, in exports to bitmaps, SVG and PDF) in
   one part per look: each part lays out the whole text and draws only

@@ -555,6 +555,62 @@ impl App {
         true
     }
 
+    /// The span of the first selected character (the Properties docker
+    /// shows the selected characters' own fill and outline); `None`
+    /// without a selection.
+    pub fn text_selection_span(&self) -> Option<TextSpan> {
+        if !self.text_selection_active() {
+            return None;
+        }
+        let te = self.text_edit.as_ref()?;
+        let spans = self.edit_spans()?;
+        let (a, _) = te.selection();
+        let mut seen = 0usize;
+        spans
+            .iter()
+            .find(|sp| {
+                let n = sp.char_count();
+                let hit = a < seen + n;
+                seen += n;
+                hit
+            })
+            .or_else(|| spans.last())
+            .cloned()
+    }
+
+    /// The fill the selected characters show: their own, else the text
+    /// object's. `None` without a selection.
+    pub fn text_selection_fill(&self) -> Option<Fill> {
+        let sp = self.text_selection_span()?;
+        if let Some(f) = sp.fill {
+            return Some(f);
+        }
+        let te = self.text_edit.as_ref()?;
+        self.doc().find_shape(te.shape).map(|s| s.fill.clone())
+    }
+
+    /// The outline the selected characters show: their own (width 0:
+    /// none), else the text object's. `None` without a selection.
+    pub fn text_selection_stroke(&self) -> Option<Option<Stroke>> {
+        let sp = self.text_selection_span()?;
+        if let Some(o) = sp.outline {
+            return Some((o.width > 0.0).then_some(o));
+        }
+        let te = self.text_edit.as_ref()?;
+        self.doc().find_shape(te.shape).map(|s| s.stroke.clone())
+    }
+
+    /// The selected characters get this outline (`None`: no outline), as
+    /// one undo step ("Character Outline"). False without a selection.
+    pub fn text_apply_outline(&mut self, stroke: Option<Stroke>) -> bool {
+        self.text_style_selection("Character Outline", move |sp| {
+            sp.outline = Some(stroke.clone().unwrap_or(Stroke {
+                width: 0.0,
+                ..Stroke::default()
+            }));
+        })
+    }
+
     /// The span the property bar shows while editing: the one of the
     /// character before the caret (the first span at the start).
     pub fn text_span_at_caret(&self) -> Option<TextSpan> {
@@ -830,6 +886,46 @@ mod tests {
     fn edited_shape(app: &App) -> tracedraw_core::Shape {
         let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
         app.doc().find_shape(id).cloned().expect("text")
+    }
+
+    /// The Properties docker shows the selected characters' own fill and
+    /// outline (the object's where they have none) and its edits go to
+    /// them alone (#304).
+    #[test]
+    fn the_selected_characters_show_their_own_fill_and_outline() {
+        let mut app = text_with_cd_selected();
+        let object_fill = edited_shape(&app).fill.clone();
+        // Unstyled characters show the object's.
+        assert_eq!(app.text_selection_fill(), Some(object_fill.clone()));
+        assert_eq!(
+            app.text_selection_stroke(),
+            Some(edited_shape(&app).stroke.clone())
+        );
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        assert!(app.text_apply_fill(red.clone()));
+        let stroke = Stroke::new(Color::rgb8(0, 0, 200), 0.5);
+        assert!(app.text_apply_outline(Some(stroke.clone())));
+        // Selected again later: their own fill and outline show.
+        app.text_move(CaretMove::LineStart, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, false);
+        app.text_move(CaretMove::Right, true);
+        assert_eq!(app.text_selected(), "c");
+        assert_eq!(app.text_selection_fill(), Some(red.clone()));
+        assert_eq!(app.text_selection_stroke(), Some(Some(stroke.clone())));
+        assert_eq!(
+            app.text_selection_span().map(|sp| sp.text),
+            Some("cd".to_string())
+        );
+        // The object itself kept its fill.
+        assert_eq!(edited_shape(&app).fill, object_fill);
+        // No outline on the characters: shows as none, kept as width 0.
+        assert!(app.text_apply_outline(None));
+        assert_eq!(app.text_selection_stroke(), Some(None));
+        // Without a selection there is nothing to show.
+        app.text_move(CaretMove::LineEnd, false);
+        assert_eq!(app.text_selection_fill(), None);
+        assert_eq!(app.text_selection_span(), None);
     }
 
     #[test]

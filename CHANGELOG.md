@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker: with characters selected in the text being edited, Fill, Outline and Character show those characters' own values (the object's where they have none) and edit them alone; the docker showed the object's values and could not adjust the characters' (#304).
+
 - Curve tools: Options > Tools > Curve tools > Constrain angle key chooses the key that keeps the next segment to the constrain angle, Ctrl (as before), Shift or Alt (#247).
 
 - Layout > Fit Page to Selection and Fit Page to Drawing (also on the Page Size options page): the page takes the size of the selection or of everything on it, and the objects move onto it; one undo step (#236).

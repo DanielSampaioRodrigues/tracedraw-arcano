@@ -568,6 +568,16 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     qr_section(app, ui, first.id, qr);
                 }
             }
+            "outline" if app.text_selection_active() => {
+                // Characters selected in the text being edited: their own
+                // outline, and an edit goes to them alone.
+                let old = app.text_selection_stroke().unwrap_or(None);
+                let mut stroke = old.clone();
+                let custom = crate::ui::line_style::OutlineLib::of(app);
+                if outline_editor(ui, &mut stroke, &custom) {
+                    app.text_apply_outline(stroke);
+                }
+            }
             "outline" => {
                 // A group shows what is inside it; values that differ
                 // across the selection show as mixed, and an edit changes
@@ -591,6 +601,15 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 extra_strokes(app, ui, first);
+            }
+            "fill" if app.text_selection_active() => {
+                // Characters selected in the text being edited: their own
+                // fill, and an edit goes to them alone.
+                let old = app.text_selection_fill().unwrap_or(Fill::None);
+                let mut fill = old.clone();
+                if fill_editor(ui, &mut fill) {
+                    app.text_apply_fill(fill);
+                }
             }
             "fill" => {
                 let base = app.paint_targets().into_iter().next();
@@ -624,7 +643,10 @@ fn properties(app: &mut App, ui: &mut Ui) {
             }
             "character" => {
                 if let ShapeKind::Text { spans, .. } = &first.kind {
-                    if let Some(sp) = spans.first() {
+                    // The selected characters' span while text is edited,
+                    // else the first span.
+                    let chosen = app.text_selection_span();
+                    if let Some(sp) = chosen.as_ref().or(spans.first()) {
                         ui.label(format!(
                             "{} {} pt{}{}",
                             sp.font_family,
