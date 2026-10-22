@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fonts embedded in a `.cdr` whose OS/2 table sets only a reserved embedding bit (old Devanagari fonts set bit 0) were refused as "restricted" and their text fell back to another font; the embedding bits are now read as the specification has them, so those fonts serve their text (#313).
+
 - Number fields (property bar, panels, dialogs): spin arrows at the right of every field, and the mouse wheel over a field steps its value (Shift ten times as much, Ctrl a tenth); values could only be typed.
 
 - Symmetry: several selected objects become one symmetry group (each still to be picked inside it with Ctrl+click), and objects drawn, pasted or duplicated while the symmetry is edited join it; before, each object got a symmetry of its own and nothing could be added.

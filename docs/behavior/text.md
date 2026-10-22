@@ -410,9 +410,13 @@ imported), each carried font whose family is not installed serves the
 text for the rest of the session and joins the font lists; an installed
 font of the same family wins, since an embedded copy may hold only the
 letters the drawing used. A font is used only when its licence allows
-use in documents (the OS/2 embedding bits: not "restricted", outlines
-allowed); others are skipped with a log line and their text falls back
-like any missing font. The Fonts docker marks carried families
+use in documents (the OS/2 embedding bits read as the specification
+has them: restricted only when the restricted bit is set without a more
+permissive one, since a font setting several takes the most permissive;
+bitmaps-only counts from table version 2; the reserved bits, which old
+fonts set, mean nothing; `tracedraw_text::usable_in_documents`); others
+are skipped with a log line and their text falls back like any missing
+font. The Fonts docker marks carried families
 "embedded" under "Fonts in document". Saving a drawing as `.tdraw` adds
 the carried fonts its text uses (text imported or pasted from another
 drawing), so the file keeps its letters on machines without them, and,
