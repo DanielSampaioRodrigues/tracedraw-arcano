@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: editing a second text put the first one back to its text before its last edit; each text's typing is now an undo step of its own and editing another text never changes it (#373).
+
 - Browser build: the interface followed the browser's dark mode and switched to a dark style of its own on reload; the theme is now the one chosen in the options alone.
 
 - Interface size: 100 % is now one interface point per pixel at the system's scaling on every system (it was 0.8 on macOS and in the browser and 12 / 13 on Windows), and the bars' Default Button Size starts at Small, so the bars stay compact while text and menus take the system's size. A chosen interface size or button size is kept.
