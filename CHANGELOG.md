@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Panels: the plus button under the tabs lists the panels in the groups of Window > Panels, with a box ticked at each open one; unticking closes it.
+
 - Panels: the pointer over a panel tab shows a close cross at the top of the tab, and a click on it closes the panel.
 
 ## 0.10.2 (2026-10-22)

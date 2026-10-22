@@ -148,18 +148,37 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     ui.painter()
         .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
     let resp = resp.on_hover_text(tr("docker.add_docker"));
+    // The panels in the groups of the Window menu, a box ticked at each
+    // one in the column: ticking opens it in front, unticking closes it.
     egui::Popup::menu(&resp)
         .id(egui::Id::new("docker_add_menu"))
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| {
             crate::ui::menus::body(ui, |ui| {
-                for tab in DockerTab::ALL {
-                    if crate::ui::menus::item(ui, tab.key(), "", true) {
-                        if !app.open_dockers.contains(&tab) {
+                let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
+                    let open = app.open_dockers.contains(&tab);
+                    if crate::ui::menus::check(ui, tab.key(), "", open) {
+                        if open {
+                            app.close_docker(tab);
+                        } else {
                             app.open_dockers.push(tab);
+                            app.show_dockers = true;
+                            app.docker_tab = tab;
                         }
-                        app.show_dockers = true;
-                        app.docker_tab = tab;
+                    }
+                };
+                for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
+                    if i > 0 {
+                        crate::ui::menus::sep(ui);
+                    }
+                    for tab in group.iter() {
+                        row(ui, app, *tab);
+                    }
+                    if i == 5 {
+                        crate::ui::menus::sep(ui);
+                        for tab in DockerTab::EFFECTS_MENU {
+                            row(ui, app, tab);
+                        }
                     }
                 }
             })
