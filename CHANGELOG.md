@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Glyphs panel: a search field finds characters by themselves or by Unicode code point (`U+20AC`, `0x20ac`, `20AC`), and a line above the grid shows the code point, character and range of the glyph under the pointer (#375).
+
 - Print and Print Preview: Keep page size stops pages from shrinking on a fixed sheet to make room for the marks, and a drag on the sheet in Print Preview moves the page information; Keep page size is remembered for the next print (#388).
 
 - Print and Print Preview: a Back side option for n-up and step-and-repeat layouts runs the pages right to left on the sheet, so the back of double-sided ID cards prints right behind the front, without mirroring the text (#387).

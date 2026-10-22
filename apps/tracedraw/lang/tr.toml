@@ -4482,6 +4482,7 @@ docker.frame_background = "Çerçeve arka plan rengi"
 glyphs.recent = "Son glifler:"
 glyphs.recent_hint = "En son kullanılan glifleri gösterir"
 glyphs.none = "Bu yazı tipinin bu aralıkta glifi yok."
+glyphs.search_hint = "Ara: bir karakter veya U+20AC" # mt
 glyphs.entire_font = "Tüm yazı tipi"
 glyphs.basic_latin = "Temel Latin"
 glyphs.latin_supplement = "Latin-1 Ek"

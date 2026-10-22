@@ -375,6 +375,11 @@ Window > Panels > Glyphs. From the top:
 - The character range: Entire Font, Basic Latin, Latin-1 Supplement,
   Latin Extended, Greek, Cyrillic, Hebrew, Arabic, Punctuation, Numbers,
   Currency, Arrows, Mathematical Operators, Symbols.
+- A search field: a character or characters ("é", "aB") keeps those; a
+  code point with a U+ or 0x prefix, or bare hex digits with at least one
+  digit ("20AC", "004"), keeps the characters whose code starts with it.
+- An info line: the code point, the character and its range of the glyph
+  last under the pointer.
 - A grid of large cells with the glyphs the font draws in that range
   (from its character map), scrolled row by row. The tip names the
   character and its code point. A small arrow under a glyph means the

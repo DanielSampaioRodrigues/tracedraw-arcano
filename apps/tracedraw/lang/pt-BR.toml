@@ -4482,6 +4482,7 @@ docker.frame_background = "Cor de fundo do quadro"
 glyphs.recent = "Glifos recentes:"
 glyphs.recent_hint = "Mostra os glifos usados mais recentemente"
 glyphs.none = "Esta fonte não tem glifos neste intervalo."
+glyphs.search_hint = "Pesquisar: um caractere ou U+20AC" # mt
 glyphs.entire_font = "Fonte inteira"
 glyphs.basic_latin = "Latim básico"
 glyphs.latin_supplement = "Suplemento Latin-1"

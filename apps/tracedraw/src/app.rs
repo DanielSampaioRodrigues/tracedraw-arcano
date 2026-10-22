@@ -1260,6 +1260,8 @@ pub struct App {
     /// The Glyphs docker's font and character range.
     pub glyph_font: String,
     pub glyph_range: usize,
+    /// The Glyphs docker's search: characters or a code point (#375).
+    pub glyph_search: String,
     pub table_edit: Option<crate::table::TableEdit>,
     /// The Table tool's drag and bar choices.
     pub table_ui: crate::table_tool::TableUi,
@@ -2160,6 +2162,7 @@ impl App {
             transparency_default: Default::default(),
             glyph_font: String::new(),
             glyph_range: 0,
+            glyph_search: String::new(),
             table_edit: None,
             table_ui: Default::default(),
             missing_fonts: Vec::new(),

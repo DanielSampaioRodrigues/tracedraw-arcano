@@ -4482,6 +4482,7 @@ docker.frame_background = "Kolor tła ramki"
 glyphs.recent = "Ostatnie glify:"
 glyphs.recent_hint = "Pokazuje ostatnio używane glify"
 glyphs.none = "Ta czcionka nie ma glifów w tym zakresie."
+glyphs.search_hint = "Szukaj: znak lub U+20AC" # mt
 glyphs.entire_font = "Cała czcionka"
 glyphs.basic_latin = "Łacina podstawowa"
 glyphs.latin_supplement = "Uzupełnienie Latin-1"

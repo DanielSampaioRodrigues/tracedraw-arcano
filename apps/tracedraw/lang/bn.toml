@@ -4482,6 +4482,7 @@ docker.frame_background = "ফ্রেমের পটভূমির রং"
 glyphs.recent = "সাম্প্রতিক গ্লিফ:"
 glyphs.recent_hint = "সম্প্রতি ব্যবহৃত গ্লিফ দেখায়"
 glyphs.none = "এই ফন্টে এই পরিসরে কোনো গ্লিফ নেই।"
+glyphs.search_hint = "খুঁজুন: একটি অক্ষর বা U+20AC" # mt
 glyphs.entire_font = "পুরো ফন্ট"
 glyphs.basic_latin = "মৌলিক ল্যাটিন"
 glyphs.latin_supplement = "ল্যাটিন-১ পরিপূরক"
