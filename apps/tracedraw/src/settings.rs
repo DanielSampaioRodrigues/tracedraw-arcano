@@ -6,6 +6,73 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// How large the buttons of the bars are (the bars' menu > Customize).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ButtonSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl ButtonSize {
+    pub const ALL: [ButtonSize; 3] = [ButtonSize::Small, ButtonSize::Medium, ButtonSize::Large];
+
+    /// The buttons' size as a share of the medium size (32 px).
+    pub fn scale(self) -> f32 {
+        match self {
+            ButtonSize::Small => 0.75,
+            ButtonSize::Medium => 1.0,
+            ButtonSize::Large => 1.25,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ButtonSize::Small => "bars.size_small",
+            ButtonSize::Medium => "bars.size_medium",
+            ButtonSize::Large => "bars.size_large",
+        }
+    }
+}
+
+/// What the toolbox's buttons show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Captions {
+    #[default]
+    ImageOnly,
+    CaptionOnly,
+    CaptionRight,
+}
+
+impl Captions {
+    pub const ALL: [Captions; 3] = [
+        Captions::ImageOnly,
+        Captions::CaptionOnly,
+        Captions::CaptionRight,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Captions::ImageOnly => "bars.image_only",
+            Captions::CaptionOnly => "bars.caption_only",
+            Captions::CaptionRight => "bars.caption_right",
+        }
+    }
+
+    /// The icon shows.
+    pub fn image(self) -> bool {
+        self != Captions::CaptionOnly
+    }
+
+    /// The tool's name shows.
+    pub fn caption(self) -> bool {
+        self != Captions::ImageOnly
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -77,6 +144,16 @@ pub struct Settings {
     /// each flyout's first tool).
     #[serde(default)]
     pub toolbox_hidden: Vec<String>,
+    /// The bars' menu > Customize > Default Button Size: how large the
+    /// buttons of every bar are.
+    #[serde(default)]
+    pub button_size: ButtonSize,
+    /// The toolbox's own button size, when it does not follow the default.
+    #[serde(default)]
+    pub toolbox_button_size: Option<ButtonSize>,
+    /// What the toolbox's buttons show: the icon, the tool's name, or both.
+    #[serde(default)]
+    pub toolbox_captions: Captions,
     /// Customization > Appearance > Interface size, relative to the
     /// scaling the system gives the monitor (1.0 = 100 %, the size of
     /// other programs, a zoom of `ui::BASE_ZOOM`); 0 is 100 % too.
@@ -1162,6 +1239,9 @@ impl Default for Settings {
             desktop_rgb: default_desktop(),
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
+            button_size: ButtonSize::Medium,
+            toolbox_button_size: None,
+            toolbox_captions: Captions::ImageOnly,
             ui_size: 0.0,
             show_splash: true,
             center_dialogs: true,

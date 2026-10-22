@@ -3114,6 +3114,68 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::TimeTracker(Default::default());
     }
 }
+/// Every bar with a check at each one shown (Window > Toolbars and the
+/// bars' menu): the menu bar (always there), the standard toolbar, the
+/// property bar, the toolbox, the colour palette, the AI prompt bar, the
+/// status bar, the Text, Zoom and Transform toolbars and the time
+/// tracker's bar.
+pub(crate) fn toolbars_list(app: &mut App, ui: &mut Ui) {
+    check(ui, "menu.window.toolbar_menu_bar", "", true);
+    if check(
+        ui,
+        "menu.window.toolbar_standard",
+        "",
+        app.show_standard_toolbar,
+    ) {
+        app.show_standard_toolbar = !app.show_standard_toolbar;
+    }
+    if check(
+        ui,
+        "menu.window.toolbar_property_bar",
+        "",
+        app.show_property_bar,
+    ) {
+        app.show_property_bar = !app.show_property_bar;
+    }
+    if check(ui, "menu.window.toolbar_toolbox", "", app.show_toolbox) {
+        app.show_toolbox = !app.show_toolbox;
+    }
+    let palette = app.settings.palette.show_palette;
+    if check(ui, "bars.palette", "", palette) {
+        app.settings.palette.show_palette = !palette;
+    }
+    // Shown while an AI service is set up (AI Drawing).
+    let ai_bar = app.settings.ai.show_bar;
+    if check(ui, "bars.ai_prompt", "", ai_bar) {
+        app.settings.ai.show_bar = !ai_bar;
+    }
+    if check(
+        ui,
+        "menu.window.toolbar_status_bar",
+        "",
+        app.show_status_bar,
+    ) {
+        app.show_status_bar = !app.show_status_bar;
+    }
+    if check(ui, "menu.window.toolbar_text", "", app.show_text_toolbar) {
+        app.show_text_toolbar = !app.show_text_toolbar;
+    }
+    if check(ui, "menu.window.toolbar_zoom", "", app.show_zoom_toolbar) {
+        app.show_zoom_toolbar = !app.show_zoom_toolbar;
+    }
+    if check(
+        ui,
+        "menu.window.toolbar_transform",
+        "",
+        app.show_transform_toolbar,
+    ) {
+        app.show_transform_toolbar = !app.show_transform_toolbar;
+    }
+    let tracker = app.settings.time_tracker.show_bar;
+    if check(ui, "menu.window.toolbar_time_tracker", "", tracker) {
+        app.settings.time_tracker.show_bar = !tracker;
+    }
+}
 
 fn window_menu(app: &mut App, ui: &mut Ui) {
     let doc = app.has_document() && !app.show_welcome;
@@ -3223,61 +3285,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         app.effect_picker.open = !app.effect_picker.open;
     }
     sub(ui, "menu.window.toolbars", |ui| {
-        check(ui, "menu.window.toolbar_menu_bar", "", true);
-        if check(
-            ui,
-            "menu.window.toolbar_standard",
-            "",
-            app.show_standard_toolbar,
-        ) {
-            app.show_standard_toolbar = !app.show_standard_toolbar;
-        }
-        if check(
-            ui,
-            "menu.window.toolbar_property_bar",
-            "",
-            app.show_property_bar,
-        ) {
-            app.show_property_bar = !app.show_property_bar;
-        }
-        if check(ui, "menu.window.toolbar_toolbox", "", app.show_toolbox) {
-            app.show_toolbox = !app.show_toolbox;
-        }
-        let palette = app.settings.palette.show_palette;
-        if check(ui, "bars.palette", "", palette) {
-            app.settings.palette.show_palette = !palette;
-        }
-        // Shown while an AI service is set up (AI Drawing).
-        let ai_bar = app.settings.ai.show_bar;
-        if check(ui, "bars.ai_prompt", "", ai_bar) {
-            app.settings.ai.show_bar = !ai_bar;
-        }
-        if check(
-            ui,
-            "menu.window.toolbar_status_bar",
-            "",
-            app.show_status_bar,
-        ) {
-            app.show_status_bar = !app.show_status_bar;
-        }
-        if check(ui, "menu.window.toolbar_text", "", app.show_text_toolbar) {
-            app.show_text_toolbar = !app.show_text_toolbar;
-        }
-        if check(ui, "menu.window.toolbar_zoom", "", app.show_zoom_toolbar) {
-            app.show_zoom_toolbar = !app.show_zoom_toolbar;
-        }
-        if check(
-            ui,
-            "menu.window.toolbar_transform",
-            "",
-            app.show_transform_toolbar,
-        ) {
-            app.show_transform_toolbar = !app.show_transform_toolbar;
-        }
-        let tracker = app.settings.time_tracker.show_bar;
-        if check(ui, "menu.window.toolbar_time_tracker", "", tracker) {
-            app.settings.time_tracker.show_bar = !tracker;
-        }
+        toolbars_list(app, ui);
         sep(ui);
         let locked = app.settings.bars.locked;
         if check(ui, "bars.lock", "", locked) {

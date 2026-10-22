@@ -19,7 +19,10 @@ use tracedraw_core::{
 pub const BAR_H: f32 = 37.0;
 const ROW: f32 = 19.0;
 /// Icon buttons are 28 px square with an 18 px icon.
-const BTN: f32 = 28.0;
+/// A property bar button's side: 28 px at the medium button size.
+fn btn() -> f32 {
+    crate::theme::Tokens::prop_button()
+}
 
 /// The small pictures before fields and on the bar's buttons, drawn on a
 /// 16 x 16 grid.
@@ -1242,7 +1245,7 @@ pub(crate) fn frame(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
 /// An icon button of the bar; `pressed` draws it pushed in.
 pub fn pic_button(ui: &mut Ui, pic: Pic, tip: &str, enabled: bool, pressed: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::splat(BTN),
+        Vec2::splat(btn()),
         if enabled {
             Sense::click()
         } else {

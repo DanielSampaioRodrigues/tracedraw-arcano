@@ -13,8 +13,11 @@ fn vsep(ui: &mut Ui) {
     ui.add(egui::Separator::default().vertical().spacing(6.0));
 }
 
-/// Standard toolbar buttons: 32 px square with a 20 px icon.
-const STD: f32 = 32.0;
+/// Standard toolbar buttons: 32 px square with a 20 px icon at the
+/// medium button size.
+fn std_btn() -> f32 {
+    Tokens::bar_button()
+}
 const STD_ICON: f32 = 20.0;
 
 fn std_frame(ui: &Ui, rect: egui::Rect, hovered: bool, pressed: bool) {
@@ -48,7 +51,7 @@ fn std_button(
     pressed: bool,
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::splat(STD),
+        Vec2::splat(std_btn()),
         if enabled {
             egui::Sense::click()
         } else {
@@ -73,11 +76,12 @@ fn std_button(
 /// A standard toolbar button that opens a list: the icon with a small
 /// down arrow on its right, one button.
 fn std_list_button(ui: &mut Ui, action: icons::Action, tip: &str) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(STD + 11.0, STD), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(std_btn() + 11.0, std_btn()), egui::Sense::click());
     std_frame(ui, rect, resp.hovered(), resp.is_pointer_button_down_on());
     let resp = resp.on_hover_ui(|ui| rich_tip(ui, tip));
     let icon = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + STD / 2.0, rect.center().y),
+        egui::pos2(rect.left() + std_btn() / 2.0, rect.center().y),
         Vec2::splat(STD_ICON),
     );
     icons::draw_action(ui.painter(), icon, action, Tokens::icon());
@@ -109,7 +113,7 @@ fn tip(key: &str) -> String {
 /// The small arrow after a button that opens its list.
 fn std_arrow(ui: &mut Ui, id: &str, enabled: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(14.0, STD),
+        Vec2::new(14.0, std_btn()),
         if enabled {
             egui::Sense::click()
         } else {
@@ -139,7 +143,7 @@ fn std_arrow(ui: &mut Ui, id: &str, enabled: bool) -> egui::Response {
 
 /// A thin vertical separator between button groups.
 fn std_sep(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(9.0, STD), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(9.0, std_btn()), egui::Sense::hover());
     let x = rect.center().x.round() + 0.5;
     ui.painter().vline(
         x,
@@ -244,7 +248,7 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
 pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
-        ui.set_min_height(STD);
+        ui.set_min_height(std_btn());
         // Commands on the drawing are pale without one shown (the Welcome
         // Screen, even with drawings open behind it).
         let doc = app.drawing_shown();
@@ -497,7 +501,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         } else {
             egui::Sense::hover()
         };
-        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, STD), sense);
+        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, std_btn()), sense);
         std_frame(ui, rect, doc && snap_resp.hovered(), false);
         ui.painter().text(
             egui::pos2(rect.left() + 6.0, rect.center().y),
@@ -561,7 +565,8 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             .show(|ui| crate::ui::menus::options_items(app, ui));
         std_sep(ui);
         // Launch: the other tools that come with the editor.
-        let (rect, launch) = ui.allocate_exact_size(Vec2::new(108.0, STD), egui::Sense::click());
+        let (rect, launch) =
+            ui.allocate_exact_size(Vec2::new(108.0, std_btn()), egui::Sense::click());
         std_frame(ui, rect, launch.hovered(), false);
         icons::draw_action(
             ui.painter(),
@@ -620,7 +625,7 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
         Tokens::text(),
     );
     let w = galley.size().x + 52.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, STD), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, std_btn()), egui::Sense::click());
     std_frame(ui, rect, resp.hovered(), false);
     let p = ui.painter();
     p.text(

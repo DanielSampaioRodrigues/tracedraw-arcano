@@ -230,6 +230,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     crate::app::set_pixel_dpi(app.document_dpi());
     crate::app::set_drawing_scale(app.doc().metadata.rulers.world_per_page());
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
+    crate::theme::set_button_sizes(app.settings.button_size, app.settings.toolbox_button_size);
     apply_theme(&ctx, &crate::settings::effective_theme(&app.settings));
     apply_shadows(&ctx, app.settings.ui_shadows);
     crate::ui::icons::set_colored(app.settings.colored_icons);
@@ -471,7 +472,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         };
         if let Some(panel) = panel {
             panel
-                .exact_size(Tokens::TOOLBOX_WIDTH)
+                .exact_size(toolbox::column_width(app))
                 .resizable(false)
                 .frame(frame)
                 .show(ui, |ui| toolbox::toolbox(app, ui, dock));
@@ -512,7 +513,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             Panel::bottom("toolbox")
         };
         panel
-            .exact_size(Tokens::TOOLBOX_WIDTH)
+            .exact_size(Tokens::tool_button() + 6.0)
             .resizable(false)
             .frame(
                 Frame::new()
@@ -1200,6 +1201,47 @@ mod tests {
         egui::Popup::close_all(&ctx);
         key(&ctx, &mut app, Key::Escape, Modifiers::NONE);
         assert!(app.selection.is_empty());
+    }
+
+    /// The window draws with the toolbox at every button size and with
+    /// captions, docked on a side, along the top and floating; the
+    /// measured captions widen the toolbox column.
+    #[test]
+    fn the_toolbox_draws_at_every_size_and_with_captions() {
+        use crate::settings::{ButtonSize, Captions};
+        use crate::ui::bars::{Bar, Dock};
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        let plain = {
+            frame(&ctx, &mut app);
+            crate::ui::toolbox::column_width(&app)
+        };
+        for size in ButtonSize::ALL {
+            app.settings.button_size = size;
+            for own in [None, Some(ButtonSize::Small)] {
+                app.settings.toolbox_button_size = own;
+                for captions in Captions::ALL {
+                    app.settings.toolbox_captions = captions;
+                    for dock in [Dock::Left, Dock::Top, Dock::Floating] {
+                        crate::ui::bars::move_bar(&mut app, Bar::Toolbox, dock, None);
+                        frame(&ctx, &mut app);
+                        frame(&ctx, &mut app);
+                    }
+                }
+            }
+        }
+        app.settings.button_size = ButtonSize::Medium;
+        app.settings.toolbox_button_size = None;
+        app.settings.toolbox_captions = Captions::CaptionRight;
+        crate::ui::bars::move_bar(&mut app, Bar::Toolbox, Dock::Left, None);
+        frame(&ctx, &mut app);
+        frame(&ctx, &mut app);
+        assert!(app.toolbox_caption_w > 30.0, "{}", app.toolbox_caption_w);
+        assert!(crate::ui::toolbox::column_width(&app) > plain + 30.0);
+        crate::ui::toolbox::reset_toolbox(&mut app);
+        frame(&ctx, &mut app);
+        assert_eq!(crate::ui::toolbox::column_width(&app), plain);
     }
 
     /// The whole window draws with every docker tab, every tool and every

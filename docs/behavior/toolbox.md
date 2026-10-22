@@ -28,6 +28,14 @@
   or into a floating window two buttons wide (see "Moving the bars" in
   `toolbars.md`). Flyouts open away from the edge the toolbox is on.
 
+## Button size and captions
+
+The bars' menu (right-click a bar) > Customize sizes the buttons (Default
+Button Size for every bar; Toolbox Toolbar > Button Size for the toolbox
+alone) and chooses what they show: Image Only (the icon, 22 px at the
+medium size, scaled with the button), Caption Only (the tool's name) or
+Caption to Right (both). See `toolbars.md`, "Moving the bars".
+
 ## Checks
 
 - `ui::toolbox::tests::flyout_groups_can_be_hidden_and_reset`

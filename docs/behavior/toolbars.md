@@ -173,9 +173,27 @@ and the status bar move (`ui/bars.rs`).
   its flyouts opening below or above it.
 - Right-clicking a grip, an empty part of a toolbar or of the status bar,
   or a floating bar's title opens the bar's menu: the places the bar can
-  take (a dot at the current one), the five bars with a check at each
-  one shown, Lock Toolbars and Reset Bar Positions. Window > Toolbars
-  has the colour palette, Lock Toolbars and Reset Bar Positions too.
+  take (a dot at the current one); every bar with a check at each one
+  shown, as Window > Toolbars lists them (`menus::toolbars_list`: the
+  menu bar, always on; the standard toolbar, the property bar, the
+  toolbox, the colour palette, the AI prompt bar, the status bar, the
+  Text, Zoom and Transform toolbars, the time tracker); Customize; Lock
+  Toolbars and Reset Bar Positions. Window > Toolbars has the same list,
+  Lock Toolbars and Reset Bar Positions.
+- Customize holds: Default Button Size (Small, Medium, Large: the
+  buttons of every bar are 24, 32 or 40 px square, the property bar's 21,
+  28 or 35; `settings.button_size`, `theme::set_button_sizes`); Toolbox
+  Toolbar (Reset to Default: every flyout shown as at first, each button
+  on its first tool, the default size and icons only; Button Size:
+  Default, which follows the default button size, or its own Small,
+  Medium or Large, `settings.toolbox_button_size`; Image Only, Caption
+  Only or Caption to Right, `settings.toolbox_captions`: with captions
+  every toolbox button is as wide as the widest tool name of the flyouts
+  shown, plus 6 px each side, so the column keeps one width whichever
+  tools the buttons show, and the name is drawn at 12 px to the right of
+  the icon or in its place); Workspace (Export Workspace, Import
+  Workspace, the same as Window > Workspace); and Customize..., which
+  opens Options > Customization > Command Bars.
 - Lock Toolbars hides the grips, stops every drag and greys the places in
   the menu. Reset Bar Positions puts every bar at its first place and
   shows it; the lock stays as it was.
@@ -194,6 +212,7 @@ and the status bar move (`ui/bars.rs`).
 - `ui::propbar::tests::outline_widths_read_in_the_ruler_unit`
 - `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`
 - `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`
+- `ui::toolbox::tests::buttons_follow_the_sizes_and_the_captions`
   draws every tool's bar.
 - `ui::overflow::tests::forward_brings_the_first_hidden_item_to_the_start`
 - `ui::overflow::tests::back_returns_between_items_and_to_the_start`

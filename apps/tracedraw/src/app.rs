@@ -858,6 +858,9 @@ pub struct App {
     pub flyout_open: Option<usize>,
     /// The tool each toolbox group shows: the one last used from its flyout.
     pub toolbox_last: Vec<Tool>,
+    /// The widest tool name among the toolbox's buttons, as measured when
+    /// the toolbox was last drawn with captions (sizes its buttons).
+    pub toolbox_caption_w: f32,
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
     // Defaults for new objects (no fill, black hairline).
@@ -1816,6 +1819,7 @@ impl App {
             docker_tab: DockerTab::Hints,
             flyout_open: None,
             toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
+            toolbox_caption_w: 0.0,
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
             polygon_points: 5,
