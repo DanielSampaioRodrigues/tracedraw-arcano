@@ -237,6 +237,24 @@ impl App {
             .map(|s| s.id)
     }
 
+    /// The topmost visible object at `p` to read from, locked or not and
+    /// on a locked layer too (the eyedroppers: reading a colour or the
+    /// attributes leaves the object as it is, #365). In focus mode, as
+    /// [`Self::hit_test`].
+    pub fn hit_test_to_read(&self, p: Point) -> Option<ShapeId> {
+        if self.focus_shape_on_page().is_some() {
+            return self.hit_test(p);
+        }
+        let tol = 3.0 / self.view.zoom as f64;
+        self.page_layers()
+            .into_iter()
+            .rev()
+            .filter(|l| l.visible)
+            .flat_map(|l| l.shapes.iter().rev())
+            .find(|s| s.visible && self.shape_hit(s, p, tol))
+            .map(|s| s.id)
+    }
+
     /// The topmost object at `p` that `skip` does not rule out.
     pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
         let tol = 3.0 / self.view.zoom as f64;

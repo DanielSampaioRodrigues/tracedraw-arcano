@@ -4,6 +4,11 @@ Both tools have two modes shown on the property bar: Select (sample)
 and Apply. A sample switches to Apply; the Select button or Esc goes
 back. Esc also drops the sample and returns to the Pick tool.
 
+Both eyedroppers, and the document palette's, read from any visible
+object under the pointer, a locked one or one on a locked layer too
+(reading leaves it as it is; `App::hit_test_to_read`, #365). Applying a
+sampled colour or attributes never changes a locked object.
+
 ## Colour Eyedropper
 
 - Property bar: Select Color, Apply Color, sample size (1x1, 2x2, 5x5
@@ -52,3 +57,4 @@ back. Esc also drops the sample and returns to the Pick tool.
   empty one, with default groups the second gets the blue fill and keeps
   its size and opacity; with Size and Effects ticked it becomes 10 x 20
   mm about its own centre at 50 %.
+- `eyedropper::tests::eyedroppers_read_from_locked_objects_but_never_write_to_them`

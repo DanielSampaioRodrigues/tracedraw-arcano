@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Eyedroppers (the tools and the document palette's): they read nothing from a locked object or one on a locked layer; they now read colours and attributes from them too, while applying to a locked object stays blocked (#365).
+
 - Pen and Bezier: closing a curve with a click on its first node keeps the last segment as the preview showed it (it turned straight, #359); dragging from the first node to close puts its handle where the pointer goes (it was the mirror, #358); and a curve of two nodes closes, for a leaf or a lens of two nodes (#356).
 
 - Repeat (Ctrl+R): after an undo it repeated the action just undone; it now repeats the last action still in effect (#366). After a copy made with a right click during a drag it moved the selection; it now makes another copy as far again (#363).

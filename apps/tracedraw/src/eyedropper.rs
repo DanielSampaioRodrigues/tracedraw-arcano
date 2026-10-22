@@ -90,11 +90,12 @@ impl App {
         None
     }
 
-    /// The colour under `p`: a bitmap pixel (averaged over the sample box),
-    /// else the solid fill (first stop of a fountain), else the outline.
+    /// The colour under `p`, locked objects included: a bitmap pixel
+    /// (averaged over the sample box), else the solid fill (first stop of
+    /// a fountain), else the outline.
     /// With `outline` the outline colour is read first.
     pub fn sample_color_at(&self, p: Point, outline: bool) -> Option<Color> {
-        let id = self.hit_test(p)?;
+        let id = self.hit_test_to_read(p)?;
         let (_, s) = self.doc().shape(id).ok()?;
         if outline {
             if let Some(st) = &s.stroke {
@@ -172,9 +173,10 @@ impl App {
         true
     }
 
-    /// Read every attribute group from the object under `p`.
+    /// Read every attribute group from the object under `p` (locked
+    /// objects included).
     pub fn sample_attrs_at(&self, p: Point) -> Option<SampledAttrs> {
-        let id = self.hit_test(p)?;
+        let id = self.hit_test_to_read(p)?;
         let (_, s) = self.doc().shape(id).ok()?;
         let b = s.bounds();
         let text = match &s.kind {
@@ -365,6 +367,57 @@ mod tests {
             sb.stroke.as_ref().map(|s| s.color),
             Some(Color::rgb8(200, 10, 10))
         );
+    }
+
+    /// Both eyedroppers read from a locked object (and from an object on
+    /// a locked layer); applying to a locked object stays blocked (#365).
+    #[test]
+    fn eyedroppers_read_from_locked_objects_but_never_write_to_them() {
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        app.run(Command::SetFill {
+            shapes: vec![a],
+            fill: Fill::Solid(Color::rgb8(10, 120, 200)),
+        });
+        app.run(Command::SetLocked {
+            shapes: vec![a, b],
+            locked: true,
+        });
+        app.select(Vec::new());
+        // The colour eyedropper.
+        app.eyedropper_click(Point::new(5.0, 5.0), false, false);
+        assert_eq!(app.eyedropper_color, Some(Color::rgb8(10, 120, 200)));
+        // The document palette's eyedropper reads the same.
+        assert_eq!(
+            app.sample_color_at(Point::new(5.0, 5.0), false),
+            Some(Color::rgb8(10, 120, 200))
+        );
+        // The attributes eyedropper.
+        let attrs = app
+            .sample_attrs_at(Point::new(5.0, 5.0))
+            .expect("attributes");
+        assert_eq!(attrs.fill, Fill::Solid(Color::rgb8(10, 120, 200)));
+        // Applying to the locked object does nothing.
+        let before = app.doc().find_shape(b).expect("b").fill.clone();
+        app.eyedropper_click(Point::new(25.0, 5.0), false, false);
+        assert_eq!(app.doc().find_shape(b).expect("b").fill, before);
+        // An object on a locked layer is read as well.
+        app.run(Command::SetLocked {
+            shapes: vec![a, b],
+            locked: false,
+        });
+        let layer = app.doc().pages[0].layers[0].id;
+        app.run(Command::SetLayerLocked {
+            layer,
+            locked: true,
+        });
+        assert_eq!(
+            app.sample_color_at(Point::new(5.0, 5.0), false),
+            Some(Color::rgb8(10, 120, 200))
+        );
+        // Selection still ignores locked objects.
+        assert_eq!(app.hit_test(Point::new(5.0, 5.0)), None);
     }
 
     #[test]
