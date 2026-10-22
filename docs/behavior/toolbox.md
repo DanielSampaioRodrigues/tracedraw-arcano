@@ -1,6 +1,7 @@
 # Toolbox
 
-- One button per flyout, top to bottom, with
+- One button per flyout, top to bottom (the last one, the Variable
+  Outline tool, after the Fill flyout), with
   separator lines after the Shape, Zoom, Polygon, Text, Connector,
   Transparency and Fill groups (before the "+"). A button shows the tool last used from its flyout
   (kept in the settings); the active tool's button is tinted.
