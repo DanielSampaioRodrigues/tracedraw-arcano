@@ -193,6 +193,14 @@ pub struct PrintState {
     pub registration_marks: bool,
     pub bleed: bool,
     pub mirror: bool,
+    /// Back side of double-sided sheets: columns right to left (#387).
+    pub back_side: bool,
+    /// Pages keep their size on a fixed sheet: never shrunk to make room
+    /// for the marks (#388).
+    pub keep_size: bool,
+    /// Where the page information sits, moved from its place (mm, x and
+    /// y) by a drag in Print Preview (#388).
+    pub info_offset: (f64, f64),
     pub invert: bool,
     pub color_bars: bool,
     pub densitometer: bool,
@@ -407,6 +415,9 @@ impl Default for PrintState {
             registration_marks: false,
             bleed: false,
             mirror: false,
+            back_side: false,
+            keep_size: false,
+            info_offset: (0.0, 0.0),
             invert: false,
             color_bars: false,
             densitometer: false,
@@ -2829,6 +2840,16 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                                 .speed(0.5)
                                 .suffix(" mm"),
                         );
+                        ui.end_row();
+                        ui.label("");
+                        ui.checkbox(&mut st.back_side, tr("print.back_side"))
+                            .on_hover_text(tr("print.back_side_tip"));
+                        ui.end_row();
+                    }
+                    if st.sheet > 0 {
+                        ui.label("");
+                        ui.checkbox(&mut st.keep_size, tr("print.keep_size"))
+                            .on_hover_text(tr("print.keep_size_tip"));
                         ui.end_row();
                     }
                 });

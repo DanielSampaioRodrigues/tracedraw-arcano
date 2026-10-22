@@ -6,6 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print and Print Preview: Keep page size stops pages from shrinking on a fixed sheet to make room for the marks, and a drag on the sheet in Print Preview moves the page information; Keep page size is remembered for the next print (#388).
+
+- Print and Print Preview: a Back side option for n-up and step-and-repeat layouts runs the pages right to left on the sheet, so the back of double-sided ID cards prints right behind the front, without mirroring the text (#387).
+
 - PDF and AI files: opening or importing one asks how to read its text, as in the reference program. Text keeps it editable; Curves draws each letter from the fonts the file embeds, so the text looks exactly as in the file even when those fonts are not installed. Options > File Formats keeps the choice (#386).
 
 - Print Merge: imports Excel workbooks (`.xlsx`) as well as CSV, guesses the picture, QR and text fields and shows their types after the import. Fields are now filled inside groups and frames, so grouped ID cards merge; a photo placeholder inside a frame fills the frame, and a shape named `<Field>` takes the picture inside it. Page copies with frames used to share ids with the template, so a merge could change the template instead of the copy (#377, #378).
