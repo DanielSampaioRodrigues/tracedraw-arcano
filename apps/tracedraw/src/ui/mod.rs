@@ -38,6 +38,7 @@ pub mod docker_form;
 pub mod dockers;
 pub mod dockers2;
 pub mod drawing_bars;
+pub mod edit_fill;
 pub mod effect_bars;
 pub mod effect_dialog;
 pub mod effect_picker;

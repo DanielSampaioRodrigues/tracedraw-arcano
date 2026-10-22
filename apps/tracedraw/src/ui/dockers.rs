@@ -1337,7 +1337,7 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
 
 /// The picture of a fill kind (0 none, 1 uniform, 2 gradient, 3 pattern,
 /// 4 texture, 5 mesh) in a 16 x 16 square.
-fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
+pub(crate) fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: usize) {
     let edge = egui::Stroke::new(1.0, Tokens::icon());
     let sq = r.shrink(1.0);
     match kind {
@@ -1547,7 +1547,7 @@ fn fill_editor_mixed(
 }
 
 /// Stops drawn left to right as one mesh.
-fn gradient_swatch(p: &egui::Painter, r: egui::Rect, stops: &[tracedraw_core::Stop]) {
+pub(crate) fn gradient_swatch(p: &egui::Painter, r: egui::Rect, stops: &[tracedraw_core::Stop]) {
     let mut mesh = egui::Mesh::default();
     for (i, st) in stops.iter().enumerate() {
         let [cr, cg, cb] = st.color.to_rgb8();
@@ -1850,7 +1850,7 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     changed
 }
 
-fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
+pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
     let mut changed = false;
     match p {
         Pattern::TwoColor {
@@ -1933,7 +1933,7 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
     changed
 }
 
-fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
+pub(crate) fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         for (k, n) in [

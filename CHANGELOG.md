@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Edit Fill (F11): a dialog as in the reference program, with the fill types across the top and, for gradients, a preview, the fill picker, type and repeat, a band of colours whose nodes can be picked, dragged, added and removed, the node's colour, transparency, position and midpoint, Reverse, rotation, centre and edge pad, and Overprint fill. OK changes only what was changed. F11 opened the Properties panel before (#361).
+
 - Outline Pen (F12): a dialog with every outline setting laid out in groups as in the reference program: General (colour, width with its unit, style, mitre limit, dashes, corners, line caps, position), Arrowheads, Calligraphy with a picture of the nib, Behind fill, Scale with object, Variable Outline (width nodes, sides and total) and Overprint outline. OK changes only what was changed; with nothing selected it sets the outline of new objects. F12 opened the Properties panel before (#357).
 
 - Bitmap effects on vector objects (3D Rotate and the others) are drawn at the drawing's rendering resolution from Layout > Page Setup instead of a fixed 300 dpi, up to 16 million pixels instead of 4, and are made again when the resolution changes; set it higher for sharper results on screen, in PDF and in exported images (#382).

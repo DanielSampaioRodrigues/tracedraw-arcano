@@ -2797,9 +2797,9 @@ impl App {
         if pressed(Key::F12, Modifiers::ALT) {
             self.align_chars_to_baseline();
         }
-        // F11: the fill editor (Properties docker, Fill section). F3: zoom out.
+        // F11: the Edit Fill dialog. F3: zoom out.
         if pressed(Key::F11, Modifiers::NONE) {
-            self.open_fill_editor();
+            self.open_edit_fill();
         }
         if pressed(Key::F3, Modifiers::NONE) {
             self.zoom_step(false);

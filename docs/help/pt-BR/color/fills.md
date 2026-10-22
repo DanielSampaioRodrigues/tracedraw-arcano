@@ -9,9 +9,10 @@ que fluem entre os nós de uma grade).
 ## Formas de preencher um objeto {#ways}
 
 - Clique em uma cor da paleta para dar à seleção um preenchimento uniforme.
-- Use a seção [[docker.fill]] do painel [[docker.properties]] (<kbd>F11</kbd>):
-  escolha o tipo de preenchimento na fileira de imagens e depois as
-  configurações.
+- Pressione <kbd>F11</kbd> para a caixa de diálogo [[edit_fill.title]] (veja
+  [abaixo](#edit-fill)), ou use a seção [[docker.fill]] do painel
+  [[docker.properties]]: escolha o tipo de preenchimento na fileira de imagens
+  e depois as configurações.
 - Use a ferramenta [[tool.interactive_fill]] (<kbd>G</kbd>) para definir
   gradientes no próprio objeto.
 - Use a ferramenta [[tool.area_fill]] para preencher uma área cercada por vários
@@ -52,6 +53,27 @@ preenchimento do painel [[docker.properties]]:
 - [[docker.invert_colours]]: as cores correm na ordem inversa.
 
 Uma faixa abaixo do tipo mostra toda a sequência de cores como será desenhada.
+
+## A caixa de diálogo Editar preenchimento {#edit-fill}
+
+<kbd>F11</kbd> abre a caixa de diálogo [[edit_fill.title]] no preenchimento da
+seleção (ou dos objetos novos, sem nada selecionado).
+
+- A fileira de imagens no alto escolhe o tipo de preenchimento.
+- Um preenchimento uniforme mostra o visualizador de cores.
+- Um gradiente mostra à esquerda uma prévia do preenchimento e o
+  [[edit_fill.fill_picker]] com os gradientes prontos. À direita: o tipo, como
+  ele se repete e a faixa de cores com seus nós. Clique num nó para escolhê-lo
+  e arraste para movê-lo; clique duas vezes na faixa para acrescentar um nó e
+  num nó para removê-lo. A cor, a transparência, a posição e o
+  [[edit_fill.midpoint]] do nó escolhido ficam sob a faixa, com
+  [[edit_fill.reverse]]. [[edit_fill.transform]] tem a rotação, o centro (para
+  gradientes radiais, cônicos e quadrados), a margem da borda, o espelho e a
+  inversão.
+- **OK** muda só o que você mudou em todos os objetos selecionados, com
+  [[edit_fill.overprint]].
+
+![A caixa de diálogo Editar preenchimento](../../img/color-fills-edit-fill.png)
 
 ## A ferramenta Preenchimento interativo {#interactive-fill}
 

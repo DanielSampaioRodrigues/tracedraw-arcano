@@ -612,6 +612,8 @@ pub enum Dialog {
         shape: tracedraw_core::ShapeId,
         name: String,
     },
+    /// The Edit Fill dialog (F11, #361).
+    EditFill(Box<crate::ui::edit_fill::EditFillState>),
     /// The Outline Pen dialog (F12, #357).
     OutlinePen(Box<crate::ui::outline_pen::OutlinePenState>),
     /// Text > Edit Text: the text of a text object in a box of its own
@@ -1221,6 +1223,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
         Dialog::OutlinePen(st) => crate::ui::outline_pen::dialog(app, ctx, st, &mut close),
+        Dialog::EditFill(st) => crate::ui::edit_fill::dialog(app, ctx, st, &mut close),
         Dialog::OldCdrVersion { version } => {
             let mut choose = false;
             window(ctx, tr("dialog.old_cdr_title")).show(ctx, |ui| {

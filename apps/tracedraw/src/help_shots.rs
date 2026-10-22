@@ -419,6 +419,19 @@ fn shots() -> Vec<(String, Shot, bool)> {
         false,
     ));
     v.push((
+        name("color/fills#edit-fill"),
+        Shot::Dialog(|app| {
+            app.apply_fill(tracedraw_core::Fill::linear(
+                tracedraw_core::Color::rgb8(220, 30, 90),
+                tracedraw_core::Color::rgb8(40, 90, 200),
+                0.0,
+            ));
+            app.open_edit_fill();
+            std::mem::replace(&mut app.dialog, Dialog::None)
+        }),
+        false,
+    ));
+    v.push((
         name("lines-shapes/outlines#outline-pen"),
         Shot::Dialog(|app| {
             app.open_outline_pen();

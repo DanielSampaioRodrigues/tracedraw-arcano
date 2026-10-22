@@ -9,9 +9,10 @@ fill: [[docker.fill_none]], [[docker.fill_uniform]] (one flat color),
 ## Ways to fill an object {#ways}
 
 - Click a color of the palette to give the selection a uniform fill.
-- Use the [[docker.fill]] section of the [[docker.properties]] panel
-  (<kbd>F11</kbd>): choose the kind of fill with the row of pictures, then
-  its settings.
+- Press <kbd>F11</kbd> for the [[edit_fill.title]] dialog box (see
+  [below](#edit-fill)), or use the [[docker.fill]] section of the
+  [[docker.properties]] panel: choose the kind of fill with the row of
+  pictures, then its settings.
 - Use the [[tool.interactive_fill]] tool (<kbd>G</kbd>) to set gradients on
   the object itself.
 - Use the [[tool.area_fill]] tool to fill an area enclosed by several objects.
@@ -49,6 +50,26 @@ the [[docker.properties]] panel:
 - [[docker.invert_colours]]: the colors run in reverse order.
 
 A strip under the type shows the whole run of colors as it will be drawn.
+
+## The Edit Fill dialog box {#edit-fill}
+
+<kbd>F11</kbd> opens the [[edit_fill.title]] dialog box on the fill of the
+selection (or of new objects, with nothing selected).
+
+- The row of pictures at the top picks the kind of fill.
+- A uniform fill shows the color viewer.
+- A gradient shows a preview of the fill and the [[edit_fill.fill_picker]]
+  with the built-in gradients on the left. On the right: the type, how it
+  repeats, and the band of colors with its nodes. Click a node to pick it and
+  drag it to move it; double-click the band to add a node and a node to
+  remove it. The picked node's color, transparency, position and
+  [[edit_fill.midpoint]] are under the band, with [[edit_fill.reverse]].
+  [[edit_fill.transform]] has the rotation, the center (for radial, conical
+  and square gradients), the edge pad, mirror and inversion.
+- **OK** changes only what you changed on every selected object, with
+  [[edit_fill.overprint]].
+
+![The Edit Fill dialog box](../../img/color-fills-edit-fill.png)
 
 ## The Interactive Fill tool {#interactive-fill}
 

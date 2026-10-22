@@ -20,7 +20,26 @@ in) in a strip under the type. The Interactive Fill property bar and the
 Transparency tool's gradient list offer the Shaped type too; a shaped
 gradient has no handles on the canvas.
 
-Shortcut: F11 opens the fill editor; G is the Interactive Fill tool.
+Shortcut: F11 opens the Edit Fill dialog; G is the Interactive Fill tool.
+
+Edit Fill dialog (#361, `ui/edit_fill.rs`): the fill kinds as pictures
+across the top (none, uniform, gradient, pattern, texture, mesh), then
+the kind's settings. Uniform: the colour viewer and the colour picker.
+Gradient: on the left a 180 point preview of the fill drawn by the
+renderer on a checker, and the fill picker (the built-in gradients); on
+the right the type, the repeat (Default, Repeat and mirror, Repeat with
+a count), the band of colours with the nodes under it (click picks,
+drag moves between the neighbours, double click on the band adds a node
+in the colour and opacity there, on a node between the ends removes
+it), Reverse (each node at `1 - pos`, midpoints mirrored), the picked
+node's colour, transparency, position and midpoint, and Transform:
+rotation, centre (radial, conical, square), edge pad, bilinear and
+invert; a fill with free nodes from Interactive Fill gets "Back to angle
+and center". Pattern and texture: a preview and their editors. OK sends
+the fields that changed to every selected object with Overprint fill in
+one step (`App::apply_edit_fill`, `edit_fill_applies_what_was_changed`,
+`nodes_are_added_moved_and_reversed`); with nothing selected it changes
+the default fill.
 Dragging with Interactive Fill on an object (anywhere inside it, filled
 or not) puts the start node at the press point and the end node at the
 release point, keeping the kind and colours of a gradient the object
