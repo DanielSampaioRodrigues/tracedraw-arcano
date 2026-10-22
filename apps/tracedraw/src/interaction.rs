@@ -255,6 +255,44 @@ impl App {
             .map(|s| s.id)
     }
 
+    /// The object [`Self::hit_test_to_read`] finds, opened down to the
+    /// innermost part under `p`: a group's child, a clip frame's content
+    /// (inside the frame) or the frame, their transforms composed. What a
+    /// colour is read from.
+    pub fn leaf_to_read(&self, p: Point) -> Option<tracedraw_core::Shape> {
+        let id = self.hit_test_to_read(p)?;
+        let (_, s) = self.doc().shape(id).ok()?;
+        let tol = 3.0 / self.view.zoom as f64;
+        Some(self.leaf_at(s, p, tol).unwrap_or_else(|| s.clone()))
+    }
+
+    fn leaf_at(
+        &self,
+        s: &tracedraw_core::Shape,
+        p: Point,
+        tol: f64,
+    ) -> Option<tracedraw_core::Shape> {
+        let open = |children: &[tracedraw_core::Shape]| {
+            children.iter().rev().filter(|c| c.visible).find_map(|c| {
+                let mut c = c.clone();
+                c.transform = s.transform * c.transform;
+                self.leaf_at(&c, p, tol)
+            })
+        };
+        match &s.kind {
+            ShapeKind::Group { children } => open(children),
+            ShapeKind::ClipFrame { frame, contents } => {
+                let mut f = (**frame).clone();
+                f.transform = s.transform * f.transform;
+                if !f.page_path().contains(p) && !self.shape_hit(&f, p, tol) {
+                    return None;
+                }
+                open(contents).or_else(|| self.shape_hit(&f, p, tol).then_some(f))
+            }
+            _ => self.shape_hit(s, p, tol).then(|| s.clone()),
+        }
+    }
+
     /// The topmost object at `p` that `skip` does not rule out.
     pub fn hit_test_where(&self, p: Point, skip: impl Fn(ShapeId) -> bool) -> Option<ShapeId> {
         let tol = 3.0 / self.view.zoom as f64;

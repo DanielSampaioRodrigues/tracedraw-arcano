@@ -297,6 +297,16 @@ pub fn for_tool(
         Tool::Pan => ToolCursor::Hand {
             closed: primary_down,
         },
+        // Apply mode paints what was sampled: the bucket (Shift with the
+        // attributes eyedropper samples again: the pipette).
+        Tool::ColorEyedropper if app.eyedropper_apply && app.eyedropper_color.is_some() => {
+            ToolCursor::Bucket
+        }
+        Tool::AttributesEyedropper
+            if app.eyedropper_apply && app.eyedropper_attrs.is_some() && !shift =>
+        {
+            ToolCursor::Bucket
+        }
         Tool::ColorEyedropper | Tool::AttributesEyedropper => ToolCursor::Pipette,
         Tool::AreaFill => ToolCursor::Bucket,
         // The I-beam where a click edits text, else the cross hair with the
@@ -979,6 +989,18 @@ mod tests {
             ToolCursor::Hand { closed: true }
         );
         app.tool = Tool::ColorEyedropper;
+        assert_eq!(
+            for_tool(&app, false, false, false, None),
+            ToolCursor::Pipette
+        );
+        // A colour sampled: Apply mode paints with the bucket (#403).
+        app.eyedropper_color = Some(tracedraw_core::Color::rgb8(255, 0, 0));
+        app.eyedropper_apply = true;
+        assert_eq!(
+            for_tool(&app, false, false, false, None),
+            ToolCursor::Bucket
+        );
+        app.eyedropper_reset();
         assert_eq!(
             for_tool(&app, false, false, false, None),
             ToolCursor::Pipette

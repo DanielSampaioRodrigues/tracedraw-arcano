@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour Eyedropper: after a colour is sampled the pointer turns into the paint bucket, as in the reference program, and pictures give their colour again when they are grouped, inside a clip frame or kept as JPEG (#403).
+
 - Hyphenation in any language: put a hyphenation dictionary (a `hyph_*.dic` pattern file) where the spelling dictionaries go and choose it under Options > Text > Paragraph Text > Hyphenation patterns (#255).
 
 - Spell checking in any language: put Hunspell dictionaries (the `.dic` and `.aff` files many programs use) in the folder Options > Text > Spelling opens, or point it at a folder that has them. Words are checked with their prefixes, suffixes and compounds, suggestions use the dictionary's own replacement table, and each dictionary can be switched off (#255).
