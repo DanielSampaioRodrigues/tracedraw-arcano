@@ -1240,7 +1240,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
                 app.clear_blend();
             }
             if ui.button(tr("docker.break_apart")).clicked() {
-                app.flatten_effects();
+                app.break_effect_groups();
             }
         });
     } else {

@@ -252,13 +252,10 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     ) {
         app.convert_to_curves();
     }
-    if ci(
-        ui,
-        close,
-        "menu.object.break_apart",
-        "Ctrl+K",
-        is_curve || is_group,
-    ) {
+    // Break Apart, or the drop shadow's or effect group's version of it.
+    let label = app.break_apart_label();
+    let can = is_curve || is_group || label != "menu.object.break_apart";
+    if ci(ui, close, label, "Ctrl+K", can) {
         app.break_apart();
     }
     if ci(ui, close, "menu.object.combine", "Ctrl+L", many) {

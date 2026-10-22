@@ -423,9 +423,21 @@ impl App {
 
     /// Effects > Flatten Effects: bake the stack into ordinary objects.
     pub fn flatten_effects(&mut self) {
+        self.flatten_effects_with(false);
+    }
+
+    /// Break Contour, Blend or Extrude Group Apart (Ctrl+K, the docker's
+    /// Break apart): as Flatten Effects, the steps then grouped beside the
+    /// object.
+    pub fn break_effect_groups(&mut self) {
+        self.flatten_effects_with(true);
+    }
+
+    fn flatten_effects_with(&mut self, group_steps: bool) {
         let shapes = self.selected_shapes();
         let mut cmds = Vec::new();
         let mut new_sel = Vec::new();
+        let mut grouped = Vec::new();
         for s in shapes {
             // A vector object with bitmap effects becomes the bitmap of its
             // picture, in its place.
@@ -500,14 +512,45 @@ impl App {
             let layer = layer.id;
             let parts = tracedraw_core::live::break_apart(&s, || self.engine.new_shape_id());
             cmds.push(Command::DeleteShapes { shapes: vec![s.id] });
+            let mut steps = Vec::new();
             for p in parts {
-                new_sel.push(p.id);
+                if p.id == s.id {
+                    new_sel.push(p.id);
+                } else {
+                    steps.push(p.id);
+                }
                 cmds.push(Command::AddShape { layer, shape: p });
+            }
+            // The steps (contour rings, blend steps, extrusion faces) come
+            // out as one group beside the object, so they move together
+            // (#424).
+            match steps.len() {
+                0 => {}
+                n if n == 1 || !group_steps => new_sel.extend(steps),
+                _ => {
+                    cmds.push(Command::Group {
+                        shapes: steps.clone(),
+                    });
+                    grouped.push(steps[0]);
+                }
             }
         }
         if !cmds.is_empty() {
             if let Err(e) = self.engine.run_batch("Flatten Effects", &cmds) {
                 self.status = e.to_string();
+            }
+            // Each group of steps, found by a step it holds.
+            for step in grouped {
+                let group = self
+                    .page_layers()
+                    .into_iter()
+                    .flat_map(|l| l.shapes.iter())
+                    .find(|g| match &g.kind {
+                        ShapeKind::Group { children } => children.iter().any(|c| c.id == step),
+                        _ => false,
+                    })
+                    .map(|g| g.id);
+                new_sel.extend(group);
             }
             self.selection = new_sel;
         }

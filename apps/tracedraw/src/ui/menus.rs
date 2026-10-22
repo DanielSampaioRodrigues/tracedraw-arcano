@@ -466,7 +466,11 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
         "menu.object.group_ungroup" => Pic::Ungroup,
         "menu.object.group_ungroup_all" => Pic::UngroupAll,
         "menu.object.combine" => Pic::Combine,
-        "menu.object.break_apart" | "menu.object.break_shadow_apart" => Pic::BreakApart,
+        "menu.object.break_apart"
+        | "menu.object.break_shadow_apart"
+        | "menu.object.break_contour_apart"
+        | "menu.object.break_blend_apart"
+        | "menu.object.break_extrude_apart" => Pic::BreakApart,
         "menu.object.weld" => Pic::Weld,
         "menu.object.trim" => Pic::Trim,
         "menu.object.intersect" => Pic::Intersect,
@@ -2445,11 +2449,9 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.object.combine", "Ctrl+L", many) {
         app.combine();
     }
-    if app.can_break_shadow_apart() {
-        if item(ui, "menu.object.break_shadow_apart", "Ctrl+K", true) {
-            app.break_shadow_apart();
-        }
-    } else if item(ui, "menu.object.break_apart", "Ctrl+K", has) {
+    // Break Apart, or the drop shadow's or effect group's version of it.
+    let label = app.break_apart_label();
+    if item(ui, label, "Ctrl+K", has) {
         app.break_apart();
     }
     if item(ui, "menu.object.add_perspective", "", has) {
