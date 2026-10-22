@@ -112,8 +112,19 @@ impl App {
     /// Layout > Fit Page to Drawing: as [`Self::fit_page_to_selection`],
     /// for everything on the page.
     pub fn fit_page_to_drawing(&mut self) {
+        self.fit_page_to_drawing_with_margin(0.0);
+    }
+
+    /// The property bar's Autofit Page: [`Self::fit_page_to_drawing`]
+    /// with `margin` mm left free around the drawing on every side.
+    pub fn fit_page_to_drawing_with_margin(&mut self, margin: f64) {
+        let margin = if margin.is_finite() {
+            margin.max(0.0)
+        } else {
+            0.0
+        };
         if let Some(b) = self.drawing_bounds() {
-            self.fit_page_to(b, "Fit Page to Drawing");
+            self.fit_page_to(b.inflate(margin, margin), "Fit Page to Drawing");
         }
     }
 
@@ -3564,6 +3575,24 @@ mod fit_page_tests {
             (bb.x1 - 90.0).abs() < 1e-9 && (bb.y1 - 70.0).abs() < 1e-9,
             "{bb:?}"
         );
+        // Autofit Page with a margin: the page is larger by the margin on
+        // every side and the drawing sits that far in; a margin that is
+        // not a number counts as none.
+        app.undo();
+        app.fit_page_to_drawing_with_margin(5.0);
+        let size = app.page_size();
+        assert!(
+            (size.width - 100.0).abs() < 1e-9 && (size.height - 80.0).abs() < 1e-9,
+            "{size:?}"
+        );
+        let ba = bounds(&app, a);
+        assert!(
+            (ba.x0 - 5.0).abs() < 1e-9 && (ba.y0 - 5.0).abs() < 1e-9,
+            "{ba:?}"
+        );
+        app.undo();
+        app.fit_page_to_drawing_with_margin(f64::NAN);
+        assert!((app.page_size().width - 90.0).abs() < 1e-9);
         // Nothing selected: Fit Page to Selection does nothing.
         let before = app.engine.history_labels().0.len();
         app.fit_page_to_selection();

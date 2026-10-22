@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Page bar: the Autofit Page button opens a popup with a Margin field (kept between sessions) and the Autofit Page button, so the page can be fitted to the drawing with room left around it; it fitted the page with no margin at once (#340).
+
 - Text: typing in the property bar's font search field (or any other field with the keyboard) while a text is being edited put the characters into the text too; they now go to the field alone (#342).
 
 ## 0.11.0 (2026-10-22)

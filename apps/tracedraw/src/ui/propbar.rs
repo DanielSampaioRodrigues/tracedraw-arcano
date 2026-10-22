@@ -1576,17 +1576,48 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         .page(app.page)
         .ok()
         .is_some_and(|p| p.layers.iter().any(|l| !l.shapes.is_empty()));
-    if pic_button(
+    // Autofit Page: a popup with the margin to leave around the drawing
+    // (kept in the preferences) and the button that fits the page.
+    let fit = pic_button(
         ui,
         Pic::FitPage,
         &tr("toolbar.fit_page_tip"),
         has_objects,
         false,
-    )
-    .clicked()
-    {
-        app.fit_page_to_drawing();
+    );
+    let popup_id = ui.make_persistent_id("autofit_page_popup");
+    if fit.clicked() {
+        egui::Popup::toggle_id(ui.ctx(), popup_id);
+    }
+    let ctx = ui.ctx().clone();
+    let mut fitted = false;
+    egui::Popup::new(popup_id, ctx.clone(), fit.rect, ui.layer_id())
+        .open_memory(None)
+        .show(|ui| {
+            ui.set_min_width(190.0);
+            ui.horizontal(|ui| {
+                ui.label(tr("toolbar.fit_margin"));
+                ui.add_space(8.0);
+                let margin = app.settings.fit_page_margin.max(0.0);
+                if let Some(m) = paper_distance(ui, app, margin, 88.0, Some(1.0)) {
+                    app.settings.fit_page_margin = m.max(0.0);
+                }
+            });
+            ui.add_space(4.0);
+            if ui
+                .add_sized(
+                    Vec2::new(ui.available_width(), 24.0),
+                    egui::Button::new(tr("toolbar.autofit_page")),
+                )
+                .clicked()
+            {
+                fitted = true;
+            }
+        });
+    if fitted {
+        app.fit_page_to_drawing_with_margin(app.settings.fit_page_margin);
         app.fit_pending = true;
+        egui::Popup::close_id(&ctx, popup_id);
     }
     sep(ui);
     let portrait = size.height >= size.width;

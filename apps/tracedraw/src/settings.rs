@@ -148,6 +148,10 @@ pub struct Settings {
     /// buttons of every bar are.
     #[serde(default)]
     pub button_size: ButtonSize,
+    /// The property bar's Autofit Page: the margin (mm) left around the
+    /// drawing when the page is fitted to it.
+    #[serde(default)]
+    pub fit_page_margin: f64,
     /// The toolbox's own button size, when it does not follow the default.
     #[serde(default)]
     pub toolbox_button_size: Option<ButtonSize>,
@@ -1257,6 +1261,7 @@ impl Default for Settings {
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
             button_size: ButtonSize::Medium,
+            fit_page_margin: 0.0,
             toolbox_button_size: None,
             toolbox_captions: Captions::ImageOnly,
             ui_size: 0.0,
