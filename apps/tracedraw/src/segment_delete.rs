@@ -189,43 +189,109 @@ fn seg_path(s: &PathSeg) -> BezPath {
     p
 }
 
+/// One segment of an outline that cuts others: the segment itself and
+/// its flattening (found against first, then refined on the segment).
+#[derive(Debug, Clone)]
+pub struct Cutter {
+    pub seg: PathSeg,
+    lines: Vec<Line>,
+    bounds: Rect,
+}
+
+impl Cutter {
+    pub fn new(seg: PathSeg) -> Self {
+        let lines = lines_of(&seg_path(&seg));
+        let bounds =
+            tracedraw_core::geometry::Shape::bounding_box(&seg_path(&seg)).inflate(0.05, 0.05);
+        Cutter { seg, lines, bounds }
+    }
+}
+
+/// The cutters of every segment of `path`.
+pub fn cutters_of(path: &BezPath) -> Vec<Cutter> {
+    subs_of(path)
+        .iter()
+        .flat_map(|s| s.segs.iter().copied())
+        .map(Cutter::new)
+        .collect()
+}
+
+/// `t` on `seg`, found against the flattening of `other`, moved onto the
+/// true crossing of the two: Newton steps on seg(a) - other(b) = 0. A
+/// crossing found against a flattened curve lies up to the flattening
+/// error off the true one, so a cut there would leave a piece ending a
+/// little short of the outline it crossed, and the next cut would miss
+/// it (#354). `t` stays when the steps do not settle near it.
+fn refine(seg: &PathSeg, t: f64, other: &PathSeg) -> f64 {
+    let mut a = t;
+    let mut b = other.nearest(seg.eval(t), 1e-9).t;
+    for _ in 0..16 {
+        let f = seg.eval(a) - other.eval(b);
+        if f.hypot() < 1e-12 {
+            break;
+        }
+        let (da, db) = (deriv(seg, a), deriv(other, b));
+        // The Jacobian [da, -db] and its inverse.
+        let det = da.x * (-db.y) - (-db.x) * da.y;
+        if det.abs() < 1e-12 {
+            return t;
+        }
+        a -= (f.x * (-db.y) - (-db.x) * f.y) / det;
+        b -= (da.x * f.y - da.y * f.x) / det;
+        // A cutter may end a hair short of the outline (a piece left by
+        // an earlier cut), so its parameter may run a little past its ends.
+        if !(-0.02..=1.02).contains(&a) || !(-0.02..=1.02).contains(&b) {
+            return t;
+        }
+    }
+    let a = a.clamp(0.0, 1.0);
+    let settled = (seg.eval(a) - other.eval(b.clamp(0.0, 1.0))).hypot() < 1e-6;
+    if settled && (seg.eval(a) - seg.eval(t)).hypot() < 0.1 {
+        a
+    } else {
+        t
+    }
+}
+
 /// Where subpath `which` of `subs` crosses `cutters` and the rest of its
 /// own object: parameters `u` = segment index + t, sorted, in `0..n`
 /// (`n` the number of segments).
-pub fn crossings(subs: &[Sub], which: usize, cutters: &[Line]) -> Vec<f64> {
+pub fn crossings(subs: &[Sub], which: usize, cutters: &[Cutter]) -> Vec<f64> {
     let Some(sub) = subs.get(which) else {
         return Vec::new();
     };
     let n = sub.segs.len();
     // The object's other subpaths cut too.
-    let mut own: Vec<Line> = Vec::new();
+    let mut own: Vec<Cutter> = Vec::new();
     for (k, other) in subs.iter().enumerate() {
         if k != which {
-            for s in &other.segs {
-                own.extend(lines_of(&seg_path(s)));
-            }
+            own.extend(other.segs.iter().copied().map(Cutter::new));
         }
     }
+    let mine: Vec<Cutter> = sub.segs.iter().copied().map(Cutter::new).collect();
     let mut out = Vec::new();
     for (i, seg) in sub.segs.iter().enumerate() {
-        let hit = |line: Line, out: &mut Vec<f64>| {
+        let near = mine[i].bounds;
+        for c in cutters.iter().chain(own.iter()) {
+            if c.bounds.intersect(near).area() <= 0.0 {
+                continue;
+            }
             // A cutter ending on the outline (a piece left by an earlier
             // cut) must count: the crossing lies at its very end, where
             // rounding puts it a hair short as often as not, and the
             // intersection drops a cutter parameter past its ends.
-            for h in seg.intersect_line(stretched(line)) {
-                if (-1e-9..=1.0 + 1e-9).contains(&h.line_t) {
-                    out.push(i as f64 + h.segment_t.clamp(0.0, 1.0));
+            for l in &c.lines {
+                for h in seg.intersect_line(stretched(*l)) {
+                    if (-1e-9..=1.0 + 1e-9).contains(&h.line_t) {
+                        out.push(i as f64 + refine(seg, h.segment_t.clamp(0.0, 1.0), &c.seg));
+                    }
                 }
             }
-        };
-        for l in cutters.iter().chain(own.iter()) {
-            hit(*l, &mut out);
         }
         // Its own other segments, the next ones included: those cross it
         // anywhere but at the node they share (a curve looping back over
         // the segment before it, #314).
-        for (j, other) in sub.segs.iter().enumerate() {
+        for (j, other) in mine.iter().enumerate() {
             if j == i {
                 continue;
             }
@@ -236,8 +302,8 @@ pub fn crossings(subs: &[Sub], which: usize, cutters: &[Line]) -> Vec<f64> {
             if (j + 1) % n == i && (sub.closed || i == j + 1) {
                 shared.push(seg.start());
             }
-            for l in lines_of(&seg_path(other)) {
-                for h in seg.intersect_line(stretched(l)) {
+            for l in &other.lines {
+                for h in seg.intersect_line(stretched(*l)) {
                     if !(-1e-9..=1.0 + 1e-9).contains(&h.line_t) {
                         continue;
                     }
@@ -246,7 +312,7 @@ pub fn crossings(subs: &[Sub], which: usize, cutters: &[Line]) -> Vec<f64> {
                     if shared.iter().any(|node| (at - *node).hypot() < NODE_REACH) {
                         continue;
                     }
-                    out.push(i as f64 + t);
+                    out.push(i as f64 + refine(seg, t, &other.seg));
                 }
             }
         }
@@ -457,12 +523,12 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// The other objects' outlines, flattened, page space.
-    fn cutters_except(&self, all: &[Shape], id: ShapeId) -> Vec<Line> {
+    /// The other objects' outlines, page space.
+    fn cutters_except(&self, all: &[Shape], id: ShapeId) -> Vec<Cutter> {
         let mut out = Vec::new();
         for s in all {
             if s.id != id {
-                out.extend(lines_of(&s.page_path()));
+                out.extend(cutters_of(&s.page_path()));
             }
         }
         out
@@ -790,6 +856,43 @@ mod tests {
             .any(|s| (s.start() - Point::new(0.0, 0.0)).hypot() < 1e-6));
     }
 
+    /// A curve of several segments whose tail comes back across an earlier
+    /// segment: the stretch from the start to the crossing goes, then the
+    /// tail past the crossing, and the loop between stays (#354: the whole
+    /// curve went, as the first cut ended a little off the tail's true
+    /// outline and the second found no crossing).
+    #[test]
+    fn a_tail_crossing_a_cut_curve_loses_only_itself() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.curve_to((15.0, 15.0), (35.0, 25.0), (45.0, 15.0));
+        p.curve_to((55.0, 5.0), (60.0, -15.0), (75.0, -10.0));
+        p.curve_to((90.0, -5.0), (80.0, 20.0), (65.0, 15.0));
+        p.curve_to((55.0, 12.0), (50.0, 0.0), (40.0, -10.0));
+        let subs = subs_of(&p);
+        let c = crossings(&subs, 0, &[]);
+        assert_eq!(c.len(), 2, "{c:?}");
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: p.clone(),
+                closed: false,
+            })
+            .expect("curve");
+        assert!(app.delete_virtual_segment_at(subs[0].segs[0].eval(0.3)));
+        let x = subs[0].segs[1].eval(c[0] - 1.0);
+        assert!(app.delete_virtual_segment_at(Point::new(40.5, -9.4)));
+        assert!(app.doc().find_shape(id).is_some(), "the whole curve went");
+        let left = path_of(&app, id);
+        let b = left.bounding_box();
+        // The loop: from the crossing round to the crossing again.
+        assert!(b.x0 > x.x - 0.01 && b.x1 > 80.0, "{left:?}");
+        assert!(b.y0 > -12.0 && b.y1 > 15.0, "{left:?}");
+        let ends: Vec<Point> = left.segments().map(|s| s.end()).collect();
+        let last = *ends.last().expect("segments");
+        assert!((last - x).hypot() < 1e-6, "{last:?} {x:?}");
+    }
+
     /// A cutter that stops a hair short of the outline (as a piece left by
     /// an earlier cut does, by rounding) still makes a crossing; one that
     /// stops well short does not.
@@ -799,7 +902,12 @@ mod tests {
         p.move_to((0.0, 0.0));
         p.line_to((30.0, 30.0));
         let subs = subs_of(&p);
-        let short = |gap: f64| vec![Line::new((0.0, 30.0), (15.0 - gap, 15.0 + gap))];
+        let short = |gap: f64| {
+            vec![Cutter::new(PathSeg::Line(Line::new(
+                (0.0, 30.0),
+                (15.0 - gap, 15.0 + gap),
+            )))]
+        };
         assert_eq!(crossings(&subs, 0, &short(1e-7)).len(), 1, "a hair short");
         assert_eq!(crossings(&subs, 0, &short(-1e-7)).len(), 1, "a hair past");
         assert_eq!(crossings(&subs, 0, &short(0.0)).len(), 1, "exactly on it");
