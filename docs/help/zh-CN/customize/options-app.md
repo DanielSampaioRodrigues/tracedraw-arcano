@@ -70,6 +70,18 @@
 
 ![TraceDraw 选项的文本页面](../../img/customize-options-app-text.png)
 
-- [[options.keyboard_text_increment]]：<kbd>Ctrl+8</kbd> 和 <kbd>Ctrl+2</kbd> 使所选文本放大和缩小的幅度（1 点）。
-- 新文本的 [[options.default_font]] 和 [[options.default_size]]。
-- [[menu.text.use_hyphenation]]、[[menu.text.show_non_printing]] 和 [[menu.text.show_text_frames]]。
+此页面有五个选项卡。
+
+- [[options.display]]：[[options.keyboard_text_increment]]（<kbd>Ctrl+8</kbd> 和
+  <kbd>Ctrl+2</kbd> 放大和缩小所选文本的幅度，1 点）、新文本的
+  [[options.default_font]] 和 [[options.default_size]]，以及
+  [[menu.text.show_non_printing]]。
+- [[options.paragraph_text]]：[[menu.text.show_text_frames]] 和
+  [[menu.text.use_hyphenation]]。
+- [[docker.fonts]]：在字体列表顶部 [[options.show_recent_fonts]]、
+  [[options.recent_font_count]]（5，最多 20）以及
+  [[options.font_sample_size]]。
+- [[options.spelling]]：[[writing.ignore_digits]]、[[writing.ignore_capitals]]
+  和 [[options.add_to_autocorrect]]，这样在拼写检查中更正的单词下次键入时会被自动更正。
+- [[dialog.autocorrect]]：键入时更正的内容；请参阅
+  [自动更正](../text/writing-tools.md#autocorrect)。

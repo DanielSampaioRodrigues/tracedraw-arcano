@@ -1231,7 +1231,42 @@ fn save_page(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// The tabs of Options > Text, in order.
+pub const TEXT_TABS: [&str; 5] = [
+    "options.display",
+    "options.paragraph_text",
+    "docker.fonts",
+    "options.spelling",
+    "dialog.autocorrect",
+];
+
+/// Options > Text > Autocorrect's tab.
+pub const AUTOCORRECT_TAB: usize = 4;
+
+/// Options > Text: Display, Paragraph Text, Fonts, Spelling and
+/// Autocorrect tabs.
 fn text_page(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        for (i, key) in TEXT_TABS.iter().enumerate() {
+            if ui
+                .selectable_label(app.options_text_tab == i, tr(key))
+                .clicked()
+            {
+                app.options_text_tab = i;
+            }
+        }
+    });
+    ui.separator();
+    match app.options_text_tab {
+        0 => text_display_tab(app, ui),
+        1 => paragraph_text_tab(app, ui),
+        2 => fonts_tab(app, ui),
+        3 => spelling_tab(app, ui),
+        _ => autocorrect_tab(app, ui),
+    }
+}
+
+fn text_display_tab(app: &mut App, ui: &mut Ui) {
     grid("text_display").show(ui, |ui| {
         row_label(ui, &tr("options.keyboard_text_increment"));
         ui.horizontal(|ui| {
@@ -1255,17 +1290,252 @@ fn text_page(app: &mut App, ui: &mut Ui) {
         );
         ui.end_row();
     });
-    ui.checkbox(&mut app.text_hyphenation, tr("menu.text.use_hyphenation"));
     ui.checkbox(
         &mut app.show_non_printing,
         tr("menu.text.show_non_printing"),
     );
-    ui.add_space(8.0);
-    ui.label(egui::RichText::new(tr("menu.text.paragraph_text_frame")).strong());
+}
+
+fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.show_text_frames,
         tr("menu.text.show_text_frames"),
     );
+    ui.checkbox(&mut app.text_hyphenation, tr("menu.text.use_hyphenation"));
+}
+
+fn fonts_tab(app: &mut App, ui: &mut Ui) {
+    ui.checkbox(
+        &mut app.settings.show_recent_fonts,
+        tr("options.show_recent_fonts"),
+    );
+    ui.add_enabled_ui(app.settings.show_recent_fonts, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(tr("options.recent_font_count"));
+            ui.add(
+                egui::DragValue::new(&mut app.settings.recent_font_count)
+                    .range(1..=crate::ui::font_list::RECENT_MAX),
+            );
+        });
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("options.font_sample_size"));
+        ui.add(
+            egui::DragValue::new(&mut app.settings.font_sample_px)
+                .range(crate::ui::font_list::SAMPLE_SIZES)
+                .max_decimals(0)
+                .suffix(" pt"),
+        );
+    });
+}
+
+fn spelling_tab(app: &mut App, ui: &mut Ui) {
+    let p = &mut app.settings.spelling;
+    ui.checkbox(&mut p.ignore_digits, tr("writing.ignore_digits"));
+    ui.checkbox(&mut p.ignore_capitals, tr("writing.ignore_capitals"));
+    ui.checkbox(&mut p.add_to_autocorrect, tr("options.add_to_autocorrect"));
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(tr("options.spelling_note")).color(Tokens::text_dim()));
+}
+
+/// A quotation mark list (one of [`crate::autocorrect::QUOTE_CHOICES`]).
+fn quote_combo(ui: &mut Ui, id: &str, value: &mut char) -> bool {
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(id)
+        .width(48.0)
+        .selected_text(value.to_string())
+        .show_ui(ui, |ui| {
+            for q in crate::autocorrect::QUOTE_CHOICES {
+                changed |= ui.selectable_value(value, q, q.to_string()).changed();
+            }
+        });
+    changed
+}
+
+fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
+    let style = app.settings.autocorrect.style();
+    let p = &mut app.settings.autocorrect;
+    ui.checkbox(&mut p.capitalize_sentences, tr("autocorrect.capitalize"));
+    ui.checkbox(
+        &mut p.fix_two_initial_capitals,
+        tr("autocorrect.two_capitals"),
+    );
+    ui.checkbox(&mut p.capitalize_days, tr("autocorrect.days"));
+    ui.checkbox(&mut p.auto_hyperlinks, tr("autocorrect.hyperlinks"));
+    ui.separator();
+    grid("autocorrect_language").show(ui, |ui| {
+        row_label(ui, &tr("autocorrect.language"));
+        let shown = crate::i18n::LANGUAGES
+            .iter()
+            .find(|(code, _)| *code == p.quote_language)
+            .map(|(_, name)| name.to_string())
+            .unwrap_or_else(|| tr("autocorrect.interface_language"));
+        let before = p.quote_language.clone();
+        egui::ComboBox::from_id_salt("autocorrect_quote_language")
+            .width(220.0)
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut p.quote_language,
+                    String::new(),
+                    tr("autocorrect.interface_language"),
+                );
+                for (code, name) in crate::i18n::LANGUAGES {
+                    ui.selectable_value(&mut p.quote_language, code.to_string(), name);
+                }
+            });
+        // Another language brings its own quotation marks.
+        if p.quote_language != before {
+            p.single_quotes = None;
+            p.double_quotes = None;
+        }
+        ui.end_row();
+    });
+    ui.checkbox(&mut p.typographic_quotes, tr("autocorrect.quotes"));
+    ui.checkbox(
+        &mut p.straight_after_numbers,
+        tr("autocorrect.straight_after_numbers"),
+    );
+    let style = if p.quote_language.is_empty() {
+        style
+    } else {
+        p.style()
+    };
+    ui.add_enabled_ui(p.typographic_quotes, |ui| {
+        grid("autocorrect_quotes").show(ui, |ui| {
+            for (label, single) in [
+                ("autocorrect.single_quotes", true),
+                ("autocorrect.double_quotes", false),
+            ] {
+                row_label(ui, &tr(label));
+                let (mut o, mut c) = if single {
+                    p.single(style)
+                } else {
+                    p.double(style)
+                };
+                let mut changed = false;
+                ui.horizontal(|ui| {
+                    ui.label(tr("autocorrect.open"));
+                    changed |= quote_combo(ui, &format!("{label}_open"), &mut o);
+                    ui.add_space(12.0);
+                    ui.label(tr("autocorrect.close"));
+                    changed |= quote_combo(ui, &format!("{label}_close"), &mut c);
+                });
+                if changed {
+                    if single {
+                        p.single_quotes = Some([o, c]);
+                    } else {
+                        p.double_quotes = Some([o, c]);
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    });
+    ui.separator();
+    ui.label(egui::RichText::new(tr("autocorrect.replacements")).strong());
+    ui.checkbox(
+        &mut p.replace_while_typing,
+        tr("autocorrect.replace_while_typing"),
+    );
+    let from_id = ui.id().with("autocorrect_from");
+    let to_id = ui.id().with("autocorrect_to");
+    let row_id = ui.id().with("autocorrect_row");
+    let mut from: String = ui.data(|d| d.get_temp(from_id)).unwrap_or_default();
+    let mut to: String = ui.data(|d| d.get_temp(to_id)).unwrap_or_default();
+    let mut picked: Option<usize> = ui.data(|d| d.get_temp(row_id)).flatten();
+    if picked.is_some_and(|i| i >= p.replacements.len()) {
+        picked = None;
+    }
+    let key = from.trim().to_string();
+    let existing = p.replacements.iter().position(|(f, _)| *f == key);
+    let usable = !key.is_empty() && !key.contains(char::is_whitespace);
+    ui.horizontal(|ui| {
+        ui.label(tr("autocorrect.replace_col"));
+        ui.add(egui::TextEdit::singleline(&mut from).desired_width(130.0));
+        ui.add_space(10.0);
+        ui.label(tr("autocorrect.with_col"));
+        ui.add(egui::TextEdit::singleline(&mut to).desired_width(130.0));
+    });
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                usable && existing.is_none(),
+                egui::Button::new(tr("autocorrect.add")),
+            )
+            .clicked()
+        {
+            p.replacements.push((key.clone(), to.clone()));
+            from.clear();
+            to.clear();
+        }
+        if ui
+            .add_enabled(
+                picked.is_some(),
+                egui::Button::new(tr("autocorrect.delete")),
+            )
+            .clicked()
+        {
+            if let Some(i) = picked.take() {
+                p.replacements.remove(i);
+            }
+            from.clear();
+            to.clear();
+        }
+        if ui
+            .add_enabled(
+                usable && existing.is_some(),
+                egui::Button::new(tr("autocorrect.replace")),
+            )
+            .clicked()
+        {
+            if let Some(i) = existing {
+                p.replacements[i].1 = to.clone();
+            }
+        }
+    });
+    egui::Frame::new()
+        .fill(Tokens::field())
+        .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
+        .inner_margin(egui::Margin::same(4))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("autocorrect_table")
+                .max_height(150.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Grid::new("autocorrect_rows")
+                        .num_columns(2)
+                        .min_col_width(160.0)
+                        .show(ui, |ui| {
+                            for (i, (f, t)) in p.replacements.iter().enumerate() {
+                                let on = picked == Some(i);
+                                let a = ui.selectable_label(on, f.as_str());
+                                let b = ui.selectable_label(on, t.as_str());
+                                if a.clicked() || b.clicked() {
+                                    picked = Some(i);
+                                    from = f.clone();
+                                    to = t.clone();
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+        });
+    ui.data_mut(|d| {
+        d.insert_temp(from_id, from);
+        d.insert_temp(to_id, to);
+        d.insert_temp(row_id, picked);
+    });
+    ui.add_space(4.0);
+    if ui.button(tr("autocorrect.apply_selection")).clicked() {
+        if app.text_shapes().is_empty() {
+            app.status = tr("autocorrect.no_selection");
+        } else {
+            let n = crate::autocorrect::apply_to_selection(app);
+            app.status = trf("autocorrect.applied", &[("n", &n.to_string())]);
+        }
+    }
 }
 
 // ----- Customization -----------------------------------------------------
@@ -2703,6 +2973,54 @@ mod tests {
         snap.restore(&mut app);
         assert_eq!(app.settings.undo_levels, 150);
         assert!(!app.doc().metadata.fill_open_curves);
+    }
+
+    #[test]
+    fn every_text_tab_draws() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.options_page = OptionsPage::Text;
+        let before = app.settings.autocorrect.clone();
+        for tab in 0..TEXT_TABS.len() {
+            app.options_text_tab = tab;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1600.0, 1000.0),
+                    )),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let mut close = false;
+                    options_dialog(&mut app, ui.ctx(), &mut close);
+                    assert!(!close, "tab {tab} closed the dialog");
+                });
+                out.textures_delta.clear();
+            }
+        }
+        assert_eq!(
+            app.settings.autocorrect, before,
+            "drawing changed a setting"
+        );
+        assert_eq!(app.settings.recent_font_count, 5);
+    }
+
+    /// Text > Writing Tools > Autocorrect opens the Autocorrect tab.
+    #[test]
+    fn the_autocorrect_command_opens_its_tab() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let mut ran = false;
+        let input = egui::RawInput::default();
+        let mut out = ctx.run_ui(input, |ui| {
+            ran = crate::ui::menus::run_command(&mut app, ui.ctx(), "menu.text.autocorrect");
+        });
+        out.textures_delta.clear();
+        assert!(ran);
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::Options));
+        assert_eq!(app.options_page, OptionsPage::Text);
+        assert_eq!(app.options_text_tab, AUTOCORRECT_TAB);
     }
 
     #[test]

@@ -92,8 +92,19 @@ Veja [Encaixe](../pages-layout/snapping.md).
 
 ![A página Texto das opções do TraceDraw](../../img/customize-options-app-text.png)
 
-- [[options.keyboard_text_increment]]: quanto <kbd>Ctrl+8</kbd> e
-  <kbd>Ctrl+2</kbd> aumentam e diminuem o texto selecionado (1 ponto).
-- [[options.default_font]] e [[options.default_size]] do texto novo.
-- [[menu.text.use_hyphenation]], [[menu.text.show_non_printing]] e
-  [[menu.text.show_text_frames]].
+A página tem cinco abas.
+
+- [[options.display]]: [[options.keyboard_text_increment]] (quanto <kbd>Ctrl+8</kbd>
+  e <kbd>Ctrl+2</kbd> aumentam e diminuem o texto selecionado, 1 ponto), a
+  [[options.default_font]] e o [[options.default_size]] do texto novo, e
+  [[menu.text.show_non_printing]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]] e
+  [[menu.text.use_hyphenation]].
+- [[docker.fonts]]: [[options.show_recent_fonts]] no topo das listas de fontes,
+  o [[options.recent_font_count]] (5, até 20) e o
+  [[options.font_sample_size]].
+- [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
+  e [[options.add_to_autocorrect]], para que uma palavra corrigida no corretor
+  ortográfico seja corrigida ao digitar da próxima vez.
+- [[dialog.autocorrect]]: o que é corrigido ao digitar; veja
+  [Correção automática](../text/writing-tools.md#autocorrect).

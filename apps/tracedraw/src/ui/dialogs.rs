@@ -558,12 +558,6 @@ pub struct EncodeState {
     pub to: crate::encode::Encoding,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct AutocorrectState {
-    pub new_from: String,
-    pub new_to: String,
-}
-
 pub use crate::ui::font_manager::FontManagerState;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -694,7 +688,6 @@ pub enum Dialog {
     WritingTools(crate::ui::writing_tools::WritingToolsState),
     CustomHyphens(crate::ui::writing_tools::CustomHyphensState),
     Encode(EncodeState),
-    Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
     ColorManagement(Box<crate::ui::color_management::ColorManagementState>),
     FontManager(FontManagerState),
@@ -1933,7 +1926,6 @@ pub fn show(app: &mut App, ctx: &Context) {
             crate::ui::writing_tools::custom_hyphens_dialog(app, ctx, st, &mut close)
         }
         Dialog::Encode(st) => encode_dialog(app, ctx, st, &mut close),
-        Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
         Dialog::ColorManagement(st) => {
             crate::ui::color_management::dialog(app, ctx, st, &mut close)
@@ -3883,110 +3875,6 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
     }
 }
 
-fn autocorrect_dialog(app: &mut App, ctx: &Context, st: &mut AutocorrectState, close: &mut bool) {
-    let mut changed = false;
-    let mut apply = false;
-    let style = crate::autocorrect::QuoteStyle::for_language(&crate::i18n::language());
-    window(ctx, tr("dialog.autocorrect")).show(ctx, |ui| {
-        ui.set_min_width(380.0);
-        let p = &mut app.settings.autocorrect;
-        changed |= ui
-            .checkbox(&mut p.enabled, tr("autocorrect.enabled"))
-            .changed();
-        ui.separator();
-        changed |= ui
-            .checkbox(&mut p.capitalize_sentences, tr("autocorrect.capitalize"))
-            .changed();
-        changed |= ui
-            .checkbox(
-                &mut p.fix_two_initial_capitals,
-                tr("autocorrect.two_capitals"),
-            )
-            .changed();
-        changed |= ui
-            .checkbox(&mut p.typographic_quotes, tr("autocorrect.quotes"))
-            .changed();
-        let (o, c) = style.double();
-        let (so, sc) = style.single();
-        ui.label(
-            egui::RichText::new(trf(
-                "autocorrect.quotes_example",
-                &[("q", &format!("{o}abc{c}  {so}abc{sc}"))],
-            ))
-            .color(Tokens::text_dim()),
-        );
-        ui.separator();
-        ui.label(egui::RichText::new(tr("autocorrect.replacements")).strong());
-        let mut remove: Option<usize> = None;
-        egui::ScrollArea::vertical()
-            .max_height(180.0)
-            .show(ui, |ui| {
-                egui::Grid::new("qc_table")
-                    .num_columns(3)
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label(tr("autocorrect.replace_col"));
-                        ui.label(tr("autocorrect.with_col"));
-                        ui.label("");
-                        ui.end_row();
-                        for (i, (from, to)) in p.replacements.iter_mut().enumerate() {
-                            changed |= ui
-                                .add_sized([130.0, 20.0], egui::TextEdit::singleline(from))
-                                .changed();
-                            changed |= ui
-                                .add_sized([130.0, 20.0], egui::TextEdit::singleline(to))
-                                .changed();
-                            if ui.small_button(tr("autocorrect.remove")).clicked() {
-                                remove = Some(i);
-                            }
-                            ui.end_row();
-                        }
-                        ui.add_sized([130.0, 20.0], egui::TextEdit::singleline(&mut st.new_from));
-                        ui.add_sized([130.0, 20.0], egui::TextEdit::singleline(&mut st.new_to));
-                        let can_add = !st.new_from.trim().is_empty()
-                            && !st.new_from.contains(char::is_whitespace);
-                        if ui
-                            .add_enabled(can_add, egui::Button::new(tr("autocorrect.add")).small())
-                            .clicked()
-                        {
-                            p.replacements
-                                .push((st.new_from.trim().to_string(), st.new_to.clone()));
-                            st.new_from.clear();
-                            st.new_to.clear();
-                            changed = true;
-                        }
-                        ui.end_row();
-                    });
-            });
-        if let Some(i) = remove {
-            if i < p.replacements.len() {
-                p.replacements.remove(i);
-                changed = true;
-            }
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button(tr("autocorrect.apply_selection")).clicked() {
-                apply = true;
-            }
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
-    });
-    if changed {
-        app.settings.save();
-    }
-    if apply {
-        if app.text_shapes().is_empty() {
-            app.status = tr("autocorrect.no_selection");
-        } else {
-            let n = crate::autocorrect::apply_to_selection(app);
-            app.status = trf("autocorrect.applied", &[("n", &n.to_string())]);
-        }
-    }
-}
-
 fn border_grommet_dialog(
     app: &mut App,
     ctx: &Context,
@@ -4573,7 +4461,6 @@ mod tests {
             Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(2)),
             Dialog::CustomHyphens(Default::default()),
             Dialog::Encode(EncodeState::default()),
-            Dialog::Autocorrect(AutocorrectState::default()),
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
             Dialog::ColorManagement(Default::default()),
             Dialog::FontManager(FontManagerState::default()),

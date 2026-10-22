@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Text: Display, Paragraph Text, Fonts, Spelling and Autocorrect tabs, as in the reference program. Autocorrect can now capitalize the names of days, turn typed web addresses into hyperlinks, use the quotation marks of another language or ones you choose, keep straight quotes after numbers, and switch the replacement table off; Text > Writing Tools > Autocorrect opens that tab. Fonts sets how many recently used fonts the font lists show (up to 20), and Spelling keeps the spell checker options and can add its corrections to Autocorrect (#369).
+
 - Segment Delete: after one stretch of a curve was deleted, clicking the stretch past the next crossing could delete the whole curve, because the first cut ended a hair off the outline it crossed. Crossings now lie exactly on both outlines (#354).
 
 - Glyphs panel: a search field finds characters by themselves or by Unicode code point (`U+20AC`, `0x20ac`, `20AC`), and a line above the grid shows the code point, character and range of the glyph under the pointer (#375).

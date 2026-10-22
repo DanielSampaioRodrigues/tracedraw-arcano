@@ -396,7 +396,6 @@ fn shots() -> Vec<(String, Shot, bool)> {
         ("menu.text.text_statistics", false),
         ("menu.text.spell_check", false),
         ("menu.text.custom_hyphens", false),
-        ("menu.text.autocorrect", false),
         ("menu.tools.border_and_grommet", false),
         ("menu.tools.color_management", false),
         ("menu.tools.font_manager", false),
@@ -518,6 +517,17 @@ fn shots() -> Vec<(String, Shot, bool)> {
     v.push((
         name("get-started/browser-version"),
         Shot::Dialog(|_| Dialog::WebNotice),
+        false,
+    ));
+    // Text > Writing Tools > Autocorrect: the Autocorrect tab of
+    // Options > Text.
+    v.push((
+        name("text/writing-tools#autocorrect"),
+        Shot::Dialog(|app| {
+            app.options_page = crate::ui::dialogs::OptionsPage::Text;
+            app.options_text_tab = crate::ui::options::AUTOCORRECT_TAB;
+            Dialog::Options
+        }),
         false,
     ));
     v.push((

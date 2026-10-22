@@ -80,18 +80,44 @@ their text is hyphenated (they win over the patterns, capitals or not).
 
 ## Autocorrect
 
-Applied while typing (`App::update_text`), per the Autocorrect dialog:
+Tools > Options > Text > Autocorrect (Text > Writing Tools > Autocorrect
+opens that tab). Applied while typing (`App::update_text`), once a word
+is finished with a space or punctuation:
 
-- capitalise the first letter of sentences (default on),
+- capitalize first letter of sentences (default on),
 - correct two initial capitals ("THe" to "The", default on),
+- capitalize names of days (English day names, "monday" to "Monday",
+  "monday's" too; default off),
+- automatically create hyperlinks when typing web addresses (default
+  off): a word starting `http://`, `https://` or `www.` with a dot in its
+  host, finished with a space, gives the text object that link
+  (`www.` gets `http://`), unless it has a link already; one undo step of
+  its own,
+- language: whose quotation marks are used (default the interface
+  language); choosing another resets the marks to that language's,
 - typographic quotes (default on): `"` and `'` become opening or closing
-  quotes depending on the character before them,
-- replacement table: `(c)` ©, `(r)` ®, `(tm)` ™, `1/2` ½, `1/4` ¼,
-  `3/4` ¾; the user can add rows. The quote style follows the UI
-  language.
+  quotes depending on the character before them; use straight quotation
+  marks after numbers (default off) leaves a quote right after a digit
+  straight (6' 2"),
+- single and double quotes: the opening and closing marks, each one of
+  ' ‘ ’ ‚ ‹ › " “ ” „ « » 「 」 『 』; the language's until one is chosen,
+- replacement table, applied while Replace text while typing is on
+  (default on): `(c)` ©, `(r)` ®, `(tm)` ™, `1/2` ½, `1/4` ¼, `3/4` ¾.
+  Replace and With fields; Add (a new word, no spaces), Delete (the row
+  clicked), Replace (gives the row of the word in Replace the text in
+  With). A click on a row fills the fields.
+- Apply to Selection runs every rule over the selected text objects.
+
+Settings written by older versions with autocorrect switched off as a
+whole load with every rule off.
 
 Autocorrect never changes text that was pasted or imported, only typed
 characters.
+
+Checks: `autocorrect::tests::days_quotes_and_links_follow_the_options`,
+`autocorrect::tests::older_settings_with_autocorrect_off_turn_every_rule_off`,
+`ui::writing_tools::tests::corrections_go_to_the_autocorrect_table`,
+`ui::options::tests::every_text_tab_draws`.
 
 ## Encode
 

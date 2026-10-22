@@ -2894,7 +2894,9 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
                 Dialog::WritingTools(crate::ui::writing_tools::WritingToolsState::on_tab(2));
         }
         if item(ui, "menu.text.autocorrect", "", true) {
-            app.dialog = Dialog::Autocorrect(Default::default());
+            app.dialog = Dialog::Options;
+            app.options_page = crate::ui::dialogs::OptionsPage::Text;
+            app.options_text_tab = crate::ui::options::AUTOCORRECT_TAB;
         }
     });
     sep(ui);

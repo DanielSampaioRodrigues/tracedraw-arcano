@@ -379,9 +379,13 @@ impl App {
         spans_delete(&mut spans, a, b);
         spans_insert(&mut spans, a, s);
         let mut caret = a + s.chars().count();
+        let mut web_link = None;
         if self.settings.autocorrect.enabled {
             let typed: String = spans_text(&spans).chars().take(caret).collect();
-            let style = crate::autocorrect::QuoteStyle::for_language(&crate::i18n::language());
+            if self.settings.autocorrect.auto_hyperlinks {
+                web_link = crate::autocorrect::typed_web_address(&typed);
+            }
+            let style = self.settings.autocorrect.style();
             if let Some(fixed) =
                 crate::autocorrect::on_typed(&typed, &self.settings.autocorrect, style)
             {
@@ -401,6 +405,19 @@ impl App {
         self.set_caret(caret, false);
         if let Some(te) = self.text_edit.as_mut() {
             te.goal_x = None;
+        }
+        // A web address just typed links the text, unless it has a link.
+        if let Some(link) = web_link {
+            let unlinked = self
+                .doc()
+                .find_shape(te.shape)
+                .is_some_and(|s| s.link.is_none());
+            if unlinked {
+                self.run(Command::SetLink {
+                    shapes: vec![te.shape],
+                    link: Some(link),
+                });
+            }
         }
     }
 
@@ -917,6 +934,43 @@ mod tests {
         app.transform_selection(Affine::scale_non_uniform(3.0, 1.0));
         app.sync_text_defaults_from(id);
         assert!((app.text_size_pt - 36.0).abs() < 1e-9);
+    }
+
+    /// Options > Text > Autocorrect > Automatically create hyperlinks: a
+    /// web address typed and finished with a space links the text,
+    /// keeping a link it already has; off, nothing is linked.
+    #[test]
+    fn a_typed_web_address_links_the_text() {
+        let mut app = App::headless();
+        app.start_text(Point::new(10.0, 10.0), None);
+        for c in "see www.tracedraw.org ".chars() {
+            app.text_insert(&c.to_string());
+        }
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        assert_eq!(app.doc().find_shape(id).and_then(|s| s.link.clone()), None);
+        app.settings.autocorrect.auto_hyperlinks = true;
+        for c in "or www.tracedraw.org ".chars() {
+            app.text_insert(&c.to_string());
+        }
+        assert_eq!(
+            app.doc()
+                .find_shape(id)
+                .and_then(|s| s.link.clone())
+                .as_deref(),
+            Some("http://www.tracedraw.org")
+        );
+        assert!(app.edit_text().ends_with("www.tracedraw.org "));
+        for c in "https://example.com ".chars() {
+            app.text_insert(&c.to_string());
+        }
+        assert_eq!(
+            app.doc()
+                .find_shape(id)
+                .and_then(|s| s.link.clone())
+                .as_deref(),
+            Some("http://www.tracedraw.org"),
+            "a link the text has stays"
+        );
     }
 
     #[test]

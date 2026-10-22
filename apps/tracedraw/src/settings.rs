@@ -121,9 +121,12 @@ pub struct Settings {
     /// (Document Options > Save as Default).
     #[serde(default)]
     pub document_defaults: DocumentDefaults,
-    /// Text > Writing Tools > Autocorrect options.
+    /// Options > Text > Autocorrect.
     #[serde(default)]
     pub autocorrect: crate::autocorrect::AutocorrectPrefs,
+    /// Options > Text > Spelling.
+    #[serde(default)]
+    pub spelling: SpellingPrefs,
     /// Thesaurus file picked by the user (Text > Writing Tools > Thesaurus).
     #[serde(default)]
     pub thesaurus_file: Option<PathBuf>,
@@ -314,6 +317,12 @@ pub struct Settings {
     /// The font lists' fonts used last, newest first.
     #[serde(default)]
     pub recent_fonts: Vec<String>,
+    /// Options > Text > Fonts: the fonts used last shown at the top of
+    /// the font lists, and how many (1 to 20).
+    #[serde(default = "default_true")]
+    pub show_recent_fonts: bool,
+    #[serde(default = "default_recent_font_count")]
+    pub recent_font_count: usize,
     /// The Properties docker's sections closed ("outline", "fill" ...).
     #[serde(default)]
     pub properties_closed: Vec<String>,
@@ -1200,6 +1209,25 @@ impl Default for ColorPrefs {
     }
 }
 
+/// Options > Text > Spelling: what the spell checker skips, and whether
+/// its replacements go to the Autocorrect table.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpellingPrefs {
+    /// Skip words with digits ("B2B").
+    pub ignore_digits: bool,
+    /// Skip words in capitals ("NASA").
+    pub ignore_capitals: bool,
+    /// A word the spell checker replaces is added to the Autocorrect
+    /// replacements, so typing it wrong again corrects it.
+    pub add_to_autocorrect: bool,
+}
+
+/// The fonts used last that the font lists show, by default.
+pub fn default_recent_font_count() -> usize {
+    5
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
@@ -1254,6 +1282,7 @@ impl Default for Settings {
             view: ViewPrefs::default(),
             panels: PanelPrefs::default(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
+            spelling: SpellingPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,
             new_document: crate::new_document::NewDocSettings::default(),
@@ -1280,6 +1309,8 @@ impl Default for Settings {
             shown_bars: None,
             dockers: None,
             recent_fonts: Vec::new(),
+            show_recent_fonts: true,
+            recent_font_count: default_recent_font_count(),
             properties_closed: Vec::new(),
             text_sections_closed: Vec::new(),
             text_docker_from: 0,
@@ -1376,6 +1407,7 @@ impl Settings {
     /// 1. objects are treated as filled (a click inside an unfilled one
     ///    selects it), which older versions saved switched off.
     pub fn upgrade(mut self) -> Settings {
+        self.autocorrect.upgrade();
         if self.upgrades < 1 {
             self.treat_all_filled = true;
         }

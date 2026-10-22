@@ -97,7 +97,6 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::WritingTools(_) => "text/writing-tools",
         Dialog::CustomHyphens(_) => "text/writing-tools#custom-hyphens",
         Dialog::Encode(_) => "text/writing-tools#encode",
-        Dialog::Autocorrect(_) => "text/writing-tools#autocorrect",
         Dialog::BorderGrommet(_) => "printing/border-and-grommet",
         Dialog::ColorManagement(_) => "color/color-management",
         Dialog::FontManager(_) => "text/fonts#font-manager",

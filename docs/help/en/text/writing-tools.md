@@ -50,20 +50,32 @@ thesaurus file you have.
 
 ## Autocorrect {#autocorrect}
 
-[[menu.text > menu.text.writing_tools > menu.text.autocorrect]] sets what is
-corrected while you type:
+[[menu.text > menu.text.writing_tools > menu.text.autocorrect]] opens the
+[[dialog.autocorrect]] tab of [[menu.tools > menu.tools.options]] >
+[[options.text]], which sets what is corrected while you type:
 
-- [[autocorrect.enabled]];
 - [[autocorrect.capitalize]];
 - [[autocorrect.two_capitals]] ("THe" becomes "The");
-- [[autocorrect.quotes]], in the style of your interface language;
-- the [[autocorrect.replacements]]: `(c)` becomes ©, `(r)` ®, `(tm)` ™, `1/2`
-  ½ and so on. [[autocorrect.add]] and [[autocorrect.remove]] change the rows.
+- [[autocorrect.days]] ("monday" becomes "Monday");
+- [[autocorrect.hyperlinks]]: typing `www.example.com` or an address starting
+  with `http://` or `https://` gives the text object that hyperlink, unless it
+  has one;
+- [[autocorrect.language]] the language whose quotation marks are used (the
+  interface language unless you pick another);
+- [[autocorrect.quotes]], and [[autocorrect.straight_after_numbers]];
+- [[autocorrect.single_quotes]] and [[autocorrect.double_quotes]]: the
+  [[autocorrect.open]] and [[autocorrect.close]] marks, if you want others than
+  the language's;
+- the [[autocorrect.replacements]], used when [[autocorrect.replace_while_typing]]
+  is on: `(c)` becomes ©, `(r)` ®, `(tm)` ™, `1/2` ½ and so on. Type in
+  [[autocorrect.replace_col]] and [[autocorrect.with_col]], then click
+  [[autocorrect.add]]; click a row to [[autocorrect.delete]] it, or change its
+  text and click [[autocorrect.replace]].
 
 [[autocorrect.apply_selection]] applies the rules to the selected text. Text
 you paste or import is never changed.
 
-![The Autocorrect dialog box](../../img/text-writing-tools-autocorrect.png)
+![The Autocorrect tab](../../img/text-writing-tools-autocorrect.png)
 
 ## Custom hyphens {#custom-hyphens}
 

@@ -22,8 +22,9 @@ const PREVIEW_H: f32 = 104.0;
 /// The preview's sample text and its size in points.
 pub const SAMPLE: &str = "AaBbYyZz";
 const SAMPLE_PX: f32 = 46.0;
-/// How many fonts used last the list keeps at its top.
-pub const RECENT: usize = 5;
+/// The most fonts used last the list may show at its top (Options >
+/// Text > Fonts picks how many, five by default).
+pub const RECENT_MAX: usize = 20;
 /// The sample size's range, in points.
 pub const SAMPLE_SIZES: std::ops::RangeInclusive<f32> = 12.0..=40.0;
 /// The size samples start at.
@@ -234,11 +235,11 @@ pub fn matching(families: &[String], typed: Option<&str>, current: &str) -> Vec<
     exact
 }
 
-/// Put `family` first among the fonts used last, keeping [`RECENT`].
+/// Put `family` first among the fonts used last, keeping [`RECENT_MAX`].
 pub fn remember(recent: &mut Vec<String>, family: &str) {
     recent.retain(|f| f != family);
     recent.insert(0, family.to_string());
-    recent.truncate(RECENT);
+    recent.truncate(RECENT_MAX);
 }
 
 /// One row of the list: a family, or one of its styles under it.
@@ -601,7 +602,11 @@ fn list_body(
         .recent_fonts
         .iter()
         .filter(|f| app.font_families.contains(f))
-        .take(RECENT)
+        .take(if app.settings.show_recent_fonts {
+            app.settings.recent_font_count.clamp(1, RECENT_MAX)
+        } else {
+            0
+        })
         .cloned()
         .collect();
     if !typing && st.show == Show::All && !recent.is_empty() {
@@ -1053,7 +1058,13 @@ mod tests {
         for f in ["A", "B", "C", "A", "D", "E", "F"] {
             remember(&mut recent, f);
         }
-        assert_eq!(recent, names(&["F", "E", "D", "A", "C"]));
+        assert_eq!(recent, names(&["F", "E", "D", "A", "C", "B"]));
+        // The list keeps up to the most Options > Text > Fonts can show.
+        for i in 0..30 {
+            remember(&mut recent, &format!("Font {i}"));
+        }
+        assert_eq!(recent.len(), RECENT_MAX);
+        assert_eq!(recent[0], "Font 29");
     }
 
     #[test]
