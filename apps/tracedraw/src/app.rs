@@ -1357,6 +1357,8 @@ pub struct App {
     /// Fill; an index into its stops), for the node bar and the property
     /// bar's node fields.
     pub fill_node: Option<usize>,
+    /// A font shown in the drawing while a font list points at it.
+    pub live_font: Option<crate::ui::font_list::LiveFont>,
     pub blend_accel_objects: f64,
     pub blend_accel_colors: f64,
     /// The Knife's mode, gap and pieces (its bar).
@@ -2189,6 +2191,7 @@ impl App {
             effect_edit_step: None,
             blend_rotation: 0.0,
             fill_node: None,
+            live_font: None,
             blend_accel_objects: 0.0,
             blend_accel_colors: 0.0,
             knife: Default::default(),

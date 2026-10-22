@@ -1963,8 +1963,12 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
         (field, anchor)
     });
     let (field, anchor) = inner.inner;
-    let current = app.text_size_pt;
-    egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
+    let current = app.text_settings_shown().3;
+    // The size last under the pointer while the list is open: the text
+    // shows it (#370).
+    let hover_id = popup_id.with("hovered");
+    let mut hovered: Option<f64> = ctx.data(|d| d.get_temp(hover_id));
+    let shown = egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
         .open_memory(None)
         .width(anchor.width())
         .show(|ui| {
@@ -1973,15 +1977,33 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                 .show(ui, |ui| {
                     for s in TEXT_SIZES {
                         let label = format!("{s} pt");
-                        if ui
-                            .selectable_label((current - s).abs() < 1e-6, label)
-                            .clicked()
-                        {
+                        let r = ui.selectable_label((current - s).abs() < 1e-6, label);
+                        if r.clicked() {
                             picked = Some(s);
+                        }
+                        if r.hovered() {
+                            hovered = Some(s);
                         }
                     }
                 });
         });
+    if shown.is_none() {
+        hovered = None;
+    }
+    ctx.data_mut(|d| match hovered {
+        Some(h) => {
+            d.insert_temp(hover_id, h);
+        }
+        None => d.remove::<f64>(hover_id),
+    });
+    let owner = format!("{popup_id:?}");
+    if picked.is_some() {
+        app.end_font_preview();
+    } else if let Some(h) = hovered {
+        app.preview_text(&owner, Some(crate::ui::font_list::LiveText::Size(h)));
+    } else if app.live_font.as_ref().is_some_and(|l| l.owner == owner) {
+        app.end_font_preview();
+    }
     if let Some(s) = picked {
         app.text_size_pt = s;
         egui::Popup::close_id(&ctx, popup_id);

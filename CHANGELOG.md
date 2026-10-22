@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: the font list and the size list show the selected text in the family or size under the pointer while they are open, as the reference program does; the text goes back as it was when the pointer leaves or the list closes, and the preview leaves the undo history alone (#370).
+
 - Pick tool: scaling with a corner handle follows the pointer smoothly. The size followed the faster of the two sides, so a line of text grew at the pace of its short side and jumped with small moves; it now goes by where the pointer falls along the box's diagonal. The handles also no longer jump a few pixels when the drag starts (#383).
 
 - Pen tool: the pointer is a pen nib with a dot at its tip, and the node goes exactly under the dot; the close, continue, add, delete and edit signs show beside it (#362).

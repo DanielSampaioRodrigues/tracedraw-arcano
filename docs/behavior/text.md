@@ -113,6 +113,16 @@ Text and Glyphs dockers and Options (default font):
   baseline and bottom lines, with "Family (Style)" under it.
 - In the browser, resting the pointer on a family to download for 0.4 s
   fetches it, and its row and preview then draw in it.
+- Live preview in the drawing (#370): while the property bar's or the
+  Text docker's list is open, the selected text (the selected
+  characters while editing, the selected table cells) shows the family
+  under the pointer, or the one the keys reached, as it would take it.
+  The property bar's size list does the same with the size under the
+  pointer. Moving off the list or closing it shows the text as it was;
+  the preview is no undo step and leaves the redo steps and the saved
+  state as they were (`Engine::begin_preview`, `withdraw_preview`;
+  `the_text_shows_the_font_a_list_points_at`). Options' default font
+  list does not preview.
 
 Names are drawn by the text engine into pictures of the screen's
 resolution, only for the rows in view, and kept until fonts are added.
