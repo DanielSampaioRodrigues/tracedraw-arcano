@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser build: Ctrl+R is Edit > Repeat, as on the desktop, instead of reloading the page (the browser's reload button still does).
+
 - Pen and Bezier tools: a click after a node whose handle was pulled gives the curved segment the dashed preview showed, leaving along that handle and arriving straight at the new node; the segment came out straight, the handle thrown away (#314).
 
 - Vertical text: Text > Vertical Text and two property bar buttons set text in columns read top to bottom, right to left, as CJK typesetting does, with ideographs, kana and hangul upright and Latin letters turned; carets, selections, clicks and the arrow keys follow the columns. Offered with a Japanese or Chinese interface language, and for any text in those scripts (#257).
