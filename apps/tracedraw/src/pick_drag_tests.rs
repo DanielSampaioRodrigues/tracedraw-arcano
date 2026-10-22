@@ -2256,6 +2256,48 @@ fn a_pen_click_after_a_pulled_node_follows_its_handle() {
     );
 }
 
+/// A 3-point curve whose chord starts on an end node of the selected
+/// curve continues it, and one that ends on the other end node closes
+/// it (the owner's report: the second curve left the object open).
+#[test]
+fn a_three_point_curve_continues_and_closes_the_selected_curve() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    let before = shape_count(&app);
+    let (a, b) = (Point::new(100.0, 150.0), Point::new(160.0, 150.0));
+    // The chord, then the point the curve passes through.
+    pull(&ctx, &mut app, a, b);
+    click_page(&ctx, &mut app, Point::new(130.0, 170.0));
+    assert_eq!(shape_count(&app), before + 1);
+    let id = app.selection[0];
+    assert_eq!(last_path(&app).segments().count(), 1);
+    // A second curve from the end node back to the start node: the same
+    // object, closed, with two segments.
+    pull(&ctx, &mut app, b, a);
+    click_page(&ctx, &mut app, Point::new(130.0, 130.0));
+    assert_eq!(shape_count(&app), before + 1, "no new object");
+    assert_eq!(app.selection, vec![id]);
+    let p = last_path(&app);
+    assert_eq!(p.segments().count(), 2, "{p:?}");
+    assert!(
+        p.elements()
+            .iter()
+            .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath)),
+        "closed: {p:?}"
+    );
+    // A chord away from the curve: a curve of its own.
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(200.0, 200.0),
+        Point::new(240.0, 200.0),
+    );
+    click_page(&ctx, &mut app, Point::new(220.0, 220.0));
+    assert_eq!(shape_count(&app), before + 2);
+}
+
 #[test]
 fn clicking_the_last_node_again_makes_it_a_cusp() {
     let (ctx, mut app, _) = setup();

@@ -3515,14 +3515,17 @@ impl App {
                 let mut path = BezPath::new();
                 path.move_to(a);
                 path.curve_to(c1, c2, b);
-                if let Some(id) = self.new_shape(ShapeKind::Path {
-                    path,
-                    closed: false,
-                }) {
-                    self.run(Command::SetFill {
-                        shapes: vec![id],
-                        fill: Fill::None,
-                    });
+                // The curve continues the selected curve when it starts
+                // or ends on one of its end nodes (closing it when it
+                // joins both ends), else it is a curve of its own.
+                let joined = self.join_candidate().map(|c| c.id);
+                if let Some(id) = self.add_drawn_line(path) {
+                    if joined != Some(id) {
+                        self.run(Command::SetFill {
+                            shapes: vec![id],
+                            fill: Fill::None,
+                        });
+                    }
                     self.select(vec![id]);
                 }
             }

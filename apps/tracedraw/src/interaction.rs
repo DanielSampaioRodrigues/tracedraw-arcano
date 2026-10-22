@@ -1514,7 +1514,13 @@ impl App {
             return;
         }
         if response.drag_started_by(PointerButton::Primary) {
-            self.select(Vec::new());
+            // A chord starting on an end node of the selected curve goes
+            // on from it (the curve stays selected for the join); else
+            // the selection is dropped, as a new object is about to be
+            // drawn.
+            if !(self.tool == Tool::ThreePointCurve && self.on_join_end(p)) {
+                self.select(Vec::new());
+            }
             self.drag = Drag::ThreePointBase {
                 start: p,
                 current: p,

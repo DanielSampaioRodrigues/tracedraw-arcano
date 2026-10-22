@@ -162,6 +162,10 @@ finish a curve.
 - Drag the chord, then click the point the curve passes through; the
   curve is the quadratic through the three points (the click at t = 0.5),
   written as a cubic.
+- A chord starting on an end node of the selected open curve (within
+  the join distance) continues it, and the curve ending on its other
+  end node closes it, as the other curve tools do (`curve_join.rs`;
+  `pick_drag_tests::a_three_point_curve_continues_and_closes_the_selected_curve`).
 
 ## Shape recognition (Shift+S)
 

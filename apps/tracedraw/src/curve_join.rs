@@ -199,7 +199,7 @@ fn joined(curve: &BezPath, line: &BezPath, tol: f64) -> Option<BezPath> {
 impl App {
     /// The selected curve a new line may join: one open curve lying on a
     /// layer.
-    fn join_candidate(&self) -> Option<tracedraw_core::Shape> {
+    pub(crate) fn join_candidate(&self) -> Option<tracedraw_core::Shape> {
         let [id] = self.selection.as_slice() else {
             return None;
         };
