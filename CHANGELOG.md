@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Smooth tool: a stroke eases the wobbles out of the curve under the nib and leaves a handful of nodes behind it; it left a node every few millimetres and broke the curve into short pieces as the pointer advanced. Smear and Twirl measure the curve finer under the nib and leave smoother curves too.
+
 - Clip frames: while objects are moved over a clip frame it lights up and a note under the pointer says what the release does; W held adds the objects to the frame, K held replaces its contents. Edit Contents fades the rest of the page while the frame and its contents are edited.
 
 - Clip frames: with a clip frame selected a bar at the top left of the drawing window offers Edit, Select Contents, Extract Contents, the contents lock and Fit Contents (centre, fit or fill proportionally, stretch); while the contents are edited it shows Finish.
