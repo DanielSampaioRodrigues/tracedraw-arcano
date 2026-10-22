@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Bitmap effects on vector objects (3D Rotate and the others) are drawn at the drawing's rendering resolution from Document Properties instead of a fixed 300 dpi, up to 16 million pixels instead of 4, and are made again when the resolution changes; set it higher for sharper results on screen, in PDF and in exported images (#382).
+
 - Paragraph text: frames have a flow tab under their bottom edge, as in the reference program. A click on it, then a click on another frame links them, even on another page; a click or drag on an empty spot makes a new frame there that the text flows into. Linking used to need both frames selected, so frames on different pages could not be linked (#371).
 
 - Place Inside Frame, Order > In Front Of and Behind: while they wait for the click on the target object, the pointer is a thick arrow pointing at it, as in the reference program; it stayed the ordinary pointer (#379).
