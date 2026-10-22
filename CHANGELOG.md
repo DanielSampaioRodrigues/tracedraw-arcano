@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pick tool: scaling with a corner handle follows the pointer smoothly. The size followed the faster of the two sides, so a line of text grew at the pace of its short side and jumped with small moves; it now goes by where the pointer falls along the box's diagonal. The handles also no longer jump a few pixels when the drag starts (#383).
+
 - Pen tool: the pointer is a pen nib with a dot at its tip, and the node goes exactly under the dot; the close, continue, add, delete and edit signs show beside it (#362).
 
 - Pen and Bezier: a finished curve keeps its anchors in the history, as in the reference program. After it is closed or deselected, Ctrl+Z opens it first and then takes the anchors back one by one; it used to take the whole curve away at once (#360).

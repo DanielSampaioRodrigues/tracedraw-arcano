@@ -466,14 +466,40 @@ fn handle_modifiers_shape_the_scale() {
         both,
     );
     assert!(close(at(t, 40.0, 10.0).x, -20.0));
-    // A corner keeps the proportions unless Alt frees it.
+    // A corner keeps the proportions unless Alt frees it, by where the
+    // pointer falls along the box's diagonal (#383): (2 * 40² + 1 * 20²) /
+    // (40² + 20²) = 1.8; on the diagonal the corner follows the pointer.
     let t = scale(
         Handle::NE,
         Point::new(0.0, 0.0),
         Point::new(80.0, 20.0),
         none,
     );
-    assert!(close(at(t, 40.0, 20.0).y, 40.0));
+    assert!(close(at(t, 40.0, 20.0).y, 36.0) && close(at(t, 40.0, 20.0).x, 72.0));
+    let t = scale(
+        Handle::NE,
+        Point::new(0.0, 0.0),
+        Point::new(60.0, 30.0),
+        none,
+    );
+    assert!(close(at(t, 40.0, 20.0).x, 60.0) && close(at(t, 40.0, 20.0).y, 30.0));
+    // On a wide, low box a 1 mm move up grows it less than a 1 mm move to
+    // the right: the long side sets the pace (with the larger of the two
+    // ratios the move up grew it twice as fast).
+    let up = scale(
+        Handle::NE,
+        Point::new(0.0, 0.0),
+        Point::new(40.0, 21.0),
+        none,
+    );
+    let right = scale(
+        Handle::NE,
+        Point::new(0.0, 0.0),
+        Point::new(41.0, 20.0),
+        none,
+    );
+    let k = |t: Affine| t.as_coeffs()[0];
+    assert!(k(up) < k(right) && k(up) > 1.0, "{} {}", k(up), k(right));
     let t = scale(
         Handle::NE,
         Point::new(0.0, 0.0),
@@ -4139,4 +4165,47 @@ fn a_finished_pen_curve_undoes_anchor_by_anchor() {
     );
     app.doc().defaults.apply_to(&mut want);
     assert_eq!((s.fill, s.stroke), (want.fill, want.stroke));
+}
+
+/// A scale handle follows the pointer from the frame the drag starts: no
+/// jump of the few pixels the pointer goes before a press becomes a drag
+/// (#383).
+#[test]
+fn a_scale_handle_follows_the_pointer_from_the_start() {
+    let (ctx, mut app, _) = setup();
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let e = handle(&app, Handle::E);
+    let w = app.selection_bounds().expect("bounds").width() as f32 * app.view.zoom;
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(e)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(e, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let mut seen = Vec::new();
+    for i in 1..=20 {
+        let p = e + egui::vec2(i as f32, 0.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+        if let Some(t) = app.preview_transform_of(&app.drag) {
+            let want = 1.0 + i as f64 / f64::from(w);
+            seen.push((i, t.as_coeffs()[0], want));
+        }
+    }
+    assert!(!seen.is_empty());
+    for (i, got, want) in seen {
+        assert!((got - want).abs() < 0.01, "step {i}: {got} {want}");
+    }
 }

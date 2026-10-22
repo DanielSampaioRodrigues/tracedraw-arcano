@@ -1118,6 +1118,12 @@ impl App {
                         mods: crate::app::HandleMods::of(mods),
                     };
                 }
+                // The drag starts once the pointer has gone a few pixels
+                // from the press: the handle catches up with it now, not
+                // in one jump at the next move (#383).
+                if let Some(now) = self.pointer_page {
+                    self.pick_drag_to(now, mods);
+                }
                 return;
             }
             // The centre mark moves the selection, whatever lies under it.
@@ -2291,12 +2297,13 @@ impl App {
                     }
                 }
                 if handle.is_corner() && !self.rotate_mode && !mods.free {
-                    // Corners scale proportionally (Alt: freely).
-                    let s = if sx.abs() > sy.abs() {
-                        sx.abs()
-                    } else {
-                        sy.abs()
-                    };
+                    // Corners scale proportionally (Alt: freely): by where
+                    // the pointer falls along the box's diagonal, so the
+                    // corner follows the pointer and a wide, low box (a
+                    // line of text) does not grow with the short side's
+                    // pace (#383).
+                    let (w2, h2) = (w * w, h * h);
+                    let s = (sx.abs() * w2 + sy.abs() * h2) / (w2 + h2);
                     sx = s * sx.signum();
                     sy = s * sy.signum();
                 }
