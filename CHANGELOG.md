@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Place Inside Frame, Order > In Front Of and Behind: while they wait for the click on the target object, the pointer is a thick arrow pointing at it, as in the reference program; it stayed the ordinary pointer (#379).
+
 - Variable Outline tool: Shift and Ctrl now work as in the reference program. A drag started with Shift changes only the side the pointer is on (Alt still does too); Shift+click picks a run of width nodes and Ctrl+click adds one or takes it out; a drag or the property bar then changes all the picked nodes, and Delete removes them (#374).
 
 - Guidelines: several selected guidelines move together when one of them is dragged, and a right click during the drag leaves copies. Edit > Duplicate (Ctrl+D) copies the selected guidelines, and the Guidelines docker gets Duplicate and Clear (every guideline of the type shown) buttons (#376).

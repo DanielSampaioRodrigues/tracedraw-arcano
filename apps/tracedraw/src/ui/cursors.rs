@@ -53,6 +53,10 @@ pub enum ToolCursor {
     /// the selected curve from its end node, or close the curve being
     /// drawn on its first node.
     CurveBadge(Tool, CurveMark),
+    /// Picking the object a command acts on (Place Inside Frame, Order >
+    /// In Front Of and Behind): a thick arrow pointing right, its tip the
+    /// hot spot (#379).
+    TargetArrow,
     /// The Pen tool: a pen nib whose tip, marked with a dot, is the hot
     /// spot (the node goes there, #362), with what a press would do.
     PenNib(Option<CurveMark>),
@@ -279,6 +283,9 @@ pub fn for_tool(
     if app.pending_palette_sample {
         return ToolCursor::Pipette;
     }
+    if app.pending_clip_frame || app.pending_order.is_some() {
+        return ToolCursor::TargetArrow;
+    }
     if matches!(app.tool, Tool::Pick | Tool::FreeformPick) {
         if let Some(c) = pick_cursor(app, pos) {
             return c;
@@ -462,6 +469,7 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
             badge(painter, p, tool);
             curve_mark_sign(painter, p, mark);
         }
+        ToolCursor::TargetArrow => target_arrow(painter, p),
         ToolCursor::PenNib(mark) => {
             pen_nib(painter, p);
             if let Some(m) = mark {
@@ -528,6 +536,33 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
         Color32::from_white_alpha(200),
     );
     crate::ui::icons::draw(painter, r, tool, badge_ink());
+}
+
+/// The outline of the arrow that picks a command's target object, its
+/// tip at `tip`, pointing right.
+pub fn target_arrow_outline(tip: Pos2) -> Vec<Pos2> {
+    [
+        (0.0, 0.0),
+        (-11.0, -9.0),
+        (-11.0, -4.0),
+        (-24.0, -4.0),
+        (-24.0, 4.0),
+        (-11.0, 4.0),
+        (-11.0, 9.0),
+    ]
+    .iter()
+    .map(|(x, y)| tip + Vec2::new(*x, *y))
+    .collect()
+}
+
+/// The target arrow: black on a white halo.
+fn target_arrow(painter: &Painter, tip: Pos2) {
+    let o = target_arrow_outline(tip);
+    painter.add(Shape::closed_line(o.clone(), Stroke::new(3.0, HALO)));
+    let head = vec![o[0], o[1], o[2], o[5], o[6]];
+    painter.add(Shape::convex_polygon(head, INK, Stroke::NONE));
+    let shaft = vec![o[2], o[3], o[4], o[5]];
+    painter.add(Shape::convex_polygon(shaft, INK, Stroke::NONE));
 }
 
 /// The outline of the Pen tool's nib with its tip at `tip`: the nib
@@ -1039,6 +1074,16 @@ mod tests {
             "{o:?}"
         );
         assert!(o.iter().any(|q| q.x > tip.x + 8.0 && q.y < tip.y - 8.0));
+        // Picking the frame for Place Inside Frame: the target arrow.
+        app.pending_clip_frame = true;
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(away)),
+            ToolCursor::TargetArrow
+        );
+        app.pending_clip_frame = false;
+        let o = target_arrow_outline(tip);
+        assert_eq!(o[0], tip);
+        assert!(o.iter().all(|q| q.x <= tip.x));
         // The Eraser and the brushes show their nib at its size on screen.
         app.tool = Tool::Eraser;
         app.eraser_width = 10.0;

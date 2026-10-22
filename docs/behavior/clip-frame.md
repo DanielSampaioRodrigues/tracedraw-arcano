@@ -27,6 +27,10 @@ frame is edited node by node, and the clip frame stays one
 - Place Inside Frame: with contents selected, click the frame; the
   contents keep their position. A frame that is a clip frame already
   takes them in over the contents it holds (`Command::PlaceInside`).
+  Until the click the pointer is a thick black arrow pointing right on
+  a white halo, its tip the hot spot; Order > In Front Of and Behind
+  show it too while they wait for their object (#379,
+  `ui::cursors::tests::tools_get_their_cursors`).
 - Extract Contents: the contents become ordinary objects again; the frame
   stays (an empty frame shows a hatched preview).
 - Edit Contents: takes the contents out of the frame to edit them; the
