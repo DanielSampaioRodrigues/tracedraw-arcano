@@ -30,10 +30,13 @@ Tests: `command::tests::duplicate_page_goes_before_or_after_with_or_without_cont
 
 Layout > Fit Page to Selection (pale with nothing selected) and Fit
 Page to Drawing (pale on an empty page), also as buttons on the
-Document Options > Page Size page: the current page takes the size of
+Document Options > Page Size page and, Fit Page to Drawing, on the
+property bar with nothing selected (after the page width and height):
+the current page takes the size of
 the selection's bounds (effects included), or of everything on the page,
 and the page's objects move so that box sits on the page from its
 bottom-left corner. One undo step (`App::fit_page_to_selection`,
 `fit_page_to_drawing`); a box under 0.1 mm does nothing and the status
 bar says so. Checked by
-`ops2::fit_page_tests::the_page_fits_the_selection_or_the_drawing`.
+`ops2::fit_page_tests::the_page_fits_the_selection_or_the_drawing` and
+`ui::propbar::tests::the_page_bar_draws_with_its_fit_page_button`.

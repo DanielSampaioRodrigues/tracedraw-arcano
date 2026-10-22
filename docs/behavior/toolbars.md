@@ -76,9 +76,10 @@ millimetre field is 25.4 mm). Values outside a field's range are brought
 into it (`ui::field::tests`).
 
 - Pick tool, nothing selected (page bar): page size list; page width and
-  height; portrait, landscape; all pages or current page (which pages a
-  size change applies to, one undo step); Units; nudge distance;
-  duplicate distances; treat all objects as filled.
+  height; fit page to drawing (Layout's command, pale on an empty page);
+  portrait, landscape; all pages or current page (which pages a size
+  change applies to, one undo step); Units; nudge distance; duplicate
+  distances; treat all objects as filled.
 - A selection (object bar): the object origin selector (a 3 x 3 grid,
   the centre by default: X and Y show and move that point of the
   selection's box, counted from the ruler origin), X and Y; width and

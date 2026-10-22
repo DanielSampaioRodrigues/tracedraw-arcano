@@ -3264,8 +3264,21 @@ fn the_page_bar_does_nothing_on_the_welcome_screen() {
     };
     let portrait = size(&app);
     assert!(portrait.1 > portrait.0, "{portrait:?}");
-    // The page bar's landscape button.
-    let landscape = egui::pos2(408.0, 87.0);
+    // The page bar's landscape button: found along the bar's row, as
+    // the first click there that turns the page.
+    let mut landscape = None;
+    for x in (380..560).step_by(4) {
+        let at = egui::pos2(x as f32, 87.0);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+        if size(&app).0 > size(&app).1 {
+            landscape = Some(at);
+            break;
+        }
+    }
+    let landscape = landscape.expect("the landscape button is on the bar");
+    app.engine.undo();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(size(&app), portrait);
     // The Welcome Screen shown (the drawing behind it): the bar is pale.
     app.show_welcome = true;
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);

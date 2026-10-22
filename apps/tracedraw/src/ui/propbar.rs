@@ -33,6 +33,8 @@ pub enum Pic {
     Landscape,
     AllPages,
     CurrentPage,
+    /// Fit page to drawing: a page shrunk onto the object on it.
+    FitPage,
     Nudge,
     DupX,
     DupY,
@@ -292,6 +294,16 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
             for x in [11.5, 13.5] {
                 line((x, 5.0), (x, 14.5), Stroke::new(1.4 * k, color));
             }
+        }
+        Pic::FitPage => {
+            outline(&[(1.5, 1.5), (14.5, 1.5), (14.5, 14.5), (1.5, 14.5)], thin);
+            poly(
+                &[(5.0, 5.0), (11.0, 5.0), (11.0, 11.0), (5.0, 11.0)],
+                color,
+                s,
+            );
+            arrow_h(8.0, 1.5, 4.5);
+            arrow_h(8.0, 11.5, 14.5);
         }
         Pic::Nudge => {
             arrow_h(8.0, 1.0, 15.0);
@@ -1533,6 +1545,25 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         if s.width > 0.1 && s.height > 0.1 {
             resize_pages(app, s);
         }
+    }
+    // Fit page to drawing, as Layout has it (#236); pale on an empty
+    // page.
+    let has_objects = app
+        .doc()
+        .page(app.page)
+        .ok()
+        .is_some_and(|p| p.layers.iter().any(|l| !l.shapes.is_empty()));
+    if pic_button(
+        ui,
+        Pic::FitPage,
+        &tr("toolbar.fit_page_tip"),
+        has_objects,
+        false,
+    )
+    .clicked()
+    {
+        app.fit_page_to_drawing();
+        app.fit_pending = true;
     }
     sep(ui);
     let portrait = size.height >= size.width;
@@ -3064,6 +3095,38 @@ mod tests {
         assert_eq!(origin_point(b, (0, 0)), Point::new(10.0, 60.0));
         assert_eq!(origin_point(b, (2, 2)), Point::new(30.0, 20.0));
         assert_eq!(origin_point(b, (1, 2)), Point::new(20.0, 20.0));
+    }
+
+    /// The page bar draws with its Fit page to drawing button on a page
+    /// with objects and on an empty one (where the button is pale), and
+    /// the icon is on the 16-grid like the others (#236).
+    #[test]
+    fn the_page_bar_draws_with_its_fit_page_button() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let run = |app: &mut App| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.horizontal(|ui| page_bar(app, ui));
+            });
+            out.textures_delta.clear();
+            out.shapes.len()
+        };
+        let empty = run(&mut app);
+        app.new_shape(ShapeKind::Rect {
+            rect: R::new(10.0, 10.0, 60.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a layer");
+        app.select(Vec::new());
+        let full = run(&mut app);
+        assert!(empty > 0 && full > 0);
+        // The icon itself.
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::hover());
+            draw_pic(ui.painter(), rect, Pic::FitPage, Tokens::text());
+        });
+        out.textures_delta.clear();
     }
 
     #[test]
