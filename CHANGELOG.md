@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Panels: the pointer over a panel tab shows a close cross at the top of the tab, and a click on it closes the panel.
+
 ## 0.10.2 (2026-10-22)
 
 - Opening `.cdr`: the bitmaps of a big drawing (a `Bitmaps.dat` member inflating past 512 MB, two large pictures on a 1.5 m page) were cut off at the limit, so the pictures after the cut were missing with "objects could not be read"; the member now inflates to the size the archive declares, up to 3 GB (#323).

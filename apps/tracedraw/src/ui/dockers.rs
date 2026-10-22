@@ -13,6 +13,17 @@ use tracedraw_core::{
 /// The vertical strip of docker tabs on the right edge of the window.
 /// Height of a docker's title bar (it runs across the tab column too).
 pub const TITLE_H: f32 = 27.0;
+/// The slot at the top of each tab where its close cross shows while
+/// the pointer is over the tab (#docker tabs).
+const CLOSE_SLOT: f32 = 16.0;
+
+/// Where a tab's close cross sits: the slot at the top of the tab `bg`.
+pub fn tab_close_rect(bg: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(bg.min.x, bg.min.y + 2.0),
+        egui::vec2(bg.width(), CLOSE_SLOT - 2.0),
+    )
+}
 
 /// The docker tab column: the open dockers as vertical tabs (an icon on
 /// top, the name running downwards), grey, the open one darker, then the
@@ -45,7 +56,9 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         let w = galley.size().x;
         let gh = galley.size().y;
         let icon_h = if tab_icon(tab).is_some() { 24.0 } else { 0.0 };
-        let h = 14.0 + icon_h + w;
+        // A slot at the top of the tab for the close cross, shown while
+        // the pointer is over the tab.
+        let h = CLOSE_SLOT + 14.0 + icon_h + w;
         let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click());
         let bg = egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max);
         let fill = if active {
@@ -56,14 +69,34 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             crate::theme::Tokens::tab()
         };
         ui.painter().rect_filled(bg, 0.0, fill);
+        let close = tab_close_rect(bg);
+        let over_close = resp.hover_pos().is_some_and(|p| close.contains(p));
+        if resp.hovered() {
+            let col = if over_close {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            };
+            let c = close.center();
+            let s = egui::Stroke::new(1.3, col);
+            ui.painter()
+                .line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], s);
+            ui.painter()
+                .line_segment([c + egui::vec2(3.5, -3.5), c + egui::vec2(-3.5, 3.5)], s);
+        }
+        let resp = if over_close {
+            resp.on_hover_text(tr("docker.close_docker"))
+        } else {
+            resp
+        };
         if let Some(icon) = tab_icon(tab) {
             let ir = egui::Rect::from_center_size(
-                egui::pos2(bg.center().x, r.min.y + 7.0 + icon_h / 2.0),
+                egui::pos2(bg.center().x, r.min.y + CLOSE_SLOT + 7.0 + icon_h / 2.0),
                 egui::vec2(16.0, 16.0),
             );
             icon(ui.painter(), ir);
         }
-        let text_top = r.min.y + 7.0 + icon_h;
+        let text_top = r.min.y + CLOSE_SLOT + 7.0 + icon_h;
         let mut ts = egui::epaint::TextShape::new(
             egui::pos2(bg.center().x + gh / 2.0, text_top),
             galley,
@@ -75,7 +108,12 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         ts.angle = std::f32::consts::FRAC_PI_2;
         ui.painter().add(ts);
         if resp.clicked() {
-            if active {
+            let on_close = resp
+                .interact_pointer_pos()
+                .is_some_and(|p| close.contains(p));
+            if on_close {
+                app.close_docker(tab);
+            } else if active {
                 app.show_dockers = false;
             } else {
                 app.show_dockers = true;
@@ -2197,6 +2235,58 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// The pointer over a docker tab shows a close cross at its top; a
+    /// click on the cross closes that docker, a click lower on the tab
+    /// brings it to the front as before.
+    #[test]
+    fn a_docker_tab_closes_with_the_cross_at_its_top() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let tabs = app.open_dockers.clone();
+        assert!(tabs.len() >= 2, "{tabs:?}");
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(27.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| tab_strip(app, ui));
+            out.textures_delta.clear();
+        };
+        run(&mut app, Vec::new());
+        // The first tab starts under the title band; its cross sits in
+        // the slot at its top.
+        let first = tabs[0];
+        let cross = egui::pos2(13.5, TITLE_H + 2.0 + (CLOSE_SLOT - 2.0) / 2.0);
+        let click = |app: &mut App, at: egui::Pos2| {
+            run(app, vec![egui::Event::PointerMoved(at)]);
+            run(app, vec![egui::Event::PointerMoved(at)]);
+            for pressed in [true, false] {
+                run(
+                    app,
+                    vec![egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
+            }
+            run(app, Vec::new());
+        };
+        // Lower on the tab: brought to the front, still open.
+        app.docker_tab = tabs[1];
+        click(&mut app, egui::pos2(13.5, TITLE_H + CLOSE_SLOT + 30.0));
+        assert_eq!(app.docker_tab, first);
+        assert!(app.open_dockers.contains(&first));
+        // On the cross: closed.
+        click(&mut app, cross);
+        assert!(!app.open_dockers.contains(&first), "{:?}", app.open_dockers);
     }
 
     /// Dragging in the outline colour picker, as with the fill: every

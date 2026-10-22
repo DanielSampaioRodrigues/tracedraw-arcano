@@ -30,7 +30,11 @@ collapse and close in grey at the right) over a white page. The tab
 column to its right is 27 px wide: `#EAEAEA` under the title bar and
 below the tabs, a `#B2B2B2` line along the panel, grey `#D8D8D8` tabs
 with an icon and the name running downwards, the open panel's tab
-`#B2B2B2`; the plus button under the tabs adds a panel.
+`#B2B2B2`; the plus button under the tabs adds a panel. The pointer
+over a tab shows a close cross in a slot at the tab's top; a click on
+it closes that panel (as the title bar's close and the tab's menu do),
+a click lower on the tab brings the panel to the front
+(`ui::dockers::tests::a_docker_tab_closes_with_the_cross_at_its_top`).
 
 ## Standard toolbar
 
