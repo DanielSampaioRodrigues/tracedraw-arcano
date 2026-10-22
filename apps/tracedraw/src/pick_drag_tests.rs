@@ -2213,8 +2213,11 @@ fn near(a: Point, b: Point) -> bool {
     (a - b).hypot() < 0.6
 }
 
+/// A click after a pulled node gives the segment the preview showed: a
+/// curve leaving along the pulled handle and arriving straight at the
+/// new node, which has no handle of its own (#314).
 #[test]
-fn a_pen_click_after_a_pulled_node_gives_a_straight_segment() {
+fn a_pen_click_after_a_pulled_node_follows_its_handle() {
     let (ctx, mut app, _) = setup();
     app.select(Vec::new());
     app.set_tool(Tool::Pen);
@@ -2232,9 +2235,23 @@ fn a_pen_click_after_a_pulled_node_gives_a_straight_segment() {
     // Into the pulled node: a curve arriving along its mirrored handle.
     let s0 = cubic(segs[0]);
     assert!(near(s0.p2, Point::new(130.0, 130.0)), "{s0:?}");
-    // Out of it after a plain click: straight, the node a cusp.
+    // Out of it after a plain click: a curve leaving along the pulled
+    // handle, arriving straight at the clicked node.
+    let s1 = cubic(segs[1]);
+    assert!(near(s1.p1, Point::new(150.0, 170.0)), "{s1:?}");
+    assert!(near(s1.p2, c) && near(s1.p3, c), "{s1:?}");
+    // The next segment leaves the clicked node straight.
+    app.set_tool(Tool::Pen);
+    app.select(Vec::new());
+    click_page(&ctx, &mut app, a);
+    pull(&ctx, &mut app, b, Point::new(150.0, 170.0));
+    click_page(&ctx, &mut app, c);
+    click_page(&ctx, &mut app, Point::new(220.0, 150.0));
+    app.finish_curve();
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert_eq!(segs.len(), 3, "{segs:?}");
     assert!(
-        matches!(segs[1], tracedraw_core::geometry::PathSeg::Line(_)),
+        matches!(segs[2], tracedraw_core::geometry::PathSeg::Line(_)),
         "{segs:?}"
     );
 }

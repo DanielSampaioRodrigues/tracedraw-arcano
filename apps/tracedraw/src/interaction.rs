@@ -1562,9 +1562,9 @@ impl App {
         }
     }
 
-    /// Bezier/Pen: click places a node with a straight segment to it (a
-    /// node that was pulled before becomes a cusp: the segment leaves it
-    /// straight), click-and-drag pulls out a smooth handle (C while
+    /// Bezier/Pen: click places a node without a handle (the segment to
+    /// it follows the handle of the node before and arrives straight),
+    /// click-and-drag pulls out a smooth handle (C while
     /// pulling makes the node a cusp: only the outgoing handle follows;
     /// Alt moves the node). Clicking the last node again makes it a cusp.
     /// Polyline and 2-point line place straight segments. Double-click or
@@ -1674,11 +1674,10 @@ impl App {
             c.smooth = smooth;
             c.bspline = bspline;
             let drag = response.drag_started_by(PointerButton::Primary);
-            if !drag && smooth {
-                // A click: the segment to the new node is straight, so a
-                // node pulled before becomes a cusp.
-                c.cusp_last();
-            }
+            // A click places a node without a handle: the segment to it
+            // is the one the preview showed, shaped by the handle of the
+            // node before (straight when that node has none), arriving
+            // straight at the new node (#314).
             if drag || !c.dragging_handle {
                 c.nodes.push((p, None));
             }

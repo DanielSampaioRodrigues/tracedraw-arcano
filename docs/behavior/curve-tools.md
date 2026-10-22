@@ -27,10 +27,13 @@ meets the start) `Path` objects with the toolbox defaults.
   is let go; pressing it again in the same pull changes nothing more.
   While a curve is being drawn C never aligns the selection. Alt while
   pulling moves the node itself, its handles with it.
-- A plain click places a node with a straight segment to it: a node
-  pulled before becomes a cusp, the segment leaving it straight (its
-  incoming handle stays). Clicking the last node again (within the join
-  distance) makes it a cusp without adding a node.
+- A plain click places a node without a handle: the segment to it is
+  the one the preview showed, curved by the handle of the node before
+  (straight when that node has none) and arriving straight at the new
+  node; the segment leaving it is straight unless a handle is pulled
+  (`pick_drag_tests::a_pen_click_after_a_pulled_node_follows_its_handle`).
+  Clicking the last node again (within the join distance) makes it a
+  cusp without adding a node.
 - Double-click or Enter finishes; with the Bezier tool Space finishes
   too and then, being the Pick tool's key, switches to Pick (checked by
   `pick_drag_tests::space_finishes_a_bezier_curve_then_picks`); Esc
@@ -207,7 +210,7 @@ Medium (first), High, Highest; kept in the preferences
 
 ## Checks
 
-- `pick_drag_tests::a_pen_click_after_a_pulled_node_gives_a_straight_segment`
+- `pick_drag_tests::a_pen_click_after_a_pulled_node_follows_its_handle`
 - `pick_drag_tests::clicking_the_last_node_again_makes_it_a_cusp`
 - `pick_drag_tests::dragging_from_the_first_node_shapes_only_the_closing_segment`
 - `pick_drag_tests::the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve`
