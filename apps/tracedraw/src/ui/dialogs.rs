@@ -612,6 +612,8 @@ pub enum Dialog {
         shape: tracedraw_core::ShapeId,
         name: String,
     },
+    /// The Outline Pen dialog (F12, #357).
+    OutlinePen(Box<crate::ui::outline_pen::OutlinePenState>),
     /// Text > Edit Text: the text of a text object in a box of its own
     /// (#355).
     EditText {
@@ -987,8 +989,17 @@ pub fn show(app: &mut App, ctx: &Context) {
         app.shortcut_editor.capture = None;
     }
     crate::ui::line_style::apply_units_request(app, ctx);
-    if crate::ui::line_style::take_request(ctx) && matches!(app.dialog, Dialog::None) {
+    let line_style = crate::ui::line_style::take_request(ctx);
+    if line_style && matches!(app.dialog, Dialog::OutlinePen(_)) {
+        // Edit Line Style from the Outline Pen dialog: back to it after.
+        let back = std::mem::replace(&mut app.dialog, Dialog::LineStyle(Default::default()));
+        app.dialog_return = Some(Box::new(back));
+    } else if line_style && matches!(app.dialog, Dialog::None) {
         app.dialog = Dialog::LineStyle(Default::default());
+    } else if matches!(app.dialog, Dialog::None) {
+        if let Some(back) = app.dialog_return.take() {
+            app.dialog = *back;
+        }
     }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
@@ -1209,6 +1220,7 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
+        Dialog::OutlinePen(st) => crate::ui::outline_pen::dialog(app, ctx, st, &mut close),
         Dialog::OldCdrVersion { version } => {
             let mut choose = false;
             window(ctx, tr("dialog.old_cdr_title")).show(ctx, |ui| {

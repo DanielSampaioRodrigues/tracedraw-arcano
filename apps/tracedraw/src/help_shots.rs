@@ -419,6 +419,14 @@ fn shots() -> Vec<(String, Shot, bool)> {
         false,
     ));
     v.push((
+        name("lines-shapes/outlines#outline-pen"),
+        Shot::Dialog(|app| {
+            app.open_outline_pen();
+            std::mem::replace(&mut app.dialog, Dialog::None)
+        }),
+        false,
+    ));
+    v.push((
         name("lines-shapes/shape-tool#align-nodes"),
         Shot::Dialog(|_| Dialog::NodeAlign {
             horizontal: true,

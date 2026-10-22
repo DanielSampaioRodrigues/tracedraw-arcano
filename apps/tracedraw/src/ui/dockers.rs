@@ -1968,7 +1968,7 @@ fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed
 }
 
-fn arrow_combo(
+pub(crate) fn arrow_combo(
     ui: &mut Ui,
     id: &str,
     label: &str,

@@ -363,7 +363,7 @@ pub const VECTOR_FX_DPI: f64 = 300.0;
 const VECTOR_FX_MAX_PIXELS: f64 = 16_000_000.0;
 
 /// The resolution bitmap effects draw vector objects at: the drawing's
-/// rendering resolution (Document Properties, 72 to 1200 dpi), else
+/// rendering resolution (Layout > Page Setup, 72 to 1200 dpi), else
 /// [`VECTOR_FX_DPI`] (#382).
 pub fn vector_fx_dpi(meta: &tracedraw_core::document::Metadata) -> f64 {
     if meta.resolution_dpi.is_finite() && meta.resolution_dpi > 0.0 {

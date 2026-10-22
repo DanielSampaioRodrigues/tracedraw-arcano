@@ -60,7 +60,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::PageSize { .. } => "pages-layout/pages#page-size",
         Dialog::Options => options_topic(options),
         Dialog::PageNumberSettings => "pages-layout/pages#page-numbers",
-        Dialog::LineStyle(_) => "lines-shapes/outlines#outline-pen",
+        Dialog::LineStyle(_) | Dialog::OutlinePen(_) => "lines-shapes/outlines#outline-pen",
         Dialog::TableCount(_) => "objects/tables",
         Dialog::OldCdrVersion { .. } => "get-started/open-and-save#save-as",
         Dialog::RenameLayer { .. } | Dialog::RenameObject { .. } => {

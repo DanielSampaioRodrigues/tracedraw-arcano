@@ -403,7 +403,7 @@ The Effects menu's bitmap effects work on any object, not only bitmaps.
 A vector object keeps its shape, fill and outlines; its effects are kept
 with it (`Shape::raster_fx`) and it is drawn as the picture they make:
 the object alone, drawn in its own space at the drawing's rendering
-resolution (Document Properties, 72 to 1200 dpi; 300 when none is set;
+resolution (Layout > Page Setup, 72 to 1200 dpi; 300 when none is set;
 fewer pixels when it would pass 16 million) with a margin of 2 mm, its outline width and 8 % of
 its size, then the visible effects in order. The picture is kept in the
 drawing, so the screen, PDF, SVG, EPS and EMF draw it without the

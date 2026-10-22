@@ -7,8 +7,15 @@ section of the [[docker.properties]] panel.
 ## Opening the outline settings {#open}
 
 - The [[tool.outline_pen]] tool (<kbd>F12</kbd>) opens the
-  [[docker.properties]] panel at the [[docker.outline]] section, then goes back
-  to the [[tool.pick]] tool.
+  [[outline_pen.title]] dialog box with every outline setting: color, width
+  and its unit, style, miter limit, dashes, corners, line caps, position,
+  arrowheads, calligraphy, [[docker.behind_fill]], [[docker.scale_with_object]],
+  the variable outline's width nodes and [[outline_pen.overprint]]. **OK**
+  changes only what you changed, on every selected object; with nothing
+  selected it sets the outline of new objects.
+
+![The Outline Pen dialog box](../../img/lines-shapes-outlines-outline-pen.png)
+
 - Double-click the outline part of the status bar.
 - Right-click a color of the palette to color the outline of the selection.
 

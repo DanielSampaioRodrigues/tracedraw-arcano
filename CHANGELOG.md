@@ -6,7 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Bitmap effects on vector objects (3D Rotate and the others) are drawn at the drawing's rendering resolution from Document Properties instead of a fixed 300 dpi, up to 16 million pixels instead of 4, and are made again when the resolution changes; set it higher for sharper results on screen, in PDF and in exported images (#382).
+- Outline Pen (F12): a dialog with every outline setting laid out in groups as in the reference program: General (colour, width with its unit, style, mitre limit, dashes, corners, line caps, position), Arrowheads, Calligraphy with a picture of the nib, Behind fill, Scale with object, Variable Outline (width nodes, sides and total) and Overprint outline. OK changes only what was changed; with nothing selected it sets the outline of new objects. F12 opened the Properties panel before (#357).
+
+- Bitmap effects on vector objects (3D Rotate and the others) are drawn at the drawing's rendering resolution from Layout > Page Setup instead of a fixed 300 dpi, up to 16 million pixels instead of 4, and are made again when the resolution changes; set it higher for sharper results on screen, in PDF and in exported images (#382).
 
 - Paragraph text: frames have a flow tab under their bottom edge, as in the reference program. A click on it, then a click on another frame links them, even on another page; a click or drag on an empty spot makes a new frame there that the text flows into. Linking used to need both frames selected, so frames on different pages could not be linked (#371).
 

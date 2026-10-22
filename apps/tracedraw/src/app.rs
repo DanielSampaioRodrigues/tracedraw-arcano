@@ -1057,6 +1057,9 @@ pub struct App {
     /// A frame's flow tab was clicked: the next click says where its text
     /// flows on (#371).
     pub pending_text_link: Option<ShapeId>,
+    /// A dialog to go back to when the one opened from it closes (Edit
+    /// Line Style from the Outline Pen dialog).
+    pub dialog_return: Option<Box<crate::ui::dialogs::Dialog>>,
     /// Where a drag for the new frame of a flow began.
     pub text_link_drag: Option<Point>,
     /// Clip frame being edited in place: (frame id, content ids).
@@ -2030,6 +2033,7 @@ impl App {
             show_welcome: false,
             pending_clip_frame: false,
             pending_text_link: None,
+            dialog_return: None,
             text_link_drag: None,
             clip_frame_edit: None,
             symmetry_edit: None,

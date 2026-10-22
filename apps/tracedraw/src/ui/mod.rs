@@ -66,6 +66,7 @@ pub mod menus;
 pub mod objects_docker;
 pub mod options;
 pub mod options_global;
+pub mod outline_pen;
 pub mod overflow;
 pub mod palette;
 pub mod pdf_password;
