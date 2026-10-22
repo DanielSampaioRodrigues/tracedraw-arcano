@@ -17,6 +17,7 @@ pub mod brand;
 pub mod brush_bars;
 pub mod callout_bar;
 pub mod chrome;
+pub mod clip_bar;
 pub mod color_docker;
 pub mod color_management;
 pub mod color_picker;
@@ -594,6 +595,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
 
     if app.has_document() && !app.show_welcome {
         symmetry_bar::show(app, &ctx);
+        clip_bar::show(app, &ctx);
         focus_bar::show(app, &ctx);
         effect_picker::show(app, &ctx);
         crate::perspective_draw::show_bar(app, &ctx);

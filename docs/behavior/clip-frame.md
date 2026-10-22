@@ -38,6 +38,21 @@ frame is edited node by node, and the clip frame stays one
   moves alone and the contents stay where they are
   (`compensate_unlocked_clip_frames` undoes the transform on them).
 
+## The clip frame bar
+
+With one clip frame selected (Pick tool) a bar floats at the top left
+of the drawing window (`ui/clip_bar.rs`): Edit (Edit Contents), Select
+Contents (the contents become the selection, with their round handles),
+Extract Contents, Lock Contents (pressed while the contents follow the
+frame; see Lock Contents to Frame) and Fit Contents, a list of Center
+Contents (the contents' centre on the frame's centre), Fit Contents
+Proportionally (scaled alike to fit inside the frame, centred), Fill
+Frame Proportionally (scaled alike to cover it) and Stretch Contents to
+Fill (scaled to the frame's box), each one "Fit Contents" undo step
+(`App::fit_clip_contents`, `ops2::fit_contents_transform`). While the
+contents are edited the bar shows Finish, as the symmetry bar does
+(`ops2::clip_frame_tests::contents_fit_the_frame_four_ways`).
+
 ## Picking
 
 A click selects the clip frame (anywhere in its box). Ctrl+click

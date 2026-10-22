@@ -907,6 +907,57 @@ impl App {
         self.select(vec![frame]);
     }
 
+    /// The clip frame bar's Select Contents: the frame's contents become
+    /// the selection (as Ctrl+click picks them), with their round
+    /// handles.
+    pub fn select_clip_contents(&mut self, clip: ShapeId) {
+        let ids: Vec<ShapeId> = match self.doc().find_shape(clip).map(|s| &s.kind) {
+            Some(ShapeKind::ClipFrame { contents, .. }) => contents.iter().map(|c| c.id).collect(),
+            _ => Vec::new(),
+        };
+        if !ids.is_empty() {
+            self.select(ids);
+        }
+    }
+
+    /// The clip frame bar's Fit Contents: the contents moved (and
+    /// scaled) to the frame's box as `mode` says; one undo step.
+    pub fn fit_clip_contents(&mut self, clip: ShapeId, mode: crate::ui::clip_bar::FitContents) {
+        let (frame_bounds, ids) = match self.doc().find_shape(clip) {
+            Some(s) => match &s.kind {
+                ShapeKind::ClipFrame { contents, .. } => (
+                    self.doc()
+                        .shape_on_page(clip)
+                        .map(|c| c.bounds())
+                        .unwrap_or_default(),
+                    contents.iter().map(|c| c.id).collect::<Vec<_>>(),
+                ),
+                _ => return,
+            },
+            None => return,
+        };
+        let Some(contents_bounds) = ids
+            .iter()
+            .filter_map(|id| self.doc().shape_on_page(*id).map(|s| s.bounds()))
+            .reduce(|a, b| a.union(b))
+        else {
+            return;
+        };
+        let t = fit_contents_transform(contents_bounds, frame_bounds, mode);
+        if t == Affine::IDENTITY {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch(
+            "Fit Contents",
+            &[Command::TransformShapes {
+                shapes: ids,
+                transform: t,
+            }],
+        ) {
+            self.status = e.to_string();
+        }
+    }
+
     /// Whether a clip frame's contents move with the frame (the default).
     pub fn clip_frame_locked(&self, id: ShapeId) -> bool {
         self.doc()
@@ -3186,6 +3237,121 @@ mod tests {
         // Less than the original size does nothing.
         app.inflate_bitmaps_by(100.0, 100.0);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+    }
+}
+
+/// The page transform that takes `contents` (its box) to `frame` as the
+/// Fit Contents `mode` says: centred without scaling, scaled alike to fit
+/// inside or to cover, or stretched to the box. The identity for an
+/// empty box.
+pub fn fit_contents_transform(
+    contents: Rect,
+    frame: Rect,
+    mode: crate::ui::clip_bar::FitContents,
+) -> Affine {
+    use crate::ui::clip_bar::FitContents;
+    if contents.width() < 1e-9 || contents.height() < 1e-9 {
+        return Affine::IDENTITY;
+    }
+    let (sx, sy) = match mode {
+        FitContents::Center => (1.0, 1.0),
+        FitContents::FitProportionally => {
+            let s = (frame.width() / contents.width()).min(frame.height() / contents.height());
+            (s, s)
+        }
+        FitContents::FillProportionally => {
+            let s = (frame.width() / contents.width()).max(frame.height() / contents.height());
+            (s, s)
+        }
+        FitContents::Stretch => (
+            frame.width() / contents.width(),
+            frame.height() / contents.height(),
+        ),
+    };
+    let c = contents.center();
+    let f = frame.center();
+    Affine::translate(f.to_vec2())
+        * Affine::scale_non_uniform(sx, sy)
+        * Affine::translate(-c.to_vec2())
+}
+
+#[cfg(test)]
+mod clip_frame_tests {
+    use super::fit_contents_transform;
+    use crate::app::App;
+    use crate::ui::clip_bar::FitContents;
+    use tracedraw_core::geometry::{Rect, Shape as _};
+    use tracedraw_core::{ShapeId, ShapeKind};
+
+    fn rect(app: &mut App, r: Rect) -> ShapeId {
+        app.new_shape(ShapeKind::Rect {
+            rect: r,
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a layer")
+    }
+
+    /// The four ways of fitting contents to a frame, and the bar's
+    /// commands on a clip frame: the contents picked, fitted as one undo
+    /// step.
+    #[test]
+    fn contents_fit_the_frame_four_ways() {
+        let frame = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let contents = Rect::new(200.0, 200.0, 240.0, 220.0);
+        let moved = |m: FitContents| -> Rect {
+            (fit_contents_transform(contents, frame, m) * contents.to_path(0.01)).bounding_box()
+        };
+        let near = |a: Rect, b: Rect| {
+            (a.x0 - b.x0).abs() < 1e-9
+                && (a.y0 - b.y0).abs() < 1e-9
+                && (a.x1 - b.x1).abs() < 1e-9
+                && (a.y1 - b.y1).abs() < 1e-9
+        };
+        assert!(near(
+            moved(FitContents::Center),
+            Rect::new(30.0, 15.0, 70.0, 35.0)
+        ));
+        // Fit: 40 x 20 scaled by 2.5 (the height's limit) to 100 x 50.
+        assert!(near(moved(FitContents::FitProportionally), frame));
+        // A taller box: fit by the height, fill by the width.
+        let tall = Rect::new(0.0, 0.0, 10.0, 20.0);
+        let fit = (fit_contents_transform(tall, frame, FitContents::FitProportionally)
+            * tall.to_path(0.01))
+        .bounding_box();
+        assert!(near(fit, Rect::new(37.5, 0.0, 62.5, 50.0)), "{fit:?}");
+        let fill = (fit_contents_transform(tall, frame, FitContents::FillProportionally)
+            * tall.to_path(0.01))
+        .bounding_box();
+        assert!(near(fill, Rect::new(0.0, -75.0, 100.0, 125.0)), "{fill:?}");
+        assert!(near(moved(FitContents::Stretch), frame));
+        assert_eq!(
+            fit_contents_transform(Rect::ZERO, frame, FitContents::Stretch),
+            tracedraw_core::geometry::Affine::IDENTITY
+        );
+
+        let mut app = App::headless();
+        let f = rect(&mut app, Rect::new(10.0, 10.0, 110.0, 60.0));
+        let a = rect(&mut app, Rect::new(200.0, 200.0, 220.0, 210.0));
+        let b = rect(&mut app, Rect::new(220.0, 200.0, 240.0, 220.0));
+        app.settings.clip_frame.auto_center = crate::settings::AutoCenter::Never;
+        app.place_inside(vec![a, b], f);
+        let clip = app.doc().top_level_of(a).expect("clip");
+        app.select_clip_contents(clip);
+        assert_eq!(app.selection, vec![a, b]);
+        assert!(app.selection_nested());
+        let depth = app.engine.history_labels().0.len();
+        app.fit_clip_contents(clip, FitContents::Stretch);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        let bounds = [a, b]
+            .iter()
+            .map(|id| app.doc().shape_on_page(*id).expect("inside").bounds())
+            .reduce(|x, y| x.union(y))
+            .expect("bounds");
+        assert!(
+            near(bounds, Rect::new(10.0, 10.0, 110.0, 60.0)),
+            "{bounds:?}"
+        );
     }
 }
 
