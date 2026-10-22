@@ -68,6 +68,19 @@ around each corner, bulging outwards, and a straight double arrow along
 each side. The centre of rotation is a ring 8 points in radius with a
 dot in the middle.
 
+## Large selections
+
+With many objects selected (Select All on a drawing of thousands of
+objects) the window keeps its frame rate: the selected objects are
+gathered in one pass over the layers and kept, shared, while the
+drawing, the page and the selection stay as they are
+(`App::selected_rc`); the bars, the status bar and the canvas read that
+one list, and the checks that ran once per selected object over the
+whole drawing (its layer, whether it lies in a group, linked text
+frames) take one pass too. With 3000 rectangles selected a frame went
+from about 200 ms to about 7 ms (#367; check
+`app::tests::the_selected_objects_are_gathered_once_and_kept_while_nothing_changes`).
+
 ## Selection groups
 
 Ctrl and a number from 0 to 9 store the selection under that number;

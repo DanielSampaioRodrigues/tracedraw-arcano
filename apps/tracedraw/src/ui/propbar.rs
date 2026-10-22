@@ -1789,7 +1789,7 @@ fn origin_selector(ui: &mut Ui, app: &mut App) {
 /// The rotation of the single selected object (degrees), from its
 /// transform.
 fn selection_angle(app: &App) -> f64 {
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     if shapes.len() != 1 {
         return 0.0;
     }
@@ -2314,7 +2314,7 @@ fn arrow_label(a: &tracedraw_core::Arrowhead) -> String {
 pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
     // The selection's arc when an ellipse is selected, else the tool's.
     let selected: Vec<(tracedraw_core::ShapeId, tracedraw_core::geometry::Rect)> = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .filter_map(|s| match &s.kind {
             ShapeKind::Ellipse { rect, .. } => Some((s.id, *rect)),
@@ -2322,7 +2322,7 @@ pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
         })
         .collect();
     let current = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .find_map(|s| match &s.kind {
             ShapeKind::Ellipse { arc, .. } => Some(*arc),
@@ -2425,7 +2425,7 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         f64,
     );
     let selected: Vec<Sel> = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .filter_map(|s| match &s.kind {
             ShapeKind::Polygon {
@@ -2642,7 +2642,7 @@ impl CornerEdit {
 pub fn edit_corners(app: &mut App, edit: CornerEdit) {
     let together = app.corners_together;
     let cmds: Vec<Command> = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .filter_map(|s| {
             let kind = s.with_page_corners(edit.apply(s.page_corners()?, together))?;
@@ -2650,7 +2650,7 @@ pub fn edit_corners(app: &mut App, edit: CornerEdit) {
         })
         .collect();
     let any_rect = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Rect { .. }));
     if !any_rect {
@@ -2675,7 +2675,7 @@ pub fn edit_corners(app: &mut App, edit: CornerEdit) {
 /// them together, and relative corner scaling.
 pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
     let current = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .find_map(|s| s.page_corners())
         .unwrap_or(app.rect_corners);
@@ -2750,7 +2750,7 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
 /// drawn.
 pub fn kind_part(app: &mut App, ui: &mut Ui) -> bool {
     let kinds: Vec<u8> = app
-        .selected_shapes()
+        .selected_rc()
         .iter()
         .map(|s| match s.kind {
             ShapeKind::Rect { .. } => 1,
@@ -2856,7 +2856,7 @@ pub fn arrange_offers(shapes: &[tracedraw_core::Shape]) -> Option<(bool, bool, b
 
 pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
     use crate::ops::Shaping;
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     let Some((many, groups, parts)) = arrange_offers(&shapes) else {
         return false;
     };
@@ -3063,7 +3063,7 @@ pub fn wrap_offset_field(app: &mut App, ui: &mut Ui, offset: f64) {
 /// Wrap Paragraph Text, To Front and To Back of the layer and Convert to
 /// Curves, for the selected objects.
 pub fn order_part(app: &mut App, ui: &mut Ui) {
-    let wrap = app.selected_shapes().iter().any(|s| s.wrap_text);
+    let wrap = app.selected_rc().iter().any(|s| s.wrap_text);
     if pic_button(
         ui,
         Pic::WrapText,
@@ -3293,30 +3293,30 @@ mod tests {
         let depth = app.engine.history_labels().0.len();
         // Together: every corner; the sizes are page millimetres.
         edit_corners(&mut app, CornerEdit::Size(Corners::TOP_RIGHT, 6.0));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert_eq!(s.page_corners().unwrap().radii, [6.0; 4]);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
         assert_eq!(app.engine.undo_label(), Some("Corner Radius"));
         // Unlocked: one corner.
         app.corners_together = false;
         edit_corners(&mut app, CornerEdit::Size(Corners::BOTTOM_LEFT, 1.0));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert_eq!(s.page_corners().unwrap().radii, [6.0, 6.0, 1.0, 6.0]);
         // Turning relative scaling off keeps the sizes on the page.
         edit_corners(&mut app, CornerEdit::Scaling(false));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         let c = s.page_corners().unwrap();
         assert!(c.fixed);
         assert_eq!(c.radii, [6.0, 6.0, 1.0, 6.0]);
         // ... and scaling the rectangle again leaves them alone.
         app.transform_selection(Affine::scale(0.5));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert_eq!(s.page_corners().unwrap().radii, [6.0, 6.0, 1.0, 6.0]);
         assert_eq!(app.rect_corners, Corners::default());
         // Undo goes back one edit at a time.
         app.undo();
         app.undo();
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert!(!s.page_corners().unwrap().fixed);
     }
 
@@ -3326,7 +3326,7 @@ mod tests {
         app.tool = crate::tools::Tool::Star;
         app.star_complex = true;
         app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert!(matches!(
             s.kind,
             ShapeKind::Polygon {
@@ -3353,7 +3353,7 @@ mod tests {
         // Perfect stars stay perfect.
         app.star_complex = false;
         app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         assert!(matches!(s.kind, ShapeKind::Polygon { complex: None, .. }));
     }
 
@@ -3363,7 +3363,7 @@ mod tests {
         app.rect_corners = Corners::uniform(2.0, CornerKind::Scallop);
         app.tool = crate::tools::Tool::Rectangle;
         app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
-        let s = app.selected_shapes()[0].clone();
+        let s = app.selected_rc()[0].clone();
         let (_, c) = s.kind.rect_corners().unwrap();
         assert_eq!(c, Corners::uniform(2.0, CornerKind::Scallop));
     }

@@ -826,7 +826,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
         let v = ui.visuals_mut();
         v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::field();
         v.widgets.hovered.weak_bg_fill = crate::theme::Tokens::field();
-        let shapes = app.selected_shapes();
+        let shapes = app.selected_rc();
         match app.tool {
             Tool::Shape => shape_tool_bar(app, ui),
             Tool::Pick | Tool::FreeformPick
@@ -1417,7 +1417,7 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
     if selected {
         sep(ui);
         crate::ui::propbar::outline_part(app, ui);
-        let open = app.selected_shapes().iter().any(|s| match &s.kind {
+        let open = app.selected_rc().iter().any(|s| match &s.kind {
             ShapeKind::Path { path, .. } => !path
                 .elements()
                 .iter()
@@ -1672,7 +1672,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         }
     }
     vsep(ui);
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     let is_text = shapes
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Text { .. }));
@@ -2059,7 +2059,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     use tracedraw_core::nodes::NodeType;
     // Rectangles, ellipses and polygons: the Shape tool edits them through
     // their own controls (corners, pie and arc, points), as with their tools.
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     // The kind of the object being edited first, so a rectangle still
     // being one reads apart from a curve.
     let kind_label = |ui: &mut Ui, key: &str| {

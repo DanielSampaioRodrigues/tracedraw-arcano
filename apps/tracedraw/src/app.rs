@@ -975,6 +975,10 @@ pub struct App {
     /// The visual bounds of objects with live effects, for the document
     /// revision they were measured at (see [`App::visual_bounds`]).
     pub visual_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, Rect>)>,
+    /// The selected objects in page space, for the drawing, its revision
+    /// and the selection they were gathered for (see
+    /// [`App::selected_rc`]).
+    pub selected_cache: std::cell::RefCell<Option<SelectedCache>>,
     /// Where the canvas began on screen when it was last drawn, so the
     /// drawing stays put in its window when the window moves (see
     /// `App::anchor_view`).
@@ -1723,6 +1727,15 @@ impl DockerTab {
     }
 }
 
+/// The selected objects as [`App::selected_rc`] gathered them: the
+/// drawing's engine, its revision and the page, and the selection.
+#[derive(Debug, Clone)]
+pub struct SelectedCache {
+    key: (u64, u64, tracedraw_core::PageId),
+    selection: Vec<ShapeId>,
+    shapes: std::rc::Rc<Vec<Shape>>,
+}
+
 /// An action Edit > Repeat can repeat.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Repeatable {
@@ -1965,6 +1978,7 @@ impl App {
             palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
+            selected_cache: std::cell::RefCell::new(None),
             view_anchor: None,
             window_layout: Default::default(),
             window_layout_seen: None,
@@ -3517,10 +3531,65 @@ impl App {
     /// The selected objects, each in page space (an object inside a group
     /// with its group's transform taken in).
     pub fn selected_shapes(&self) -> Vec<Shape> {
+        if self.selection.len() > 8 {
+            return (*self.selected_rc()).clone();
+        }
+        self.gather_selected()
+    }
+
+    /// [`Self::selected_shapes`] shared, without a copy: gathered once for
+    /// a drawing, its revision and the selection, so the bars, the canvas
+    /// and the status bar asking for it in one frame cost one pass (a few
+    /// thousand selected objects made a frame take a fifth of a second,
+    /// #367).
+    pub fn selected_rc(&self) -> std::rc::Rc<Vec<Shape>> {
+        let key = (self.engine.instance(), self.engine.revision(), self.page);
+        if let Ok(cache) = self.selected_cache.try_borrow() {
+            if let Some(c) = cache.as_ref() {
+                if c.key == key && c.selection == self.selection {
+                    return c.shapes.clone();
+                }
+            }
+        }
+        let shapes = std::rc::Rc::new(self.gather_selected());
+        if let Ok(mut cache) = self.selected_cache.try_borrow_mut() {
+            *cache = Some(SelectedCache {
+                key,
+                selection: self.selection.clone(),
+                shapes: shapes.clone(),
+            });
+        }
+        shapes
+    }
+
+    fn gather_selected(&self) -> Vec<Shape> {
         let doc = self.doc();
+        if self.selection.len() <= 8 {
+            return self
+                .selection
+                .iter()
+                .filter_map(|id| doc.shape_on_page(*id))
+                .collect();
+        }
+        // Many objects (Select All): one pass over the layers finds the
+        // ones lying on a layer, instead of a search of the whole drawing
+        // for each, which made a frame take a fifth of a second with a
+        // few thousand objects selected (#367). Objects inside groups are
+        // found as before.
+        let wanted: std::collections::HashSet<ShapeId> = self.selection.iter().copied().collect();
+        let mut found: std::collections::HashMap<ShapeId, &Shape> =
+            std::collections::HashMap::with_capacity(wanted.len());
+        for s in doc.all_layers().flat_map(|l| &l.shapes) {
+            if wanted.contains(&s.id) {
+                found.entry(s.id).or_insert(s);
+            }
+        }
         self.selection
             .iter()
-            .filter_map(|id| doc.shape_on_page(*id))
+            .filter_map(|id| match found.get(id) {
+                Some(s) => Some((*s).clone()),
+                None => doc.shape_on_page(*id),
+            })
             .collect()
     }
 
@@ -3551,7 +3620,17 @@ impl App {
     /// in the Objects docker).
     pub fn selection_nested(&self) -> bool {
         let doc = self.doc();
-        self.selection.iter().any(|id| doc.is_nested(*id))
+        if self.selection.len() <= 8 {
+            return self.selection.iter().any(|id| doc.is_nested(*id));
+        }
+        // One pass over the layers rather than a search per object (#367).
+        let on_layer: std::collections::HashSet<ShapeId> = doc
+            .all_layers()
+            .flat_map(|l| l.shapes.iter().map(|s| s.id))
+            .collect();
+        self.selection
+            .iter()
+            .any(|id| !on_layer.contains(id) && doc.find_shape(*id).is_some())
     }
 
     /// Turn the rotate and skew handles on or off (a moved centre of
@@ -3563,7 +3642,7 @@ impl App {
     /// The selection's bounds as drawn: live effects (an envelope, a
     /// contour...) included.
     pub fn selection_bounds(&self) -> Option<Rect> {
-        self.selected_shapes()
+        self.selected_rc()
             .iter()
             .map(|s| self.visual_bounds(s))
             .reduce(|a, b| a.union(b))
@@ -6478,6 +6557,60 @@ mod tests {
         app.move_docker(DockerTab::Hints, DockerPlace::Right, None);
         assert!(app.left_dockers.is_empty() && !app.show_left_dockers);
         assert_eq!(app.docker_tab, DockerTab::Hints);
+    }
+
+    /// Many selected objects (Select All) are gathered in one pass and
+    /// kept for the frame: the same list while nothing changes, a new one
+    /// when the drawing or the selection changes; objects inside groups
+    /// are found too, in the order of the selection (#367).
+    #[test]
+    fn the_selected_objects_are_gathered_once_and_kept_while_nothing_changes() {
+        use tracedraw_core::{geometry::Rect, Command};
+        let mut app = App::headless();
+        let mut ids = Vec::new();
+        for k in 0..20 {
+            let x = k as f64 * 5.0;
+            ids.push(
+                app.new_shape(ShapeKind::Rect {
+                    rect: Rect::new(x, 0.0, x + 4.0, 4.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect"),
+            );
+        }
+        // Two of them grouped, one picked inside the group.
+        app.run(Command::Group {
+            shapes: vec![ids[0], ids[1]],
+        });
+        let mut sel: Vec<ShapeId> = ids[2..].iter().rev().copied().collect();
+        sel.push(ids[0]);
+        app.select(sel.clone());
+        let a = app.selected_rc();
+        let b = app.selected_rc();
+        assert!(std::rc::Rc::ptr_eq(&a, &b), "kept while nothing changes");
+        let got: Vec<ShapeId> = a.iter().map(|s| s.id).collect();
+        assert_eq!(got, sel, "every object, in the selection's order");
+        let slow: Vec<Shape> = sel
+            .iter()
+            .filter_map(|id| app.doc().shape_on_page(*id))
+            .collect();
+        assert_eq!(*a, slow, "the same objects as one by one");
+        assert!(app.selection_nested());
+        // A change of the drawing: gathered again, with the change.
+        app.run(Command::SetOpacity {
+            shapes: vec![ids[5]],
+            opacity: 0.5,
+        });
+        let c = app.selected_rc();
+        assert!(!std::rc::Rc::ptr_eq(&a, &c));
+        assert!(c
+            .iter()
+            .any(|s| s.id == ids[5] && (s.opacity - 0.5).abs() < 1e-9));
+        // A change of the selection too.
+        app.select(ids[2..12].to_vec());
+        assert_eq!(app.selected_rc().len(), 10);
+        assert!(!app.selection_nested());
     }
 
     #[test]

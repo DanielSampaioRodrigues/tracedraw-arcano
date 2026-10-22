@@ -187,14 +187,16 @@ impl App {
             .flat_map(|l| &l.shapes)
             .filter(|s| s.visible)
         {
+            // Only text frames: asking every object whether it is selected
+            // cost a search of the selection each (#367).
+            let Some(mut c) = s.text_frame_corners() else {
+                continue;
+            };
             let selected = self.selection.contains(&s.id);
             let chosen = selected || editing == Some(s.id);
             if !(self.settings.show_text_frames || chosen) {
                 continue;
             }
-            let Some(mut c) = s.text_frame_corners() else {
-                continue;
-            };
             if let Some(t) = preview.filter(|t| selected && self.resizes_text_frame(s.id, *t)) {
                 if let Some(kind) = resized_kind(s, t) {
                     let mut moved = s.clone();

@@ -2523,7 +2523,7 @@ impl App {
         }
         // Bitmap adjustments of the Effects menu.
         if self
-            .selected_shapes()
+            .selected_rc()
             .iter()
             .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }))
         {
@@ -2571,7 +2571,7 @@ impl App {
         // selects the group again (a second time also zooms to it). With
         // text selected Ctrl+8 and Ctrl+2 keep changing the text size.
         let text_selected = self
-            .selected_shapes()
+            .selected_rc()
             .iter()
             .any(|s| matches!(s.kind, ShapeKind::Text { .. }));
         for (n, k) in [
@@ -2709,7 +2709,7 @@ impl App {
         // Ctrl+8 and Ctrl+2: selected text one keyboard text increment
         // larger or smaller (Options > Text).
         if self
-            .selected_shapes()
+            .selected_rc()
             .iter()
             .any(|s| matches!(s.kind, ShapeKind::Text { .. }))
         {

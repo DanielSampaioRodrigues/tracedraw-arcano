@@ -36,6 +36,8 @@ pub struct Engine {
     uid_state: u64,
     /// The id the next recorded step gets.
     next_step: u64,
+    /// This engine's identity, unlike any other engine's in this run.
+    instance: u64,
 }
 
 /// A seed no other engine in this run has: std's per-run random hash keys
@@ -67,6 +69,7 @@ impl Engine {
             max_history: 200,
             uid_state: fresh_seed(),
             next_step: 1,
+            instance: fresh_seed(),
         };
         e.doc.assign_uids(&mut e.uid_state);
         e.doc.refresh_text_flow();
@@ -75,6 +78,12 @@ impl Engine {
 
     pub fn document(&self) -> &Document {
         &self.doc
+    }
+
+    /// This engine's identity: no other engine of this run has it, so a
+    /// value cached for (instance, revision) belongs to one drawing state.
+    pub fn instance(&self) -> u64 {
+        self.instance
     }
 
     pub fn revision(&self) -> u64 {

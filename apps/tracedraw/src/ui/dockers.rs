@@ -734,7 +734,7 @@ fn current_colors_id() -> egui::Id {
 fn properties(app: &mut App, ui: &mut Ui) {
     let cc = app.current_colors;
     ui.data_mut(|d| d.insert_temp(current_colors_id(), cc));
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     if shapes.is_empty() {
         ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::text_dim()));
         ui.add_space(6.0);
@@ -967,7 +967,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 }
             }
             _ => {
-                for s in &shapes {
+                for s in shapes.iter() {
                     ui.label(format!(
                         "{}  id {}  {}",
                         kind_name(&s.kind),

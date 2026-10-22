@@ -727,7 +727,7 @@ fn draw_drop_frame(app: &App, painter: &Painter) {
 
 fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
-    for s in app.selected_shapes() {
+    for s in app.selected_rc().iter() {
         for e in &s.effects {
             let tracedraw_core::live::Effect::Symmetry {
                 center,
@@ -933,7 +933,15 @@ fn draw_anchors(app: &App, painter: &Painter) {
 fn draw_frame_links(app: &App, painter: &Painter) {
     let view = &app.view;
     let stroke = EStroke::new(1.0, Tokens::SELECTION);
-    for id in &app.selection {
+    // Only linked paragraph text has a chain (asking for every selected
+    // object searched the drawing for each, #367).
+    let linked: Vec<tracedraw_core::ShapeId> = app
+        .selected_rc()
+        .iter()
+        .filter(|s| matches!(s.kind, ShapeKind::Text { frame: Some(_), .. }) && !s.data.is_empty())
+        .map(|s| s.id)
+        .collect();
+    for id in &linked {
         for pair in app.chain_of(*id).windows(2) {
             let (Some(a), Some(b)) = (app.doc().find_shape(pair[0]), app.doc().find_shape(pair[1]))
             else {
@@ -1004,7 +1012,7 @@ fn draw_table_cells(app: &App, painter: &Painter) {
 pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
     let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
     let line = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
-    for s in app.selected_shapes() {
+    for s in app.selected_rc().iter() {
         // What the release will make: rounded corners keep their size.
         let path = s.page_path_after(t);
         for (mut pts, closed) in flatten(&path, &app.view) {
@@ -1061,7 +1069,7 @@ fn draw_along_path(app: &App, painter: &Painter, start: Point, current: Point) {
 }
 
 fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
-    let shapes = app.selected_shapes();
+    let shapes = app.selected_rc();
     if shapes.is_empty() {
         return;
     }
@@ -2396,8 +2404,8 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
     ) {
         return;
     }
-    for s in app.selected_shapes() {
-        let nodes = crate::interaction2::effect_nodes(&s);
+    for s in app.selected_rc().iter() {
+        let nodes = crate::interaction2::effect_nodes(s);
         if nodes.is_empty() {
             continue;
         }
