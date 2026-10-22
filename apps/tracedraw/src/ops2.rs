@@ -1697,7 +1697,79 @@ impl App {
             .collect()
     }
 
-    /// Text > Edit Text: start in-place editing of the selected text.
+    /// Text > Edit Text (Ctrl+Shift+T, the text bar's button, the object's
+    /// menu): the Edit Text dialog with the first selected text's
+    /// characters (#355). A double click edits the text in place instead.
+    pub fn open_edit_text_dialog(&mut self) {
+        if let Some(s) = self.text_shapes().first() {
+            let ShapeKind::Text { spans, .. } = &s.kind else {
+                return;
+            };
+            self.finish_text();
+            self.dialog = crate::ui::dialogs::Dialog::EditText {
+                shape: s.id,
+                text: tracedraw_core::spans_text(spans),
+            };
+        }
+    }
+
+    /// The text object `id` gets the characters `text`, as one undo step
+    /// ("Edit Text"): the characters before and after the part that
+    /// changed keep their own formatting, and the new part takes the
+    /// formatting of the character before it.
+    pub fn set_text_content(&mut self, id: ShapeId, text: &str) {
+        let Some(ShapeKind::Text {
+            spans,
+            origin,
+            frame,
+            align,
+            para,
+            on_path,
+        }) = self.doc().find_shape(id).map(|s| s.kind.clone())
+        else {
+            return;
+        };
+        let old: Vec<char> = tracedraw_core::spans_text(&spans).chars().collect();
+        let new: Vec<char> = text.chars().collect();
+        if old == new {
+            return;
+        }
+        let mut spans = spans;
+        // Each run of characters removed or added, in place: what stays
+        // keeps its formatting and an addition takes the formatting of
+        // the character before it.
+        let mut pos = 0;
+        for op in char_edits(&old, &new) {
+            match op {
+                CharEdit::Keep(n) => pos += n,
+                CharEdit::Remove(n) => tracedraw_core::spans_delete(&mut spans, pos, pos + n),
+                CharEdit::Add(s) => {
+                    tracedraw_core::spans_insert(&mut spans, pos, &s);
+                    pos += s.chars().count();
+                }
+            }
+        }
+        let kind = ShapeKind::Text {
+            spans,
+            origin,
+            frame,
+            align,
+            para,
+            on_path,
+        };
+        if let Err(e) = self
+            .engine
+            .run_with_label(&Command::SetShapeKind { shape: id, kind }, "Edit Text")
+        {
+            self.status = e.to_string();
+            return;
+        }
+        if self.is_linked_frame(id) {
+            self.reflow_chain(id);
+        }
+    }
+
+    /// A double click on a text: start in-place editing of the selected text.
     pub fn edit_selected_text(&mut self) {
         if let Some(s) = self.text_shapes().first() {
             let id = s.id;
@@ -3597,5 +3669,170 @@ mod fit_page_tests {
         let before = app.engine.history_labels().0.len();
         app.fit_page_to_selection();
         assert_eq!(app.engine.history_labels().0.len(), before);
+    }
+}
+
+/// One step of turning one text into another (see [`char_edits`]).
+#[derive(Debug, Clone, PartialEq)]
+enum CharEdit {
+    Keep(usize),
+    Remove(usize),
+    Add(String),
+}
+
+/// The steps that turn `old` into `new`, keeping the longest common
+/// subsequence of characters (beyond 4 million comparisons, only the
+/// common start and end are kept).
+fn char_edits(old: &[char], new: &[char]) -> Vec<CharEdit> {
+    let head = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+    let tail = old[head..]
+        .iter()
+        .rev()
+        .zip(new[head..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (a, b) = (&old[head..old.len() - tail], &new[head..new.len() - tail]);
+    let mut out = Vec::new();
+    let mut push = |e: CharEdit| match (out.last_mut(), e) {
+        (Some(CharEdit::Keep(n)), CharEdit::Keep(m)) => *n += m,
+        (Some(CharEdit::Remove(n)), CharEdit::Remove(m)) => *n += m,
+        (Some(CharEdit::Add(s)), CharEdit::Add(t)) => s.push_str(&t),
+        (_, e) => out.push(e),
+    };
+    if head > 0 {
+        push(CharEdit::Keep(head));
+    }
+    if a.len().saturating_mul(b.len()) > 4_000_000 {
+        if !a.is_empty() {
+            push(CharEdit::Remove(a.len()));
+        }
+        if !b.is_empty() {
+            push(CharEdit::Add(b.iter().collect()));
+        }
+    } else {
+        // lcs[i][j]: the longest common subsequence of a[i..] and b[j..].
+        let w = b.len() + 1;
+        let mut lcs = vec![0u32; (a.len() + 1) * w];
+        for i in (0..a.len()).rev() {
+            for j in (0..b.len()).rev() {
+                lcs[i * w + j] = if a[i] == b[j] {
+                    lcs[(i + 1) * w + j + 1] + 1
+                } else {
+                    lcs[(i + 1) * w + j].max(lcs[i * w + j + 1])
+                };
+            }
+        }
+        let (mut i, mut j) = (0, 0);
+        while i < a.len() || j < b.len() {
+            if i < a.len() && j < b.len() && a[i] == b[j] {
+                push(CharEdit::Keep(1));
+                i += 1;
+                j += 1;
+            } else if j < b.len() && (i == a.len() || lcs[i * w + j + 1] >= lcs[(i + 1) * w + j]) {
+                push(CharEdit::Add(b[j].to_string()));
+                j += 1;
+            } else {
+                push(CharEdit::Remove(1));
+                i += 1;
+            }
+        }
+    }
+    if tail > 0 {
+        push(CharEdit::Keep(tail));
+    }
+    out
+}
+
+#[cfg(test)]
+mod text_dialog_tests {
+    use crate::app::App;
+    use crate::ui::dialogs::Dialog;
+    use tracedraw_core::{document::ShapeKind, geometry::Point, TextSpan};
+
+    #[test]
+    fn char_edits_keep_what_both_texts_share() {
+        use super::{char_edits, CharEdit};
+        let c = |s: &str| s.chars().collect::<Vec<_>>();
+        assert_eq!(
+            char_edits(&c("Hello world"), &c("Hello big world!")),
+            vec![
+                CharEdit::Keep(6),
+                CharEdit::Add("big ".into()),
+                CharEdit::Keep(5),
+                CharEdit::Add("!".into())
+            ]
+        );
+        assert_eq!(
+            char_edits(&c("abc"), &c("ac")),
+            vec![CharEdit::Keep(1), CharEdit::Remove(1), CharEdit::Keep(1)]
+        );
+        assert_eq!(char_edits(&c(""), &c("x")), vec![CharEdit::Add("x".into())]);
+        assert_eq!(char_edits(&c("x"), &c("")), vec![CharEdit::Remove(1)]);
+    }
+
+    /// Text > Edit Text opens the dialog with the text; OK keeps the
+    /// formatting of the characters that did not change (#355).
+    #[test]
+    fn the_edit_text_dialog_keeps_the_formatting_of_what_did_not_change() {
+        let mut app = App::headless();
+        let mut bold = TextSpan::new("Hello ", "Sans", 20.0);
+        bold.bold = true;
+        let plain = TextSpan::new("world", "Sans", 12.0);
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![bold, plain],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: tracedraw_core::document::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        app.open_edit_text_dialog();
+        let Dialog::EditText { shape, text } = &app.dialog else {
+            panic!("no dialog: {:?}", std::mem::discriminant(&app.dialog));
+        };
+        assert_eq!((*shape, text.as_str()), (id, "Hello world"));
+        let depth = app.engine.history_labels().0.len();
+        app.set_text_content(id, "Hello big world!");
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        assert_eq!(app.engine.undo_label(), Some("Edit Text"));
+        let ShapeKind::Text { spans, .. } = app.doc().find_shape(id).expect("text").kind.clone()
+        else {
+            panic!("text");
+        };
+        // "Hello " stays bold at 20 pt; "big " (typed after the bold
+        // space) takes its style; "world" stays plain, "!" follows it.
+        let styled: Vec<(String, bool, f64)> = spans
+            .iter()
+            .map(|s| (s.text.clone(), s.bold, s.size_pt))
+            .collect();
+        assert_eq!(
+            styled,
+            vec![
+                ("Hello big ".to_string(), true, 20.0),
+                ("world!".to_string(), false, 12.0)
+            ]
+        );
+        // The same text: nothing to do.
+        app.set_text_content(id, "Hello big world!");
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        // The dialog draws.
+        let ctx = crate::theme::ui_context();
+        app.open_edit_text_dialog();
+        app.show_welcome = false;
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+            out.textures_delta.clear();
+        }
+        assert!(matches!(app.dialog, Dialog::EditText { .. }));
     }
 }

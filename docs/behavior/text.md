@@ -117,6 +117,21 @@ Text and Glyphs dockers and Options (default font):
 Names are drawn by the text engine into pictures of the screen's
 resolution, only for the rows in view, and kept until fonts are added.
 
+## Edit Text dialog
+
+Text > Edit Text (Ctrl+Shift+T), the text bar's Edit Text button and the
+object's menu open the Edit Text dialog on the first selected text
+(#355): its characters in a box of several lines (Enter makes a new
+paragraph there), OK and Cancel. OK gives the text the characters of the
+box as one undo step ("Edit Text"): the characters both texts share (the
+longest common sequence, by character; past 4 million comparisons the
+common start and end) keep their formatting, each added run takes the
+formatting of the character before it, and linked frames reflow
+(`App::open_edit_text_dialog`, `App::set_text_content`; check
+`ops2::text_dialog_tests::the_edit_text_dialog_keeps_the_formatting_of_what_did_not_change`,
+`ops2::text_dialog_tests::char_edits_keep_what_both_texts_share`).
+A double click on a text still edits it in place.
+
 ## Editing in place
 
 Clicking text with the Text tool (or double-clicking it with the Pick

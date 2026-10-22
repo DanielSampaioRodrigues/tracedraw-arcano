@@ -21,7 +21,9 @@ with sample text, as much as fits.
 
 Click text with the [[tool.text]] tool, or double-click it with the
 [[tool.pick]] tool, to edit it in place. [[menu.text > menu.text.edit_text]]
-(<kbd>Ctrl+Shift+T</kbd>) does the same.
+(<kbd>Ctrl+Shift+T</kbd>) opens a box with the whole text to edit
+instead; **OK** puts it back in the drawing, and the characters you did
+not change keep their formatting.
 
 | Keys | What they do |
 |---|---|

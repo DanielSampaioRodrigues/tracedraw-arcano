@@ -2799,7 +2799,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         }
     }
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
-        app.edit_selected_text();
+        app.open_edit_text_dialog();
     }
     if item(ui, "menu.text.insert_placeholder_text", "", is_para) {
         app.insert_placeholder_text();

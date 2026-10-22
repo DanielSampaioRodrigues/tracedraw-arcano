@@ -2686,7 +2686,7 @@ impl App {
             self.zoom_step(false);
         }
         if pressed(Key::T, cmd | Modifiers::SHIFT) {
-            self.edit_selected_text();
+            self.open_edit_text_dialog();
         }
         if pressed(Key::Q, Modifiers::ALT) {
             self.snap.off = !self.snap.off;

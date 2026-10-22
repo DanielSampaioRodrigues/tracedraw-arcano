@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text > Edit Text (Ctrl+Shift+T) opens the Edit Text dialog with the whole text in a box; OK applies it as one step and the characters left as they were keep their formatting. It only started editing in place, with no window (#355).
+
 - Font Manager: the samples were drawn in black on the dark themes, nearly unreadable; they now take the theme's text colour (#380). Showing the details pane made the window grow a little on every frame, off the screen; the pane now takes its room from the list (#381).
 
 - Eyedroppers (the tools and the document palette's): they read nothing from a locked object or one on a locked layer; they now read colours and attributes from them too, while applying to a locked object stays blocked (#365).

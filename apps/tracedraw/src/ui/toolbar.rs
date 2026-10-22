@@ -1707,7 +1707,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     )
     .clicked()
     {
-        app.edit_selected_text();
+        app.open_edit_text_dialog();
     }
     if changed {
         app.apply_text_style();

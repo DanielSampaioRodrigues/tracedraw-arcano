@@ -612,6 +612,12 @@ pub enum Dialog {
         shape: tracedraw_core::ShapeId,
         name: String,
     },
+    /// Text > Edit Text: the text of a text object in a box of its own
+    /// (#355).
+    EditText {
+        shape: tracedraw_core::ShapeId,
+        text: String,
+    },
     DocumentProperties(Box<crate::ui::doc_properties::DocPropsState>),
     /// Save on a drawing opened from a `.cdr` version TraceDraw does not
     /// save in: choose another version first.
@@ -1180,6 +1186,25 @@ pub fn show(app: &mut App, ctx: &Context) {
                         shape: *shape,
                         name: (!trimmed.is_empty()).then(|| trimmed.to_string()),
                     });
+                }
+            });
+        }
+        Dialog::EditText { shape, text } => {
+            let title = tr("menu.text.edit_text");
+            let title = title
+                .trim_end_matches("...")
+                .trim_end_matches('\u{2026}')
+                .trim()
+                .to_string();
+            window(ctx, title).show(ctx, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(text)
+                        .id(egui::Id::new("edit_text_dialog_box"))
+                        .desired_width(480.0)
+                        .desired_rows(10),
+                );
+                if ok_cancel(ui, &mut close) {
+                    app.set_text_content(*shape, text);
                 }
             });
         }
