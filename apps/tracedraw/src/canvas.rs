@@ -2025,14 +2025,14 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
     let Ok(page) = app.doc().page(app.page) else {
         return;
     };
+    let moving = app.guide_drag_moves();
     for (i, g) in page.guides.iter().enumerate() {
+        let moved = moving.iter().find(|(k, _)| *k == i).map(|(_, g)| g);
         let g = match &app.drag {
-            Drag::MoveGuide { index, guide, .. } | Drag::RotateGuide { index, guide, .. }
-                if *index == i =>
-            {
-                guide
-            }
-            _ => g,
+            Drag::RotateGuide { index, guide, .. } if *index == i => guide,
+            // A copy leaves the guideline in place and shows the copy.
+            _ if app.drag_copy => g,
+            _ => moved.unwrap_or(g),
         };
         let color = if app.selected_guides.contains(&i) {
             GUIDE_SELECTED
@@ -2040,6 +2040,19 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
             to_color32(app.guide_color(g))
         };
         draw_guide_line(app, painter, rect, g.line, color, g.style.pattern());
+    }
+    // The copies a right click during the drag will leave.
+    if app.drag_copy {
+        for (_, g) in &moving {
+            draw_guide_line(
+                app,
+                painter,
+                rect,
+                g.line,
+                GUIDE_SELECTED,
+                g.style.pattern(),
+            );
+        }
     }
     if let Drag::NewGuide { horizontal, pos } = &app.drag {
         use tracedraw_core::document::GuideLine;

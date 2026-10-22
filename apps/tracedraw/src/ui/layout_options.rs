@@ -1024,6 +1024,26 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         {
             app.status = tr("status.guideline_locked");
         }
+        // Copies of the selected guidelines, moved by the duplicate offset.
+        if ui
+            .add_enabled(any, egui::Button::new(tr("guides.duplicate")))
+            .on_hover_text(tr("guides.duplicate_tip"))
+            .clicked()
+        {
+            app.duplicate_selected_guides();
+        }
+        // Every guideline of the type shown, one undo step.
+        let of_kind = app
+            .page_guides()
+            .iter()
+            .any(|g| GuideKind::of(&g.line) == form.kind);
+        if ui
+            .add_enabled(of_kind, egui::Button::new(tr("guides.clear")))
+            .on_hover_text(tr("guides.clear_tip"))
+            .clicked()
+        {
+            app.clear_guides_of_kind(form.kind);
+        }
         let guides = app.page_guides();
         let all_locked = any
             && app

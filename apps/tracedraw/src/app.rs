@@ -577,6 +577,9 @@ pub enum Drag {
         press: Point,
         start: tracedraw_core::document::Guide,
         guide: tracedraw_core::document::Guide,
+        /// How far the drag carries the other selected guidelines: the
+        /// pressed one's snapped move, the pointer's along a free axis.
+        delta: Vec2,
     },
     /// Turning a guideline about its pivot with a rotation handle.
     RotateGuide {
@@ -4296,6 +4299,10 @@ impl App {
     }
 
     pub fn duplicate(&mut self) {
+        // Guidelines selected and no objects: the guidelines (#376).
+        if self.selection.is_empty() && self.duplicate_selected_guides() {
+            return;
+        }
         let shapes = self.selected_shapes();
         let Some(layer) = self.active_layer() else {
             return;

@@ -689,7 +689,11 @@ impl App {
     pub fn transforming(&self) -> bool {
         matches!(
             self.drag,
-            Drag::Move { .. } | Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. }
+            Drag::Move { .. }
+                | Drag::Scale { .. }
+                | Drag::Rotate { .. }
+                | Drag::Skew { .. }
+                | Drag::MoveGuide { .. }
         ) && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
     }
 

@@ -1797,7 +1797,9 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         app.delete_selection();
     }
     sep(ui);
-    if item(ui, "menu.edit.duplicate", "Ctrl+D", has) {
+    // Guidelines selected (no objects) duplicate too.
+    let guides_picked = !app.selected_guides.is_empty();
+    if item(ui, "menu.edit.duplicate", "Ctrl+D", has || guides_picked) {
         app.duplicate();
     }
     if item(ui, "menu.edit.clone", "", app.can_clone()) {
