@@ -2460,6 +2460,41 @@ fn unmarked_utf8_letters_of_older_saves_read_back() {
     assert_eq!(text, "Пример", "{warnings:?}");
 }
 
+/// The outline's mitre limit goes out in the object's style string from
+/// version 16 and reads back from there (#384).
+#[test]
+fn the_mitre_limit_goes_out_and_reads_back_from_version_16() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    let mut st = Stroke::new(Color::BLACK, 2.0);
+    st.miter_limit = 29.0;
+    r.stroke = Some(st);
+    let doc = doc_with(vec![r]);
+    for v in 16u16..=*crate::write::versions().end() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let s = back
+            .pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .flat_map(|l| &l.shapes)
+            .find_map(|s| s.stroke.clone())
+            .expect("an outline");
+        assert!(
+            (s.miter_limit - 29.0).abs() < 1e-6,
+            "{v}: {}",
+            s.miter_limit
+        );
+    }
+}
+
 #[test]
 fn before_16_text_frames_take_their_objects_numbers_and_curves_end_padded() {
     let mut ids = tracedraw_core::id::IdSource::default();

@@ -2456,14 +2456,16 @@ fn object_style_json(
         _ => r#"{"type":"0"}"#.to_string(),
     };
     let outline_part = match stroke {
+        // The mitre limit in degrees, where the reader takes it (#384).
         Some(s) => format!(
-            r#"{{"width":"{}","color":"{}"}}"#,
+            r#"{{"width":"{}","color":"{}","miterLimit":"{}"}}"#,
             if s.width <= Stroke::HAIRLINE + 1e-9 {
                 0
             } else {
                 units(s.width)
             },
-            colour_spec(s.color)
+            colour_spec(s.color),
+            Stroke::miter_angle_from_ratio(s.miter_ratio())
         ),
         None => r#"{"type":"1","width":"0"}"#.to_string(),
     };

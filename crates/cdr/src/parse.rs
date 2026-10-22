@@ -2747,6 +2747,15 @@ impl<'a> Ctx<'a> {
             }
         }
 
+        // Version 16+: the outline's mitre limit is in the object's style
+        // string (the outline record leaves it out, #384).
+        if let (Some(s), Some(a)) = (
+            stroke.as_mut(),
+            style_string.as_deref().and_then(text::object_miter_limit),
+        ) {
+            s.miter_limit = a;
+        }
+
         // Version 16+: a graded transparency in the object's style string
         // becomes a mask; otherwise its uniform transparency an opacity.
         let mask = style_string
