@@ -57,8 +57,10 @@ thicker or thinner along its length with width nodes.
    ellipse. An object with no outline gets a thin one.
 2. Choose the [[tool.variable_outline]] tool.
 3. Drag across the outline: a width node is added where you start, and the
-   outline reaches to the pointer on both sides. Hold <kbd>Alt</kbd> as you
-   start dragging to change only the side the pointer is on.
+   outline reaches to the pointer on both sides. Hold <kbd>Shift</kbd> (or
+   <kbd>Alt</kbd>) as you start dragging to change only the side the pointer
+   is on. <kbd>Shift</kbd>+click picks a run of nodes and
+   <kbd>Ctrl</kbd>+click adds one; a drag then changes all the picked nodes.
 4. Add more nodes the same way. Between nodes the width changes smoothly.
 
 To change a node, click it and type the **Left width** and **Right width** on

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Variable Outline tool: Shift and Ctrl now work as in the reference program. A drag started with Shift changes only the side the pointer is on (Alt still does too); Shift+click picks a run of width nodes and Ctrl+click adds one or takes it out; a drag or the property bar then changes all the picked nodes, and Delete removes them (#374).
+
 - Guidelines: several selected guidelines move together when one of them is dragged, and a right click during the drag leaves copies. Edit > Duplicate (Ctrl+D) copies the selected guidelines, and the Guidelines docker gets Duplicate and Clear (every guideline of the type shown) buttons (#376).
 
 - Text: the font list and the size list show the selected text in the family or size under the pointer while they are open, as the reference program does; the text goes back as it was when the pointer leaves or the list closes, and the preview leaves the undo history alone (#370).

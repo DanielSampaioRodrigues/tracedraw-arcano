@@ -61,8 +61,10 @@ grosso ou mais fino ao longo do comprimento com nós de largura.
 2. Escolha a ferramenta [[tool.variable_outline]].
 3. Arraste através do contorno: um nó de largura é acrescentado onde você
    começa, e o contorno chega até o ponteiro dos dois lados. Mantenha
-   <kbd>Alt</kbd> pressionado ao começar a arrastar para mudar só o lado onde
-   está o ponteiro.
+   <kbd>Shift</kbd> (ou <kbd>Alt</kbd>) pressionado ao começar a arrastar para
+   mudar só o lado onde está o ponteiro. <kbd>Shift</kbd>+clique escolhe uma
+   sequência de nós e <kbd>Ctrl</kbd>+clique acrescenta um; um arraste então
+   muda todos os nós escolhidos.
 4. Acrescente mais nós do mesmo jeito. Entre os nós, a largura muda suavemente.
 
 Para mudar um nó, clique nele e digite a **Largura esquerda** e a **Largura
