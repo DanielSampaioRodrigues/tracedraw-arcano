@@ -16,7 +16,7 @@ use tracedraw_core::{
         text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
         PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
     },
-    geometry::{Affine, BezPath, Point, Rect, Shape as _},
+    geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
     text_flow::{free_segments, WrapRegion},
 };
 
@@ -702,6 +702,23 @@ pub struct TextLayout {
     /// The glyphs as fonts draw them and the other marks, filled in by
     /// [`FontSystem::glyph_layout`] only.
     glyph_layout: GlyphLayout,
+    /// Vertical text: `path`, `bounds` and the glyphs are laid out in
+    /// columns (down from the top right, columns going left), while
+    /// `lines` and `baselines` describe the written lines as if
+    /// horizontal; [`TextLayout::line_frame`] maps those into the columns.
+    pub vertical: bool,
+}
+
+impl TextLayout {
+    /// From the space of `lines` and `baselines` to the space of `path`:
+    /// the identity, or the quarter turn of vertical text.
+    pub fn line_frame(&self) -> Affine {
+        if self.vertical {
+            tracedraw_core::document::vertical_line_frame()
+        } else {
+            Affine::IDENTITY
+        }
+    }
 }
 
 /// Caret geometry of one laid-out line, mm, in layout space (Y up).
@@ -1905,7 +1922,7 @@ impl FontSystem {
             None
         };
 
-        let features: Vec<rustybuzz::Feature> = span
+        let mut features: Vec<rustybuzz::Feature> = span
             .features
             .iter()
             .map(|f| {
@@ -1913,6 +1930,16 @@ impl FontSystem {
                 rustybuzz::Feature::new(tag, 1, ..)
             })
             .collect();
+        // Vertical text takes the font's vertical forms (brackets and
+        // punctuation turned or moved for columns) for its upright
+        // letters.
+        if para.vertical && text.chars().any(upright) {
+            features.push(rustybuzz::Feature::new(
+                rustybuzz::ttf_parser::Tag::from_bytes(b"vert"),
+                1,
+                ..,
+            ));
+        }
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);
         buffer.guess_segment_properties();
@@ -2061,9 +2088,22 @@ impl FontSystem {
                 baselines: Vec::new(),
                 lines: Vec::new(),
                 glyph_layout: GlyphLayout::default(),
+                vertical: false,
             };
         }
         let para = req.para;
+        // Vertical text is laid out as written lines in a frame turned on
+        // its side (the columns run down the frame's height), and turned
+        // into columns as the glyphs are placed; see `orient` below.
+        let vertical = para.vertical && req.on_path.is_none();
+        let frame = req.frame.map(|f| {
+            if vertical {
+                Size::new(f.height, f.width)
+            } else {
+                f
+            }
+        });
+        let turn = tracedraw_core::document::vertical_line_frame();
         // Each paragraph's alignment and style: its own, or the object's.
         let styles = tracedraw_core::paragraphs::paragraph_styles(spans, req.align, para);
         let fallback = (req.align, para.clone());
@@ -2130,12 +2170,16 @@ impl FontSystem {
         // line has (the column, less indents, drop caps and the objects the
         // text wraps around) and give every line its place.
         let columns = para.columns.max(1) as usize;
-        let col_width = req
-            .frame
+        let col_width = frame
             .map(|f| ((f.width - para.gutter * (columns as f64 - 1.0)) / columns as f64).max(1.0));
-        let frame_h = req.frame.map(|f| f.height);
-        let artistic = req.frame.is_none();
-        let wrap: &[WrapRegion] = if artistic { &[] } else { &para.flow.wrap };
+        let frame_h = frame.map(|f| f.height);
+        let artistic = frame.is_none();
+        // Vertical text does not wrap around objects.
+        let wrap: &[WrapRegion] = if artistic || vertical {
+            &[]
+        } else {
+            &para.flow.wrap
+        };
         // Baseline grid: baselines snap to the grid line at or below their
         // natural position: the page's grid, or one measured from the frame
         // top (y is negative below the frame top).
@@ -2414,6 +2458,32 @@ impl FontSystem {
             })
             .collect();
 
+        // Vertical text: a glyph's placing affine turned into the column.
+        // Letters that lie on their side take the quarter turn whole; an
+        // upright one (ideographs, kana, hangul) keeps its orientation,
+        // centred on the column, the top of its em box at the pen (the
+        // letter's ascent above its baseline), as the column advances
+        // by the written advance.
+        let orient = |a: Affine, g: &Glyph, ascent: f64| -> Affine {
+            if !vertical {
+                return a;
+            }
+            if upright(g.ch) {
+                let c = a.as_coeffs();
+                let pen = turn * Point::new(c[4], c[5]);
+                let linear = Affine::new([c[0], c[1], c[2], c[3], 0.0, 0.0]);
+                Affine::translate((pen.x - g.advance / 2.0, pen.y - ascent)) * linear
+            } else {
+                turn * a
+            }
+        };
+        let orient_rest = |p: BezPath| -> BezPath {
+            if vertical {
+                turn * p
+            } else {
+                p
+            }
+        };
         for (li, line) in lines.iter().enumerate() {
             let m = line.metrics;
             let (align, ps) = style_of(line.para);
@@ -2436,6 +2506,7 @@ impl FontSystem {
                 let n = ps.drop_cap_lines as f64;
                 let (scale, baseline) = drop_cap_placement(&g.path, n, step, y, m.ascent);
                 let a = Affine::translate((cap_x, baseline)) * Affine::scale(scale);
+                let a = orient(a, g, m.ascent * scale);
                 if span_drawn(g.span) {
                     place_glyph(collect, a, g, &mut line_glyphs);
                     let gp = a * g.path.as_ref().clone();
@@ -2450,7 +2521,7 @@ impl FontSystem {
                 if let Some(span) = spans.get(first_span).filter(|_| span_drawn(first_span)) {
                     let b = self.shape_run(span, 0, &ps.bullet_char, size_scale, 0, ps);
                     for g in &b {
-                        let a = Affine::translate((bx, y));
+                        let a = orient(Affine::translate((bx, y)), g, m.ascent);
                         place_glyph(collect, a, g, &mut line_glyphs);
                         let gp = a * g.path.as_ref().clone();
                         line_path.extend(gp.elements().iter().copied());
@@ -2528,6 +2599,7 @@ impl FontSystem {
                 }
                 if span_drawn(g.span) {
                     let a = Affine::translate((pen + g.x_offset, y + g.y_offset));
+                    let a = orient(a, g, metrics[g.span].ascent);
                     place_glyph(collect, a, g, &mut line_glyphs);
                     let gp = a * g.path.as_ref().clone();
                     line_path.extend(gp.elements().iter().copied());
@@ -2556,7 +2628,7 @@ impl FontSystem {
             });
             if let Some(h) = &line.hyphen {
                 if line.glyphs.last().is_none_or(|g| span_drawn(g.span)) {
-                    let gp = Affine::translate((pen, y)) * h.path.clone();
+                    let gp = orient_rest(Affine::translate((pen, y)) * h.path.clone());
                     line_path.extend(gp.elements().iter().copied());
                     if collect {
                         line_glyphs.rest.extend(gp.elements().iter().copied());
@@ -2574,11 +2646,10 @@ impl FontSystem {
                         b,
                         y + sm.underline_pos,
                     );
-                    line_path.extend(r.to_path(0.01).elements().iter().copied());
+                    let rp = orient_rest(r.to_path(0.01));
+                    line_path.extend(rp.elements().iter().copied());
                     if collect {
-                        line_glyphs
-                            .rest
-                            .extend(r.to_path(0.01).elements().iter().copied());
+                        line_glyphs.rest.extend(rp.elements().iter().copied());
                     }
                 }
                 if span.strikethrough {
@@ -2588,11 +2659,10 @@ impl FontSystem {
                         b,
                         y + sm.strike_pos + sm.underline_thick / 2.0,
                     );
-                    line_path.extend(r.to_path(0.01).elements().iter().copied());
+                    let rp = orient_rest(r.to_path(0.01));
+                    line_path.extend(rp.elements().iter().copied());
                     if collect {
-                        line_glyphs
-                            .rest
-                            .extend(r.to_path(0.01).elements().iter().copied());
+                        line_glyphs.rest.extend(rp.elements().iter().copied());
                     }
                 }
             }
@@ -2619,8 +2689,13 @@ impl FontSystem {
             };
             let dy = -(h + min_y).max(0.0) * share;
             if dy.abs() > 1e-9 {
-                path.apply_affine(Affine::translate((0.0, dy)));
-                let shift = Affine::translate((0.0, dy));
+                // In the columns of vertical text the move is sideways.
+                let shift = if vertical {
+                    Affine::translate((dy, 0.0))
+                } else {
+                    Affine::translate((0.0, dy))
+                };
+                path.apply_affine(shift);
                 for g in &mut glyphs_out.glyphs {
                     g.transform = shift * g.transform;
                     g.path.apply_affine(shift);
@@ -2644,9 +2719,14 @@ impl FontSystem {
         let bounds = Rect::new(
             0.0,
             min_y,
-            max_x.max(req.frame.map(|f| f.width).unwrap_or(0.0)),
+            max_x.max(frame.map(|f| f.width).unwrap_or(0.0)),
             top,
         );
+        let bounds = if vertical {
+            (turn * bounds.to_path(0.01)).bounding_box()
+        } else {
+            bounds
+        };
 
         // 4. Text on a path: re-place the glyphs of artistic text along the curve.
         if let (Some(tp), true) = (req.on_path, artistic) {
@@ -2661,6 +2741,7 @@ impl FontSystem {
                 baselines: line_baselines,
                 lines: line_boxes,
                 glyph_layout: on_path,
+                vertical: false,
             };
         }
 
@@ -2673,8 +2754,39 @@ impl FontSystem {
             baselines: line_baselines,
             lines: line_boxes,
             glyph_layout: glyphs_out,
+            vertical,
         }
     }
+}
+
+/// Whether a character stands upright in vertical text (ideographs,
+/// kana, hangul, their punctuation and full-width forms, enclosed and
+/// pictorial symbols) rather than lying on its side like Latin letters
+/// and digits: the Unicode vertical orientation (UAX #50), by its main
+/// ranges.
+pub fn upright(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x1100..=0x11FF       // Hangul Jamo
+            | 0x2460..=0x24FF // enclosed alphanumerics
+            | 0x25A0..=0x27BF // geometric shapes, miscellaneous symbols, dingbats
+            | 0x2E80..=0x2FDF // CJK radicals, Kangxi radicals
+            | 0x2FF0..=0x303F // ideographic description, CJK symbols and punctuation
+            | 0x3040..=0x30FF // hiragana, katakana
+            | 0x3100..=0x31FF // bopomofo, hangul compatibility jamo, kanbun, small kana
+            | 0x3200..=0x4DBF // enclosed CJK, CJK compatibility, extension A
+            | 0x4E00..=0x9FFF // CJK unified ideographs
+            | 0xA000..=0xA4CF // Yi
+            | 0xA960..=0xA97F // Hangul Jamo extended A
+            | 0xAC00..=0xD7FF // Hangul syllables, Jamo extended B
+            | 0xF900..=0xFAFF // CJK compatibility ideographs
+            | 0xFE10..=0xFE1F // vertical forms
+            | 0xFE30..=0xFE4F // CJK compatibility forms
+            | 0xFF01..=0xFF60 // full-width forms
+            | 0xFFE0..=0xFFE6 // full-width signs
+            | 0x1F000..=0x1FAFF // mahjong, domino, playing cards, emoji, symbols
+            | 0x20000..=0x3FFFF // CJK extensions B and on
+    )
 }
 
 /// The tallest metrics among a line's glyphs; `fallback` for a line with
@@ -4495,6 +4607,108 @@ mod tests {
             g.with_embedded_fonts(&doc),
             std::borrow::Cow::Borrowed(_)
         ));
+    }
+
+    /// Vertical text (#257): the written line becomes a column going
+    /// down from the origin, Latin letters turned a quarter clockwise
+    /// (their tops to the right of the column's axis), an upright letter
+    /// centred on the axis with its em top at the pen; the reported
+    /// lines stay as written, and `line_frame` turns them.
+    #[test]
+    fn vertical_text_sets_columns_with_turned_and_upright_letters() {
+        let mut para = ParagraphStyle::default();
+        para.vertical = true;
+        fn req<'a>(spans: &'a [TextSpan], para: &'a ParagraphStyle) -> TextRequest<'a> {
+            TextRequest {
+                spans,
+                frame: None,
+                align: TextAlign::Left,
+                para,
+                on_path: None,
+            }
+        }
+        let f = system_with(&[SELAWIK]);
+        // Four letters: a line longer than it is high.
+        let mut ab = TextSpan::new("abcd", "Selawik", 72.0);
+        ab.size_pt = 72.0;
+        let flat = f.layout(&req(std::slice::from_ref(&ab), &ParagraphStyle::default()));
+        let tall = f.layout(&req(std::slice::from_ref(&ab), &para));
+        assert!(tall.vertical && !flat.vertical);
+        assert_eq!(tall.glyphs, 4);
+        // The same written line: edges from the origin to the right.
+        assert_eq!(tall.lines.len(), 1);
+        assert_eq!(tall.lines[0].edges, flat.lines[0].edges);
+        assert_eq!(
+            tall.line_frame(),
+            tracedraw_core::document::vertical_line_frame()
+        );
+        // Turned: the glyphs run down from the top, as deep as the line
+        // was long, and sit to the right of the axis (x = 0) as high as
+        // the letters stood.
+        let (fb, tb) = (flat.bounds, tall.bounds);
+        assert!(tb.height() > tb.width(), "{tb:?}");
+        assert!(
+            (tb.y0 - -fb.x1).abs() < 1e-6 && tb.y1.abs() < 1e-6,
+            "{tb:?} vs {fb:?}"
+        );
+        assert!(
+            (tb.x1 - fb.y1).abs() < 1e-6 && (tb.x0 - fb.y0).abs() < 1e-6,
+            "{tb:?} vs {fb:?}"
+        );
+        let pb = tall.path.bounding_box();
+        assert!(pb.y1 < 0.5 && pb.y0 > -fb.x1 - 0.5, "{pb:?}");
+        assert!(pb.x0 > -0.5 && pb.x1 < fb.y1 + 0.5, "{pb:?}");
+        // The turn itself: a point of the written line maps as a quarter
+        // turn clockwise.
+        let turn = tall.line_frame();
+        let p = turn * Point::new(10.0, 2.0);
+        assert!(
+            (p.x - 2.0).abs() < 1e-9 && (p.y - -10.0).abs() < 1e-9,
+            "{p:?}"
+        );
+
+        // An upright letter (a circle the system fonts have): centred on
+        // the axis, within the em below the pen.
+        let f = fonts();
+        let mut circle = TextSpan::new("\u{25CB}", "Selawik", 72.0);
+        circle.size_pt = 72.0;
+        let l = f.layout(&req(std::slice::from_ref(&circle), &para));
+        if l.glyphs == 1 && !l.path.elements().is_empty() {
+            // (The circle may come from another font, with its own
+            // ascent: it hangs from the pen by that ascent.)
+            let b = l.path.bounding_box();
+            let em = 72.0 * PT_MM;
+            assert!(b.center().x.abs() < em * 0.2, "{b:?}");
+            assert!(b.y1 <= 0.5 && b.y0 >= -1.4 * em, "{b:?}");
+        }
+        // Text on a path is never vertical.
+        let on_path = TextOnPath {
+            path: {
+                let mut p = BezPath::new();
+                p.move_to((0.0, 0.0));
+                p.line_to((100.0, 0.0));
+                p
+            },
+            ..Default::default()
+        };
+        let l = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&ab),
+            frame: None,
+            align: TextAlign::Left,
+            para: &para,
+            on_path: Some(&on_path),
+        });
+        assert!(!l.vertical);
+    }
+
+    #[test]
+    fn letters_that_stand_upright_in_columns() {
+        for c in ['日', 'あ', 'ア', '한', '。', '「', 'ａ', '○', '①', '😀'] {
+            assert!(upright(c), "{c}");
+        }
+        for c in ['A', 'z', '1', '.', ' ', 'é', 'Ω', 'я', 'ب'] {
+            assert!(!upright(c), "{c}");
+        }
     }
 
     #[test]

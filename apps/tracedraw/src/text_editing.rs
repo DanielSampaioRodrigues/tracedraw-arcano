@@ -85,6 +85,84 @@ impl App {
         layout_of_text_shape(s, Affine::IDENTITY)
     }
 
+    /// The text objects Vertical Text acts on: the selected ones and the
+    /// one being edited.
+    fn vertical_text_targets(&self) -> Vec<tracedraw_core::Shape> {
+        let mut out: Vec<tracedraw_core::Shape> = self
+            .selected_shapes()
+            .into_iter()
+            .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
+            .collect();
+        if let Some(te) = &self.text_edit {
+            if !out.iter().any(|s| s.id == te.shape) {
+                if let Some(s) = self.doc().find_shape(te.shape) {
+                    out.push(s.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Vertical Text is offered (Text menu, property bar) with a CJK
+    /// interface language, and for text that holds letters which stand
+    /// upright in columns (ideographs, kana, hangul), whatever the
+    /// language.
+    pub fn vertical_text_offered(&self) -> bool {
+        if vertical_text_language(&crate::i18n::language()) {
+            return true;
+        }
+        self.vertical_text_targets().iter().any(|s| match &s.kind {
+            ShapeKind::Text { spans, para, .. } => {
+                para.vertical
+                    || spans
+                        .iter()
+                        .any(|sp| sp.text.chars().any(tracedraw_text::upright))
+            }
+            _ => false,
+        })
+    }
+
+    /// Any text acted on is vertical (the menu's check, the bar's button).
+    pub fn vertical_text_on(&self) -> bool {
+        self.vertical_text_targets()
+            .iter()
+            .any(|s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.vertical))
+    }
+
+    /// The text being edited is vertical.
+    pub fn editing_vertical(&self) -> bool {
+        self.text_edit
+            .as_ref()
+            .and_then(|te| self.doc().find_shape(te.shape))
+            .is_some_and(|s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.vertical))
+    }
+
+    /// Text > Vertical Text: set the selected text (and the one being
+    /// edited) in columns, or back in lines. One undo step.
+    pub fn set_vertical_text(&mut self, on: bool) {
+        let cmds: Vec<Command> = self
+            .vertical_text_targets()
+            .into_iter()
+            .filter_map(|s| {
+                let mut kind = s.kind.clone();
+                let ShapeKind::Text { para, .. } = &mut kind else {
+                    return None;
+                };
+                if para.vertical == on {
+                    return None;
+                }
+                para.vertical = on;
+                Some(Command::SetShapeKind { shape: s.id, kind })
+            })
+            .collect();
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Vertical Text", &cmds) {
+            self.status = e.to_string();
+        }
+    }
+
     /// Replace the spans of the text being edited. Keystrokes collapse
     /// into one undo step per text object.
     pub fn set_edit_spans(&mut self, spans: Vec<TextSpan>) {
@@ -189,6 +267,9 @@ impl App {
                 } => {
                     let shift = modifiers.shift;
                     let ctrl = modifiers.command;
+                    // In vertical text the caret goes down the column with
+                    // Down and across the columns with Left and Right.
+                    let vertical = self.editing_vertical();
                     match key {
                         Key::Num8 if ctrl => self.step_text_size(true),
                         Key::Num2 if ctrl => self.step_text_size(false),
@@ -197,6 +278,16 @@ impl App {
                         Key::Enter if !shift => self.text_insert("\n"),
                         Key::Enter => self.text_insert("\u{2028}"),
                         Key::Tab => self.text_insert("\t"),
+                        Key::ArrowUp if vertical && !ctrl => self.text_move(CaretMove::Left, shift),
+                        Key::ArrowDown if vertical && !ctrl => {
+                            self.text_move(CaretMove::Right, shift)
+                        }
+                        Key::ArrowLeft if vertical && !ctrl => {
+                            self.text_move(CaretMove::Down, shift)
+                        }
+                        Key::ArrowRight if vertical && !ctrl => {
+                            self.text_move(CaretMove::Up, shift)
+                        }
                         Key::ArrowLeft if ctrl => self.text_move(CaretMove::WordLeft, shift),
                         Key::ArrowRight if ctrl => self.text_move(CaretMove::WordRight, shift),
                         Key::ArrowLeft => self.text_move(CaretMove::Left, shift),
@@ -677,11 +768,22 @@ pub fn layout_of_text_shape(
         para,
         on_path: on_path.as_ref(),
     });
-    let shift = match frame {
-        Some(f) if on_path.is_none() => Affine::translate((origin.x, origin.y + f.height)),
-        _ => Affine::translate(origin.to_vec2()),
-    };
-    Some((layout, parent * s.transform * shift))
+    let shift = tracedraw_core::document::text_layout_shift(
+        *origin,
+        *frame,
+        on_path.is_some(),
+        para.vertical,
+    );
+    // The lines of vertical text are reported as written; their frame
+    // turns them into the columns.
+    let frame = layout.line_frame();
+    Some((layout, parent * s.transform * shift * frame))
+}
+
+/// The interface languages for which Vertical Text is always offered:
+/// the CJK ones.
+pub fn vertical_text_language(code: &str) -> bool {
+    matches!(code, "ja" | "zh-CN" | "zh-TW" | "ko")
 }
 
 /// Caret segment (top, bottom) and one quad per selected line, on the page.
@@ -1010,6 +1112,93 @@ mod tests {
         assert_ne!(by_text("c").font_family, "Other");
         assert!((by_text("ab").size_pt - 40.0).abs() > 1e-9);
         assert!((by_text("ef").size_pt - 40.0).abs() > 1e-9);
+    }
+
+    /// Vertical text (#257): the caret is a bar across the column, the
+    /// selection a box down it, and a click down the column finds the
+    /// character there; Text > Vertical Text switches the selected text
+    /// in one undo step; the command is offered for CJK languages and
+    /// for text in those scripts.
+    #[test]
+    fn vertical_text_has_carets_across_its_columns_and_a_switch() {
+        assert!(vertical_text_language("ja") && vertical_text_language("zh-TW"));
+        assert!(!vertical_text_language("en") && !vertical_text_language("pt-BR"));
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("abcd", "Selawik", 24.0)],
+                origin: Point::new(50.0, 100.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a layer");
+        app.select(vec![id]);
+        assert!(
+            !app.vertical_text_offered(),
+            "Latin text, English interface"
+        );
+        assert!(!app.vertical_text_on());
+        let depth = app.engine.history_labels().0.len();
+        app.set_vertical_text(true);
+        assert!(app.vertical_text_on());
+        assert!(
+            app.vertical_text_offered(),
+            "once vertical, the switch stays offered"
+        );
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        let Some((layout, to_page)) = app.text_layout_of(id) else {
+            panic!("a layout");
+        };
+        if layout.glyphs == 0 {
+            return;
+        }
+        assert!(layout.vertical);
+        // The caret after "ab": a horizontal bar, below the origin, to
+        // the right of the column's axis (x = 50) by the letters' height.
+        let (top, bottom, quads) = caret_geometry(&layout, &to_page, 2, (1, 3)).expect("caret");
+        assert!((top.y - bottom.y).abs() < 1e-6, "{top:?} {bottom:?}");
+        assert!(top.y < 100.0, "{top:?}");
+        assert!(
+            top.x > 50.0 && bottom.x <= 50.0 + 1e-6,
+            "{top:?} {bottom:?}"
+        );
+        // The selection "bc": one box down the column, as deep as the
+        // two letters' advances and as wide as the line's height.
+        assert_eq!(quads.len(), 1);
+        let q = quads[0];
+        let (w, h) = (
+            q.iter().map(|p| p.x).fold(f64::MIN, f64::max)
+                - q.iter().map(|p| p.x).fold(f64::MAX, f64::min),
+            q.iter().map(|p| p.y).fold(f64::MIN, f64::max)
+                - q.iter().map(|p| p.y).fold(f64::MAX, f64::min),
+        );
+        let line = &layout.lines[0];
+        assert!((h - (line.edges[3] - line.edges[1])).abs() < 1e-6, "{q:?}");
+        assert!((w - (line.ascent + line.descent)).abs() < 1e-6, "{q:?}");
+        // A point down the column, just past the second letter, hits the
+        // caret place before the third.
+        let edges = &layout.lines[0].edges;
+        let down = to_page * Point::new(edges[2] * 0.75 + edges[3] * 0.25, 0.0);
+        let local = to_page.inverse() * down;
+        assert_eq!(layout.hit_char(local), Some(2));
+        // Back to lines.
+        app.set_vertical_text(false);
+        assert!(!app.vertical_text_on());
+        // Text in a CJK script offers the switch whatever the language.
+        let cjk = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("\u{65E5}\u{672C}", "Selawik", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a layer");
+        app.select(vec![cjk]);
+        assert!(app.vertical_text_offered());
     }
 
     #[test]

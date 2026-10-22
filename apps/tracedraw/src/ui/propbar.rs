@@ -111,6 +111,9 @@ pub enum Pic {
     // Text: alignments, bullets, drop cap, the Text docker, editing, and
     // wrapping paragraph text around an object.
     TextLeft,
+    /// Text in lines, and text in columns (vertical text).
+    TextHorizontal,
+    TextVertical,
     TextCenter,
     TextRight,
     TextJustify,
@@ -628,6 +631,23 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 };
                 line((x0, y), (x0 + w, y), Stroke::new(1.3 * k, color));
             }
+        }
+        Pic::TextHorizontal => {
+            // Three lines read across, an arrow along the first.
+            for (i, w) in [12.0, 9.0, 11.0].iter().enumerate() {
+                let y = 4.0 + i as f32 * 4.0;
+                line((2.0, y), (2.0 + w, y), Stroke::new(1.3 * k, color));
+            }
+            arrow_h(14.0, 2.0, 14.0);
+        }
+        Pic::TextVertical => {
+            // Three columns read down, from the right, an arrow along the
+            // first.
+            for (i, h) in [12.0, 9.0, 11.0].iter().enumerate() {
+                let x = 12.0 - i as f32 * 4.0;
+                line((x, 2.0), (x, 2.0 + h), Stroke::new(1.3 * k, color));
+            }
+            arrow_v(2.0, 2.0, 14.0);
         }
         Pic::TextNone | Pic::TextForceJustify => {
             for i in 0..4 {

@@ -1637,6 +1637,35 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         let a = app.text_align;
         app.apply_text_align(a);
     }
+    // Horizontal or vertical text, offered with a CJK interface language
+    // or for text in those scripts (#257).
+    if app.vertical_text_offered() {
+        let on = app.vertical_text_on();
+        if pic_button(
+            ui,
+            Pic::TextHorizontal,
+            &tr("toolbar.text_horizontal"),
+            true,
+            !on,
+        )
+        .clicked()
+            && on
+        {
+            app.set_vertical_text(false);
+        }
+        if pic_button(
+            ui,
+            Pic::TextVertical,
+            &tr("toolbar.text_vertical"),
+            true,
+            on,
+        )
+        .clicked()
+            && !on
+        {
+            app.set_vertical_text(true);
+        }
+    }
     vsep(ui);
     let shapes = app.selected_shapes();
     let is_text = shapes

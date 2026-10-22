@@ -154,16 +154,41 @@ pub fn text_glyph_layout(kind: &ShapeKind) -> Option<text_outline::GlyphLayout> 
         para,
         on_path: on_path.as_ref(),
     })?;
-    let shift = match (on_path, frame) {
-        (Some(_), _) | (None, None) => Affine::translate(origin.to_vec2()),
-        (None, Some(f)) => Affine::translate((origin.x, origin.y + f.height)),
-    };
+    let shift = text_layout_shift(*origin, *frame, on_path.is_some(), para.vertical);
     for g in &mut layout.glyphs {
         g.transform = shift * g.transform;
         g.path.apply_affine(shift);
     }
     layout.rest.apply_affine(shift);
     Some(layout)
+}
+
+/// From the text engine's layout space to a text's local space: paragraph
+/// text hangs from the top left of its frame (vertical text from the top
+/// right), artistic text sits on its first baseline at its origin
+/// (vertical text starts at the top of its first column there); text on
+/// a path is placed at the origin.
+pub fn text_layout_shift(
+    origin: Point,
+    frame: Option<geometry::Size>,
+    on_path: bool,
+    vertical: bool,
+) -> Affine {
+    match frame {
+        Some(f) if !on_path => {
+            let dx = if vertical { f.width } else { 0.0 };
+            Affine::translate((origin.x + dx, origin.y + f.height))
+        }
+        _ => Affine::translate(origin.to_vec2()),
+    }
+}
+
+/// How the written lines of vertical text (as the text engine reports
+/// them, laid out left to right and down) sit in its layout space: a
+/// quarter turn clockwise, so a line's run to the right goes down a
+/// column and its lines going down become columns going left.
+pub fn vertical_line_frame() -> Affine {
+    Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0])
 }
 
 /// The rectangles behind a text, in its local space (apply its
@@ -201,11 +226,14 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
     }) else {
         return Vec::new();
     };
-    // Layout space to local space, as the outline is placed.
-    let (dx, dy) = match frame {
-        Some(f) => (origin.x, origin.y + f.height),
-        None => (origin.x, origin.y),
-    };
+    // The written lines to local space, as the outline is placed (the
+    // columns of vertical text are the lines turned).
+    let to_local = text_layout_shift(*origin, *frame, false, para.vertical)
+        * if para.vertical {
+            vertical_line_frame()
+        } else {
+            Affine::IDENTITY
+        };
     let mut out: Vec<(Rect, Fill)> = frame_bg.into_iter().collect();
     let mut span_start = 0usize;
     for sp in spans {
@@ -226,15 +254,13 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
             let (Some(x0), Some(x1)) = (x0, x1) else {
                 continue;
             };
-            out.push((
-                Rect::new(
-                    dx + x0.min(x1),
-                    dy + line.baseline - line.descent,
-                    dx + x0.max(x1),
-                    dy + line.baseline + line.ascent,
-                ),
-                fill.clone(),
-            ));
+            let r = Rect::new(
+                x0.min(x1),
+                line.baseline - line.descent,
+                x0.max(x1),
+                line.baseline + line.ascent,
+            );
+            out.push(((to_local * r.to_path(0.01)).bounding_box(), fill.clone()));
         }
     }
     out
@@ -263,12 +289,24 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
         para,
         on_path: None,
     })?;
-    let top = origin.y + frame.height;
+    // The written lines to local space (vertical text: the columns run
+    // down the frame's height, so the lines go across its width).
+    let to_local = text_layout_shift(*origin, Some(*frame), false, para.vertical)
+        * if para.vertical {
+            vertical_line_frame()
+        } else {
+            Affine::IDENTITY
+        };
+    let depth = if para.vertical {
+        frame.width
+    } else {
+        frame.height
+    };
     let mut out = Vec::new();
     for line in &lines {
         // Below the frame: overflow, shown in the next linked frame or not
         // at all.
-        if line.baseline < -frame.height - 1e-6 {
+        if line.baseline < -depth - 1e-6 {
             break;
         }
         let (_, tail) = split_spans_at(spans, line.start_char);
@@ -284,7 +322,7 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
         }
         out.push(ShapeKind::Text {
             spans: piece,
-            origin: Point::new(origin.x + line.x, top + line.baseline),
+            origin: to_local * Point::new(line.x, line.baseline),
             frame: None,
             align: TextAlign::Left,
             para: ParagraphStyle {
@@ -1091,6 +1129,14 @@ pub struct ParagraphStyle {
     pub baseline_grid_mm: f64,
     /// Where paragraph text sits in its frame from top to bottom.
     pub vertical_align: VerticalAlign,
+    /// Vertical text, as CJK typesetting sets it: the lines become
+    /// columns read top to bottom and placed right to left, ideographs,
+    /// kana and hangul stand upright, Latin letters and digits lie on
+    /// their side (turned a quarter clockwise). A frame's columns run
+    /// down its height; the text starts at the top right. Text fitted to
+    /// a path ignores it. See docs/behavior/text.md, Vertical text.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub vertical: bool,
     /// The paragraph frame's background; `None` = transparent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_fill: Option<Fill>,
@@ -1171,6 +1217,7 @@ impl Default for ParagraphStyle {
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,
+            vertical: false,
             frame_fill: None,
             flow: crate::text_flow::FrameFlow::default(),
         }
@@ -2349,12 +2396,9 @@ impl Shape {
                     if on_path.is_some() {
                         return Affine::translate(origin.to_vec2()) * p;
                     }
-                    // Paragraph text hangs from the top of its frame; artistic text sits on its baseline.
-                    let shift = match frame {
-                        Some(f) => Affine::translate((origin.x, origin.y + f.height)),
-                        None => Affine::translate(origin.to_vec2()),
-                    };
-                    return shift * p;
+                    // Paragraph text hangs from the top of its frame;
+                    // artistic text sits on its baseline.
+                    return text_layout_shift(*origin, *frame, false, para.vertical) * p;
                 }
                 // No text engine registered: rough box, 0.5 em per character.
                 let size_mm: f64 =
@@ -4996,6 +5040,33 @@ mod tests {
             Affine::rotate(0.5) * Affine::translate((3.0, 4.0)),
         );
         assert!(matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if k.fixed));
+    }
+
+    /// Vertical text (#257): the flag loads from older files as off, is
+    /// saved only when on, and places a frame's text from its top right.
+    #[test]
+    fn vertical_text_is_off_by_default_and_placed_from_the_top_right() {
+        let old: ParagraphStyle = serde_json::from_str("{}").expect("parses");
+        assert!(!old.vertical);
+        let on: ParagraphStyle = serde_json::from_str(r#"{"vertical":true}"#).expect("parses");
+        assert!(on.vertical);
+        let json = serde_json::to_string(&ParagraphStyle::default()).expect("writes");
+        assert!(!json.contains("vertical\""), "{json}");
+        let json = serde_json::to_string(&on).expect("writes");
+        assert!(json.contains("\"vertical\":true"), "{json}");
+        let o = Point::new(10.0, 20.0);
+        let f = Some(geometry::Size::new(50.0, 80.0));
+        let flat = text_layout_shift(o, f, false, false) * Point::ZERO;
+        let tall = text_layout_shift(o, f, false, true) * Point::ZERO;
+        assert_eq!(flat, Point::new(10.0, 100.0));
+        assert_eq!(tall, Point::new(60.0, 100.0));
+        assert_eq!(text_layout_shift(o, None, false, true) * Point::ZERO, o);
+        // The written lines' frame: a quarter turn clockwise.
+        let p = vertical_line_frame() * Point::new(5.0, 1.0);
+        assert!(
+            (p.x - 1.0).abs() < 1e-9 && (p.y - -5.0).abs() < 1e-9,
+            "{p:?}"
+        );
     }
 
     #[test]

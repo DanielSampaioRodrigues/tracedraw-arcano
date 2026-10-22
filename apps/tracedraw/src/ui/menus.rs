@@ -2787,6 +2787,14 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         app.docker_tab = DockerTab::FontSampler;
     }
     sep(ui);
+    // Vertical text, offered with a CJK interface language or for text
+    // in those scripts (#257).
+    if app.vertical_text_offered() {
+        let on = app.vertical_text_on();
+        if check(ui, "menu.text.vertical_text", "", on) {
+            app.set_vertical_text(!on);
+        }
+    }
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
         app.edit_selected_text();
     }

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Vertical text: Text > Vertical Text and two property bar buttons set text in columns read top to bottom, right to left, as CJK typesetting does, with ideographs, kana and hangul upright and Latin letters turned; carets, selections, clicks and the arrow keys follow the columns. Offered with a Japanese or Chinese interface language, and for any text in those scripts (#257).
+
 - Property bar: with nothing selected, a Fit page to drawing button sits after the page width and height, the Layout command at hand (#236).
 
 - Segment Delete: a curve drawn over itself (a loop inside one segment, or a segment coming back over the one before it) loses only the stretch clicked between the crossings; the whole curve went. Pen, Bezier, Polyline and B-spline: Esc finishes the curve being drawn as it stands, keeping the nodes placed and the tool, instead of discarding it (#314).

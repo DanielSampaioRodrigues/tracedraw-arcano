@@ -40,6 +40,47 @@ leaves each character's size alone. The alignment goes to the paragraphs (see Pa
 formatting below) as one "Text Alignment" step. Double-clicking text
 with the Pick tool edits it in place.
 
+## Vertical text
+
+Text > Vertical Text (a check item) and the Horizontal text and
+Vertical text buttons after the alignment on the property bar set the
+selected text objects (and the one being edited) in columns, as CJK
+typesetting does, or back in lines; one "Vertical Text" undo step
+(`App::set_vertical_text`, `ParagraphStyle::vertical`, saved with the
+drawing). They show with a Japanese or Chinese interface language, and
+for any text whose letters stand upright in columns (ideographs, kana,
+hangul; `App::vertical_text_offered`, `tracedraw_text::upright`).
+
+- The written lines become columns read top to bottom and placed right
+  to left, each column a line's height apart (the line spacing). Artistic
+  text starts at its origin and goes down and left; paragraph text
+  starts at the top right of its frame, its columns running down the
+  frame's height and across its width (so the frame's width holds the
+  columns and its height the line length; linked frames, columns and
+  the gutter apply as to lines).
+- Ideographs, kana, hangul, their punctuation and brackets, full-width
+  and enclosed forms and pictorial symbols stand upright, centred on the
+  column, each advancing by its width (the Unicode vertical orientation,
+  `upright`); the font's vertical forms (the `vert` feature) give the
+  brackets and punctuation their column shapes. Latin, Greek, Cyrillic
+  and Arabic letters, digits and the other characters lie on their side,
+  turned a quarter clockwise, their tops to the right of the column.
+  Underlines, strike lines and hyphens turn with the text.
+- The text engine lays the text out as written lines (in a frame turned
+  on its side) and turns the glyphs into columns as it places them
+  (`layout_scaled`, `orient`); `TextLayout::lines` and `baselines` keep
+  describing the written lines and `TextLayout::line_frame` turns them,
+  so carets, selections, clicks, the character nodes of the Shape tool,
+  snapping to baselines and the text box follow the columns
+  (`text_editing::layout_of_text_shape` composes the turn into the
+  text's transform). The caret is a bar across the column; while editing,
+  Down and Up move along the column, Left and Right to the next and
+  previous column.
+- Vertical alignment in the frame moves the columns sideways by the
+  room left. Text fitted to a path, and text wrapping around objects,
+  stay horizontal. Files of other formats hold the text as written lines
+  (`.cdr`, SVG as curves); `.tdraw` keeps the flag.
+
 ## Font list
 
 The family is picked from a font list, the same in the property bar, the
@@ -487,6 +528,12 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 - Fit text to frame: scale size so the paragraph fills the frame height.
 
 ## Checks
+
+- `tracedraw_text::tests::vertical_text_sets_columns_with_turned_and_upright_letters`,
+  `tests::letters_that_stand_upright_in_columns`,
+  `document::tests::vertical_text_is_off_by_default_and_placed_from_the_top_right`,
+  `text_editing::tests::vertical_text_has_carets_across_its_columns_and_a_switch`
+  (vertical text).
 
 - Character colours: `text_editing::tests::a_colour_picked_with_characters_selected_colours_only_them`,
   `text_editing::tests::without_a_character_selection_the_colour_goes_to_the_object`,
