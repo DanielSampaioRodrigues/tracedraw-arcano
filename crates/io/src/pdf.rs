@@ -1975,18 +1975,9 @@ mod tests {
         s.fill = Fill::Fountain(tracedraw_core::Fountain {
             kind: FountainKind::Linear,
             stops: vec![
-                tracedraw_core::Stop {
-                    pos: 0.0,
-                    color: Color::rgb8(255, 0, 0),
-                },
-                tracedraw_core::Stop {
-                    pos: 0.3,
-                    color: Color::rgb8(0, 255, 0),
-                },
-                tracedraw_core::Stop {
-                    pos: 1.0,
-                    color: Color::rgb8(0, 0, 255),
-                },
+                tracedraw_core::Stop::new(0.0, Color::rgb8(255, 0, 0)),
+                tracedraw_core::Stop::new(0.3, Color::rgb8(0, 255, 0)),
+                tracedraw_core::Stop::new(1.0, Color::rgb8(0, 0, 255)),
             ],
             angle: 90.0,
             offset: tracedraw_core::geometry::Point::ZERO,

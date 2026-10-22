@@ -747,6 +747,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     app.draw_right_drag(&painter);
     context::context_menu(app, ui, &response);
     crate::drop_menu::drop_menu_ui(app, ui);
+    crate::fill_tool::node_bar(app, ui);
 
     // Scrollbars, document navigator, page tabs, Navigator button.
     window_bars::window_bars(app, ui, full, canvas_rect, ruler);
@@ -1234,6 +1235,43 @@ mod tests {
         assert_eq!(
             ctx.global_style().visuals.panel_fill,
             crate::theme::visuals().panel_fill
+        );
+    }
+
+    /// With Interactive Fill and a colour node picked, the node bar opens
+    /// under the node.
+    #[test]
+    fn the_node_bar_opens_under_a_picked_fill_node() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.apply_fill(tracedraw_core::Fill::linear(
+            tracedraw_core::Color::BLACK,
+            tracedraw_core::Color::WHITE,
+            0.0,
+        ));
+        app.tool = crate::tools::Tool::InteractiveFill;
+        frame(&ctx, &mut app);
+        let bar = egui::Id::new("fill_node_bar");
+        assert!(ctx.memory(|m| m.area_rect(bar)).is_none());
+        app.fill_node = Some(0);
+        frame(&ctx, &mut app);
+        frame(&ctx, &mut app);
+        let r = ctx.memory(|m| m.area_rect(bar)).expect("node bar");
+        let (_, f, b) = app.selected_fountain().expect("fountain");
+        let start = crate::fill_tool::fountain_handles(&f, b)[0].1;
+        let at = app.view.to_screen(start);
+        assert!(
+            r.top() > at.y && (r.left() - at.x).abs() < 20.0,
+            "{r:?} {at:?}"
         );
     }
 

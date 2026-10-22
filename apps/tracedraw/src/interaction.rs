@@ -1914,8 +1914,28 @@ impl App {
     }
 
     fn fill_input(&mut self, response: &Response, p: Point) {
+        // A double click on a colour node removes it; on the line, it adds
+        // one there.
+        if response.double_clicked_by(PointerButton::Primary) {
+            match self.fountain_handle_at(p) {
+                Some(crate::fill_tool::FountainHandle::Stop(i)) => {
+                    self.remove_fountain_stop(i);
+                    return;
+                }
+                Some(_) => return,
+                None => {
+                    if let Some(t) = self.fountain_line_at(p) {
+                        self.add_fountain_stop(t);
+                        return;
+                    }
+                }
+            }
+        }
         if response.drag_started_by(PointerButton::Primary) {
             if let Some(h) = self.fountain_handle_at(p) {
+                if let Some(i) = self.fountain_stop_of(h) {
+                    self.fill_node = Some(i);
+                }
                 self.drag = Drag::FountainHandle {
                     handle: h,
                     begun: false,
@@ -1945,11 +1965,28 @@ impl App {
             }
         }
         if response.clicked_by(PointerButton::Primary) {
-            if self.fountain_handle_at(p).is_some() {
+            // A click on a node picks it (the node bar opens under it).
+            if let Some(h) = self.fountain_handle_at(p) {
+                if let Some(i) = self.fountain_stop_of(h) {
+                    self.fill_node = Some(i);
+                }
+                return;
+            }
+            self.fill_node = None;
+            if self.fountain_line_at(p).is_some() {
                 return;
             }
             if let Some(id) = self.hit_test_inside(p) {
+                // An object with a gradient already is only picked, its
+                // nodes shown.
+                let has_fountain = self
+                    .doc()
+                    .find_shape(id)
+                    .is_some_and(|s| matches!(s.fill, Fill::Fountain(_)));
                 self.select(vec![id]);
+                if has_fountain {
+                    return;
+                }
                 let fill = match self.default_fill() {
                     Fill::None => Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0)),
                     f => f,

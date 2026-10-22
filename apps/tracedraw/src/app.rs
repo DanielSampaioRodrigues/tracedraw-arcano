@@ -1348,6 +1348,10 @@ pub struct App {
     /// What new blends take besides their steps: rotation (degrees) and
     /// the object and colour accelerations (-1 to 1).
     pub blend_rotation: f64,
+    /// The colour node picked on the selected fill's line (Interactive
+    /// Fill; an index into its stops), for the node bar and the property
+    /// bar's node fields.
+    pub fill_node: Option<usize>,
     pub blend_accel_objects: f64,
     pub blend_accel_colors: f64,
     /// The Knife's mode, gap and pieces (its bar).
@@ -2179,6 +2183,7 @@ impl App {
             sketch: Default::default(),
             effect_edit_step: None,
             blend_rotation: 0.0,
+            fill_node: None,
             blend_accel_objects: 0.0,
             blend_accel_colors: 0.0,
             knife: Default::default(),

@@ -1389,18 +1389,9 @@ fn centred_gradients_are_written_from_their_edge_and_read_back() {
         let f = Fountain {
             kind,
             stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: red,
-                },
-                Stop {
-                    pos: 0.3,
-                    color: Color::rgb8(255, 128, 0),
-                },
-                Stop {
-                    pos: 1.0,
-                    color: yellow,
-                },
+                Stop::new(0.0, red),
+                Stop::new(0.3, Color::rgb8(255, 128, 0)),
+                Stop::new(1.0, yellow),
             ],
             angle: 0.0,
             offset: tracedraw_core::geometry::Point::ZERO,

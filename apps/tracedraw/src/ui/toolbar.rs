@@ -2352,6 +2352,18 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     let shown_kind = (!mix.kind).then_some(kind);
     let mut touched: Vec<FillField> = Vec::new();
     let mut changed = false;
+    // The colour node picked on the canvas, for one object; an edit of it
+    // (colour, opacity, position) goes in after the bar.
+    let picked_node = (shapes.len() == 1)
+        .then(|| app.selected_fill_node().map(|(_, i)| i))
+        .flatten();
+    type NodeEdit = (
+        usize,
+        Option<tracedraw_core::Color>,
+        Option<f32>,
+        Option<f64>,
+    );
+    let mut node_edit: Option<NodeEdit> = None;
     for (i, key) in [
         "docker.fill_none",
         "docker.fill_uniform",
@@ -2455,14 +2467,58 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                 }
             }
             vsep(ui);
-            if let Some(first) = f.stops.first_mut() {
-                if color_button(ui, &mut first.color, mix.has(FillField::StartColor)) {
-                    set(FillField::StartColor, &mut changed);
+            if let Some(i) = picked_node.filter(|i| *i < f.stops.len()) {
+                // The picked node: its colour, transparency and place on
+                // the line (the start and the end stay at the ends).
+                let n = f.stops.len();
+                let st = f.stops[i];
+                let mut c = st.color;
+                if crate::ui::color_picker::color_button(ui, &mut c) {
+                    node_edit = Some((i, Some(c), None, None));
                 }
-            }
-            if let Some(last) = f.stops.last_mut() {
-                if color_button(ui, &mut last.color, mix.has(FillField::EndColor)) {
-                    set(FillField::EndColor, &mut changed);
+                ui.label(
+                    egui::RichText::new(tr("toolbar.node_transparency"))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+                let mut tr_pct = ((1.0 - st.opacity) * 100.0).round() as f64;
+                if ui
+                    .add(
+                        crate::ui::field::NumField::new(&mut tr_pct)
+                            .speed(1.0)
+                            .range(0.0..=100.0)
+                            .suffix(" %"),
+                    )
+                    .changed()
+                {
+                    node_edit = Some((i, None, Some(1.0 - tr_pct as f32 / 100.0), None));
+                }
+                ui.label(
+                    egui::RichText::new(tr("toolbar.node_position"))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+                let mut pos = st.pos * 100.0;
+                let r = ui.add_enabled(
+                    i > 0 && i + 1 < n,
+                    crate::ui::field::NumField::new(&mut pos)
+                        .speed(1.0)
+                        .range(0.0..=100.0)
+                        .suffix(" %"),
+                );
+                if r.changed() {
+                    node_edit = Some((i, None, None, Some(pos / 100.0)));
+                }
+            } else {
+                if let Some(first) = f.stops.first_mut() {
+                    if color_button(ui, &mut first.color, mix.has(FillField::StartColor)) {
+                        set(FillField::StartColor, &mut changed);
+                    }
+                }
+                if let Some(last) = f.stops.last_mut() {
+                    if color_button(ui, &mut last.color, mix.has(FillField::EndColor)) {
+                        set(FillField::EndColor, &mut changed);
+                    }
                 }
             }
             ui.label(
@@ -2511,6 +2567,8 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         } else {
             app.patch_selection_fill(&old, &fill, &touched);
         }
+    } else if let Some((i, c, o, p)) = node_edit {
+        app.set_fountain_node(i, c, o, p, false);
     }
     vsep(ui);
     ui.label(

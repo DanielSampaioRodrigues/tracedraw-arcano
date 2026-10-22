@@ -58,14 +58,23 @@ Uma faixa abaixo do tipo mostra toda a sequência de cores como será desenhada.
 A ferramenta [[tool.interactive_fill]] (<kbd>G</kbd>) edita preenchimentos no
 próprio objeto.
 
-1. Escolha a ferramenta e arraste através de um objeto: você obtém um gradiente
-   linear de onde pressiona até onde solta. Mantenha <kbd>Ctrl</kbd>
-   pressionado para limitar o ângulo a passos de 15 graus. Um clique dá o
-   preenchimento padrão.
-2. Arraste os nós no objeto para mudar o gradiente: os dois nós quadrados de um
-   gradiente linear giram a direção e mudam o comprimento; o nó de um gradiente
-   radial, cônico ou quadrado move o centro.
-3. Arraste uma cor da paleta até um nó para mudar a cor dele, ou até a linha
+1. Escolha a ferramenta e arraste através de um objeto: o gradiente começa
+   onde você pressiona e termina onde solta, mantendo as cores de um
+   gradiente que o objeto já tenha. Mantenha <kbd>Ctrl</kbd> pressionado para
+   limitar o ângulo a passos de 15 graus. Um clique num objeto sem gradiente
+   dá o preenchimento padrão.
+2. Arraste os nós para mudar o gradiente: o nó inicial o move, o nó final
+   define o comprimento e a direção, e o nó redondo de inclinação inclina as
+   faixas (ou faz de um gradiente radial uma elipse).
+3. Clique duas vezes na linha entre os nós para acrescentar um nó de cor ali;
+   clique duas vezes num nó de cor para removê-lo. Arraste um nó de cor ao
+   longo da linha, ou a barrinha entre dois nós para mover o ponto onde as
+   cores deles se encontram no meio.
+4. Clique num nó para escolhê-lo: abre-se embaixo dele uma pequena barra com
+   a cor do nó (clique na amostra para o seletor de cores) e a transparência.
+   Uma cor da paleta clicada com um nó escolhido vai para esse nó, e a barra
+   de propriedades mostra a cor, a transparência e a posição do nó.
+5. Arraste uma cor da paleta até um nó para mudar a cor dele, ou até a linha
    entre os nós para acrescentar uma cor ali.
 
 A barra de propriedades tem o tipo de preenchimento e as configurações: a cor

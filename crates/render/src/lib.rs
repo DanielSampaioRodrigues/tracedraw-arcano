@@ -1106,7 +1106,7 @@ impl Renderer<'_> {
                 let stops: Vec<GradientStop> = f
                     .resolved_stops()
                     .iter()
-                    .map(|s| GradientStop::new(s.pos as f32, sk_color(s.color)))
+                    .map(|s| GradientStop::new(s.pos as f32, sk_color_alpha(s.color, s.opacity)))
                     .collect();
                 // Nodes placed freely with the Interactive Fill tool: the
                 // fill's own frame (start, end, skew handle) places it.
@@ -1144,12 +1144,13 @@ impl Renderer<'_> {
                             | tracedraw_core::FountainKind::Square
                     ) {
                         let f2 = f.clone();
-                        let base = f.sorted_stops();
+                        let base = f.blended_stops();
                         let key = format!("{f:?}");
                         self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let p = Point::new(b.x0 + u * b.width(), b.y0 + v * b.height());
                             let t = f2.param_at(b, p).unwrap_or(0.0);
-                            tracedraw_core::style::sample_stops(&base, f2.stop_param(t))
+                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            (s.color, s.opacity)
                         });
                     }
                     return;
@@ -1200,7 +1201,7 @@ impl Renderer<'_> {
                     tracedraw_core::FountainKind::Conical
                     | tracedraw_core::FountainKind::Square => {
                         let f2 = f.clone();
-                        let base = f.sorted_stops();
+                        let base = f.blended_stops();
                         let key = format!("{f:?}");
                         self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let dx = u - 0.5 - f2.offset.x / 2.0;
@@ -1218,7 +1219,8 @@ impl Renderer<'_> {
                                 }
                                 _ => (dx.abs().max(dy.abs()) * 2.0).min(1.0),
                             };
-                            tracedraw_core::style::sample_stops(&base, f2.stop_param(t))
+                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            (s.color, s.opacity)
                         });
                     }
                 }
@@ -1242,7 +1244,10 @@ impl Renderer<'_> {
                             .round()
                             .clamp(0.0, 255.0) as u8
                     };
-                    Color::rgb8(l(ca[0], cb[0]), l(ca[1], cb[1]), l(ca[2], cb[2]))
+                    (
+                        Color::rgb8(l(ca[0], cb[0]), l(ca[1], cb[1]), l(ca[2], cb[2])),
+                        1.0,
+                    )
                 });
             }
         }
@@ -1437,14 +1442,15 @@ impl Renderer<'_> {
                 let inside: Vec<bool> = m.pixels().iter().map(|p| p.alpha() >= 128).collect();
                 let dist = edge_distance(&inside, gw as usize, gh as usize);
                 let deepest = dist.iter().cloned().fold(0.0f64, f64::max).max(1e-9);
-                let base = f.sorted_stops();
+                let base = f.blended_stops();
                 let Some(mut pm) = Pixmap::new(gw, gh) else {
                     return;
                 };
                 for (px, d) in pm.pixels_mut().iter_mut().zip(&dist) {
-                    let c = tracedraw_core::style::sample_stops(&base, f.stop_param(d / deepest));
-                    let [r, g, bb] = c.to_rgb8();
-                    *px = tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+                    let s = tracedraw_core::style::sample_stop(&base, f.stop_param(d / deepest));
+                    let [r, g, bb] = s.color.to_rgb8();
+                    let a = (s.opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    *px = tiny_skia::ColorU8::from_rgba(r, g, bb, a).premultiply();
                 }
                 procedural_cache_put(key, pm.clone());
                 pm
@@ -1472,7 +1478,7 @@ impl Renderer<'_> {
         sk: &SkPath,
         rule: FillRule,
         key: &str,
-        f: impl Fn(f64, f64) -> Color + Sync,
+        f: impl Fn(f64, f64) -> (Color, f32) + Sync,
     ) {
         use tracedraw_core::geometry::Shape as _;
         let b = bbox(page_path);
@@ -1517,8 +1523,10 @@ impl Renderer<'_> {
                     for (x, px) in out.iter_mut().enumerate() {
                         let u = (x0 + (x as f64 + 0.5) * st - sb.x0) / bw;
                         let v = 1.0 - (y0 + (y as f64 + 0.5) * st - sb.y0) / bh;
-                        let [r, g, bb] = f(u, v).to_rgb8();
-                        *px = tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+                        let (c, o) = f(u, v);
+                        let [r, g, bb] = c.to_rgb8();
+                        let a = (o.clamp(0.0, 1.0) * 255.0).round() as u8;
+                        *px = tiny_skia::ColorU8::from_rgba(r, g, bb, a).premultiply();
                     }
                 };
                 for_rows(pm.pixels_mut(), w as usize, &row);
@@ -2125,6 +2133,12 @@ pub fn sk_color(c: Color) -> SkColor {
     SkColor::from_rgba8(r, g, b, 255)
 }
 
+/// [`sk_color`] at an opacity (0 clear, 1 opaque).
+pub fn sk_color_alpha(c: Color, opacity: f32) -> SkColor {
+    let [r, g, b] = c.to_rgb8();
+    SkColor::from_rgba8(r, g, b, (opacity.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
 pub fn to_sk_path(path: &BezPath) -> Option<SkPath> {
     let mut pb = PathBuilder::new();
     for el in path.elements() {
@@ -2416,22 +2430,10 @@ mod tests {
         frame.fill = Fill::Fountain(Fountain {
             kind: FountainKind::Linear,
             stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: Color::WHITE,
-                },
-                Stop {
-                    pos: 0.499,
-                    color: Color::WHITE,
-                },
-                Stop {
-                    pos: 0.501,
-                    color: Color::BLACK,
-                },
-                Stop {
-                    pos: 1.0,
-                    color: Color::BLACK,
-                },
+                Stop::new(0.0, Color::WHITE),
+                Stop::new(0.499, Color::WHITE),
+                Stop::new(0.501, Color::BLACK),
+                Stop::new(1.0, Color::BLACK),
             ],
             ..Fountain::two(FountainKind::Linear, Color::WHITE, Color::BLACK, 0.0)
         });
@@ -3004,6 +3006,25 @@ mod tests {
     /// end node, held at the end colours beyond them; an elliptical one
     /// is centred on its start (#330).
     #[test]
+    fn node_opacity_shows_through_the_gradient() {
+        let b = Rect::new(0.0, 0.0, 100.0, 10.0);
+        let mut f = Fountain::two(FountainKind::Linear, Color::BLACK, Color::BLACK, 0.0);
+        f.stops[1].opacity = 0.0;
+        for kind in [FountainKind::Linear, FountainKind::Square] {
+            f.kind = kind;
+            let pm = render_fill_image(&Fill::Fountain(f.clone()), b, 25.4).unwrap();
+            let a = |x: u32| pm.pixel(x, 5).map(|p| p.alpha()).unwrap_or(0);
+            if kind == FountainKind::Linear {
+                assert!(a(2) > 240, "opaque start: {}", a(2));
+                assert!(a(97) < 15, "clear end: {}", a(97));
+            } else {
+                // Square: opaque at the centre, clear at the corners.
+                assert!(a(50) > a(1), "{} {}", a(50), a(1));
+            }
+        }
+    }
+
+    #[test]
     fn free_fill_nodes_place_the_gradient() {
         use tracedraw_core::style::FountainHandles;
         let b = Rect::new(0.0, 0.0, 100.0, 10.0);
@@ -3053,18 +3074,9 @@ mod tests {
         let fill = Fill::Fountain(Fountain {
             kind: FountainKind::Linear,
             stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: Color::rgb8(0, 0, 0),
-                },
-                Stop {
-                    pos: 0.5,
-                    color: Color::rgb8(255, 0, 0),
-                },
-                Stop {
-                    pos: 1.0,
-                    color: Color::rgb8(255, 255, 255),
-                },
+                Stop::new(0.0, Color::rgb8(0, 0, 0)),
+                Stop::new(0.5, Color::rgb8(255, 0, 0)),
+                Stop::new(1.0, Color::rgb8(255, 255, 255)),
             ],
             angle: 0.0,
             offset: Point::ZERO,

@@ -54,13 +54,22 @@ A strip under the type shows the whole run of colors as it will be drawn.
 
 The [[tool.interactive_fill]] tool (<kbd>G</kbd>) edits fills on the object.
 
-1. Choose the tool and drag across an object: you get a linear gradient from
-   where you press to where you release. Hold <kbd>Ctrl</kbd> to keep the
-   angle to steps of 15 degrees. A click gives the default fill.
-2. Drag the nodes on the object to change the gradient: the two square nodes
-   of a linear gradient turn its direction and length; the node of a radial,
-   conical or square gradient moves its center.
-3. Drag a palette color onto a node to recolor it, or onto the line between
+1. Choose the tool and drag across an object: the gradient starts where you
+   press and ends where you release, keeping the colors of a gradient the
+   object has already. Hold <kbd>Ctrl</kbd> to keep the angle to steps of 15
+   degrees. A click on an object without a gradient gives the default fill.
+2. Drag the nodes to change the gradient: the start node moves it, the end
+   node sets its length and direction, and the round skew node tilts the
+   bands (or makes a radial gradient an ellipse).
+3. Double-click the line between the nodes to add a color node there;
+   double-click a color node to remove it. Drag a color node along the line,
+   or the short bar between two nodes to move the point where their colors
+   meet half way.
+4. Click a node to pick it: a small bar opens under it with the node's color
+   (click the swatch for the color picker) and its transparency. A palette
+   color clicked while a node is picked goes to that node, and the property
+   bar shows the node's color, transparency and position.
+5. Drag a palette color onto a node to recolor it, or onto the line between
    the nodes to add a color there.
 
 The property bar has the kind of fill and its settings: the color of a

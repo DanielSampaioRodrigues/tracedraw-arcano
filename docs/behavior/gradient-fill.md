@@ -25,7 +25,8 @@ Dragging with Interactive Fill on an object (anywhere inside it, filled
 or not) puts the start node at the press point and the end node at the
 release point, keeping the kind and colours of a gradient the object
 already has (a linear black to white one otherwise); the skew handle
-goes square to the line, as far from the start as the end. A click
+goes square to the line, as far from the start as the end. A click on
+an object with a gradient picks it (its nodes show); on one without, it
 gives the default fill; Ctrl constrains the angle to 15 degree steps;
 dragging a palette colour onto a stop recolours it; dragging a colour
 onto the fill line adds a stop.
@@ -51,6 +52,29 @@ the dashed ellipse their frame makes, square fills the parallelogram.
   line and keeps its length.
 - Skew handle: sets the second axis on its own, so a radial fill
   becomes an ellipse and a linear fill's bands slant.
+
+Colour nodes on the line (#330): every stop is a node on the line from
+the start to the end, at `start + pos (end - start)` (the first is the
+start node, the last the end node; the ones between are smaller
+squares in their colours). Between each pair of nodes a short bar
+across the line is the midpoint slider, at `pos_i + mid_i (pos_i+1 -
+pos_i)`.
+
+- Double-click on the line: adds a node there in the colour and
+  opacity the fill has at that point, and picks it. Not within 0.0001
+  of a node.
+- Double-click on a node between the ends: removes it.
+- Drag a node between the ends along the line: sets its position, kept
+  0.001 inside its neighbours.
+- Drag a midpoint slider: sets `mid` (0.01 to 0.99) of the blend.
+- Click a node (the start and the end too): picks it. The node bar
+  opens under it with the node's colour (the swatch opens the colour
+  picker) and its transparency (0 % opaque to 100 % clear); the
+  property bar shows the node's colour, transparency and position
+  (the position only for nodes between the ends). A palette colour
+  clicked while a node is picked goes to the node.
+- A palette colour dropped on a node recolours it; dropped on the line
+  it adds a node of that colour (one undo step).
 
 Until a node is moved the fill has no stored nodes and is placed by its
 angle and offset as below; the first move stores the three nodes
@@ -89,6 +113,13 @@ Bounding box `b` of the object in page space, centre `c`.
      odd ones. No repeat: `n` is ignored.
   3. Edge pad `e`: `t = clamp((t - e) / (1 - 2e), 0, 1)` (per cycle).
   4. Invert colours: `s = 1 - t`.
+- Midpoint: between a stop with midpoint `m` and the next, at `k` of the
+  way (0..1) the blend is `k^g` with `m^g = 1/2` (`m = 0.5`: straight).
+  Shaders and exports get it as 16 straight pieces along the curve
+  (`Fountain::blended_stops`, `Fountain::MID_STEPS`).
+- Opacity: each stop has one (1 opaque); it blends from stop to stop
+  as the colour does. The renderer and SVG (`stop-opacity`) use it;
+  PDF, EPS, EMF and `.cdr` draw the colours opaque.
 - Colour at `s` is a linear interpolation in RGB between the two stops
   around it; stops are sorted by position; equal positions give a hard
   edge.
@@ -116,6 +147,20 @@ Bounding box `b` of the object in page space, centre `c`.
   it radial and red to white, puts the start and end nodes at those
   points and the skew handle at (5, 15)
   (`fill_tool::tests::a_drag_puts_the_nodes_where_it_began_and_ended`).
+- Given a black to white linear fill on that rectangle, double-clicking
+  the line at (20, 10) adds a grey node at 0.5; dragging it to (30, 12)
+  puts it at 0.75; the first midpoint slider dragged to (10, 10) sets
+  its `mid` to 0.25 / 0.75; the node removed leaves two
+  (`fill_tool::tests::colour_nodes_are_added_moved_and_removed`).
+- Given the end node picked, a palette colour recolours only it; a
+  colour dropped on the line at (10, 10) adds a node of it at 0.25, one
+  undo step (`fill_tool::tests::a_picked_node_takes_colours_and_transparency`).
+- Given a midpoint of 0.25 on black to white, the colour at 0.25 is mid
+  grey and at 0.5 lighter; a stop at opacity 0 makes the fill clear
+  there, on screen and in SVG
+  (`midpoints_and_node_opacity_shape_the_blend`,
+  `node_opacity_shows_through_the_gradient`,
+  `node_opacity_goes_out_as_stop_opacity`).
 - Given free nodes, the renderer, SVG (`gradientTransform`) and PDF (a
   unit shading drawn through the frame) place the fill as the nodes say
   (`free_fill_nodes_place_the_gradient`,

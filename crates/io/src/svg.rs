@@ -463,8 +463,14 @@ fn paint_value(
             let stop_xml: String = stops
                 .iter()
                 .map(|st| {
+                    // A node's transparency as the stop's opacity.
+                    let opacity = if st.opacity < 1.0 {
+                        format!(" stop-opacity=\"{}\"", fmt(f64::from(st.opacity.max(0.0))))
+                    } else {
+                        String::new()
+                    };
                     format!(
-                        "      <stop offset=\"{}\" stop-color=\"{}\"/>\n",
+                        "      <stop offset=\"{}\" stop-color=\"{}\"{opacity}/>\n",
                         fmt(st.pos),
                         st.color.to_hex()
                     )
@@ -1102,6 +1108,17 @@ mod tests {
     /// A fill whose nodes were placed freely goes out through a gradient
     /// transform: the unit gradient mapped onto its start, end and skew
     /// handle (#330).
+    #[test]
+    fn node_opacity_goes_out_as_stop_opacity() {
+        use tracedraw_core::style::FountainKind;
+        let mut f =
+            tracedraw_core::Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        f.stops[1].opacity = 0.25;
+        let svg = one_shape_svg(Fill::Fountain(f), None);
+        assert!(svg.contains("stop-opacity=\"0.25\""), "{svg}");
+        assert_eq!(svg.matches("stop-opacity").count(), 1, "{svg}");
+    }
+
     #[test]
     fn free_fill_nodes_go_out_as_a_gradient_transform() {
         use tracedraw_core::style::{FountainHandles, FountainKind};

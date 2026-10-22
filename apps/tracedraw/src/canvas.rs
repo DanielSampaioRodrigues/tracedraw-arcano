@@ -835,12 +835,38 @@ fn draw_fountain_handles(app: &App, painter: &Painter) {
     );
     painter.circle_filled(sk, 4.5, Color32::WHITE);
     painter.circle_stroke(sk, 4.5, line);
-    // The start and end nodes in their colours.
-    for (p, color) in [(ss, f.first_color()), (se, f.last_color())] {
-        let [r, g, bl] = color.to_rgb8();
-        let rect = ERect::from_center_size(p, egui::vec2(9.0, 9.0));
+    // The midpoint sliders: a short bar across the line between each
+    // pair of nodes.
+    let d = se - ss;
+    if d.length() > 24.0 {
+        let n = egui::vec2(-d.y, d.x).normalized() * 5.0;
+        for (_, t) in crate::fill_tool::midpoint_params(&f) {
+            let m = ss + d * t as f32;
+            painter.line_segment([m - n, m + n], EStroke::new(2.0, Tokens::SELECTION));
+        }
+    }
+    // The colour nodes in their colours, the start and the end bigger;
+    // the picked one drawn with a thick outline.
+    let last = f.stops.len().saturating_sub(1);
+    for (i, st) in f.stops.iter().enumerate() {
+        let p = if i == 0 {
+            ss
+        } else if i == last {
+            se
+        } else {
+            ss + d * st.pos as f32
+        };
+        let size = if i == 0 || i == last { 9.0 } else { 7.0 };
+        let [r, g, bl] = st.color.to_rgb8();
+        let rect = ERect::from_center_size(p, egui::vec2(size, size));
         painter.rect_filled(rect, 0.0, Color32::from_rgb(r, g, bl));
-        painter.rect_stroke(rect, 0.0, line, egui::StrokeKind::Outside);
+        let picked = app.fill_node == Some(i);
+        let stroke = if picked {
+            EStroke::new(2.0, Tokens::SELECTION)
+        } else {
+            line
+        };
+        painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
     }
 }
 

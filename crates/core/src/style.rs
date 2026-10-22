@@ -47,6 +47,52 @@ pub struct Stop {
     /// 0.0 at the start, 1.0 at the end.
     pub pos: f64,
     pub color: Color,
+    /// Where the blend to the next stop is half way, as a fraction of the
+    /// way there (0.5: in the middle; the Interactive Fill tool's
+    /// midpoint slider). Unused on the last stop.
+    #[serde(default = "half", skip_serializing_if = "is_half")]
+    pub mid: f64,
+    /// 1 opaque, 0 clear (the node's transparency).
+    #[serde(default = "one_f32", skip_serializing_if = "is_one_f32")]
+    pub opacity: f32,
+}
+
+impl Stop {
+    /// An opaque stop with its blend half way to the next.
+    pub fn new(pos: f64, color: Color) -> Self {
+        Stop {
+            pos,
+            color,
+            mid: 0.5,
+            opacity: 1.0,
+        }
+    }
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+fn is_half(v: &f64) -> bool {
+    (*v - 0.5).abs() < 1e-12
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn is_one_f32(v: &f32) -> bool {
+    *v == 1.0
+}
+
+/// The blend from one stop to the next at `k` (0..1 of the way) with its
+/// midpoint at `mid`: `k^g` with `mid^g = 1/2`.
+pub fn midpoint_curve(k: f64, mid: f64) -> f64 {
+    let m = mid.clamp(0.01, 0.99);
+    if (m - 0.5).abs() < 1e-9 {
+        return k;
+    }
+    k.clamp(0.0, 1.0).powf(0.5f64.ln() / m.ln())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,16 +172,7 @@ impl Fountain {
     pub fn two(kind: FountainKind, from: Color, to: Color, angle: f64) -> Self {
         Fountain {
             kind,
-            stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: from,
-                },
-                Stop {
-                    pos: 1.0,
-                    color: to,
-                },
-            ],
+            stops: vec![Stop::new(0.0, from), Stop::new(1.0, to)],
             angle,
             offset: Point::ZERO,
             edge_pad: 0.0,
@@ -303,6 +340,53 @@ impl Fountain {
         self.cycles() == 1 && !self.bilinear && !self.invert
     }
 
+    /// A stop's midpoint is off the middle.
+    pub fn has_midpoints(&self) -> bool {
+        let n = self.stops.len();
+        self.stops
+            .iter()
+            .take(n.saturating_sub(1))
+            .any(|s| !is_half(&s.mid))
+    }
+
+    /// The sorted stops with each blend whose midpoint is off the middle
+    /// drawn as [`Self::MID_STEPS`] straight pieces along its curve, so a
+    /// plain run of stops gives the same colours (the midpoints set back
+    /// to the middle).
+    pub fn blended_stops(&self) -> Vec<Stop> {
+        let base = self.sorted_stops();
+        let mut out: Vec<Stop> = Vec::with_capacity(base.len());
+        for (i, s) in base.iter().enumerate() {
+            out.push(Stop { mid: 0.5, ..*s });
+            let Some(next) = base.get(i + 1) else {
+                continue;
+            };
+            if is_half(&s.mid) || next.pos - s.pos < 1e-9 {
+                continue;
+            }
+            for j in 1..Self::MID_STEPS {
+                let k = j as f64 / Self::MID_STEPS as f64;
+                let w = midpoint_curve(k, s.mid) as f32;
+                out.push(Stop {
+                    pos: s.pos + (next.pos - s.pos) * k,
+                    color: lerp_color(s.color, next.color, w),
+                    mid: 0.5,
+                    opacity: s.opacity + (next.opacity - s.opacity) * w,
+                });
+            }
+        }
+        out
+    }
+
+    /// Pieces per blend with its midpoint off the middle (see
+    /// [`Self::blended_stops`]).
+    pub const MID_STEPS: usize = 16;
+
+    /// Any stop is not fully opaque.
+    pub fn has_opacity(&self) -> bool {
+        self.stops.iter().any(|s| s.opacity < 1.0)
+    }
+
     /// The stops sorted by position, at least two.
     pub fn sorted_stops(&self) -> Vec<Stop> {
         let mut v = self.stops.clone();
@@ -313,7 +397,7 @@ impl Fountain {
         });
         if v.len() < 2 {
             let c = v.first().map(|s| s.color).unwrap_or(Color::BLACK);
-            v = vec![Stop { pos: 0.0, color: c }, Stop { pos: 1.0, color: c }];
+            v = vec![Stop::new(0.0, c), Stop::new(1.0, c)];
         }
         v
     }
@@ -354,7 +438,12 @@ impl Fountain {
 
     /// Colour at `t` in 0..1 (sRGB interpolation).
     pub fn color_at(&self, t: f64) -> Color {
-        sample_stops(&self.sorted_stops(), self.stop_param(t))
+        sample_stops(&self.blended_stops(), self.stop_param(t))
+    }
+
+    /// The opacity at `t` (0 clear, 1 opaque).
+    pub fn opacity_at(&self, t: f64) -> f32 {
+        sample_opacity(&self.blended_stops(), self.stop_param(t))
     }
 
     /// The fountain as plain stops over 0..1 that give the same colours
@@ -362,7 +451,7 @@ impl Fountain {
     /// inversion worked in (for gradient shaders and exports that only
     /// know a single run of stops). Equal positions are hard edges.
     pub fn resolved_stops(&self) -> Vec<Stop> {
-        let base = self.sorted_stops();
+        let base = self.blended_stops();
         let cycles = self.cycles();
         let n = cycles as f64;
         let e = self.edge_pad.clamp(0.0, 0.49);
@@ -388,13 +477,13 @@ impl Fountain {
         ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         ts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
         let mut out: Vec<Stop> = Vec::new();
-        let mut push = |pos: f64, color: Color| {
+        let mut push = |pos: f64, s: Stop| {
             if let Some(l) = out.last() {
-                if (l.pos - pos).abs() < 1e-12 && l.color == color {
+                if (l.pos - pos).abs() < 1e-12 && l.color == s.color && l.opacity == s.opacity {
                     return;
                 }
             }
-            out.push(Stop { pos, color });
+            out.push(Stop { pos, ..s });
         };
         for w in ts.windows(2) {
             let (a, b) = (w[0], w[1]);
@@ -408,7 +497,7 @@ impl Fountain {
             let slope = (p3 - p1) / (q3 - q1);
             let pa = (p1 - slope * (q1 - a)).clamp(0.0, 1.0);
             let pb = (p3 + slope * (b - q3)).clamp(0.0, 1.0);
-            push(a, sample_stops(&base, pa));
+            push(a, sample_stop(&base, pa));
             if (pb - pa).abs() > 1e-12 {
                 let (lo, hi) = (pa.min(pb), pa.max(pb));
                 let mut inner: Vec<Stop> = base
@@ -416,17 +505,17 @@ impl Fountain {
                     .filter(|s| s.pos > lo + 1e-9 && s.pos < hi - 1e-9)
                     .map(|s| Stop {
                         pos: a + (s.pos - pa) / (pb - pa) * (b - a),
-                        color: s.color,
+                        ..*s
                     })
                     .collect();
                 if pb < pa {
                     inner.reverse();
                 }
                 for s in inner {
-                    push(s.pos, s.color);
+                    push(s.pos, s);
                 }
             }
-            push(b, sample_stops(&base, pb));
+            push(b, sample_stop(&base, pb));
         }
         if out.len() < 2 {
             return base;
@@ -440,7 +529,7 @@ impl Fountain {
     /// shaped fountain becomes a square one running from the centre out.
     /// A fountain with none of the options comes back unchanged.
     pub fn to_plain(&self, max_stops: usize) -> Fountain {
-        if self.runs_once() && self.kind != FountainKind::Shaped {
+        if self.runs_once() && self.kind != FountainKind::Shaped && !self.has_midpoints() {
             return self.clone();
         }
         let mut stops = self.resolved_stops();
@@ -459,7 +548,7 @@ impl Fountain {
                     let pos = i as f64 / k;
                     Stop {
                         pos,
-                        color: sample_stops(&stops, pos),
+                        ..sample_stop(&stops, pos)
                     }
                 })
                 .collect();
@@ -499,6 +588,45 @@ pub fn sample_stops(stops: &[Stop], t: f64) -> Color {
         }
     }
     stops.last().map(|s| s.color).unwrap_or(first.color)
+}
+
+/// Opacity at `t` along `stops` (sorted by position), as
+/// [`sample_stops`] mixes the colours.
+pub fn sample_opacity(stops: &[Stop], t: f64) -> f32 {
+    sample_stop(stops, t).opacity
+}
+
+/// The stop at `t` along `stops` (sorted by position): colour and opacity
+/// mixed from the two around it, its blend half way.
+pub fn sample_stop(stops: &[Stop], t: f64) -> Stop {
+    let Some(first) = stops.first() else {
+        return Stop::new(t, Color::BLACK);
+    };
+    if t <= first.pos {
+        return Stop {
+            pos: t,
+            mid: 0.5,
+            ..*first
+        };
+    }
+    for w in stops.windows(2) {
+        if t <= w[1].pos {
+            let span = (w[1].pos - w[0].pos).max(1e-9);
+            let k = ((t - w[0].pos) / span).clamp(0.0, 1.0) as f32;
+            return Stop {
+                pos: t,
+                color: lerp_color(w[0].color, w[1].color, k),
+                mid: 0.5,
+                opacity: w[0].opacity + (w[1].opacity - w[0].opacity) * k,
+            };
+        }
+    }
+    let last = stops.last().copied().unwrap_or(*first);
+    Stop {
+        pos: t,
+        mid: 0.5,
+        ..last
+    }
 }
 
 pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
@@ -710,10 +838,6 @@ pub struct MeshNode {
     /// 1.0 = opaque.
     #[serde(default = "one_f32")]
     pub alpha: f32,
-}
-
-fn one_f32() -> f32 {
-    1.0
 }
 
 impl Mesh {
@@ -1343,18 +1467,9 @@ mod tests {
         let f = Fountain {
             kind: FountainKind::Linear,
             stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: Color::rgb8(0, 0, 0),
-                },
-                Stop {
-                    pos: 0.5,
-                    color: Color::rgb8(255, 0, 0),
-                },
-                Stop {
-                    pos: 1.0,
-                    color: Color::rgb8(255, 255, 255),
-                },
+                Stop::new(0.0, Color::rgb8(0, 0, 0)),
+                Stop::new(0.5, Color::rgb8(255, 0, 0)),
+                Stop::new(1.0, Color::rgb8(255, 255, 255)),
             ],
             angle: 0.0,
             offset: Point::ZERO,
@@ -1369,6 +1484,39 @@ mod tests {
     /// Free nodes: a fill placed with its default nodes looks as the
     /// angle and offset place it, for every kind; a skew handle tilts
     /// the bands; the nodes follow the box (#330).
+    #[test]
+    fn midpoints_and_node_opacity_shape_the_blend() {
+        let mut f = Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let grey = |c: Color| c.to_rgb8()[0];
+        // In the middle by default.
+        assert!((126..=129).contains(&grey(f.color_at(0.5))));
+        // The midpoint at a quarter: half way there at 0.25, lighter at 0.5.
+        f.stops[0].mid = 0.25;
+        assert!(f.has_midpoints());
+        assert!(
+            (122..=134).contains(&grey(f.color_at(0.25))),
+            "{:?}",
+            f.color_at(0.25)
+        );
+        assert!(grey(f.color_at(0.5)) > 160);
+        // The plain run of stops gives the same colours.
+        let plain = f.resolved_stops();
+        assert!(plain.len() > 2);
+        let at = sample_stops(&plain, 0.25);
+        assert!((i32::from(grey(at)) - i32::from(grey(f.color_at(0.25)))).abs() <= 3);
+        // Opacity runs from node to node like the colour.
+        f.stops[0].mid = 0.5;
+        f.stops[1].opacity = 0.0;
+        assert!(f.has_opacity());
+        assert!((f.opacity_at(0.5) - 0.5).abs() < 0.02);
+        assert_eq!(f.resolved_stops().last().map(|s| s.opacity), Some(0.0));
+        // Saved without the defaults; read back from files that lack them.
+        let plain_json = serde_json::to_string(&Stop::new(0.0, Color::BLACK)).unwrap();
+        assert!(!plain_json.contains("mid") && !plain_json.contains("opacity"));
+        let back: Stop = serde_json::from_str(&plain_json).unwrap();
+        assert_eq!(back, Stop::new(0.0, Color::BLACK));
+    }
+
     #[test]
     fn free_nodes_place_the_fill_as_the_frame_says() {
         let b = Rect::new(10.0, 20.0, 110.0, 70.0);
@@ -1516,18 +1664,9 @@ mod tests {
     fn resolved_stops_draw_the_same_colours_in_one_run() {
         let three = Fountain {
             stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: Color::rgb8(255, 0, 0),
-                },
-                Stop {
-                    pos: 0.4,
-                    color: Color::rgb8(0, 255, 0),
-                },
-                Stop {
-                    pos: 1.0,
-                    color: Color::rgb8(0, 0, 255),
-                },
+                Stop::new(0.0, Color::rgb8(255, 0, 0)),
+                Stop::new(0.4, Color::rgb8(0, 255, 0)),
+                Stop::new(1.0, Color::rgb8(0, 0, 255)),
             ],
             ..Default::default()
         };
