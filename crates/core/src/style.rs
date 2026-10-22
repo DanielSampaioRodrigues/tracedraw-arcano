@@ -1,7 +1,7 @@
 //! Fill and outline (stroke) properties of a shape.
 
 use crate::color::Color;
-use crate::geometry::{Affine, Point, Rect, Size};
+use crate::geometry::{Affine, Point, Rect, Size, Vec2};
 use serde::{Deserialize, Serialize};
 
 /// Fountain (gradient) fill geometry.
@@ -73,6 +73,31 @@ pub struct Fountain {
     /// Colours in reverse order.
     #[serde(default, skip_serializing_if = "is_default")]
     pub invert: bool,
+    /// Where the Interactive Fill tool put the fill's nodes (#330): the
+    /// start, the end and the skew handle, free of the object's box. When
+    /// set they place the fill instead of `angle` and `offset` (which
+    /// keep the nearest equivalent for formats that know only those).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handles: Option<FountainHandles>,
+}
+
+/// The nodes of a fountain fill placed freely (see [`Fountain::handles`]),
+/// relative to the object's bounding box `b`: a point `p` is stored as
+/// `((p.x - c.x) / (w / 2), (p.y - c.y) / (h / 2))` with `c` the box's
+/// centre, so they follow the object when it is moved or scaled.
+///
+/// The fill's own frame maps `(u, v)` to `start + u (end - start) +
+/// v (skew - start)`. Linear: `t = u` (0 at the start, 1 at the end; the
+/// bands run along `skew - start`). Radial (elliptical): `t = |(u, v)|`
+/// (the end and the skew handle on the ellipse's two half axes). Conical:
+/// the angle of `(u, v)` from the end, mirrored as the conical fill is.
+/// Square: `t = max(|u|, |v|)` (the end and the skew handle on the
+/// parallelogram's half axes).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FountainHandles {
+    pub start: Point,
+    pub end: Point,
+    pub skew: Point,
 }
 
 fn is_default<T: Default + PartialEq>(v: &T) -> bool {
@@ -118,7 +143,143 @@ impl Fountain {
             repeats: 1,
             bilinear: false,
             invert: false,
+            handles: None,
         }
+    }
+
+    /// A box-relative point (see [`FountainHandles`]) on the page, for the
+    /// object's bounding box `b`.
+    pub fn rel_to_page(b: Rect, r: Point) -> Point {
+        let c = b.center();
+        Point::new(c.x + r.x * b.width() / 2.0, c.y + r.y * b.height() / 2.0)
+    }
+
+    /// A page point as a box-relative one for `b` (0 on a flat side).
+    pub fn page_to_rel(b: Rect, p: Point) -> Point {
+        let c = b.center();
+        let rx = if b.width() > 1e-9 {
+            (p.x - c.x) / (b.width() / 2.0)
+        } else {
+            0.0
+        };
+        let ry = if b.height() > 1e-9 {
+            (p.y - c.y) / (b.height() / 2.0)
+        } else {
+            0.0
+        };
+        Point::new(rx, ry)
+    }
+
+    /// The fill's frame on the page for the object's box `b`, mapping
+    /// `(u, v)` to `start + u (end - start) + v (skew - start)`: from the
+    /// nodes when they are placed freely, else `None` (the angle and the
+    /// offset place the fill). A frame that is flat counts as none.
+    pub fn frame(&self, b: Rect) -> Option<Affine> {
+        if self.kind == FountainKind::Shaped {
+            return None;
+        }
+        let h = self.handles?;
+        let s = Self::rel_to_page(b, h.start);
+        let e = Self::rel_to_page(b, h.end) - s;
+        let k = Self::rel_to_page(b, h.skew) - s;
+        let det = e.x * k.y - e.y * k.x;
+        if !det.is_finite() || det.abs() < 1e-12 {
+            return None;
+        }
+        Some(Affine::new([e.x, e.y, k.x, k.y, s.x, s.y]))
+    }
+
+    /// The fill's parameter `t` (before [`Self::stop_param`]) at the page
+    /// point `p`, for a fill whose nodes are placed freely (`None`
+    /// otherwise; see [`FountainHandles`]).
+    pub fn param_at(&self, b: Rect, p: Point) -> Option<f64> {
+        let q = self.frame(b)?.inverse() * p;
+        let (u, v) = (q.x, q.y);
+        Some(match self.kind {
+            FountainKind::Linear => u,
+            FountainKind::Radial => u.hypot(v),
+            FountainKind::Conical => {
+                let a = v.atan2(u).rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
+                if a < 0.5 {
+                    a * 2.0
+                } else {
+                    2.0 - a * 2.0
+                }
+            }
+            FountainKind::Square => u.abs().max(v.abs()),
+            FountainKind::Shaped => return None,
+        })
+    }
+
+    /// The nodes that place the fill as its angle and offset do now on
+    /// the box `b` (where the Interactive Fill tool shows them before they
+    /// are first dragged).
+    pub fn default_handles(&self, b: Rect) -> FountainHandles {
+        let a = self.angle.to_radians();
+        let (ca, sa) = (a.cos(), a.sin());
+        let c = b.center();
+        let rel = |p: Point| Self::page_to_rel(b, p);
+        match self.kind {
+            FountainKind::Linear | FountainKind::Shaped => {
+                let half = (b.width() * ca.abs() + b.height() * sa.abs()) / 2.0;
+                let d = Vec2::new(ca, sa) * half;
+                let s = c - d;
+                let n = Vec2::new(-sa, ca) * (2.0 * half);
+                FountainHandles {
+                    start: rel(s),
+                    end: rel(c + d),
+                    skew: rel(s + n),
+                }
+            }
+            FountainKind::Radial => {
+                let cc = Point::new(
+                    c.x + self.offset.x * b.width() / 2.0,
+                    c.y + self.offset.y * b.height() / 2.0,
+                );
+                let r = b.width().max(b.height()) / 2.0 * std::f64::consts::SQRT_2;
+                FountainHandles {
+                    start: rel(cc),
+                    end: rel(cc + Vec2::new(ca, sa) * r),
+                    skew: rel(cc + Vec2::new(-sa, ca) * r),
+                }
+            }
+            // Conical and square fills are measured in the box's own
+            // units (half the width and half the height), around the
+            // offset; the conical one turned by the angle.
+            FountainKind::Conical => {
+                let o = self.offset;
+                FountainHandles {
+                    start: o,
+                    end: Point::new(o.x + ca, o.y + sa),
+                    skew: Point::new(o.x - sa, o.y + ca),
+                }
+            }
+            FountainKind::Square => {
+                let o = self.offset;
+                FountainHandles {
+                    start: o,
+                    end: Point::new(o.x + 1.0, o.y),
+                    skew: Point::new(o.x, o.y + 1.0),
+                }
+            }
+        }
+    }
+
+    /// Place the fill's nodes (box `b`) and keep the angle and the offset
+    /// the nearest the formats that know only those can show: the angle
+    /// of the axis, and for the kinds with a centre the start as the
+    /// offset.
+    pub fn set_handles(&mut self, b: Rect, h: FountainHandles) {
+        let s = Self::rel_to_page(b, h.start);
+        let e = Self::rel_to_page(b, h.end);
+        let d = e - s;
+        if d.hypot() > 1e-9 && d.x.is_finite() && d.y.is_finite() {
+            self.angle = d.y.atan2(d.x).to_degrees();
+        }
+        if self.kind != FountainKind::Linear {
+            self.offset = Point::new(h.start.x.clamp(-1.0, 1.0), h.start.y.clamp(-1.0, 1.0));
+        }
+        self.handles = Some(h);
     }
 
     pub fn first_color(&self) -> Color {
@@ -316,6 +477,7 @@ impl Fountain {
             repeats: 1,
             bilinear: false,
             invert: false,
+            handles: None,
         }
     }
 }
@@ -1202,6 +1364,105 @@ mod tests {
         assert_eq!(f.color_at(0.25).to_rgb8(), [128, 0, 0]);
         assert_eq!(f.color_at(0.5).to_rgb8(), [255, 0, 0]);
         assert_eq!(f.color_at(1.5).to_rgb8(), [255, 255, 255]);
+    }
+
+    /// Free nodes: a fill placed with its default nodes looks as the
+    /// angle and offset place it, for every kind; a skew handle tilts
+    /// the bands; the nodes follow the box (#330).
+    #[test]
+    fn free_nodes_place_the_fill_as_the_frame_says() {
+        let b = Rect::new(10.0, 20.0, 110.0, 70.0);
+        for kind in [
+            FountainKind::Linear,
+            FountainKind::Radial,
+            FountainKind::Conical,
+            FountainKind::Square,
+        ] {
+            let mut f = Fountain::two(kind, Color::BLACK, Color::WHITE, 30.0);
+            f.offset = Point::new(0.2, -0.1);
+            let h = f.default_handles(b);
+            let mut g = f.clone();
+            g.handles = Some(h);
+            for p in [
+                Point::new(30.0, 30.0),
+                Point::new(60.0, 45.0),
+                Point::new(100.0, 65.0),
+            ] {
+                let t = g.param_at(b, p).expect("a frame");
+                let want = legacy_param(&f, b, p);
+                assert!((t - want).abs() < 1e-9, "{kind:?} at {p:?}: {t} vs {want}");
+            }
+        }
+        // Linear from (20, 40) to (60, 40): the start is 0, the end 1.
+        let mut f = Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let rel = |p| Fountain::page_to_rel(b, p);
+        f.set_handles(
+            b,
+            FountainHandles {
+                start: rel(Point::new(20.0, 40.0)),
+                end: rel(Point::new(60.0, 40.0)),
+                skew: rel(Point::new(20.0, 60.0)),
+            },
+        );
+        assert!((f.param_at(b, Point::new(20.0, 50.0)).unwrap()).abs() < 1e-9);
+        assert!((f.param_at(b, Point::new(40.0, 40.0)).unwrap() - 0.5).abs() < 1e-9);
+        assert!((f.angle).abs() < 1e-9);
+        // A skew handle leaning right: the bands lean with it.
+        f.handles = Some(FountainHandles {
+            skew: rel(Point::new(40.0, 60.0)),
+            ..f.handles.unwrap()
+        });
+        assert!((f.param_at(b, Point::new(40.0, 60.0)).unwrap()).abs() < 1e-9);
+        // The nodes follow the box: the same fill on a box twice as wide
+        // has its start twice as far from the centre.
+        let wide = Rect::new(10.0, 20.0, 210.0, 70.0);
+        let s = Fountain::rel_to_page(wide, f.handles.unwrap().start);
+        assert!((s.x - (110.0 - 2.0 * 40.0)).abs() < 1e-9, "{s:?}");
+        // A flat frame places nothing.
+        f.handles = Some(FountainHandles {
+            start: Point::ZERO,
+            end: Point::ZERO,
+            skew: Point::ZERO,
+        });
+        assert!(f.frame(b).is_none());
+    }
+
+    /// The parameter as the renderer works it out without free nodes.
+    fn legacy_param(f: &Fountain, b: Rect, p: Point) -> f64 {
+        let a = f.angle.to_radians();
+        let c = b.center();
+        match f.kind {
+            FountainKind::Linear => {
+                let half = (b.width() * a.cos().abs() + b.height() * a.sin().abs()) / 2.0;
+                let s = Point::new(c.x - half * a.cos(), c.y - half * a.sin());
+                let d = Vec2::new(a.cos(), a.sin()) * (2.0 * half);
+                (p - s).dot(d) / d.hypot2()
+            }
+            FountainKind::Radial => {
+                let cc = Point::new(
+                    c.x + f.offset.x * b.width() / 2.0,
+                    c.y + f.offset.y * b.height() / 2.0,
+                );
+                (p - cc).hypot() / (b.width().max(b.height()) / 2.0 * std::f64::consts::SQRT_2)
+            }
+            _ => {
+                let u = (p.x - b.x0) / b.width();
+                let v = (p.y - b.y0) / b.height();
+                let dx = u - 0.5 - f.offset.x / 2.0;
+                let dy = v - 0.5 - f.offset.y / 2.0;
+                if f.kind == FountainKind::Conical {
+                    let a = (dy.atan2(dx) - a).rem_euclid(std::f64::consts::TAU)
+                        / std::f64::consts::TAU;
+                    if a < 0.5 {
+                        a * 2.0
+                    } else {
+                        2.0 - a * 2.0
+                    }
+                } else {
+                    dx.abs().max(dy.abs()) * 2.0
+                }
+            }
+        }
     }
 
     fn black_white() -> Fountain {

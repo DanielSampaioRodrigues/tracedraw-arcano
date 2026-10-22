@@ -521,6 +521,8 @@ pub enum Drag {
     /// Moving a fountain handle of the selected object (Interactive Fill).
     FountainHandle {
         handle: crate::fill_tool::FountainHandle,
+        /// The drag's undo step is recorded (the next moves join it).
+        begun: bool,
     },
     /// Zoom tool rubber band.
     ZoomBox {

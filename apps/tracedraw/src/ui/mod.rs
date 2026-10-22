@@ -1273,6 +1273,8 @@ mod tests {
         frame(&ctx, &mut app);
         assert!(app.toolbox_caption_w > 30.0, "{}", app.toolbox_caption_w);
         assert!(crate::ui::toolbox::column_width(&app) > plain + 30.0);
+        // Back to the default size the plain width was measured at.
+        app.settings.button_size = ButtonSize::default();
         crate::ui::toolbox::reset_toolbox(&mut app);
         frame(&ctx, &mut app);
         assert_eq!(crate::ui::toolbox::column_width(&app), plain);

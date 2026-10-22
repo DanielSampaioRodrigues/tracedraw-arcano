@@ -470,6 +470,34 @@ fn paint_value(
                     )
                 })
                 .collect();
+            // Nodes placed freely (Interactive Fill): the fill's own
+            // frame, start + u (end - start) + v (skew - start), as the
+            // gradient's transform; the output's y runs down.
+            if let (Some(h), true) = (f.handles, f.kind != tracedraw_core::FountainKind::Shaped) {
+                let c = bounds.center();
+                let at = |r: tracedraw_core::geometry::Point| {
+                    (
+                        c.x + r.x * bounds.width() / 2.0,
+                        c.y - r.y * bounds.height() / 2.0,
+                    )
+                };
+                let (sx, sy) = at(h.start);
+                let (ex, ey) = at(h.end);
+                let (kx, ky) = at(h.skew);
+                let m = [ex - sx, ey - sy, kx - sx, ky - sy, sx, sy];
+                let det = m[0] * m[3] - m[1] * m[2];
+                if det.is_finite() && det.abs() > 1e-12 {
+                    let matrix = m.iter().map(|v| fmt(*v)).collect::<Vec<_>>().join(" ");
+                    if f.kind == tracedraw_core::FountainKind::Radial {
+                        let _ = writeln!(defs, "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"1\" gradientTransform=\"matrix({matrix})\">\n{stop_xml}    </radialGradient>");
+                    } else {
+                        // Conical and square: SVG has neither; linear along
+                        // the same axis.
+                        let _ = writeln!(defs, "    <linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\" gradientTransform=\"matrix({matrix})\">\n{stop_xml}    </linearGradient>");
+                    }
+                    return format!("url(#{id})");
+                }
+            }
             match f.kind {
                 tracedraw_core::FountainKind::Linear
                 | tracedraw_core::FountainKind::Conical
@@ -1069,6 +1097,29 @@ mod tests {
         s.stroke = stroke;
         doc.layer_mut(layer).unwrap().shapes.push(s);
         page_to_svg(&doc, 0)
+    }
+
+    /// A fill whose nodes were placed freely goes out through a gradient
+    /// transform: the unit gradient mapped onto its start, end and skew
+    /// handle (#330).
+    #[test]
+    fn free_fill_nodes_go_out_as_a_gradient_transform() {
+        use tracedraw_core::style::{FountainHandles, FountainKind};
+        let mut f =
+            tracedraw_core::Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        f.handles = Some(FountainHandles {
+            start: tracedraw_core::geometry::Point::new(-1.0, 0.0),
+            end: tracedraw_core::geometry::Point::new(0.0, 0.0),
+            skew: tracedraw_core::geometry::Point::new(-1.0, 1.0),
+        });
+        let svg = one_shape_svg(Fill::Fountain(f.clone()), None);
+        assert!(
+            svg.contains("x2=\"1\" y2=\"0\" gradientTransform=\"matrix("),
+            "{svg}"
+        );
+        f.kind = FountainKind::Radial;
+        let svg = one_shape_svg(Fill::Fountain(f), None);
+        assert!(svg.contains("r=\"1\" gradientTransform=\"matrix("), "{svg}");
     }
 
     #[test]

@@ -122,7 +122,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill: Mesh Fill tool and bar (rows and columns keeping colours, Smooth colour, node transparency, Clear Mesh), nodes dragged and coloured from the palette, grid lines added and removed (see `behavior/mesh-fill.md`) | works |
 | Area Fill (enclosed region; fill and outline: default, own or none) (see `behavior/area-fill.md`) | works |
-| Interactive Fill tool: property bar with fill type and gradient fields, axis and centre handles on the canvas | works |
+| Interactive Fill tool: property bar with fill type and gradient fields, start, end and skew nodes placed freely on the canvas (the fill keeps them through moves and scales; SVG and PDF export them) | works |
 | Outline: width (shown in points, mm, cm, inches or pixels), colour, caps, joins, mitre limit (angle), position (outside, centred, inside), dashes with Align dashes and custom line styles (Edit Line Style), nib, behind fill, scale with object, arrowheads (presets and custom from the selection) (see `behavior/outline-pen.md`) | works |
 | Outline paint: every fill kind (none, uniform, gradient, pattern, texture, mesh) with the fill editors, on screen, in SVG (gradient and pattern strokes) and PDF (the outline's area shaded or rasterised) | works (see `behavior/outline-pen.md`, Outline paint; other exports use the outline colour) |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |

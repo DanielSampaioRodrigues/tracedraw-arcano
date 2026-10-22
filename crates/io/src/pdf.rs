@@ -506,6 +506,38 @@ impl PageWriter<'_> {
             }
             Fill::Fountain(ft) if ft.kind != FountainKind::Shaped => {
                 let func = stitching_function_in(ft, self.pdf.cmyk_only);
+                // Nodes placed freely (Interactive Fill): a unit shading
+                // drawn through the fill's own frame.
+                if let Some(frame) = ft.frame(bounds) {
+                    let m = frame.as_coeffs();
+                    let shading = if ft.kind == FountainKind::Radial {
+                        format!(
+                            "<< /ShadingType 3 /ColorSpace {} /Coords [0 0 0 0 0 1] /Function {} /Extend [true true] >>",
+                            self.pdf.color_space(), func
+                        )
+                    } else {
+                        format!(
+                            "<< /ShadingType 2 /ColorSpace {} /Coords [0 0 1 0] /Function {} /Extend [true true] >>",
+                            self.pdf.color_space(), func
+                        )
+                    };
+                    let name = format!("Sh{}", self.shadings.len());
+                    let id = self.pdf.add_str(shading);
+                    self.shadings.push((name.clone(), id));
+                    self.content.push_str("q\n");
+                    self.path_ops(path);
+                    let _ = writeln!(
+                        self.content,
+                        "{clip} n {} {} {} {} {} {} cm /{name} sh\nQ",
+                        f(m[0] * MM_PT),
+                        f(m[1] * MM_PT),
+                        f(m[2] * MM_PT),
+                        f(m[3] * MM_PT),
+                        f(m[4] * MM_PT),
+                        f(m[5] * MM_PT)
+                    );
+                    return;
+                }
                 let shading = match ft.kind {
                     FountainKind::Radial => {
                         let c = bounds.center();
@@ -1965,6 +1997,26 @@ mod tests {
         let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
         assert!(text.contains("/FunctionType 3"));
         assert!(text.contains("/Bounds [0.3]"));
+    }
+
+    /// A fill whose nodes were placed freely is a unit shading drawn
+    /// through its frame (#330).
+    #[test]
+    fn free_fill_nodes_draw_a_unit_shading_through_their_frame() {
+        use tracedraw_core::style::FountainHandles;
+        let mut f =
+            tracedraw_core::Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        f.handles = Some(FountainHandles {
+            start: tracedraw_core::geometry::Point::new(-1.0, 0.0),
+            end: tracedraw_core::geometry::Point::new(0.0, 0.0),
+            skew: tracedraw_core::geometry::Point::new(-1.0, 1.0),
+        });
+        let text = one_rect_pdf(Fill::Fountain(f.clone()), None);
+        assert!(text.contains("/Coords [0 0 1 0]"), "{text}");
+        assert!(text.contains(" cm /Sh0 sh"), "{text}");
+        f.kind = FountainKind::Radial;
+        let text = one_rect_pdf(Fill::Fountain(f), None);
+        assert!(text.contains("/Coords [0 0 0 0 0 1]"), "{text}");
     }
 
     fn one_rect_pdf(fill: Fill, stroke: Option<tracedraw_core::Stroke>) -> String {

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Interactive Fill: gradient nodes are placed freely, as in the reference program. Dragging on an object puts the start and end nodes where the drag began and ended; the start, the end and a new skew handle move on their own (the start moves the fill, the end sets length and angle, the skew handle makes a radial fill elliptic or slants a linear one). The fill keeps its nodes when the object moves or scales, and SVG and PDF exports draw it the same way (#330, #285).
+
 - Select All on a drawing with thousands of objects no longer slows the window down: the selection is gathered once per change instead of searched for object by object several times a frame (a frame with 3000 objects selected went from about 200 ms to about 7 ms, #367).
 
 - Text > Edit Text (Ctrl+Shift+T) opens the Edit Text dialog with the whole text in a box; OK applies it as one step and the characters left as they were keep their formatting. It only started editing in place, with no window (#355).

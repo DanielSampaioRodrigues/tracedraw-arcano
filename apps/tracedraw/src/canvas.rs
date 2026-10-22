@@ -771,10 +771,11 @@ fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     }
 }
 
-/// Connector anchors: small diamonds on the selected object with the
-/// Anchor Editing tool, and on both ends while a connector is dragged.
-/// Interactive Fill: the fountain axis (dashed, between two square
-/// nodes) or the centre node of a radial, conical or square fountain.
+/// Interactive Fill: the fill's nodes as the reference shows them (#330):
+/// the line from the start to the end (an arrow at the end), a thin line
+/// to the round skew handle, the start and end nodes as squares in the
+/// first and last colours, and for an elliptical or square fill its
+/// outline dashed (the frame's unit circle or square).
 fn draw_fountain_handles(app: &App, painter: &Painter) {
     if app.tool != Tool::InteractiveFill {
         return;
@@ -784,43 +785,62 @@ fn draw_fountain_handles(app: &App, painter: &Painter) {
     };
     let view = &app.view;
     let handles = crate::fill_tool::fountain_handles(&f, b);
-    if handles.len() == 2 {
-        let a = view.to_screen(handles[0].1);
-        let z = view.to_screen(handles[1].1);
-        // Dashed axis.
-        let d = z - a;
-        let len = d.length().max(1e-6);
-        let step = 6.0;
-        let mut t = 0.0;
-        while t < len {
-            let t1 = (t + step * 0.6).min(len);
-            painter.line_segment(
-                [a + d * (t / len), a + d * (t1 / len)],
-                EStroke::new(1.0, Tokens::SELECTION),
-            );
-            t += step;
-        }
-    }
-    for (h, p) in handles {
-        let sp = view.to_screen(p);
-        let color = match h {
-            crate::fill_tool::FountainHandle::Start | crate::fill_tool::FountainHandle::Center => {
-                f.first_color()
-            }
-            crate::fill_tool::FountainHandle::End => f.last_color(),
+    let [(_, s), (_, e), (_, k)] = handles.as_slice() else {
+        return;
+    };
+    let (ss, se, sk) = (view.to_screen(*s), view.to_screen(*e), view.to_screen(*k));
+    let line = EStroke::new(1.0, Tokens::SELECTION);
+    // The outline of an elliptical or square fill, dashed.
+    if matches!(
+        f.kind,
+        tracedraw_core::FountainKind::Radial | tracedraw_core::FountainKind::Square
+    ) {
+        let (ev, kv) = (*e - *s, *k - *s);
+        let at = |u: f64, v: f64| view.to_screen(*s + ev * u + kv * v);
+        let pts: Vec<egui::Pos2> = if f.kind == tracedraw_core::FountainKind::Radial {
+            (0..=64)
+                .map(|i| {
+                    let a = i as f64 / 64.0 * std::f64::consts::TAU;
+                    at(a.cos(), a.sin())
+                })
+                .collect()
+        } else {
+            vec![
+                at(1.0, 1.0),
+                at(-1.0, 1.0),
+                at(-1.0, -1.0),
+                at(1.0, -1.0),
+                at(1.0, 1.0),
+            ]
         };
+        dashed_polyline(painter, &pts, line, 4.0, 3.0);
+    }
+    // The axis, an arrow at the end.
+    painter.line_segment([ss, se], line);
+    let d = se - ss;
+    if d.length() > 12.0 {
+        let u = d.normalized();
+        let n = egui::vec2(-u.y, u.x);
+        let tip = se - u * 6.0;
+        painter.add(epaint::PathShape::convex_polygon(
+            vec![tip, tip - u * 8.0 + n * 4.0, tip - u * 8.0 - n * 4.0],
+            Tokens::SELECTION,
+            EStroke::NONE,
+        ));
+    }
+    // The skew handle on its thin line.
+    painter.line_segment(
+        [ss, sk],
+        EStroke::new(1.0, Tokens::SELECTION.gamma_multiply(0.6)),
+    );
+    painter.circle_filled(sk, 4.5, Color32::WHITE);
+    painter.circle_stroke(sk, 4.5, line);
+    // The start and end nodes in their colours.
+    for (p, color) in [(ss, f.first_color()), (se, f.last_color())] {
         let [r, g, bl] = color.to_rgb8();
-        painter.rect_filled(
-            ERect::from_center_size(sp, egui::vec2(9.0, 9.0)),
-            0.0,
-            Color32::from_rgb(r, g, bl),
-        );
-        painter.rect_stroke(
-            ERect::from_center_size(sp, egui::vec2(9.0, 9.0)),
-            0.0,
-            EStroke::new(1.0, Tokens::SELECTION),
-            egui::StrokeKind::Outside,
-        );
+        let rect = ERect::from_center_size(p, egui::vec2(9.0, 9.0));
+        painter.rect_filled(rect, 0.0, Color32::from_rgb(r, g, bl));
+        painter.rect_stroke(rect, 0.0, line, egui::StrokeKind::Outside);
     }
 }
 

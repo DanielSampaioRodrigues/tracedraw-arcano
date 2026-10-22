@@ -1916,7 +1916,10 @@ impl App {
     fn fill_input(&mut self, response: &Response, p: Point) {
         if response.drag_started_by(PointerButton::Primary) {
             if let Some(h) = self.fountain_handle_at(p) {
-                self.drag = Drag::FountainHandle { handle: h };
+                self.drag = Drag::FountainHandle {
+                    handle: h,
+                    begun: false,
+                };
                 return;
             }
             if let Some(id) = self.hit_test_inside(p) {
@@ -1929,8 +1932,12 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::FountainHandle { handle } = self.drag {
-                self.drag_fountain_handle(handle, p);
+            if let Drag::FountainHandle { handle, begun } = self.drag {
+                self.drag_fountain_handle(handle, p, begun);
+                self.drag = Drag::FountainHandle {
+                    handle,
+                    begun: true,
+                };
                 return;
             }
             if let Drag::FillGradient { current, .. } = &mut self.drag {
@@ -2125,15 +2132,7 @@ impl App {
                 current,
             } => {
                 if (current - start).hypot() > 0.5 {
-                    let from = match &self.default_fill() {
-                        Fill::Solid(c) => *c,
-                        _ => Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
-                    };
-                    let angle = (current - start).atan2().to_degrees();
-                    self.run(Command::SetFill {
-                        shapes: vec![shape],
-                        fill: Fill::linear(from, Color::WHITE, angle),
-                    });
+                    self.fill_from_drag(shape, start, current);
                 }
             }
             Drag::ZoomBox { start, current } => {

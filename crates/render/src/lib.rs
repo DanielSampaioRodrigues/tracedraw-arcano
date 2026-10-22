@@ -1108,6 +1108,52 @@ impl Renderer<'_> {
                     .iter()
                     .map(|s| GradientStop::new(s.pos as f32, sk_color(s.color)))
                     .collect();
+                // Nodes placed freely with the Interactive Fill tool: the
+                // fill's own frame (start, end, skew handle) places it.
+                if let Some(frame) = f.frame(b) {
+                    let m = (self.screen * frame).as_coeffs();
+                    let t = Transform::from_row(
+                        m[0] as f32,
+                        m[1] as f32,
+                        m[2] as f32,
+                        m[3] as f32,
+                        m[4] as f32,
+                        m[5] as f32,
+                    );
+                    let origin = tiny_skia::Point::from_xy(0.0, 0.0);
+                    let shader = match f.kind {
+                        tracedraw_core::FountainKind::Linear => LinearGradient::new(
+                            origin,
+                            tiny_skia::Point::from_xy(1.0, 0.0),
+                            stops,
+                            SpreadMode::Pad,
+                            t,
+                        ),
+                        tracedraw_core::FountainKind::Radial => {
+                            RadialGradient::new(origin, 0.0, origin, 1.0, stops, SpreadMode::Pad, t)
+                        }
+                        _ => None,
+                    };
+                    if let Some(sh) = shader {
+                        paint.shader = sh;
+                        self.pixmap
+                            .fill_path(sk, &paint, rule, Transform::identity(), None);
+                    } else if matches!(
+                        f.kind,
+                        tracedraw_core::FountainKind::Conical
+                            | tracedraw_core::FountainKind::Square
+                    ) {
+                        let f2 = f.clone();
+                        let base = f.sorted_stops();
+                        let key = format!("{f:?}");
+                        self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
+                            let p = Point::new(b.x0 + u * b.width(), b.y0 + v * b.height());
+                            let t = f2.param_at(b, p).unwrap_or(0.0);
+                            tracedraw_core::style::sample_stops(&base, f2.stop_param(t))
+                        });
+                    }
+                    return;
+                }
                 match f.kind {
                     tracedraw_core::FountainKind::Shaped => {
                         self.fill_shaped(f, sk, sk, rule);
@@ -2952,6 +2998,54 @@ mod tests {
             (r as i32 - b as i32).abs() < 40,
             "middle should be purple: {r} {b}"
         );
+    }
+
+    /// A fill whose nodes were placed freely runs from its start to its
+    /// end node, held at the end colours beyond them; an elliptical one
+    /// is centred on its start (#330).
+    #[test]
+    fn free_fill_nodes_place_the_gradient() {
+        use tracedraw_core::style::FountainHandles;
+        let b = Rect::new(0.0, 0.0, 100.0, 10.0);
+        let rel = |x: f64, y: f64| Fountain::page_to_rel(b, Point::new(x, y));
+        let mut f = Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        f.set_handles(
+            b,
+            FountainHandles {
+                start: rel(20.0, 5.0),
+                end: rel(60.0, 5.0),
+                skew: rel(20.0, 10.0),
+            },
+        );
+        let pm = render_fill_image(&Fill::Fountain(f.clone()), b, 25.4).unwrap();
+        let (r, _, _) = px(&pm, 10, 5);
+        assert!(r < 10, "before the start: {r}");
+        let (r, _, _) = px(&pm, 40, 5);
+        assert!((110..150).contains(&r), "half way: {r}");
+        let (r, _, _) = px(&pm, 80, 5);
+        assert!(r > 245, "beyond the end: {r}");
+        // Elliptical, centred at x = 70.
+        f.kind = FountainKind::Radial;
+        f.set_handles(
+            b,
+            FountainHandles {
+                start: rel(70.0, 5.0),
+                end: rel(90.0, 5.0),
+                skew: rel(70.0, 25.0),
+            },
+        );
+        let pm = render_fill_image(&Fill::Fountain(f.clone()), b, 25.4).unwrap();
+        let (r, _, _) = px(&pm, 70, 5);
+        assert!(r < 20, "the centre: {r}");
+        let (r, _, _) = px(&pm, 20, 5);
+        assert!(r > 245, "far out: {r}");
+        // Square, procedural: centre dark, beyond the half axis light.
+        f.kind = FountainKind::Square;
+        let pm = render_fill_image(&Fill::Fountain(f), b, 25.4).unwrap();
+        let (r, _, _) = px(&pm, 70, 5);
+        assert!(r < 30, "square centre: {r}");
+        let (r, _, _) = px(&pm, 5, 5);
+        assert!(r > 240, "square outside: {r}");
     }
 
     #[test]

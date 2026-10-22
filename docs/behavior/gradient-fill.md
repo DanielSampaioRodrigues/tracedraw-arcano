@@ -22,10 +22,13 @@ gradient has no handles on the canvas.
 
 Shortcut: F11 opens the fill editor; G is the Interactive Fill tool.
 Dragging with Interactive Fill on an object (anywhere inside it, filled
-or not) sets a linear fill from the press point to the release point; a
-click gives the default fill; Ctrl constrains the angle to 15 degree
-steps; dragging a palette colour onto a stop recolours it; dragging a
-colour onto the fill line adds a stop.
+or not) puts the start node at the press point and the end node at the
+release point, keeping the kind and colours of a gradient the object
+already has (a linear black to white one otherwise); the skew handle
+goes square to the line, as far from the start as the end. A click
+gives the default fill; Ctrl constrains the angle to 15 degree steps;
+dragging a palette colour onto a stop recolours it; dragging a colour
+onto the fill line adds a stop.
 
 Property bar (Interactive Fill): the fill type (None, Uniform, Gradient,
 Pattern, Texture, Mesh), then the type's fields: the colour for a
@@ -34,13 +37,26 @@ the start and end colours, the angle and the edge pad. With a selection
 the fields edit it; with nothing selected they set the default fill for
 the next object.
 
-Handles on the canvas (Interactive Fill, gradient-filled selection): a
-linear fill shows its axis as a dashed line between a start node and an
-end node (squares in the two colours) at `c -/+ h (cos a, sin a)` with
-`h = (w |cos a| + h |sin a|) / 2`; dragging either node turns the axis
-about the centre and sets the angle. Radial, conical and square fills
-show one node at `c + offset * (w, h) / 2`; dragging it sets the centre
-offset, clamped to the bounds.
+Handles on the canvas (Interactive Fill, gradient-filled selection):
+three nodes placed freely, as the reference program shows them. The
+start node and the end node are squares in the first and last colours,
+joined by a dashed line with an arrow at the end; the skew handle is a
+small round node joined to the start by a thin line. Radial fills draw
+the dashed ellipse their frame makes, square fills the parallelogram.
+
+- Start: moves the fill. A linear fill keeps its end where it was (the
+  line gets shorter or longer and turns); radial, conical and square
+  fills move whole, end and skew handle with the start.
+- End: sets the length and the angle; the skew handle turns with the
+  line and keeps its length.
+- Skew handle: sets the second axis on its own, so a radial fill
+  becomes an ellipse and a linear fill's bands slant.
+
+Until a node is moved the fill has no stored nodes and is placed by its
+angle and offset as below; the first move stores the three nodes
+(`Fountain::handles`, relative to the object's bounding box, so they
+follow when the object is moved or scaled) and later moves keep them.
+A drag on a node is one undo step.
 
 ## Formulas
 
@@ -54,6 +70,11 @@ Bounding box `b` of the object in page space, centre `c`.
   colour at 0 and 1 is the same (`t = 1 - |2t - 1|`).
 - Square: `t = max(|dx|, |dy|)` in the frame rotated by `a`, normalised
   by half the diagonal.
+- Free nodes (start `s`, end `e`, skew handle `k`): the frame maps
+  `(u, v)` to `s + u (e - s) + v (k - s)`; for a page point `p` take its
+  `(u, v)` in that frame, then Linear `t = u`, Radial `t = hypot(u, v)`,
+  Conical the mirrored angle of `(u, v)`, Square `t = max(|u|, |v|)`. A
+  frame with no area is ignored (the angle and offset place the fill).
 - Shaped: `t = d(p) / max d`, where `d` is the distance from `p` to the
   object's edge (0 outside) and `max d` the distance of the point
   deepest inside. The distances are exact Euclidean distances on a grid
@@ -85,10 +106,21 @@ Bounding box `b` of the object in page space, centre `c`.
 - Given a PDF export of a 3-stop fill, then the shading uses a
   stitching function with one bound at 0.3.
 - Given a 40 x 20 mm rectangle with a 0 degree linear fill, then the
-  handles are at (0, 10) and (40, 10); dragging the end node to (20, 30)
-  makes the angle 90 degrees.
-- Given a radial fill, dragging the centre node to (30, 15) on that
-  rectangle sets the offset to (0.5, 0.5); beyond the edge it clamps to 1.
+  start and end nodes are at (0, 10) and (40, 10) and the skew handle is
+  square to the line; moving the start to (10, 10) leaves the end at
+  (40, 10) and keeps the skew handle's offset from the start
+  (`fill_tool::tests::linear_nodes_move_as_the_reference_moves_them`).
+- Given a radial fill, moving its centre node moves the whole fill
+  (`fill_tool::tests::the_centre_of_a_radial_fill_moves_it_whole`).
+- Given a radial fill on a square, a drag from (5, 5) to (15, 5) keeps
+  it radial and red to white, puts the start and end nodes at those
+  points and the skew handle at (5, 15)
+  (`fill_tool::tests::a_drag_puts_the_nodes_where_it_began_and_ended`).
+- Given free nodes, the renderer, SVG (`gradientTransform`) and PDF (a
+  unit shading drawn through the frame) place the fill as the nodes say
+  (`free_fill_nodes_place_the_gradient`,
+  `free_fill_nodes_go_out_as_a_gradient_transform`,
+  `free_fill_nodes_draw_a_unit_shading_through_their_frame`).
 - Given a 100 x 10 mm black to white linear fill with Sawtooth, 2 cycles,
   rendered at 1 px/mm, then pixel 48 is light and pixel 51 dark; with
   Mirror, 2 cycles (or Bilinear), the middle is white and both ends black;
