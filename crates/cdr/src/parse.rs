@@ -2711,8 +2711,9 @@ impl<'a> Ctx<'a> {
         let mut kind = match kind {
             Some(k) => k,
             None => {
+                // (A bitmap whose picture is missing has said so already.)
                 match kind_code {
-                    OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT | OBJ_EMBEDDED => {}
+                    OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT | OBJ_EMBEDDED | OBJ_BITMAP => {}
                     other => self
                         .report
                         .warn(format!("object type 0x{other:02x} not modelled yet")),
