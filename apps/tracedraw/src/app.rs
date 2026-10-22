@@ -1060,6 +1060,8 @@ pub struct App {
     /// A dialog to go back to when the one opened from it closes (Edit
     /// Line Style from the Outline Pen dialog).
     pub dialog_return: Option<Box<crate::ui::dialogs::Dialog>>,
+    /// The Import PDF question was answered for the file about to be read.
+    pub pdf_text_chosen: bool,
     /// Where a drag for the new frame of a flow began.
     pub text_link_drag: Option<Point>,
     /// Clip frame being edited in place: (frame id, content ids).
@@ -1886,6 +1888,8 @@ impl App {
             app.new_document();
         }
         app.show_welcome = false;
+        // Tests read PDFs without the question in between.
+        app.settings.formats.pdf_ask_text = false;
         app
     }
 
@@ -2034,6 +2038,7 @@ impl App {
             pending_clip_frame: false,
             pending_text_link: None,
             dialog_return: None,
+            pdf_text_chosen: false,
             text_link_drag: None,
             clip_frame_edit: None,
             symmetry_edit: None,
@@ -5041,20 +5046,30 @@ impl App {
                 })
         } else if ext == "pdf" || ext == "ai" {
             use tracedraw_io::pdf_import::ImportError;
+            if self.ask_pdf_text(&path, false) {
+                return;
+            }
+            let options = self.pdf_options();
             let parsed = crate::files::read(&path)
                 .map_err(|e| ImportError::Failed(e.to_string()))
                 .and_then(|bytes| {
-                    tracedraw_io::pdf_import::parse_with_password(
+                    tracedraw_io::pdf_import::parse_with_options(
                         &bytes,
                         &mut tracedraw_core::id::IdSource::default(),
                         password,
+                        options,
                     )
                 });
             if matches!(parsed, Err(ImportError::NeedsPassword)) {
+                // The answer stands for the password's retry.
+                self.pdf_text_chosen = true;
                 self.ask_pdf_password(path, false, !password.is_empty());
                 return;
             }
-            parsed.map_err(|e| e.to_string()).map(|imported| {
+            parsed.map_err(|e| e.to_string()).map(|mut imported| {
+                if options.text_as_curves {
+                    crate::ui::pdf_import_dialog::remaining_text_to_curves(&mut imported.pages);
+                }
                 let title = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -5927,22 +5942,31 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
+        if self.ask_pdf_text(path, true) {
+            return;
+        }
+        let options = self.pdf_options();
         let parsed = crate::files::read(path)
             .map_err(|e| ImportError::Failed(e.to_string()))
             .and_then(|bytes| {
-                tracedraw_io::pdf_import::parse_with_password(
+                tracedraw_io::pdf_import::parse_with_options(
                     &bytes,
                     &mut tracedraw_core::id::IdSource::default(),
                     password,
+                    options,
                 )
             });
         if matches!(parsed, Err(ImportError::NeedsPassword)) {
+            self.pdf_text_chosen = true;
             self.ask_pdf_password(path.to_path_buf(), true, !password.is_empty());
             return;
         }
         let parsed = parsed.map_err(|e| e.to_string());
         match parsed {
-            Ok(imported) => {
+            Ok(mut imported) => {
+                if options.text_as_curves {
+                    crate::ui::pdf_import_dialog::remaining_text_to_curves(&mut imported.pages);
+                }
                 let mut cmds = Vec::new();
                 let mut ids = Vec::new();
                 let Some(first) = imported.pages.into_iter().next() else {

@@ -112,6 +112,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::Preflight(_) => "printing/preflight",
         Dialog::PublishPdf(_) => "file-formats/publish-pdf",
         Dialog::PdfPassword(_) => "file-formats/publish-pdf#password",
+        Dialog::PdfText(_) => "file-formats/import#formats",
         Dialog::ChangeDefaults(_) => "templates-styles/object-styles#document-defaults",
         Dialog::SaveAs(_) => "get-started/open-and-save#save-as",
     }

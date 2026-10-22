@@ -138,6 +138,12 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
         ImportPlace::ViewCenter,
         tr("options.import_view_center"),
     );
+    ui.horizontal(|ui| {
+        ui.label(tr("pdf_import.text_as"));
+        ui.radio_value(&mut f.pdf_text_as_curves, false, tr("pdf_import.text"));
+        ui.radio_value(&mut f.pdf_text_as_curves, true, tr("pdf_import.curves"));
+    });
+    ui.checkbox(&mut f.pdf_ask_text, tr("pdf_import.ask"));
     chrome::section(ui, &tr("options.cdr_save_section"));
     f.cdr_version = f.cdr_version.clamp(
         tracedraw_cdr::write::CHECKED_SINCE,

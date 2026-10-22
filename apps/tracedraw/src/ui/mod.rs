@@ -70,6 +70,7 @@ pub mod options_global;
 pub mod outline_pen;
 pub mod overflow;
 pub mod palette;
+pub mod pdf_import_dialog;
 pub mod pdf_password;
 pub mod picture_mosaic_docker;
 pub mod preflight_dialog;

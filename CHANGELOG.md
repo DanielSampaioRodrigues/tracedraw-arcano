@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- PDF and AI files: opening or importing one asks how to read its text, as in the reference program. Text keeps it editable; Curves draws each letter from the fonts the file embeds, so the text looks exactly as in the file even when those fonts are not installed. Options > File Formats keeps the choice (#386).
+
 - Print Merge: imports Excel workbooks (`.xlsx`) as well as CSV, guesses the picture, QR and text fields and shows their types after the import. Fields are now filled inside groups and frames, so grouped ID cards merge; a photo placeholder inside a frame fills the frame, and a shape named `<Field>` takes the picture inside it. Page copies with frames used to share ids with the template, so a merge could change the template instead of the copy (#377, #378).
 
 - Edit Fill (F11): a dialog as in the reference program, with the fill types across the top and, for gradients, a preview, the fill picker, type and repeat, a band of colours whose nodes can be picked, dragged, added and removed, the node's colour, transparency, position and midpoint, Reverse, rotation, centre and edge pad, and Overprint fill. OK changes only what was changed. F11 opened the Properties panel before (#361).

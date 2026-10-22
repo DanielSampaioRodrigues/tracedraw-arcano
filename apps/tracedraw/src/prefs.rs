@@ -185,6 +185,11 @@ pub struct FormatPrefs {
     /// File > Export goes straight to the file with the last choices
     /// ("Do not show filter dialog").
     pub skip_export_dialog: bool,
+    /// PDF and AI files: text read in as curves from the fonts the file
+    /// embeds (else as editable text, #386).
+    pub pdf_text_as_curves: bool,
+    /// Ask how to read a PDF's text each time one is opened or imported.
+    pub pdf_ask_text: bool,
 }
 
 impl Default for FormatPrefs {
@@ -202,6 +207,8 @@ impl Default for FormatPrefs {
             import_place: ImportPlace::AsInFile,
             cdr_version: tracedraw_cdr::write::NEWEST_VERSION,
             skip_export_dialog: false,
+            pdf_text_as_curves: false,
+            pdf_ask_text: true,
         }
     }
 }

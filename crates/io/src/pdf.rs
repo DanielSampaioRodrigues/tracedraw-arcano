@@ -2877,6 +2877,55 @@ mod text_tests {
         doc.extract_text(&[1]).expect("text")
     }
 
+    /// A PDF's text read back as curves from the font it embeds (#386):
+    /// filled outlines where the letters were, no text left; read as text
+    /// it stays text.
+    #[test]
+    fn embedded_text_reads_back_as_curves() {
+        use tracedraw_core::geometry::Shape as _;
+        let doc = doc_with(
+            vec![TextSpan::new("Hello PDF", "Quicksand", 24.0)],
+            black(),
+            None,
+        );
+        let (bytes, _) = document_to_pdf_report(&doc, &PdfOptions::default());
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let as_text = crate::pdf_import::parse(&bytes, &mut ids).expect("reads");
+        assert!(as_text.pages[0]
+            .shapes
+            .iter()
+            .any(|s| matches!(s.kind, tracedraw_core::ShapeKind::Text { .. })));
+        let curves = crate::pdf_import::parse_with_options(
+            &bytes,
+            &mut ids,
+            "",
+            crate::pdf_import::ImportOptions {
+                text_as_curves: true,
+            },
+        )
+        .expect("reads");
+        let shapes = &curves.pages[0].shapes;
+        assert!(!shapes
+            .iter()
+            .any(|s| matches!(s.kind, tracedraw_core::ShapeKind::Text { .. })));
+        let paths: Vec<_> = shapes
+            .iter()
+            .filter(|s| matches!(s.kind, tracedraw_core::ShapeKind::Path { .. }))
+            .collect();
+        assert!(!paths.is_empty());
+        // The letters stand about as high as 24 pt capitals (8.5 mm em).
+        let b = paths
+            .iter()
+            .map(|p| p.bounds())
+            .reduce(|a, c| a.union(c))
+            .expect("bounds");
+        assert!(b.height() > 4.0 && b.height() < 9.0, "{b:?}");
+        assert!(b.width() > 20.0, "{b:?}");
+        // Where the text was in the file read as text.
+        let t = as_text.pages[0].shapes[0].bounds();
+        assert!((b.x0 - t.x0).abs() < 3.0, "{b:?} {t:?}");
+    }
+
     #[test]
     fn text_goes_in_as_text_with_an_embedded_subset_font() {
         let doc = doc_with(
