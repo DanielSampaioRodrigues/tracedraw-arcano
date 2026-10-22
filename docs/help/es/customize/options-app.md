@@ -109,6 +109,8 @@ La página tiene cinco pestañas.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   y [[options.add_to_autocorrect]], para que una palabra corregida en el
-  corrector se corrija al escribir la próxima vez.
+  corrector se corrija al escribir la próxima vez; y los
+  [[options.dictionaries]] que usa, consulte
+  [Diccionarios](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: lo que se corrige al escribir; consulte
   [Autocorrección](../text/writing-tools.md#autocorrect).

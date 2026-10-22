@@ -104,6 +104,7 @@ The page has five tabs.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   and [[options.add_to_autocorrect]], so a word you correct in the spell checker
-  is corrected as you type next time.
+  is corrected as you type next time; and the [[options.dictionaries]] it uses,
+  see [Dictionaries](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: what is corrected as you type; see
   [Autocorrect](../text/writing-tools.md#autocorrect).

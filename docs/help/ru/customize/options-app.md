@@ -106,6 +106,8 @@
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   и [[options.add_to_autocorrect]], чтобы слово, исправленное при проверке
-  орфографии, в следующий раз исправлялось при вводе.
+  орфографии, в следующий раз исправлялось при вводе; а также
+  [[options.dictionaries]], которые она использует, см.
+  [Словари](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: что исправляется при вводе; см.
   [Автозамена](../text/writing-tools.md#autocorrect).

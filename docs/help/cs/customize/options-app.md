@@ -105,6 +105,7 @@ Stránka má pět karet.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   a [[options.add_to_autocorrect]], aby se slovo opravené v kontrole pravopisu
-  příště opravilo při psaní.
+  příště opravilo při psaní; a [[options.dictionaries]], které používá, viz
+  [Slovníky](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: co se opravuje při psaní; viz
   [Automatické opravy](../text/writing-tools.md#autocorrect).

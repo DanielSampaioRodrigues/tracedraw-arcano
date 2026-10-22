@@ -105,6 +105,8 @@ A página tem cinco abas.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   e [[options.add_to_autocorrect]], para que uma palavra corrigida no corretor
-  ortográfico seja corrigida ao digitar da próxima vez.
+  ortográfico seja corrigida ao digitar da próxima vez; e os
+  [[options.dictionaries]] que ele usa, veja
+  [Dicionários](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: o que é corrigido ao digitar; veja
   [Correção automática](../text/writing-tools.md#autocorrect).

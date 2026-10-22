@@ -1334,8 +1334,114 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(&mut p.ignore_digits, tr("writing.ignore_digits"));
     ui.checkbox(&mut p.ignore_capitals, tr("writing.ignore_capitals"));
     ui.checkbox(&mut p.add_to_autocorrect, tr("options.add_to_autocorrect"));
-    ui.add_space(6.0);
+    ui.add_space(4.0);
     ui.label(egui::RichText::new(tr("options.spelling_note")).color(Tokens::text_dim()));
+    chrome::section(ui, &tr("options.dictionaries"));
+    // The folders are read when the tab shows a new folder or on Refresh,
+    // not every frame.
+    type Found = (
+        Option<std::path::PathBuf>,
+        Vec<crate::spell::DictionaryFile>,
+    );
+    let cache = ui.id().with("dictionaries_found");
+    let key = p.dictionary_folder.clone();
+    let mut found: Option<Found> = ui.data(|d| d.get_temp(cache));
+    if found.as_ref().is_none_or(|(k, _)| *k != key) {
+        found = Some((key.clone(), crate::spell::find_dictionaries(key.as_deref())));
+    }
+    let list = found.as_ref().map(|f| f.1.clone()).unwrap_or_default();
+    egui::Frame::new()
+        .fill(Tokens::field())
+        .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
+        .inner_margin(egui::Margin::same(4))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("dictionaries_list")
+                .max_height(120.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    if list.is_empty() {
+                        ui.label(
+                            egui::RichText::new(tr("options.no_dictionaries"))
+                                .color(Tokens::text_dim()),
+                        );
+                    }
+                    for d in &list {
+                        let mut on = !p.disabled_dictionaries.contains(&d.name);
+                        let label = if d.aff.is_some() {
+                            d.name.clone()
+                        } else {
+                            format!("{}  ({})", d.name, tr("options.word_list"))
+                        };
+                        if ui
+                            .checkbox(&mut on, label)
+                            .on_hover_text(d.dic.display().to_string())
+                            .changed()
+                        {
+                            p.disabled_dictionaries.retain(|n| *n != d.name);
+                            if !on {
+                                p.disabled_dictionaries.push(d.name.clone());
+                            }
+                        }
+                    }
+                });
+        });
+    let own = crate::spell::own_folder();
+    grid("dictionary_folders").show(ui, |ui| {
+        row_label(ui, &tr("options.dictionaries_folder"));
+        ui.horizontal(|ui| {
+            let mut text = own
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(&mut text).desired_width(320.0),
+            );
+            if ui
+                .add_enabled(
+                    own.is_some() && !crate::files::WEB,
+                    egui::Button::new(tr("options.open_folder")),
+                )
+                .clicked()
+            {
+                if let Some(dir) = &own {
+                    let _ = std::fs::create_dir_all(dir);
+                    if let Err(e) = crate::export::open_with_system(dir) {
+                        app.status = e;
+                    }
+                }
+            }
+        });
+        ui.end_row();
+        let p = &mut app.settings.spelling;
+        row_label(ui, &tr("options.more_dictionaries"));
+        ui.horizontal(|ui| {
+            path_field(ui, &mut p.dictionary_folder, String::new());
+            if ui
+                .add_enabled(
+                    p.dictionary_folder.is_some(),
+                    egui::Button::new(tr("options.clear_folder")),
+                )
+                .clicked()
+            {
+                p.dictionary_folder = None;
+            }
+        });
+        ui.end_row();
+    });
+    if ui.button(tr("options.refresh_dictionaries")).clicked() {
+        found = None;
+        crate::spell::reload();
+    }
+    ui.data_mut(|d| match found {
+        Some(f) => {
+            d.insert_temp(cache, f);
+        }
+        None => {
+            d.remove::<Found>(cache);
+        }
+    });
 }
 
 /// A quotation mark list (one of [`crate::autocorrect::QUOTE_CHOICES`]).

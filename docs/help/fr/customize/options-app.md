@@ -110,6 +110,8 @@ La page a cinq onglets.
   [[options.font_sample_size]].
 - [[options.spelling]] : [[writing.ignore_digits]], [[writing.ignore_capitals]]
   et [[options.add_to_autocorrect]], pour qu'un mot corrigé dans le correcteur
-  soit corrigé à la frappe la fois suivante.
+  soit corrigé à la frappe la fois suivante ; et les
+  [[options.dictionaries]] qu'il utilise, voir
+  [Dictionnaires](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]] : ce qui est corrigé à la frappe ; voir
   [Correction automatique](../text/writing-tools.md#autocorrect).

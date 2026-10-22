@@ -105,6 +105,8 @@ Strona ma pięć kart.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   i [[options.add_to_autocorrect]], aby słowo poprawione w sprawdzaniu pisowni
-  następnym razem poprawiało się podczas pisania.
+  następnym razem poprawiało się podczas pisania; oraz
+  [[options.dictionaries]], których używa, zobacz
+  [Słowniki](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: co jest poprawiane podczas pisania; zobacz
   [Autokorekta](../text/writing-tools.md#autocorrect).

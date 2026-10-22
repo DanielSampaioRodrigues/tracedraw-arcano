@@ -107,6 +107,7 @@ Sayfada beş sekme vardır.
   ve [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   ve [[options.add_to_autocorrect]]; yazım denetiminde düzelttiğiniz bir sözcük
-  bir dahaki sefere yazarken düzeltilir.
+  bir dahaki sefere yazarken düzeltilir; ve kullandığı
+  [[options.dictionaries]], bkz. [Sözlükler](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: yazarken neyin düzeltildiği; bkz.
   [Otomatik Düzelt](../text/writing-tools.md#autocorrect).

@@ -106,6 +106,7 @@ Halaman ini punya lima tab.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   dan [[options.add_to_autocorrect]], agar kata yang Anda koreksi di pemeriksa
-  ejaan dikoreksi saat mengetik berikutnya.
+  ejaan dikoreksi saat mengetik berikutnya; serta [[options.dictionaries]] yang
+  dipakai, lihat [Kamus](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: apa yang dikoreksi saat mengetik; lihat
   [Koreksi otomatis](../text/writing-tools.md#autocorrect).

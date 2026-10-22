@@ -107,6 +107,8 @@ La pagina ha cinque schede.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   e [[options.add_to_autocorrect]], così una parola corretta nel controllo
-  ortografico viene corretta durante la digitazione la volta successiva.
+  ortografico viene corretta durante la digitazione la volta successiva; e i
+  [[options.dictionaries]] che usa, vedere
+  [Dizionari](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: cosa viene corretto durante la digitazione; vedere
   [Correzione automatica](../text/writing-tools.md#autocorrect).

@@ -14,14 +14,48 @@ Selection).
 
 ## Spell Checker
 
-System Hunspell word lists (see `text.md`). Left: Replace with, the
+Dictionaries (`spell.rs`, `hunspell.rs`): Hunspell dictionaries, a
+`.dic` word file with the `.aff` affix file of the same name, found in
+TraceDraw's `dictionaries` folder under the configuration folder and in
+the folder named under Options > Text > Spelling > Also read
+dictionaries from (each with the folders inside it, three deep, so a
+dictionary package unpacked there or another program's dictionary folder
+works), then in the system's folders (`/usr/share/hunspell`,
+`/usr/share/myspell`, `/Library/Spelling` ...); a name found twice is
+used once, the user's folders first. `hyph_*` and `th_*` files
+(hyphenation patterns, thesauri) are left out; a `.dic` with no `.aff`
+is a plain word list. The Spelling tab lists them by name, each with a
+check box (on; the names switched off are kept in the preferences),
+Open Folder (creates and opens TraceDraw's folder) and Read Again
+(reads the folders and the dictionaries again). A word is right when any
+dictionary in use, a system word list (`/usr/share/dict/*`), the
+built-in core words or the user's own words know it; a hyphenated word
+when each part is. The affix file is read for `SET` (UTF-8, ISO 8859,
+Windows code pages, KOI8-R), `FLAG` (characters, `long`, `num`), `AF`
+aliases, `PFX` and `SFX` rules (strip, add, condition, cross product,
+continuation classes: two suffixes, a suffix and a prefix),
+`NEEDAFFIX`, `FORBIDDENWORD`, `ONLYINCOMPOUND`, `KEEPCASE`, compounds
+(`COMPOUNDFLAG`, `COMPOUNDBEGIN`, `COMPOUNDMIDDLE`, `COMPOUNDLAST`,
+`COMPOUNDPERMITFLAG`, `COMPOUNDMIN`, `COMPOUNDWORDMAX`), `IGNORE`, `TRY`
+and `REP`. Case: a word typed with a capital (or in capitals) is also
+looked up in small letters, but not one kept in its case. A typographic
+apostrophe counts as a straight one. Suggestions: the dictionaries'
+replacement tables, then single edits with their `TRY` letters, then a
+split into two words, then edits found in the word lists; eight at most.
+Checks: `hunspell::tests` (and `real_dictionaries`, ignored, over
+dictionaries in `HUNSPELL_TEST_DIR`: English, Brazilian Portuguese and
+German words, affixed and compound), and
+`spell::tests::dictionaries_in_a_folder_are_found_and_used`.
+
+Left: Replace with, the
 Replacements list (suggestions; a click puts one in Replace with, a
 double click replaces with it) and the status ("Ready: Begin spell
 checking", the word not found, then "Spell check completed"). Right:
 Start (Replace once a word is shown), Auto Replace (every place the word
 is), Skip Once, Undo (the last replacement), Skip All (for this check),
-Options (ignore words with numbers, ignore words in capitals), Add (to
-the user word list) and Check.
+Options (ignore words with numbers, ignore words in capitals, add
+corrections to Autocorrect; the same as Options > Text > Spelling), Add
+(to the user word list) and Check.
 
 ## Grammar
 

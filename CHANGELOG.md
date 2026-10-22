@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Spell checking in any language: put Hunspell dictionaries (the `.dic` and `.aff` files many programs use) in the folder Options > Text > Spelling opens, or point it at a folder that has them. Words are checked with their prefixes, suffixes and compounds, suggestions use the dictionary's own replacement table, and each dictionary can be switched off (#255).
+
 - Options > Text: Display, Paragraph Text, Fonts, Spelling and Autocorrect tabs, as in the reference program. Autocorrect can now capitalize the names of days, turn typed web addresses into hyperlinks, use the quotation marks of another language or ones you choose, keep straight quotes after numbers, and switch the replacement table off; Text > Writing Tools > Autocorrect opens that tab. Fonts sets how many recently used fonts the font lists show (up to 20), and Spelling keeps the spell checker options and can add its corrections to Autocorrect (#369).
 
 - Segment Delete: after one stretch of a curve was deleted, clicking the stretch past the next crossing could delete the whole curve, because the first cut ended a hair off the outline it crossed. Crossings now lie exactly on both outlines (#354).

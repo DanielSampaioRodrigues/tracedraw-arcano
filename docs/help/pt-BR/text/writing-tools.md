@@ -26,9 +26,27 @@ da página ([[writing.scope_document]]) ou só os textos selecionados
    ou [[writing.add]] para acrescentá-la à sua lista de palavras.
 4. [[writing.undo]] desfaz a última substituição.
 
-[[writing.options]] tem [[writing.ignore_digits]] e
-[[writing.ignore_capitals]]. O TraceDraw usa os dicionários instalados no seu
-sistema; sem nenhum, só uma lista de palavras incluída é usada.
+[[writing.options]] tem [[writing.ignore_digits]],
+[[writing.ignore_capitals]] e [[options.add_to_autocorrect]].
+
+### Dicionários {#dictionaries}
+
+O TraceDraw verifica a ortografia com dicionários Hunspell: para cada idioma,
+um arquivo `.dic` e um arquivo `.aff` com o mesmo nome, como `pt_BR.dic` e
+`pt_BR.aff`. Dicionários gratuitos para a maioria dos idiomas podem ser baixados
+dos projetos que os fazem; outros programas costumam instalá-los também.
+
+1. Abra [[menu.tools > menu.tools.options]] > [[options.text]] >
+   [[options.spelling]].
+2. Clique em [[options.open_folder]] e copie os arquivos `.dic` e `.aff` para
+   essa pasta (pastas dentro dela também servem), ou indique uma pasta que já
+   tenha dicionários em [[options.more_dictionaries]].
+3. Clique em [[options.refresh_dictionaries]]. A lista [[options.dictionaries]]
+   mostra cada um; desmarque a caixa para deixar de usá-lo.
+
+Uma palavra está certa quando algum dicionário em uso a conhece. Os dicionários
+instalados no sistema também são usados. Sem nenhum, só uma lista de palavras
+incluída é usada.
 
 ### Gramática {#grammar}
 

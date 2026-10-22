@@ -2340,6 +2340,7 @@ impl App {
     /// after loading the preferences and when an options dialog closes.
     pub fn apply_runtime_settings(&mut self) {
         crate::ui::writing_tools::install_custom_hyphens(self);
+        crate::spell::configure(self.settings.spelling.config());
         let levels = self.settings.undo_levels.max(1);
         self.engine.set_max_history(levels);
         for slot in &mut self.docs {

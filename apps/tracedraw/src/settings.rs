@@ -1209,8 +1209,9 @@ impl Default for ColorPrefs {
     }
 }
 
-/// Options > Text > Spelling: what the spell checker skips, and whether
-/// its replacements go to the Autocorrect table.
+/// Options > Text > Spelling: what the spell checker skips, whether its
+/// replacements go to the Autocorrect table, and which dictionaries it
+/// uses.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpellingPrefs {
@@ -1221,6 +1222,20 @@ pub struct SpellingPrefs {
     /// A word the spell checker replaces is added to the Autocorrect
     /// replacements, so typing it wrong again corrects it.
     pub add_to_autocorrect: bool,
+    /// A folder of Hunspell dictionaries besides TraceDraw's own.
+    pub dictionary_folder: Option<PathBuf>,
+    /// The dictionaries switched off, by name (`pt_BR`).
+    pub disabled_dictionaries: Vec<String>,
+}
+
+impl SpellingPrefs {
+    /// The dictionaries these options name, for the spell checker.
+    pub fn config(&self) -> crate::spell::SpellConfig {
+        crate::spell::SpellConfig {
+            folder: self.dictionary_folder.clone(),
+            disabled: self.disabled_dictionaries.clone(),
+        }
+    }
 }
 
 /// The fonts used last that the font lists show, by default.

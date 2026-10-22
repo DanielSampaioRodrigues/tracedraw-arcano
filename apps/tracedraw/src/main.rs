@@ -68,6 +68,7 @@ mod guides;
 mod help;
 #[cfg(test)]
 mod help_shots;
+mod hunspell;
 mod i18n;
 mod image_dpi;
 mod imposition;

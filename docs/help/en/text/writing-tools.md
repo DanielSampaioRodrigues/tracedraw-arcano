@@ -25,9 +25,26 @@ selected texts ([[writing.scope_selection]]).
    [[writing.add]] to add the word to your own word list.
 4. [[writing.undo]] takes back the last replacement.
 
-[[writing.options]] has [[writing.ignore_digits]] and
-[[writing.ignore_capitals]]. TraceDraw uses the dictionaries installed on your
-system; without one, only a built-in word list is used.
+[[writing.options]] has [[writing.ignore_digits]],
+[[writing.ignore_capitals]] and [[options.add_to_autocorrect]].
+
+### Dictionaries {#dictionaries}
+
+TraceDraw checks spelling with Hunspell dictionaries: for each language a
+`.dic` file and an `.aff` file with the same name, such as `pt_BR.dic` and
+`pt_BR.aff`. Free dictionaries for most languages can be downloaded from the
+projects that make them; other programs often install them too.
+
+1. Open [[menu.tools > menu.tools.options]] > [[options.text]] >
+   [[options.spelling]].
+2. Click [[options.open_folder]] and copy the `.dic` and `.aff` files into that
+   folder (folders inside it work too), or name a folder that already has
+   dictionaries in [[options.more_dictionaries]].
+3. Click [[options.refresh_dictionaries]]. The [[options.dictionaries]] list
+   shows each one; clear a box to stop using it.
+
+A word is right when any dictionary in use knows it. Dictionaries installed on
+your system are used as well. Without any, only a built-in word list is used.
 
 ### Grammar {#grammar}
 

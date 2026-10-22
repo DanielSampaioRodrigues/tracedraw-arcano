@@ -106,6 +106,8 @@ De pagina heeft vijf tabbladen.
   [[options.font_sample_size]].
 - [[options.spelling]]: [[writing.ignore_digits]], [[writing.ignore_capitals]]
   en [[options.add_to_autocorrect]], zodat een woord dat u in de
-  spellingcontrole verbetert de volgende keer tijdens het typen wordt verbeterd.
+  spellingcontrole verbetert de volgende keer tijdens het typen wordt verbeterd;
+  en de [[options.dictionaries]] die ze gebruikt, zie
+  [Woordenboeken](../text/writing-tools.md#dictionaries).
 - [[dialog.autocorrect]]: wat tijdens het typen wordt verbeterd; zie
   [AutoCorrectie](../text/writing-tools.md#autocorrect).

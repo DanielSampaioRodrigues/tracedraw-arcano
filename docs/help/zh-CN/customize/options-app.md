@@ -82,6 +82,7 @@
   [[options.recent_font_count]]（5，最多 20）以及
   [[options.font_sample_size]]。
 - [[options.spelling]]：[[writing.ignore_digits]]、[[writing.ignore_capitals]]
-  和 [[options.add_to_autocorrect]]，这样在拼写检查中更正的单词下次键入时会被自动更正。
+  和 [[options.add_to_autocorrect]]，这样在拼写检查中更正的单词下次键入时会被自动更正；以及它使用的
+  [[options.dictionaries]]，请参阅[词典](../text/writing-tools.md#dictionaries)。
 - [[dialog.autocorrect]]：键入时更正的内容；请参阅
   [自动更正](../text/writing-tools.md#autocorrect)。

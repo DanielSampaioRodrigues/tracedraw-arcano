@@ -3960,6 +3960,7 @@ dependencies = [
  "csv",
  "eframe",
  "egui",
+ "encoding_rs",
  "env_logger",
  "flate2",
  "getrandom 0.2.17",
