@@ -83,9 +83,9 @@ pub struct RenderOptions {
     /// gradients) may be worked out on a coarser grid. Exports keep every
     /// pixel.
     pub draft: bool,
-    /// Focus mode: this object drawn as it is and everything else faded
-    /// to the given visibility (0 to 1).
-    pub focus: Option<(tracedraw_core::ShapeId, f32)>,
+    /// Focus mode: these objects drawn as they are and everything else
+    /// faded to the given visibility (0 to 1).
+    pub focus: Option<(Vec<tracedraw_core::ShapeId>, f32)>,
 }
 
 impl Default for RenderOptions {
@@ -228,24 +228,26 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
             r.draw_shape(shape, extra);
         }
     }
-    // Focus mode: everything fades, then the object in focus is drawn
-    // again over it as it is.
-    if let Some((id, visibility)) = opts.focus {
-        if let (Some(shape), Some(parent)) = (doc.find_shape(id), doc.parent_transform(id)) {
-            let v = visibility.clamp(0.0, 1.0);
-            for px in r.pixmap.pixels_mut() {
-                let c = |x: u8| (x as f32 * v).round() as u8;
-                if let Some(faded) = tiny_skia::PremultipliedColorU8::from_rgba(
-                    c(px.red()),
-                    c(px.green()),
-                    c(px.blue()),
-                    c(px.alpha()),
-                ) {
-                    *px = faded;
-                }
+    // Focus mode: everything fades, then the objects in focus are drawn
+    // again over it as they are.
+    if let Some((ids, visibility)) = &opts.focus {
+        let v = visibility.clamp(0.0, 1.0);
+        for px in r.pixmap.pixels_mut() {
+            let c = |x: u8| (x as f32 * v).round() as u8;
+            if let Some(faded) = tiny_skia::PremultipliedColorU8::from_rgba(
+                c(px.red()),
+                c(px.green()),
+                c(px.blue()),
+                c(px.alpha()),
+            ) {
+                *px = faded;
             }
-            let extra = r.child_transform(shape, parent);
-            r.draw_shape(shape, extra);
+        }
+        for id in ids {
+            if let (Some(shape), Some(parent)) = (doc.find_shape(*id), doc.parent_transform(*id)) {
+                let extra = r.child_transform(shape, parent);
+                r.draw_shape(shape, extra);
+            }
         }
     }
     Some(pixmap)

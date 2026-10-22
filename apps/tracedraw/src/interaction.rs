@@ -785,6 +785,7 @@ impl App {
             // and ends when it goes up.
             if !response.dragged() && !response.drag_stopped_by(PointerButton::Primary) {
                 if response.ctx.input(|i| i.pointer.primary_down()) {
+                    self.note_drop_keys(&response.ctx);
                     self.pick_drag_to(p, mods);
                     self.stamp_on_space(response);
                 } else {
@@ -1143,6 +1144,7 @@ impl App {
                 self.node_move_to(p, mods);
                 return;
             }
+            self.note_drop_keys(&response.ctx);
             self.pick_drag_to(p, mods);
         }
         self.stamp_on_space(response);
@@ -1253,6 +1255,14 @@ impl App {
 
     /// A Pick tool drag goes on with the pointer at `p` (page) and the
     /// modifier keys `mods`.
+    /// W and K held while the selection is moved: what a drop on a clip
+    /// frame does (they are not tool shortcuts then).
+    fn note_drop_keys(&mut self, ctx: &egui::Context) {
+        if matches!(self.drag, Drag::Move { .. }) {
+            self.drop_keys = ctx.input(|i| (i.key_down(Key::W), i.key_down(Key::K)));
+        }
+    }
+
     fn pick_drag_to(&mut self, p: Point, mods: Modifiers) {
         if matches!(self.drag, Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) {
             self.drag_guide_to(p);
@@ -1309,6 +1319,9 @@ impl App {
                     *last = np;
                     *total = nt;
                 }
+                // Over a clip frame that is not being moved: a drop
+                // target (W adds to it, K replaces its contents).
+                self.drop_frame = self.frame_under_pointer(p);
             }
             Drag::Marquee {
                 start,
@@ -1918,6 +1931,9 @@ impl App {
 
     pub fn end_drag(&mut self) {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
+        if !matches!(drag, Drag::Move { .. }) {
+            self.drop_frame = None;
+        }
         match drag {
             Drag::Anchor { .. } => {}
             Drag::Box {
@@ -1998,6 +2014,19 @@ impl App {
             Drag::Move { total, .. } => {
                 if total.hypot() > 1e-6 {
                     self.finish_transform(Affine::translate(total));
+                }
+                // Dropped on a clip frame with W: into it; with K: in
+                // place of its contents. Without a key the objects just
+                // land there, over the frame.
+                let (w, k) = self.drop_keys;
+                if let Some(frame) = self.drop_frame.take() {
+                    let moved = self.selection.clone();
+                    if k && !moved.is_empty() {
+                        self.replace_clip_contents(moved, frame);
+                    } else if w && !moved.is_empty() {
+                        self.place_inside(moved, frame);
+                        self.select(vec![frame]);
+                    }
                 }
             }
             Drag::AlongPath { start, current } => self.finish_along_path(start, current),
@@ -2860,7 +2889,12 @@ impl App {
                     })
                 });
                 if let Some((mods, k)) = keys {
-                    if pressed(k, mods) {
+                    // W and K during a move say what a drop on a clip
+                    // frame does; they pick no tool then.
+                    let drop_key = matches!(self.drag, Drag::Move { .. })
+                        && mods.is_none()
+                        && matches!(k, Key::W | Key::K);
+                    if pressed(k, mods) && !drop_key {
                         self.set_tool(*t);
                     }
                 }

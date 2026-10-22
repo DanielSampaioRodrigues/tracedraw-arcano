@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Clip frames: while objects are moved over a clip frame it lights up and a note under the pointer says what the release does; W held adds the objects to the frame, K held replaces its contents. Edit Contents fades the rest of the page while the frame and its contents are edited.
+
 - Clip frames: with a clip frame selected a bar at the top left of the drawing window offers Edit, Select Contents, Extract Contents, the contents lock and Fit Contents (centre, fit or fill proportionally, stretch); while the contents are edited it shows Finish.
 
 - 3-point curve: a curve drawn from an end node of the selected curve continues it, and one ending on its other end node closes it, as the other curve tools do; it always made a curve of its own.

@@ -785,6 +785,12 @@ pub struct App {
     /// A right click during a move, scale, rotation or skew: on release
     /// the change goes to copies and the originals stay.
     pub drag_copy: bool,
+    /// The clip frame under the pointer while the selection is moved
+    /// over it: a release there with W adds the selection to it, with K
+    /// replaces its contents (see `docs/behavior/clip-frame.md`).
+    pub drop_frame: Option<ShapeId>,
+    /// W and K held during that move.
+    pub drop_keys: (bool, bool),
     /// The Pen or Bezier tool is dragging a node of the selected curve
     /// (as the Shape tool does), not drawing.
     pub pen_editing: bool,
@@ -1779,6 +1785,8 @@ impl App {
             pivots: Pivots::default(),
             drag: Drag::None,
             drag_copy: false,
+            drop_frame: None,
+            drop_keys: (false, false),
             pen_editing: false,
             paste_seen: false,
             curve: None,

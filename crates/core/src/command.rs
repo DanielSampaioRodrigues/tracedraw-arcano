@@ -1031,6 +1031,14 @@ impl Command {
                 }
                 let (flid, fi) = doc.locate(*frame)?;
                 let mut frame_shape = doc.layer_mut(flid)?.shapes.remove(fi);
+                // A clip frame already: the objects join its contents,
+                // over the ones it holds.
+                if let ShapeKind::ClipFrame { contents, .. } = &mut frame_shape.kind {
+                    contents.extend(inner);
+                    let target = &mut doc.layer_mut(flid)?.shapes;
+                    target.insert(fi.min(target.len()), frame_shape);
+                    return Ok(());
+                }
                 // The clip frame keeps the object's id; the frame inside
                 // it gets one of its own, so it can be found, painted and
                 // reshaped (Extract Contents gives it the id back).

@@ -118,6 +118,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     crate::comments::draw_comments(app, painter);
     crate::perspective_draw::draw_grid(app, painter, rect);
     draw_frame_links(app, painter);
+    draw_drop_frame(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
     draw_fountain_handles(app, painter);
@@ -505,7 +506,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         app.simulate_overprints,
         app.rasterize_complex_effects,
         app.proof_colors,
-        app.focus_target().map(|id| (id, app.focus_visibility())),
+        app.render_focus(),
         (app.view_mode == crate::app::ViewMode::Pixels).then(|| app.document_dpi()),
     ) {
         let (tex, at) = tex;
@@ -656,6 +657,74 @@ fn dash(painter: &Painter, a: Pos2, b: Pos2, color: Color32) {
 
 /// Mirror lines of selected objects with a Symmetry effect (dashed, with a
 /// centre handle), shown in symmetry mode.
+/// The clip frame the selection is being moved over: its outline filled
+/// in the selection colour, and under the pointer what a drop does (as
+/// it is, or with W or K held).
+fn draw_drop_frame(app: &App, painter: &Painter) {
+    let Some(frame) = app.drop_frame else {
+        return;
+    };
+    let Some(s) = app.doc().find_shape(frame) else {
+        return;
+    };
+    let accent = Tokens::ACCENT;
+    for (pts, closed) in flatten(&s.page_path(), &app.view) {
+        if pts.len() < 2 {
+            continue;
+        }
+        if closed {
+            painter.add(egui::Shape::convex_polygon(
+                pts.clone(),
+                accent.gamma_multiply(0.25),
+                EStroke::NONE,
+            ));
+        }
+        painter.add(egui::Shape::line(pts, EStroke::new(1.5, accent)));
+    }
+    let Some(p) = app.pointer_page else {
+        return;
+    };
+    let at = app.view.to_screen(p) + egui::vec2(18.0, 24.0);
+    let (w, k) = app.drop_keys;
+    let lines = [
+        ("hint.drop_frame_place", !w && !k),
+        ("hint.drop_frame_add", w && !k),
+        ("hint.drop_frame_replace", k),
+    ];
+    let font = egui::FontId::proportional(12.0);
+    let galleys: Vec<_> = lines
+        .iter()
+        .map(|(key, on)| {
+            let col = if *on {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            };
+            painter.layout_no_wrap(
+                format!("\u{2022} {}", crate::i18n::tr(key)),
+                font.clone(),
+                col,
+            )
+        })
+        .collect();
+    let width = galleys.iter().map(|g| g.size().x).fold(0.0f32, f32::max);
+    let height: f32 = galleys.iter().map(|g| g.size().y + 2.0).sum();
+    let bg = ERect::from_min_size(at, egui::vec2(width + 12.0, height + 8.0));
+    painter.rect(
+        bg,
+        2.0,
+        Tokens::panel(),
+        EStroke::new(1.0, Tokens::border()),
+        egui::StrokeKind::Inside,
+    );
+    let mut y = bg.top() + 4.0;
+    for g in galleys {
+        let h = g.size().y;
+        painter.galley(egui::pos2(bg.left() + 6.0, y), g, Tokens::text());
+        y += h + 2.0;
+    }
+}
+
 fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     for s in app.selected_shapes() {

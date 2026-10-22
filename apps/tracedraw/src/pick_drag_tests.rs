@@ -2650,6 +2650,88 @@ fn an_unfilled_rectangle_over_text_takes_the_click_and_alt_reaches_the_text() {
     assert_eq!(kinds_bottom_up(&back), ["text", "shape"]);
 }
 
+/// Moving objects over a clip frame: dropped as they are they land over
+/// it; with W held they go into it; with K held they replace its
+/// contents. The frame under the pointer is noted during the move.
+#[test]
+fn dropping_on_a_clip_frame_with_w_or_k_puts_the_objects_in() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let (rect, text) = text_and_frame(&mut app, true, false);
+    app.place_inside(vec![text], rect);
+    let clip = app.doc().top_level_of(text).expect("clip frame");
+    app.settings.clip_frame.auto_center = crate::settings::AutoCenter::Never;
+    // A small square away from the frame.
+    let square = |app: &mut App| {
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(200.0, 20.0, 220.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("square")
+    };
+    let from = app.view.to_screen(Point::new(210.0, 30.0));
+    let to = app.view.to_screen(Point::new(60.0, 45.0));
+    let hold = |k: egui::Key| vec![key(k, Modifiers::NONE)];
+    let release = |k: egui::Key| Event::Key {
+        key: k,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    // No key: the square lands over the frame, on its own.
+    let a = square(&mut app);
+    app.select(vec![a]);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.doc().top_level_of(a), Some(a));
+    assert!(app.drop_frame.is_none());
+    app.select(vec![a]);
+    app.delete_selection();
+    // W held during the move: into the frame, which is then selected.
+    let b = square(&mut app);
+    app.select(vec![b]);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::NONE,
+        hold(egui::Key::W),
+    );
+    frame(&ctx, &mut app, vec![release(egui::Key::W)], Modifiers::NONE);
+    assert_eq!(app.doc().top_level_of(b), Some(clip), "in the frame");
+    assert!(
+        app.doc().find_shape(text).is_some(),
+        "the old contents stay"
+    );
+    assert_eq!(app.selection, vec![clip]);
+    assert_eq!(app.tool, Tool::Pick, "W picked no tool");
+    // K held: the old contents go, the square takes their place.
+    let c = square(&mut app);
+    app.select(vec![c]);
+    let depth = app.engine.history_labels().0.len();
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::NONE,
+        hold(egui::Key::K),
+    );
+    frame(&ctx, &mut app, vec![release(egui::Key::K)], Modifiers::NONE);
+    assert_eq!(app.doc().top_level_of(c), Some(clip));
+    assert!(app.doc().find_shape(text).is_none(), "replaced");
+    assert!(app.doc().find_shape(b).is_none(), "replaced");
+    assert_eq!(
+        app.engine.history_labels().0.len(),
+        depth + 2,
+        "the move, then the drop"
+    );
+    assert_eq!(app.tool, Tool::Pick);
+}
+
 #[test]
 fn ctrl_click_takes_the_contents_of_a_clip_frame() {
     let (ctx, mut app, first) = setup();

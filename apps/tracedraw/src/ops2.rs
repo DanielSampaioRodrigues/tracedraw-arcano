@@ -958,6 +958,57 @@ impl App {
         }
     }
 
+    /// What the renderer draws in full while the rest fades: the object
+    /// in focus (focus mode), or the frame and the contents being edited
+    /// (Edit Contents).
+    pub fn render_focus(&self) -> Option<(Vec<ShapeId>, f32)> {
+        if let Some((frame, ids)) = &self.clip_frame_edit {
+            let mut all = vec![*frame];
+            all.extend(ids.iter().copied());
+            return Some((all, CLIP_EDIT_VISIBILITY));
+        }
+        self.focus_target()
+            .map(|id| (vec![id], self.focus_visibility()))
+    }
+
+    /// The clip frame under `p` (page) that is not part of the selection
+    /// being moved, for a drop into it.
+    pub fn frame_under_pointer(&self, p: Point) -> Option<ShapeId> {
+        let doc = self.doc();
+        let moved = |id: ShapeId| {
+            self.selection.contains(&id)
+                || doc
+                    .top_level_of(id)
+                    .is_some_and(|t| self.selection.contains(&t))
+        };
+        let hit = self.hit_test_where(p, moved)?;
+        let top = doc.top_level_of(hit)?;
+        matches!(
+            doc.find_shape(top).map(|s| &s.kind),
+            Some(ShapeKind::ClipFrame { .. })
+        )
+        .then_some(top)
+    }
+
+    /// The selection dropped on a clip frame with K held: the frame's
+    /// contents give way to it (they are deleted); one undo step.
+    pub fn replace_clip_contents(&mut self, contents: Vec<ShapeId>, frame: ShapeId) {
+        let old: Vec<ShapeId> = match self.doc().find_shape(frame).map(|s| &s.kind) {
+            Some(ShapeKind::ClipFrame { contents, .. }) => contents.iter().map(|c| c.id).collect(),
+            _ => return,
+        };
+        let mut cmds = Vec::new();
+        if !old.is_empty() {
+            cmds.push(Command::ExtractContents { clip: frame });
+            cmds.push(Command::DeleteShapes { shapes: old });
+        }
+        cmds.push(Command::PlaceInside { contents, frame });
+        if let Err(e) = self.engine.run_batch("Place Inside Frame", &cmds) {
+            self.status = format!("ClipFrame: {e}");
+        }
+        self.select(vec![frame]);
+    }
+
     /// Whether a clip frame's contents move with the frame (the default).
     pub fn clip_frame_locked(&self, id: ShapeId) -> bool {
         self.doc()
@@ -3239,6 +3290,10 @@ mod tests {
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
     }
 }
+
+/// How much of the rest of the page shows while a clip frame's contents
+/// are edited (the frame and its contents are drawn in full).
+pub const CLIP_EDIT_VISIBILITY: f32 = 0.25;
 
 /// The page transform that takes `contents` (its box) to `frame` as the
 /// Fit Contents `mode` says: centred without scaling, scaled alike to fit
