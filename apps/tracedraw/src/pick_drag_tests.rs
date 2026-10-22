@@ -2571,7 +2571,7 @@ fn clicking_the_last_node_again_makes_it_a_cusp() {
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(over)),
-        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::EditNode)
+        ToolCursor::PenNib(Some(crate::ui::cursors::CurveMark::EditNode))
     );
     click_page(&ctx, &mut app, b);
     assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(2));
@@ -2608,7 +2608,7 @@ fn dragging_from_the_first_node_shapes_only_the_closing_segment() {
     let over = app.view.to_screen(a);
     assert_eq!(
         for_tool(&app, false, false, false, Some(over)),
-        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::Close)
+        ToolCursor::PenNib(Some(crate::ui::cursors::CurveMark::Close))
     );
     pull(&ctx, &mut app, a, Point::new(90.0, 140.0));
     assert!(app.curve.is_none());
@@ -2649,7 +2649,7 @@ fn a_click_on_the_first_node_keeps_the_last_handle_and_two_nodes_close() {
     let over = app.view.to_screen(a);
     assert_eq!(
         for_tool(&app, false, false, false, Some(over)),
-        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::Close)
+        ToolCursor::PenNib(Some(crate::ui::cursors::CurveMark::Close))
     );
     click_page(&ctx, &mut app, a);
     assert!(app.curve.is_none(), "closed");
@@ -2724,12 +2724,12 @@ fn the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve() {
     let on_node = app.view.to_screen(Point::new(150.0, 100.0));
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_segment)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::AddNode)
+        ToolCursor::PenNib(Some(CurveMark::AddNode))
     );
     // With Auto add/delete (the default) a click on the node deletes it.
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_node)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::DeleteNode)
+        ToolCursor::PenNib(Some(CurveMark::DeleteNode))
     );
     click_at(&ctx, &mut app, on_segment, Modifiers::NONE);
     assert_eq!(node_count(&app, id), 4);
@@ -3170,11 +3170,11 @@ fn the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off() {
     app.settings.curves.pen_auto_add_delete = false;
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_node)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::EditNode)
+        ToolCursor::PenNib(Some(CurveMark::EditNode))
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_segment)),
-        ToolCursor::Badge(Tool::Pen)
+        ToolCursor::PenNib(None)
     );
     click_at(&ctx, &mut app, on_node, Modifiers::NONE);
     assert_eq!(node_count(&app, id), 3);
@@ -3215,11 +3215,11 @@ fn the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn() {
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_segment)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::AddNode)
+        ToolCursor::PenNib(Some(CurveMark::AddNode))
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_node)),
-        ToolCursor::CurveBadge(Tool::Pen, CurveMark::DeleteNode)
+        ToolCursor::PenNib(Some(CurveMark::DeleteNode))
     );
     click_page(&ctx, &mut app, Point::new(120.0, 150.0));
     let xs: Vec<f64> = app

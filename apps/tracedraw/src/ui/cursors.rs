@@ -53,6 +53,9 @@ pub enum ToolCursor {
     /// the selected curve from its end node, or close the curve being
     /// drawn on its first node.
     CurveBadge(Tool, CurveMark),
+    /// The Pen tool: a pen nib whose tip, marked with a dot, is the hot
+    /// spot (the node goes there, #362), with what a press would do.
+    PenNib(Option<CurveMark>),
     /// The cross hair with the nib's outline around it: a circle of
     /// `radius` screen points, or a square of that half side (the Eraser,
     /// the Smooth, Smear, Twirl, Attract and Repel, Smudge and Roughen
@@ -326,9 +329,9 @@ pub fn for_tool(
             radius: nib_px(app.brush_radius, app.view.zoom),
             square: false,
         },
+        Tool::Pen => ToolCursor::PenNib(curve_mark(app, pos)),
         t @ (Tool::Freehand
         | Tool::Bezier
-        | Tool::Pen
         | Tool::BSpline
         | Tool::Polyline
         | Tool::TwoPointLine) => match curve_mark(app, pos) {
@@ -459,6 +462,12 @@ pub fn paint(painter: &Painter, cursor: ToolCursor, p: Pos2) {
             badge(painter, p, tool);
             curve_mark_sign(painter, p, mark);
         }
+        ToolCursor::PenNib(mark) => {
+            pen_nib(painter, p);
+            if let Some(m) = mark {
+                curve_mark_at(painter, p + Vec2::new(4.0, 14.0), m);
+            }
+        }
         ToolCursor::Nib { radius, square } => nib(painter, p, radius, square),
         ToolCursor::TableArrow { down } => table_arrow(painter, p, down),
     }
@@ -521,10 +530,48 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
     crate::ui::icons::draw(painter, r, tool, badge_ink());
 }
 
+/// The outline of the Pen tool's nib with its tip at `tip`: the nib
+/// leans up and to the right, so the tip is its lowest, leftmost point.
+pub fn nib_outline(tip: Pos2) -> Vec<Pos2> {
+    // Along the nib (u, from the tip) and across it (v).
+    let u = Vec2::new(1.0, -1.0).normalized();
+    let v = Vec2::new(u.y, -u.x);
+    [
+        (0.0, 0.0),
+        (9.0, -4.5),
+        (15.0, -4.5),
+        (17.0, -3.0),
+        (17.0, 3.0),
+        (15.0, 4.5),
+        (9.0, 4.5),
+    ]
+    .iter()
+    .map(|(a, b)| tip + u * *a + v * *b)
+    .collect()
+}
+
+/// The Pen tool's cursor: a black nib on a white halo, its slit and
+/// breather hole white, and a dot at the tip where the node goes.
+fn pen_nib(painter: &Painter, tip: Pos2) {
+    let outline = nib_outline(tip);
+    painter.add(Shape::closed_line(outline.clone(), Stroke::new(2.5, HALO)));
+    painter.add(Shape::convex_polygon(outline, INK, Stroke::NONE));
+    let u = Vec2::new(1.0, -1.0).normalized();
+    painter.line_segment([tip + u * 2.5, tip + u * 8.0], Stroke::new(1.0, HALO));
+    painter.circle_filled(tip + u * 9.5, 1.6, HALO);
+    // The tip: a dot ringed in white, exactly on the hot spot.
+    painter.circle_filled(tip, 2.4, HALO);
+    painter.circle_filled(tip, 1.3, INK);
+}
+
 /// Above and to the right of the cross hair: a node with the line going
 /// on from it (join), or a ring (close).
 fn curve_mark_sign(painter: &Painter, p: Pos2, mark: CurveMark) {
-    let c = p + Vec2::new(12.0, -12.0);
+    curve_mark_at(painter, p + Vec2::new(12.0, -12.0), mark);
+}
+
+/// A curve tool's sign (see [`curve_mark_sign`]) centred at `c`.
+fn curve_mark_at(painter: &Painter, c: Pos2, mark: CurveMark) {
     match mark {
         CurveMark::Join => {
             haloed(painter, &[vec![c, c + Vec2::new(7.0, -5.0)]], 1.4);
@@ -968,7 +1015,30 @@ mod tests {
             for_tool(&app, false, false, false, Some(first)),
             ToolCursor::CurveBadge(Tool::Bezier, CurveMark::Close)
         );
+        // The Pen: the nib, with the same signs (#362).
+        app.tool = Tool::Pen;
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(first)),
+            ToolCursor::PenNib(Some(CurveMark::Close))
+        );
         app.curve = None;
+        let away = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(300.0, 300.0));
+        assert_eq!(
+            for_tool(&app, false, false, false, Some(away)),
+            ToolCursor::PenNib(None)
+        );
+        // Its tip is the hot spot: the outline starts there and leans up
+        // and to the right of it.
+        let tip = egui::pos2(50.0, 50.0);
+        let o = nib_outline(tip);
+        assert_eq!(o[0], tip);
+        assert!(
+            o.iter().all(|q| q.x >= tip.x - 4.0 && q.y <= tip.y + 4.0),
+            "{o:?}"
+        );
+        assert!(o.iter().any(|q| q.x > tip.x + 8.0 && q.y < tip.y - 8.0));
         // The Eraser and the brushes show their nib at its size on screen.
         app.tool = Tool::Eraser;
         app.eraser_width = 10.0;

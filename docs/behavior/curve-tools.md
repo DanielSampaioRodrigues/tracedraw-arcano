@@ -86,7 +86,10 @@ meets the start) `Path` objects with the toolbox defaults.
   plus over a segment where a click adds a node; a minus over a node a
   click deletes (Pen, Auto add/delete); a hollow node over a node of the
   selected curve otherwise, or over the last node of the curve being
-  drawn (edit the node, or make it a cusp).
+  drawn (edit the node, or make it a cusp). The Pen tool shows a pen
+  nib instead of the cross hair (#362): black on a white halo, leaning
+  up and to the right, with a dot at its tip; the tip is the hot spot,
+  where the node goes. The same signs show below the nib.
 - While drawing (code: `pen_look.rs`), the segments placed so far are a
   hairline in the colour of the outline new objects get (black without
   one), as the curve will look; nodes placed before are small hollow
