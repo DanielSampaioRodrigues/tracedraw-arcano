@@ -38,6 +38,42 @@ it closes that panel (as the title bar's close and the tab's menu do),
 a click lower on the tab brings the panel to the front
 (`ui::dockers::tests::a_docker_tab_closes_with_the_cross_at_its_top`).
 
+### Panels anywhere
+
+- Panels live in one of three places (`App::docker_place`): the default
+  column at the right of the window (`open_dockers`, `docker_tab` in
+  front, `show_dockers`; at the left in a right-to-left language), the
+  column at the other side (`left_dockers`, `left_tab`,
+  `show_left_dockers`; it exists only while it holds a panel) and
+  floating windows (`floating_dockers`, one panel each). Every panel
+  starts in the default column.
+- Dragging a tab, or the title bar of a panel (a column's or a floating
+  one's), moves the panel: a light blue band shows where it goes, within
+  56 px of a side the column there (the strip and a 340 px panel),
+  elsewhere a window the size a panel floats at (340 by 480) with its
+  top left corner where the grab point puts it. Releasing puts the panel
+  there, in front of the column it joins (the column it leaves shows the
+  tab next to it, or closes when none is left); a release outside the
+  window counts at the last place the pointer was seen. The tab's menu
+  and the title's menu (right click) have Dock at Right, Dock at Left,
+  Floating and Close panel.
+- A floating panel is a window with a grey border and a shadow: the
+  panel's title bar (its name and close; no collapse) over its page,
+  resizable at its edges; where it is and how large are kept.
+- A panel brought to the front from a menu, a shortcut or a tool while it
+  lies in the other column or floats is put in front where it is, and
+  the default column stays as it was; a panel open nowhere joins the
+  default column (`App::open_docker`, `App::reconcile_dockers`). Window >
+  Panels and the Help > Hints check show a panel as on when it is in
+  front of an open column or floating (`App::docker_shown`); the plus
+  button of a column opens a ticked panel in front of that column.
+- The places are kept in the preferences (`dockers`: `open`, `front`,
+  `left`, `left_front`, `left_shown`, `floating` with each window's
+  corner and size); older preferences with the column alone read as
+  before.
+- Checks: `app::tests::dockers_move_between_the_columns_and_float`,
+  `ui::dockers::tests::a_docker_dragged_to_a_side_docks_there_and_the_window_draws_them_all`.
+
 ## Standard toolbar
 
 A 35 px band (and its line): 32 px buttons with 20 px icons in groups

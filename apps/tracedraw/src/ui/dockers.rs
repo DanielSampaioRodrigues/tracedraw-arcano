@@ -1,6 +1,6 @@
 //! Dockers: Properties, Objects (layer manager) and Hints.
 
-use crate::app::{App, DockerTab};
+use crate::app::{App, DockerDrag, DockerPlace, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use egui::Ui;
@@ -25,29 +25,35 @@ pub fn tab_close_rect(bg: egui::Rect) -> egui::Rect {
     )
 }
 
-/// The docker tab column: the open dockers as vertical tabs (an icon on
-/// top, the name running downwards), grey, the open one darker, then the
-/// button that adds a docker.
-pub fn tab_strip(app: &mut App, ui: &mut Ui) {
+/// The width of a docker tab column.
+pub const STRIP_W: f32 = 27.0;
+
+/// A docker tab column: the open dockers of the column at `place` as
+/// vertical tabs (an icon on top, the name running downwards), grey, the
+/// open one darker, then the button that adds a docker. A tab dragged
+/// moves its docker (see [`drag_overlay`]).
+pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     let full = ui.max_rect();
     // The title bar's part and the line along the docker.
     ui.painter()
         .rect_filled(full, 0.0, crate::theme::Tokens::tab_strip());
+    let line_x = if strip_at_left(place) {
+        full.right() - 0.5
+    } else {
+        full.left() + 0.5
+    };
     ui.painter().vline(
-        full.left() + 0.5,
+        line_x,
         (full.top() + TITLE_H)..=full.bottom(),
         egui::Stroke::new(1.0, crate::theme::Tokens::window_border()),
     );
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.add_space(TITLE_H);
-    // A docker brought to the front (from a menu, a shortcut) joins the
-    // column.
-    if app.show_dockers && !app.open_dockers.contains(&app.docker_tab) {
-        app.open_dockers.push(app.docker_tab);
-    }
-    for tab in app.open_dockers.clone() {
+    let (tabs, front, shown) = app.docker_column(place);
+    let tabs = tabs.to_vec();
+    for tab in tabs {
         let name = tr(tab.key());
-        let active = app.show_dockers && app.docker_tab == tab;
+        let active = shown && front == tab;
         let galley = ui.painter().layout_no_wrap(
             name.clone(),
             egui::FontId::proportional(12.0),
@@ -59,8 +65,13 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         // A slot at the top of the tab for the close cross, shown while
         // the pointer is over the tab.
         let h = CLOSE_SLOT + 14.0 + icon_h + w;
-        let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click());
-        let bg = egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max);
+        let (r, resp) =
+            ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click_and_drag());
+        let bg = if strip_at_left(place) {
+            egui::Rect::from_min_max(r.min, egui::pos2(r.max.x - 1.0, r.max.y))
+        } else {
+            egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max)
+        };
         let fill = if active {
             crate::theme::Tokens::window_border()
         } else if resp.hovered() {
@@ -107,6 +118,17 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         }
         ts.angle = std::f32::consts::FRAC_PI_2;
         ui.painter().add(ts);
+        if resp.drag_started_by(egui::PointerButton::Primary) {
+            let grab = resp
+                .interact_pointer_pos()
+                .map(|p| p - r.min)
+                .unwrap_or(egui::vec2(12.0, 12.0));
+            app.docker_drag = Some(DockerDrag {
+                tab,
+                grab: egui::vec2(grab.x.min(60.0), grab.y.min(TITLE_H)),
+                last: None,
+            });
+        }
         if resp.clicked() {
             let on_close = resp
                 .interact_pointer_pos()
@@ -114,10 +136,9 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             if on_close {
                 app.close_docker(tab);
             } else if active {
-                app.show_dockers = false;
+                app.set_docker_column(place, false, None);
             } else {
-                app.show_dockers = true;
-                app.docker_tab = tab;
+                app.set_docker_column(place, true, Some(tab));
             }
         }
         egui::Popup::context_menu(&resp)
@@ -125,6 +146,8 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| {
                 crate::ui::menus::body(ui, |ui| {
+                    place_menu(app, ui, tab);
+                    crate::ui::menus::sep(ui);
                     if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
                         app.close_docker(tab);
                     }
@@ -149,21 +172,20 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
     let resp = resp.on_hover_text(tr("docker.add_docker"));
     // The panels in the groups of the Window menu, a box ticked at each
-    // one in the column: ticking opens it in front, unticking closes it.
+    // one open anywhere: ticking opens it in front of this column,
+    // unticking closes it.
     egui::Popup::menu(&resp)
-        .id(egui::Id::new("docker_add_menu"))
+        .id(egui::Id::new(("docker_add_menu", place as u8)))
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| {
             crate::ui::menus::body(ui, |ui| {
                 let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
-                    let open = app.open_dockers.contains(&tab);
+                    let open = app.docker_open(tab);
                     if crate::ui::menus::check(ui, tab.key(), "", open) {
                         if open {
                             app.close_docker(tab);
                         } else {
-                            app.open_dockers.push(tab);
-                            app.show_dockers = true;
-                            app.docker_tab = tab;
+                            app.move_docker(tab, place, None);
                         }
                     }
                 };
@@ -183,6 +205,175 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
                 }
             })
         });
+}
+
+/// The places a docker can go, a dot at the one it has (a tab's menu and
+/// a docker's title menu).
+fn place_menu(app: &mut App, ui: &mut Ui, tab: DockerTab) {
+    let current = app.docker_place(tab);
+    for (key, place) in [
+        ("bars.right", DockerPlace::Right),
+        ("bars.left", DockerPlace::Left),
+        ("bars.floating", DockerPlace::Floating),
+    ] {
+        if crate::ui::menus::radio(ui, key, "", current == Some(place)) && current != Some(place) {
+            app.move_docker(tab, place, None);
+        }
+    }
+}
+
+/// A column's tab strip lies at the window's left edge: the other
+/// column's (the default column's in a right-to-left language).
+fn strip_at_left(place: DockerPlace) -> bool {
+    (place == DockerPlace::Left) != crate::i18n::is_rtl()
+}
+
+/// Where a docker dropped with the pointer at `p` goes, in a window
+/// `screen` wide: within [`crate::ui::bars::EDGE_ZONE`] of a side the
+/// column there, elsewhere floating.
+pub fn drop_target(screen: egui::Rect, p: egui::Pos2) -> DockerPlace {
+    let zone = crate::ui::bars::EDGE_ZONE;
+    let (left, right) = if crate::i18n::is_rtl() {
+        (DockerPlace::Right, DockerPlace::Left)
+    } else {
+        (DockerPlace::Left, DockerPlace::Right)
+    };
+    if p.x <= screen.left() + zone {
+        left
+    } else if p.x >= screen.right() - zone {
+        right
+    } else {
+        DockerPlace::Floating
+    }
+}
+
+/// The band (or, floating, the window) a dragged docker would take.
+fn drop_zone(
+    screen: egui::Rect,
+    menu_h: f32,
+    place: DockerPlace,
+    p: egui::Pos2,
+    grab: egui::Vec2,
+) -> egui::Rect {
+    let top = screen.top() + menu_h;
+    let w = STRIP_W + 340.0;
+    match place {
+        DockerPlace::Floating => {
+            egui::Rect::from_min_size(p - grab, crate::app::FloatingDocker::DEFAULT_SIZE)
+        }
+        place if strip_at_left(place) => egui::Rect::from_min_max(
+            egui::pos2(screen.left(), top),
+            egui::pos2(screen.left() + w, screen.bottom()),
+        ),
+        _ => egui::Rect::from_min_max(
+            egui::pos2(screen.right() - w, top),
+            egui::pos2(screen.right(), screen.bottom()),
+        ),
+    }
+}
+
+/// A docker being moved: the band or window it would take shows under the
+/// pointer, and the release puts it there (also when the pointer has left
+/// the window: the last place it was seen counts).
+pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
+    let Some(mut drag) = app.docker_drag else {
+        return;
+    };
+    let screen = ctx.content_rect();
+    let (pointer, down) = ctx.input(|i| (i.pointer.latest_pos(), i.pointer.primary_down()));
+    let Some(p) = pointer.or(drag.last) else {
+        if !down {
+            app.docker_drag = None;
+        }
+        return;
+    };
+    drag.last = Some(p);
+    app.docker_drag = Some(drag);
+    let place = drop_target(screen, p);
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("docker_drag_overlay"),
+    ));
+    let fill = egui::Color32::from_rgba_unmultiplied(0x1E, 0x78, 0xD7, 46);
+    let edge = egui::Stroke::new(1.5, egui::Color32::from_rgb(0x1E, 0x78, 0xD7));
+    let zone = drop_zone(screen, menu_h, place, p, drag.grab);
+    painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
+    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+    if !down {
+        app.docker_drag = None;
+        let at = (place == DockerPlace::Floating).then_some(zone.min);
+        // Dropped where it already is: nothing moves.
+        let same = app.docker_place(drag.tab) == Some(place) && place != DockerPlace::Floating;
+        if !same {
+            app.move_docker(drag.tab, place, at);
+        }
+    }
+}
+
+/// The floating dockers, each in a window of its own with a title bar
+/// (its name; a menu with its places; close), resizable at its edges.
+/// Dragging the title moves it (near a side it docks there).
+pub fn floating_dockers(app: &mut App, ctx: &egui::Context) {
+    let tabs: Vec<DockerTab> = app.floating_dockers.iter().map(|f| f.tab).collect();
+    for tab in tabs {
+        let Some(fd) = app.floating_dockers.iter_mut().find(|f| f.tab == tab) else {
+            continue;
+        };
+        let screen = ctx.content_rect();
+        let mut pos = fd.pos;
+        pos.x = pos
+            .x
+            .clamp(screen.left(), (screen.right() - 60.0).max(screen.left()));
+        pos.y = pos
+            .y
+            .clamp(screen.top(), (screen.bottom() - TITLE_H).max(screen.top()));
+        let size = fd.size;
+        let place = std::mem::take(&mut fd.place);
+        let mut window = egui::Window::new(tr(tab.key()))
+            .id(egui::Id::new(("floating_docker", tab.key())))
+            .title_bar(false)
+            .collapsible(false)
+            .movable(false)
+            .resizable(true)
+            .default_size(size)
+            .default_pos(pos)
+            .frame(
+                egui::Frame::new()
+                    .fill(crate::theme::Tokens::field())
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        crate::theme::Tokens::window_border(),
+                    ))
+                    .shadow(crate::theme::shadow(egui::epaint::Shadow {
+                        offset: [0, 3],
+                        blur: 10,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(50),
+                    })),
+            );
+        if place {
+            window = window.current_pos(pos).fixed_size(size);
+        }
+        let shown = window.show(ctx, |ui| {
+            ui.set_min_size(ui.available_size());
+            docker_title(app, ui, tab, DockerPlace::Floating);
+            let content = ui.available_rect_before_wrap();
+            let inner = content.shrink2(egui::vec2(8.0, 6.0));
+            let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+            page.set_clip_rect(content.intersect(ui.clip_rect()));
+            ui.advance_cursor_after_rect(content);
+            docker_page(app, &mut page, tab);
+        });
+        if let Some(shown) = shown {
+            if let Some(fd) = app.floating_dockers.iter_mut().find(|f| f.tab == tab) {
+                let r = shown.response.rect;
+                if r.is_finite() && r.width() >= 120.0 && r.height() >= 120.0 {
+                    fd.pos = r.min;
+                    fd.size = r.size();
+                }
+            }
+        }
+    }
 }
 
 type TabIcon = fn(&egui::Painter, egui::Rect);
@@ -253,20 +444,74 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
     }
 }
 
-/// The open docker: its title bar (name, collapse and close), then its
-/// page on white.
-pub fn dockers(app: &mut App, ui: &mut Ui) {
+/// The docker column at `place`: the title bar of the docker in front,
+/// then its page in the width the column has.
+pub fn dockers(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     let full = ui.max_rect();
-    let (bar, _) = ui.allocate_exact_size(egui::vec2(full.width(), TITLE_H), egui::Sense::hover());
+    let (_, front, _) = app.docker_column(place);
+    docker_title(app, ui, front, place);
+    let content = egui::Rect::from_min_max(egui::pos2(full.left(), full.top() + TITLE_H), full.max);
+    ui.painter()
+        .rect_filled(content, 0.0, crate::theme::Tokens::field());
+    // The docker keeps the width it was given (its default or the one the
+    // user dragged it to): the page lies in a child that never widens the
+    // panel, clipped to the docker, so no section can push it wider.
+    let inner = content.shrink2(egui::vec2(8.0, 6.0));
+    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    page.set_clip_rect(content.intersect(ui.clip_rect()));
+    ui.advance_cursor_after_rect(content);
+    docker_page(app, &mut page, front);
+    // How wide the page's widgets came out, for the tests that check
+    // that every section keeps to the docker.
+    #[cfg(test)]
+    {
+        let need = page.min_rect().width() - inner.width();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("docker_overflow"), need));
+    }
+}
+
+/// A docker's title bar: its name, then collapse (a column's) and close in
+/// grey at the right. Dragging it moves the docker; a right click lists
+/// its places.
+fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) {
+    let full = ui.max_rect();
+    let (bar, resp) = ui.allocate_exact_size(
+        egui::vec2(full.width(), TITLE_H),
+        egui::Sense::click_and_drag(),
+    );
     ui.painter()
         .rect_filled(bar, 0.0, crate::theme::Tokens::tab_strip());
     ui.painter().text(
         egui::pos2(bar.left() + 7.0, bar.center().y),
         egui::Align2::LEFT_CENTER,
-        tr(app.docker_tab.key()),
+        tr(tab.key()),
         egui::FontId::proportional(12.0),
         Tokens::text(),
     );
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        let grab = resp
+            .interact_pointer_pos()
+            .map(|p| p - bar.min)
+            .unwrap_or(egui::vec2(12.0, 12.0));
+        app.docker_drag = Some(DockerDrag {
+            tab,
+            grab: egui::vec2(grab.x.clamp(0.0, 300.0), grab.y.clamp(0.0, TITLE_H)),
+            last: None,
+        });
+    }
+    egui::Popup::context_menu(&resp)
+        .id(egui::Id::new(("docker_title_menu", tab.key())))
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| {
+            crate::ui::menus::body(ui, |ui| {
+                place_menu(app, ui, tab);
+                crate::ui::menus::sep(ui);
+                if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
+                    app.close_docker(tab);
+                }
+            })
+        });
     let grey = crate::theme::Tokens::text_dim();
     // Close, at the right end.
     let close = egui::Rect::from_center_size(
@@ -274,7 +519,11 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         egui::vec2(20.0, 20.0),
     );
     let resp = ui
-        .interact(close, egui::Id::new("docker_close"), egui::Sense::click())
+        .interact(
+            close,
+            egui::Id::new(("docker_close", tab.key())),
+            egui::Sense::click(),
+        )
         .on_hover_text(tr("docker.close_docker"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
     let c = close.center();
@@ -284,7 +533,10 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
     ui.painter()
         .line_segment([c + egui::vec2(4.5, -4.5), c + egui::vec2(-4.5, 4.5)], s);
     if resp.clicked() {
-        app.close_docker(app.docker_tab);
+        app.close_docker(tab);
+    }
+    if place == DockerPlace::Floating {
+        return;
     }
     // Collapse: two small triangles.
     let fold = egui::Rect::from_center_size(
@@ -292,7 +544,11 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         egui::vec2(20.0, 20.0),
     );
     let resp = ui
-        .interact(fold, egui::Id::new("docker_fold"), egui::Sense::click())
+        .interact(
+            fold,
+            egui::Id::new(("docker_fold", place as u8)),
+            egui::Sense::click(),
+        )
         .on_hover_text(tr("docker.collapse"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
     for dx in [-3.5f32, 3.0] {
@@ -308,53 +564,36 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         ));
     }
     if resp.clicked() {
-        app.show_dockers = false;
-    }
-    let content = egui::Rect::from_min_max(egui::pos2(full.left(), bar.bottom()), full.max);
-    ui.painter()
-        .rect_filled(content, 0.0, crate::theme::Tokens::field());
-    // The docker keeps the width it was given (its default or the one the
-    // user dragged it to): the page lies in a child that never widens the
-    // panel, clipped to the docker, so no section can push it wider.
-    let inner = content.shrink2(egui::vec2(8.0, 6.0));
-    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    page.set_clip_rect(content.intersect(ui.clip_rect()));
-    ui.advance_cursor_after_rect(content);
-    docker_page(app, &mut page);
-    // How wide the page's widgets came out, for the tests that check
-    // that every section keeps to the docker.
-    #[cfg(test)]
-    {
-        let need = page.min_rect().width() - inner.width();
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(egui::Id::new("docker_overflow"), need));
+        app.set_docker_column(place, false, None);
     }
 }
 
-/// The page of the docker shown: its own layout under the title bar.
-fn docker_page(app: &mut App, ui: &mut Ui) {
+/// The page of the docker `tab`: its own layout under the title bar.
+fn docker_page(app: &mut App, ui: &mut Ui, tab: DockerTab) {
     // Hints scrolls its page above its own navigation bar.
-    if app.docker_tab == DockerTab::Hints {
+    if tab == DockerTab::Hints {
         crate::ui::hints::hints_docker(app, ui);
         return;
     }
     // AI Generate keeps Generate at the bottom, under its own scroll.
-    if app.docker_tab == DockerTab::AiGenerate {
+    if tab == DockerTab::AiGenerate {
         crate::ui::ai_generate_docker::ai_generate(app, ui);
         return;
     }
     // Objects keeps its New Layer and Delete bar under the tree.
-    if app.docker_tab == DockerTab::Objects {
+    if tab == DockerTab::Objects {
         crate::ui::objects_docker::objects_docker(app, ui);
         return;
     }
-    egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
-        DockerTab::Properties => properties(app, ui),
-        DockerTab::Hints | DockerTab::Objects => {}
-        DockerTab::Transformations => crate::ui::transform_docker::transformations(app, ui),
-        DockerTab::Undo => undo_docker(app, ui),
-        other => crate::ui::dockers2::show(app, ui, other),
-    });
+    egui::ScrollArea::vertical()
+        .id_salt(("docker_scroll", tab.key()))
+        .show(ui, |ui| match tab {
+            DockerTab::Properties => properties(app, ui),
+            DockerTab::Hints | DockerTab::Objects => {}
+            DockerTab::Transformations => crate::ui::transform_docker::transformations(app, ui),
+            DockerTab::Undo => undo_docker(app, ui),
+            other => crate::ui::dockers2::show(app, ui, other),
+        });
 }
 
 fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
@@ -2274,7 +2513,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            let mut out = ctx.run_ui(input, |ui| tab_strip(app, ui));
+            let mut out = ctx.run_ui(input, |ui| tab_strip(app, ui, DockerPlace::Right));
             out.textures_delta.clear();
         };
         run(&mut app, Vec::new());
@@ -2306,6 +2545,123 @@ mod tests {
         // On the cross: closed.
         click(&mut app, cross);
         assert!(!app.open_dockers.contains(&first), "{:?}", app.open_dockers);
+    }
+
+    /// A docker dragged by its tab (or its title) and dropped near the
+    /// left edge goes to the column there, and the window draws with both
+    /// columns and a floating docker.
+    #[test]
+    fn a_docker_dragged_to_a_side_docks_there_and_the_window_draws_them_all() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+        };
+        run(&mut app, Vec::new());
+        // A drag under way (as a tab starts one), the pointer held down
+        // at the left edge: the band shows; the release docks it there.
+        app.docker_drag = Some(DockerDrag {
+            tab: DockerTab::Hints,
+            grab: egui::vec2(10.0, 10.0),
+            last: None,
+        });
+        let at = egui::pos2(20.0, 450.0);
+        run(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert!(app.docker_drag.is_some());
+        assert_eq!(app.docker_place(DockerTab::Hints), Some(DockerPlace::Right));
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.docker_drag.is_none());
+        assert_eq!(app.docker_place(DockerTab::Hints), Some(DockerPlace::Left));
+        assert!(app.show_left_dockers && app.left_tab == DockerTab::Hints);
+        // The middle of the window: floating, with its top left corner
+        // where the grab point puts it.
+        app.docker_drag = Some(DockerDrag {
+            tab: DockerTab::Objects,
+            grab: egui::vec2(10.0, 10.0),
+            last: None,
+        });
+        let at = egui::pos2(600.0, 300.0);
+        run(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(
+            app.docker_place(DockerTab::Objects),
+            Some(DockerPlace::Floating)
+        );
+        let fd = app.floating_dockers[0];
+        assert_eq!(fd.pos, egui::pos2(590.0, 290.0));
+        // Both columns and the floating window draw, and the floating
+        // window keeps near where it was put.
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let fd = app.floating_dockers[0];
+        assert!(
+            (fd.pos.x - 590.0).abs() < 2.0 && (fd.pos.y - 290.0).abs() < 2.0,
+            "{fd:?}"
+        );
+        assert!(fd.size.x > 200.0 && fd.size.y > 200.0, "{fd:?}");
+        assert_eq!(app.open_dockers, [DockerTab::Properties]);
+        // Dropped at the right edge: back in the default column, in front.
+        assert_eq!(
+            drop_target(ctx.content_rect(), egui::pos2(1390.0, 400.0)),
+            DockerPlace::Right
+        );
+        app.move_docker(DockerTab::Objects, DockerPlace::Right, None);
+        assert!(app.floating_dockers.is_empty());
+        assert_eq!(
+            app.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        assert_eq!(app.docker_tab, DockerTab::Objects);
+        run(&mut app, Vec::new());
     }
 
     /// Dragging in the outline colour picker, as with the fill: every

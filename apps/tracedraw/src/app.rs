@@ -1268,8 +1268,23 @@ pub struct App {
     pub effect_node_drag: Option<(ShapeId, usize)>,
     /// A step of the effect node drag under way is on the undo list.
     pub effect_node_stepped: bool,
-    /// Dockers added to the tab strip beyond the defaults.
+    /// The dockers of the default column (at the right; `docker_tab` is
+    /// the one in front, `show_dockers` whether the column is open).
     pub open_dockers: Vec<DockerTab>,
+    /// The dockers of the column at the other side of the window (the
+    /// left), the one in front and whether the column is open.
+    pub left_dockers: Vec<DockerTab>,
+    pub left_tab: DockerTab,
+    pub show_left_dockers: bool,
+    /// Dockers floating over the window, each in a window of its own.
+    pub floating_dockers: Vec<FloatingDocker>,
+    /// A docker being moved by its tab or its title (see ui/dockers.rs).
+    pub docker_drag: Option<DockerDrag>,
+    /// The default column's front tab and whether it was open, as the
+    /// last frame left them: a docker of another place brought to the
+    /// front through `docker_tab` is put in front there and the column
+    /// goes back to this (see [`App::reconcile_dockers`]).
+    pub docker_last: (DockerTab, bool),
     pub free_transform_last: Point,
     pub free_transform_mode: FreeTransformMode,
     pub free_transform_duplicate: bool,
@@ -1695,6 +1710,42 @@ impl DockerTab {
     }
 }
 
+/// Where a docker lies: the default column (the right side of the
+/// window; the left in a right-to-left language), the column at the
+/// other side, or a window of its own over the drawing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockerPlace {
+    Right,
+    Left,
+    Floating,
+}
+
+/// A docker in a window of its own: its tab, where the window is and how
+/// large (screen points).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatingDocker {
+    pub tab: DockerTab,
+    pub pos: Pos2,
+    pub size: egui::Vec2,
+    /// The window is put at `pos` on the next frame (it was just dropped
+    /// or moved); otherwise it keeps where egui has it.
+    pub place: bool,
+}
+
+impl FloatingDocker {
+    /// The size a docker floats at when first dropped.
+    pub const DEFAULT_SIZE: egui::Vec2 = egui::vec2(340.0, 480.0);
+}
+
+/// A docker being moved: its tab, where on the window (or the tab) it
+/// was grabbed, and the last pointer position seen.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DockerDrag {
+    pub tab: DockerTab,
+    pub grab: egui::Vec2,
+    pub last: Option<Pos2>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformTab {
     Position,
@@ -2058,6 +2109,12 @@ impl App {
             effect_node_drag: None,
             effect_node_stepped: false,
             open_dockers: DockerTab::default_strip(),
+            left_dockers: Vec::new(),
+            left_tab: DockerTab::Hints,
+            show_left_dockers: false,
+            floating_dockers: Vec::new(),
+            docker_drag: None,
+            docker_last: (DockerTab::Hints, true),
             free_transform_last: Point::ZERO,
             free_transform_mode: FreeTransformMode::Rotation,
             free_transform_duplicate: false,
@@ -2768,20 +2825,30 @@ impl App {
         true
     }
 
-    /// The docker tab column now (see [`crate::settings::DockerSetup`]).
+    /// The dockers as they are now: the default column, the other column
+    /// and the floating ones (see [`crate::settings::DockerSetup`]).
     pub fn docker_setup(&self) -> crate::settings::DockerSetup {
+        let keys = |tabs: &[DockerTab]| tabs.iter().map(|t| t.key().to_string()).collect();
         crate::settings::DockerSetup {
-            open: self
-                .open_dockers
-                .iter()
-                .map(|t| t.key().to_string())
-                .collect(),
+            open: keys(&self.open_dockers),
             front: self.docker_tab.key().to_string(),
+            left: keys(&self.left_dockers),
+            left_front: self.left_tab.key().to_string(),
+            left_shown: self.show_left_dockers,
+            floating: self
+                .floating_dockers
+                .iter()
+                .map(|f| crate::settings::FloatingSetup {
+                    tab: f.tab.key().to_string(),
+                    pos: [f.pos.x, f.pos.y],
+                    size: [f.size.x, f.size.y],
+                })
+                .collect(),
         }
     }
 
-    /// Put the docker tab column back as `setup` says; names of no docker
-    /// are skipped.
+    /// Put the dockers back as `setup` says; names of no docker are
+    /// skipped, and a docker named in two places keeps the first.
     pub fn set_docker_setup(&mut self, setup: &crate::settings::DockerSetup) {
         // AI Drawing is a mode of AI Generate now.
         let by_key = |k: &str| {
@@ -2792,13 +2859,46 @@ impl App {
             };
             DockerTab::ALL.iter().copied().find(|t| t.key() == k)
         };
-        let mut open: Vec<DockerTab> = Vec::new();
-        for t in setup.open.iter().filter_map(|k| by_key(k)) {
-            if !open.contains(&t) {
-                open.push(t);
+        let mut seen: Vec<DockerTab> = Vec::new();
+        let mut take = |keys: &[String]| -> Vec<DockerTab> {
+            let mut out = Vec::new();
+            for t in keys.iter().filter_map(|k| by_key(k)) {
+                if !seen.contains(&t) {
+                    seen.push(t);
+                    out.push(t);
+                }
             }
-        }
-        self.open_dockers = open;
+            out
+        };
+        self.open_dockers = take(&setup.open);
+        self.left_dockers = take(&setup.left);
+        self.floating_dockers = setup
+            .floating
+            .iter()
+            .filter_map(|f| {
+                let tab = by_key(&f.tab)?;
+                if seen.contains(&tab) {
+                    return None;
+                }
+                seen.push(tab);
+                let finite = f.pos.iter().chain(&f.size).all(|v| v.is_finite());
+                let size = if finite && f.size[0] >= 120.0 && f.size[1] >= 120.0 {
+                    egui::vec2(f.size[0], f.size[1])
+                } else {
+                    FloatingDocker::DEFAULT_SIZE
+                };
+                Some(FloatingDocker {
+                    tab,
+                    pos: if finite {
+                        Pos2::new(f.pos[0].max(0.0), f.pos[1].max(0.0))
+                    } else {
+                        Pos2::new(200.0, 100.0)
+                    },
+                    size,
+                    place: true,
+                })
+            })
+            .collect();
         if let Some(t) = by_key(&setup.front) {
             self.docker_tab = t;
         }
@@ -2807,28 +2907,206 @@ impl App {
         } else if !self.open_dockers.contains(&self.docker_tab) {
             self.docker_tab = self.open_dockers[0];
         }
+        if let Some(t) = by_key(&setup.left_front) {
+            self.left_tab = t;
+        }
+        if self.left_dockers.is_empty() {
+            self.show_left_dockers = false;
+        } else {
+            if !self.left_dockers.contains(&self.left_tab) {
+                self.left_tab = self.left_dockers[0];
+            }
+            self.show_left_dockers = setup.left_shown;
+        }
+        self.docker_last = (self.docker_tab, self.show_dockers);
     }
 
-    /// Close a docker: its tab leaves the column and the next one comes to
-    /// the front; with none left the docker area closes.
-    pub fn close_docker(&mut self, tab: DockerTab) {
-        let at = self.open_dockers.iter().position(|t| *t == tab);
-        self.open_dockers.retain(|t| *t != tab);
-        if self.docker_tab == tab {
-            let next = at
-                .and_then(|i| {
-                    self.open_dockers
-                        .get(i.min(self.open_dockers.len().saturating_sub(1)))
-                })
-                .copied();
-            match next {
-                Some(t) => self.docker_tab = t,
-                None => self.show_dockers = false,
+    /// Where `tab` lies, if it is open anywhere.
+    pub fn docker_place(&self, tab: DockerTab) -> Option<DockerPlace> {
+        if self.open_dockers.contains(&tab) {
+            Some(DockerPlace::Right)
+        } else if self.left_dockers.contains(&tab) {
+            Some(DockerPlace::Left)
+        } else if self.floating_dockers.iter().any(|f| f.tab == tab) {
+            Some(DockerPlace::Floating)
+        } else {
+            None
+        }
+    }
+
+    /// `tab` is open somewhere (in a column, in front or behind, or
+    /// floating).
+    pub fn docker_open(&self, tab: DockerTab) -> bool {
+        self.docker_place(tab).is_some()
+    }
+
+    /// `tab` is on screen: in front of an open column, or floating.
+    pub fn docker_shown(&self, tab: DockerTab) -> bool {
+        match self.docker_place(tab) {
+            Some(DockerPlace::Right) => self.show_dockers && self.docker_tab == tab,
+            Some(DockerPlace::Left) => self.show_left_dockers && self.left_tab == tab,
+            Some(DockerPlace::Floating) => true,
+            None => false,
+        }
+    }
+
+    /// The tabs of a column, the one in front and whether it is open.
+    pub fn docker_column(&self, place: DockerPlace) -> (&[DockerTab], DockerTab, bool) {
+        match place {
+            DockerPlace::Left => (&self.left_dockers, self.left_tab, self.show_left_dockers),
+            _ => (&self.open_dockers, self.docker_tab, self.show_dockers),
+        }
+    }
+
+    /// Open or close a column, and put `front` in front of it when given.
+    pub fn set_docker_column(&mut self, place: DockerPlace, shown: bool, front: Option<DockerTab>) {
+        match place {
+            DockerPlace::Left => {
+                self.show_left_dockers = shown;
+                if let Some(t) = front {
+                    self.left_tab = t;
+                }
+            }
+            _ => {
+                self.show_dockers = shown;
+                if let Some(t) = front {
+                    self.docker_tab = t;
+                }
+                self.docker_last = (self.docker_tab, self.show_dockers);
             }
         }
-        if self.open_dockers.is_empty() {
-            self.show_dockers = false;
+    }
+
+    /// Bring `tab` to the front where it lies; a docker open nowhere
+    /// joins the default column.
+    pub fn open_docker(&mut self, tab: DockerTab) {
+        match self.docker_place(tab) {
+            Some(DockerPlace::Left) => {
+                self.left_tab = tab;
+                self.show_left_dockers = true;
+            }
+            Some(DockerPlace::Floating) => {}
+            Some(DockerPlace::Right) | None => {
+                if !self.open_dockers.contains(&tab) {
+                    self.open_dockers.push(tab);
+                }
+                self.docker_tab = tab;
+                self.show_dockers = true;
+                self.docker_last = (tab, true);
+            }
         }
+    }
+
+    /// Put `tab` at `place`: at the front of that column (opening it), or
+    /// floating with its top left corner at `at` (where it last floated,
+    /// or a stock place, when `None`). It leaves where it was.
+    pub fn move_docker(&mut self, tab: DockerTab, place: DockerPlace, at: Option<Pos2>) {
+        let was = self
+            .floating_dockers
+            .iter()
+            .find(|f| f.tab == tab)
+            .map(|f| (f.pos, f.size));
+        self.take_docker(tab);
+        match place {
+            DockerPlace::Right => {
+                self.open_dockers.push(tab);
+                self.docker_tab = tab;
+                self.show_dockers = true;
+                self.docker_last = (tab, true);
+            }
+            DockerPlace::Left => {
+                self.left_dockers.push(tab);
+                self.left_tab = tab;
+                self.show_left_dockers = true;
+            }
+            DockerPlace::Floating => {
+                let (pos, size) =
+                    was.unwrap_or((Pos2::new(200.0, 100.0), FloatingDocker::DEFAULT_SIZE));
+                let pos = at.filter(|p| p.is_finite()).unwrap_or(pos);
+                self.floating_dockers.push(FloatingDocker {
+                    tab,
+                    pos: Pos2::new(pos.x.max(0.0), pos.y.max(0.0)),
+                    size,
+                    place: true,
+                });
+            }
+        }
+    }
+
+    /// Take `tab` out of wherever it is, the column it leaves showing the
+    /// tab next to it (or closing when none is left).
+    fn take_docker(&mut self, tab: DockerTab) {
+        let at = self.open_dockers.iter().position(|t| *t == tab);
+        self.open_dockers.retain(|t| *t != tab);
+        if let Some(i) = at {
+            if self.docker_tab == tab {
+                match self
+                    .open_dockers
+                    .get(i.min(self.open_dockers.len().saturating_sub(1)))
+                {
+                    Some(t) => self.docker_tab = *t,
+                    None => self.show_dockers = false,
+                }
+            }
+            if self.open_dockers.is_empty() {
+                self.show_dockers = false;
+            }
+            self.docker_last = (self.docker_tab, self.show_dockers);
+        }
+        let at = self.left_dockers.iter().position(|t| *t == tab);
+        self.left_dockers.retain(|t| *t != tab);
+        if let Some(i) = at {
+            if self.left_tab == tab {
+                match self
+                    .left_dockers
+                    .get(i.min(self.left_dockers.len().saturating_sub(1)))
+                {
+                    Some(t) => self.left_tab = *t,
+                    None => self.show_left_dockers = false,
+                }
+            }
+            if self.left_dockers.is_empty() {
+                self.show_left_dockers = false;
+            }
+        }
+        self.floating_dockers.retain(|f| f.tab != tab);
+    }
+
+    /// Close a docker wherever it is: its tab leaves its column and the
+    /// next one comes to the front (with none left the column closes), or
+    /// its window closes.
+    pub fn close_docker(&mut self, tab: DockerTab) {
+        self.take_docker(tab);
+    }
+
+    /// Once a frame, before the dockers draw: a docker brought to the
+    /// front the old way (`docker_tab` set and `show_dockers` on) that
+    /// lies in the other column or floats is put in front there, and the
+    /// default column goes back to how the last frame left it; one open
+    /// nowhere joins the default column.
+    pub fn reconcile_dockers(&mut self) {
+        if self.show_dockers && !self.open_dockers.contains(&self.docker_tab) {
+            let tab = self.docker_tab;
+            match self.docker_place(tab) {
+                Some(DockerPlace::Left) => {
+                    self.left_tab = tab;
+                    self.show_left_dockers = true;
+                    (self.docker_tab, self.show_dockers) = self.docker_last;
+                }
+                Some(DockerPlace::Floating) => {
+                    (self.docker_tab, self.show_dockers) = self.docker_last;
+                }
+                _ => self.open_dockers.push(tab),
+            }
+            // The column's front must be one of its tabs.
+            if !self.open_dockers.contains(&self.docker_tab) {
+                match self.open_dockers.first() {
+                    Some(t) => self.docker_tab = *t,
+                    None => self.show_dockers = false,
+                }
+            }
+        }
+        self.docker_last = (self.docker_tab, self.show_dockers);
     }
 
     /// The tool each toolbox group shows, from tool ids (one per group, in
@@ -2986,11 +3264,7 @@ impl App {
     }
 
     pub fn open_ai_generate(&mut self) {
-        if !self.open_dockers.contains(&DockerTab::AiGenerate) {
-            self.open_dockers.push(DockerTab::AiGenerate);
-        }
-        self.show_dockers = true;
-        self.docker_tab = DockerTab::AiGenerate;
+        self.open_docker(DockerTab::AiGenerate);
     }
 
     /// File > New From Template.
@@ -3271,11 +3545,14 @@ impl App {
     /// Open the docker (or hide the column when it is already the active
     /// tab), as the docker shortcuts do.
     pub fn toggle_docker(&mut self, tab: DockerTab) {
-        if self.show_dockers && self.docker_tab == tab {
-            self.show_dockers = false;
+        if self.docker_shown(tab) {
+            match self.docker_place(tab) {
+                Some(DockerPlace::Left) => self.show_left_dockers = false,
+                Some(DockerPlace::Floating) => self.close_docker(tab),
+                _ => self.set_docker_column(DockerPlace::Right, false, None),
+            }
         } else {
-            self.show_dockers = true;
-            self.docker_tab = tab;
+            self.open_docker(tab);
         }
     }
 
@@ -6057,6 +6334,79 @@ mod tests {
         assert!(carried_cmyk_profile(&doc).is_none());
     }
 
+    /// Dockers move between the two columns and float; one brought to
+    /// the front the old way is put in front where it lies; the places
+    /// survive the preferences.
+    #[test]
+    fn dockers_move_between_the_columns_and_float() {
+        let mut app = App::headless();
+        assert_eq!(app.open_dockers, DockerTab::default_strip());
+        app.move_docker(DockerTab::Hints, DockerPlace::Left, None);
+        assert_eq!(app.left_dockers, [DockerTab::Hints]);
+        assert!(app.show_left_dockers && app.left_tab == DockerTab::Hints);
+        assert_eq!(
+            app.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        assert_eq!(app.docker_tab, DockerTab::Properties);
+        assert!(app.docker_shown(DockerTab::Hints) && app.docker_shown(DockerTab::Properties));
+        // The old way of bringing a docker to the front, from a menu or
+        // a shortcut: the left column shows it and the right column stays
+        // as it was.
+        app.show_dockers = false;
+        app.reconcile_dockers();
+        app.show_left_dockers = false;
+        app.docker_tab = DockerTab::Hints;
+        app.show_dockers = true;
+        app.reconcile_dockers();
+        assert!(app.show_left_dockers && app.left_tab == DockerTab::Hints);
+        assert!(!app.show_dockers && app.docker_tab == DockerTab::Properties);
+        assert_eq!(
+            app.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        // Toggling a left docker closes its column; again, opens it.
+        app.toggle_docker(DockerTab::Hints);
+        assert!(!app.show_left_dockers);
+        app.toggle_docker(DockerTab::Hints);
+        assert!(app.show_left_dockers);
+        // Floating: where it is dropped; closed, it is gone; opened again
+        // from a menu, it joins the default column.
+        app.move_docker(
+            DockerTab::Objects,
+            DockerPlace::Floating,
+            Some(Pos2::new(300.0, 200.0)),
+        );
+        assert_eq!(
+            app.docker_place(DockerTab::Objects),
+            Some(DockerPlace::Floating)
+        );
+        assert_eq!(app.floating_dockers[0].pos, Pos2::new(300.0, 200.0));
+        assert!(app.docker_shown(DockerTab::Objects));
+        assert_eq!(app.open_dockers, [DockerTab::Properties]);
+        // The places survive the preferences.
+        let setup = app.docker_setup();
+        let mut next = App::headless();
+        next.set_docker_setup(&setup);
+        assert_eq!(next.left_dockers, [DockerTab::Hints]);
+        assert!(next.show_left_dockers);
+        assert_eq!(next.floating_dockers[0].tab, DockerTab::Objects);
+        assert_eq!(next.floating_dockers[0].pos, Pos2::new(300.0, 200.0));
+        assert_eq!(next.open_dockers, [DockerTab::Properties]);
+        app.close_docker(DockerTab::Objects);
+        assert_eq!(app.docker_place(DockerTab::Objects), None);
+        app.toggle_docker(DockerTab::Objects);
+        assert_eq!(
+            app.open_dockers,
+            [DockerTab::Properties, DockerTab::Objects]
+        );
+        assert!(app.show_dockers && app.docker_tab == DockerTab::Objects);
+        // Taking the last docker out of the left column closes it.
+        app.move_docker(DockerTab::Hints, DockerPlace::Right, None);
+        assert!(app.left_dockers.is_empty() && !app.show_left_dockers);
+        assert_eq!(app.docker_tab, DockerTab::Hints);
+    }
+
     #[test]
     fn a_closed_docker_stays_closed_the_next_time() {
         let mut app = App::headless();
@@ -6066,6 +6416,7 @@ mod tests {
                 .map(|t| t.key().to_string())
                 .collect(),
             front: DockerTab::Hints.key().into(),
+            ..Default::default()
         });
         app.show_dockers = true;
         assert_eq!(app.open_dockers, DockerTab::default_strip());
@@ -6120,6 +6471,7 @@ mod tests {
         fourth.set_docker_setup(&crate::settings::DockerSetup {
             open: vec!["no.such.key".into(), "docker.objects".into()],
             front: "no.such.key".into(),
+            ..Default::default()
         });
         assert_eq!(fourth.open_dockers, [DockerTab::Objects]);
         assert_eq!(fourth.docker_tab, DockerTab::Objects);

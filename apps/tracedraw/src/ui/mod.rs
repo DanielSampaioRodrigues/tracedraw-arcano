@@ -479,30 +479,47 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         }
     }
 
-    // Right-to-left languages mirror the workspace: dockers sit on the left.
+    // The docker columns: the default one at the right (right-to-left
+    // languages mirror the workspace: it sits on the left), the other at
+    // the other side, each a tab strip and, when open, the docker in
+    // front. The other column exists only while it holds a docker.
+    app.reconcile_dockers();
     let rtl = crate::i18n::is_rtl();
-    let docker_tabs = if rtl {
-        Panel::left("docker_tabs")
-    } else {
-        Panel::right("docker_tabs")
-    };
-    docker_tabs
-        .exact_size(27.0)
-        .resizable(false)
-        .show_separator_line(false)
-        .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
-        .show(ui, |ui| dockers::tab_strip(app, ui));
-    if app.show_dockers {
-        let dockers_panel = if rtl {
-            Panel::left("dockers")
+    use crate::app::DockerPlace;
+    for place in [DockerPlace::Right, DockerPlace::Left] {
+        if place == DockerPlace::Left && app.left_dockers.is_empty() {
+            continue;
+        }
+        let at_left = (place == DockerPlace::Left) != rtl;
+        let id = if place == DockerPlace::Left {
+            ("docker_tabs_left", "dockers_left")
         } else {
-            Panel::right("dockers")
+            ("docker_tabs", "dockers")
         };
-        dockers_panel
-            .default_size(340.0)
-            .resizable(true)
-            .frame(Frame::new().fill(crate::theme::Tokens::field()))
-            .show(ui, |ui| dockers::dockers(app, ui));
+        let docker_tabs = if at_left {
+            Panel::left(id.0)
+        } else {
+            Panel::right(id.0)
+        };
+        docker_tabs
+            .exact_size(dockers::STRIP_W)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
+            .show(ui, |ui| dockers::tab_strip(app, ui, place));
+        let (_, _, shown) = app.docker_column(place);
+        if shown {
+            let dockers_panel = if at_left {
+                Panel::left(id.1)
+            } else {
+                Panel::right(id.1)
+            };
+            dockers_panel
+                .default_size(340.0)
+                .resizable(true)
+                .frame(Frame::new().fill(crate::theme::Tokens::field()))
+                .show(ui, |ui| dockers::dockers(app, ui, place));
+        }
     }
 
     if app.show_toolbox && bars_layout.dock(Bar::Toolbox).horizontal() {
@@ -556,9 +573,12 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     }
     palette::popups(app, &ctx);
 
-    // Floating bars over the window, and a bar being moved.
+    // Floating bars over the window, and a bar being moved; the floating
+    // dockers and a docker being moved likewise.
     bars::floating_bars(app, &ctx);
     bars::drag_overlay(app, &ctx, 24.0);
+    dockers::floating_dockers(app, &ctx);
+    dockers::drag_overlay(app, &ctx, 24.0);
 
     // Document tabs above the rulers.
     // The tabs' blue line is the strip's lower edge: no separator and no

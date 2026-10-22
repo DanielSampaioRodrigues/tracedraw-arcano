@@ -1686,7 +1686,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         app.dialog = crate::ui::dialogs::Dialog::TextDropCap;
     }
     vsep(ui);
-    let docker_open = app.show_dockers && app.docker_tab == crate::app::DockerTab::Text;
+    let docker_open = app.docker_shown(crate::app::DockerTab::Text);
     if pic_button(
         ui,
         Pic::TextProperties,

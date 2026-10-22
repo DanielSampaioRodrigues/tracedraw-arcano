@@ -598,7 +598,7 @@ fn help_shots() {
                     );
                     ui.painter()
                         .rect_filled(rect, 0.0, crate::theme::Tokens::field());
-                    crate::ui::dockers::dockers(app, &mut ui);
+                    crate::ui::dockers::dockers(app, &mut ui, crate::app::DockerPlace::Right);
                 } else {
                     crate::ui::dialogs::show(app, ctx);
                 }

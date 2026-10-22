@@ -278,11 +278,7 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         app.delete_selection();
     }
     if ci(ui, close, "menu.object.add_to_shelf", "", true) && app.shelf_add_selection() {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Shelf;
-        if !app.open_dockers.contains(&DockerTab::Shelf) {
-            app.open_dockers.push(DockerTab::Shelf);
-        }
+        app.open_docker(DockerTab::Shelf);
     }
     sep(ui);
     sub(ui, "menu.object.order", |ui| {

@@ -414,12 +414,29 @@ fn default_path_tick() -> f64 {
     1.0
 }
 
-/// The docker tab column as it was left: the dockers in it, in order, and
-/// the one in front (by their name keys, "docker.hints" ...).
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+/// The dockers as they were left: the default column's dockers, in
+/// order, and the one in front (by their name keys, "docker.hints" ...);
+/// the other column's, its front and whether it was open; and the
+/// floating ones with their windows.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct DockerSetup {
     pub open: Vec<String>,
     pub front: String,
+    pub left: Vec<String>,
+    pub left_front: String,
+    pub left_shown: bool,
+    pub floating: Vec<FloatingSetup>,
+}
+
+/// A floating docker as it was left: its name key, the window's top left
+/// corner and its size (screen points).
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct FloatingSetup {
+    pub tab: String,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette

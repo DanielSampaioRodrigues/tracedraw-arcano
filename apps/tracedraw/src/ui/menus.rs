@@ -2521,19 +2521,17 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         ui,
         "menu.object.properties",
         "Alt+Enter",
-        app.show_dockers && app.docker_tab == DockerTab::Properties,
+        app.docker_shown(DockerTab::Properties),
     ) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Properties;
+        app.open_docker(DockerTab::Properties);
     }
     if check(
         ui,
         "menu.object.objects",
         "",
-        app.show_dockers && app.docker_tab == DockerTab::Objects,
+        app.docker_shown(DockerTab::Objects),
     ) {
-        app.show_dockers = true;
-        app.docker_tab = DockerTab::Objects;
+        app.open_docker(DockerTab::Objects);
     }
 }
 
@@ -2594,15 +2592,20 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
         ("menu.effects.vector_mosaic", "", DockerTab::VectorMosaic),
     ] {
         if check(ui, key, shortcut, effect_docker_open(app, tab)) {
-            app.show_dockers = true;
-            app.docker_tab = tab;
+            app.open_docker(tab);
         }
     }
 }
 
-/// An effect panel's tab is in the shown docker column.
+/// An effect panel's tab is in an open docker column, or floating.
 pub(crate) fn effect_docker_open(app: &App, tab: DockerTab) -> bool {
-    app.show_dockers && (app.docker_tab == tab || app.open_dockers.contains(&tab))
+    match app.docker_place(tab) {
+        Some(crate::app::DockerPlace::Right) => app.show_dockers,
+        Some(crate::app::DockerPlace::Left) => app.show_left_dockers,
+        Some(crate::app::DockerPlace::Floating) => true,
+        // Brought to the front and joining the default column.
+        None => app.show_dockers && app.docker_tab == tab,
+    }
 }
 
 fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
@@ -3253,14 +3256,8 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     sub(ui, "menu.window.dockers", |ui| {
         let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
-            if check(
-                ui,
-                tab.key(),
-                tab.shortcut(),
-                app.show_dockers && app.docker_tab == tab,
-            ) {
-                app.show_dockers = true;
-                app.docker_tab = tab;
+            if check(ui, tab.key(), tab.shortcut(), app.docker_shown(tab)) {
+                app.open_docker(tab);
             }
         };
         for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
@@ -3377,13 +3374,12 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         app.show_welcome = true;
         app.welcome_tab = crate::app::WelcomeTab::Learn;
     }
-    let hints_open = app.show_dockers && app.docker_tab == DockerTab::Hints;
+    let hints_open = app.docker_shown(DockerTab::Hints);
     if check(ui, "menu.help.hints", "", hints_open) {
         if hints_open {
             app.close_docker(DockerTab::Hints);
         } else {
-            app.show_dockers = true;
-            app.docker_tab = DockerTab::Hints;
+            app.open_docker(DockerTab::Hints);
         }
     }
     if item(ui, "menu.help.quick_start_guide", "", true) {
