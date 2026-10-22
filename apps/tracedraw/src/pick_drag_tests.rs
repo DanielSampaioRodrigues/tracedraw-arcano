@@ -4025,3 +4025,57 @@ fn a_shift_marquee_inverts_the_objects_it_takes() {
     drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
     assert_eq!(app.selection.len(), 3);
 }
+
+/// With the Shape tool, the align keys align the selected nodes (#364):
+/// T to the top node, L to the leftmost, E to the middle of their box;
+/// handles move with their node; one undo step each.
+#[test]
+fn align_keys_align_selected_nodes_in_the_shape_tool() {
+    let (ctx, mut app, id) = setup();
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((10.0, 10.0));
+    path.curve_to((20.0, 10.0), (30.0, 20.0), (40.0, 30.0));
+    path.line_to((70.0, 20.0));
+    app.select(vec![id]);
+    app.delete_selection();
+    let c = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![c]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let ns = |app: &App| match app.doc().find_shape(c).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => tracedraw_core::nodes::nodes(&path),
+        _ => panic!("curve"),
+    };
+    let all: Vec<_> = ns(&app).iter().map(|n| (c, n.index)).collect();
+    assert_eq!(all.len(), 3);
+    app.node_selection = all;
+    let press = |app: &mut App, k: egui::Key| {
+        frame(&ctx, app, vec![key(k, Modifiers::NONE)], Modifiers::NONE);
+    };
+    press(&mut app, egui::Key::T);
+    let after = ns(&app);
+    assert!(
+        after.iter().all(|n| (n.pos.y - 30.0).abs() < 1e-9),
+        "{after:?}"
+    );
+    // The first node's outgoing handle moved with it, 20 mm up.
+    let first = &after[0];
+    assert!((first.ctrl_out.expect("handle").y - 30.0).abs() < 1e-9);
+    assert_eq!(app.tool, Tool::Shape);
+    assert_eq!(app.selection, vec![c]);
+    press(&mut app, egui::Key::L);
+    assert!(ns(&app).iter().all(|n| (n.pos.x - 10.0).abs() < 1e-9));
+    app.undo();
+    let back = ns(&app);
+    assert!((back[2].pos.x - 70.0).abs() < 1e-9, "{back:?}");
+    press(&mut app, egui::Key::E);
+    assert!(ns(&app).iter().all(|n| (n.pos.y - 30.0).abs() < 1e-9));
+    // One node: the keys do what they did before (nothing to the nodes).
+    app.node_selection.truncate(1);
+    assert!(!app.align_nodes_to(crate::ops::Align::Bottom));
+}

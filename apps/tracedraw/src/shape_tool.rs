@@ -886,6 +886,84 @@ impl App {
         }
     }
 
+    /// The align keys and commands (L, R, T, B, C, E) on the Shape tool's
+    /// selected nodes, two or more, as on objects (#364): to the leftmost,
+    /// rightmost, top or bottom node, or to the centre of their box.
+    /// Handles move with their node. One undo step; false when fewer than
+    /// two nodes are selected or the alignment has no node version.
+    pub fn align_nodes_to(&mut self, how: crate::ops::Align) -> bool {
+        use crate::ops::Align;
+        use tracedraw_core::geometry::{Point, Vec2};
+        if self.tool != crate::tools::Tool::Shape
+            || self.node_selection.len() < 2
+            || how == Align::CenterPage
+        {
+            return false;
+        }
+        // Each selected node on the page, with its curve's transform.
+        let mut picked: Vec<(ShapeId, usize, Point, tracedraw_core::geometry::Affine)> = Vec::new();
+        for (id, i) in self.node_selection.clone() {
+            let Some((path, _, t)) = self.path_of(id) else {
+                continue;
+            };
+            if let Some(n) = nodes::nodes(&path).into_iter().find(|n| n.index == i) {
+                picked.push((id, i, t * n.pos, t));
+            }
+        }
+        if picked.len() < 2 {
+            return false;
+        }
+        let xs = picked.iter().map(|p| p.2.x);
+        let ys = picked.iter().map(|p| p.2.y);
+        let (x0, x1) = (
+            xs.clone().fold(f64::MAX, f64::min),
+            xs.fold(f64::MIN, f64::max),
+        );
+        let (y0, y1) = (
+            ys.clone().fold(f64::MAX, f64::min),
+            ys.fold(f64::MIN, f64::max),
+        );
+        let target = |p: Point| match how {
+            Align::Left => Point::new(x0, p.y),
+            Align::Right => Point::new(x1, p.y),
+            Align::Top => Point::new(p.x, y1),
+            Align::Bottom => Point::new(p.x, y0),
+            Align::CenterV => Point::new((x0 + x1) / 2.0, p.y),
+            Align::CenterH => Point::new(p.x, (y0 + y1) / 2.0),
+            Align::CenterPage => p,
+        };
+        let mut paths: std::collections::BTreeMap<ShapeId, (BezPath, bool)> = Default::default();
+        for (id, i, at, t) in picked {
+            let to = target(at);
+            let inv = t.inverse();
+            let d: Vec2 = inv * to - inv * at;
+            if d.hypot() < 1e-12 {
+                continue;
+            }
+            let entry = match paths.entry(id) {
+                std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    let Some((path, closed, _)) = self.path_of(id) else {
+                        continue;
+                    };
+                    e.insert((path, closed))
+                }
+            };
+            entry.0 = nodes::move_node(&entry.0, i, d);
+        }
+        let cmds: Vec<Command> = paths
+            .into_iter()
+            .map(|(id, (path, closed))| Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path { path, closed },
+            })
+            .collect();
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Align Nodes", &cmds);
+        }
+        true
+    }
+
     /// The segment chosen by a click on it, as (curve, element drawing
     /// it): the spot clicked is kept and its end node is the only node
     /// chosen.

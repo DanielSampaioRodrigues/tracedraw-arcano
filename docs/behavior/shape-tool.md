@@ -103,7 +103,7 @@ Properties.
 | Extract Subpath | the subpath of the selected node becomes its own curve |
 | Reduce nodes | RDP simplification (0.3 screen pixels) of the curves with selected nodes, else of every selected curve |
 | Curve smoothness (slider, 0 to 100) | drag it to remove nodes: the tolerance is (v / 100)² × 10% of the curve's larger side, worked from the curve as it was when the drag began, the selected nodes only when some are selected; one undo step per drag |
-| Align Nodes | a dialog with Align horizontal and Align vertical: the selected nodes move onto a common line |
+| Align Nodes | a dialog with Align horizontal and Align vertical: the selected nodes move onto a common line. The align keys and the Object > Align commands work on two or more selected nodes too (#364): L, R to the leftmost or rightmost node's x, T, B to the top or bottom node's y, E (Align Centers Horizontally) to the middle of the nodes' box in y, Align Centers Vertically to its middle in x (the menu; the C key stays Cusp); nodes on several curves compare on the page; handles move with their node; one undo step "Align Nodes" (`align_keys_align_selected_nodes_in_the_shape_tool`) |
 | Ctrl+C, Ctrl+X | with selected nodes, the segments between them are copied (cut: taken out of the curve, which opens) as new curves styled like their source |
 | Ctrl+D | the same segments as new curves at the duplicate offset |
 

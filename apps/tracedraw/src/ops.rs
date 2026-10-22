@@ -85,6 +85,10 @@ impl App {
     /// Align to the last-selected object; with one object, to the page
     /// (the menu, the L, R, T, B, E, C and P keys and scripts).
     pub fn align(&mut self, how: Align) {
+        // With the Shape tool and nodes selected, the nodes align.
+        if self.align_nodes_to(how) {
+            return;
+        }
         self.align_with(how, crate::ops2::AlignTo::ActiveObject);
     }
 

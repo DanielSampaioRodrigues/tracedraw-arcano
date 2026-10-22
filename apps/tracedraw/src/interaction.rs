@@ -2937,9 +2937,24 @@ impl App {
                 return;
             }
         }
-        // Align shortcuts: plain letters with a selection (not while nodes
-        // are being edited).
+        // Align shortcuts: plain letters with a selection; with the Shape
+        // tool and two or more nodes chosen they align the nodes (C stays
+        // the node's cusp key there, P has no node version).
         // (Not while a curve is drawn: C there makes a cusp.)
+        if nodes_chosen && self.node_selection.len() >= 2 && self.curve.is_none() {
+            use crate::ops::Align;
+            for (k, a) in [
+                (Key::L, Align::Left),
+                (Key::R, Align::Right),
+                (Key::T, Align::Top),
+                (Key::B, Align::Bottom),
+                (Key::E, Align::CenterH),
+            ] {
+                if pressed(k, Modifiers::NONE) && self.align_nodes_to(a) {
+                    return;
+                }
+            }
+        }
         if !self.selection.is_empty() && !nodes_chosen && self.curve.is_none() {
             use crate::ops::Align;
             for (k, a) in [

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: with two or more nodes selected, the align keys (L, R, T, B, E) and the Object > Align commands align the nodes, as in the reference program; handles move with their nodes and it is one undo step (#364).
+
 - Pick tool: a marquee (or the Freehand Pick lasso) dragged with Shift turns over the objects it takes, as in the reference program: those already selected are deselected and the others added. It only added before (#401).
 
 - Interactive Fill: colour nodes on the gradient's line, as in the reference program. A double click on the line adds a node in the colour the fill has there, a double click on a node removes it, and nodes drag along the line. The bar between two nodes moves where their colours meet half way. A click on a node opens a small bar under it with its colour (with the colour picker) and its transparency; the property bar shows the node's colour, transparency and position, and a palette colour goes to the picked node. Node transparency shows on screen and in SVG (#330, #285).
