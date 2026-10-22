@@ -123,10 +123,16 @@ pub(crate) fn apply_ui_scale(ctx: &egui::Context, size: f32) {
 }
 
 /// Use the theme the preferences name, when it is not the one in use.
+/// egui's own theme preference stays pinned, with the chosen theme's
+/// visuals in both of its style slots, so the system's dark mode (the
+/// browser's, in the browser build) never picks another style.
 pub(crate) fn apply_theme(ctx: &egui::Context, id: &str) {
     let wanted = crate::theme::Theme::from_id(id);
-    if wanted != crate::theme::theme() {
+    let pinned = ctx.options(|o| o.theme_preference) == egui::ThemePreference::Light;
+    if wanted != crate::theme::theme() || !pinned {
         crate::theme::set_theme(wanted);
+        ctx.set_theme(egui::ThemePreference::Light);
+        ctx.set_visuals_of(egui::Theme::Dark, crate::theme::visuals());
         ctx.set_visuals(crate::theme::visuals());
     }
 }
@@ -1201,6 +1207,34 @@ mod tests {
         egui::Popup::close_all(&ctx);
         key(&ctx, &mut app, Key::Escape, Modifiers::NONE);
         assert!(app.selection.is_empty());
+    }
+
+    /// The browser reports its dark mode as the system theme: the
+    /// interface keeps the chosen theme (Light at first) all the same.
+    #[test]
+    fn the_system_dark_mode_does_not_change_the_theme() {
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                system_theme: Some(egui::Theme::Dark),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+            out.textures_delta.clear();
+        }
+        assert_eq!(ctx.theme(), egui::Theme::Light);
+        assert!(!ctx.global_style().visuals.dark_mode);
+        assert_eq!(crate::theme::theme(), crate::theme::Theme::Light);
+        assert_eq!(
+            ctx.global_style().visuals.panel_fill,
+            crate::theme::visuals().panel_fill
+        );
     }
 
     /// The window draws with the toolbox at every button size and with

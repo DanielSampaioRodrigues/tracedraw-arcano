@@ -208,7 +208,12 @@ menus, dialogs, lists, rulers, tabs and icons take the theme's colours;
 the page, the drawing, the accent blue and the desktop colour (its own
 setting) do not. The button with a moon (light themes) or a sun (dark
 themes) at the right end of the status bar switches to Dark or to
-Light. The choice is kept in the preferences and applies at once.
+Light. The choice is kept in the preferences and applies at once. The
+system's dark mode (the browser's `prefers-color-scheme` in the browser
+build) does not change the theme: egui's own theme preference is pinned
+and both of its style slots hold the chosen theme's visuals
+(`App::setup_context`, `ui::apply_theme` each frame;
+`ui::tests::the_system_dark_mode_does_not_change_the_theme`).
 
 ## Coloured tool icons
 

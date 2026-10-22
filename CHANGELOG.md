@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser build: the interface followed the browser's dark mode and switched to a dark style of its own on reload; the theme is now the one chosen in the options alone.
+
 - Interface size: 100 % is now one interface point per pixel at the system's scaling on every system (it was 0.8 on macOS and in the browser and 12 / 13 on Windows), and the bars' Default Button Size starts at Small, so the bars stay compact while text and menus take the system's size. A chosen interface size or button size is kept.
 
 - Toolbox: the Variable Outline tool has a button of its own at the bottom of the toolbox, after the Fill flyout; it was inside the Shape tool's flyout, where it was hard to find (#339).

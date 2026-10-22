@@ -1776,6 +1776,11 @@ impl App {
             // the interface size is an option (see `ui_size`).
             o.zoom_with_keyboard = false;
         });
+        // The theme is the one chosen in the options, whatever the
+        // system's (the browser's dark mode): egui would otherwise switch
+        // to its own dark style whenever the system reports dark.
+        ctx.set_theme(egui::ThemePreference::Light);
+        ctx.set_visuals_of(egui::Theme::Dark, theme::visuals());
         ctx.set_visuals(theme::visuals());
         ctx.all_styles_mut(|style| {
             // Menus, lists and dialogs appear at once, without fading in
