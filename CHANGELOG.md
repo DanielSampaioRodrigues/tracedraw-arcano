@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Font Manager: the samples were drawn in black on the dark themes, nearly unreadable; they now take the theme's text colour (#380). Showing the details pane made the window grow a little on every frame, off the screen; the pane now takes its room from the list (#381).
+
 - Eyedroppers (the tools and the document palette's): they read nothing from a locked object or one on a locked layer; they now read colours and attributes from them too, while applying to a locked object stays blocked (#365).
 
 - Pen and Bezier: closing a curve with a click on its first node keeps the last segment as the preview showed it (it turned straight, #359); dragging from the first node to close puts its handle where the pointer goes (it was the mirror, #358); and a curve of two nodes closes, for a leaf or a lens of two nodes (#356).
