@@ -68,6 +68,91 @@ fn stretched(line: Line) -> Line {
     Line::new(line.p0 - e, line.p1 + e)
 }
 
+/// How near the node two neighbouring segments share a crossing of theirs
+/// must be to be that node rather than a crossing, mm (past the
+/// flattening error).
+const NODE_REACH: f64 = 0.05;
+
+/// Where a segment crosses itself (a cubic with a loop): the two
+/// parameters of the crossing, else nothing. Found between chords of
+/// the curve and refined on the curve itself.
+pub fn self_crossings(seg: &PathSeg) -> Vec<f64> {
+    let PathSeg::Cubic(_) = seg else {
+        return Vec::new();
+    };
+    const N: usize = 48;
+    let pts: Vec<Point> = (0..=N).map(|k| seg.eval(k as f64 / N as f64)).collect();
+    let mut out = Vec::new();
+    for a in 0..N {
+        let la = Line::new(pts[a], pts[a + 1]);
+        for b in a + 2..N {
+            let lb = Line::new(pts[b], pts[b + 1]);
+            let crossing = PathSeg::Line(la).intersect_line(lb).into_iter().any(|h| {
+                (-1e-9..=1.0 + 1e-9).contains(&h.line_t)
+                    && (-1e-9..=1.0 + 1e-9).contains(&h.segment_t)
+            });
+            if !crossing {
+                continue;
+            }
+            // The curve's own parameters: where it meets each chord, near
+            // the other chord's stretch of it.
+            let near = |t: f64, k: usize| {
+                let lo = (k as f64 - 1.0) / N as f64;
+                let hi = (k as f64 + 2.0) / N as f64;
+                (lo..=hi).contains(&t)
+            };
+            for (chord, k) in [(lb, a), (la, b)] {
+                for h in seg.intersect_line(stretched(chord)) {
+                    let t = h.segment_t.clamp(0.0, 1.0);
+                    if (-1e-9..=1.0 + 1e-9).contains(&h.line_t) && near(t, k) {
+                        out.push(t);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(f64::total_cmp);
+    out.dedup_by(|x, y| (*x - *y).abs() < 1e-7);
+    // The two parameters refined together onto the crossing point:
+    // Newton steps on c(t1) - c(t2) = 0.
+    if let [t1, t2] = out[..] {
+        let (mut a, mut b) = (t1, t2);
+        for _ in 0..12 {
+            let f = seg.eval(a) - seg.eval(b);
+            let (da, db) = (deriv(seg, a), deriv(seg, b));
+            // The Jacobian [da, -db] and its inverse.
+            let det = da.x * (-db.y) - (-db.x) * da.y;
+            if det.abs() < 1e-12 {
+                break;
+            }
+            let sa = (f.x * (-db.y) - (-db.x) * f.y) / det;
+            let sb = (da.x * f.y - da.y * f.x) / det;
+            a -= sa;
+            b -= sb;
+            if !(0.0..=1.0).contains(&a) || !(0.0..=1.0).contains(&b) {
+                return out;
+            }
+            if sa.abs() < 1e-13 && sb.abs() < 1e-13 {
+                break;
+            }
+        }
+        if (seg.eval(a) - seg.eval(b)).hypot() < (seg.eval(t1) - seg.eval(t2)).hypot() {
+            out = vec![a.min(b), a.max(b)];
+        }
+    }
+    out
+}
+
+/// The derivative of `seg` at `t`.
+fn deriv(seg: &PathSeg, t: f64) -> tracedraw_core::geometry::Vec2 {
+    use tracedraw_core::geometry::ParamCurveDeriv;
+    match seg {
+        PathSeg::Line(l) => l.deriv().eval(t).to_vec2(),
+        PathSeg::Quad(q) => q.deriv().eval(t).to_vec2(),
+        PathSeg::Cubic(c) => c.deriv().eval(t).to_vec2(),
+    }
+}
+
 fn lines_of(path: &BezPath) -> Vec<Line> {
     let mut out = Vec::new();
     let mut start = Point::ZERO;
@@ -137,15 +222,37 @@ pub fn crossings(subs: &[Sub], which: usize, cutters: &[Line]) -> Vec<f64> {
         for l in cutters.iter().chain(own.iter()) {
             hit(*l, &mut out);
         }
-        // Its own segments that are not next to it.
+        // Its own other segments, the next ones included: those cross it
+        // anywhere but at the node they share (a curve looping back over
+        // the segment before it, #314).
         for (j, other) in sub.segs.iter().enumerate() {
-            let next = (j + 1) % n == i || (i + 1) % n == j;
-            if j == i || (next && (sub.closed || j.abs_diff(i) == 1)) {
+            if j == i {
                 continue;
             }
-            for l in lines_of(&seg_path(other)) {
-                hit(l, &mut out);
+            let mut shared: Vec<Point> = Vec::new();
+            if (i + 1) % n == j && (sub.closed || j == i + 1) {
+                shared.push(seg.end());
             }
+            if (j + 1) % n == i && (sub.closed || i == j + 1) {
+                shared.push(seg.start());
+            }
+            for l in lines_of(&seg_path(other)) {
+                for h in seg.intersect_line(stretched(l)) {
+                    if !(-1e-9..=1.0 + 1e-9).contains(&h.line_t) {
+                        continue;
+                    }
+                    let t = h.segment_t.clamp(0.0, 1.0);
+                    let at = seg.eval(t);
+                    if shared.iter().any(|node| (at - *node).hypot() < NODE_REACH) {
+                        continue;
+                    }
+                    out.push(i as f64 + t);
+                }
+            }
+        }
+        // The segment crossing itself (a loop within one segment).
+        for t in self_crossings(seg) {
+            out.push(i as f64 + t);
         }
     }
     out.retain(|u| u.is_finite());
@@ -608,6 +715,79 @@ mod tests {
         assert!(app.doc().find_shape(b).is_some(), "the whole of b went");
         let bb = path_of(&app, b).bounding_box();
         assert!(bb.x0 > 40.0 && bb.x1 > 87.0, "{bb:?}");
+    }
+
+    /// A curve crossing itself: a loop inside one cubic segment, and the
+    /// next segment looping back over the one before it. Only the
+    /// stretch between the crossings goes, not the whole curve (#314).
+    #[test]
+    fn a_curve_crossing_itself_loses_only_the_stretch_clicked() {
+        // One cubic with a loop: from (0, 0) up and over itself to (30, 0).
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.curve_to((40.0, 30.0), (-10.0, 30.0), (30.0, 0.0));
+        let subs = subs_of(&p);
+        let seg = subs[0].segs[0];
+        let ts = self_crossings(&seg);
+        assert_eq!(ts.len(), 2, "{ts:?}");
+        let (a, b) = (seg.eval(ts[0]), seg.eval(ts[1]));
+        assert!((a - b).hypot() < 1e-6, "one point: {a:?} {b:?}");
+        assert_eq!(crossings(&subs, 0, &[]).len(), 2);
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: p.clone(),
+                closed: false,
+            })
+            .expect("curve");
+        // The loop's top is the stretch between the crossings.
+        let top = seg.eval(0.5);
+        assert!(app.delete_virtual_segment_at(top));
+        let left = path_of(&app, id);
+        assert!(app.doc().find_shape(id).is_some(), "the whole curve went");
+        let pieces = left
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(pieces, 2, "{left:?}");
+        assert!(left.bounding_box().y1 < top.y - 1.0, "{left:?}");
+        assert!(left
+            .segments()
+            .any(|s| (s.start() - Point::new(0.0, 0.0)).hypot() < 1e-6));
+        assert!(left
+            .segments()
+            .any(|s| (s.end() - Point::new(30.0, 0.0)).hypot() < 1e-6));
+
+        // A straight segment, then a curve that comes back over it.
+        let mut q = BezPath::new();
+        q.move_to((0.0, 0.0));
+        q.line_to((20.0, 0.0));
+        q.curve_to((20.0, 15.0), (5.0, 15.0), (10.0, -5.0));
+        let subs = subs_of(&q);
+        let c = crossings(&subs, 0, &[]);
+        assert_eq!(c.len(), 2, "{c:?}");
+        assert!(c[0] > 0.3 && c[0] < 0.7, "on the line's middle: {c:?}");
+        assert!(c[1] > 1.5 && c[1] < 2.0, "late in the curve: {c:?}");
+        // The node they share is no crossing.
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: q,
+                closed: false,
+            })
+            .expect("curve");
+        // The tail past the crossing goes; the line and the arc stay.
+        assert!(app.delete_virtual_segment_at(Point::new(10.0, -4.0)));
+        let left = path_of(&app, id);
+        let b = left.bounding_box();
+        assert!(
+            b.y0 > -0.5 && b.y1 > 8.0 && (b.x1 - 20.0).abs() < 1e-6,
+            "{left:?}"
+        );
+        assert!(left
+            .segments()
+            .any(|s| (s.start() - Point::new(0.0, 0.0)).hypot() < 1e-6));
     }
 
     /// A cutter that stops a hair short of the outline (as a piece left by

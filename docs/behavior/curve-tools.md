@@ -34,7 +34,10 @@ meets the start) `Path` objects with the toolbox defaults.
 - Double-click or Enter finishes; with the Bezier tool Space finishes
   too and then, being the Pick tool's key, switches to Pick (checked by
   `pick_drag_tests::space_finishes_a_bezier_curve_then_picks`); Esc
-  discards the curve being drawn. While it is drawn, Ctrl+Z takes back
+  finishes the curve as it stands too, the segment to the pointer
+  dropped and the tool kept (a lone first node is dropped;
+  `pick_drag_tests::esc_finishes_the_curve_being_drawn_and_keeps_it`).
+  While it is drawn, Ctrl+Z takes back
   the last press that changed it (a node placed, a handle pulled, a
   click on a node), one at a time until the curve is gone, and then the
   document's own history; Ctrl+Shift+Z puts the steps back one by one.
@@ -106,8 +109,8 @@ meets the start) `Path` objects with the toolbox defaults.
   polygon, and stays inside the points' hull (quadratic with three
   points, a line with two). While drawing, the control polygon shows
   dashed with the curve over it, both following the pointer.
-- Double-click or Enter finishes, Esc discards; clicking the first
-  point (once there are three) closes it into the periodic spline,
+- Double-click, Enter or Esc finishes (Esc with one point drops it);
+  clicking the first point (once there are three) closes it into the periodic spline,
   smooth all round. The result is a curve object (its nodes are the
   Bezier segments, one a knot span); the control points are not kept.
 - Checked by `geometry::tests::bsplines_start_and_end_on_their_ends_and_stay_inside`

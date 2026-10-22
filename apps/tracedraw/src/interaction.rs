@@ -2744,6 +2744,13 @@ impl App {
             && !egui::Popup::is_any_open(ctx)
             && self.crop_area.take().is_none()
         {
+            // A curve being drawn is finished as it stands, the segment
+            // to the pointer dropped; the tool stays (#314). A lone first
+            // node is dropped.
+            if self.curve.as_ref().is_some_and(|c| c.nodes.len() >= 2) {
+                self.finish_curve();
+                return;
+            }
             // In focus mode with nothing selected: one level out.
             if self.selection.is_empty() && self.focus_target().is_some() {
                 self.focus_up();

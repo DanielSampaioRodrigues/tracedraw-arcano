@@ -3004,6 +3004,42 @@ fn space_finishes_a_bezier_curve_then_picks() {
     assert_eq!(nodes.len(), 3, "{nodes:?}");
 }
 
+/// Esc while a curve is drawn with the Pen (or Bezier) finishes it as
+/// it stands, keeping the nodes placed; the tool stays. A lone first
+/// node is dropped (#314).
+#[test]
+fn esc_finishes_the_curve_being_drawn_and_keeps_it() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let before = shape_count(&app);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 170.0),
+        Point::new(180.0, 150.0),
+    ];
+    for p in pts {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    assert!(app.curve.is_some());
+    let esc = || vec![key(egui::Key::Escape, Modifiers::NONE)];
+    frame(&ctx, &mut app, esc(), Modifiers::NONE);
+    assert!(app.curve.is_none(), "Esc ends the curve");
+    assert_eq!(shape_count(&app), before + 1, "the curve is kept");
+    assert_eq!(app.tool, Tool::Pen, "the tool stays");
+    let nodes = tracedraw_core::nodes::nodes(&last_path(&app));
+    assert_eq!(nodes.len(), 3, "{nodes:?}");
+    // One node only: nothing to keep.
+    app.select(Vec::new());
+    let at = app.view.to_screen(Point::new(60.0, 60.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(app.curve.is_some());
+    frame(&ctx, &mut app, esc(), Modifiers::NONE);
+    assert!(app.curve.is_none());
+    assert_eq!(shape_count(&app), before + 1);
+}
+
 /// With a real mouse the right button goes down and up in frames of its
 /// own while the left one is held; the move goes on after it.
 #[test]

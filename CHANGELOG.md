@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Segment Delete: a curve drawn over itself (a loop inside one segment, or a segment coming back over the one before it) loses only the stretch clicked between the crossings; the whole curve went. Pen, Bezier, Polyline and B-spline: Esc finishes the curve being drawn as it stands, keeping the nodes placed and the tool, instead of discarding it (#314).
+
 - Remove Background (on this computer): the contiguous fill now follows a backdrop that drifts in colour (a texture, a gradient the edges did not show, a soft shadow under the subject), stopping at the subject's sharp edge, so such backdrops go whole instead of leaving patches; up to six background colours are learnt from the edges; and the command is in a bitmap's context menu beside the AI one (#231).
 
 - Print: the Printer list holds the system's printers on Linux and macOS (CUPS), the default one first, and a print on one of them goes straight to it with its copies, instead of only through the PDF viewer; the printer is remembered for the next print (#300).

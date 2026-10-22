@@ -56,7 +56,12 @@
   closed subpath that nothing crosses is one virtual segment.
 - Crossings count against every visible object of the page's unlocked
   layers (flattened to 0.02 mm), the object's other subpaths and its
-  own segments that are not next to each other (`segment_delete.rs`).
+  own other segments, the neighbouring ones included anywhere but at
+  the node they share (within 0.05 mm of it), and a cubic segment
+  crossing itself in a loop (`segment_delete.rs`, `self_crossings`:
+  found between 48 chords of the segment and refined on the curve), so
+  a single curve drawn over itself loses only the stretch clicked
+  (`segment_delete::tests::a_curve_crossing_itself_loses_only_the_stretch_clicked`).
   Each cutter reaches 0.001 mm past its ends, so a piece left by an
   earlier cut, which ends on the outline it crossed, still cuts it
   (`segment_delete::tests::a_cutter_ending_a_hair_short_of_the_outline_still_cuts`).
@@ -90,6 +95,7 @@
 - `segment_delete::tests::closed_outlines_open_where_they_lose_a_stretch`
 - `segment_delete::tests::a_drag_removes_the_stretches_inside`
 - `segment_delete::tests::pieces_and_stretches`
+- `segment_delete::tests::a_curve_crossing_itself_loses_only_the_stretch_clicked`
 - `crop_tool::tests::the_area_waits_and_moves_until_it_is_applied`
 - `crop_tool::tests::open_curves_groups_bitmaps_and_text`
 - `crop_tool::tests::handles_and_resizing_stay_sane`
