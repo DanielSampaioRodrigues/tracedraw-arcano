@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: typing in the property bar's font search field (or any other field with the keyboard) while a text is being edited put the characters into the text too; they now go to the field alone (#342).
+
 ## 0.11.0 (2026-10-22)
 
 - Panels: any panel can be dragged by its tab or its title bar to the left side of the window, to the right side or anywhere over the drawing as a floating window (resizable; the tab's and the title's right-click menu offer the three places too), so panels can sit on both sides at once; every panel still starts at the right. Where each panel is survives a restart.

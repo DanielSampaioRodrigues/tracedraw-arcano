@@ -2202,6 +2202,49 @@ fn a_bspline_keeps_its_control_points_for_the_shape_tool() {
     assert!(app.node_at(pts[0]).is_some());
 }
 
+/// Typing while a field has the keyboard (the font search field of the
+/// property bar) goes to the field, not to the text being edited (#342).
+#[test]
+fn typing_in_a_focused_field_leaves_the_edited_text_alone() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.settings.autocorrect.enabled = false;
+    app.start_text(Point::new(30.0, 50.0), None);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Typed on the canvas: into the text.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("ab".into())],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.edit_text(), "ab");
+    // A field takes the keyboard (as a click in the font search field
+    // does): what is typed goes there.
+    let field = egui::Id::new("some_field");
+    ctx.memory_mut(|m| m.request_focus(field));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    ctx.memory_mut(|m| m.request_focus(field));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("cd".into())],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.edit_text(), "ab");
+    assert!(app.text_edit.is_some());
+    // The keyboard back on the canvas: typing edits the text again.
+    ctx.memory_mut(|m| m.surrender_focus(field));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("e".into())],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.edit_text(), "abe");
+}
+
 /// With alignment guides on (and every other snapping off), a move of the
 /// rectangle near another one lands its top edge on the other's top and
 /// shows the line while the button is down; a scale handle lines up the

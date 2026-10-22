@@ -2276,12 +2276,15 @@ impl App {
         {
             return;
         }
+        // A field with the keyboard (the font search field of the
+        // property bar, a docker's box) keeps what is typed in it, even
+        // while a text is being edited (#342).
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
         // Text typing has priority.
         if self.text_edit.is_some() && !dialog_open {
             self.text_keyboard(ctx);
-            return;
-        }
-        if ctx.egui_wants_keyboard_input() {
             return;
         }
         // An open menu takes the keys: its rows' access keys, arrows, Esc.

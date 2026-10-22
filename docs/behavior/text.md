@@ -138,6 +138,7 @@ concatenated spans; the layout's line boxes give its place on the page.
 | Click / Shift+click / drag | place the caret / extend / select |
 | Double-click | select the word |
 | Esc | finish editing and return to the Pick tool; an empty text is removed |
+| Typing while a field has the keyboard (the font search field, a docker's box) | goes to the field only; the text waits until the field lets the keyboard go (#342, `pick_drag_tests::typing_in_a_focused_field_leaves_the_edited_text_alone`) |
 
 The property bar's font, size and style buttons act on the selected
 characters while a selection exists, and show the style at the caret
