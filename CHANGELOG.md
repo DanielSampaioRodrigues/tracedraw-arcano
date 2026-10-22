@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` (version 16 and later): text with letters outside Windows-1252 (Cyrillic, Greek, most Central European letters) was saved as unmarked UTF-8 and came back as garbage, in TraceDraw and in other programs; such letters are now saved as marked two-byte units, and files saved the old way read back right (#368).
+
 - Text: editing a second text put the first one back to its text before its last edit; each text's typing is now an undo step of its own and editing another text never changes it (#373).
 
 - Browser build: the interface followed the browser's dark mode and switched to a dark style of its own on reload; the theme is now the one chosen in the options alone.

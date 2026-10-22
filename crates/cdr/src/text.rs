@@ -1159,6 +1159,17 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         let text = if v >= 17 || nbytes != nc.saturating_mul(2) {
             match decode_mixed_width(text, &wide) {
                 Some(s) => s,
+                // Files saved by TraceDraw before 0.11.1 held the letters
+                // Windows-1252 lacks as UTF-8, with no letter marked
+                // (#368): such bytes, UTF-8 with exactly as many letters as
+                // records, are read so (before the UTF-16 guess: Cyrillic
+                // in UTF-8 is two bytes a letter too).
+                None if !wide.iter().any(|w| *w)
+                    && !text.is_ascii()
+                    && std::str::from_utf8(text).is_ok_and(|t| t.chars().count() == nc) =>
+                {
+                    String::from_utf8_lossy(text).into_owned()
+                }
                 None if nbytes == nc * 2 => decode_utf16le(text),
                 None => {
                     warn(format!(

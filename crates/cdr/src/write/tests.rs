@@ -2350,6 +2350,116 @@ fn text_from_version_12_goes_out_one_byte_a_letter_with_wide_letters_marked() {
     }
 }
 
+/// From version 16 a letter Windows-1252 lacks (Cyrillic here) goes out
+/// as a UTF-16 unit of two bytes with bit 0 of its record's flags set;
+/// the others stay one byte. The text reads back as written (#368).
+#[test]
+fn text_from_version_16_marks_the_letters_windows_1252_lacks() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Пример é", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    for v in 16u16..=*crate::write::versions().end() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let text: String = back
+            .pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .flat_map(|l| &l.shapes)
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|sp| sp.text.as_str()).collect::<String>())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Пример é", "{v}");
+        // The letters as stored: six UTF-16 units, then a space and "é"
+        // in one byte each (Windows-1252 0x20 and 0xE9).
+        let mut want: Vec<u8> = "Пример"
+            .encode_utf16()
+            .flat_map(|u| u.to_le_bytes())
+            .collect();
+        want.extend_from_slice(&[0x20, 0xE9]);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut recs = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") {
+                recs.push(tree.data(&riff, c).to_vec());
+            }
+        });
+        assert!(!recs.is_empty(), "{v}: a text record");
+        let found = recs
+            .iter()
+            .any(|d| d.windows(want.len()).any(|w| w == want.as_slice()));
+        assert!(found, "{v}: the letters are not stored as expected");
+        // No UTF-8 for them.
+        let utf8 = "Пример".as_bytes();
+        assert!(
+            !recs
+                .iter()
+                .any(|d| d.windows(utf8.len()).any(|w| w == utf8)),
+            "{v}"
+        );
+    }
+}
+
+/// A text record holding its letters as unmarked UTF-8, as TraceDraw
+/// saved them before #368, reads back as the text it was.
+#[test]
+fn unmarked_utf8_letters_of_older_saves_read_back() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Пример", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    let v = 17u16;
+    let bytes = document_to_cdr_version(&doc, v);
+    let (_, tree, riff) = chunk_ids(&bytes);
+    let mut rec = None;
+    tree.root.walk(&mut |c, _| {
+        if c.is(b"txsm") && rec.is_none() {
+            rec = Some(tree.data(&riff, c).to_vec());
+        }
+    });
+    let d = rec.expect("a text record");
+    // Rebuild the end of the record as the old writer had it: the six
+    // records with no flag, then the UTF-8 bytes.
+    let units: Vec<u8> = "Пример"
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
+    let at = d
+        .windows(units.len())
+        .position(|w| w == units.as_slice())
+        .expect("the letters");
+    let mut old = d[..at - 4].to_vec();
+    let recs_at = old.len() - 6 * 8;
+    for k in 0..6 {
+        old[recs_at + k * 8] = 0;
+        old[recs_at + k * 8 + 1] = 0;
+    }
+    let utf8 = "Пример".as_bytes();
+    old.extend_from_slice(&(utf8.len() as u32).to_le_bytes());
+    old.extend_from_slice(utf8);
+    old.extend_from_slice(&d[at + units.len()..]);
+    let mut warnings = Vec::new();
+    let txsm = crate::text::read_txsm(&old, v, &mut |w| warnings.push(w)).expect("read");
+    let text: String = txsm
+        .paragraphs
+        .iter()
+        .flat_map(|p| &p.runs)
+        .map(|r| r.text.as_str())
+        .collect();
+    assert_eq!(text, "Пример", "{warnings:?}");
+}
+
 #[test]
 fn before_16_text_frames_take_their_objects_numbers_and_curves_end_padded() {
     let mut ids = tracedraw_core::id::IdSource::default();
