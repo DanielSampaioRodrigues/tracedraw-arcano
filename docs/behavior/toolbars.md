@@ -79,7 +79,11 @@ selects the value, Enter or leaving the field applies it, Esc puts it
 back. A comma or a point marks decimals; sums work (`10+5`, `2*3,5`,
 brackets); a distance typed with another unit is converted (`1 in` in a
 millimetre field is 25.4 mm). Values outside a field's range are brought
-into it (`ui::field::tests`).
+into it (`ui::field::tests`). Every number field has a pair of spin
+arrows at its right (11 px): a click on one steps the value by a unit
+(or the step the field was given), as does the mouse wheel over the
+field; Shift steps ten times as much, Ctrl a tenth; a whole-number field
+stays whole and the range holds (`ui::field::tests::arrows_and_the_wheel_step_the_value`).
 
 - Pick tool, nothing selected (page bar): page size list; page width and
   height; fit page to drawing (Layout's command, pale on an empty page);

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Number fields (property bar, panels, dialogs): spin arrows at the right of every field, and the mouse wheel over a field steps its value (Shift ten times as much, Ctrl a tenth); values could only be typed.
+
 - Symmetry: several selected objects become one symmetry group (each still to be picked inside it with Ctrl+click), and objects drawn, pasted or duplicated while the symmetry is edited join it; before, each object got a symmetry of its own and nothing could be added.
 
 - Panels: the plus button under the tabs lists the panels in the groups of Window > Panels, with a box ticked at each open one; unticking closes it.
