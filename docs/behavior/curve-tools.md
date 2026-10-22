@@ -47,12 +47,16 @@ meets the start) `Path` objects with the toolbox defaults.
   The finished curve is one step of the document's history
   (`pick_drag_tests::ctrl_z_takes_back_pen_nodes_one_by_one`).
   A press on the first node (within the join distance, 5 screen pixels
-  by default, once the curve has three nodes; with the Pen and Auto
-  add/delete on, within the larger of the join and pick distances, so
-  the first node is never deleted instead) closes the curve: a click
-  closes it with a straight segment from the last node; a drag from the
-  first node pulls the closing segment's handle at the first node (the
-  mirror of the pointer, as a pulled handle), and the first node's own
+  by default, once the curve has two nodes with the Bezier and Pen
+  tools, three with the others: two curved nodes close into a leaf or a
+  lens, #356; with the Pen and Auto add/delete on, within the larger of
+  the join and pick distances, so the first node is never deleted
+  instead) closes the curve (`CurveInProgress::closes_at_first`): a
+  click closes it with the segment the preview showed, leaving the last
+  node along its handle (straight when it has none) and arriving at the
+  first node with no handle (#359); a drag from the first node pulls the
+  closing segment's handle at the first node, which follows the pointer
+  (drag left, the handle lies left, #358), and the first node's own
   outgoing handle stays as it was, with or without C held.
 - With no curve being drawn and one curve selected, the Pen and Bezier
   tools edit it: a click on a segment (within the pick distance) adds a

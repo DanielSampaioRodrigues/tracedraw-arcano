@@ -353,7 +353,7 @@ fn curve_mark(app: &App, pos: Option<Pos2>) -> Option<CurveMark> {
         let near = |q: &tracedraw_core::geometry::Point| {
             app.view.to_screen(*q).distance(pos) as f64 <= app.curve_end_reach_px()
         };
-        if c.nodes.len() >= 3 && c.nodes.first().is_some_and(|(f, _)| near(f)) {
+        if c.closes_at_first() && c.nodes.first().is_some_and(|(f, _)| near(f)) {
             return Some(CurveMark::Close);
         }
         if pen && c.nodes.len() >= 2 && c.nodes.last().is_some_and(|(l, _)| near(l)) {

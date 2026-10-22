@@ -1631,7 +1631,7 @@ impl App {
         let start_close = self
             .curve
             .as_ref()
-            .is_some_and(|c| c.nodes.len() >= 3 && c.nodes.first().is_some_and(|n| near(n.0)));
+            .is_some_and(|c| c.closes_at_first() && c.nodes.first().is_some_and(|n| near(n.0)));
         let on_last = smooth
             && self
                 .curve
@@ -1639,10 +1639,11 @@ impl App {
                 .is_some_and(|c| c.nodes.len() >= 2 && c.nodes.last().is_some_and(|n| near(n.0)));
         if response.clicked_by(PointerButton::Primary) {
             if start_close {
-                // A click on the first node closes the curve; the closing
-                // segment leaves the last node straight.
+                // A click on the first node closes the curve with the
+                // segment the preview showed: it leaves the last node
+                // along its handle and arrives at the first node with no
+                // handle (#359).
                 if let Some(mut c) = self.curve.take() {
-                    c.cusp_last();
                     c.closing = None;
                     self.close_curve(c);
                 }

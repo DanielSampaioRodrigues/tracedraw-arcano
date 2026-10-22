@@ -2617,8 +2617,8 @@ fn dragging_from_the_first_node_shapes_only_the_closing_segment() {
     // The first node keeps its own outgoing handle.
     let s0 = cubic(segs[0]);
     assert!(near(s0.p1, a_out), "{s0:?}");
-    // The closing segment arrives at the first node along the mirror of
-    // the drag.
+    // The closing segment arrives at the first node along the drag: its
+    // handle at the first node is where the pointer was let go (#358).
     let last = segs
         .iter()
         .rev()
@@ -2627,8 +2627,64 @@ fn dragging_from_the_first_node_shapes_only_the_closing_segment() {
             _ => None,
         })
         .expect("a curved closing segment");
-    assert!(near(last.p2, Point::new(110.0, 160.0)), "{last:?}");
+    assert!(near(last.p2, Point::new(90.0, 140.0)), "{last:?}");
     assert!(near(last.p1, Point::new(160.0, 130.0)), "{last:?}");
+}
+
+/// A click on the first node closes the curve with the segment the
+/// preview showed: it leaves the last node along its handle and arrives
+/// at the first with no handle (#359). Two curved nodes close into a
+/// leaf (#356).
+#[test]
+fn a_click_on_the_first_node_keeps_the_last_handle_and_two_nodes_close() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    pull(&ctx, &mut app, a, Point::new(110.0, 170.0));
+    let b = Point::new(160.0, 150.0);
+    let b_out = Point::new(170.0, 130.0);
+    pull(&ctx, &mut app, b, b_out);
+    // Two nodes: the pointer over the first one shows a close.
+    let over = app.view.to_screen(a);
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(over)),
+        ToolCursor::CurveBadge(Tool::Pen, crate::ui::cursors::CurveMark::Close)
+    );
+    click_page(&ctx, &mut app, a);
+    assert!(app.curve.is_none(), "closed");
+    let path = last_path(&app);
+    assert!(
+        path.elements()
+            .iter()
+            .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath)),
+        "{path:?}"
+    );
+    assert_eq!(tracedraw_core::nodes::nodes(&path).len(), 2, "{path:?}");
+    let closing = path
+        .segments()
+        .filter_map(|s| match s {
+            tracedraw_core::geometry::PathSeg::Cubic(c) if near(c.p3, a) => Some(c),
+            _ => None,
+        })
+        .last()
+        .expect("a curved closing segment");
+    // It leaves the last node along its handle and arrives with none.
+    assert!(
+        near(closing.p0, b) && near(closing.p1, b_out),
+        "{closing:?}"
+    );
+    assert!(near(closing.p2, a), "{closing:?}");
+    // A polyline still needs three nodes to close.
+    app.select(Vec::new());
+    app.set_tool(Tool::Polyline);
+    click_page(&ctx, &mut app, Point::new(20.0, 200.0));
+    click_page(&ctx, &mut app, Point::new(60.0, 200.0));
+    let over = app.view.to_screen(Point::new(20.0, 200.0));
+    assert_ne!(
+        for_tool(&app, false, false, false, Some(over)),
+        ToolCursor::CurveBadge(Tool::Polyline, crate::ui::cursors::CurveMark::Close)
+    );
 }
 
 /// A curve from (100, 100) through (150, 100) to (200, 100), selected,
@@ -3293,7 +3349,7 @@ fn c_during_the_closing_drag_keeps_the_first_node_handle() {
             _ => None,
         })
         .expect("a curved closing segment");
-    assert!(near(closing.p2, Point::new(110.0, 160.0)), "{closing:?}");
+    assert!(near(closing.p2, Point::new(90.0, 140.0)), "{closing:?}");
 }
 
 #[test]

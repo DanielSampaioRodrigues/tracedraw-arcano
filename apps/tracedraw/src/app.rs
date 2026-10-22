@@ -660,12 +660,22 @@ impl CurveInProgress {
     }
 
     /// The handle the closing drag gives the first node for the closing
-    /// segment: the mirror of the pointer about the first node, like a
-    /// handle pulled out of it (`None` for a press without a drag).
+    /// segment: where the pointer is, so the segment arrives from the side
+    /// the drag goes to (drag left, the handle lies left), and the first
+    /// node's own outgoing handle stays (#358). `None` for a press
+    /// without a drag: the segment arrives with no handle.
     pub fn closing_handle(&self) -> Option<Point> {
         let first = self.nodes.first()?.0;
         let p = self.closing?;
-        ((p - first).hypot() > 1e-9).then(|| first - (p - first))
+        ((p - first).hypot() > 1e-9).then_some(p)
+    }
+
+    /// A press on the first node closes the curve: from two nodes with
+    /// the curve tools that pull handles (a leaf or a lens of two nodes,
+    /// #356), from three with the others.
+    pub fn closes_at_first(&self) -> bool {
+        let needed = if self.smooth && !self.bspline { 2 } else { 3 };
+        self.nodes.len() >= needed
     }
 
     /// Path through the nodes, optionally extended to a preview point.
