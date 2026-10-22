@@ -143,23 +143,14 @@ pub(crate) fn apply_shadows(ctx: &egui::Context, on: bool) {
 #[cfg(test)]
 pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
-/// The zoom of the interface at 100 % on Windows: its 13 px text comes
-/// out as large as the system's own (Segoe UI 9 pt, 12 px at 100 %
-/// scaling and in proportion at every other), so 100 % is the size of
-/// other programs. At 0.8 the text was 10.4 px on a monitor at 100 %,
-/// reported too small (#229).
-#[cfg(target_os = "windows")]
-pub(crate) const BASE_ZOOM: f32 = 12.0 / 13.0;
-
-/// The zoom of the interface at 100 % elsewhere (macOS, the browser):
-/// its measures (13 px text, 20 px icons, 24 px rows) at 0.8 of the
-/// system's scaling.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub(crate) const BASE_ZOOM: f32 = 0.8;
-
-/// On Linux 100 % is one interface point per pixel at the system's
-/// scaling: at 0.8 the text was reported too small there (#1).
-#[cfg(target_os = "linux")]
+/// The zoom of the interface at 100 %, on every system: one interface
+/// point per pixel at the system's scaling, so the measures (13 px text,
+/// 20 px icons, 24 px rows) come out as drawn. It was 0.8 on macOS and in
+/// the browser and 12 / 13 on Windows, to make the whole interface as
+/// compact as the reference drawing program; what made that program
+/// compact was its small button size, which the bars have now (Default
+/// Button Size, Small at first), so the text and the menus stay at the
+/// system's size (#1, #229).
 pub(crate) const BASE_ZOOM: f32 = 1.0;
 
 /// The interface size `size` relative to the system's scaling (1 is
@@ -905,20 +896,9 @@ mod tests {
         assert!(UI_SIZES
             .iter()
             .all(|s| (interface_size(*s) - s).abs() < 1e-6));
-        // 100 % on Windows: the 13 px text as large as the system's
-        // 12 px. On Linux one point per pixel at the system's scaling;
-        // elsewhere 0.8 of it.
-        let base = if cfg!(target_os = "linux") {
-            1.0
-        } else if cfg!(target_os = "windows") {
-            12.0 / 13.0
-        } else {
-            0.8
-        };
-        // On Windows the text at 100 % is the system's 12 px.
-        if cfg!(target_os = "windows") {
-            assert!((13.0 * ui_zoom(1.0) - 12.0).abs() < 1e-4);
-        }
+        // 100 %: one interface point per pixel at the system's scaling,
+        // on every system.
+        let base = 1.0;
         assert_eq!(BASE_ZOOM, base);
         assert!((ui_zoom(0.0) - base).abs() < 1e-6);
         assert!((ui_zoom(1.0) - base).abs() < 1e-6);

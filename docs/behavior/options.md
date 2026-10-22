@@ -149,13 +149,13 @@ it), applied when the slider is let go.
   follows the monitor: moving the window to a monitor the system scales
   differently rescales it. 200 % is twice that size.
 - The interface's own measures are 13 px text, 20 px icons and 24 px
-  rows. On Windows 100 % is a zoom of 12 / 13 over the system's scaling,
-  so the text comes out as large as the system's own (Segoe UI 9 pt,
-  12 px at 100 % scaling, 15 px at 125 %); at 0.8 it was 10.4 px at
-  100 %, too small (#229).
-- On Linux 100 % is a zoom of 1 over the system's scaling: one interface
-  point per pixel at the system's scaling (#1). Elsewhere (macOS, the
-  browser) it is 0.8. The sizes offered and their order are the same.
+  rows. 100 % is a zoom of 1 over the system's scaling on every system:
+  one interface point per pixel at the system's scaling (`BASE_ZOOM`).
+  It was 0.8 on macOS and in the browser and 12 / 13 on Windows, to make
+  the whole interface as compact as the reference drawing program; what
+  made that program compact was its small button size, which the bars
+  have now (Default Button Size, Small at first, see `toolbars.md`), so
+  the text and the menus stay at the system's size (#1, #229).
 - The size is a zoom factor over the monitor's own scaling, so text stays
   sharp. Values out of 50 % to 400 % count as 100 %.
 - The interface size never changes how large drawings are: zoom 100 %
@@ -173,8 +173,8 @@ ruler at that resolution: hold a real ruler against the screen and
 change the value until the marks match. Zoom 100% then shows a drawing
 at its real size (the zoom box percentages follow; the Pixels view shows
 one pixel at the system's scaling per document pixel). Interface points
-per inch are that resolution over the interface's zoom (104 at 100 %
-on Windows, 96 on Linux, 120 elsewhere), so the interface size never changes real sizes. Reset puts
+per inch are that resolution over the interface's zoom (96 at 100 %),
+so the interface size never changes real sizes. Reset puts
 96 back.
 
 ## Document Options
