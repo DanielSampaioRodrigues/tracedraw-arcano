@@ -424,12 +424,17 @@ pub enum Drag {
         start: Point,
         current: Point,
         touching: bool,
+        /// Shift at the press: the objects taken change state (selected
+        /// ones are deselected, the others added).
+        toggle: bool,
     },
     /// Freehand Pick lasso; with `touching` (Alt) objects it touches count
     /// too.
     Lasso {
         points: Vec<Point>,
         touching: bool,
+        /// Shift at the press, as for the marquee.
+        toggle: bool,
     },
     /// Freehand stroke being drawn.
     Freehand {

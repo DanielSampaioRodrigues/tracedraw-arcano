@@ -1342,6 +1342,7 @@ mod curves_and_target_tests {
             app.select_in_region(
                 crate::select_region::Region::Rect(Rect::new(0.0, 0.0, 70.0, 70.0)),
                 false,
+                false,
             );
             assert_eq!(app.selection, vec![bottom, top]);
             app.shaping_with(op, false, false);
@@ -1352,6 +1353,7 @@ mod curves_and_target_tests {
         let (bottom, top) = two_rects(&mut app);
         app.select_in_region(
             crate::select_region::Region::Rect(Rect::new(0.0, 0.0, 70.0, 70.0)),
+            false,
             false,
         );
         app.select(vec![bottom, top]);
@@ -1379,6 +1381,7 @@ mod curves_and_target_tests {
         app.select(Vec::new());
         app.select_in_region(
             crate::select_region::Region::Rect(Rect::new(90.0, 90.0, 120.0, 120.0)),
+            false,
             false,
         );
         app.join_settings.gap = 5.0;

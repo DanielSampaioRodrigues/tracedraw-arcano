@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pick tool: a marquee (or the Freehand Pick lasso) dragged with Shift turns over the objects it takes, as in the reference program: those already selected are deselected and the others added. It only added before (#401).
+
 - Interactive Fill: colour nodes on the gradient's line, as in the reference program. A double click on the line adds a node in the colour the fill has there, a double click on a node removes it, and nodes drag along the line. The bar between two nodes moves where their colours meet half way. A click on a node opens a small bar under it with its colour (with the colour picker) and its transparency; the property bar shows the node's colour, transparency and position, and a palette colour goes to the picked node. Node transparency shows on screen and in SVG (#330, #285).
 
 - Interactive Fill: gradient nodes are placed freely, as in the reference program. Dragging on an object puts the start and end nodes where the drag began and ended; the start, the end and a new skew handle move on their own (the start moves the fill, the end sets length and angle, the skew handle makes a radial fill elliptic or slants a linear one). The fill keeps its nodes when the object moves or scales, and SVG and PDF exports draw it the same way (#330, #285).

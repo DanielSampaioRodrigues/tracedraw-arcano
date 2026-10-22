@@ -473,8 +473,14 @@ impl App {
 
     /// Add the objects `region` takes (wholly inside, or with `touching`
     /// those it touches) to the selection: on unlocked, visible layers,
-    /// not locked or hidden.
-    pub fn select_in_region(&mut self, region: crate::select_region::Region, touching: bool) {
+    /// not locked or hidden. With `toggle` (Shift) a taken object that is
+    /// selected already is deselected instead.
+    pub fn select_in_region(
+        &mut self,
+        region: crate::select_region::Region,
+        touching: bool,
+        toggle: bool,
+    ) {
         let doc = self.doc();
         let fill_open = doc.metadata.fill_open_curves;
         let all_filled = self.settings.treat_all_filled;
@@ -483,7 +489,8 @@ impl App {
                 || (!matches!(s.fill, Fill::None)
                     && (fill_open || !matches!(s.kind, ShapeKind::Path { closed: false, .. })))
         };
-        let mut ids = self.selection.clone();
+        let before = self.selection.clone();
+        let mut ids = before.clone();
         for s in self
             .page_layers()
             .into_iter()
@@ -491,10 +498,15 @@ impl App {
             .flat_map(|l| &l.shapes)
             .filter(|s| s.visible && !s.locked)
         {
-            if !ids.contains(&s.id)
-                && crate::select_region::takes(region, s, touching, &fill_counts)
-            {
-                ids.push(s.id);
+            if !crate::select_region::takes(region, s, touching, &fill_counts) {
+                continue;
+            }
+            if !before.contains(&s.id) {
+                if !ids.contains(&s.id) {
+                    ids.push(s.id);
+                }
+            } else if toggle {
+                ids.retain(|id| *id != s.id);
             }
         }
         self.select(ids);
@@ -1147,12 +1159,14 @@ impl App {
                         Drag::Lasso {
                             points: vec![p],
                             touching: mods.alt != self.settings.marquee_touching,
+                            toggle: mods.shift,
                         }
                     } else {
                         Drag::Marquee {
                             start: p,
                             current: p,
                             touching: mods.alt != self.settings.marquee_touching,
+                            toggle: mods.shift,
                         }
                     };
                 }
@@ -1346,6 +1360,7 @@ impl App {
                 start,
                 current,
                 touching,
+                ..
             } => {
                 // Ctrl keeps the marquee square.
                 let mut q = p;
@@ -1357,7 +1372,9 @@ impl App {
                 *current = q;
                 *touching = mods.alt != self.settings.marquee_touching;
             }
-            Drag::Lasso { points, touching } => {
+            Drag::Lasso {
+                points, touching, ..
+            } => {
                 // Ctrl keeps the freehand selection a rectangle.
                 if (mods.ctrl || mods.command) && !points.is_empty() {
                     let s = points[0];
@@ -2110,15 +2127,24 @@ impl App {
                 start,
                 current,
                 touching,
+                toggle,
             } => {
                 let r = Rect::from_points(start, current);
                 if r.width() > 0.1 || r.height() > 0.1 {
-                    self.select_in_region(crate::select_region::Region::Rect(r), touching);
+                    self.select_in_region(crate::select_region::Region::Rect(r), touching, toggle);
                 }
             }
-            Drag::Lasso { points, touching } => {
+            Drag::Lasso {
+                points,
+                touching,
+                toggle,
+            } => {
                 if points.len() >= 3 {
-                    self.select_in_region(crate::select_region::Region::Polygon(&points), touching);
+                    self.select_in_region(
+                        crate::select_region::Region::Polygon(&points),
+                        touching,
+                        toggle,
+                    );
                 }
             }
             Drag::Freehand { points } if self.tool == Tool::PainterlyBrush => {

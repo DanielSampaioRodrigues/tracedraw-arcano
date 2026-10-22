@@ -3994,3 +3994,34 @@ fn the_constrain_key_can_be_shift_or_alt() {
         assert!(!level(&app), "{key:?}: another key does not constrain");
     }
 }
+
+/// Shift with a marquee turns over the selection of the objects it takes
+/// (#401): one picked, a Shift marquee round all three leaves the other
+/// two picked.
+#[test]
+fn a_shift_marquee_inverts_the_objects_it_takes() {
+    let (ctx, mut app, first) = setup();
+    let rect = |app: &mut App, x: f64| {
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(x, 10.0, x + 20.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect")
+    };
+    let b = rect(&mut app, 80.0);
+    let c = rect(&mut app, 120.0);
+    app.select(vec![first]);
+    let from = app.view.to_screen(Point::new(0.0, 60.0));
+    let to = app.view.to_screen(Point::new(150.0, 0.0));
+    drag(&ctx, &mut app, from, to, Modifiers::SHIFT, Vec::new());
+    let mut got = app.selection.clone();
+    got.sort();
+    let mut want = vec![b, c];
+    want.sort();
+    assert_eq!(got, want);
+    // Without Shift a marquee picks all three.
+    app.select(vec![first]);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection.len(), 3);
+}
