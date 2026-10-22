@@ -503,9 +503,12 @@ impl App {
     }
 
     /// Object > Symmetry > Create New Symmetry (Alt+S): one vertical mirror
-    /// line at the right edge of the selection.
+    /// line at the right edge of the selection. Several selected objects
+    /// become one symmetry group (grouped first), so they are mirrored
+    /// together and each can still be picked inside it with Ctrl+click.
+    /// One undo step.
     pub fn create_symmetry(&mut self) {
-        let shapes = self.selected_shapes();
+        let mut shapes = self.selected_shapes();
         if shapes.is_empty() {
             return;
         }
@@ -513,6 +516,23 @@ impl App {
             return;
         };
         let center = Point::new(b.x1, b.center().y);
+        let mut first = true;
+        if shapes.len() > 1 {
+            let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
+            if let Err(e) = self
+                .engine
+                .run_with_label(&Command::Group { shapes: ids }, "Symmetry")
+            {
+                self.status = e.to_string();
+                return;
+            }
+            first = false;
+            let Some(g) = self.newest_group() else {
+                return;
+            };
+            self.selection = vec![g];
+            shapes = self.selected_shapes();
+        }
         for s in shapes {
             let mut effects = s.effects.clone();
             effects.retain(|e| !matches!(e, Effect::Symmetry { .. }));
@@ -521,13 +541,106 @@ impl App {
                 angle: 90.0,
                 lines: 1,
             });
-            self.run(Command::SetEffects {
+            let cmd = Command::SetEffects {
                 shape: s.id,
                 effects,
-            });
+            };
+            let r = if first {
+                first = false;
+                self.engine.run_with_label(&cmd, "Symmetry")
+            } else {
+                self.engine.amend(&cmd)
+            };
+            if let Err(e) = r {
+                self.status = e.to_string();
+            }
         }
         // Straight into editing it, as Edit Symmetry does.
         self.edit_symmetry();
+    }
+
+    /// The group added last on the page's layers (the one a Group
+    /// command just made).
+    fn newest_group(&self) -> Option<ShapeId> {
+        self.page_layers()
+            .into_iter()
+            .flat_map(|l| &l.shapes)
+            .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
+            .max_by_key(|s| s.id)
+            .map(|g| g.id)
+    }
+
+    /// Objects made while a symmetry is edited (drawn, pasted,
+    /// duplicated) join it: the symmetry group takes them in (an object
+    /// that was alone with the symmetry becomes a group of it and them,
+    /// the symmetry moving to the group). Folded into the step that made
+    /// the objects, so one Undo takes both back. The new objects stay
+    /// selected, inside the group.
+    pub fn join_symmetry(&mut self, ids: &[ShapeId]) {
+        let Some(g) = self.symmetry_editing() else {
+            return;
+        };
+        let ids: Vec<ShapeId> = ids
+            .iter()
+            .copied()
+            .filter(|id| self.doc().top_level_of(*id).is_some_and(|t| t != g))
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let Some(group) = self.doc().find_shape(g).cloned() else {
+            return;
+        };
+        let symmetry: Vec<Effect> = group
+            .effects
+            .iter()
+            .filter(|e| matches!(e, Effect::Symmetry { .. }))
+            .cloned()
+            .collect();
+        let mut members: Vec<ShapeId> = Vec::new();
+        let mut cmds: Vec<Command> = Vec::new();
+        match &group.kind {
+            ShapeKind::Group { children } => {
+                // The members come out of the group and into a new one
+                // with the newcomers; the group itself goes.
+                members.extend(children.iter().map(|c| c.id));
+                cmds.push(Command::Ungroup { group: g });
+            }
+            _ => {
+                // The lone object keeps its other effects; the symmetry
+                // moves to the group of it and the newcomers.
+                members.push(g);
+                let rest: Vec<Effect> = group
+                    .effects
+                    .iter()
+                    .filter(|e| !matches!(e, Effect::Symmetry { .. }))
+                    .cloned()
+                    .collect();
+                cmds.push(Command::SetEffects {
+                    shape: g,
+                    effects: rest,
+                });
+            }
+        }
+        members.extend(ids.iter().copied());
+        cmds.push(Command::Group { shapes: members });
+        for cmd in &cmds {
+            if let Err(e) = self.engine.amend(cmd) {
+                self.status = e.to_string();
+                return;
+            }
+        }
+        let Some(new) = self.newest_group() else {
+            return;
+        };
+        if let Err(e) = self.engine.amend(&Command::SetEffects {
+            shape: new,
+            effects: symmetry,
+        }) {
+            self.status = e.to_string();
+        }
+        self.symmetry_edit = Some(new);
+        self.selection = ids;
     }
 
     /// Object > Symmetry > Edit Symmetry (Alt+E): the symmetry editing
@@ -552,19 +665,33 @@ impl App {
     }
 
     /// The object whose symmetry is being edited, while it still has one;
-    /// the mode ends when it is gone or lost its symmetry.
+    /// the mode ends when it is gone or lost its symmetry. A group
+    /// remade by an Undo (see [`App::join_symmetry`]) hands the mode to
+    /// the page's symmetry object when there is one alone.
     pub fn symmetry_editing(&mut self) -> Option<ShapeId> {
         let id = self.symmetry_edit?;
-        let alive = self.doc().find_shape(id).is_some_and(|s| {
+        let has = |s: &tracedraw_core::Shape| {
             s.effects
                 .iter()
                 .any(|e| matches!(e, Effect::Symmetry { .. }))
-        });
-        if !alive {
-            self.symmetry_edit = None;
-            return None;
+        };
+        if self.doc().find_shape(id).is_some_and(has) {
+            return Some(id);
         }
-        Some(id)
+        let mut with: Vec<ShapeId> = self
+            .page_layers()
+            .into_iter()
+            .flat_map(|l| &l.shapes)
+            .filter(|s| has(s))
+            .map(|s| s.id)
+            .collect();
+        if with.len() == 1 {
+            let only = with.remove(0);
+            self.symmetry_edit = Some(only);
+            return Some(only);
+        }
+        self.symmetry_edit = None;
+        None
     }
 
     /// Object > Symmetry > Break Symmetry Link (Alt+X): the copies become
@@ -3059,6 +3186,108 @@ mod tests {
         // Less than the original size does nothing.
         app.inflate_bitmaps_by(100.0, 100.0);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+    }
+}
+
+#[cfg(test)]
+mod symmetry_tests {
+    use crate::app::App;
+    use tracedraw_core::geometry::Rect;
+    use tracedraw_core::live::Effect;
+    use tracedraw_core::{ShapeId, ShapeKind};
+
+    fn rect(app: &mut App, r: Rect) -> ShapeId {
+        app.new_shape(ShapeKind::Rect {
+            rect: r,
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a layer")
+    }
+
+    fn has_symmetry(app: &App, id: ShapeId) -> bool {
+        app.doc().find_shape(id).is_some_and(|s| {
+            s.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Symmetry { .. }))
+        })
+    }
+
+    fn members(app: &App, g: ShapeId) -> Vec<ShapeId> {
+        match app.doc().find_shape(g).map(|s| &s.kind) {
+            Some(ShapeKind::Group { children }) => children.iter().map(|c| c.id).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Several objects become one symmetry group in one step, each still
+    /// to be picked inside it; an object drawn, pasted or duplicated
+    /// while the symmetry is edited joins the group, folded into the step
+    /// that made it; a lone object with a symmetry becomes a group when
+    /// another joins it.
+    #[test]
+    fn a_symmetry_takes_several_objects_and_those_made_while_editing() {
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(10.0, 10.0, 30.0, 30.0));
+        let b = rect(&mut app, Rect::new(40.0, 10.0, 60.0, 30.0));
+        app.select(vec![a, b]);
+        let depth = app.engine.history_labels().0.len();
+        app.create_symmetry();
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1, "one step");
+        let g = app.symmetry_edit.expect("editing the symmetry");
+        assert!(has_symmetry(&app, g));
+        assert_eq!(members(&app, g), vec![a, b]);
+        assert!(!has_symmetry(&app, a) && !has_symmetry(&app, b));
+        // Picked inside: nested, so the handles are round.
+        app.select(vec![a]);
+        assert!(app.selection_nested());
+        // Drawn while editing: in the group, one step with the drawing.
+        let depth = app.engine.history_labels().0.len();
+        let c = rect(&mut app, Rect::new(10.0, 40.0, 30.0, 60.0));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        let g2 = app.symmetry_edit.expect("still editing");
+        assert_eq!(members(&app, g2), vec![a, b, c]);
+        assert!(has_symmetry(&app, g2));
+        assert_eq!(app.selection, vec![c]);
+        assert_eq!(
+            app.doc()
+                .all_layers()
+                .flat_map(|l| &l.shapes)
+                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
+                .count(),
+            1,
+            "one group on the page"
+        );
+        // Undo takes the drawing and its joining back together; the mode
+        // stays on the group as remade.
+        app.undo();
+        let g = app.symmetry_editing().expect("editing the symmetry");
+        assert_eq!(members(&app, g), vec![a, b]);
+        assert!(app.doc().find_shape(c).is_none());
+        // Duplicated while editing: the copy joins too.
+        app.select(vec![a]);
+        app.duplicate();
+        let g3 = app.symmetry_edit.expect("still editing");
+        assert_eq!(members(&app, g3).len(), 3);
+        app.finish_symmetry_edit();
+
+        // A lone object with a symmetry: another drawn while editing it
+        // makes the two a group holding the symmetry.
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(10.0, 10.0, 30.0, 30.0));
+        app.select(vec![a]);
+        app.create_symmetry();
+        assert_eq!(app.symmetry_edit, Some(a));
+        let b = rect(&mut app, Rect::new(10.0, 40.0, 30.0, 60.0));
+        let g = app.symmetry_edit.expect("editing");
+        assert_ne!(g, a);
+        assert_eq!(members(&app, g), vec![a, b]);
+        assert!(has_symmetry(&app, g) && !has_symmetry(&app, a));
+        // Not editing: a new object stays on its own.
+        app.finish_symmetry_edit();
+        let c = rect(&mut app, Rect::new(70.0, 10.0, 80.0, 20.0));
+        assert_eq!(members(&app, g), vec![a, b]);
+        assert!(app.doc().top_level_of(c) == Some(c));
     }
 }
 

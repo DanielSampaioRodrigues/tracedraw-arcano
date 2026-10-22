@@ -3313,6 +3313,10 @@ impl App {
         // The fill and outline of its kind (Default Properties).
         self.doc().defaults.apply_to(&mut shape);
         self.run(Command::AddShape { layer, shape });
+        // Drawn while a symmetry is edited: part of it.
+        if self.symmetry_edit.is_some() {
+            self.join_symmetry(&[id]);
+        }
         Some(id)
     }
 
@@ -3718,7 +3722,10 @@ impl App {
         if self.settings.hyphens_when_pasting && !self.settings.custom_hyphens.is_empty() {
             crate::ui::writing_tools::apply_custom_hyphens(self, &ids);
         }
-        self.select(ids);
+        self.select(ids.clone());
+        if self.symmetry_edit.is_some() {
+            self.join_symmetry(&ids);
+        }
     }
 
     pub fn duplicate(&mut self) {
@@ -3746,7 +3753,10 @@ impl App {
         if let Err(e) = self.engine.run_batch("Duplicate", &cmds) {
             self.status = e.to_string();
         }
-        self.select(ids);
+        self.select(ids.clone());
+        if self.symmetry_edit.is_some() {
+            self.join_symmetry(&ids);
+        }
     }
 
     pub fn group_selection(&mut self) {

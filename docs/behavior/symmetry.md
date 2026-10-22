@@ -25,6 +25,17 @@ recomputed from it.
   context menu): one vertical line (90 degrees) through the right edge of
   the selection's bounds, at its vertical centre, so the copy appears next
   to the original instead of over it; then straight into editing it.
+  Several selected objects are grouped first and the symmetry goes on the
+  group (one "Symmetry" undo step), so they mirror together; Ctrl+click
+  picks one of them inside the group (round handles) to move or colour
+  it alone, the copies following.
+- While a symmetry is edited, an object drawn, pasted or duplicated
+  joins it: the group takes it in (an object that was alone with the
+  symmetry becomes a group of it and the newcomer, the symmetry moving
+  to the group), folded into the step that made the object, so one Undo
+  takes both back; the newcomer stays selected inside
+  (`App::join_symmetry`,
+  `ops2::symmetry_tests::a_symmetry_takes_several_objects_and_those_made_while_editing`).
 - Edit (Object > Symmetry > Edit Symmetry, Alt+E): the symmetry editing
   mode. The original is outlined in red and a bar floats at the top left
   of the drawing window: Finish, the number of mirror lines (1 to 12),

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Symmetry: several selected objects become one symmetry group (each still to be picked inside it with Ctrl+click), and objects drawn, pasted or duplicated while the symmetry is edited join it; before, each object got a symmetry of its own and nothing could be added.
+
 - Panels: the plus button under the tabs lists the panels in the groups of Window > Panels, with a box ticked at each open one; unticking closes it.
 
 - Panels: the pointer over a panel tab shows a close cross at the top of the tab, and a click on it closes the panel.
