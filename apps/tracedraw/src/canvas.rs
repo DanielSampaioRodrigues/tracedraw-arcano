@@ -1662,6 +1662,34 @@ fn draw_nodes(app: &App, painter: &Painter) {
                 continue;
             }
         }
+        // A B-spline: its outline, the control polygon dashed and the
+        // control points as nodes; the curve's own nodes do not show.
+        if s.spline.is_some() {
+            for (pts, _) in flatten(&s.page_path(), view) {
+                painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+            }
+            let own = crate::kind_nodes::nodes(&s);
+            let poly: Vec<Pos2> = own.iter().map(|(_, p)| view.to_screen(*p)).collect();
+            let closed = matches!(s.kind, ShapeKind::Path { closed: true, .. });
+            let lines = if closed {
+                poly.len()
+            } else {
+                poly.len().saturating_sub(1)
+            };
+            for i in 0..lines {
+                painter.extend(egui::Shape::dashed_line(
+                    &[poly[i], poly[(i + 1) % poly.len()]],
+                    EStroke::new(1.0, secondary),
+                    4.0,
+                    3.0,
+                ));
+            }
+            for p in poly {
+                let fill = prefs.unselected_filled.then_some(Color32::WHITE);
+                node_marker(painter, p, size, prefs.cusp, fill, main);
+            }
+            continue;
+        }
         let ShapeKind::Path { path, .. } = &s.kind else {
             // Rectangles, ellipses and polygons show their own nodes.
             let own = crate::kind_nodes::nodes(&s);

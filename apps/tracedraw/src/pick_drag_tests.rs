@@ -2080,6 +2080,128 @@ fn bspline_clicks_place_control_points_of_a_smooth_curve() {
     assert!(near(c.p1, pts[1]) && near(c.p2, pts[2]), "{c:?}");
 }
 
+/// A B-spline keeps its control points: the Shape tool shows them
+/// instead of the curve's nodes, dragging one reshapes the spline, a
+/// double-click on the control polygon adds one and a double-click on a
+/// control point removes it. Any other edit of the outline leaves an
+/// ordinary curve.
+#[test]
+fn a_bspline_keeps_its_control_points_for_the_shape_tool() {
+    use tracedraw_core::geometry::bspline_path;
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::BSpline);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(130.0, 190.0),
+        Point::new(180.0, 180.0),
+        Point::new(190.0, 140.0),
+    ];
+    for p in pts {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    app.finish_curve();
+    let id = app.selection[0];
+    let spline = |app: &App| app.doc().find_shape(id).expect("shape").spline.clone();
+    let near = |a: &[Point], b: &[Point]| {
+        a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p - *q).hypot() < 0.5)
+    };
+    assert!(
+        near(&spline(&app).expect("spline"), &pts),
+        "{:?}",
+        spline(&app)
+    );
+    // One undo step for the whole curve.
+    app.undo();
+    assert!(app.doc().find_shape(id).is_none());
+    app.redo();
+    assert!(
+        near(&spline(&app).expect("spline"), &pts),
+        "{:?}",
+        spline(&app)
+    );
+
+    // The Shape tool: the control points are the nodes shown; a drag of
+    // the second one reshapes the spline.
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.node_at(pts[1]).is_none());
+    assert!(matches!(
+        app.kind_node_at(pts[1]),
+        Some((_, crate::kind_nodes::KindNode::Spline { index: 1 }))
+    ));
+    let moved = Point::new(130.0, 210.0);
+    let (from, to) = (app.view.to_screen(pts[1]), app.view.to_screen(moved));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let mut now = pts.to_vec();
+    now[1] = moved;
+    assert!(
+        near(&spline(&app).expect("spline"), &now),
+        "{:?}",
+        spline(&app)
+    );
+    assert_eq!(
+        last_path(&app),
+        bspline_path(&spline(&app).expect("spline"), false)
+    );
+    assert_eq!(app.engine.undo_label(), Some("Edit B-Spline"));
+
+    // A double-click on the control polygon (between the third and the
+    // fourth point) adds a control point there.
+    let double = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        // Well past the triple-click time since the last click, so these
+        // two clicks make a double-click and not a triple.
+        for _ in 0..40 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        for _ in 0..2 {
+            frame(
+                ctx,
+                app,
+                vec![button(at, true, PointerButton::Primary, Modifiers::NONE)],
+                Modifiers::NONE,
+            );
+            frame(
+                ctx,
+                app,
+                vec![button(at, false, PointerButton::Primary, Modifiers::NONE)],
+                Modifiers::NONE,
+            );
+        }
+        for _ in 0..20 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    };
+    let mid = now[2].midpoint(now[3]);
+    let at = app.view.to_screen(mid);
+    double(&ctx, &mut app, at);
+    let five = spline(&app).expect("spline");
+    assert_eq!(five.len(), 5, "{five:?}");
+    assert!((five[3] - mid).hypot() < 0.5, "{five:?}");
+    // A double-click on a control point removes it.
+    let at = app.view.to_screen(five[3]);
+    double(&ctx, &mut app, at);
+    assert!(
+        near(&spline(&app).expect("spline"), &now),
+        "{:?}",
+        spline(&app)
+    );
+
+    // Convert To Curves: the outline stays, the control points go, and
+    // the Shape tool shows the curve's nodes.
+    let outline = last_path(&app);
+    app.select(vec![id]);
+    assert!(app.can_convert_to_curves());
+    app.convert_to_curves();
+    assert_eq!(spline(&app), None);
+    assert_eq!(last_path(&app), outline);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.node_at(pts[0]).is_some());
+}
+
 /// With alignment guides on (and every other snapping off), a move of the
 /// rectangle near another one lands its top edge on the other's top and
 /// shows the line while the button is down; a scale handle lines up the
@@ -3417,7 +3539,7 @@ fn the_page_bar_does_nothing_on_the_welcome_screen() {
         }
     }
     let landscape = landscape.expect("the landscape button is on the bar");
-    app.engine.undo();
+    let _ = app.engine.undo();
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     assert_eq!(size(&app), portrait);
     // The Welcome Screen shown (the drawing behind it): the bar is pale.

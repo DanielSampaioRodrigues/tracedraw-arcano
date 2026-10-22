@@ -1759,7 +1759,13 @@ impl App {
     fn close_curve(&mut self, c: CurveInProgress) {
         self.curve_steps.clear();
         let path = c.path_closed(None, true);
-        if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
+        if let Some(id) = self.new_shape(ShapeKind::Path {
+            path: path.clone(),
+            closed: true,
+        }) {
+            if c.bspline {
+                self.keep_spline(id, &path, c.nodes.iter().map(|n| n.0).collect());
+            }
             self.select(vec![id]);
         }
     }

@@ -156,6 +156,27 @@ the node colour with a larger first node, which a rectangle, ellipse or
 polygon never has. Each drag is one undo step. Other objects show a Convert to
 Curves button.
 
+## B-splines
+
+A curve drawn with the B-spline tool keeps its control points
+(`Shape::spline`, local space). With the Shape tool it shows its outline
+in the node colour, the control polygon as dashed lines in the secondary
+node colour between the control points (the closing line too when the
+spline is closed), and a node at each control point; the curve's own
+nodes do not show and cannot be taken.
+
+| Action | Behaviour |
+|---|---|
+| Drag a control point | the spline follows (`Command::SetSpline`: the outline becomes the spline of the points, open or closed as it was); one undo step "Edit B-Spline" for the drag |
+| Double-click the control polygon | a control point there, between the two the line joins, at the foot of the pointer on the line |
+| Double-click a control point | removes it (two always stay) |
+| Click the control polygon | keeps the selection, as a click near a node does |
+| Convert To Curves (Ctrl+Q), or any other change of the outline (node editing, the brushes, a join) | the outline stays as it is and the control points go: an ordinary curve with the spline's nodes |
+
+A B-spline drawn on from the end node of another curve becomes part of
+that curve, and keeps no control points, as the other curve tools' lines
+do.
+
 ## Text
 
 With a text object selected the Shape tool shows a node per character
@@ -194,6 +215,8 @@ Reduce Nodes, Curve smoothness.
 - `kind_nodes::tests::the_ellipse_node_opens_a_pie_inside_and_an_arc_outside`
 - `kind_nodes::tests::polygon_nodes_move_together`
 - `kind_nodes::tests::points_between_the_vertices_twist_the_star`
+- `pick_drag_tests::a_bspline_keeps_its_control_points_for_the_shape_tool`
+- `tracedraw_core::command::tests::a_spline_follows_its_control_points_until_the_outline_is_changed_otherwise`
 - `geometry::tests::twisting_turns_the_points_between_the_vertices` (core): the
   vertices stay, the points between them keep their distance and turn by
   the twist; a plain polygon turned gains points at its sides' middles.

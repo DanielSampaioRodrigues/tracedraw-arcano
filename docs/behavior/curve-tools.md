@@ -115,9 +115,15 @@ meets the start) `Path` objects with the toolbox defaults.
 - Double-click, Enter or Esc finishes (Esc with one point drops it);
   clicking the first point (once there are three) closes it into the periodic spline,
   smooth all round. The result is a curve object (its nodes are the
-  Bezier segments, one a knot span); the control points are not kept.
-- Checked by `geometry::tests::bsplines_start_and_end_on_their_ends_and_stay_inside`
-  and `pick_drag_tests::bspline_clicks_place_control_points_of_a_smooth_curve`.
+  Bezier segments, one a knot span) that keeps its control points
+  (`Shape::spline`): the Shape tool shows and moves them, with the
+  dashed control polygon, instead of the nodes (see
+  [shape-tool.md](shape-tool.md), "B-splines"). A B-spline that goes on
+  from the end node of the selected curve joins that curve and keeps no
+  control points.
+- Checked by `geometry::tests::bsplines_start_and_end_on_their_ends_and_stay_inside`,
+  `pick_drag_tests::bspline_clicks_place_control_points_of_a_smooth_curve`
+  and `pick_drag_tests::a_bspline_keeps_its_control_points_for_the_shape_tool`.
 
 ## Polyline and 2-point line
 

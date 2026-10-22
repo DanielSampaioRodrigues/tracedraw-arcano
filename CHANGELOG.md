@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- B-spline: a curve drawn with the B-spline tool keeps its control points. The Shape tool shows them with the dashed control polygon instead of the curve's nodes: drag one to reshape the spline, double-click the polygon to add one, double-click a point to remove it. Convert To Curves (or any other edit of the outline) makes it an ordinary curve. The control points were dropped as soon as the curve was finished.
+
 - Smooth tool: a stroke eases the wobbles out of the curve under the nib and leaves a handful of nodes behind it; it left a node every few millimetres and broke the curve into short pieces as the pointer advanced. Smear and Twirl measure the curve finer under the nib and leave smoother curves too.
 
 - Clip frames: while objects are moved over a clip frame it lights up and a note under the pointer says what the release does; W held adds the objects to the frame, K held replaces its contents. Edit Contents fades the rest of the page while the frame and its contents are edited.

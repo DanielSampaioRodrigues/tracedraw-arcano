@@ -147,6 +147,8 @@ impl App {
         let s = self.doc().find_shape(id)?;
         let parent = self.doc().parent_transform(id)?;
         match &s.kind {
+            // A B-spline's control points are edited, not its nodes.
+            ShapeKind::Path { .. } if s.spline.is_some() => None,
             ShapeKind::Path { path, closed } => Some((path.clone(), *closed, parent * s.transform)),
             _ => None,
         }

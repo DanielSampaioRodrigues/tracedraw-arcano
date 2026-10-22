@@ -127,6 +127,8 @@ impl App {
         let s = self.doc().find_shape(id)?;
         let parent = self.doc().parent_transform(id)?;
         match &s.kind {
+            // A B-spline shows its control points, not its nodes.
+            ShapeKind::Path { .. } if s.spline.is_some() => None,
             ShapeKind::Path { path, closed } => Some((path.clone(), *closed, parent * s.transform)),
             _ => None,
         }
@@ -298,6 +300,15 @@ impl App {
             .find_map(|s| crate::kind_nodes::node_at(&s, p, tol).map(|n| (s, n)))
     }
 
+    /// A selected B-spline whose control polygon lies under the pointer,
+    /// with its control points plus one at the pointer.
+    pub(crate) fn spline_polygon_at(&self, p: Point) -> Option<(ShapeId, Vec<Point>)> {
+        let tol = (self.settings.nodes.pick_px() + 1.0) / self.view.zoom as f64;
+        self.shape_tool_shapes()
+            .into_iter()
+            .find_map(|s| crate::kind_nodes::spline_with_point(&s, p, tol).map(|pts| (s.id, pts)))
+    }
+
     /// Control handle under the pointer, for selected nodes only.
     pub(crate) fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
         // The nearest handle within the pick distance, on the page.
@@ -326,6 +337,21 @@ impl App {
 
     pub fn shape_tool_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         if response.double_clicked_by(PointerButton::Primary) {
+            // A B-spline: a double-click on a control point removes it,
+            // one on the control polygon adds one there.
+            if let Some((s, crate::kind_nodes::KindNode::Spline { index })) = self.kind_node_at(p) {
+                if let Some(points) = crate::kind_nodes::spline_without(&s, index) {
+                    self.run(Command::SetSpline {
+                        shape: s.id,
+                        points,
+                    });
+                }
+                return;
+            }
+            if let Some((id, points)) = self.spline_polygon_at(p) {
+                self.run(Command::SetSpline { shape: id, points });
+                return;
+            }
             if let Some(hit) = self.node_at(p) {
                 // Double-click a node deletes it.
                 if let Some((path, closed, _)) = self.path_of(hit.shape) {
@@ -645,9 +671,15 @@ impl App {
                     mut turn,
                 } => {
                     let q = self.snap_point_excluding(p, &[shape]);
-                    if let Some(kind) = crate::kind_nodes::drag(&start, node, q, single, &mut turn)
-                    {
-                        let cmd = Command::SetShapeKind { shape, kind };
+                    let cmd = match node {
+                        crate::kind_nodes::KindNode::Spline { index } => {
+                            crate::kind_nodes::spline_moved(&start, index, q)
+                                .map(|points| Command::SetSpline { shape, points })
+                        }
+                        _ => crate::kind_nodes::drag(&start, node, q, single, &mut turn)
+                            .map(|kind| Command::SetShapeKind { shape, kind }),
+                    };
+                    if let Some(cmd) = cmd {
                         // One undo step for the whole drag.
                         let _ = if begun {
                             self.engine.amend(&cmd)
@@ -701,7 +733,10 @@ impl App {
             // A press on a control handle, or a near miss of a node or a
             // handle of the selected curves, keeps the selection: only a
             // click clearly on empty canvas deselects.
-            if self.ctrl_handle_at(p).is_some() || self.near_selected_nodes(p) {
+            if self.ctrl_handle_at(p).is_some()
+                || self.near_selected_nodes(p)
+                || self.spline_polygon_at(p).is_some()
+            {
                 return;
             }
             match self.hit_test(p) {

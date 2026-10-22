@@ -3550,7 +3550,33 @@ impl App {
         if c.nodes.len() < 2 {
             return;
         }
-        self.add_drawn_line(c.path(None));
+        let line = c.path(None);
+        let id = self.add_drawn_line(line.clone());
+        if c.bspline {
+            // A B-spline of its own keeps its control points (one that
+            // went on from another curve is a curve like that one).
+            if let Some(id) = id {
+                self.keep_spline(id, &line, c.nodes.iter().map(|n| n.0).collect());
+            }
+        }
+    }
+
+    /// The curve `id`, just made with the outline `line` from the B-spline
+    /// tool, keeps its control points `points` (folded into its undo
+    /// step) when its outline is still `line`.
+    pub(crate) fn keep_spline(
+        &mut self,
+        id: ShapeId,
+        line: &tracedraw_core::BezPath,
+        points: Vec<Point>,
+    ) {
+        let fresh = matches!(
+            self.doc().find_shape(id).map(|s| &s.kind),
+            Some(ShapeKind::Path { path, .. }) if path == line
+        );
+        if fresh {
+            let _ = self.engine.amend(&Command::SetSpline { shape: id, points });
+        }
     }
 
     /// Start artistic text at a point, or paragraph text in a frame.

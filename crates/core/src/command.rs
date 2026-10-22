@@ -189,6 +189,13 @@ pub enum Command {
         shape: ShapeId,
         name: Option<String>,
     },
+    /// A B-spline's control points (local space; two at least): the
+    /// curve's outline becomes their spline, open or closed as the curve
+    /// is, and the Shape tool edits them (see [`Shape::spline`]).
+    SetSpline {
+        shape: ShapeId,
+        points: Vec<crate::geometry::Point>,
+    },
     /// A QR code object's settings (its children are set with
     /// [`Command::SetShapeKind`] in the same step).
     SetQrCode {
@@ -412,6 +419,7 @@ impl Command {
             Command::PatchFill { .. } => "Fill",
             Command::SetShapeKind { .. } => "Edit Object",
             Command::SetShapeName { .. } => "Rename Object",
+            Command::SetSpline { .. } => "Edit B-Spline",
             Command::SetQrCode { .. } => "QR Code",
             Command::Reorder { .. } => "Order",
             Command::Group { .. } => "Group",
@@ -734,7 +742,22 @@ impl Command {
                 if !s.node_types.is_empty() && node_count(&s.kind) != node_count(kind) {
                     s.node_types.clear();
                 }
+                // A B-spline given any other outline is an ordinary curve.
+                s.spline = None;
                 s.kind = kind.clone();
+            }
+            Command::SetSpline { shape, points } => {
+                if points.len() < 2 || points.iter().any(|p| !p.is_finite()) {
+                    return Err(Error::BadSpline);
+                }
+                let s = any_mut(doc, *shape)?;
+                let closed = matches!(s.kind, ShapeKind::Path { closed: true, .. });
+                s.kind = ShapeKind::Path {
+                    path: crate::geometry::bspline_path(points, closed),
+                    closed,
+                };
+                s.node_types.clear();
+                s.spline = Some(points.clone());
             }
             Command::SetNodeTypes { shape, types } => {
                 any_mut(doc, *shape)?.node_types = types.clone()
@@ -1316,6 +1339,86 @@ mod tests {
             })
             .unwrap();
         assert!(engine.document().comments.is_empty());
+    }
+
+    #[test]
+    fn a_spline_follows_its_control_points_until_the_outline_is_changed_otherwise() {
+        use crate::geometry::Point;
+        let mut doc = Document::default();
+        let page = doc.pages[0].id;
+        let layer = doc.page(page).expect("page").layers[0].id;
+        let id = doc.ids_mut().shape();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: BezPath::new(),
+                closed: false,
+            },
+        );
+        let mut eng = crate::Engine::new(doc);
+        eng.run(&Command::AddShape { layer, shape }).expect("added");
+        let pts = vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 20.0),
+            Point::new(30.0, 20.0),
+            Point::new(40.0, 0.0),
+        ];
+        eng.run(&Command::SetSpline {
+            shape: id,
+            points: pts.clone(),
+        })
+        .expect("spline");
+        let s = eng.document().find_shape(id).expect("shape");
+        assert_eq!(s.spline.as_deref(), Some(pts.as_slice()));
+        assert_eq!(
+            s.kind,
+            ShapeKind::Path {
+                path: crate::geometry::bspline_path(&pts, false),
+                closed: false,
+            }
+        );
+        // The native format keeps the control points.
+        let json = serde_json::to_string(eng.document()).expect("json");
+        let back: Document = serde_json::from_str(&json).expect("parsed");
+        assert_eq!(back.find_shape(id).expect("shape").spline, s.spline);
+        // Fewer than two points, or a point that is not finite: refused.
+        assert!(eng
+            .run(&Command::SetSpline {
+                shape: id,
+                points: vec![Point::new(0.0, 0.0)],
+            })
+            .is_err());
+        assert!(eng
+            .run(&Command::SetSpline {
+                shape: id,
+                points: vec![Point::new(0.0, 0.0), Point::new(f64::NAN, 0.0)],
+            })
+            .is_err());
+        // Any other outline makes it an ordinary curve.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((40.0, 0.0));
+        eng.run(&Command::SetShapeKind {
+            shape: id,
+            kind: ShapeKind::Path {
+                path: line,
+                closed: false,
+            },
+        })
+        .expect("kind");
+        assert_eq!(eng.document().find_shape(id).expect("shape").spline, None);
+        eng.undo().expect("undo");
+        assert!(eng
+            .document()
+            .find_shape(id)
+            .expect("shape")
+            .spline
+            .is_some());
+        // So does Convert To Curves, keeping the outline.
+        let s = eng.document().find_shape(id).expect("shape").clone();
+        assert!(s.converts_to_curves());
+        let mut next = || ShapeId(0);
+        assert_eq!(s.curves_kind(&[], &mut next), Some(s.kind.clone()));
     }
 
     #[test]
