@@ -1302,6 +1302,13 @@ pub(crate) fn text_frame_color(f: &crate::text_frames::ShownFrame) -> Color32 {
     }
 }
 
+/// The flow tab of a frame whose bottom edge runs from `a` to `b` on
+/// screen: hanging under its middle.
+pub fn flow_tab_rect(a: Pos2, b: Pos2) -> ERect {
+    let mid = a + (b - a) * 0.5;
+    ERect::from_min_size(mid + egui::vec2(-6.0, 1.0), egui::vec2(12.0, 9.0))
+}
+
 /// Paragraph text frames: dashed lines in the colour `text_frame_color`
 /// gives.
 fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
@@ -1318,27 +1325,40 @@ fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
             4.0,
             3.0,
         ));
-        if f.overflow {
-            // The bottom edge's middle, then a tab hanging from it.
-            let mid = pts[0] + (pts[1] - pts[0]) * 0.5;
-            let tab = ERect::from_min_size(mid + egui::vec2(-6.0, 1.0), egui::vec2(12.0, 9.0));
+        // The flow tab under the bottom edge's middle: a down arrow when
+        // the text does not fit, two links when it flows on, empty on a
+        // picked frame; a click on it says where the text flows on.
+        if f.overflow || f.chosen {
+            let tab = flow_tab_rect(pts[0], pts[1]);
+            let ink = if f.overflow { red } else { color };
             painter.rect(
                 tab,
                 0.0,
                 Color32::WHITE,
-                EStroke::new(1.0, red),
+                EStroke::new(1.0, ink),
                 epaint::StrokeKind::Inside,
             );
             let c = tab.center();
-            painter.add(epaint::PathShape::convex_polygon(
-                vec![
-                    c + egui::vec2(-3.0, -2.0),
-                    c + egui::vec2(3.0, -2.0),
-                    c + egui::vec2(0.0, 2.5),
-                ],
-                red,
-                EStroke::NONE,
-            ));
+            if f.overflow {
+                painter.add(epaint::PathShape::convex_polygon(
+                    vec![
+                        c + egui::vec2(-3.0, -2.0),
+                        c + egui::vec2(3.0, -2.0),
+                        c + egui::vec2(0.0, 2.5),
+                    ],
+                    red,
+                    EStroke::NONE,
+                ));
+            } else if f.linked {
+                for dx in [-2.0, 2.0] {
+                    painter.rect_stroke(
+                        ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(4.0, 3.0)),
+                        1.0,
+                        EStroke::new(1.0, ink),
+                        epaint::StrokeKind::Inside,
+                    );
+                }
+            }
         }
     }
 }

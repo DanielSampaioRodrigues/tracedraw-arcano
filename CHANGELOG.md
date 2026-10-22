@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Paragraph text: frames have a flow tab under their bottom edge, as in the reference program. A click on it, then a click on another frame links them, even on another page; a click or drag on an empty spot makes a new frame there that the text flows into. Linking used to need both frames selected, so frames on different pages could not be linked (#371).
+
 - Place Inside Frame, Order > In Front Of and Behind: while they wait for the click on the target object, the pointer is a thick arrow pointing at it, as in the reference program; it stayed the ordinary pointer (#379).
 
 - Variable Outline tool: Shift and Ctrl now work as in the reference program. A drag started with Shift changes only the side the pointer is on (Alt still does too); Shift+click picks a run of width nodes and Ctrl+click adds one or takes it out; a drag or the property bar then changes all the picked nodes, and Delete removes them (#374).

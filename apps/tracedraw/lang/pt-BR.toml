@@ -3053,6 +3053,7 @@ status.exported = "Exportado para {path}"
 status.extrude_drag_hint = "Arraste sobre o objeto para definir a profundidade da extrusão"
 status.fill_color = "Cor de preenchimento"
 status.first_page = "Primeira página"
+status.flow_text_where = "Clique num quadro de texto de parágrafo (em qualquer página) para o texto fluir nele, ou clique ou arraste onde vai um quadro novo; Esc cancela" # mt
 status.frames_linked = "Quadros vinculados; o texto excedente flui para o próximo quadro"
 status.guideline_locked = "A linha-guia está bloqueada"
 status.hairline = "Linha fina"

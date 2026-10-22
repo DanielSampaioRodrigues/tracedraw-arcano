@@ -91,6 +91,9 @@ drawn, printed or exported. To make it fit:
   to resize the text to fill the frame;
 - link the frame to another one, so the text flows on:
   [[menu.text.frame_link]]. [[menu.text.frame_unlink]] breaks the link.
+  Or click the small tab under the frame's bottom edge, then click another
+  frame (on this page or another one) or click or drag on an empty spot
+  for a new frame: the text flows on into it.
 
 [[menu.text > menu.text.show_text_frames]] shows or hides the frames.
 

@@ -3053,6 +3053,7 @@ status.exported = "Esportato {path}"
 status.extrude_drag_hint = "Trascina sull'oggetto per impostare la profondità dell'estrusione"
 status.fill_color = "Colore di riempimento"
 status.first_page = "Prima pagina"
+status.flow_text_where = "Fate clic su una cornice di testo di paragrafo (in qualsiasi pagina) per farvi scorrere il testo, oppure fate clic o trascinate dove va una nuova cornice; Esc annulla" # mt
 status.frames_linked = "Cornici collegate; il testo in eccesso scorre nella cornice successiva"
 status.guideline_locked = "La linea guida è bloccata"
 status.hairline = "Linea sottilissima"

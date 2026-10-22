@@ -3053,6 +3053,7 @@ status.exported = "已导出 {path}"
 status.extrude_drag_hint = "在对象上拖动以设置立体化深度"
 status.fill_color = "填充颜色"
 status.first_page = "第一页"
+status.flow_text_where = "单击段落文本框（任意页面）使文本流入其中，或在新文本框的位置单击或拖动；Esc 取消" # mt
 status.frames_linked = "文本框已链接；溢出的文本流入下一个文本框"
 status.guideline_locked = "辅助线已锁定"
 status.hairline = "细线"

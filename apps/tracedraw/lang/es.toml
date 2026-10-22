@@ -3053,6 +3053,7 @@ status.exported = "Exportado a {path}"
 status.extrude_drag_hint = "Arrastre sobre el objeto para fijar la profundidad de extrusión"
 status.fill_color = "Color de relleno"
 status.first_page = "Primera página"
+status.flow_text_where = "Haga clic en un marco de texto de párrafo (en cualquier página) para que el texto fluya en él, o haga clic o arrastre donde va un marco nuevo; Esc cancela" # mt
 status.frames_linked = "Marcos vinculados; el texto sobrante fluye al siguiente marco"
 status.guideline_locked = "La línea guía está bloqueada"
 status.hairline = "Línea fina"

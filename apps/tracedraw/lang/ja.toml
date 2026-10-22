@@ -3053,6 +3053,7 @@ status.exported = "{path} にエクスポートしました"
 status.extrude_drag_hint = "オブジェクト上をドラッグして押し出しの深さを設定"
 status.fill_color = "塗りつぶしの色"
 status.first_page = "最初のページ"
+status.flow_text_where = "段落テキストのフレーム（どのページでも）をクリックするとテキストがそこへ流れ込みます。新しいフレームの位置をクリックまたはドラッグすることもできます。Esc で取り消し" # mt
 status.frames_linked = "フレームをリンクしました。あふれたテキストは次のフレームに流れます"
 status.guideline_locked = "ガイドラインはロックされています"
 status.hairline = "ヘアライン"

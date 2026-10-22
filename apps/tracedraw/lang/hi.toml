@@ -3053,6 +3053,7 @@ status.exported = "{path} निर्यात किया गया"
 status.extrude_drag_hint = "एक्सट्रूड गहराई सेट करने के लिए ऑब्जेक्ट पर खींचें"
 status.fill_color = "भराव रंग"
 status.first_page = "पहला पृष्ठ"
+status.flow_text_where = "टेक्स्ट को उसमें बहाने के लिए किसी अनुच्छेद टेक्स्ट फ़्रेम (किसी भी पेज पर) पर क्लिक करें, या जहाँ नया फ़्रेम जाए वहाँ क्लिक करें या खींचें; Esc रद्द करता है" # mt
 status.frames_linked = "फ़्रेम लिंक हो गए; अतिरिक्त टेक्स्ट अगले फ़्रेम में प्रवाहित होता है"
 status.guideline_locked = "गाइडलाइन लॉक है"
 status.hairline = "हेयरलाइन"

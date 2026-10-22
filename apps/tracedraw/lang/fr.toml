@@ -3053,6 +3053,7 @@ status.exported = "Exporté vers {path}"
 status.extrude_drag_hint = "Faites glisser sur l'objet pour définir la profondeur d'extrusion"
 status.fill_color = "Couleur de fond"
 status.first_page = "Première page"
+status.flow_text_where = "Cliquez sur un cadre de texte de paragraphe (sur n'importe quelle page) pour y faire couler le texte, ou cliquez ou faites glisser là où va un nouveau cadre ; Échap annule" # mt
 status.frames_linked = "Encadrés liés ; le texte en excès s'écoule dans l'encadré suivant"
 status.guideline_locked = "Le repère est verrouillé"
 status.hairline = "Filet"

@@ -3053,6 +3053,7 @@ status.exported = "{path} geëxporteerd"
 status.extrude_drag_hint = "Sleep op het object om de extrusiediepte in te stellen"
 status.fill_color = "Vulkleur"
 status.first_page = "Eerste pagina"
+status.flow_text_where = "Klik op een alineatekstkader (op elke pagina) om de tekst erin te laten lopen, of klik of sleep waar een nieuw kader komt; Esc annuleert" # mt
 status.frames_linked = "Kaders gekoppeld; overlopende tekst loopt door in het volgende kader"
 status.guideline_locked = "De hulplijn is vergrendeld"
 status.hairline = "Haarlijn"

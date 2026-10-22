@@ -3053,6 +3053,7 @@ status.exported = "Diekspor ke {path}"
 status.extrude_drag_hint = "Seret pada objek untuk mengatur kedalaman ekstrusi"
 status.fill_color = "Warna isian"
 status.first_page = "Halaman pertama"
+status.flow_text_where = "Klik bingkai teks paragraf (di halaman mana pun) agar teks mengalir ke dalamnya, atau klik atau seret di tempat bingkai baru; Esc membatalkan" # mt
 status.frames_linked = "Bingkai tertaut; teks berlebih mengalir ke bingkai berikutnya"
 status.guideline_locked = "Garis bantu terkunci"
 status.hairline = "Garis rambut"

@@ -845,7 +845,11 @@ impl App {
         }
         // Right click: context menu (drawn by the UI at this position);
         // none while a transform is dragged.
-        if response.secondary_clicked() && !self.pending_clip_frame && !self.transforming() {
+        if response.secondary_clicked()
+            && !self.pending_clip_frame
+            && self.pending_text_link.is_none()
+            && !self.transforming()
+        {
             if self.pending_click(response, p) || self.coords_pick_input(response, p) {
                 return;
             }
@@ -860,6 +864,23 @@ impl App {
             return;
         }
 
+        if self.pending_text_link.is_some() {
+            if response.drag_started_by(PointerButton::Primary) {
+                self.text_link_drag = Some(p);
+            } else if response.drag_stopped_by(PointerButton::Primary) {
+                if let Some(a) = self.text_link_drag.take() {
+                    let now = self.pointer_page.unwrap_or(p);
+                    self.finish_text_link(now, Some(Rect::from_points(a, now)));
+                }
+            } else if response.clicked_by(PointerButton::Primary) {
+                self.finish_text_link(p, None);
+            }
+            if response.secondary_clicked() {
+                self.pending_text_link = None;
+                self.text_link_drag = None;
+            }
+            return;
+        }
         if self.pending_clip_frame {
             if response.clicked_by(PointerButton::Primary) {
                 self.pending_clip_frame = false;
@@ -1057,6 +1078,16 @@ impl App {
     }
 
     fn pick_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
+        // A press on a frame's flow tab: where its text flows on is the
+        // next click (#371).
+        if response.clicked_by(PointerButton::Primary)
+            || response.drag_started_by(PointerButton::Primary)
+        {
+            if let Some(id) = self.flow_tab_at(screen) {
+                self.start_text_link(id);
+                return;
+            }
+        }
         // Resting over the selection (not over a handle or the centre of
         // rotation), the pointer shows the snap point or edge a drag
         // would carry, with its name.
@@ -2417,6 +2448,11 @@ impl App {
         }
         // Esc during a move, scale, rotation or skew cancels it: nothing
         // changes and the selection stays.
+        if self.pending_text_link.is_some() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.pending_text_link = None;
+            self.text_link_drag = None;
+            return;
+        }
         if self.transforming() && ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.drag = Drag::None;
             self.drag_copy = false;

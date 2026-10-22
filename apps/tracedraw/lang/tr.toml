@@ -3053,6 +3053,7 @@ status.exported = "Dışa aktarıldı: {path}"
 status.extrude_drag_hint = "Ekstrüzyon derinliğini ayarlamak için nesne üzerinde sürükleyin"
 status.fill_color = "Dolgu Rengi"
 status.first_page = "İlk sayfa"
+status.flow_text_where = "Metnin akması için bir paragraf metni çerçevesine (herhangi bir sayfada) tıklayın veya yeni çerçevenin olacağı yere tıklayın ya da sürükleyin; Esc iptal eder" # mt
 status.frames_linked = "Çerçeveler bağlandı; taşan metin sonraki çerçeveye akar"
 status.guideline_locked = "Kılavuz çizgisi kilitli"
 status.hairline = "Kılcal"

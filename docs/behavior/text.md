@@ -260,6 +260,17 @@ any other object; the steps and sides follow the letters' outlines
   typing, linking and resizing (`textflow.rs`, links kept in the object
   data as `text.next` and `text.prev`). Unlink leaves each frame with the
   text it shows.
+- The flow tab (#371): a paragraph frame that is picked, or whose text
+  does not fit, has a tab under its bottom edge's middle (a down arrow
+  when the text does not fit, two links when the frame flows on, empty
+  otherwise). A click on the tab of a frame that flows into no other
+  (Pick tool) waits for the next click, with the target arrow pointer
+  and a hint on the status bar: on another paragraph frame, on this page
+  or on another one reached meanwhile, the text flows into it; on empty
+  space a new frame the size of the first one takes the text, its top
+  left corner at the click; a drag makes the new frame the dragged
+  rectangle. Esc or a right click cancels
+  (`the_flow_tab_links_to_a_new_frame_on_another_page`).
 - A copy of a frame (Duplicate, a right click during a move, Paste,
   stamping) is a frame of its own, in no chain: typing in it does not
   flow into the original's next frame. Frames of a chain copied together

@@ -3053,6 +3053,7 @@ status.exported = "Wyeksportowano {path}"
 status.extrude_drag_hint = "Przeciągnij na obiekcie, aby ustawić głębokość wytłaczania"
 status.fill_color = "Kolor wypełnienia"
 status.first_page = "Pierwsza strona"
+status.flow_text_where = "Kliknij ramkę tekstu akapitowego (na dowolnej stronie), aby tekst do niej przepłynął, albo kliknij lub przeciągnij tam, gdzie ma być nowa ramka; Esc anuluje" # mt
 status.frames_linked = "Połączono ramki; nadmiarowy tekst przepływa do następnej ramki"
 status.guideline_locked = "Linia pomocnicza jest zablokowana"
 status.hairline = "Linia włosowa"

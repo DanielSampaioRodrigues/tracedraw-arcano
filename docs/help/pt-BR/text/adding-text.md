@@ -95,6 +95,9 @@ cabe não é desenhado, impresso nem exportado. Para fazê-lo caber:
   para redimensionar o texto até preencher a moldura;
 - ligue a moldura a outra, para o texto continuar nela:
   [[menu.text.frame_link]]. [[menu.text.frame_unlink]] desfaz a ligação.
+  Ou clique na pequena aba sob a borda de baixo do quadro e depois clique
+  em outro quadro (nesta página ou em outra) ou clique ou arraste num lugar
+  vazio para um quadro novo: o texto continua nele.
 
 [[menu.text > menu.text.show_text_frames]] mostra ou oculta as molduras.
 

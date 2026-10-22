@@ -1054,6 +1054,11 @@ pub struct App {
     pub show_welcome: bool,
     /// Object > Clip to Frame > Place Inside Frame is waiting for a click on the frame.
     pub pending_clip_frame: bool,
+    /// A frame's flow tab was clicked: the next click says where its text
+    /// flows on (#371).
+    pub pending_text_link: Option<ShapeId>,
+    /// Where a drag for the new frame of a flow began.
+    pub text_link_drag: Option<Point>,
     /// Clip frame being edited in place: (frame id, content ids).
     pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
     /// Object > Symmetry > Edit Symmetry: the object whose symmetry is
@@ -2024,6 +2029,8 @@ impl App {
             page_numbers: PageNumberSettings::default(),
             show_welcome: false,
             pending_clip_frame: false,
+            pending_text_link: None,
+            text_link_drag: None,
             clip_frame_edit: None,
             symmetry_edit: None,
             show_guides: true,

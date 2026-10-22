@@ -3053,6 +3053,7 @@ status.exported = "Exportováno: {path}"
 status.extrude_drag_hint = "Tažením na objektu nastavíte hloubku vysunutí"
 status.fill_color = "Barva výplně"
 status.first_page = "První stránka"
+status.flow_text_where = "Klepněte na rámec odstavcového textu (na libovolné stránce), aby do něj text tekl, nebo klepněte či táhněte tam, kde má být nový rámec; Esc ruší" # mt
 status.frames_linked = "Rámečky propojeny; přetékající text plyne do dalšího rámečku"
 status.guideline_locked = "Vodítko je zamčené"
 status.hairline = "Vlasová čára"

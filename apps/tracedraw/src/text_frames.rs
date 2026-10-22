@@ -12,6 +12,9 @@ use tracedraw_core::{Command, Shape, ShapeId, ShapeKind};
 /// A paragraph text frame as shown on screen.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShownFrame {
+    pub id: tracedraw_core::ShapeId,
+    /// The frame flows into another (its tab shows a link).
+    pub linked: bool,
     /// Page-space corners, the frame's lower left first.
     pub corners: [Point; 4],
     /// The text is selected or being edited.
@@ -207,6 +210,8 @@ impl App {
                 c = c.map(|p| t * p);
             }
             out.push(ShownFrame {
+                id: s.id,
+                linked: self.next_frame(s.id).is_some(),
                 corners: c,
                 chosen,
                 editing: editing == Some(s.id),

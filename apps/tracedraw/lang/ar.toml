@@ -3053,6 +3053,7 @@ status.exported = "تم التصدير إلى {path}"
 status.extrude_drag_hint = "اسحب على الكائن لتعيين عمق البثق"
 status.fill_color = "لون التعبئة"
 status.first_page = "الصفحة الأولى"
+status.flow_text_where = "انقر إطار نص فقرة (في أي صفحة) ليتدفق النص فيه، أو انقر أو اسحب حيث يكون إطار جديد؛ Esc يلغي" # mt
 status.frames_linked = "تم ربط الإطارات؛ يتدفق النص الزائد إلى الإطار التالي"
 status.guideline_locked = "خط الإرشاد مقفل"
 status.hairline = "خط شعري"

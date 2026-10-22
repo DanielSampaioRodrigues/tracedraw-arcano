@@ -3053,6 +3053,7 @@ status.exported = "এক্সপোর্ট হয়েছে: {path}"
 status.extrude_drag_hint = "এক্সট্রুড গভীরতা সেট করতে অবজেক্টের উপর টানুন"
 status.fill_color = "ভরাট রং"
 status.first_page = "প্রথম পৃষ্ঠা"
+status.flow_text_where = "টেক্সট প্রবাহিত করতে কোনো অনুচ্ছেদ টেক্সট ফ্রেমে (যেকোনো পৃষ্ঠায়) ক্লিক করুন, অথবা যেখানে নতুন ফ্রেম যাবে সেখানে ক্লিক বা টেনে আনুন; Esc বাতিল করে" # mt
 status.frames_linked = "ফ্রেম লিংক হয়েছে; অতিরিক্ত টেক্সট পরের ফ্রেমে প্রবাহিত হয়"
 status.guideline_locked = "গাইডলাইনটি লক করা"
 status.hairline = "হেয়ারলাইন"

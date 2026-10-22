@@ -3053,6 +3053,7 @@ status.exported = "Exportiert nach {path}"
 status.extrude_drag_hint = "Auf dem Objekt ziehen, um die Extrusionstiefe festzulegen"
 status.fill_color = "Füllfarbe"
 status.first_page = "Erste Seite"
+status.flow_text_where = "Klicken Sie auf einen Mengentextrahmen (auf jeder Seite), damit der Text hineinfließt, oder klicken oder ziehen Sie dort, wo ein neuer Rahmen hinkommt; Esc bricht ab" # mt
 status.frames_linked = "Rahmen verknüpft; überlaufender Text fließt in den nächsten Rahmen"
 status.guideline_locked = "Die Hilfslinie ist gesperrt"
 status.hairline = "Haarlinie"

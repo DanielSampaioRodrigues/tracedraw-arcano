@@ -3053,6 +3053,7 @@ status.exported = "已匯出 {path}"
 status.extrude_drag_hint = "在物件上拖曳以設定立體化深度"
 status.fill_color = "填滿色彩"
 status.first_page = "第一頁"
+status.flow_text_where = "按一下段落文字框（任何頁面）讓文字流入其中，或在新文字框的位置按一下或拖曳；Esc 取消" # mt
 status.frames_linked = "已連結框架；溢出的文字會流入下一個框架"
 status.guideline_locked = "參考線已鎖定"
 status.hairline = "極細線"
