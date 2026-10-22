@@ -12,6 +12,9 @@ use crate::{Document, Error, Result};
 #[derive(Debug, Clone)]
 struct HistoryEntry {
     label: &'static str,
+    /// The step's identity, unique in this engine (see
+    /// [`Engine::last_step_id`]).
+    id: u64,
     before: Document,
     after: Document,
 }
@@ -31,6 +34,8 @@ pub struct Engine {
     max_history: usize,
     /// Generator of object identities ([`crate::document::Uid`]).
     uid_state: u64,
+    /// The id the next recorded step gets.
+    next_step: u64,
 }
 
 /// A seed no other engine in this run has: std's per-run random hash keys
@@ -61,6 +66,7 @@ impl Engine {
             step_revision: u64::MAX,
             max_history: 200,
             uid_state: fresh_seed(),
+            next_step: 1,
         };
         e.doc.assign_uids(&mut e.uid_state);
         e.doc.refresh_text_flow();
@@ -118,8 +124,11 @@ impl Engine {
         cmd.apply(&mut self.doc)?;
         self.doc.assign_uids(&mut self.uid_state);
         self.doc.refresh_text_flow();
+        let id = self.next_step;
+        self.next_step += 1;
         self.undo.push(HistoryEntry {
             label,
+            id,
             before,
             after: self.doc.clone(),
         });
@@ -146,8 +155,11 @@ impl Engine {
         doc.assign_uids(&mut self.uid_state);
         doc.refresh_text_flow();
         self.doc = doc;
+        let id = self.next_step;
+        self.next_step += 1;
         self.undo.push(HistoryEntry {
             label,
+            id,
             before,
             after: self.doc.clone(),
         });
@@ -248,6 +260,19 @@ impl Engine {
         Ok(label)
     }
 
+    /// The id of the step on top of the undo stack (the last one still in
+    /// effect); a step keeps its id through [`amend`](Self::amend), undo
+    /// and redo, and no other step ever gets it.
+    pub fn last_step_id(&self) -> Option<u64> {
+        self.undo.last().map(|e| e.id)
+    }
+
+    /// The step `id` is in effect: it is on the undo stack (not undone,
+    /// not dropped as too old).
+    pub fn step_in_effect(&self, id: u64) -> bool {
+        self.undo.iter().any(|e| e.id == id)
+    }
+
     /// Labels of the undo stack (oldest first) and the redo stack.
     pub fn history_labels(&self) -> (Vec<&'static str>, Vec<&'static str>) {
         (
@@ -283,6 +308,47 @@ mod tests {
     use super::*;
     use crate::document::{Shape, ShapeKind};
     use crate::geometry::Rect;
+
+    /// Each step has an id of its own, kept through undo, redo and
+    /// amend; a step undone and replaced by another is gone for good.
+    #[test]
+    fn steps_have_ids_that_follow_undo_and_redo() {
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let add = |eng: &mut Engine| {
+            let id = eng.new_shape_id();
+            let shape = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            eng.run(&Command::AddShape { layer, shape }).unwrap();
+            (id, eng.last_step_id().expect("a step"))
+        };
+        assert_eq!(eng.last_step_id(), None);
+        let (shape, a) = add(&mut eng);
+        let (_, b) = add(&mut eng);
+        assert_ne!(a, b);
+        assert!(eng.step_in_effect(a) && eng.step_in_effect(b));
+        eng.amend(&Command::SetOpacity {
+            shapes: vec![shape],
+            opacity: 0.5,
+        })
+        .unwrap();
+        assert_eq!(eng.last_step_id(), Some(b));
+        eng.undo().unwrap();
+        assert!(eng.step_in_effect(a) && !eng.step_in_effect(b));
+        assert_eq!(eng.last_step_id(), Some(a));
+        eng.redo().unwrap();
+        assert!(eng.step_in_effect(b));
+        eng.undo().unwrap();
+        let (_, c) = add(&mut eng);
+        assert!(c != a && c != b);
+        assert!(!eng.step_in_effect(b));
+    }
 
     #[test]
     fn objects_keep_their_identity_and_copies_get_their_own() {

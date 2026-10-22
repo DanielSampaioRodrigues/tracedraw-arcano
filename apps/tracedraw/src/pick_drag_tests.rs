@@ -188,6 +188,92 @@ fn a_right_click_while_dragging_leaves_the_original() {
     assert!(app.dialog_is_none_or_menu_closed());
 }
 
+/// Repeat after a copy made with a right click during a drag makes
+/// another copy, as far again from the last one (#363).
+#[test]
+fn repeat_after_a_right_click_copy_makes_another_copy() {
+    let (ctx, mut app, id) = setup();
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let to = from + egui::vec2(150.0, 0.0);
+    let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, Modifiers::NONE);
+    let mid = from + (to - from) * 0.5;
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::NONE,
+        vec![right(mid, true), right(mid, false)],
+    );
+    assert_eq!(shape_count(&app), 2);
+    let first = app.selection[0];
+    let step = bounds(&app, first).x0 - bounds(&app, id).x0;
+    assert!(step > 5.0, "{step}");
+    app.repeat_last();
+    assert_eq!(shape_count(&app), 3, "Repeat makes a third copy");
+    let second = app.selection[0];
+    assert!(second != first && second != id);
+    assert!(close(
+        bounds(&app, second).x0,
+        bounds(&app, first).x0 + step
+    ));
+    assert!(
+        close(bounds(&app, first).x0, bounds(&app, id).x0 + step),
+        "the first copy stays"
+    );
+    app.repeat_last();
+    assert_eq!(shape_count(&app), 4);
+}
+
+/// Repeat after an undo repeats the last action still in effect, not the
+/// one just undone; after a redo the redone action is the last again
+/// (#366).
+#[test]
+fn repeat_after_an_undo_takes_the_last_action_still_in_effect() {
+    use tracedraw_core::{Affine, Command};
+    let (_ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    // A: a move; B: a rotation.
+    app.transform_selection(Affine::translate((10.0, 0.0)));
+    let after_a = bounds(&app, id);
+    let c = after_a.center();
+    app.transform_selection(Affine::rotate_about(std::f64::consts::FRAC_PI_2, c));
+    assert!(!close(bounds(&app, id).width(), after_a.width()));
+    app.undo();
+    assert!(close(bounds(&app, id).width(), after_a.width()));
+    // Repeat: the move again, not the rotation.
+    app.repeat_last();
+    let b = bounds(&app, id);
+    assert!(close(b.x0, after_a.x0 + 10.0), "{b:?} {after_a:?}");
+    assert!(close(b.width(), after_a.width()), "not turned: {b:?}");
+    // Undo that, redo the rotation: Repeat turns again.
+    app.undo();
+    app.redo();
+    let turned = bounds(&app, id);
+    app.repeat_last();
+    assert!(
+        close(bounds(&app, id).width(), after_a.width()),
+        "turned a second time: {:?} {turned:?}",
+        bounds(&app, id)
+    );
+    // An undone action followed by another change is never repeated.
+    app.undo();
+    app.undo();
+    app.run(Command::SetOpacity {
+        shapes: vec![id],
+        opacity: 0.5,
+    });
+    app.run(Command::SetOpacity {
+        shapes: vec![id],
+        opacity: 1.0,
+    });
+    app.undo();
+    // The opacity of 0.5 is the last action in effect.
+    app.repeat_last();
+    let op = app.doc().find_shape(id).map(|s| s.opacity).expect("shape");
+    assert!(close(op, 0.5), "{op}");
+}
+
 #[test]
 fn esc_cancels_a_drag() {
     let (ctx, mut app, id) = setup();

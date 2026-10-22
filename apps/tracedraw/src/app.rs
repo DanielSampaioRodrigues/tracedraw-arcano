@@ -1160,7 +1160,10 @@ pub struct App {
     pub anchor_sel: Option<usize>,
     /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
     pub pending_order: Option<bool>,
-    pub last_repeatable: Option<Command>,
+    /// What Edit > Repeat can repeat, newest last, each with the id of
+    /// the undo step it made: Repeat takes the newest whose step is still
+    /// in effect (an undone action is never repeated, #366).
+    pub repeatables: Vec<(u64, Repeatable)>,
     pub show_non_printing: bool,
     pub text_hyphenation: bool,
     /// Macro recording in progress: the commands run since Record started.
@@ -1710,6 +1713,16 @@ impl DockerTab {
     }
 }
 
+/// An action Edit > Repeat can repeat.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Repeatable {
+    /// A command, run again on the selection of the time.
+    Command(Box<Command>),
+    /// Copies of the selection transformed by the affine (a drag ended
+    /// with a right click), made again from the selection of the time.
+    Copy(Affine),
+}
+
 /// Where a docker lies: the default column (the right side of the
 /// window; the left in a right-to-left language), the column at the
 /// other side, or a window of its own over the drawing.
@@ -2048,7 +2061,7 @@ impl App {
             options_current_only: false,
             anchor_sel: None,
             pending_order: None,
-            last_repeatable: None,
+            repeatables: Vec::new(),
             show_non_printing: false,
             text_hyphenation: false,
             recording: None,
@@ -3303,10 +3316,55 @@ impl App {
         }
     }
 
-    /// Edit > Repeat: run the last repeatable command on the current selection.
-    pub fn repeat_last(&mut self) {
-        let Some(cmd) = self.last_repeatable.clone() else {
+    /// The action Edit > Repeat repeats: the newest one whose undo step is
+    /// still in effect.
+    pub fn last_repeatable(&self) -> Option<&Repeatable> {
+        self.repeatables
+            .iter()
+            .rev()
+            .find(|(id, _)| self.engine.step_in_effect(*id))
+            .map(|(_, r)| r)
+    }
+
+    /// Remember `r` as the action of the undo step just recorded.
+    pub(crate) fn note_repeatable(&mut self, r: Repeatable) {
+        let Some(id) = self.engine.last_step_id() else {
             return;
+        };
+        self.repeatables.retain(|(i, _)| *i != id);
+        self.repeatables.push((id, r));
+        // Only the newest few matter; the ones undone and replaced by
+        // other steps never come back.
+        if self.repeatables.len() > 64 {
+            let engine = &self.engine;
+            self.repeatables.retain(|(i, _)| engine.step_in_effect(*i));
+            let extra = self.repeatables.len().saturating_sub(64);
+            self.repeatables.drain(..extra);
+        }
+    }
+
+    /// Copies of the selection, moved (scaled, turned) by `t`, become the
+    /// selection: the end of a drag with a right click, and its Repeat.
+    pub(crate) fn copy_selection_by(&mut self, t: Affine) {
+        if self.selection.is_empty() {
+            return;
+        }
+        self.duplicate_in_place();
+        self.transform_selection(t);
+        self.note_repeatable(Repeatable::Copy(t));
+    }
+
+    /// Edit > Repeat: the last action still in effect again, on the
+    /// current selection (a copy with a right click during a drag makes
+    /// another copy, moved as far again, #363).
+    pub fn repeat_last(&mut self) {
+        let cmd = match self.last_repeatable().cloned() {
+            Some(Repeatable::Command(cmd)) => *cmd,
+            Some(Repeatable::Copy(t)) => {
+                self.copy_selection_by(t);
+                return;
+            }
+            None => return,
         };
         let shapes = self.selection.clone();
         let cmd = match cmd {
@@ -3540,7 +3598,7 @@ impl App {
                 | Command::PatchFill { .. }
                 | Command::SetOpacity { .. }
         ) {
-            self.last_repeatable = Some(cmd.clone());
+            self.note_repeatable(Repeatable::Command(Box::new(cmd.clone())));
         }
         if let Some(rec) = &mut self.recording {
             rec.push(cmd);

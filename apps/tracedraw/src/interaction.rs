@@ -668,7 +668,8 @@ impl App {
     /// during the drag.
     fn finish_transform(&mut self, t: Affine) {
         if std::mem::take(&mut self.drag_copy) {
-            self.duplicate_in_place();
+            self.copy_selection_by(t);
+            return;
         }
         self.transform_selection(t);
     }

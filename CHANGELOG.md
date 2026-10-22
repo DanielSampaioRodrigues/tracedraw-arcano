@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Repeat (Ctrl+R): after an undo it repeated the action just undone; it now repeats the last action still in effect (#366). After a copy made with a right click during a drag it moved the selection; it now makes another copy as far again (#363).
+
 - `.cdr` (version 16 and later): outlines keep their mitre limit; it was read as 5 degrees whatever the file said, so sharp corners were cut where they should not be, and it was not saved (#384).
 
 - `.cdr` (version 16 and later): text with letters outside Windows-1252 (Cyrillic, Greek, most Central European letters) was saved as unmarked UTF-8 and came back as garbage, in TraceDraw and in other programs; such letters are now saved as marked two-byte units, and files saved the old way read back right (#368).
