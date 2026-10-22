@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen and Bezier: a finished curve keeps its anchors in the history, as in the reference program. After it is closed or deselected, Ctrl+Z opens it first and then takes the anchors back one by one; it used to take the whole curve away at once (#360).
+
 - Shape tool: with two or more nodes selected, the align keys (L, R, T, B, E) and the Object > Align commands align the nodes, as in the reference program; handles move with their nodes and it is one undo step (#364).
 
 - Pick tool: a marquee (or the Freehand Pick lasso) dragged with Shift turns over the objects it takes, as in the reference program: those already selected are deselected and the others added. It only added before (#401).

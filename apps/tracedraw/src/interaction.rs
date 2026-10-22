@@ -1794,12 +1794,22 @@ impl App {
     /// The curve being drawn, closed onto its first node, becomes a
     /// curve object and is selected.
     fn close_curve(&mut self, c: CurveInProgress) {
+        let history = std::mem::take(&mut self.curve_steps.undo);
         self.curve_steps.clear();
         let path = c.path_closed(None, true);
-        if let Some(id) = self.new_shape(ShapeKind::Path {
-            path: path.clone(),
-            closed: true,
-        }) {
+        // The anchors stay in the history, the closing last (#360).
+        let prior = if c.bspline {
+            Vec::new()
+        } else {
+            Self::anchor_paths(&history, Some(&c))
+        };
+        if let Some(id) = self.new_curve_in_steps(
+            prior,
+            ShapeKind::Path {
+                path: path.clone(),
+                closed: true,
+            },
+        ) {
             if c.bspline {
                 self.keep_spline(id, &path, c.nodes.iter().map(|n| n.0).collect());
             }

@@ -44,8 +44,15 @@ meets the start) `Path` objects with the toolbox defaults.
   the last press that changed it (a node placed, a handle pulled, a
   click on a node), one at a time until the curve is gone, and then the
   document's own history; Ctrl+Shift+Z puts the steps back one by one.
-  The finished curve is one step of the document's history
-  (`pick_drag_tests::ctrl_z_takes_back_pen_nodes_one_by_one`).
+  A finished curve of its own keeps those steps in the document's
+  history, closed or not, selected or not (#360): Ctrl+Z opens a closed
+  curve first, then takes the anchors back one at a time until the
+  curve is gone; redo builds it again the same way (each step "Curve
+  Node"; the first one creates the curve with the fill and outline the
+  finished curve takes). A curve that continues a selected curve, a
+  B-spline and a curve drawn while a symmetry is edited stay one step
+  (`pick_drag_tests::ctrl_z_takes_back_pen_nodes_one_by_one`,
+  `pick_drag_tests::a_finished_pen_curve_undoes_anchor_by_anchor`).
   A press on the first node (within the join distance, 5 screen pixels
   by default, once the curve has two nodes with the Bezier and Pen
   tools, three with the others: two curved nodes close into a leaf or a

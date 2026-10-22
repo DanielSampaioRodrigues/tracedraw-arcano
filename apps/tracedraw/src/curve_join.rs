@@ -228,6 +228,15 @@ impl App {
     /// Add a newly drawn open line (page space): it continues the selected
     /// curve when one of its ends is on one of the curve's end nodes,
     /// otherwise it becomes a curve of its own. The result is selected.
+    /// A line drawn now would continue the selected curve (see
+    /// [`Self::add_drawn_line`]).
+    pub(crate) fn would_join(&self, line: &BezPath) -> bool {
+        self.join_candidate().is_some_and(|curve| {
+            joined(&curve.page_path(), line, self.join_tolerance()).is_some()
+                && curve.transform.determinant().abs() > 1e-12
+        })
+    }
+
     pub fn add_drawn_line(&mut self, line: BezPath) -> Option<ShapeId> {
         if let Some(curve) = self.join_candidate() {
             if let Some(path) = joined(&curve.page_path(), &line, self.join_tolerance()) {

@@ -4079,3 +4079,64 @@ fn align_keys_align_selected_nodes_in_the_shape_tool() {
     app.node_selection.truncate(1);
     assert!(!app.align_nodes_to(crate::ops::Align::Bottom));
 }
+
+/// A Pen curve keeps its anchors in the history once it is closed and
+/// deselected (#360): Ctrl+Z opens it first, then takes the anchors back
+/// one by one, and redo builds it again.
+#[test]
+fn a_finished_pen_curve_undoes_anchor_by_anchor() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(150.0, 150.0),
+        Point::new(150.0, 200.0),
+        Point::new(100.0, 200.0),
+    ];
+    for p in pts {
+        click_page(&ctx, &mut app, p);
+        for _ in 0..40 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+    }
+    // A click on the first node closes it.
+    click_page(&ctx, &mut app, pts[0]);
+    assert!(app.curve.is_none());
+    let id = *app.selection.first().expect("the new curve");
+    let path_of = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, closed }) => Some((path, closed)),
+        _ => None,
+    };
+    let count = |p: &tracedraw_core::BezPath| tracedraw_core::nodes::nodes(p).len();
+    let (closed_path, closed) = path_of(&app).expect("curve");
+    assert!(closed);
+    assert_eq!(count(&closed_path), 4);
+    // Deselected, then undone step by step.
+    app.select(Vec::new());
+    app.undo();
+    let (p, closed) = path_of(&app).expect("open again");
+    assert!(!closed && count(&p) == 4, "{p:?}");
+    app.undo();
+    assert_eq!(path_of(&app).map(|(p, _)| count(&p)), Some(3));
+    app.undo();
+    assert_eq!(path_of(&app).map(|(p, _)| count(&p)), Some(2));
+    app.undo();
+    assert!(path_of(&app).is_none());
+    // Redo brings it back the same way, closed at the end.
+    for _ in 0..4 {
+        app.redo();
+    }
+    assert_eq!(path_of(&app), Some((closed_path, true)));
+    // The curve still has the default fill and outline of a closed curve.
+    let s = app.doc().find_shape(id).cloned().expect("curve");
+    let mut want = tracedraw_core::Shape::new(
+        id,
+        ShapeKind::Path {
+            path: s.page_path(),
+            closed: true,
+        },
+    );
+    app.doc().defaults.apply_to(&mut want);
+    assert_eq!((s.fill, s.stroke), (want.fill, want.stroke));
+}

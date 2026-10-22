@@ -3990,12 +3990,28 @@ impl App {
     /// when it starts or ends on one of its end nodes, otherwise it becomes
     /// a curve of its own (see `curve_join.rs`).
     pub fn finish_curve(&mut self) {
+        let history = std::mem::take(&mut self.curve_steps.undo);
         self.curve_steps.clear();
         let Some(c) = self.curve.take() else { return };
         if c.nodes.len() < 2 {
             return;
         }
         let line = c.path(None);
+        // A curve of its own keeps its anchors in the history (#360): undo
+        // takes them back one by one, as while it was drawn.
+        if !c.bspline && !self.would_join(&line) {
+            let prior = Self::anchor_paths(&history, None);
+            if let Some(id) = self.new_curve_in_steps(
+                prior,
+                ShapeKind::Path {
+                    path: line,
+                    closed: false,
+                },
+            ) {
+                self.select(vec![id]);
+            }
+            return;
+        }
         let id = self.add_drawn_line(line.clone());
         if c.bspline {
             // A B-spline of its own keeps its control points (one that
@@ -4004,6 +4020,72 @@ impl App {
                 self.keep_spline(id, &line, c.nodes.iter().map(|n| n.0).collect());
             }
         }
+    }
+
+    /// The open outlines a curve had while it was drawn (`history`, the
+    /// Pen and Bezier tools' steps), from two nodes on, then `last` (the
+    /// curve as it was just before it closed), with repeats left out.
+    pub(crate) fn anchor_paths(
+        history: &[Option<CurveInProgress>],
+        last: Option<&CurveInProgress>,
+    ) -> Vec<tracedraw_core::BezPath> {
+        let mut out: Vec<tracedraw_core::BezPath> = Vec::new();
+        for c in history.iter().flatten().chain(last) {
+            if c.nodes.len() < 2 || c.bspline {
+                continue;
+            }
+            let p = c.path(None);
+            if out.last() != Some(&p) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// A new curve that ends as `last`, made in steps: it appears as the
+    /// first of `prior`, then takes each next one and at last `last`, each
+    /// an undo step of its own, so Ctrl+Z goes back through them. Its fill
+    /// and outline are those `last` takes from the default properties.
+    /// One step when there is nothing before, or while a symmetry is
+    /// edited.
+    pub(crate) fn new_curve_in_steps(
+        &mut self,
+        prior: Vec<tracedraw_core::BezPath>,
+        last: ShapeKind,
+    ) -> Option<ShapeId> {
+        let prior: Vec<_> = prior
+            .into_iter()
+            .filter(|p| !matches!(&last, ShapeKind::Path { path, .. } if path == p))
+            .collect();
+        if prior.is_empty() || self.symmetry_edit.is_some() {
+            return self.new_shape(last);
+        }
+        let layer = self.active_layer()?;
+        let id = self.engine.new_shape_id();
+        let mut shape = Shape::new(id, last.clone());
+        self.doc().defaults.apply_to(&mut shape);
+        let mut kinds = prior.into_iter().map(|path| ShapeKind::Path {
+            path,
+            closed: false,
+        });
+        let first = kinds.next()?;
+        self.run(Command::AddShape {
+            layer,
+            shape: Shape {
+                kind: first,
+                ..shape
+            },
+        });
+        for kind in kinds.chain(std::iter::once(last)) {
+            if self
+                .engine
+                .run_with_label(&Command::SetShapeKind { shape: id, kind }, "Curve Node")
+                .is_err()
+            {
+                break;
+            }
+        }
+        Some(id)
     }
 
     /// The curve `id`, just made with the outline `line` from the B-spline
