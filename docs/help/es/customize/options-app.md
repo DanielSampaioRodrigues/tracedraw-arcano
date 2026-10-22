@@ -102,8 +102,9 @@ La página tiene cinco pestañas.
   reducen <kbd>Ctrl+8</kbd> y <kbd>Ctrl+2</kbd> el texto seleccionado, 1 punto),
   la [[options.default_font]] y el [[options.default_size]] del texto nuevo, y
   [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] y
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] y los [[options.hyphenation_patterns]]
+  (integrados, o un diccionario de división de su idioma).
 - [[docker.fonts]]: [[options.show_recent_fonts]] arriba de las listas de
   fuentes, el [[options.recent_font_count]] (5, hasta 20) y el
   [[options.font_sample_size]].

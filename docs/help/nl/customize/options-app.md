@@ -99,8 +99,9 @@ De pagina heeft vijf tabbladen.
   <kbd>Ctrl+8</kbd> en <kbd>Ctrl+2</kbd> de geselecteerde tekst groter en kleiner
   maken, 1 punt), [[options.default_font]] en [[options.default_size]] van
   nieuwe tekst, en [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] en
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] en de [[options.hyphenation_patterns]]
+  (ingebouwd, of een afbreekwoordenboek voor uw taal).
 - [[docker.fonts]]: [[options.show_recent_fonts]] bovenaan de
   lettertypelijsten, het [[options.recent_font_count]] (5, tot 20) en de
   [[options.font_sample_size]].

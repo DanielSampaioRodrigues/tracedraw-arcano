@@ -48,6 +48,10 @@ Uma palavra está certa quando algum dicionário em uso a conhece. Os dicionári
 instalados no sistema também são usados. Sem nenhum, só uma lista de palavras
 incluída é usada.
 
+Dicionários de hifenização (arquivos `hyph_`, como `hyph_pt_BR.dic`) vão nas
+mesmas pastas. Escolha um em [[options.text]] > [[options.paragraph_text]] >
+[[options.hyphenation_patterns]] para hifenizar texto nesse idioma.
+
 ### Gramática {#grammar}
 
 O verificador gramatical encontra palavras repetidas, espaços duplos, espaços

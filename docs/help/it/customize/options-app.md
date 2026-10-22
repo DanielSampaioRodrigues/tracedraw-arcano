@@ -100,8 +100,9 @@ La pagina ha cinque schede.
   <kbd>Ctrl+8</kbd> e <kbd>Ctrl+2</kbd> ingrandiscono e riducono il testo
   selezionato, 1 punto), [[options.default_font]] e [[options.default_size]] del
   nuovo testo, e [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] e
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] e gli [[options.hyphenation_patterns]]
+  (integrati, o un dizionario di sillabazione per la tua lingua).
 - [[docker.fonts]]: [[options.show_recent_fonts]] in cima agli elenchi dei
   font, il [[options.recent_font_count]] (5, fino a 20) e la
   [[options.font_sample_size]].

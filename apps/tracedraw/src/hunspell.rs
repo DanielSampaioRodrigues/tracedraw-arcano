@@ -115,7 +115,7 @@ pub struct Hunspell {
 }
 
 /// The encoding a `SET` line names, as the decoder knows it.
-fn encoding_for(name: &str) -> &'static encoding_rs::Encoding {
+pub fn encoding_for(name: &str) -> &'static encoding_rs::Encoding {
     let n = name.trim().to_ascii_lowercase();
     let label = if let Some(cp) = n.strip_prefix("microsoft-cp") {
         format!("windows-{cp}")

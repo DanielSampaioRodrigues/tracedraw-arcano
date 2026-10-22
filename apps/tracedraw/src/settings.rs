@@ -1226,6 +1226,10 @@ pub struct SpellingPrefs {
     pub dictionary_folder: Option<PathBuf>,
     /// The dictionaries switched off, by name (`pt_BR`).
     pub disabled_dictionaries: Vec<String>,
+    /// Options > Text > Paragraph Text: the hyphenation pattern file used
+    /// (`hyph_pt_BR`, found where the dictionaries are), empty for the
+    /// built-in patterns.
+    pub hyphenation_patterns: String,
 }
 
 impl SpellingPrefs {

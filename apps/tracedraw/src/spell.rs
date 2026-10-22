@@ -155,7 +155,20 @@ fn folders(extra: Option<&Path>) -> Vec<(PathBuf, usize)> {
     v
 }
 
+/// What a folder scan looks for.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    /// Spelling dictionaries and word lists.
+    Spelling,
+    /// Hyphenation patterns (`hyph_*.dic`).
+    Hyphenation,
+}
+
 fn scan(dir: &Path, depth: usize, out: &mut Vec<DictionaryFile>) {
+    scan_for(dir, depth, Kind::Spelling, out);
+}
+
+fn scan_for(dir: &Path, depth: usize, kind: Kind, out: &mut Vec<DictionaryFile>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -164,7 +177,7 @@ fn scan(dir: &Path, depth: usize, out: &mut Vec<DictionaryFile>) {
     for p in entries {
         if p.is_dir() {
             if depth > 0 {
-                scan(&p, depth - 1, out);
+                scan_for(&p, depth - 1, kind, out);
             }
             continue;
         }
@@ -177,7 +190,12 @@ fn scan(dir: &Path, depth: usize, out: &mut Vec<DictionaryFile>) {
         };
         // Hyphenation patterns and thesauri share the extension.
         let lower = name.to_lowercase();
-        if !is_dic || lower.starts_with("hyph_") || lower.starts_with("th_") {
+        let hyph = lower.starts_with("hyph_");
+        let wanted = match kind {
+            Kind::Spelling => !hyph && !lower.starts_with("th_"),
+            Kind::Hyphenation => hyph,
+        };
+        if !is_dic || !wanted {
             continue;
         }
         if out.iter().any(|d| d.name == name) {
@@ -186,7 +204,7 @@ fn scan(dir: &Path, depth: usize, out: &mut Vec<DictionaryFile>) {
         let aff = p.with_extension("aff");
         out.push(DictionaryFile {
             name,
-            aff: aff.is_file().then_some(aff),
+            aff: (kind == Kind::Spelling && aff.is_file()).then_some(aff),
             dic: p,
         });
     }
@@ -199,6 +217,49 @@ pub fn find_dictionaries(extra: Option<&Path>) -> Vec<DictionaryFile> {
         scan(&dir, depth, &mut out);
     }
     out
+}
+
+/// The hyphenation pattern files found (`hyph_pt_BR`), each name once.
+pub fn find_hyphenation(extra: Option<&Path>) -> Vec<DictionaryFile> {
+    let mut out = Vec::new();
+    for (dir, depth) in folders(extra) {
+        scan_for(&dir, depth, Kind::Hyphenation, &mut out);
+    }
+    out
+}
+
+/// The patterns of a hyphenation file: its first line names the
+/// character set the rest is written in.
+pub fn read_hyphenation(path: &Path) -> Option<tracedraw_text::hyphen::PatternSet> {
+    let bytes = std::fs::read(path).ok()?;
+    let first = bytes.split(|b| *b == b'\n').next().unwrap_or(&[]);
+    let enc = crate::hunspell::encoding_for(&String::from_utf8_lossy(first));
+    let (text, _, _) = enc.decode(&bytes);
+    tracedraw_text::hyphen::PatternSet::parse(&text)
+}
+
+/// Hyphenate with the pattern file named `name` (found in the dictionary
+/// folders; empty: the built-in patterns). False when it was not found or
+/// held no patterns, the built-in ones then being used.
+pub fn use_hyphenation(name: &str, extra: Option<&Path>) -> bool {
+    static CURRENT: OnceLock<RwLock<(String, Option<PathBuf>)>> = OnceLock::new();
+    let current = CURRENT.get_or_init(|| RwLock::new((String::new(), None)));
+    let key = (name.to_string(), extra.map(Path::to_path_buf));
+    if *current.read().unwrap_or_else(|e| e.into_inner()) == key {
+        return true;
+    }
+    let set = if name.is_empty() {
+        None
+    } else {
+        find_hyphenation(extra)
+            .into_iter()
+            .find(|d| d.name == name)
+            .and_then(|d| read_hyphenation(&d.dic))
+    };
+    let found = name.is_empty() || set.is_some();
+    tracedraw_text::hyphen::set_patterns(set);
+    *current.write().unwrap_or_else(|e| e.into_inner()) = key;
+    found
 }
 
 fn user_dictionary_path() -> Option<PathBuf> {
@@ -464,7 +525,55 @@ mod tests {
         assert!(!is_known("unblorfs"));
         assert!(is_known("wibblewort"));
         configure(SpellConfig::default());
+        // Hyphenation files beside them, in their own character set.
+        std::fs::write(
+            inner.join("hyph_yy.dic"),
+            b"ISO8859-1\nLEFTHYPHENMIN 1\n1\xe7a\n",
+        )
+        .unwrap();
+        let hyph = find_hyphenation(Some(&dir));
+        let names: Vec<&str> = hyph.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            names.contains(&"hyph_xx") && names.contains(&"hyph_yy"),
+            "{names:?}"
+        );
+        assert_eq!(names.len(), 2);
+        let yy = hyph.iter().find(|d| d.name == "hyph_yy").unwrap();
+        let set = read_hyphenation(&yy.dic).expect("patterns");
+        assert_eq!((set.len(), set.left_min), (1, 1));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Real hyphenation dictionaries, where `HUNSPELL_TEST_DIR` holds
+    /// them (not in the repository): English, Brazilian Portuguese and
+    /// German (eight-bit, two levels).
+    #[test]
+    #[ignore]
+    fn real_hyphenation_files() {
+        let Some(dir) = std::env::var_os("HUNSPELL_TEST_DIR") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        let found = find_hyphenation(Some(&dir));
+        let names: Vec<&str> = found.iter().map(|d| d.name.as_str()).collect();
+        eprintln!("{names:?}");
+        let cases: [(&str, &str, &[usize]); 4] = [
+            ("hyph_en_US", "hyphenation", &[2, 6]),
+            ("hyph_pt_BR", "computador", &[3, 5, 7]),
+            ("hyph_de_DE", "Haustür", &[4]),
+            ("hyph_de_DE", "Schifffahrt", &[6]),
+        ];
+        for (name, word, want) in cases {
+            let d = found.iter().find(|d| d.name == name).expect(name);
+            let set = read_hyphenation(&d.dic).expect("patterns");
+            tracedraw_text::hyphen::set_patterns(Some(set));
+            let got = tracedraw_text::hyphen::break_points(word);
+            tracedraw_text::hyphen::set_patterns(None);
+            eprintln!("{name}: {word} -> {got:?}");
+            for w in want {
+                assert!(got.contains(w), "{name}: {word} {got:?} lacks {w}");
+            }
+        }
     }
 
     #[test]

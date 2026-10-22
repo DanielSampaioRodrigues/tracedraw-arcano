@@ -46,6 +46,10 @@ projects that make them; other programs often install them too.
 A word is right when any dictionary in use knows it. Dictionaries installed on
 your system are used as well. Without any, only a built-in word list is used.
 
+Hyphenation dictionaries (`hyph_` files such as `hyph_pt_BR.dic`) go in the
+same folders. Choose one under [[options.text]] > [[options.paragraph_text]] >
+[[options.hyphenation_patterns]] to hyphenate text in that language.
+
 ### Grammar {#grammar}
 
 The grammar checker finds doubled words, double spaces, spaces before

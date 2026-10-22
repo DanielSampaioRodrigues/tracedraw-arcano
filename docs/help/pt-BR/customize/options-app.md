@@ -98,8 +98,9 @@ A página tem cinco abas.
   e <kbd>Ctrl+2</kbd> aumentam e diminuem o texto selecionado, 1 ponto), a
   [[options.default_font]] e o [[options.default_size]] do texto novo, e
   [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] e
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] e os [[options.hyphenation_patterns]]
+  (incluídos, ou um dicionário de hifenização do seu idioma).
 - [[docker.fonts]]: [[options.show_recent_fonts]] no topo das listas de fontes,
   o [[options.recent_font_count]] (5, até 20) e o
   [[options.font_sample_size]].

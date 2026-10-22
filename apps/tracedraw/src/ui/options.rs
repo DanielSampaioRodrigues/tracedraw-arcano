@@ -1302,6 +1302,48 @@ fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
         tr("menu.text.show_text_frames"),
     );
     ui.checkbox(&mut app.text_hyphenation, tr("menu.text.use_hyphenation"));
+    // The pattern files, read when the tab shows a new folder.
+    type Found = (
+        Option<std::path::PathBuf>,
+        Vec<crate::spell::DictionaryFile>,
+    );
+    let cache = ui.id().with("hyphenation_found");
+    let sp = &mut app.settings.spelling;
+    let key = sp.dictionary_folder.clone();
+    let mut found: Option<Found> = ui.data(|d| d.get_temp(cache));
+    if found.as_ref().is_none_or(|(k, _)| *k != key) {
+        found = Some((key.clone(), crate::spell::find_hyphenation(key.as_deref())));
+    }
+    let list = found.as_ref().map(|f| f.1.clone()).unwrap_or_default();
+    let shown = |name: &str| {
+        if name.is_empty() {
+            tr("options.hyphenation_builtin")
+        } else {
+            name.strip_prefix("hyph_").unwrap_or(name).to_string()
+        }
+    };
+    grid("hyphenation_patterns").show(ui, |ui| {
+        row_label(ui, &tr("options.hyphenation_patterns"));
+        egui::ComboBox::from_id_salt("hyphenation_patterns_combo")
+            .width(220.0)
+            .selected_text(shown(&sp.hyphenation_patterns))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut sp.hyphenation_patterns, String::new(), shown(""));
+                for d in &list {
+                    ui.selectable_value(
+                        &mut sp.hyphenation_patterns,
+                        d.name.clone(),
+                        shown(&d.name),
+                    )
+                    .on_hover_text(d.dic.display().to_string());
+                }
+            });
+        ui.end_row();
+    });
+    ui.label(egui::RichText::new(tr("options.hyphenation_note")).color(Tokens::text_dim()));
+    if let Some(f) = found {
+        ui.data_mut(|d| d.insert_temp(cache, f));
+    }
 }
 
 fn fonts_tab(app: &mut App, ui: &mut Ui) {
@@ -1433,6 +1475,8 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
     if ui.button(tr("options.refresh_dictionaries")).clicked() {
         found = None;
         crate::spell::reload();
+        let hyph = ui.id().with("hyphenation_found");
+        ui.data_mut(|d| d.remove::<Found>(hyph));
     }
     ui.data_mut(|d| match found {
         Some(f) => {

@@ -99,8 +99,9 @@
   <kbd>Ctrl+8</kbd> и <kbd>Ctrl+2</kbd> увеличивают и уменьшают выделенный
   текст, 1 пункт), [[options.default_font]] и [[options.default_size]] нового
   текста, а также [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] и
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] и [[options.hyphenation_patterns]]
+  (встроенные или словарь переносов для вашего языка).
 - [[docker.fonts]]: [[options.show_recent_fonts]] вверху списков шрифтов,
   [[options.recent_font_count]] (5, до 20) и
   [[options.font_sample_size]].

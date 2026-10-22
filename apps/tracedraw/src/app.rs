@@ -2341,6 +2341,12 @@ impl App {
     pub fn apply_runtime_settings(&mut self) {
         crate::ui::writing_tools::install_custom_hyphens(self);
         crate::spell::configure(self.settings.spelling.config());
+        let sp = &self.settings.spelling;
+        let had = sp.hyphenation_patterns.clone();
+        if !crate::spell::use_hyphenation(&had, sp.dictionary_folder.as_deref()) {
+            self.status = crate::i18n::trf("status.hyphenation_missing", &[("name", &had)]);
+        }
+        self.raster.borrow_mut().invalidate();
         let levels = self.settings.undo_levels.max(1);
         self.engine.set_max_history(levels);
         for slot in &mut self.docs {

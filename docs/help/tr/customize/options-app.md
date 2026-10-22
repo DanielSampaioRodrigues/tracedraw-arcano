@@ -100,8 +100,9 @@ Sayfada beş sekme vardır.
   ve <kbd>Ctrl+2</kbd> seçili metni ne kadar büyütüp küçültür, 1 punto), yeni
   metnin [[options.default_font]] ve [[options.default_size]] değerleri ve
   [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] ve
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] ve [[options.hyphenation_patterns]]
+  (yerleşik ya da dilinize ait bir heceleme sözlüğü).
 - [[docker.fonts]]: yazı tipi listelerinin başında
   [[options.show_recent_fonts]], [[options.recent_font_count]] (5, en çok 20)
   ve [[options.font_sample_size]].

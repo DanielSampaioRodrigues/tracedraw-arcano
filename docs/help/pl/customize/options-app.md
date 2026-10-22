@@ -98,8 +98,9 @@ Strona ma pięć kart.
   <kbd>Ctrl+8</kbd> i <kbd>Ctrl+2</kbd> powiększają i zmniejszają zaznaczony
   tekst, 1 punkt), [[options.default_font]] i [[options.default_size]] nowego
   tekstu oraz [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]]
-  i [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] i [[options.hyphenation_patterns]]
+  (wbudowane lub słownik dzielenia wyrazów dla Twojego języka).
 - [[docker.fonts]]: [[options.show_recent_fonts]] na górze list czcionek,
   [[options.recent_font_count]] (5, do 20) i
   [[options.font_sample_size]].

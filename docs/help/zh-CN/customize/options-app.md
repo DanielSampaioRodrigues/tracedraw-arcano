@@ -76,8 +76,9 @@
   <kbd>Ctrl+2</kbd> 放大和缩小所选文本的幅度，1 点）、新文本的
   [[options.default_font]] 和 [[options.default_size]]，以及
   [[menu.text.show_non_printing]]。
-- [[options.paragraph_text]]：[[menu.text.show_text_frames]] 和
-  [[menu.text.use_hyphenation]]。
+- [[options.paragraph_text]]：[[menu.text.show_text_frames]]、
+  [[menu.text.use_hyphenation]] 和 [[options.hyphenation_patterns]]
+  （内置，或您所用语言的断字词典）。
 - [[docker.fonts]]：在字体列表顶部 [[options.show_recent_fonts]]、
   [[options.recent_font_count]]（5，最多 20）以及
   [[options.font_sample_size]]。

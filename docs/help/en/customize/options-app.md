@@ -97,8 +97,9 @@ The page has five tabs.
   and <kbd>Ctrl+2</kbd> grow and shrink the selected text, 1 point), the
   [[options.default_font]] and [[options.default_size]] of new text, and
   [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] and
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] and the [[options.hyphenation_patterns]]
+  (built-in, or a hyphenation dictionary for your language).
 - [[docker.fonts]]: [[options.show_recent_fonts]] at the top of the font lists,
   the [[options.recent_font_count]] (5, up to 20) and the
   [[options.font_sample_size]].

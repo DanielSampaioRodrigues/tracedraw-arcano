@@ -99,8 +99,9 @@ Halaman ini punya lima tab.
   <kbd>Ctrl+8</kbd> dan <kbd>Ctrl+2</kbd> memperbesar dan memperkecil teks yang
   dipilih, 1 poin), [[options.default_font]] dan [[options.default_size]] untuk
   teks baru, serta [[menu.text.show_non_printing]].
-- [[options.paragraph_text]]: [[menu.text.show_text_frames]] dan
-  [[menu.text.use_hyphenation]].
+- [[options.paragraph_text]]: [[menu.text.show_text_frames]],
+  [[menu.text.use_hyphenation]] dan [[options.hyphenation_patterns]]
+  (bawaan, atau kamus pemenggalan untuk bahasa Anda).
 - [[docker.fonts]]: [[options.show_recent_fonts]] di atas daftar font,
   [[options.recent_font_count]] (5, hingga 20) dan
   [[options.font_sample_size]].
