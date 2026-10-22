@@ -16,6 +16,7 @@ pub mod psd;
 pub mod svg;
 pub mod svg_import;
 pub mod text_import;
+pub mod xlsx;
 
 use std::path::Path;
 use tracedraw_core::Document;

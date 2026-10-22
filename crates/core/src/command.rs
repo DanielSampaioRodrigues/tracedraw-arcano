@@ -1232,12 +1232,24 @@ fn remove_shapes(shapes: &mut Vec<Shape>, ids: &[ShapeId]) {
     });
 }
 
+/// A copy of `s` with new ids all through it: in groups, and in clip
+/// frames' frames and contents (a page copy whose clip frames kept their
+/// ids had two objects of one id, and a change to the copy went to the
+/// original, #377).
 fn reid_shape(s: &Shape, doc: &mut Document) -> Shape {
     let mut c = s.clone();
     c.id = doc.ids_mut().shape();
-    if let ShapeKind::Group { children } = &mut c.kind {
-        let copies: Vec<Shape> = children.iter().map(|ch| reid_shape(ch, doc)).collect();
-        *children = copies;
+    match &mut c.kind {
+        ShapeKind::Group { children } => {
+            let copies: Vec<Shape> = children.iter().map(|ch| reid_shape(ch, doc)).collect();
+            *children = copies;
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            **frame = reid_shape(frame, doc);
+            let copies: Vec<Shape> = contents.iter().map(|ch| reid_shape(ch, doc)).collect();
+            *contents = copies;
+        }
+        _ => {}
     }
     c
 }
@@ -1866,6 +1878,34 @@ mod tests {
         assert_eq!(copy.layers[0].shapes.len(), 1);
         assert_ne!(copy.layers[0].shapes[0].id, ia);
         assert_ne!(copy.layers[0].id, layer);
+        // A clip frame's frame and contents get new ids too (#377).
+        let f = rect(&mut doc, 10.0);
+        let c = rect(&mut doc, 12.0);
+        let (fid, cid) = (f.id, c.id);
+        let clip_id = doc.ids_mut().shape();
+        let clip = Shape::new(
+            clip_id,
+            ShapeKind::ClipFrame {
+                frame: Box::new(f),
+                contents: vec![c],
+            },
+        );
+        Command::AddShape { layer, shape: clip }
+            .apply(&mut doc)
+            .unwrap();
+        Command::duplicate_page(page).apply(&mut doc).unwrap();
+        let copy = &doc.pages[1];
+        let copied = copy.layers[0]
+            .shapes
+            .iter()
+            .find(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .expect("the clip frame copied");
+        let ShapeKind::ClipFrame { frame, contents } = &copied.kind else {
+            unreachable!()
+        };
+        assert_ne!(copied.id, clip_id);
+        assert_ne!(frame.id, fid);
+        assert_ne!(contents[0].id, cid);
     }
 
     #[test]

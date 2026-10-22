@@ -3285,19 +3285,25 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(tr("merge.import_file")).clicked() {
                     crate::files::Dialog::new()
+                        .add_filter("CSV, Excel", &["csv", "txt", "xlsx"])
+                        .add_filter("Excel", &["xlsx"])
                         .add_filter("CSV", &["csv", "txt"])
                         .pick_into("print_merge_csv");
                 }
             });
         });
         if let Some(p) = crate::files::take_picked("print_merge_csv") {
-            if let Ok(text) = crate::files::read_to_string(&p) {
-                let (h, r) = crate::export::parse_csv(&text);
-                st.headers = h;
-                st.rows = r;
-                st.kinds.clear();
-                st.current = 0;
-                st.path = Some(p);
+            match crate::print_merge::read_data(&p) {
+                Ok((h, r)) => {
+                    st.kinds = crate::print_merge::guess_kinds(&h, &r);
+                    st.headers = h;
+                    st.rows = r;
+                    st.current = 0;
+                    st.path = Some(p);
+                    // The fields' types show at once, to set each one.
+                    st.configure = true;
+                }
+                Err(e) => app.status = e,
             }
         }
         ui.add_space(4.0);
