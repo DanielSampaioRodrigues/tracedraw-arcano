@@ -2037,7 +2037,7 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::RenamePage { name };
     }
     if item(ui, "menu.layout.delete_page", "", app.doc().pages.len() > 1) {
-        app.delete_page();
+        app.ask_delete_page();
     }
     if item(ui, "menu.layout.go_to_page", "", true) {
         app.dialog = Dialog::GoToPage {

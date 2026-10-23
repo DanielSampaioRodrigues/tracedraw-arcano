@@ -599,6 +599,13 @@ pub enum Dialog {
         count: u32,
         after: bool,
     },
+    /// Layout > Delete Page: the page (1 = the first) and, with `through`,
+    /// the last one of a range to delete with it (#500).
+    DeletePage {
+        from: usize,
+        to: usize,
+        through: bool,
+    },
     /// Layout > Duplicate Page and the page tab menu: where the copy goes
     /// and whether the layers keep their objects.
     DuplicatePage {
@@ -1127,6 +1134,33 @@ pub fn show(app: &mut App, ctx: &Context) {
                         });
                     }
                     app.goto_page(target);
+                }
+            });
+        }
+        Dialog::DeletePage { from, to, through } => {
+            let n = app.doc().pages.len();
+            window(ctx, tr("dialog.delete_page")).show(ctx, |ui| {
+                egui::Grid::new("delete_page")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label(tr("dialog.delete_page_from"));
+                        ui.add(crate::ui::field::NumField::new(from).range(1..=n.max(1)));
+                        ui.end_row();
+                        ui.checkbox(through, tr("dialog.delete_through"));
+                        ui.add_enabled(
+                            *through,
+                            crate::ui::field::NumField::new(to).range(1..=n.max(1)),
+                        );
+                        ui.end_row();
+                    });
+                let (a, b) = delete_page_range(*from, *to, *through, n);
+                let all = b + 1 - a >= n;
+                if all {
+                    ui.colored_label(Tokens::text_dim(), tr("dialog.delete_keeps_one"));
+                }
+                if ok_cancel(ui, &mut close) && !all {
+                    app.delete_pages(a, b);
                 }
             });
         }
@@ -2819,6 +2853,19 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
     });
 }
 
+/// The pages Delete Page deletes, as indices (0 = the first): `from`
+/// alone, or `from` through `to` in either order, kept to the `n` pages.
+pub(crate) fn delete_page_range(from: usize, to: usize, through: bool, n: usize) -> (usize, usize) {
+    let last = n.saturating_sub(1);
+    let a = from.saturating_sub(1).min(last);
+    let b = if through {
+        to.saturating_sub(1).min(last)
+    } else {
+        a
+    };
+    (a.min(b), a.max(b))
+}
+
 /// Print > Layout: the imposition, the sheet and the gap between pages,
 /// with a sketch of the first sheet.
 pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
@@ -4433,6 +4480,11 @@ mod tests {
             Dialog::InsertPage {
                 count: 1,
                 after: true,
+            },
+            Dialog::DeletePage {
+                from: 1,
+                to: 1,
+                through: true,
             },
             Dialog::duplicate_page(),
             Dialog::PageSize {

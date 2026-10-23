@@ -6517,6 +6517,44 @@ impl App {
         self.fit_pending = true;
     }
 
+    /// Layout > Delete Page: the pages from index `a` to `b` (0 = the
+    /// first, both kept in range) in one undo step, never every page; the
+    /// page after them (else the one before) is the current one (#500).
+    pub fn delete_pages(&mut self, a: usize, b: usize) {
+        let ids: Vec<_> = self.doc().pages.iter().map(|p| p.id).collect();
+        let n = ids.len();
+        if n == 0 || a > b || a >= n || b + 1 - a >= n {
+            return;
+        }
+        let b = b.min(n - 1);
+        let cmds: Vec<Command> = ids[a..=b]
+            .iter()
+            .map(|&page| Command::DeletePage { page })
+            .collect();
+        if let Err(e) = self.engine.run_batch("Delete Page", &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        let next = ids
+            .get(b + 1)
+            .or_else(|| a.checked_sub(1).and_then(|i| ids.get(i)));
+        if let Some(&p) = next {
+            self.page = p;
+        }
+        self.selection.clear();
+        self.fit_pending = true;
+    }
+
+    /// Layout > Delete Page asks which pages, the current one first.
+    pub fn ask_delete_page(&mut self) {
+        let i = self.page_index() + 1;
+        self.dialog = crate::ui::dialogs::Dialog::DeletePage {
+            from: i,
+            to: i,
+            through: false,
+        };
+    }
+
     pub fn goto_page(&mut self, idx: usize) {
         if self.multipage {
             if let Some(id) = self.doc().pages.get(idx).map(|p| p.id) {
@@ -6983,6 +7021,34 @@ mod tests {
     /// Tool settings, what the window shows, snapping and the dockers'
     /// choices come back the next time, through the preferences file
     /// (JSON, as in the browser's storage).
+    /// Delete Page with a range deletes those pages in one undo step and
+    /// never every page; the page after them is the current one (#500).
+    #[test]
+    fn delete_page_takes_a_range_of_pages() {
+        let mut app = App::headless();
+        for _ in 0..4 {
+            app.add_page();
+        }
+        let ids: Vec<_> = app.doc().pages.iter().map(|p| p.id).collect();
+        assert_eq!(ids.len(), 5);
+        assert_eq!(crate::ui::dialogs::delete_page_range(4, 2, true, 5), (1, 3));
+        assert_eq!(
+            crate::ui::dialogs::delete_page_range(9, 2, false, 5),
+            (4, 4)
+        );
+        app.delete_pages(1, 3);
+        let left: Vec<_> = app.doc().pages.iter().map(|p| p.id).collect();
+        assert_eq!(left, vec![ids[0], ids[4]]);
+        assert_eq!(app.page, ids[4]);
+        app.undo();
+        assert_eq!(app.doc().pages.len(), 5, "one undo step");
+        app.delete_pages(0, 4);
+        assert_eq!(app.doc().pages.len(), 5, "a drawing keeps a page");
+        app.delete_pages(3, 4);
+        assert_eq!(app.doc().pages.len(), 3);
+        assert_eq!(app.page, ids[2], "the page before them");
+    }
+
     /// A font for new text that is not installed (uninstalled since it
     /// was kept) gives way to an installed one; an installed one stays,
     /// whatever its case (#504).

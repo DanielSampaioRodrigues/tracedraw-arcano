@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Layout > Delete Page opens a dialog: the page to delete (the current one to start with) and, with Through to page, the last page of a range, deleted in one undo step; it deleted the current page only (#500).
+
 - Print Merge: CSV files saved by Excel on Windows import; they are in code page 1252, not UTF-8, and failed to read. UTF-16 files (Excel's Unicode Text) and tab-separated files import too, and a UTF-8 byte order mark no longer sticks to the first field's name (#495).
 
 - Paragraph text: the bottom handle of a selected frame drags it taller; the flow tab sat under that handle and took the press, so the next click linked the text to another object (after Text > Convert, for one). The tab now hangs below the handle (#503).
