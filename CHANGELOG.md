@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.12.0 (2026-10-23)
+
 - Break Apart on a contour, blend or extrusion: Ctrl+K and the right-click menu now offer Break Contour (Blend, Extrude) Group Apart, as in the reference program, instead of a greyed-out Break Apart. The object stays and the steps come out as a group beside it, also from the dockers' Break apart buttons (#424).
 
 - Colour Eyedropper: after a colour is sampled the pointer turns into the paint bucket, as in the reference program, and pictures give their colour again when they are grouped, inside a clip frame or kept as JPEG (#403).
