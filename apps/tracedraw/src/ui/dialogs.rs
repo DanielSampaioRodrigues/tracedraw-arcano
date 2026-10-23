@@ -2899,9 +2899,9 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     if matches!(st.layout_kind, 1 | 3) {
                         ui.label(tr("print.grid"));
                         ui.horizontal(|ui| {
-                            ui.add(crate::ui::field::NumField::new(&mut st.cols).range(1..=20));
+                            ui.add(crate::ui::field::NumField::new(&mut st.cols).range(1..=99));
                             ui.label("x");
-                            ui.add(crate::ui::field::NumField::new(&mut st.rows).range(1..=20));
+                            ui.add(crate::ui::field::NumField::new(&mut st.rows).range(1..=99));
                         });
                         ui.end_row();
                     }
@@ -2960,7 +2960,11 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 let w = sheet.size.width as f32 * k;
                 let h = sheet.size.height as f32 * k;
                 let o = r.center() - egui::vec2(w / 2.0, h / 2.0);
-                let p = ui.painter();
+                // Pages kept at their size may run off the sheet: the
+                // sketch shows the sheet's part of them.
+                let p = ui
+                    .painter()
+                    .with_clip_rect(egui::Rect::from_min_size(o, egui::vec2(w, h)).expand(1.0));
                 p.rect(
                     egui::Rect::from_min_size(o, egui::vec2(w, h)),
                     0.0,
@@ -3001,6 +3005,9 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 egui::RichText::new(trf("print.sheets", &[("n", &plan.len().to_string())]))
                     .color(Tokens::text_dim()),
             );
+            if crate::imposition::overflows(&plan) {
+                ui.colored_label(ui.visuals().warn_fg_color, tr("print.keep_size_overflow"));
+            }
         });
     });
 }

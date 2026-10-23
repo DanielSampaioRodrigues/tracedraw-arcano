@@ -2890,6 +2890,7 @@ print.info_drag_tip = "用紙上をドラッグしてページ情報を移動" #
 print.info_reset = "ページ情報を元の位置に戻す" # mt
 print.keep_size = "ページサイズを保持" # mt
 print.keep_size_tip = "マーク用の余白のためにページを縮小せず、用紙上の大きさを保ちます" # mt
+print.keep_size_overflow = "この大きさではすべてのページが用紙に収まりません。はみ出た部分は印刷されません。" # mt
 print.landscape = "横向き"
 print.layout = "レイアウト"
 print.layout_as_is = "ドキュメントどおり"

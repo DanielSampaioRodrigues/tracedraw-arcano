@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Arrastre en la hoja para mover la información de página
 print.info_reset = "Información de página a su sitio" # mt
 print.keep_size = "Mantener tamaño de página" # mt
 print.keep_size_tip = "Las páginas mantienen su tamaño en la hoja en vez de encogerse para dejar sitio a las marcas" # mt
+print.keep_size_overflow = "A su tamaño no caben todas las páginas en la hoja: lo que sobresale no se imprime." # mt
 print.landscape = "Horizontal"
 print.layout = "Diseño"
 print.layout_as_is = "Como en el documento"

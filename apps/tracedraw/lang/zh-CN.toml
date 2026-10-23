@@ -2890,6 +2890,7 @@ print.info_drag_tip = "在纸张上拖动以移动页面信息" # mt
 print.info_reset = "页面信息回到原位" # mt
 print.keep_size = "保持页面大小" # mt
 print.keep_size_tip = "页面在纸张上保持大小，而不是缩小以给标记留出空间" # mt
+print.keep_size_overflow = "按原尺寸，页面无法全部放入纸张：超出部分不会打印。" # mt
 print.landscape = "横向"
 print.layout = "版式"
 print.layout_as_is = "与文档相同"

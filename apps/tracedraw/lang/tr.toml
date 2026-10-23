@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Sayfa bilgisini taşımak için sayfa üzerinde sürükle
 print.info_reset = "Sayfa bilgisini yerine al" # mt
 print.keep_size = "Sayfa boyutunu koru" # mt
 print.keep_size_tip = "Sayfalar işaretlere yer açmak için küçülmek yerine sayfadaki boyutlarını korur" # mt
+print.keep_size_overflow = "Bu boyutta tüm sayfalar yaprağa sığmıyor: dışına taşan kısım yazdırılmaz." # mt
 print.landscape = "Yatay"
 print.layout = "Yerleşim"
 print.layout_as_is = "Belgedeki gibi"

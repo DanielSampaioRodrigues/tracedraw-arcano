@@ -2890,6 +2890,7 @@ print.info_drag_tip = "在紙張上拖曳以移動頁面資訊" # mt
 print.info_reset = "頁面資訊回到原位" # mt
 print.keep_size = "保持頁面大小" # mt
 print.keep_size_tip = "頁面在紙張上保持大小，而不是縮小以給標記留出空間" # mt
+print.keep_size_overflow = "按原尺寸，頁面無法全部放入紙張：超出部分不會列印。" # mt
 print.landscape = "橫向"
 print.layout = "版面"
 print.layout_as_is = "與文件相同"

@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Arraste na folha para mover a informação da página" # 
 print.info_reset = "Informação da página de volta ao lugar" # mt
 print.keep_size = "Manter tamanho da página" # mt
 print.keep_size_tip = "As páginas mantêm o tamanho na folha em vez de encolher para dar lugar às marcas" # mt
+print.keep_size_overflow = "No tamanho delas, nem todas as páginas cabem na folha: o que passar dela não é impresso." # mt
 print.landscape = "Paisagem"
 print.layout = "Layout"
 print.layout_as_is = "Como no documento"

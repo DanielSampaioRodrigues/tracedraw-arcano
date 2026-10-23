@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Tažením na archu přesunete informace o stránce" # mt
 print.info_reset = "Informace o stránce zpět na místo" # mt
 print.keep_size = "Zachovat velikost stránky" # mt
 print.keep_size_tip = "Stránky si na archu zachovají velikost místo zmenšení kvůli značkám" # mt
+print.keep_size_overflow = "Ve své velikosti se všechny stránky na arch nevejdou: co přesahuje, se nevytiskne." # mt
 print.landscape = "Na šířku"
 print.layout = "Rozvržení"
 print.layout_as_is = "Jako v dokumentu"

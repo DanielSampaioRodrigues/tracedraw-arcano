@@ -96,9 +96,15 @@ same function (`export::print_sheets`).
   about the sheet's middle and it prints behind its front on a
   double-sided sheet; the pages are not mirrored (unlike Mirror)
   (`imposition::tests::the_back_side_runs_the_columns_right_to_left`).
-- Keep page size (a fixed sheet, #388): the pages are scaled down only
-  when they would not fit the sheet itself, not to make room for the
-  marks, which take the room there is. The page information can be moved:
+- Keep page size (a fixed sheet, #388): the pages are never scaled, not
+  to make room for the marks (which take the room there is) nor to fit
+  the grid: Several Pages per Sheet and Step and Repeat keep the columns
+  and rows as set, and pages that do not fit run off the sheet; the
+  sketch shows the sheet's part and a warning says what runs off is not
+  printed (#496, `imposition::overflows`,
+  `imposition::tests::kept_size_keeps_the_grid_and_the_page_size`).
+  Without it the grid shrinks to fit inside the marks. Columns and rows go
+  up to 99. The page information can be moved:
   with it on, a drag on the sheet in Print Preview moves it (an offset in
   mm, "Page information back in place" resets it)
   (`imposition::tests::kept_size_does_not_shrink_pages_for_marks`).

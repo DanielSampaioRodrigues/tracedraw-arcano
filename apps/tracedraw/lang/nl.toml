@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Sleep op het vel om de pagina-informatie te verplaatsen" 
 print.info_reset = "Pagina-informatie terug op haar plaats" # mt
 print.keep_size = "Paginaformaat behouden" # mt
 print.keep_size_tip = "De pagina's houden hun formaat op het vel in plaats van te krimpen voor de markeringen" # mt
+print.keep_size_overflow = "Op hun formaat passen niet alle pagina's op het vel: wat erbuiten valt, wordt niet afgedrukt." # mt
 print.landscape = "Liggend"
 print.layout = "Indeling"
 print.layout_as_is = "Zoals in document"

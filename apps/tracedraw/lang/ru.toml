@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Перетащите по листу, чтобы сдви
 print.info_reset = "Информацию о странице на место" # mt
 print.keep_size = "Сохранять размер страницы" # mt
 print.keep_size_tip = "Страницы сохраняют размер на листе, а не уменьшаются ради меток" # mt
+print.keep_size_overflow = "В своём размере не все страницы помещаются на лист: то, что выходит за него, не печатается." # mt
 print.landscape = "Альбомная"
 print.layout = "Макет"
 print.layout_as_is = "Как в документе"

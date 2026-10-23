@@ -2890,6 +2890,7 @@ print.info_drag_tip = "পৃষ্ঠার তথ্য সরাতে শি
 print.info_reset = "পৃষ্ঠার তথ্য আগের জায়গায়" # mt
 print.keep_size = "পৃষ্ঠার আকার রাখুন" # mt
 print.keep_size_tip = "চিহ্নের জায়গা করতে ছোট হওয়ার বদলে পৃষ্ঠা শিটে তাদের আকার রাখে" # mt
+print.keep_size_overflow = "নিজের আকারে সব পৃষ্ঠা শিটে ধরে না: যা বাইরে যায় তা মুদ্রিত হয় না।" # mt
 print.landscape = "আড়াআড়ি"
 print.layout = "লেআউট"
 print.layout_as_is = "নথির মতো"

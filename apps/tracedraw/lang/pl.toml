@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Przeciągnij na arkuszu, aby przesunąć informacje o str
 print.info_reset = "Informacje o stronie na swoje miejsce" # mt
 print.keep_size = "Zachowaj rozmiar strony" # mt
 print.keep_size_tip = "Strony zachowują rozmiar na arkuszu zamiast zmniejszać się, by zrobić miejsce na znaczniki" # mt
+print.keep_size_overflow = "W tym rozmiarze nie wszystkie strony mieszczą się na arkuszu: to, co wystaje, nie zostanie wydrukowane." # mt
 print.landscape = "Pozioma"
 print.layout = "Układ"
 print.layout_as_is = "Jak w dokumencie"

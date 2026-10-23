@@ -2890,6 +2890,7 @@ print.info_drag_tip = "पेज जानकारी खिसकाने क
 print.info_reset = "पेज जानकारी वापस अपनी जगह" # mt
 print.keep_size = "पेज का आकार रखें" # mt
 print.keep_size_tip = "निशानों के लिए जगह बनाने हेतु छोटे होने के बजाय पेज शीट पर अपना आकार रखते हैं" # mt
+print.keep_size_overflow = "अपने आकार में सभी पृष्ठ शीट पर नहीं आते: जो बाहर जाता है वह छपता नहीं।" # mt
 print.landscape = "लैंडस्केप"
 print.layout = "लेआउट"
 print.layout_as_is = "दस्तावेज़ जैसा"

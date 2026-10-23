@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Auf dem Bogen ziehen, um die Seiteninformation zu verschi
 print.info_reset = "Seiteninformation zurück an ihren Platz" # mt
 print.keep_size = "Seitengröße beibehalten" # mt
 print.keep_size_tip = "Die Seiten behalten ihre Größe auf dem Bogen, statt für die Marken zu schrumpfen" # mt
+print.keep_size_overflow = "In ihrer Größe passen nicht alle Seiten auf den Bogen: Was darüber hinausragt, wird nicht gedruckt." # mt
 print.landscape = "Querformat"
 print.layout = "Layout"
 print.layout_as_is = "Wie im Dokument"

@@ -2890,6 +2890,7 @@ print.info_drag_tip = "Seret di lembar untuk memindahkan informasi halaman" # mt
 print.info_reset = "Informasi halaman kembali ke tempatnya" # mt
 print.keep_size = "Pertahankan ukuran halaman" # mt
 print.keep_size_tip = "Halaman mempertahankan ukurannya di lembar alih-alih mengecil untuk memberi ruang tanda" # mt
+print.keep_size_overflow = "Dengan ukurannya, tidak semua halaman muat di lembar: bagian yang keluar tidak dicetak." # mt
 print.landscape = "Lanskap"
 print.layout = "Tata letak"
 print.layout_as_is = "Sesuai dokumen"

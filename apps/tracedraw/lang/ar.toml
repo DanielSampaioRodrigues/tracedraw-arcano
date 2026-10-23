@@ -2890,6 +2890,7 @@ print.info_drag_tip = "اسحب على الورقة لتحريك معلومات 
 print.info_reset = "إعادة معلومات الصفحة إلى مكانها" # mt
 print.keep_size = "الإبقاء على حجم الصفحة" # mt
 print.keep_size_tip = "تحتفظ الصفحات بحجمها على الورقة بدل أن تصغر لإفساح مكان للعلامات" # mt
+print.keep_size_overflow = "بحجمها الحالي لا تتسع كل الصفحات على الورقة: ما يتجاوزها لا يُطبع." # mt
 print.landscape = "أفقي"
 print.layout = "التخطيط"
 print.layout_as_is = "كما في المستند"
