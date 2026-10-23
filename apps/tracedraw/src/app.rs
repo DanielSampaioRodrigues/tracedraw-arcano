@@ -3508,8 +3508,11 @@ impl App {
         if self.selection.is_empty() {
             return;
         }
+        // One step: the copies and their move (#471).
+        let depth = self.engine.history_labels().0.len();
         self.duplicate_in_place();
         self.transform_selection(t);
+        self.engine.squash_since(depth, "Duplicate");
         self.note_repeatable(Repeatable::Copy(t));
     }
 

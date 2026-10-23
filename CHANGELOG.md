@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Repeat (Ctrl+R) after a copy made with a right click during a drag is one undo step, as is that copy itself; the first Undo only moved the new copy back onto the original (#471).
+
 - Export: WebP takes the quality setting; it was ignored. The files stay lossless, and below 100 their colours are first rounded to fewer levels (near-lossless), so a lower quality makes a smaller file (#544).
 
 - Edit Fill > Uniform: the colour's model list and a field for each value (C, M, Y, K or R, G, B and so on), as in the colour picker; it showed only the swatch and the hex code (#468).

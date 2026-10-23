@@ -223,6 +223,17 @@ fn repeat_after_a_right_click_copy_makes_another_copy() {
     );
     app.repeat_last();
     assert_eq!(shape_count(&app), 4);
+    // Each copy, the drag's and Repeat's, is one undo step: one Undo
+    // takes the newest copy away whole, not just its move (#471).
+    let third = app.selection[0];
+    let steps = app.engine.history_labels().0.len();
+    app.undo();
+    assert_eq!(app.engine.history_labels().0.len(), steps - 1);
+    assert_eq!(shape_count(&app), 3);
+    assert!(app.doc().find_shape(third).is_none());
+    app.undo();
+    app.undo();
+    assert_eq!(shape_count(&app), 1, "three Undos for three copies");
 }
 
 /// Repeat after an undo repeats the last action still in effect, not the
