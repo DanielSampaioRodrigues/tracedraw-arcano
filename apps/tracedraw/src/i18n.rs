@@ -202,6 +202,12 @@ pub fn system_language() -> &'static str {
     let env = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_default();
+    // Windows sets neither: its own locale (Arcano edition, see fork.rs).
+    let env = if env.trim().is_empty() {
+        crate::fork::windows_locale().unwrap_or_default()
+    } else {
+        env
+    };
     language_for_locale(&env)
 }
 

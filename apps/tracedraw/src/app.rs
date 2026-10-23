@@ -2552,7 +2552,7 @@ impl App {
             self.studio.keys = s.studio.keys.clone();
         }
         let lang = if s.language.is_empty() {
-            crate::i18n::system_language().to_string()
+            crate::fork::default_language().to_string()
         } else {
             s.language.clone()
         };

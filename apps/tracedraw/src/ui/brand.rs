@@ -49,6 +49,18 @@ pub fn icon(ctx: &Context) -> Option<TextureHandle> {
     Some(tex)
 }
 
+/// The 256 px icon for the window and the taskbar (Arcano edition: the
+/// upstream window shows the windowing library's own icon).
+pub fn window_icon() -> Option<egui::IconData> {
+    let bytes = include_bytes!("../../../../assets/icon/tracedraw-256.png");
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    Some(egui::IconData {
+        width: img.width(),
+        height: img.height(),
+        rgba: img.into_raw(),
+    })
+}
+
 /// The embedded 128 px icon as an egui image.
 pub(crate) fn icon_image() -> Option<egui::ColorImage> {
     let bytes = include_bytes!("../../../../assets/icon/tracedraw-128.png");

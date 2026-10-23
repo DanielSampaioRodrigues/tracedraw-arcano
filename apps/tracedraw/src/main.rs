@@ -199,7 +199,7 @@ fn main() -> eframe::Result<()> {
         settings.save();
     }
     i18n::set_language(&if settings.language.is_empty() {
-        i18n::system_language().to_string()
+        fork::default_language().to_string()
     } else {
         settings.language.clone()
     });
@@ -210,12 +210,14 @@ fn main() -> eframe::Result<()> {
         // window made not resizable at its size for good, and the main
         // window it becomes could then neither be resized nor maximized.
         egui::ViewportBuilder::default()
+            .with_icon(std::sync::Arc::new(ui::brand::window_icon().unwrap_or_default()))
             .with_inner_size(splash::SIZE)
             .with_decorations(false)
             .with_resizable(true)
             .with_title("TraceDraw")
     } else {
         egui::ViewportBuilder::default()
+            .with_icon(std::sync::Arc::new(ui::brand::window_icon().unwrap_or_default()))
             .with_inner_size(splash::main_window_size(settings.window_size, None))
             .with_min_inner_size(splash::MIN_SIZE)
             .with_maximized(settings.window_maximized && !plain)

@@ -20,6 +20,53 @@ macro_rules! fork_repo {
     };
 }
 
+/// The user's locale on Windows (`pt-BR`, `en-US`...), which sets no
+/// `LANG`: `GetUserDefaultLocaleName` of kernel32. None elsewhere.
+pub fn windows_locale() -> Option<String> {
+    #[cfg(windows)]
+    {
+        windows_locale_name()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetUserDefaultLocaleName(name: *mut u16, len: i32) -> i32;
+}
+
+#[cfg(windows)]
+fn windows_locale_name() -> Option<String> {
+    let mut buf = [0u16; 85];
+    // SAFETY: the buffer is valid for its whole length, which is the
+    // length the call is given; it writes at most that many characters.
+    let n = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
+    if n <= 1 {
+        None
+    } else {
+        let end = ((n - 1) as usize).min(buf.len());
+        String::from_utf16(&buf[..end]).ok()
+    }
+}
+
+/// The interface language when none was chosen: the system's, and
+/// Brazilian Portuguese where the system's is English or unknown (the
+/// edition is made for a Brazilian publisher).
+pub fn default_language() -> &'static str {
+    // Tests read the interface in English, as upstream.
+    if cfg!(test) {
+        return crate::i18n::system_language();
+    }
+    match crate::i18n::system_language() {
+        "en" => "pt-BR",
+        other => other,
+    }
+}
+
 /// The build number of this edition (set by the release script through
 /// `ARCANO_BUILD` at compile time; 0 for a local build).
 pub fn build() -> u64 {
