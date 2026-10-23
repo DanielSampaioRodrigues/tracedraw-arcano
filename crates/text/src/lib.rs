@@ -22,6 +22,8 @@ use tracedraw_core::{
 
 pub mod catalog;
 pub mod hyphen;
+#[cfg(any(windows, all(test, not(target_arch = "wasm32"))))]
+mod installed;
 
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
@@ -828,6 +830,8 @@ impl FontSystem {
         let mut db = fontdb::Database::new();
         #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();
+        #[cfg(windows)]
+        installed::drop_unregistered(&mut db);
         if let Ok(extra) = EXTRA_FONTS.lock() {
             for data in extra.iter() {
                 let source: Arc<dyn AsRef<[u8]> + Sync + Send> = data.clone();

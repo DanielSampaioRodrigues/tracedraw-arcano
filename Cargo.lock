@@ -4212,6 +4212,7 @@ dependencies = [
  "rustybuzz",
  "tracedraw-core",
  "ttf-parser",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

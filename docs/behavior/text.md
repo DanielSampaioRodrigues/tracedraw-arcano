@@ -123,6 +123,15 @@ Text and Glyphs dockers and Options (default font):
   state as they were (`Engine::begin_preview`, `withdraw_preview`;
   `the_text_shows_the_font_a_list_points_at`). Options' default font
   list does not preview.
+- The font for new text is kept between runs; at start, one that is no
+  longer installed gives way to Arial (else Liberation Sans, DejaVu Sans,
+  Selawik, or the first font there is), since text typed in it was drawn
+  with a stand-in while the bars named the missing font (#504,
+  `a_default_font_no_longer_installed_gives_way`).
+- On Windows the installed fonts are the ones its font registry lists
+  (the machine's and the user's): a file left in a font folder by a font
+  uninstalled while in use is not offered (#504,
+  `installed::tests::faces_of_files_not_registered_are_left_out`).
 
 Names are drawn by the text engine into pictures of the screen's
 resolution, only for the rows in view, and kept until fonts are added.

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fonts: on Windows the font lists offer only the fonts Windows lists as installed; a font uninstalled while in use left its file in the font folder until the next restart and was still offered. A font for new text that is no longer installed gives way to Arial at start, instead of being named in the bars while text was drawn with a stand-in (#504).
+
 - Text: typing in a text keeps its own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off behind the menu's back. Text > Use Hyphenation while editing acts on the paragraphs at the caret, and its check mark shows them (#470).
 
 - Text: Alt codes type their character on Windows (Alt+0193 gives Á, or the glyph a symbol font draws there, as the Glyphs docker's keystroke says); nothing was typed (#469).

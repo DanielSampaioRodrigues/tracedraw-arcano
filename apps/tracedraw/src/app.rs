@@ -1876,7 +1876,11 @@ impl App {
         // The Bitmap Effects lens runs the application's bitmap effects.
         tracedraw_render::set_pixel_effects(crate::fx::lens_effects);
         Self::setup_context(ctx);
-        Self::build(open)
+        let mut app = Self::build(open);
+        if !crate::files::WEB {
+            app.keep_default_font_installed();
+        }
+        app
     }
 
     /// The interface style every window context takes: options, visuals
@@ -2500,6 +2504,32 @@ impl App {
         if !crate::ui::font_manager::install_saved(&self.settings.font_manager).is_empty() {
             self.font_families = tracedraw_text::fonts().available_families();
         }
+    }
+
+    /// A font for new text that is no longer installed gives way to Arial,
+    /// or the first font there is: text typed in it was drawn with a
+    /// stand-in while the bars named the missing font (#504).
+    pub fn keep_default_font_installed(&mut self) {
+        let installed = |f: &str| self.font_families.iter().any(|g| g.eq_ignore_ascii_case(f));
+        if self.font_families.is_empty() || installed(&self.text_default_font) {
+            return;
+        }
+        let Some(font) = ["Arial", "Liberation Sans", "DejaVu Sans", "Selawik"]
+            .iter()
+            .find(|f| installed(f))
+            .map(|f| f.to_string())
+            .or_else(|| self.font_families.first().cloned())
+        else {
+            return;
+        };
+        log::info!(
+            "the font for new text, {}, is not installed: {font} instead",
+            self.text_default_font
+        );
+        if self.text_font == self.text_default_font {
+            self.text_font = font.clone();
+        }
+        self.text_default_font = font;
     }
 
     /// Apply a set of preferences to the running editor.
@@ -6953,6 +6983,27 @@ mod tests {
     /// Tool settings, what the window shows, snapping and the dockers'
     /// choices come back the next time, through the preferences file
     /// (JSON, as in the browser's storage).
+    /// A font for new text that is not installed (uninstalled since it
+    /// was kept) gives way to an installed one; an installed one stays,
+    /// whatever its case (#504).
+    #[test]
+    fn a_default_font_no_longer_installed_gives_way() {
+        let mut app = App::headless();
+        app.font_families = vec!["Arial".into(), "Georgia".into()];
+        app.text_default_font = "georgia".into();
+        app.keep_default_font_installed();
+        assert_eq!(app.text_default_font, "georgia");
+        app.text_default_font = "Uninstalled Font".into();
+        app.text_font = "Uninstalled Font".into();
+        app.keep_default_font_installed();
+        assert_eq!(app.text_default_font, "Arial");
+        assert_eq!(app.text_font, "Arial");
+        app.font_families = vec!["Georgia".into()];
+        app.text_default_font = "Gone".into();
+        app.keep_default_font_installed();
+        assert_eq!(app.text_default_font, "Georgia");
+    }
+
     #[test]
     fn tools_view_snapping_and_dockers_survive_a_restart() {
         let mut app = App::headless();
