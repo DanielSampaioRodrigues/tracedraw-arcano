@@ -3,7 +3,8 @@
 # publica para as outras maquinas e instala nesta.
 #   -NaoPublicar   so compila e instala aqui
 #   -SemTestes     pula os testes (mais rapido)
-param([switch]$NaoPublicar, [switch]$SemTestes)
+#   -SoEsteCodigo  nao busca novidades: compila o codigo como esta
+param([switch]$NaoPublicar, [switch]$SemTestes, [switch]$SoEsteCodigo)
 . (Join-Path $PSScriptRoot 'comum.ps1')
 
 Passo 'Conferindo o codigo'
@@ -11,6 +12,8 @@ if (git status --porcelain --untracked-files=no) { Falha 'Ha mudancas sem commit
 if ((git rev-parse --abbrev-ref HEAD) -ne 'arcano') { git checkout arcano }
 $antes = (git rev-parse HEAD).Trim()
 
+$novas = 0
+if (-not $SoEsteCodigo) {
 Passo 'Buscando novidades do projeto original'
 if (-not ((git remote) -contains 'upstream')) { git remote add upstream $Upstream }
 git fetch upstream
@@ -22,6 +25,14 @@ if ($novas -gt 0) {
         git merge --abort
         Falha 'Alguma novidade bateu de frente com uma mudanca nossa. Nada foi alterado; peca ao Claude para resolver o conflito.'
     }
+}
+}
+
+if (-not $NaoPublicar -and (Tem 'gh')) {
+    # Nada novo desde a ultima versao publicada: para por aqui.
+    $tagAgora = "v$(Versao-Base)+arcano.$([int](git rev-list --count HEAD))"
+    gh release view $tagAgora --repo (Repo-Da-Edicao) 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Passo "Ja esta tudo atualizado ($tagAgora publicada)."; exit 0 }
 }
 
 if (-not $SemTestes) {
