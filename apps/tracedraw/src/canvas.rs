@@ -262,7 +262,15 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             }
         }
         if let Some(seg) = &look.preview {
+            // A solid white line under the dashes keeps the preview one
+            // line over any colour, as in the reference program (#489).
             for (pts, _) in flatten(seg, view) {
+                if pts.len() > 1 {
+                    painter.add(epaint::PathShape::line(
+                        pts.clone(),
+                        EStroke::new(2.0, Color32::WHITE),
+                    ));
+                }
                 dashed_polyline(
                     painter,
                     &pts,

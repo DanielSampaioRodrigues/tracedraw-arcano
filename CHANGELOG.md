@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen: the dashed blue preview to the pointer is drawn over a solid white line, so it stays one line over dark objects and any colour, as in the reference program (#489).
+
 - Pen and Bezier: the constrain key (Ctrl) keeps the closing handle to the constrain angle when dragging on the first node to close a curve, as on every other node (#473).
 
 - Shape tool: deleting the first node of a closed curve keeps the curve's shape, as deleting any other node does; the two segments around it kept their old handles and the curve changed (#472).
