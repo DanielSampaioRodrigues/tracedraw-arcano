@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- About TraceDraw: an ALPHA badge beside the version, with a tooltip saying what the alpha stage means.
+
 - Symmetry: a double click on a symmetry goes back into editing it, as in the reference program; it opened the group's focus mode instead, so after Finish the only way back was the menu.
 
 - Guidelines: Copy, Cut and Paste work on selected guidelines (no objects selected), pasting them in the same place, and the Transformations docker moves, rotates, scales and copies them; the Help says where the Ctrl+D duplicate offset is set (#376).
