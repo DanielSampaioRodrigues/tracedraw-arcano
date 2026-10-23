@@ -64,6 +64,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             (Mode::Remix, "\u{1F504}", "aigen.mode_remix"),
             (Mode::Vector, "\u{2712}", "aigen.mode_vector"),
             (Mode::Draw, "\u{270D}", "aigen.mode_draw"),
+            (Mode::Edit, "\u{2728}", "studio.mode_edit"),
         ] {
             let on = app.ai_image.mode == mode && !app.ai_image.info;
             if ui
@@ -96,6 +97,11 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         return;
     }
     let mode = app.ai_image.mode;
+    if mode == Mode::Edit {
+        // Arcano edition: operations on the selected bitmap.
+        crate::studio::ui::edit_page(app, ui);
+        return;
+    }
     if mode == Mode::Draw {
         // Draw with words: the drawing service makes and changes objects.
         ui.label(RichText::new(tr("aigen.draw_title")).strong());
@@ -115,9 +121,18 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
     }
     let svg = mode == Mode::Vector && app.ai_image.vector_engine == VectorEngine::Svg;
     let need = if svg { Need::Drawing } else { Need::Images };
-    banner(app, ui, need);
+    // Arcano edition: a studio service needs no banner of the main one.
+    if svg || !app.studio_active() {
+        banner(app, ui, need);
+    }
     let ready = if svg {
         app.ai_drawing_ready()
+    } else if app.studio_active() {
+        app.ai_features_on()
+            && !app
+                .studio_key(&app.settings.studio.image_provider)
+                .trim()
+                .is_empty()
     } else {
         app.ai_image_ready()
     };
@@ -125,7 +140,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         Mode::Create => ("aigen.create_title", "aigen.create_about"),
         Mode::Remix => ("aigen.remix_title", "aigen.remix_about"),
         Mode::Vector => ("aigen.vector_title", "aigen.vector_about"),
-        Mode::Draw => ("aigen.draw_title", "aigen.draw_about"),
+        Mode::Draw | Mode::Edit => ("aigen.draw_title", "aigen.draw_about"),
     };
     // The settings and results scroll; the footer stays at the bottom.
     let footer_h = 118.0;
@@ -142,7 +157,9 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
                     .color(Tokens::text_dim())
                     .size(11.0),
             );
-            ui.add_enabled_ui(ready && !app.ai_image.busy(), |ui| body(app, ui, mode, svg));
+            ui.add_enabled_ui(ready && !app.ai_image.busy() && !app.studio.busy(), |ui| {
+                body(app, ui, mode, svg)
+            });
             results(app, ui);
             ui.add_space(6.0);
             ui.label(
@@ -172,7 +189,18 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             .on_hover_text(tr("aigen.engine_svg_tip"));
         });
     }
+    // Arcano edition: the picture service, and the studio's model, size
+    // and shape when one of its services is chosen.
+    let studio = !svg && {
+        let op = if mode == Mode::Remix {
+            crate::studio::Op::Remix
+        } else {
+            crate::studio::Op::Generate
+        };
+        crate::studio::ui::picture_rows(app, ui, op)
+    };
     // The model in use, from the service's list, and its notes.
+    if !studio {
     ui.horizontal(|ui| {
         ui.label(tr("ai.model"));
         if svg {
@@ -238,8 +266,9 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             });
         ui.small_button("?").on_hover_text(model_note(&current));
     });
+    }
     // The size of the pictures, and what one costs at that size.
-    if !svg {
+    if !svg && !studio {
         if let Some(prefs) = app.ai_image_prefs() {
             let model = prefs.model();
             let offered = crate::ai_image::resolutions(prefs.provider, &model);
@@ -318,6 +347,8 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             }
             app.ai_image.prompt = pick.to_string();
         }
+        // The studio shows the shapes its model makes, with its rows.
+        if !studio {
         ui.horizontal(|ui| {
             ui.label(tr("aigen.aspect"));
             let current = app.ai_image.aspect;
@@ -337,6 +368,7 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                     }
                 });
         });
+        }
     }
     // Style and palette fold away to make room for the results.
     let folded = app.ai_image.folded;
@@ -520,7 +552,7 @@ fn results(app: &mut App, ui: &mut Ui) {
 fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
     ui.separator();
     let svg = mode == Mode::Vector && app.ai_image.vector_engine == VectorEngine::Svg;
-    ui.add_enabled_ui(ready && !app.ai_image.busy(), |ui| {
+    ui.add_enabled_ui(ready && !app.ai_image.busy() && !app.studio.busy(), |ui| {
         ui.horizontal(|ui| {
             if !svg {
                 ui.label(tr("aigen.images"));
@@ -532,10 +564,16 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
                 .on_hover_text(tr("aigen.auto_place_tip"));
         });
     });
-    let service = match app.ai_image_prefs() {
-        Some(p) if !svg => tr(p.provider.key()),
+    let studio_service = (!svg && app.studio_active())
+        .then(|| app.studio.catalog.provider(&app.settings.studio.image_provider))
+        .flatten()
+        .map(|p| p.name.clone());
+    let service = match (studio_service, app.ai_image_prefs()) {
+        (Some(name), _) => name,
+        (None, Some(p)) if !svg => tr(p.provider.key()),
         _ => tr(app.settings.ai.provider.key()),
     };
+    let busy = app.ai_image.busy() || app.studio.busy();
     let requests = if svg {
         1
     } else {
@@ -549,7 +587,7 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
         .color(Tokens::text_dim())
         .size(11.0),
     );
-    if app.ai_image.busy() {
+    if busy {
         // The button says it is working, with the progress and Cancel.
         let label = match app.ai_image.status {
             ImageStatus::Waiting { done, total } if total > 1 => trf(
@@ -567,6 +605,7 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
             ui.spinner();
             if ui.button(tr("dialog.cancel")).clicked() {
                 app.ai_image_cancel();
+                app.studio_cancel();
             }
         });
     } else {

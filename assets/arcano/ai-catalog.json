@@ -1,0 +1,2232 @@
+{
+ "version": 1,
+ "checked": "2026-10-23",
+ "providers": [
+  {
+   "id": "gemini",
+   "name": "Google Gemini",
+   "key_url": "https://aistudio.google.com/apikey",
+   "about": {
+    "pt-BR": "Nano Banana: segue bem o pedido e edita bem imagens; até 4K.",
+    "en": "Nano Banana: follows prompts and edits pictures well; up to 4K."
+   },
+   "english_only": false,
+   "models": [
+    {
+     "id": "gemini-nano-banana-2.1",
+     "label": "Nano Banana 2.1",
+     "note": {
+      "pt-BR": "O mais novo do Google: rápido, barato, ótimo para editar; até 4K.",
+      "en": "Google's newest: fast, low priced, great at edits; up to 4K."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "21:9"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {
+      "1K": 0.0336,
+      "2K": 0.0504,
+      "4K": 0.113
+     },
+     "vector": false,
+     "newest": true,
+     "params": []
+    },
+    {
+     "id": "gemini-3-pro-image",
+     "label": "Nano Banana Pro",
+     "note": {
+      "pt-BR": "Mais detalhe e texto nas imagens; cerca de 4 vezes o preço do 2.1.",
+      "en": "More detail and text in pictures; about four times the price of 2.1."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "21:9"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {
+      "1K": 0.134,
+      "2K": 0.134,
+      "4K": 0.24
+     },
+     "vector": false,
+     "newest": false,
+     "params": []
+    }
+   ],
+   "ops": [
+    {
+     "op": "upscale",
+     "variants": [
+      {
+       "id": "regenerate",
+       "label": {
+        "pt-BR": "Refazer em alta resolução",
+        "en": "Regenerate at high resolution"
+       },
+       "note": {
+        "pt-BR": "A IA redesenha a imagem em 2K ou 4K; pode mudar pequenos detalhes.",
+        "en": "The AI redraws the picture at 2K or 4K; small details may change."
+       },
+       "params": [
+        {
+         "name": "resolution",
+         "label": {
+          "pt-BR": "Tamanho",
+          "en": "Size"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "2K",
+           {
+            "pt-BR": "2K",
+            "en": "2K"
+           }
+          ],
+          [
+           "4K",
+           {
+            "pt-BR": "4K",
+            "en": "4K"
+           }
+          ]
+         ],
+         "default": "4K"
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Preço de uma imagem do Nano Banana 2.1 no tamanho escolhido (US$ 0,05 em 2K, 0,113 em 4K).",
+        "en": "The price of one Nano Banana 2.1 picture at the size (US$ 0.05 at 2K, 0.113 at 4K)."
+       }
+      }
+     ]
+    },
+    {
+     "op": "remove_background",
+     "variants": [
+      {
+       "id": "chroma",
+       "label": {
+        "pt-BR": "Pela descrição",
+        "en": "By description"
+       },
+       "note": {
+        "pt-BR": "O Gemini pinta o fundo de verde e o programa recorta.",
+        "en": "Gemini paints the background green and the editor cuts it out."
+       },
+       "params": [],
+       "price": 0.0336
+      }
+     ]
+    },
+    {
+     "op": "replace_background",
+     "variants": [
+      {
+       "id": "prompt",
+       "label": {
+        "pt-BR": "Pela descrição",
+        "en": "By description"
+       },
+       "note": {
+        "pt-BR": "Novo fundo descrito em palavras; o Gemini não tem ferramenta própria para isso.",
+        "en": "A new background described in words; Gemini has no tool of its own for it."
+       },
+       "params": [],
+       "price": 0.0336
+      }
+     ]
+    },
+    {
+     "op": "relight",
+     "variants": [
+      {
+       "id": "prompt",
+       "label": {
+        "pt-BR": "Pela descrição",
+        "en": "By description"
+       },
+       "note": {
+        "pt-BR": "Nova luz descrita em palavras.",
+        "en": "New light described in words."
+       },
+       "params": [],
+       "price": 0.0336
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "openai",
+   "name": "OpenAI",
+   "key_url": "https://platform.openai.com/api-keys",
+   "about": {
+    "pt-BR": "GPT Image 2.5: tamanho exato em qualquer proporção até 3840 px, fundo transparente, bom com texto.",
+    "en": "GPT Image 2.5: exact sizes in any shape up to 3840 px, transparent backgrounds, good at text."
+   },
+   "english_only": false,
+   "models": [
+    {
+     "id": "gpt-image-2.5-sunburst",
+     "label": "GPT Image 2.5 Sunburst",
+     "note": {
+      "pt-BR": "O mais capaz da OpenAI, melhor para edições precisas.",
+      "en": "OpenAI's most capable, best for precise edits."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "21:9",
+      "1:3",
+      "3:1"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": true,
+     "params": [
+      {
+       "name": "quality",
+       "label": {
+        "pt-BR": "Qualidade",
+        "en": "Quality"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "low",
+         {
+          "pt-BR": "Baixa (mais barata)",
+          "en": "Low (cheapest)"
+         }
+        ],
+        [
+         "medium",
+         {
+          "pt-BR": "Média",
+          "en": "Medium"
+         }
+        ],
+        [
+         "high",
+         {
+          "pt-BR": "Alta",
+          "en": "High"
+         }
+        ],
+        [
+         "xhigh",
+         {
+          "pt-BR": "Muito alta",
+          "en": "Very high"
+         }
+        ],
+        [
+         "max",
+         {
+          "pt-BR": "Máxima (mais cara)",
+          "en": "Maximum (dearest)"
+         }
+        ]
+       ],
+       "default": "high"
+      }
+     ],
+     "price_range": [
+      0.006,
+      0.21
+     ],
+     "price_note": {
+      "pt-BR": "Varia com a qualidade e o tamanho; a OpenAI cobra por token de imagem.",
+      "en": "Depends on quality and size; OpenAI charges by picture token."
+     }
+    },
+    {
+     "id": "gpt-image-2.5-flare",
+     "label": "GPT Image 2.5 Flare",
+     "note": {
+      "pt-BR": "Mesmo preço do Sunburst, mais rápido para o dia a dia.",
+      "en": "Same price as Sunburst, faster for everyday pictures."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "21:9",
+      "1:3",
+      "3:1"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "quality",
+       "label": {
+        "pt-BR": "Qualidade",
+        "en": "Quality"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "low",
+         {
+          "pt-BR": "Baixa (mais barata)",
+          "en": "Low (cheapest)"
+         }
+        ],
+        [
+         "medium",
+         {
+          "pt-BR": "Média",
+          "en": "Medium"
+         }
+        ],
+        [
+         "high",
+         {
+          "pt-BR": "Alta",
+          "en": "High"
+         }
+        ],
+        [
+         "xhigh",
+         {
+          "pt-BR": "Muito alta",
+          "en": "Very high"
+         }
+        ],
+        [
+         "max",
+         {
+          "pt-BR": "Máxima (mais cara)",
+          "en": "Maximum (dearest)"
+         }
+        ]
+       ],
+       "default": "high"
+      }
+     ],
+     "price_range": [
+      0.006,
+      0.21
+     ],
+     "price_note": {
+      "pt-BR": "Varia com a qualidade e o tamanho.",
+      "en": "Depends on quality and size."
+     }
+    }
+   ],
+   "ops": [
+    {
+     "op": "remove_background",
+     "variants": [
+      {
+       "id": "transparent",
+       "label": {
+        "pt-BR": "Fundo transparente",
+        "en": "Transparent background"
+       },
+       "note": {
+        "pt-BR": "Edição com fundo transparente de verdade.",
+        "en": "An edit with a truly transparent background."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Uma edição do GPT Image 2.5 (varia com a qualidade).",
+        "en": "One GPT Image 2.5 edit (depends on quality)."
+       }
+      }
+     ]
+    },
+    {
+     "op": "expand",
+     "variants": [
+      {
+       "id": "mask",
+       "label": {
+        "pt-BR": "Com máscara",
+        "en": "With a mask"
+       },
+       "note": {
+        "pt-BR": "A imagem vai num quadro maior e a IA preenche o novo espaço; até 3840 px.",
+        "en": "The picture goes on a larger canvas and the AI fills the new part; up to 3840 px."
+       },
+       "params": [
+        {
+         "name": "left",
+         "label": {
+          "pt-BR": "Esquerda (px)",
+          "en": "Left (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "right",
+         "label": {
+          "pt-BR": "Direita (px)",
+          "en": "Right (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "top",
+         "label": {
+          "pt-BR": "Em cima (px)",
+          "en": "Top (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "bottom",
+         "label": {
+          "pt-BR": "Embaixo (px)",
+          "en": "Bottom (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Uma edição do GPT Image 2.5.",
+        "en": "One GPT Image 2.5 edit."
+       }
+      }
+     ]
+    },
+    {
+     "op": "replace_background",
+     "variants": [
+      {
+       "id": "prompt",
+       "label": {
+        "pt-BR": "Pela descrição",
+        "en": "By description"
+       },
+       "note": {
+        "pt-BR": "Novo fundo descrito em palavras.",
+        "en": "A new background described in words."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Uma edição do GPT Image 2.5.",
+        "en": "One GPT Image 2.5 edit."
+       }
+      }
+     ]
+    },
+    {
+     "op": "relight",
+     "variants": [
+      {
+       "id": "prompt",
+       "label": {
+        "pt-BR": "Pela descrição",
+        "en": "By description"
+       },
+       "note": {
+        "pt-BR": "Nova luz descrita em palavras.",
+        "en": "New light described in words."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Uma edição do GPT Image 2.5.",
+        "en": "One GPT Image 2.5 edit."
+       }
+      }
+     ]
+    },
+    {
+     "op": "upscale",
+     "variants": [
+      {
+       "id": "regenerate",
+       "label": {
+        "pt-BR": "Refazer com o dobro do tamanho",
+        "en": "Regenerate at twice the size"
+       },
+       "note": {
+        "pt-BR": "A IA redesenha a imagem maior; pode mudar pequenos detalhes.",
+        "en": "The AI redraws the picture larger; small details may change."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Uma edição do GPT Image 2.5.",
+        "en": "One GPT Image 2.5 edit."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "recraft",
+   "name": "Recraft",
+   "key_url": "https://app.recraft.ai/profile/api",
+   "about": {
+    "pt-BR": "Gera vetor SVG editável de verdade e vetoriza imagens; ótimo para logos, ícones e ilustração.",
+    "en": "Makes truly editable SVG vectors and traces pictures; great for logos, icons and illustration."
+   },
+   "english_only": false,
+   "models": [
+    {
+     "id": "recraftv4_1_vector",
+     "label": "Recraft V4.1 Vetor",
+     "note": {
+      "pt-BR": "Vetor SVG editável, direto em curvas no TraceDraw.",
+      "en": "Editable SVG vectors, straight into curves."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.08
+     },
+     "vector": true,
+     "newest": true,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.5
+      }
+     ]
+    },
+    {
+     "id": "recraftv4_1_pro_vector",
+     "label": "Recraft V4.1 Pro Vetor",
+     "note": {
+      "pt-BR": "Vetor com mais detalhe.",
+      "en": "Vectors with more detail."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.3
+     },
+     "vector": true,
+     "newest": false,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.5
+      }
+     ]
+    },
+    {
+     "id": "recraftv4_1",
+     "label": "Recraft V4.1",
+     "note": {
+      "pt-BR": "Imagem em 1K, a mais nova da Recraft.",
+      "en": "1K pictures, Recraft's newest."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.035
+     },
+     "vector": false,
+     "newest": true,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.5
+      }
+     ]
+    },
+    {
+     "id": "recraftv4_1_pro",
+     "label": "Recraft V4.1 Pro",
+     "note": {
+      "pt-BR": "Imagem em 2K.",
+      "en": "2K pictures."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "2K"
+     ],
+     "price": {
+      "2K": 0.21
+     },
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.5
+      }
+     ]
+    },
+    {
+     "id": "recraftv4_1_utility",
+     "label": "Recraft V4.1 Utility",
+     "note": {
+      "pt-BR": "Luz chapada e previsível, para mockups e fotos de produto.",
+      "en": "Flat, predictable light for mockups and product photos."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.035
+     },
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.5
+      }
+     ]
+    },
+    {
+     "id": "recraftv4_1_flash",
+     "label": "Recraft V4.1 Flash",
+     "note": {
+      "pt-BR": "Rápido e muito barato, para rascunhos; não edita.",
+      "en": "Fast and very cheap, for drafts; no edits."
+     },
+     "ops": [
+      "generate"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "10:14",
+      "14:10",
+      "6:10"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.007
+     },
+     "vector": false,
+     "newest": false,
+     "params": []
+    }
+   ],
+   "ops": [
+    {
+     "op": "vectorize",
+     "variants": [
+      {
+       "id": "trace",
+       "label": {
+        "pt-BR": "Vetorizar",
+        "en": "Vectorize"
+       },
+       "note": {
+        "pt-BR": "Transforma a imagem em curvas SVG editáveis.",
+        "en": "Turns the picture into editable SVG curves."
+       },
+       "params": [
+        {
+         "name": "stacking",
+         "label": {
+          "pt-BR": "Formas",
+          "en": "Shapes"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "hierarchical",
+           {
+            "pt-BR": "Empilhadas",
+            "en": "Stacked"
+           }
+          ],
+          [
+           "cut_out",
+           {
+            "pt-BR": "Recortadas, sem sobrepor",
+            "en": "Cut out, no overlap"
+           }
+          ]
+         ],
+         "default": "hierarchical"
+        }
+       ],
+       "price": 0.01
+      }
+     ]
+    },
+    {
+     "op": "upscale",
+     "variants": [
+      {
+       "id": "crisp",
+       "label": {
+        "pt-BR": "Nítido",
+        "en": "Crisp"
+       },
+       "note": {
+        "pt-BR": "Mais nitidez sem mudar o conteúdo.",
+        "en": "Sharper without changing the content."
+       },
+       "params": [],
+       "price": 0.004
+      },
+      {
+       "id": "creative",
+       "label": {
+        "pt-BR": "Criativo",
+        "en": "Creative"
+       },
+       "note": {
+        "pt-BR": "Recria detalhes finos e rostos.",
+        "en": "Recreates fine detail and faces."
+       },
+       "params": [],
+       "price": 0.25
+      },
+      {
+       "id": "enhance",
+       "label": {
+        "pt-BR": "Realçar detalhes",
+        "en": "Enhance details"
+       },
+       "note": {
+        "pt-BR": "Redesenha com o V4.1 Pro em 2K.",
+        "en": "Redraws with V4.1 Pro at 2K."
+       },
+       "params": [
+        {
+         "name": "refinement",
+         "label": {
+          "pt-BR": "Intensidade",
+          "en": "Strength"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "moderate",
+           {
+            "pt-BR": "Moderada",
+            "en": "Moderate"
+           }
+          ],
+          [
+           "subtle",
+           {
+            "pt-BR": "Sutil",
+            "en": "Subtle"
+           }
+          ]
+         ],
+         "default": "moderate"
+        }
+       ],
+       "price": 0.21
+      }
+     ]
+    },
+    {
+     "op": "remove_background",
+     "variants": [
+      {
+       "id": "cutout",
+       "label": {
+        "pt-BR": "Remover fundo",
+        "en": "Remove background"
+       },
+       "note": {
+        "pt-BR": "Mantém o assunto com fundo transparente.",
+        "en": "Keeps the subject on a transparent background."
+       },
+       "params": [],
+       "price": 0.01
+      }
+     ]
+    },
+    {
+     "op": "replace_background",
+     "variants": [
+      {
+       "id": "prompt",
+       "label": {
+        "pt-BR": "Trocar fundo",
+        "en": "Replace background"
+       },
+       "note": {
+        "pt-BR": "O fundo é detectado sozinho e trocado pelo descrito.",
+        "en": "The background is found and replaced with the one described."
+       },
+       "params": [],
+       "price": 0.04
+      }
+     ]
+    },
+    {
+     "op": "expand",
+     "variants": [
+      {
+       "id": "outpaint",
+       "label": {
+        "pt-BR": "Expandir",
+        "en": "Expand"
+       },
+       "note": {
+        "pt-BR": "Até 4096 px por lado no resultado.",
+        "en": "Up to 4096 px a side."
+       },
+       "params": [
+        {
+         "name": "left",
+         "label": {
+          "pt-BR": "Esquerda (px)",
+          "en": "Left (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "right",
+         "label": {
+          "pt-BR": "Direita (px)",
+          "en": "Right (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "top",
+         "label": {
+          "pt-BR": "Em cima (px)",
+          "en": "Top (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "bottom",
+         "label": {
+          "pt-BR": "Embaixo (px)",
+          "en": "Bottom (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        }
+       ],
+       "price": 0.04
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "freepik",
+   "name": "Magnific (Freepik)",
+   "key_url": "https://www.magnific.com/user/organization/api-keys",
+   "about": {
+    "pt-BR": "O ampliador Magnific, reiluminar, expandir, o Mystic e modelos de outras empresas com uma chave só; cobrado em créditos.",
+    "en": "The Magnific upscaler, relight, expand, Mystic and other companies' models with one key; paid in credits."
+   },
+   "english_only": false,
+   "models": [
+    {
+     "id": "mystic",
+     "label": "Mystic",
+     "note": {
+      "pt-BR": "O gerador do Magnific: fotorrealismo de alta qualidade, até 4K.",
+      "en": "Magnific's generator: high quality photorealism, up to 4K."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "3:2",
+      "2:3",
+      "2:1",
+      "1:2",
+      "5:4",
+      "4:5"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": true,
+     "params": [
+      {
+       "name": "engine_model",
+       "label": {
+        "pt-BR": "Estilo",
+        "en": "Style"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "realism",
+         {
+          "pt-BR": "Realismo",
+          "en": "Realism"
+         }
+        ],
+        [
+         "super_real",
+         {
+          "pt-BR": "Super-real",
+          "en": "Super real"
+         }
+        ],
+        [
+         "editorial_portraits",
+         {
+          "pt-BR": "Retratos editoriais",
+          "en": "Editorial portraits"
+         }
+        ],
+        [
+         "fluid",
+         {
+          "pt-BR": "Fluido (segue mais o pedido)",
+          "en": "Fluid (follows prompts more)"
+         }
+        ],
+        [
+         "flexible",
+         {
+          "pt-BR": "Flexível",
+          "en": "Flexible"
+         }
+        ],
+        [
+         "zen",
+         {
+          "pt-BR": "Zen",
+          "en": "Zen"
+         }
+        ]
+       ],
+       "default": "realism"
+      },
+      {
+       "name": "structure",
+       "label": {
+        "pt-BR": "Fidelidade à imagem de origem (0 a 100)",
+        "en": "Faithfulness to the source (0 to 100)"
+       },
+       "kind": "number",
+       "min": 0,
+       "max": 100,
+       "default": 50
+      }
+     ],
+     "price_note": {
+      "pt-BR": "Cerca de 50 créditos Magnific por imagem.",
+      "en": "About 50 Magnific credits a picture."
+     }
+    },
+    {
+     "id": "nano-banana-2-1",
+     "label": "Nano Banana 2.1 (via Magnific)",
+     "note": {
+      "pt-BR": "O modelo do Google pela conta Magnific.",
+      "en": "Google's model through the Magnific account."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "21:9"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": false,
+     "params": [],
+     "price_note": {
+      "pt-BR": "Cobrado em créditos Magnific, conforme o tamanho.",
+      "en": "Paid in Magnific credits, by size."
+     }
+    },
+    {
+     "id": "gpt-image-2-5",
+     "label": "GPT Image 2.5 (via Magnific)",
+     "note": {
+      "pt-BR": "O modelo da OpenAI pela conta Magnific.",
+      "en": "OpenAI's model through the Magnific account."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "3:2",
+      "2:3",
+      "2:1",
+      "21:9"
+     ],
+     "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "variant",
+       "label": {
+        "pt-BR": "Versão",
+        "en": "Version"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "flare",
+         {
+          "pt-BR": "Flare (rápida)",
+          "en": "Flare (fast)"
+         }
+        ],
+        [
+         "sunburst",
+         {
+          "pt-BR": "Sunburst (edições precisas)",
+          "en": "Sunburst (precise edits)"
+         }
+        ]
+       ],
+       "default": "flare"
+      },
+      {
+       "name": "quality",
+       "label": {
+        "pt-BR": "Qualidade",
+        "en": "Quality"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "low",
+         {
+          "pt-BR": "Baixa",
+          "en": "Low"
+         }
+        ],
+        [
+         "medium",
+         {
+          "pt-BR": "Média",
+          "en": "Medium"
+         }
+        ],
+        [
+         "high",
+         {
+          "pt-BR": "Alta",
+          "en": "High"
+         }
+        ]
+       ],
+       "default": "high"
+      }
+     ],
+     "price_note": {
+      "pt-BR": "15 a 1.000 créditos Magnific, conforme a qualidade e o tamanho.",
+      "en": "15 to 1,000 Magnific credits, by quality and size."
+     }
+    },
+    {
+     "id": "seedream-v5-pro",
+     "label": "Seedream 5.0 Pro",
+     "note": {
+      "pt-BR": "Da ByteDance: cores fortes, cartazes e composições; 2K.",
+      "en": "ByteDance's: bold colour, posters and compositions; 2K."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "2:3",
+      "3:4",
+      "3:2",
+      "4:3",
+      "21:9"
+     ],
+     "resolutions": [
+      "1K",
+      "2K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": false,
+     "params": [],
+     "price_note": {
+      "pt-BR": "75 créditos (1,5K) ou 150 (2K).",
+      "en": "75 credits (1.5K) or 150 (2K)."
+     }
+    },
+    {
+     "id": "ideogram-4-5",
+     "label": "Ideogram 4.5",
+     "note": {
+      "pt-BR": "O melhor com texto e tipografia dentro da imagem.",
+      "en": "The best with text and type in the picture."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "4:5",
+      "5:4",
+      "3:4",
+      "4:3",
+      "2:3",
+      "3:2",
+      "9:16",
+      "16:9",
+      "1:2",
+      "2:1",
+      "1:3",
+      "3:1"
+     ],
+     "resolutions": [
+      "2K"
+     ],
+     "price": {},
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "quality",
+       "label": {
+        "pt-BR": "Qualidade",
+        "en": "Quality"
+       },
+       "kind": "choice",
+       "choices": [
+        [
+         "low",
+         {
+          "pt-BR": "Baixa",
+          "en": "Low"
+         }
+        ],
+        [
+         "medium",
+         {
+          "pt-BR": "Média",
+          "en": "Medium"
+         }
+        ],
+        [
+         "high",
+         {
+          "pt-BR": "Alta",
+          "en": "High"
+         }
+        ]
+       ],
+       "default": "high"
+      }
+     ],
+     "price_note": {
+      "pt-BR": "40 a 270 créditos, conforme a qualidade.",
+      "en": "40 to 270 credits, by quality."
+     }
+    }
+   ],
+   "ops": [
+    {
+     "op": "upscale",
+     "variants": [
+      {
+       "id": "creative",
+       "label": {
+        "pt-BR": "Magnific criativo",
+        "en": "Magnific creative"
+       },
+       "note": {
+        "pt-BR": "O ampliador famoso: inventa detalhe novo; até 25 MP no resultado.",
+        "en": "The famous upscaler: invents new detail; up to 25 MP."
+       },
+       "params": [
+        {
+         "name": "factor",
+         "label": {
+          "pt-BR": "Ampliar",
+          "en": "Enlarge"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           2,
+           {
+            "pt-BR": "2×",
+            "en": "2x"
+           }
+          ],
+          [
+           4,
+           {
+            "pt-BR": "4×",
+            "en": "4x"
+           }
+          ],
+          [
+           8,
+           {
+            "pt-BR": "8×",
+            "en": "8x"
+           }
+          ],
+          [
+           16,
+           {
+            "pt-BR": "16×",
+            "en": "16x"
+           }
+          ]
+         ],
+         "default": 2
+        },
+        {
+         "name": "optimized_for",
+         "label": {
+          "pt-BR": "Tipo de imagem",
+          "en": "Kind of picture"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "standard",
+           {
+            "pt-BR": "Geral",
+            "en": "General"
+           }
+          ],
+          [
+           "art_n_illustration",
+           {
+            "pt-BR": "Arte e ilustração",
+            "en": "Art and illustration"
+           }
+          ],
+          [
+           "films_n_photography",
+           {
+            "pt-BR": "Fotografia",
+            "en": "Photography"
+           }
+          ],
+          [
+           "soft_portraits",
+           {
+            "pt-BR": "Retratos suaves",
+            "en": "Soft portraits"
+           }
+          ],
+          [
+           "hard_portraits",
+           {
+            "pt-BR": "Retratos marcados",
+            "en": "Hard portraits"
+           }
+          ],
+          [
+           "nature_n_landscapes",
+           {
+            "pt-BR": "Natureza e paisagem",
+            "en": "Nature and landscape"
+           }
+          ],
+          [
+           "3d_renders",
+           {
+            "pt-BR": "3D",
+            "en": "3D renders"
+           }
+          ]
+         ],
+         "default": "standard"
+        },
+        {
+         "name": "creativity",
+         "label": {
+          "pt-BR": "Criatividade (-10 a 10)",
+          "en": "Creativity (-10 to 10)"
+         },
+         "kind": "number",
+         "min": -10,
+         "max": 10,
+         "default": 0
+        },
+        {
+         "name": "resemblance",
+         "label": {
+          "pt-BR": "Semelhança (-10 a 10)",
+          "en": "Resemblance (-10 to 10)"
+         },
+         "kind": "number",
+         "min": -10,
+         "max": 10,
+         "default": 0
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Cobrado pela área final (ex.: 2× de 1920×1080 ≈ €0,20).",
+        "en": "Priced by the final area (2x of 1920x1080 about EUR 0.20)."
+       }
+      },
+      {
+       "id": "precision",
+       "label": {
+        "pt-BR": "Magnific precisão",
+        "en": "Magnific precision"
+       },
+       "note": {
+        "pt-BR": "Fiel ao original, sem inventar; de 2× a 16×.",
+        "en": "Faithful to the original, invents nothing; 2x to 16x."
+       },
+       "params": [
+        {
+         "name": "factor",
+         "label": {
+          "pt-BR": "Ampliar (2 a 16 vezes)",
+          "en": "Enlarge (2 to 16 times)"
+         },
+         "kind": "number",
+         "min": 2,
+         "max": 16,
+         "default": 2
+        },
+        {
+         "name": "flavor",
+         "label": {
+          "pt-BR": "Tipo",
+          "en": "Kind"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "sublime",
+           {
+            "pt-BR": "Arte e ilustração",
+            "en": "Art and illustration"
+           }
+          ],
+          [
+           "photo",
+           {
+            "pt-BR": "Foto",
+            "en": "Photo"
+           }
+          ],
+          [
+           "photo_denoiser",
+           {
+            "pt-BR": "Foto com ruído",
+            "en": "Noisy photo"
+           }
+          ]
+         ],
+         "default": "sublime"
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Cobrado em créditos pela área final.",
+        "en": "Paid in credits by the final area."
+       }
+      }
+     ]
+    },
+    {
+     "op": "relight",
+     "variants": [
+      {
+       "id": "relight",
+       "label": {
+        "pt-BR": "Reiluminar",
+        "en": "Relight"
+       },
+       "note": {
+        "pt-BR": "Nova luz descrita em palavras, mantendo o fundo.",
+        "en": "New light described in words, keeping the background."
+       },
+       "params": [
+        {
+         "name": "style",
+         "label": {
+          "pt-BR": "Estilo de luz",
+          "en": "Light style"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "standard",
+           {
+            "pt-BR": "Padrão",
+            "en": "Standard"
+           }
+          ],
+          [
+           "brighter",
+           {
+            "pt-BR": "Mais clara",
+            "en": "Brighter"
+           }
+          ],
+          [
+           "darker_but_realistic",
+           {
+            "pt-BR": "Mais escura",
+            "en": "Darker"
+           }
+          ],
+          [
+           "contrasted_n_hdr",
+           {
+            "pt-BR": "Contraste e HDR",
+            "en": "Contrast and HDR"
+           }
+          ],
+          [
+           "smooth",
+           {
+            "pt-BR": "Suave",
+            "en": "Smooth"
+           }
+          ],
+          [
+           "clean",
+           {
+            "pt-BR": "Limpa",
+            "en": "Clean"
+           }
+          ]
+         ],
+         "default": "standard"
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Cerca de €0,10 por imagem.",
+        "en": "About EUR 0.10 a picture."
+       }
+      }
+     ]
+    },
+    {
+     "op": "replace_background",
+     "variants": [
+      {
+       "id": "relight",
+       "label": {
+        "pt-BR": "Novo cenário com luz",
+        "en": "New scene with light"
+       },
+       "note": {
+        "pt-BR": "Troca o fundo e ajusta a luz do assunto a ele.",
+        "en": "Replaces the background and lights the subject to match."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Cerca de €0,10 por imagem.",
+        "en": "About EUR 0.10 a picture."
+       }
+      }
+     ]
+    },
+    {
+     "op": "expand",
+     "variants": [
+      {
+       "id": "seedream",
+       "label": {
+        "pt-BR": "Seedream (grande)",
+        "en": "Seedream (large)"
+       },
+       "note": {
+        "pt-BR": "Resultado entre 3,7 e 16,8 MP.",
+        "en": "Results of 3.7 to 16.8 MP."
+       },
+       "params": [
+        {
+         "name": "left",
+         "label": {
+          "pt-BR": "Esquerda (px)",
+          "en": "Left (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "right",
+         "label": {
+          "pt-BR": "Direita (px)",
+          "en": "Right (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "top",
+         "label": {
+          "pt-BR": "Em cima (px)",
+          "en": "Top (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "bottom",
+         "label": {
+          "pt-BR": "Embaixo (px)",
+          "en": "Bottom (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Cobrado em créditos Magnific.",
+        "en": "Paid in Magnific credits."
+       }
+      },
+      {
+       "id": "flux",
+       "label": {
+        "pt-BR": "Flux Pro (rápido)",
+        "en": "Flux Pro (fast)"
+       },
+       "note": {
+        "pt-BR": "Resultado de até cerca de 1,6 MP.",
+        "en": "Results of up to about 1.6 MP."
+       },
+       "params": [
+        {
+         "name": "left",
+         "label": {
+          "pt-BR": "Esquerda (px)",
+          "en": "Left (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "right",
+         "label": {
+          "pt-BR": "Direita (px)",
+          "en": "Right (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "top",
+         "label": {
+          "pt-BR": "Em cima (px)",
+          "en": "Top (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "bottom",
+         "label": {
+          "pt-BR": "Embaixo (px)",
+          "en": "Bottom (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        }
+       ],
+       "price_note": {
+        "pt-BR": "Cobrado em créditos Magnific.",
+        "en": "Paid in Magnific credits."
+       }
+      }
+     ]
+    },
+    {
+     "op": "remove_background",
+     "variants": [
+      {
+       "id": "beta",
+       "label": {
+        "pt-BR": "Remover fundo",
+        "en": "Remove background"
+       },
+       "note": {
+        "pt-BR": "Fundo transparente em alta resolução (até 25 MP).",
+        "en": "A transparent background at high resolution (up to 25 MP)."
+       },
+       "params": [],
+       "price_note": {
+        "pt-BR": "Cobrado em créditos Magnific.",
+        "en": "Paid in Magnific credits."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "stability",
+   "name": "Stability AI",
+   "key_url": "https://platform.stability.ai/account/keys",
+   "about": {
+    "pt-BR": "Caixa de ferramentas completa e barata; só entende inglês (o programa traduz o pedido pelo serviço de texto).",
+    "en": "A complete, low priced toolbox; English only (the editor translates through the text service)."
+   },
+   "english_only": true,
+   "models": [
+    {
+     "id": "stable-image-ultra",
+     "label": "Stable Image Ultra",
+     "note": {
+      "pt-BR": "O melhor da Stability.",
+      "en": "Stability's best."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "5:4",
+      "4:5",
+      "3:2",
+      "2:3",
+      "16:9",
+      "9:16",
+      "21:9",
+      "9:21"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.08
+     },
+     "vector": false,
+     "newest": true,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.6
+      }
+     ]
+    },
+    {
+     "id": "sd3.5-large",
+     "label": "Stable Diffusion 3.5 Large",
+     "note": {
+      "pt-BR": "Bom e um pouco mais barato.",
+      "en": "Good and a little cheaper."
+     },
+     "ops": [
+      "generate",
+      "remix"
+     ],
+     "aspects": [
+      "1:1",
+      "5:4",
+      "4:5",
+      "3:2",
+      "2:3",
+      "16:9",
+      "9:16",
+      "21:9",
+      "9:21"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.065
+     },
+     "vector": false,
+     "newest": false,
+     "params": [
+      {
+       "name": "strength",
+       "label": {
+        "pt-BR": "Quanto mudar (0 a 1)",
+        "en": "How much to change (0 to 1)"
+       },
+       "kind": "number",
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.6
+      }
+     ]
+    },
+    {
+     "id": "stable-image-core",
+     "label": "Stable Image Core",
+     "note": {
+      "pt-BR": "Rápido e barato; não edita.",
+      "en": "Fast and cheap; no edits."
+     },
+     "ops": [
+      "generate"
+     ],
+     "aspects": [
+      "1:1",
+      "5:4",
+      "4:5",
+      "3:2",
+      "2:3",
+      "16:9",
+      "9:16",
+      "21:9",
+      "9:21"
+     ],
+     "resolutions": [
+      "1K"
+     ],
+     "price": {
+      "1K": 0.03
+     },
+     "vector": false,
+     "newest": false,
+     "params": []
+    }
+   ],
+   "ops": [
+    {
+     "op": "upscale",
+     "variants": [
+      {
+       "id": "fast",
+       "label": {
+        "pt-BR": "Rápido 4×",
+        "en": "Fast 4x"
+       },
+       "note": {
+        "pt-BR": "Quatro vezes maior em segundos (imagem de até 1 MP).",
+        "en": "Four times larger in seconds (pictures up to 1 MP)."
+       },
+       "params": [],
+       "price": 0.02
+      },
+      {
+       "id": "conservative",
+       "label": {
+        "pt-BR": "Conservador",
+        "en": "Conservative"
+       },
+       "note": {
+        "pt-BR": "Até 4 MP mudando o mínimo possível.",
+        "en": "Up to 4 MP, changing as little as can be."
+       },
+       "params": [
+        {
+         "name": "creativity",
+         "label": {
+          "pt-BR": "Criatividade (0,2 a 0,5)",
+          "en": "Creativity (0.2 to 0.5)"
+         },
+         "kind": "number",
+         "min": 0.2,
+         "max": 0.5,
+         "default": 0.35
+        }
+       ],
+       "price": 0.4
+      },
+      {
+       "id": "creative",
+       "label": {
+        "pt-BR": "Criativo",
+        "en": "Creative"
+       },
+       "note": {
+        "pt-BR": "Para imagens muito pequenas ou estragadas; até 4K.",
+        "en": "For very small or damaged pictures; up to 4K."
+       },
+       "params": [
+        {
+         "name": "creativity",
+         "label": {
+          "pt-BR": "Criatividade (0,1 a 0,5)",
+          "en": "Creativity (0.1 to 0.5)"
+         },
+         "kind": "number",
+         "min": 0.1,
+         "max": 0.5,
+         "default": 0.3
+        }
+       ],
+       "price": 0.6
+      }
+     ]
+    },
+    {
+     "op": "expand",
+     "variants": [
+      {
+       "id": "outpaint",
+       "label": {
+        "pt-BR": "Expandir",
+        "en": "Expand"
+       },
+       "note": {
+        "pt-BR": "Até 2000 px por lado.",
+        "en": "Up to 2000 px a side."
+       },
+       "params": [
+        {
+         "name": "left",
+         "label": {
+          "pt-BR": "Esquerda (px)",
+          "en": "Left (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "right",
+         "label": {
+          "pt-BR": "Direita (px)",
+          "en": "Right (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "top",
+         "label": {
+          "pt-BR": "Em cima (px)",
+          "en": "Top (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        },
+        {
+         "name": "bottom",
+         "label": {
+          "pt-BR": "Embaixo (px)",
+          "en": "Bottom (px)"
+         },
+         "kind": "number",
+         "min": 0,
+         "max": 2048,
+         "default": 0
+        }
+       ],
+       "price": 0.04
+      }
+     ]
+    },
+    {
+     "op": "remove_background",
+     "variants": [
+      {
+       "id": "cutout",
+       "label": {
+        "pt-BR": "Remover fundo",
+        "en": "Remove background"
+       },
+       "note": {
+        "pt-BR": "Fundo transparente (imagem de até 4 MP).",
+        "en": "A transparent background (pictures up to 4 MP)."
+       },
+       "params": [],
+       "price": 0.05
+      }
+     ]
+    },
+    {
+     "op": "replace_background",
+     "variants": [
+      {
+       "id": "relight",
+       "label": {
+        "pt-BR": "Trocar fundo e luz",
+        "en": "Replace background and light"
+       },
+       "note": {
+        "pt-BR": "Novo fundo descrito, com a luz do assunto ajustada.",
+        "en": "A new background described, with the subject's light to match."
+       },
+       "params": [
+        {
+         "name": "preserve",
+         "label": {
+          "pt-BR": "Preservar o assunto (0 a 1)",
+          "en": "Keep the subject (0 to 1)"
+         },
+         "kind": "number",
+         "min": 0.0,
+         "max": 1.0,
+         "default": 0.6
+        }
+       ],
+       "price": 0.08
+      }
+     ]
+    },
+    {
+     "op": "relight",
+     "variants": [
+      {
+       "id": "relight",
+       "label": {
+        "pt-BR": "Reiluminar",
+        "en": "Relight"
+       },
+       "note": {
+        "pt-BR": "Luz nova mantendo o fundo.",
+        "en": "New light, keeping the background."
+       },
+       "params": [
+        {
+         "name": "direction",
+         "label": {
+          "pt-BR": "De onde vem a luz",
+          "en": "Where the light comes from"
+         },
+         "kind": "choice",
+         "choices": [
+          [
+           "above",
+           {
+            "pt-BR": "De cima",
+            "en": "Above"
+           }
+          ],
+          [
+           "left",
+           {
+            "pt-BR": "Da esquerda",
+            "en": "Left"
+           }
+          ],
+          [
+           "right",
+           {
+            "pt-BR": "Da direita",
+            "en": "Right"
+           }
+          ],
+          [
+           "below",
+           {
+            "pt-BR": "De baixo",
+            "en": "Below"
+           }
+          ]
+         ],
+         "default": "above"
+        },
+        {
+         "name": "strength",
+         "label": {
+          "pt-BR": "Intensidade (0 a 1)",
+          "en": "Strength (0 to 1)"
+         },
+         "kind": "number",
+         "min": 0.0,
+         "max": 1.0,
+         "default": 0.5
+        }
+       ],
+       "price": 0.08
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

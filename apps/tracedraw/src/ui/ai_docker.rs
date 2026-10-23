@@ -123,6 +123,12 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                         prefs.provider = *provider;
                         prefs.endpoint = endpoint.to_string();
                         prefs.model = crate::ai::preset_default_model(key).to_string();
+                        // Arcano edition: the key kept for this company.
+                        if let Some(k) = crate::studio::provider_of_preset(key)
+                            .and_then(|p| app.studio.keys.get(p))
+                        {
+                            app.ai.key = k.clone();
+                        }
                         prefs.image_model.clear();
                         app.ai.models.clear();
                         app.ai_image.models.clear();
@@ -201,6 +207,18 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
         );
         if key.changed() && prefs.remember_key {
             prefs.key = app.ai.key.clone();
+        }
+        if key.changed() {
+            // Arcano edition: kept for this company in the studio too.
+            let company = crate::ai::preset_of(prefs)
+                .and_then(|i| crate::ai::PRESETS.get(i))
+                .and_then(|(k, _, _)| crate::studio::provider_of_preset(k));
+            if let Some(c) = company {
+                app.studio.keys.insert(c.to_string(), app.ai.key.clone());
+                if app.settings.studio.remember_keys {
+                    app.settings.studio.keys.insert(c.to_string(), app.ai.key.clone());
+                }
+            }
         }
         ui.end_row();
         // Pictures: only for a service that can make them.

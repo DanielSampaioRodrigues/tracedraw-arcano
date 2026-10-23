@@ -82,7 +82,7 @@ impl Provider {
 
 /// Ready-made connections: the i18n key of the name, the kind of service
 /// and its address. The address stays editable after one is picked.
-pub const PRESETS: [(&str, Provider, &str); 9] = [
+pub const PRESETS: [(&str, Provider, &str); 10] = [
     ("aipreset.anthropic", Provider::Anthropic, ""),
     ("aipreset.openai", Provider::OpenAiCompatible, ""),
     (
@@ -120,21 +120,63 @@ pub const PRESETS: [(&str, Provider, &str); 9] = [
         Provider::OpenAiCompatible,
         MARITACA_ENDPOINT,
     ),
+    (
+        "aipreset.deepseek",
+        Provider::OpenAiCompatible,
+        DEEPSEEK_ENDPOINT,
+    ),
 ];
+
+/// DeepSeek's chat completions address (api-docs.deepseek.com).
+pub const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
+
+/// The text models offered for each preset whose service lists too many
+/// or none, the usual one first, with listed prices per million tokens
+/// in and out and their currency (checked 2026-10-23 on each service's
+/// price page). Models that reason before answering are marked, since
+/// they write more.
+pub const TEXT_MODELS: [(&str, &str, f64, f64, &str, bool); 15] = [
+    ("aipreset.anthropic", "claude-sonnet-5-5", 2.0, 10.0, "US$", false),
+    ("aipreset.anthropic", "claude-opus-5-5", 4.0, 20.0, "US$", true),
+    ("aipreset.anthropic", "claude-haiku-5-5", 0.10, 0.50, "US$", false),
+    ("aipreset.anthropic", "claude-fable-5-1", 10.0, 50.0, "US$", true),
+    ("aipreset.openai", "gpt-6.1-sol", 2.0, 10.0, "US$", true),
+    ("aipreset.openai", "gpt-6-luna", 0.10, 0.50, "US$", true),
+    ("aipreset.openai", "gpt-6-astra", 10.0, 50.0, "US$", true),
+    ("aipreset.gemini", "gemini-3.8-flash", 0.75, 3.75, "US$", true),
+    ("aipreset.gemini", "gemini-4-argon", 2.0, 10.0, "US$", true),
+    ("aipreset.gemini", "gemini-3.5-flash-lite", 0.30, 2.50, "US$", false),
+    ("aipreset.maritaca", "sabia-4", 5.0, 20.0, "R$", false),
+    ("aipreset.maritaca", "sabiazinho-4", 1.0, 4.0, "R$", false),
+    ("aipreset.maritaca", "sabia-4-thinking", 5.0, 40.0, "R$", true),
+    ("aipreset.deepseek", "deepseek-flash", 0.30, 1.20, "US$", true),
+    ("aipreset.deepseek", "deepseek-v4-pro", 1.32, 3.96, "US$", true),
+];
+
+/// The preset key of the connection, if it is a preset.
+fn preset_key(prefs: &AiPrefs) -> Option<&'static str> {
+    preset_of(prefs).and_then(|i| PRESETS.get(i)).map(|(k, _, _)| *k)
+}
+
+/// The models offered for the connection's preset.
+pub fn preset_text_models(prefs: &AiPrefs) -> Vec<&'static str> {
+    let key = match preset_key(prefs) {
+        Some(k) => k,
+        None if prefs.provider == Provider::Anthropic => "aipreset.anthropic",
+        None => return Vec::new(),
+    };
+    let mut out: Vec<&'static str> = Vec::new();
+    for (k, m, ..) in TEXT_MODELS {
+        if k == key && !out.contains(&m) {
+            out.push(m);
+        }
+    }
+    out
+}
 
 /// Maritaca AI's chat completions address (docs.maritaca.ai, OpenAI
 /// compatibility: base `https://chat.maritaca.ai/api`).
 pub const MARITACA_ENDPOINT: &str = "https://chat.maritaca.ai/api/chat/completions";
-
-/// Maritaca AI's current models (docs.maritaca.ai/pt/modelos, checked
-/// 2026-10-23), the usual one first, with their listed prices in reais
-/// per million tokens of input and output (docs.maritaca.ai/pt/precos).
-/// The service lists no models of its own, so these are offered.
-pub const MARITACA_MODELS: [(&str, f64, f64); 3] = [
-    ("sabia-4", 5.0, 20.0),
-    ("sabiazinho-4", 1.0, 4.0),
-    ("sabia-4-thinking", 5.0, 40.0),
-];
 
 /// True when requests go to Maritaca AI.
 pub fn is_maritaca(prefs: &AiPrefs) -> bool {
@@ -144,13 +186,13 @@ pub fn is_maritaca(prefs: &AiPrefs) -> bool {
         .starts_with("https://chat.maritaca.ai/")
 }
 
-/// The text model a preset starts with, for services whose model list
-/// cannot be fetched.
+/// The text model a preset starts with: the first one it offers.
 pub fn preset_default_model(key: &str) -> &'static str {
-    match key {
-        "aipreset.maritaca" => MARITACA_MODELS[0].0,
-        _ => "",
-    }
+    TEXT_MODELS
+        .iter()
+        .find(|(k, ..)| *k == key)
+        .map(|(_, m, ..)| *m)
+        .unwrap_or("")
 }
 
 /// What one drawing request costs with `model`, as a line for under the
@@ -159,14 +201,18 @@ pub fn preset_default_model(key: &str) -> &'static str {
 /// gets one program back; the estimate takes 4,000 tokens in and 2,000
 /// out (6,000 out for a model that reasons before it answers).
 pub fn text_price_caption(prefs: &AiPrefs, model: &str) -> Option<String> {
-    if !is_maritaca(prefs) {
-        return None;
-    }
-    let (_, input, output) = MARITACA_MODELS.iter().find(|(m, _, _)| *m == model)?;
-    let out_tokens = if model.contains("thinking") { 6000.0 } else { 2000.0 };
+    let key = preset_key(prefs).or((prefs.provider == Provider::Anthropic).then_some("aipreset.anthropic"))?;
+    let (_, _, input, output, currency, reasons) =
+        TEXT_MODELS.iter().find(|(k, m, ..)| *k == key && *m == model)?;
+    let out_tokens = if *reasons { 6000.0 } else { 2000.0 };
     let cost = 4000.0 * input / 1e6 + out_tokens * output / 1e6;
-    let shown = crate::ai_image::localize_decimal(format!("{cost:.2}"));
-    Some(trf("ai.price_request_brl", &[("price", &shown)]))
+    let digits = if cost < 0.01 { 4 } else if cost < 0.1 { 3 } else { 2 };
+    let shown = crate::ai_image::localize_decimal(format!("{cost:.digits$}"));
+    Some(if *currency == "R$" {
+        trf("ai.price_request_brl", &[("price", &shown)])
+    } else {
+        trf("ai.price_request_usd", &[("price", &shown)])
+    })
 }
 
 /// The host of the OpenCode service (its Console Inference API, at
@@ -207,13 +253,14 @@ pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
 
 /// The presets that only write text (no pictures): the model servers on
 /// this computer (Ollama, LM Studio, llama.cpp and vLLM) and OpenCode.
-const CHAT_ONLY_PRESETS: [&str; 6] = [
+const CHAT_ONLY_PRESETS: [&str; 7] = [
     "aipreset.ollama",
     "aipreset.lm_studio",
     "aipreset.llama_cpp",
     "aipreset.vllm",
     "aipreset.opencode",
     "aipreset.maritaca",
+    "aipreset.deepseek",
 ];
 
 /// Google's API host: chat at its OpenAI-compatible address, pictures
@@ -853,9 +900,8 @@ impl App {
     /// the usual ones, with the model in use first when it is in neither.
     pub fn ai_model_choices(&self) -> Vec<String> {
         let mut list: Vec<String> = if self.ai.models.is_empty() {
-            if is_maritaca(&self.settings.ai) {
-                MARITACA_MODELS.iter().map(|(m, _, _)| m.to_string()).collect()
-            } else {
+            let offered = preset_text_models(&self.settings.ai);
+            if offered.is_empty() {
                 self.settings
                     .ai
                     .provider
@@ -863,6 +909,8 @@ impl App {
                     .iter()
                     .map(|m| m.to_string())
                     .collect()
+            } else {
+                offered.into_iter().map(String::from).collect()
             }
         } else {
             self.ai.models.clone()
@@ -1563,6 +1611,11 @@ mod tests {
             let small = text_price_caption(&prefs, "sabiazinho-4").expect("price");
             assert!(small.contains("R$ 0,01"), "{small}");
         });
-        assert!(text_price_caption(&AiPrefs::default(), "claude-sonnet-5-5").is_none());
+        // Every text company shows its estimate, in its currency.
+        crate::i18n::with_thread_language("en", || {
+            let c = text_price_caption(&AiPrefs::default(), "claude-sonnet-5-5").expect("price");
+            assert!(c.contains("US$ 0.028"), "{c}");
+        });
+        assert!(text_price_caption(&AiPrefs::default(), "unknown-model").is_none());
     }
 }

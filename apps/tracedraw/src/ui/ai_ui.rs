@@ -106,7 +106,15 @@ fn service_state(app: &App, ui: &mut Ui) {
         state_line(ui, app.ai_drawing_ready());
         ui.end_row();
         row_label(ui, &tr("aiui.pictures"));
-        if app.settings.ai.can_make_pictures() {
+        if app.studio_active() {
+            // Arcano edition: pictures from a studio service.
+            let id = &app.settings.studio.image_provider;
+            let name = app.studio.catalog.provider(id).map(|p| p.name.clone()).unwrap_or_default();
+            ui.horizontal(|ui| {
+                state_line(ui, !app.studio_key(id).trim().is_empty());
+                ui.label(RichText::new(name).color(Tokens::text_dim()));
+            });
+        } else if app.settings.ai.can_make_pictures() {
             state_line(ui, app.ai_image_ready());
         } else {
             ui.label(RichText::new(tr("aiui.drawings_only_state")).color(Tokens::text_dim()));

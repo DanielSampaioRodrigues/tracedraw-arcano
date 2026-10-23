@@ -155,6 +155,7 @@ pub fn options_topic(p: OptionsPage) -> &'static str {
         Workspace => "customize/workspaces",
         AiGeneral => "customize/ai#general",
         AiService => "customize/ai#service",
+        AiKeys => "customize/ai#service",
         DocumentGeneral => "pages-layout/document-options#general",
         PageSize => "pages-layout/document-options#page-size",
         Layout => "pages-layout/document-options#layout",

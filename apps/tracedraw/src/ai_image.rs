@@ -568,7 +568,7 @@ const VECTOR_PROMPT: &str = "Flat vector illustration: clean simple shapes, a fe
 const CUTOUT_PROMPT: &str = "Remove the background completely and keep only the main subject, unchanged, at the same size and position, on a transparent background.";
 /// Remove Background, for services that cannot: a flat key colour is
 /// asked for and keyed out here.
-const CHROMA_PROMPT: &str = "Keep the main subject exactly as it is, at the same size and position, and replace everything else with a flat, even, pure green background (#00FF00) with no shadows or gradients.";
+pub(crate) const CHROMA_PROMPT: &str = "Keep the main subject exactly as it is, at the same size and position, and replace everything else with a flat, even, pure green background (#00FF00) with no shadows or gradients.";
 
 /// The longest prompt sent, in characters.
 pub const MAX_PROMPT: usize = 4000;
@@ -995,6 +995,9 @@ pub enum Mode {
     /// Draw and change the drawing's objects from a request in words,
     /// through the drawing service (see `ai.rs`).
     Draw,
+    /// Arcano edition: operations on the selected bitmap through the AI
+    /// studio (see `studio/`).
+    Edit,
 }
 
 /// Where the requests stand.
@@ -1051,8 +1054,8 @@ pub struct ImageSession {
     pub models: Vec<String>,
     pending: Vec<Pending>,
     total: usize,
-    made: usize,
-    errors: Vec<String>,
+    pub(crate) made: usize,
+    pub(crate) errors: Vec<String>,
     /// Tests: answers requests at once instead of the network.
     pub fake: Option<fn(&HttpRequest) -> HttpResult>,
     /// Tests: the requests sent, newest last.
@@ -1186,11 +1189,23 @@ impl App {
 
     /// The docker's Generate, for its mode.
     pub fn ai_generate(&mut self) {
+        // Arcano edition: a picture service of the AI studio is chosen.
+        if self.studio_active() {
+            match self.ai_image.mode {
+                Mode::Create => return self.studio_create(crate::studio::Op::Generate, false),
+                Mode::Vector if self.ai_image.vector_engine == VectorEngine::Trace => {
+                    return self.studio_create(crate::studio::Op::Generate, true)
+                }
+                Mode::Remix => return self.studio_create(crate::studio::Op::Remix, false),
+                _ => {}
+            }
+        }
         match self.ai_image.mode {
             Mode::Create => self.ai_create(false),
             Mode::Vector => self.ai_create(true),
             Mode::Remix => self.ai_remix(),
             Mode::Draw => self.ai_draw(),
+            Mode::Edit => self.studio_edit(),
         }
     }
 
@@ -1594,7 +1609,7 @@ impl App {
         };
     }
 
-    fn ai_keep_result(&mut self, img: GenImage) {
+    pub(crate) fn ai_keep_result(&mut self, img: GenImage) {
         self.ai_image.results.push(img);
         self.ai_image.results.truncate(MAX_RESULTS);
     }
@@ -1733,7 +1748,7 @@ impl App {
         );
     }
 
-    fn ai_apply_cutout(&mut self, shape: ShapeId, img: GenImage, chroma: bool) {
+    pub(crate) fn ai_apply_cutout(&mut self, shape: ShapeId, img: GenImage, chroma: bool) {
         let Some(src) = self.doc().find_shape(shape).cloned() else {
             self.ai_image.errors.push(tr("aiimg.source_gone"));
             return;

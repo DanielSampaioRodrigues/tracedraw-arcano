@@ -420,6 +420,14 @@ pub struct Settings {
     /// a source folder; see `fork.rs`).
     #[serde(default)]
     pub fork_source: String,
+    /// Arcano edition: the AI studio's choices and kept keys (see
+    /// `studio/mod.rs`).
+    #[serde(default)]
+    pub studio: crate::studio::StudioPrefs,
+    /// When the studio last looked for a newer catalog, seconds since
+    /// 1970.
+    #[serde(default)]
+    pub studio_catalog_checked: u64,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1384,6 +1392,8 @@ impl Default for Settings {
             last_update_check: 0,
             skipped_update: String::new(),
             fork_source: String::new(),
+            studio: Default::default(),
+            studio_catalog_checked: 0,
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

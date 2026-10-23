@@ -72,7 +72,11 @@ pub fn send(req: &HttpRequest, limit: u64) -> HttpResult {
             for (name, value) in &req.headers {
                 r = r.header(name, value);
             }
-            r.send(req.body.as_str())
+            if req.bytes.is_empty() {
+                r.send(req.body.as_str())
+            } else {
+                r.send(&req.bytes[..])
+            }
         }
         _ => {
             let mut r = agent.post(&req.url);

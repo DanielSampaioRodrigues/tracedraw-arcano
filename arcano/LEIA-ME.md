@@ -7,12 +7,11 @@ MIT ou Apache 2.0) com algumas mudanças por cima:
 - **Português do Brasil revisado**: todas as linhas de tradução automática
   foram conferidas, e a terminologia foi unificada (Mistura, Sombreamento,
   Aderir, Painel, Moldura de recorte...).
-- **IA com os modelos atuais** (*Ferramentas › Opções › IA*):
-  - Gemini Nano Banana 2.1 e Gemini 3 Pro Image;
-  - GPT Image 2.5 Flare e Sunburst;
-  - Maritaca AI (Sabiá 4), que só faz desenhos, sem imagens.
-  - Cada modelo mostra o preço estimado por imagem ou por pedido.
-  - Imagens em 1K, 2K ou 4K: 4K tem cerca de 35 cm a 300 dpi.
+- **Estúdio de IA** (detalhes abaixo):
+  - cinco empresas de imagem, cada uma com a própria chave: Gemini, OpenAI, Recraft, Magnific e Stability;
+  - cinco de texto: Claude, GPT, Gemini, Sabiá e DeepSeek;
+  - os modelos atuais, com tamanho de 1K a 4K, proporção e preço estimado;
+  - a página **Editar imagem**: aumentar qualidade, expandir, remover e trocar fundo, reiluminar e vetorizar.
 - **MCP** para o Claude e outras IAs trabalharem no desenho aberto, agora
   com a ferramenta `render_page`, que permite à IA *ver* a página.
 - **Atualizações que preservam as mudanças da editora** (*Ajuda ›
@@ -20,7 +19,7 @@ MIT ou Apache 2.0) com algumas mudanças por cima:
 - Ícone verde e tela de abertura com a marca da editora.
 
 Tudo o que é só da edição fica em `apps/tracedraw/src/fork.rs`, em
-`arcano/` e em `assets/arcano/`. Assim, as novidades do projeto original
+`apps/tracedraw/src/studio/`, em `arcano/` e em `assets/arcano/`. Assim, as novidades do projeto original
 entram quase sempre sem conflito.
 
 ## Máquina que compila (Dan)
@@ -67,21 +66,43 @@ Opções do script:
 
 Essas máquinas não precisam de Rust, Git nem código-fonte.
 
-## IA: chaves
+## IA: o estúdio
 
-Em *Ferramentas › Opções › IA › Serviço*:
-1. escolha a predefinição (Google Gemini, OpenAI ou Maritaca AI);
-2. cole a chave;
-3. marque "Lembrar a chave neste computador".
+Cada empresa tem a própria chave, guardada separadamente: trocar de serviço nunca pede chave de novo.
+As chaves ficam em *Ferramentas › Opções › IA › Chaves*, cada uma com os botões "Obter chave" e "Testar".
 
-O TraceDraw usa **um** serviço de cada vez. Com a Maritaca, a geração de
-imagens fica desligada, porque o Sabiá só gera texto. Ao trocar de
-serviço, cole a chave do serviço novo.
+**Imagem** (no painel *Gerar com IA*, linha "Serviço"):
+- **Google Gemini:** Nano Banana 2.1 e Pro.
+- **OpenAI:** GPT Image 2.5 Sunburst e Flare. Gera no tamanho exato, em qualquer proporção, até 3840 px.
+- **Recraft:** gera **vetor SVG editável** e vetoriza imagens.
+- **Magnific (Freepik):** com uma chave só, dá acesso ao Mystic, ao Nano Banana, ao GPT Image, ao Seedream e ao Ideogram, que é ótimo com texto.
+- **Stability AI:** só aceita pedidos em inglês. O programa traduz os pedidos pelo serviço de texto.
 
-Onde conseguir as chaves:
-- Gemini: Google AI Studio.
-- OpenAI: platform.openai.com.
-- Maritaca: plataforma.maritaca.ai.
+Para cada modelo você escolhe:
+- o **tamanho** (1K, 2K ou 4K);
+- a **proporção**;
+- as opções do modelo, como qualidade e quanto a imagem muda num remix.
+
+O preço aparece embaixo do modelo.
+
+**Editar imagem** (quinto botão do painel), sempre sobre o bitmap selecionado:
+- **Aumentar qualidade:** Magnific criativo e de precisão, Recraft nítido, criativo e realçar, Stability rápido 4×, conservador e criativo.
+- **Expandir:** com "Expandir até a proporção", que calcula os lados sozinho.
+- **Remover fundo**, **Trocar fundo** e **Reiluminar**.
+- **Vetorizar** (Recraft).
+
+O painel mostra o tamanho em pixels e os dpi da imagem no tamanho em que ela está na página. Cada resultado é um passo de desfazer.
+
+**Texto** (desenhos escritos pela IA), em *Opções › IA › Serviço*:
+- Anthropic (Claude);
+- OpenAI (GPT-6 Luna, Sol e Astra);
+- Gemini (3.8 Flash e 4 Argon);
+- Maritaca (Sabiá 4);
+- DeepSeek (Flash e V4 Pro).
+
+Todos mostram o custo estimado por pedido.
+
+Os modelos, tamanhos e preços vêm de um catálogo (`assets/arcano/ai-catalog.json`). Quando sair modelo novo, basta atualizar esse arquivo no GitHub da editora. Os programas instalados recebem a lista nova sozinhos, uma vez por dia, sem recompilar.
 
 ## MCP: ligar o Claude e outras IAs
 

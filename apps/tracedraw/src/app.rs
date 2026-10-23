@@ -1274,6 +1274,8 @@ pub struct App {
     pub ai: crate::ai::AiSession,
     /// AI Generate and Remove Background.
     pub ai_image: crate::ai_image::ImageSession,
+    /// Arcano edition: the AI studio (several services, keys by service).
+    pub studio: crate::studio::app::Studio,
     /// AI agents editing the open drawing (MCP), while allowed.
     #[cfg(not(target_arch = "wasm32"))]
     pub mcp_link: Option<crate::mcp_link::Link>,
@@ -1883,6 +1885,8 @@ impl App {
         let mut app = Self::build(open);
         if !crate::files::WEB {
             app.keep_default_font_installed();
+            // Arcano edition: a newer AI catalog, at most once a day.
+            app.studio_refresh_catalog();
         }
         app
     }
@@ -2210,6 +2214,7 @@ impl App {
             debug_expr: String::new(),
             ai: Default::default(),
             ai_image: Default::default(),
+            studio: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             mcp_link: None,
             find_state: Default::default(),
@@ -2542,6 +2547,10 @@ impl App {
         s.bars.migrate();
         s.migrate_ai();
         self.ai.key = crate::ai::remembered_key(&s.ai);
+        // Arcano edition: the AI studio's keys kept on this computer.
+        if s.studio.remember_keys {
+            self.studio.keys = s.studio.keys.clone();
+        }
         let lang = if s.language.is_empty() {
             crate::i18n::system_language().to_string()
         } else {

@@ -13,6 +13,7 @@
 #[macro_use]
 mod fork;
 mod ai;
+mod studio;
 mod ai_image;
 mod anchors;
 mod app;
@@ -341,7 +342,7 @@ impl eframe::App for Shell {
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         // Pictures from the image service (AI Generate).
-        if app.poll_ai_image() {
+        if app.poll_ai_image() | app.poll_studio() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
