@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: Ctrl or Shift while dragging a control handle keeps it to the constrain angle (15° by default), and a smooth node's other handle keeps following; Ctrl turned the node into a cusp instead and Shift did nothing (#510).
+
 - Interactive Fill: the colour node's bar and the colour picker popup have a dotted grip that drags them off the object they cover; they stay where they were put while open.
 
 - About TraceDraw: an ALPHA badge beside the version, with a tooltip saying what the alpha stage means.

@@ -4560,3 +4560,49 @@ fn a_finished_symmetry_is_picked_whole_and_a_double_click_edits_it() {
     click_at(&ctx, &mut app, on_a, Modifiers::NONE);
     assert_eq!(app.selection, vec![a], "one object inside");
 }
+
+/// Shape tool: Ctrl or Shift while dragging a handle keeps it to the
+/// constrain angle about its node, and a smooth node's other handle keeps
+/// following it (Ctrl made the node a cusp instead, Shift did nothing;
+/// #510).
+#[test]
+fn ctrl_or_shift_keeps_a_handle_to_the_constrain_angle() {
+    use tracedraw_core::geometry::BezPath;
+    use tracedraw_core::nodes;
+    for mods in [Modifiers::CTRL, Modifiers::SHIFT] {
+        let (ctx, mut app, _) = setup();
+        let mut path = BezPath::new();
+        path.move_to((10.0, 50.0));
+        path.curve_to((20.0, 50.0), (30.0, 60.0), (40.0, 60.0));
+        path.curve_to((50.0, 60.0), (60.0, 50.0), (70.0, 50.0));
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path,
+                closed: false,
+            })
+            .expect("curve");
+        app.select(vec![id]);
+        app.set_tool(Tool::Shape);
+        app.node_selection = vec![(id, 1)];
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        let from = app.view.to_screen(Point::new(50.0, 60.0));
+        let to = app.view.to_screen(Point::new(58.0, 63.0));
+        drag(&ctx, &mut app, from, to, mods, Vec::new());
+        let ShapeKind::Path { path, .. } = &app.doc().find_shape(id).expect("curve").kind else {
+            panic!("a curve");
+        };
+        let n = nodes::nodes(path)
+            .into_iter()
+            .find(|n| n.index == 1)
+            .expect("node");
+        let out = n.ctrl_out.expect("out") - n.pos;
+        let back = n.ctrl_in.expect("in") - n.pos;
+        let a = out.y.atan2(out.x).to_degrees();
+        assert!((a - 15.0).abs() < 0.5, "{mods:?}: {a}");
+        let b = back.y.atan2(back.x).to_degrees();
+        assert!(
+            ((b - a).abs() - 180.0).abs() < 0.5,
+            "{mods:?}: still smooth, {b}"
+        );
+    }
+}
