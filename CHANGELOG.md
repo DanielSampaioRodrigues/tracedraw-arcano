@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Symmetry: after Finish the mirror lines no longer show on the selected symmetry, so it reads as one object; they stayed whenever it was selected and editing looked still open.
+
 ## 0.14.0 (2026-10-23)
 
 - Variable Outline: a width node dragged along the path slides along it, and its reach handles change its width; a drag on a node could only change its width (#479).

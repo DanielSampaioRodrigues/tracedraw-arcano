@@ -4853,3 +4853,79 @@ fn a_group_inside_a_clip_frame_being_edited_drags_and_ungroups() {
     }
     assert!(app.doc().find_shape(outside).is_some());
 }
+
+/// Finish on the symmetry bar ends the editing: the bar and the mirror
+/// lines go, the symmetry stays selected whole, a click takes it whole
+/// and a drag moves it whole.
+#[test]
+fn finish_on_the_symmetry_bar_leaves_one_object() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.create_symmetry();
+    let sym = app.selection[0];
+    assert_eq!(
+        app.symmetry_edit,
+        Some(sym),
+        "a new symmetry opens for editing"
+    );
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    texts(&mut app);
+    let finish = texts(&mut app)
+        .into_iter()
+        .find(|(t, _)| t.trim() == "Finish")
+        .map(|(_, p)| p)
+        .expect("the bar's Finish");
+    for _ in 0..40 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    click_at(&ctx, &mut app, finish, Modifiers::NONE);
+    assert_eq!(app.symmetry_edit, None, "editing ended");
+    assert!(app.edited_symmetry().is_none());
+    assert_eq!(app.selection, vec![sym]);
+    assert!(
+        !texts(&mut app).iter().any(|(t, _)| t.trim() == "Finish"),
+        "the bar is gone"
+    );
+    // One object: a click takes it whole, a drag moves it whole.
+    for _ in 0..40 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let c = app.view.to_screen(bounds(&app, sym).center());
+    click_at(&ctx, &mut app, c, Modifiers::NONE);
+    assert_eq!(app.selection, vec![sym]);
+    assert_eq!(app.symmetry_edit, None);
+    let x0 = bounds(&app, sym).x0;
+    drag(
+        &ctx,
+        &mut app,
+        c,
+        c + egui::vec2(80.0, 0.0),
+        Modifiers::NONE,
+        vec![],
+    );
+    assert!(bounds(&app, sym).x0 > x0 + 5.0);
+    assert_eq!(app.symmetry_edit, None);
+}

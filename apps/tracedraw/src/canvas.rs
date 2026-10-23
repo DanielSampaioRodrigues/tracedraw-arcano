@@ -763,25 +763,13 @@ fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
             painter.add(egui::Shape::line(pts, EStroke::new(1.0, red)));
         }
     }
-    // The lines of the symmetry being edited, whatever is selected; else
-    // those of the selected objects.
+    // The lines of the symmetry being edited, whatever is selected; a
+    // symmetry merely selected shows none, so after Finish it reads as one
+    // object, as in the reference program.
     let mut shown: Vec<(Point, f64, u8)> = Vec::new();
     if let Some((_, center, angle, lines)) = app.edited_symmetry() {
         if app.settings.symmetry_show_lines {
             shown.push((center, angle, lines));
-        }
-    } else {
-        for s in app.selected_rc().iter() {
-            for e in &s.effects {
-                if let tracedraw_core::live::Effect::Symmetry {
-                    center,
-                    angle,
-                    lines,
-                } = e
-                {
-                    shown.push((*center, *angle, *lines));
-                }
-            }
         }
     }
     for (center, angle, lines) in shown {
