@@ -417,7 +417,8 @@ Window > Panels > Glyphs. From the top:
 
 ## Shape tool on text
 
-- A node at the lower left of every character, on its (shifted)
+- A node at the lower left of every character (of its own glyph, in right-to-left text too, each under its letter in reading order, #474,
+  `text_nodes::tests::right_to_left_characters_have_their_nodes_under_their_glyphs`), on its (shifted)
   baseline; newlines have none. Click chooses one, Ctrl+click adds or
   removes, Shift+click adds, a marquee (rectangular or freehand) chooses
   the nodes inside. Chosen nodes are filled.
