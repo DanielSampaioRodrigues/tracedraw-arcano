@@ -4777,3 +4777,68 @@ fn the_bottom_handle_of_a_converted_frame_drags_it_taller() {
     click_at(&ctx, &mut app, c, Modifiers::NONE);
     assert!(app.next_frame(id).is_none());
 }
+
+/// Editing a clip frame's contents, a group inside drags, ungroups, and
+/// its members (and an object drawn meanwhile) go back into the frame on
+/// Finish; the ungrouped members were left out and the frame lost its
+/// contents (#537).
+#[test]
+fn a_group_inside_a_clip_frame_being_edited_drags_and_ungroups() {
+    let (ctx, mut app, frame_id) = setup();
+    let mk = |app: &mut App, r: Rect| {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            0, 0, 200,
+        )));
+        id
+    };
+    let a = mk(&mut app, Rect::new(15.0, 15.0, 30.0, 30.0));
+    let b = mk(&mut app, Rect::new(32.0, 15.0, 45.0, 30.0));
+    let outside = mk(&mut app, Rect::new(150.0, 150.0, 160.0, 160.0));
+    app.select(vec![a, b]);
+    app.group_selection();
+    let g = app.selection[0];
+    app.place_inside(vec![g], frame_id);
+    app.select(vec![frame_id]);
+    app.edit_clip_frame();
+    assert_eq!(app.selection, vec![g]);
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let x0 = bounds(&app, g).x0;
+    let from = app.view.to_screen(Point::new(22.0, 22.0));
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(60.0, 0.0),
+        Modifiers::NONE,
+        vec![],
+    );
+    assert!(bounds(&app, g).x0 > x0 + 1.0, "the group moved");
+    app.ungroup_selection();
+    assert_eq!(app.selection, vec![a, b]);
+    let (focus, _) = app.render_focus().expect("editing");
+    assert!(
+        focus.contains(&a) && focus.contains(&b),
+        "the members stay in full"
+    );
+    assert!(!focus.contains(&outside));
+    let c = mk(&mut app, Rect::new(20.0, 32.0, 25.0, 36.0));
+    app.finish_clip_frame_edit();
+    match &app.doc().find_shape(frame_id).expect("frame").kind {
+        ShapeKind::ClipFrame { contents, .. } => {
+            let ids: Vec<ShapeId> = contents.iter().map(|s| s.id).collect();
+            assert_eq!(ids, vec![a, b, c]);
+        }
+        other => panic!("not a clip frame: {other:?}"),
+    }
+    assert!(app.doc().find_shape(outside).is_some());
+}

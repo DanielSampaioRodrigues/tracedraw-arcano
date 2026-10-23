@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- PowerClip (Clip to Frame) Edit Contents: a group inside can be ungrouped and its members stay in the frame, drawn in full and back inside on Finish; objects drawn or pasted while editing go in too. The members faded as if outside and Finish emptied the frame (#537).
+
 - Print: Fit to page shrinks objects that run off the page (or the selection printed) to fit inside it, centred; they were cut at the page's edge. Print Preview's Close button sits at the right end of its bar (#534).
 
 - Options > Customization > Appearance: the desktop colour button shows the colour around the page, and white picked makes the desktop white; white stood for the theme's colour, so picking it changed nothing until another colour had been picked (#530).

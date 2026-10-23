@@ -1092,7 +1092,8 @@ pub struct App {
     pub pdf_text_chosen: bool,
     /// Where a drag for the new frame of a flow began.
     pub text_link_drag: Option<Point>,
-    /// Clip frame being edited in place: (frame id, content ids).
+    /// Clip frame being edited in place: (frame id, the page's other
+    /// objects when editing began; see `clip_edit_contents`).
     pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
     /// Object > Symmetry > Edit Symmetry: the object whose symmetry is
     /// being edited.

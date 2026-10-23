@@ -858,8 +858,18 @@ impl App {
             return;
         };
         let ids: Vec<ShapeId> = contents.iter().map(|c| c.id).collect();
+        // What is on the page besides: everything else that comes along
+        // while editing (the members of a content ungrouped, objects
+        // drawn or pasted) is contents too (#537).
+        let outside: Vec<ShapeId> = self
+            .page_layers()
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .filter(|id| *id != clip.id)
+            .collect();
         self.run(Command::ExtractContents { clip: clip.id });
-        self.clip_frame_edit = Some((clip.id, ids.clone()));
+        self.clip_frame_edit = Some((clip.id, outside));
         self.select(ids);
         self.status = tr("status.editing_clip_frame");
     }
@@ -867,21 +877,35 @@ impl App {
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
     /// back inside the frame.
     pub fn finish_clip_frame_edit(&mut self) {
-        let Some((frame, ids)) = self.clip_frame_edit.take() else {
+        let contents = self.clip_edit_contents();
+        let Some((frame, _)) = self.clip_frame_edit.take() else {
             return;
         };
         if self.doc().find_shape(frame).is_none() {
             return;
         }
-        let contents: Vec<ShapeId> = ids
-            .into_iter()
-            .filter(|id| self.doc().find_shape(*id).is_some())
-            .collect();
         if contents.is_empty() {
             return;
         }
         self.place_inside(contents, frame);
         self.select(vec![frame]);
+    }
+
+    /// The contents of the clip frame being edited: the page's objects
+    /// that were not there besides it when editing began, so a content
+    /// ungrouped stays in as its members, and objects drawn or pasted
+    /// meanwhile go in (#537).
+    pub fn clip_edit_contents(&self) -> Vec<ShapeId> {
+        let Some((frame, outside)) = &self.clip_frame_edit else {
+            return Vec::new();
+        };
+        let outside: std::collections::HashSet<&ShapeId> = outside.iter().collect();
+        self.page_layers()
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .filter(|id| id != frame && !outside.contains(id))
+            .collect()
     }
 
     /// The clip frame bar's Select Contents: the frame's contents become
@@ -939,9 +963,9 @@ impl App {
     /// in focus (focus mode), or the frame and the contents being edited
     /// (Edit Contents).
     pub fn render_focus(&self) -> Option<(Vec<ShapeId>, f32)> {
-        if let Some((frame, ids)) = &self.clip_frame_edit {
+        if let Some((frame, _)) = &self.clip_frame_edit {
             let mut all = vec![*frame];
-            all.extend(ids.iter().copied());
+            all.extend(self.clip_edit_contents());
             return Some((all, CLIP_EDIT_VISIBILITY));
         }
         self.focus_target()
