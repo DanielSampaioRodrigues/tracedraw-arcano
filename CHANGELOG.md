@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Property bar: the page size, nudge, duplicate distance, autofit margin and origin fields have one set of up/down arrows; a second pair beside each field did the same job. The field's own arrows and wheel step as the extra pair did (1 unit, 0.1 for nudge and duplicate) (#488).
+
 - Shaping: Back Minus Front, Front Minus Back and Trim on a group cut each of its objects, each keeping its own fill and outline; the result had no fill or outline and showed only in Wireframe. Weld and Intersect with a group take its first filled object's attributes (#539).
 
 - PowerClip (Clip to Frame) Edit Contents: a group inside can be ungrouped and its members stay in the frame, drawn in full and back inside on Finish; objects drawn or pasted while editing go in too. The members faded as if outside and Finish emptied the frame (#537).
