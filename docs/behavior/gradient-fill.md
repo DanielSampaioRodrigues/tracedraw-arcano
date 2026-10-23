@@ -97,7 +97,11 @@ pos_i)`.
   picker) and its transparency (0 % opaque to 100 % clear); the
   property bar shows the node's colour, transparency and position
   (the position only for nodes between the ends). A palette colour
-  clicked while a node is picked goes to the node.
+  clicked while a node is picked goes to the node. The node bar's
+  dotted grip (at its left) and the colour picker's (along its top)
+  drag them off the object; the bar keeps that offset from its node,
+  the picker stays where it was put while open, inside the window
+  (`color_picker::tests::a_swatch_click_opens_the_popup_inside_the_window`).
 - A palette colour dropped on a node recolours it; dropped on the line
   it adds a node of that colour (one undo step).
 

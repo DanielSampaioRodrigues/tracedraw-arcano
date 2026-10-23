@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Interactive Fill: the colour node's bar and the colour picker popup have a dotted grip that drags them off the object they cover; they stay where they were put while open.
+
 - About TraceDraw: an ALPHA badge beside the version, with a tooltip saying what the alpha stage means.
 
 - Symmetry: a double click on a symmetry goes back into editing it, as in the reference program; it opened the group's focus mode instead, so after Finish the only way back was the menu.
