@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: typing in a text keeps its own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off behind the menu's back. Text > Use Hyphenation while editing acts on the paragraphs at the caret, and its check mark shows them (#470).
+
 - Text: Alt codes type their character on Windows (Alt+0193 gives Á, or the glyph a symbol font draws there, as the Glyphs docker's keystroke says); nothing was typed (#469).
 
 - Text: Ctrl+Space while editing text finishes the text and switches to the Pick tool, as in the reference program; it typed a space (#478).

@@ -1934,11 +1934,11 @@ impl App {
         self.set_paragraph_style(id, p);
     }
 
-    /// The selected texts Text > Use Hyphenation acts on: none while a
-    /// text is being edited.
+    /// The texts Text > Use Hyphenation acts on: the one being edited,
+    /// else the selected ones.
     fn hyphenation_targets(&self) -> Vec<ShapeId> {
-        if self.text_edit.is_some() {
-            return Vec::new();
+        if let Some(te) = &self.text_edit {
+            return vec![te.shape];
         }
         self.selected_shapes()
             .iter()
@@ -1947,9 +1947,9 @@ impl App {
             .collect()
     }
 
-    /// Whether Text > Use Hyphenation shows checked: every selected text
-    /// hyphenates; with no text selected, or one being edited, whether new
-    /// text does.
+    /// Whether Text > Use Hyphenation shows checked: the text being
+    /// edited, or every selected text, hyphenates; with no text, whether
+    /// new text does (#470).
     pub fn uses_hyphenation(&self) -> bool {
         let ids = self.hyphenation_targets();
         if ids.is_empty() {
@@ -1966,15 +1966,12 @@ impl App {
     /// Text > Use Hyphenation: the selected texts hyphenate (or stop, when
     /// they all did), as in the reference program; before, only text made
     /// afterwards did, so turning it on for a selected text changed
-    /// nothing (#255). With no text selected, or while one is edited, it
-    /// is the setting new text takes, the text being edited following.
+    /// nothing (#255). While a text is edited it is that text's setting
+    /// (#470); with no text selected, the setting new text takes.
     pub fn toggle_use_hyphenation(&mut self) {
         let ids = self.hyphenation_targets();
         if ids.is_empty() {
             self.text_hyphenation = !self.text_hyphenation;
-            if let Some(spans) = self.edit_spans() {
-                self.set_edit_spans(spans);
-            }
             return;
         }
         let on = !self.uses_hyphenation();

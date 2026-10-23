@@ -195,8 +195,8 @@ impl App {
         else {
             return;
         };
-        let mut para = para;
-        para.hyphenate = self.text_hyphenation;
+        // The text keeps its own hyphenation: typing took the setting for
+        // new text, turning it on or off for the text edited (#470).
         let kind = ShapeKind::Text {
             spans,
             origin,
