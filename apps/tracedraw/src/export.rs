@@ -262,6 +262,29 @@ pub fn human_size(bytes: usize) -> String {
     }
 }
 
+/// Round each colour channel (not alpha) to fewer levels for WebP's
+/// near-lossless quality: 100 keeps every value, lower qualities drop up
+/// to 4 low bits.
+fn near_lossless(img: &mut image::RgbaImage, quality: u8) {
+    let bits: u32 = match quality {
+        100.. => 0,
+        90..=99 => 1,
+        75..=89 => 2,
+        50..=74 => 3,
+        _ => 4,
+    };
+    if bits == 0 {
+        return;
+    }
+    let half = 1u16 << (bits - 1);
+    for p in img.pixels_mut() {
+        for v in &mut p.0[..3] {
+            let q = ((*v as u16 + half) >> bits) << bits;
+            *v = q.min(255) as u8;
+        }
+    }
+}
+
 /// Encode a rendered page in the bitmap format `ext`.
 fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u8>, String> {
     let (w, h) = (pm.width(), pm.height());
@@ -294,6 +317,14 @@ fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u
                 .to_rgb8()
                 .write_to(&mut out, format)
                 .map_err(|e| e.to_string())?;
+        }
+        image::ImageFormat::WebP => {
+            // The WebP encoder at hand writes lossless files only; below
+            // 100 the colours are first rounded to fewer levels, WebP's
+            // near-lossless way, so quality shrinks the file (#544).
+            let mut rgba = dynimg.to_rgba8();
+            near_lossless(&mut rgba, quality);
+            rgba.write_to(&mut out, format).map_err(|e| e.to_string())?;
         }
         _ => dynimg
             .write_to(&mut out, format)
@@ -1620,6 +1651,32 @@ mod tests {
             replace_in("cat concat", "cat", "dog", false, true),
             "dog concat"
         );
+    }
+
+    /// WebP takes the quality: lower values make smaller files (colours
+    /// rounded, near-lossless), 100 keeps the image exact (#544).
+    #[test]
+    fn webp_quality_shrinks_the_file() {
+        let mut pm = tiny_skia::Pixmap::new(256, 128).expect("pixmap");
+        for (i, p) in pm.pixels_mut().iter_mut().enumerate() {
+            let (x, y) = ((i % 256) as u8, (i / 256) as u8);
+            let n = ((x as u32 * 7 + y as u32 * 13) % 5) as u8;
+            *p = tiny_skia::PremultipliedColorU8::from_rgba(x, y.wrapping_mul(2), x ^ y ^ n, 255)
+                .expect("pixel");
+        }
+        let full = encode_raster(&pm, "webp", 100).expect("webp");
+        let low = encode_raster(&pm, "webp", 40).expect("webp");
+        assert!(
+            low.len() < full.len() * 3 / 4,
+            "{} vs {}",
+            low.len(),
+            full.len()
+        );
+        let back = image::load_from_memory(&full).expect("decode").to_rgba8();
+        assert_eq!(back.get_pixel(37, 21).0, {
+            let d = pm.pixel(37, 21).expect("pixel").demultiply();
+            [d.red(), d.green(), d.blue(), d.alpha()]
+        });
     }
 
     /// Fit to page shrinks objects running off the page to fit inside it,
