@@ -86,4 +86,10 @@ formulário; use as setas ou **Ir para o registro** para percorrê-los. Os
 botões de marcador inserem um campo no texto que você está editando. **Salvar
 fonte de dados** grava os registros como arquivo CSV.
 
+Para trabalhar em várias células de uma vez, arraste de uma célula a outra, ou
+sobre os números dos registros ou os nomes dos campos para pegar registros ou
+campos inteiros. Então **[[merge.sel_add]]** adiciona o mesmo número de
+registros vazios depois deles, **[[merge.sel_delete]]** remove os registros e
+**[[merge.sel_clear]]** (ou a tecla Delete) esvazia as células.
+
 [[menu.file.print_merge_edit]] reabre os registros.

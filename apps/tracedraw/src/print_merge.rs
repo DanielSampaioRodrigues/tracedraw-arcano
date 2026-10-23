@@ -313,6 +313,65 @@ pub fn add_record(st: &mut PrintMergeState) {
     st.rows.push(vec![String::new(); st.headers.len()]);
 }
 
+/// What a drag in the data grid selects: a block of cells, whole records
+/// (from the record numbers) or whole fields (from the field names).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridDrag {
+    Cells,
+    Records,
+    Fields,
+}
+
+/// A block of cells of the data grid: the cell a drag started on and the
+/// one it reached, as (record, field), both 0-based (#501).
+pub type CellRange = ((usize, usize), (usize, usize));
+
+/// The records and fields a block spans, in order.
+pub fn range_bounds(
+    sel: CellRange,
+) -> (
+    std::ops::RangeInclusive<usize>,
+    std::ops::RangeInclusive<usize>,
+) {
+    let ((r0, c0), (r1, c1)) = sel;
+    (r0.min(r1)..=r0.max(r1), c0.min(c1)..=c0.max(c1))
+}
+
+/// Insert `n` empty records before record `at` (at the end when past it).
+pub fn insert_records(st: &mut PrintMergeState, at: usize, n: usize) {
+    let at = at.min(st.rows.len());
+    let width = st.headers.len();
+    for _ in 0..n {
+        st.rows.insert(at, vec![String::new(); width]);
+    }
+}
+
+/// Delete the records `rows` spans (those that exist).
+pub fn delete_records(st: &mut PrintMergeState, rows: std::ops::RangeInclusive<usize>) {
+    let n = st.rows.len();
+    let (a, b) = (*rows.start(), (*rows.end()).min(n.saturating_sub(1)));
+    if a < n && a <= b {
+        st.rows.drain(a..=b);
+    }
+    st.current = st.current.min(st.rows.len().saturating_sub(1));
+}
+
+/// Empty the cells of a block; counter fields, worked out rather than
+/// typed, keep theirs.
+pub fn clear_cells(st: &mut PrintMergeState, sel: CellRange) {
+    let (rows, cols) = range_bounds(sel);
+    for r in rows {
+        for c in cols.clone() {
+            if matches!(kind_of(st, c), FieldKind::Number { .. }) {
+                continue;
+            }
+            if let Some(cell) = st.rows.get_mut(r).and_then(|row| row.get_mut(c)) {
+                cell.clear();
+            }
+        }
+    }
+}
+
 /// The records as CSV text, counters written out, with a header line.
 pub fn to_csv(st: &PrintMergeState) -> String {
     let mut w = csv::WriterBuilder::new().from_writer(Vec::new());
@@ -831,6 +890,21 @@ mod tests {
         assert_eq!(st.headers, vec!["Name", "Link", "City"]);
         assert_eq!(st.kinds[1], FieldKind::Qr);
         assert!(st.rows.iter().all(|r| r.len() == 3));
+    }
+
+    /// Clearing a block of the grid empties its typed cells; a counter
+    /// field, worked out, keeps its numbers (#501).
+    #[test]
+    fn clearing_cells_leaves_counters() {
+        let mut st = state();
+        for row in st.rows.iter_mut() {
+            row.resize(3, String::new());
+        }
+        st.rows[0][1] = "kept".into();
+        clear_cells(&mut st, ((1, 2), (0, 0)));
+        assert_eq!(st.rows[0], vec!["", "kept", ""]);
+        assert_eq!(values(&st)[1][1], "010");
+        assert_eq!(range_bounds(((3, 1), (1, 4))), (1..=3, 1..=4));
     }
 
     #[test]

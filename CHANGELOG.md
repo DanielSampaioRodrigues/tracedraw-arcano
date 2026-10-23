@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge: the data grid selects a block of cells by dragging across them (or over the record numbers or field names for whole records or fields), with Add (as many empty records after it), Delete (its records) and Clear (its cells, also the Delete key) (#501).
+
 - Layout > Delete Page opens a dialog: the page to delete (the current one to start with) and, with Through to page, the last page of a range, deleted in one undo step; it deleted the current page only (#500).
 
 - Print Merge: CSV files saved by Excel on Windows import; they are in code page 1252, not UTF-8, and failed to read. UTF-16 files (Excel's Unicode Text) and tab-separated files import too, and a UTF-8 byte order mark no longer sticks to the first field's name (#495).

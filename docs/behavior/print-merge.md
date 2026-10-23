@@ -33,6 +33,16 @@ Record); Save Data Source, Finish and Cancel.
 - View Single Record shows the current record as a form; View All
   Records goes back to the grid, where a click on a record's number makes
   it the current one.
+- The grid selects a block of cells (#501): a drag from one cell to
+  another (the text editing stops once the drag reaches another cell), a
+  drag over record numbers (whole records) or field names (whole fields),
+  a click on one of those, or Shift+click on a cell from the block's first
+  cell; a block of more than one cell is tinted. Beside + and -: Add puts
+  as many empty records as the block spans after it (and selects them),
+  Delete removes the block's records, Clear (or Delete with no field
+  being edited) empties its cells, counter fields keeping their numbers
+  (`ui::dialogs::tests::the_merge_grid_selects_a_block_of_cells_by_dragging`,
+  `print_merge::tests::clearing_cells_leaves_counters`).
 - Types:
   - Text: put in place of `<Field>` in every text object of the page.
   - Number: a counter, not typed in: Start, then Step more for each

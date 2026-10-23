@@ -82,4 +82,10 @@ arrows or **Go to record** to move through them. The placeholder buttons
 insert a field into the text you are editing. **Save data source** writes the
 records as a CSV file.
 
+To work on several cells at once, drag from one cell to another, or over the
+record numbers or the field names to take whole records or fields. Then
+**[[merge.sel_add]]** adds as many empty records after them, **[[merge.sel_delete]]**
+removes their records and **[[merge.sel_clear]]** (or the Delete key) empties
+the cells.
+
 [[menu.file.print_merge_edit]] reopens the records.
