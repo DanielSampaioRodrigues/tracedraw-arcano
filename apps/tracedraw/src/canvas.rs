@@ -262,21 +262,21 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             }
         }
         if let Some(seg) = &look.preview {
-            // A solid white line under the dashes keeps the preview one
-            // line over any colour, as in the reference program (#489).
+            // A white line under the dashes keeps the preview one line
+            // over any colour, as in the reference program (#489): as wide
+            // as the dashes, so it only shows in their short gaps (#560).
+            // Plain segments: a path shape here cost a third of the Pen's
+            // frame and the preview lagged behind the pointer (#560).
             for (pts, _) in flatten(seg, view) {
-                if pts.len() > 1 {
-                    painter.add(epaint::PathShape::line(
-                        pts.clone(),
-                        EStroke::new(2.0, Color32::WHITE),
-                    ));
+                for w in pts.windows(2) {
+                    painter.line_segment([w[0], w[1]], EStroke::new(1.0, Color32::WHITE));
                 }
                 dashed_polyline(
                     painter,
                     &pts,
                     EStroke::new(1.0, look.preview_color),
-                    4.0,
-                    3.0,
+                    5.0,
+                    2.0,
                 );
             }
         }

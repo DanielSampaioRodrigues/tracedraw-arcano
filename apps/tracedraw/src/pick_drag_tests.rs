@@ -4929,3 +4929,56 @@ fn finish_on_the_symmetry_bar_leaves_one_object() {
     assert!(bounds(&app, sym).x0 > x0 + 5.0);
     assert_eq!(app.symmetry_edit, None);
 }
+
+/// Frame times of the Pen with its preview following the pointer, with
+/// the preview off and on (#560): run with
+/// `cargo test --release -- --ignored frame_times_of_the_pen_preview --nocapture`.
+/// The preview may add little to the frame; the white line drawn as a
+/// path shape cost about 0.25 ms of 0.7 and the preview lagged.
+#[test]
+#[ignore]
+fn frame_times_of_the_pen_preview() {
+    for preview in [false, true] {
+        let (ctx, mut app, _) = setup();
+        app.select(Vec::new());
+        app.settings.curves.pen_preview = preview;
+        app.set_tool(Tool::Pen);
+        let a = Pos2::new(500.0, 400.0);
+        click_at(&ctx, &mut app, a, Modifiers::NONE);
+        let n = 300;
+        let (mut ui_t, mut tess_t, mut verts) = (0.0, 0.0, 0usize);
+        for i in 0..n {
+            let p = a + egui::vec2(
+                100.0 + (i as f32 * 3.0) % 400.0,
+                50.0 + (i as f32 * 7.0) % 200.0,
+            );
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                events: vec![Event::PointerMoved(p)],
+                time: Some(i as f64 * 0.016),
+                ..Default::default()
+            };
+            let t = std::time::Instant::now();
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+            ui_t += t.elapsed().as_secs_f64();
+            let t = std::time::Instant::now();
+            let clipped = ctx.tessellate(std::mem::take(&mut out.shapes), out.pixels_per_point);
+            tess_t += t.elapsed().as_secs_f64();
+            for c in &clipped {
+                if let egui::epaint::Primitive::Mesh(m) = &c.primitive {
+                    verts += m.vertices.len();
+                }
+            }
+            out.textures_delta.clear();
+        }
+        eprintln!(
+            "pen preview {preview}: ui {:.3} ms, tessellation {:.3} ms, {} vertices a frame",
+            ui_t * 1000.0 / n as f64,
+            tess_t * 1000.0 / n as f64,
+            verts / n
+        );
+    }
+}

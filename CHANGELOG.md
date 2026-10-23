@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen: the preview follows the pointer as smoothly as in 0.13.0; its white line, drawn as a path shape, cost about a third of each frame. The white line is now as thin as the dashes, so the preview reads mostly blue with short white gaps (#560).
+
 - Symmetry: after Finish the mirror lines no longer show on the selected symmetry, so it reads as one object; they stayed whenever it was selected and editing looked still open.
 
 ## 0.14.0 (2026-10-23)
