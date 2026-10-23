@@ -523,6 +523,30 @@ impl App {
             .unwrap_or_default()
     }
 
+    /// The targets with every group opened (not linked groups such as
+    /// text or clip frames): the objects inside take their place, their
+    /// transforms composed with the group's, so a curve in a group is cut
+    /// as one on its own (#427).
+    fn segment_leaves(&self) -> Vec<Shape> {
+        fn open(s: Shape, out: &mut Vec<Shape>) {
+            match &s.kind {
+                ShapeKind::Group { children } => {
+                    for c in children.iter().filter(|c| c.visible && !c.locked) {
+                        let mut c = c.clone();
+                        c.transform = s.transform * c.transform;
+                        open(c, out);
+                    }
+                }
+                _ => out.push(s),
+            }
+        }
+        let mut out = Vec::new();
+        for s in self.segment_targets() {
+            open(s, &mut out);
+        }
+        out
+    }
+
     /// The other objects' outlines, page space.
     fn cutters_except(&self, all: &[Shape], id: ShapeId) -> Vec<Cutter> {
         let mut out = Vec::new();
@@ -593,7 +617,7 @@ impl App {
     /// outline is near.
     pub fn delete_virtual_segment_at(&mut self, p: Point) -> bool {
         let tol = 5.0 / self.view.zoom.max(1e-6) as f64;
-        let all = self.segment_targets();
+        let all = self.segment_leaves();
         // The nearest outline within reach (the topmost of equals).
         let mut found: Option<(Shape, Vec<Sub>, usize, f64, f64)> = None;
         for s in all.iter().rev().filter(|s| cuttable(s)) {
@@ -640,10 +664,13 @@ impl App {
         if rect.width() < 1e-6 || rect.height() < 1e-6 {
             return;
         }
-        let all = self.segment_targets();
+        let all = self.segment_leaves();
         let mut cmds = Vec::new();
         for s in all.iter().filter(|s| cuttable(s)) {
-            if s.bounds().intersect(rect).area() <= 0.0 && !rect.contains(s.bounds().center()) {
+            // Overlap, not area: a level or upright line has a box of no
+            // height or width.
+            let b = s.bounds();
+            if b.x0 > rect.x1 || b.x1 < rect.x0 || b.y0 > rect.y1 || b.y1 < rect.y0 {
                 continue;
             }
             let subs = subs_of(&s.page_path());
@@ -891,6 +918,58 @@ mod tests {
         let ends: Vec<Point> = left.segments().map(|s| s.end()).collect();
         let last = *ends.last().expect("segments");
         assert!((last - x).hypot() < 1e-6, "{last:?} {x:?}");
+    }
+
+    /// Curves inside a group (an imported ornament is one) are cut as
+    /// curves on their own, by a click and by a drag, the group moved
+    /// first so its transform counts (#427: nothing happened).
+    #[test]
+    fn curves_inside_a_group_are_cut() {
+        let mut app = App::headless();
+        let h = line(&mut app, (0.0, 0.0), (30.0, 0.0));
+        let v1 = line(&mut app, (10.0, -5.0), (10.0, 5.0));
+        let v2 = line(&mut app, (20.0, -5.0), (20.0, 5.0));
+        app.select(vec![h, v1, v2]);
+        app.group_selection();
+        let g = app.selection[0];
+        app.run(Command::TransformShapes {
+            shapes: vec![g],
+            transform: tracedraw_core::geometry::Affine::translate((100.0, 50.0)),
+        });
+        // The line in page space: the group's move applied.
+        let page = |app: &App| {
+            let gt = app.doc().find_shape(g).expect("group").transform;
+            gt * path_of(app, h)
+        };
+        // A click between the crossings, where the group now is.
+        assert!(app.delete_virtual_segment_at(Point::new(115.0, 50.0)));
+        let p = page(&app);
+        assert_eq!(
+            p.elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count(),
+            2,
+            "{p:?}"
+        );
+        assert!(
+            p.segments()
+                .all(|s| s.eval(0.5).x < 110.0 + 1e-6 || s.eval(0.5).x > 120.0 - 1e-6),
+            "{p:?}"
+        );
+        let b = p.bounding_box();
+        assert!(
+            (b.x0 - 100.0).abs() < 1e-6 && (b.x1 - 130.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // A drag round the right end of the line: that stretch goes.
+        app.delete_virtual_segments_in(Rect::new(119.0, 48.0, 131.0, 52.0));
+        let b = page(&app).bounding_box();
+        assert!((b.x1 - 110.0).abs() < 1e-6, "{b:?}");
+        assert!(matches!(
+            app.doc().find_shape(g).map(|s| &s.kind),
+            Some(ShapeKind::Group { .. })
+        ));
     }
 
     /// A cutter that stops a hair short of the outline (as a piece left by

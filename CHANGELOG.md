@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Segment Delete: curves inside a group (an imported ornament, for example) are now cut by a click and by a drag, as in the reference program; nothing happened before. A drag also takes level and upright lines, which it used to skip (#427).
+
 ## 0.12.0 (2026-10-23)
 
 - Break Apart on a contour, blend or extrusion: Ctrl+K and the right-click menu now offer Break Contour (Blend, Extrude) Group Apart, as in the reference program, instead of a greyed-out Break Apart. The object stays and the steps come out as a group beside it, also from the dockers' Break apart buttons (#424).
