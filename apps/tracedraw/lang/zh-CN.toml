@@ -1714,6 +1714,7 @@ fxp.width = "宽度"
 fxp.yellow = "黄色"
 fxp.yellow_angle = "黄色角度"
 fxp.yellow_blue = "黄色 / 蓝色"
+glyphs.keystroke = "按键: {keys}" # mt
 grammar.check_again = "重新检查"
 grammar.fix = "修正"
 grammar.fix_all = "全部修正"

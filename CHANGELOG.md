@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Glyphs docker: the font list is the property bar's, so a font can be found by typing its name, and the line above the glyphs shows the keystroke that types the glyph (Alt+0169 for ©), as in the reference program. While editing text, Alt and a number types the character on every system, not only on Windows (#447).
+
 - Transparency tool: a gradient transparency shows its nodes on the object, as Interactive Fill does: start, end, skew, nodes added on the line and the midpoint slider between two nodes to set where the blend is half way. A drag sets the gradient from where it began to where it ended, not only its angle (#448).
 
 - Options > Text > Display: the default font and size can be changed while a text is selected, and they no longer turn into the selected text's font and size; with nothing selected the Text tool's bar shows them (#449).

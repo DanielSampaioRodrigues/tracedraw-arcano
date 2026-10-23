@@ -1714,6 +1714,7 @@ fxp.width = "Šířka"
 fxp.yellow = "Žlutá"
 fxp.yellow_angle = "Úhel žluté"
 fxp.yellow_blue = "Žlutá / Modrá"
+glyphs.keystroke = "Klávesy: {keys}" # mt
 grammar.check_again = "Zkontrolovat znovu"
 grammar.fix = "Opravit"
 grammar.fix_all = "Opravit vše"

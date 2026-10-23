@@ -1714,6 +1714,7 @@ fxp.width = "幅"
 fxp.yellow = "イエロー"
 fxp.yellow_angle = "イエローの角度"
 fxp.yellow_blue = "イエロー / ブルー"
+glyphs.keystroke = "キー操作: {keys}" # mt
 grammar.check_again = "再チェック"
 grammar.fix = "修正"
 grammar.fix_all = "すべて修正"

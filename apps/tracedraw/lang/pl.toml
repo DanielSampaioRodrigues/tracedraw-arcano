@@ -1714,6 +1714,7 @@ fxp.width = "Szerokość"
 fxp.yellow = "Żółty"
 fxp.yellow_angle = "Kąt żółtego"
 fxp.yellow_blue = "Żółty / Niebieski"
+glyphs.keystroke = "Skrót: {keys}" # mt
 grammar.check_again = "Sprawdź ponownie"
 grammar.fix = "Popraw"
 grammar.fix_all = "Popraw wszystko"

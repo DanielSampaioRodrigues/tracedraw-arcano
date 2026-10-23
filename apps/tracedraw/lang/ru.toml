@@ -1714,6 +1714,7 @@ fxp.width = "Ширина"
 fxp.yellow = "Желтый"
 fxp.yellow_angle = "Угол желтого"
 fxp.yellow_blue = "Желтый / Синий"
+glyphs.keystroke = "Клавиши: {keys}" # mt
 grammar.check_again = "Проверить снова"
 grammar.fix = "Исправить"
 grammar.fix_all = "Исправить все"

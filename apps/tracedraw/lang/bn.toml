@@ -1714,6 +1714,7 @@ fxp.width = "প্রস্থ"
 fxp.yellow = "হলুদ"
 fxp.yellow_angle = "হলুদের কোণ"
 fxp.yellow_blue = "হলুদ / নীল"
+glyphs.keystroke = "কী: {keys}" # mt
 grammar.check_again = "আবার পরীক্ষা করুন"
 grammar.fix = "ঠিক করুন"
 grammar.fix_all = "সব ঠিক করুন"

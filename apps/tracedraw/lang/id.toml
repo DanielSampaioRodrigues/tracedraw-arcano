@@ -1714,6 +1714,7 @@ fxp.width = "Lebar"
 fxp.yellow = "Kuning"
 fxp.yellow_angle = "Sudut kuning"
 fxp.yellow_blue = "Kuning / Biru"
+glyphs.keystroke = "Tombol: {keys}" # mt
 grammar.check_again = "Periksa Lagi"
 grammar.fix = "Perbaiki"
 grammar.fix_all = "Perbaiki Semua"

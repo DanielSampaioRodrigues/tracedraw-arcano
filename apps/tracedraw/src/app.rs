@@ -835,6 +835,9 @@ pub struct App {
     /// Korean and other input methods), shown underlined until it is
     /// committed.
     pub ime_preedit: String,
+    /// The digits typed with Alt held while editing text, for a character
+    /// by its number (#447; the system does it on Windows).
+    pub alt_code: String,
     /// The last colours picked for a fill and for an outline (the
     /// palette's left and right clicks): the "current colours" the first
     /// built-in gradient runs between.
@@ -1954,6 +1957,7 @@ impl App {
             curve: None,
             text_edit: None,
             ime_preedit: String::new(),
+            alt_code: String::new(),
             current_colors: (Color::BLACK, Color::WHITE),
             live_fill: None,
             live_stroke: None,

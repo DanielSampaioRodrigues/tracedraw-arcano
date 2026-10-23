@@ -1714,6 +1714,7 @@ fxp.width = "चौड़ाई"
 fxp.yellow = "पीला"
 fxp.yellow_angle = "पीले का कोण"
 fxp.yellow_blue = "पीला / नीला"
+glyphs.keystroke = "कुंजियाँ: {keys}" # mt
 grammar.check_again = "फिर से जाँचें"
 grammar.fix = "ठीक करें"
 grammar.fix_all = "सभी ठीक करें"

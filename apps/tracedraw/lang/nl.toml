@@ -1714,6 +1714,7 @@ fxp.width = "Breedte"
 fxp.yellow = "Geel"
 fxp.yellow_angle = "Hoek geel"
 fxp.yellow_blue = "Geel / Blauw"
+glyphs.keystroke = "Toetsen: {keys}" # mt
 grammar.check_again = "Opnieuw controleren"
 grammar.fix = "Herstellen"
 grammar.fix_all = "Alles herstellen"

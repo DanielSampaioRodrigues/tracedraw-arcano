@@ -1714,6 +1714,7 @@ fxp.width = "العرض"
 fxp.yellow = "أصفر"
 fxp.yellow_angle = "زاوية الأصفر"
 fxp.yellow_blue = "أصفر / أزرق"
+glyphs.keystroke = "المفاتيح: {keys}" # mt
 grammar.check_again = "إعادة الفحص"
 grammar.fix = "إصلاح"
 grammar.fix_all = "إصلاح الكل"

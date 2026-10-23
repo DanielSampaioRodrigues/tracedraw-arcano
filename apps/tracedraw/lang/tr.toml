@@ -1714,6 +1714,7 @@ fxp.width = "Genişlik"
 fxp.yellow = "Sarı"
 fxp.yellow_angle = "Sarı açısı"
 fxp.yellow_blue = "Sarı / Mavi"
+glyphs.keystroke = "Tuşlar: {keys}" # mt
 grammar.check_again = "Yeniden Denetle"
 grammar.fix = "Düzelt"
 grammar.fix_all = "Tümünü Düzelt"

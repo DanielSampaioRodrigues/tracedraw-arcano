@@ -1714,6 +1714,7 @@ fxp.width = "Anchura"
 fxp.yellow = "Amarillo"
 fxp.yellow_angle = "Ángulo del amarillo"
 fxp.yellow_blue = "Amarillo / Azul"
+glyphs.keystroke = "Pulsación: {keys}" # mt
 grammar.check_again = "Revisar de nuevo"
 grammar.fix = "Corregir"
 grammar.fix_all = "Corregir todo"
