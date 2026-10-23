@@ -3206,6 +3206,7 @@ status.object_details = "تفاصيل الكائن"
 status.object_information = "معلومات الكائن"
 status.object_on_layer = "{k} على {l}"
 status.objects_copied = "تم نسخ {n} كائن(ات)"
+status.guides_copied = "تم نسخ {n} من خطوط الإرشاد" # mt
 status.opened = "تم الفتح"
 status.opened_cdr = "{version}: {pages} صفحة، {objects} كائن، تم تخطي {skipped}"
 status.opened_objects = "{format}: {objects} كائن"

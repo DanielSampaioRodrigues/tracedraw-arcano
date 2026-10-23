@@ -3206,6 +3206,7 @@ status.object_details = "Nesne Ayrıntıları"
 status.object_information = "Nesne Bilgileri"
 status.object_on_layer = "{k} (katman: {l})"
 status.objects_copied = "Kopyalanan nesne sayısı: {n}"
+status.guides_copied = "{n} kılavuz çizgisi kopyalandı" # mt
 status.opened = "Açıldı"
 status.opened_cdr = "{version}: sayfa: {pages}, nesne: {objects}, atlanan: {skipped}"
 status.opened_objects = "{format}: nesne: {objects}"

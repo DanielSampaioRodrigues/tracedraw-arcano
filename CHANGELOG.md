@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Guidelines: Copy, Cut and Paste work on selected guidelines (no objects selected), pasting them in the same place, and the Transformations docker moves, rotates, scales and copies them; the Help says where the Ctrl+D duplicate offset is set (#376).
+
 - Hyphenation: a word with a comma, full stop or quotation mark next to it can break at a line's end (before, any punctuation kept the whole word on the next line, in every language), words with an apostrophe break too (Italian *dell'informazione*), and Text > Use Hyphenation now turns hyphenation on for the selected text instead of only for text made afterwards. Checked with the Italian, English, Portuguese and German dictionaries (#255).
 
 - Text on a path: changing the distance from the path, or pressing a mirror button with a distance set, no longer slides the text round the path; text centred on the bottom of a circle (Placement: Bottom, or both mirrors) stays centred as it moves in or out, as in the reference program (#193).

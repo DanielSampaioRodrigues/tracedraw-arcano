@@ -3206,6 +3206,7 @@ status.object_details = "对象详细信息"
 status.object_information = "对象信息"
 status.object_on_layer = "{k} 位于 {l}"
 status.objects_copied = "已复制 {n} 个对象"
+status.guides_copied = "已复制 {n} 条辅助线" # mt
 status.opened = "已打开"
 status.opened_cdr = "{version}：{pages} 页，{objects} 个对象，跳过 {skipped} 个"
 status.opened_objects = "{format}：{objects} 个对象"

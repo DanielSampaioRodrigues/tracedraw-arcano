@@ -769,6 +769,9 @@ pub struct Clipboard {
     /// What the system clipboard held right after this copy (see
     /// `ClipboardContent::fingerprint`).
     pub system: u64,
+    /// Guidelines copied with no objects selected: pasted where they were
+    /// (#376).
+    pub guides: Vec<tracedraw_core::document::Guide>,
 }
 
 /// Centres of rotation the user moved. One object's is kept in the
@@ -4377,6 +4380,7 @@ impl App {
                 shapes,
                 styles: self.doc().object_styles.clone(),
                 system: 0,
+                guides: Vec::new(),
             });
             self.status = crate::i18n::trf(
                 "status.objects_copied",
@@ -4386,6 +4390,11 @@ impl App {
     }
 
     pub fn cut(&mut self) {
+        // Guidelines selected and no objects: they go (#376).
+        if self.selection.is_empty() && self.copy_selected_guides() {
+            self.delete_selected_guides();
+            return;
+        }
         self.copy_with_system();
         self.delete_selection();
     }
@@ -4394,6 +4403,10 @@ impl App {
         let Some(cb) = self.clipboard.clone() else {
             return;
         };
+        if !cb.guides.is_empty() && cb.shapes.is_empty() {
+            self.paste_guides(&cb.guides);
+            return;
+        }
         let Some(layer) = self.active_layer() else {
             return;
         };

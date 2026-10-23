@@ -3206,6 +3206,7 @@ status.object_details = "Detail objek"
 status.object_information = "Informasi objek"
 status.object_on_layer = "{k} di {l}"
 status.objects_copied = "{n} objek disalin"
+status.guides_copied = "{n} garis bantu disalin" # mt
 status.opened = "Dibuka"
 status.opened_cdr = "{version}: {pages} halaman, {objects} objek, {skipped} dilewati"
 status.opened_objects = "{format}: {objects} objek"

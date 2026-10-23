@@ -3206,6 +3206,7 @@ status.object_details = "物件詳細資訊"
 status.object_information = "物件資訊"
 status.object_on_layer = "{l} 上的{k}"
 status.objects_copied = "已複製 {n} 個物件"
+status.guides_copied = "已複製 {n} 條輔助線" # mt
 status.opened = "已開啟"
 status.opened_cdr = "{version}：{pages} 頁，{objects} 個物件，略過 {skipped} 個"
 status.opened_objects = "{format}：{objects} 個物件"

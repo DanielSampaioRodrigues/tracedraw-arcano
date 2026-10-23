@@ -1803,10 +1803,12 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         app.repeat_last();
     }
     sep(ui);
-    if item(ui, "menu.edit.cut", "Ctrl+X", has) {
+    // Guidelines selected (no objects) are cut and copied too.
+    let guides_picked = !app.selected_guides.is_empty();
+    if item(ui, "menu.edit.cut", "Ctrl+X", has || guides_picked) {
         app.cut();
     }
-    if item(ui, "menu.edit.copy", "Ctrl+C", has) {
+    if item(ui, "menu.edit.copy", "Ctrl+C", has || guides_picked) {
         app.copy_with_system();
     }
     if item(ui, "menu.edit.copy_properties_from", "", has) {
@@ -1834,7 +1836,6 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     // Guidelines selected (no objects) duplicate too.
-    let guides_picked = !app.selected_guides.is_empty();
     if item(ui, "menu.edit.duplicate", "Ctrl+D", has || guides_picked) {
         app.duplicate();
     }

@@ -3206,6 +3206,7 @@ status.object_details = "Podrobnosti o objektu"
 status.object_information = "Informace o objektu"
 status.object_on_layer = "{k} ve vrstvě {l}"
 status.objects_copied = "Zkopírované objekty: {n}"
+status.guides_copied = "Zkopírováno vodítek: {n}" # mt
 status.opened = "Otevřeno"
 status.opened_cdr = "{version}: stránky: {pages}, objekty: {objects}, přeskočeno: {skipped}"
 status.opened_objects = "{format}: objekty: {objects}"

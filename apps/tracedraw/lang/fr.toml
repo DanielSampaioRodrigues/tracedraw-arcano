@@ -3206,6 +3206,7 @@ status.object_details = "Détails de l'objet"
 status.object_information = "Informations sur l'objet"
 status.object_on_layer = "{k} sur {l}"
 status.objects_copied = "{n} objet(s) copié(s)"
+status.guides_copied = "{n} repère(s) copié(s)" # mt
 status.opened = "Ouvert"
 status.opened_cdr = "{version} : {pages} page(s), {objects} objet(s), {skipped} ignoré(s)"
 status.opened_objects = "{format} : {objects} objet(s)"

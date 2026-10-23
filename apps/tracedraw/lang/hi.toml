@@ -3206,6 +3206,7 @@ status.object_details = "ऑब्जेक्ट विवरण"
 status.object_information = "ऑब्जेक्ट जानकारी"
 status.object_on_layer = "{l} पर {k}"
 status.objects_copied = "{n} ऑब्जेक्ट कॉपी किए गए"
+status.guides_copied = "{n} गाइडलाइन कॉपी की गईं" # mt
 status.opened = "खोला गया"
 status.opened_cdr = "{version}: {pages} पृष्ठ, {objects} ऑब्जेक्ट, {skipped} छोड़े गए"
 status.opened_objects = "{format}: {objects} ऑब्जेक्ट"

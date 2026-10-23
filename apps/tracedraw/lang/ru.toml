@@ -3206,6 +3206,7 @@ status.object_details = "Сведения об объекте"
 status.object_information = "Информация об объекте"
 status.object_on_layer = "{k} на слое {l}"
 status.objects_copied = "Скопировано объектов: {n}"
+status.guides_copied = "Скопировано направляющих: {n}" # mt
 status.opened = "Открыт"
 status.opened_cdr = "{version}: страниц: {pages}, объектов: {objects}, пропущено: {skipped}"
 status.opened_objects = "{format}: объектов: {objects}"

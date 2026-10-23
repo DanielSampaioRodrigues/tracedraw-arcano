@@ -3206,6 +3206,7 @@ status.object_details = "オブジェクトの詳細"
 status.object_information = "オブジェクト情報"
 status.object_on_layer = "{l} 上の {k}"
 status.objects_copied = "{n} 個のオブジェクトをコピーしました"
+status.guides_copied = "{n} 本のガイドラインをコピーしました" # mt
 status.opened = "開きました"
 status.opened_cdr = "{version}: {pages} ページ、オブジェクト {objects} 個、{skipped} 個をスキップ"
 status.opened_objects = "{format}: オブジェクト {objects} 個"
