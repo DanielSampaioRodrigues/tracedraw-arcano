@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Downloads: Linux on 64-bit ARM (arm64) gets its own `.deb`, AppImage and `.tar.gz`, built on an ARM machine (#561).
+
 - Browser version: with the interface in Chinese or Japanese, the menus and dialogs show their text; they showed empty boxes, the browser having no system fonts. The page fetches Noto Sans SC, TC or JP from its font folder when it starts. Variable interface fonts are drawn at Regular weight, not at their default, which is Thin in some (#561).
 
 - Shaping: Weld, Trim and Intersect work with one object selected: choose the command (Object > Shaping, the Shaping panel or the property bar), then click the object it acts on, as in other drawing programs. The buttons were greyed until two objects were selected, and which one was cut depended on the selection order (#562).
