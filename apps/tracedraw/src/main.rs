@@ -318,6 +318,8 @@ impl eframe::App for Shell {
         };
         // Fonts text asked for (browser build), and fonts that arrived.
         #[cfg(target_arch = "wasm32")]
+        web::sync_ui_fonts(ui.ctx());
+        #[cfg(target_arch = "wasm32")]
         web::fetch_requested_fonts();
         app.sync_fonts();
         app.sync_document_colors();
