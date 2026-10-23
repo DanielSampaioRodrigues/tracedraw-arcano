@@ -244,6 +244,7 @@ impl App {
         self.pending_clip_frame = false;
         self.pending_order = None;
         self.pending_copy_properties = false;
+        self.pending_shaping = None;
         self.pending_copy_effect = None;
         self.pending_copy_envelope = false;
         self.envelope_drag = None;

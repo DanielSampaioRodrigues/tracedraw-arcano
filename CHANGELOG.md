@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shaping: Weld, Trim and Intersect work with one object selected: choose the command (Object > Shaping, the Shaping panel or the property bar), then click the object it acts on, as in other drawing programs. The buttons were greyed until two objects were selected, and which one was cut depended on the selection order (#562).
+
 - Pen: the preview follows the pointer as smoothly as in 0.13.0; its white line, drawn as a path shape, cost about a third of each frame. The white line is now as thin as the dashes, so the preview reads mostly blue with short white gaps (#560).
 
 - Symmetry: after Finish the mirror lines no longer show on the selected symmetry, so it reads as one object; they stayed whenever it was selected and editing looked still open.

@@ -2451,7 +2451,6 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     sub(ui, "menu.object.shaping", |ui| {
         use crate::ops::Shaping;
-        let two = app.selection.len() >= 2;
         for (key, op, need_two) in [
             ("menu.object.weld", Shaping::Weld, true),
             ("menu.object.trim", Shaping::Trim, true),
@@ -2469,7 +2468,12 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             ),
             ("menu.object.boundary", Shaping::Boundary, false),
         ] {
-            if item(ui, key, "", if need_two { two } else { has }) {
+            let on = if need_two {
+                op.ready(app.selection.len())
+            } else {
+                has
+            };
+            if item(ui, key, "", on) {
                 app.shaping(op);
             }
         }

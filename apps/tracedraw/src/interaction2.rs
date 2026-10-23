@@ -19,6 +19,7 @@ impl App {
     pub fn pending_click(&mut self, response: &Response, p: Point) -> bool {
         let waiting = self.pending_order.is_some()
             || self.pending_copy_properties
+            || self.pending_shaping.is_some()
             || self.pending_copy_effect.is_some()
             || self.pending_copy_envelope
             || self.pending_clone_effect.is_some()
@@ -31,6 +32,7 @@ impl App {
         if response.secondary_clicked() {
             self.pending_order = None;
             self.pending_copy_properties = false;
+            self.pending_shaping = None;
             self.pending_copy_effect = None;
             self.pending_copy_envelope = false;
             self.pending_clone_effect = None;
@@ -51,6 +53,12 @@ impl App {
             if let Some(c) = self.sample_color_at(p, false) {
                 self.add_to_document_palette(c);
             }
+            return true;
+        }
+        if self.pending_shaping.is_some() {
+            // The target is found under the selected objects too.
+            let target = self.hit_test_where(p, |id| self.selection.contains(&id));
+            self.shaping_onto(target);
             return true;
         }
         let target = self.hit_test(p);

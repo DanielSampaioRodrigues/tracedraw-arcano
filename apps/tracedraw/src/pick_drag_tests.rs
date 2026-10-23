@@ -4982,3 +4982,88 @@ fn frame_times_of_the_pen_preview() {
         );
     }
 }
+
+/// Trim with one object selected waits for a click on the target, found
+/// under the selected object too; the selection cuts it, in one undo
+/// step. Esc or a click on nothing cancels (#562).
+#[test]
+fn trim_with_one_object_waits_for_the_target() {
+    use crate::ops::Shaping;
+    let (ctx, mut app, cutter) = setup();
+    let target = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(40.0, 20.0, 90.0, 70.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![target]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        30, 30, 200,
+    )));
+    let settle = |ctx: &egui::Context, app: &mut App| {
+        for _ in 0..20 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    };
+    // Esc cancels.
+    app.select(vec![cutter]);
+    app.shaping(Shaping::Trim);
+    assert!(app.pending_shaping.is_some(), "waits for the target");
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.pending_shaping.is_none());
+    settle(&ctx, &mut app);
+    // A click on nothing cancels and changes nothing.
+    app.select(vec![cutter]);
+    app.shaping(Shaping::Trim);
+    let rev = app.engine.revision();
+    let at = app.view.to_screen(Point::new(150.0, 150.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(app.pending_shaping.is_none());
+    assert_eq!(app.engine.revision(), rev);
+    // The target clicked, where it shows beside the cutter.
+    app.select(vec![cutter]);
+    app.shaping(Shaping::Trim);
+    let before = shape_count(&app);
+    let at = app.view.to_screen(Point::new(80.0, 60.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(app.pending_shaping.is_none());
+    assert!(app.doc().find_shape(cutter).is_some(), "the cutter stays");
+    assert!(app.doc().find_shape(target).is_none(), "the target is cut");
+    assert_eq!(shape_count(&app), before);
+    let cut = app.selection[0];
+    let b = bounds(&app, cut);
+    assert!(close(b.x1, 90.0) && close(b.y1, 70.0), "{b:?}");
+    let s = app.doc().find_shape(cut).expect("cut").clone();
+    assert_eq!(
+        s.fill,
+        tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(30, 30, 200)),
+        "the target's fill"
+    );
+    // The part under the cutter is gone.
+    assert!(!crate::tools2::point_in_path(
+        &s.page_path(),
+        Point::new(50.0, 30.0)
+    ));
+    // One step undoes it.
+    app.undo();
+    assert!(app.doc().find_shape(target).is_some());
+    assert!(app.doc().find_shape(cut).is_none());
+    settle(&ctx, &mut app);
+    // The target under the selected object: the top one cuts the one
+    // beneath, clicked where they overlap.
+    app.select(vec![target]);
+    app.shaping(Shaping::Trim);
+    let at = app.view.to_screen(Point::new(50.0, 30.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(
+        app.doc().find_shape(cutter).is_none(),
+        "the one beneath is cut"
+    );
+    assert!(app.doc().find_shape(target).is_some());
+}

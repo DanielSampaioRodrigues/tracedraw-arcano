@@ -283,7 +283,11 @@ pub fn for_tool(
     if app.pending_palette_sample {
         return ToolCursor::Pipette;
     }
-    if app.pending_clip_frame || app.pending_order.is_some() || app.pending_text_link.is_some() {
+    if app.pending_clip_frame
+        || app.pending_order.is_some()
+        || app.pending_text_link.is_some()
+        || app.pending_shaping.is_some()
+    {
         return ToolCursor::TargetArrow;
     }
     if matches!(app.tool, Tool::Pick | Tool::FreeformPick) {

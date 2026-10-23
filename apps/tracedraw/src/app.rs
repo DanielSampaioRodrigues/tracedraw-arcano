@@ -1194,6 +1194,9 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
+    /// Weld, Trim or Intersect waiting for a click on the target, with
+    /// what it leaves of the source and the target (#562).
+    pub pending_shaping: Option<(crate::ops::Shaping, bool, bool)>,
     pub pending_copy_effect: Option<crate::copy_effect::CopyKind>,
     /// Copy Envelope Properties waits for the object to copy from.
     pub pending_copy_envelope: bool,
@@ -2160,6 +2163,7 @@ impl App {
             object_origin: (1, 1),
             scale_locked: false,
             pending_copy_properties: false,
+            pending_shaping: None,
             pending_copy_effect: None,
             pending_copy_envelope: false,
             pending_clone_effect: None,
