@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen and Bezier: the constrain key (Ctrl) keeps the closing handle to the constrain angle when dragging on the first node to close a curve, as on every other node (#473).
+
 - Shape tool: deleting the first node of a closed curve keeps the curve's shape, as deleting any other node does; the two segments around it kept their old handles and the curve changed (#472).
 
 - Shape tool: Ctrl or Shift while dragging a control handle keeps it to the constrain angle (15° by default), and a smooth node's other handle keeps following; Ctrl turned the node into a cusp instead and Shift did nothing (#510).

@@ -64,7 +64,10 @@ meets the start) `Path` objects with the toolbox defaults.
   first node with no handle (#359); a drag from the first node pulls the
   closing segment's handle at the first node, which follows the pointer
   (drag left, the handle lies left, #358), and the first node's own
-  outgoing handle stays as it was, with or without C held.
+  outgoing handle stays as it was, with or without C held; the constrain
+  key keeps that handle to the constrain angle about the first node, as
+  on every other node (#473,
+  `pick_drag_tests::ctrl_keeps_the_closing_handle_to_the_constrain_angle`).
 - With no curve being drawn and one curve selected, the Pen and Bezier
   tools edit it: a click on a segment (within the pick distance) adds a
   node there (the Pen only with Auto add/delete on), a press on a node

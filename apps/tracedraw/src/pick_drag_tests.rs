@@ -4606,3 +4606,48 @@ fn ctrl_or_shift_keeps_a_handle_to_the_constrain_angle() {
         );
     }
 }
+
+/// Pen: Ctrl while dragging on the first node to close the curve keeps
+/// the closing handle to the constrain angle, as on every other node
+/// (#473).
+#[test]
+fn ctrl_keeps_the_closing_handle_to_the_constrain_angle() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    pull(&ctx, &mut app, a, Point::new(110.0, 170.0));
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(150.0, 190.0),
+        Point::new(170.0, 190.0),
+    );
+    click_page(&ctx, &mut app, Point::new(160.0, 130.0));
+    let (from, to) = (
+        app.view.to_screen(a),
+        app.view.to_screen(Point::new(88.0, 146.0)),
+    );
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        to,
+        Modifiers::CTRL,
+        vec![key(egui::Key::C, Modifiers::CTRL)],
+    );
+    assert!(app.curve.is_none());
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    let closing = segs
+        .iter()
+        .rev()
+        .find_map(|s| match s {
+            tracedraw_core::geometry::PathSeg::Cubic(c) if near(c.p3, a) => Some(*c),
+            _ => None,
+        })
+        .expect("a curved closing segment");
+    let d = closing.p2 - a;
+    let angle = d.y.atan2(d.x).to_degrees().rem_euclid(360.0);
+    // Free, the handle would point at 198.4°; kept to 15° steps, 195°.
+    assert!((angle - 195.0).abs() < 0.5, "{angle} {closing:?}");
+}
