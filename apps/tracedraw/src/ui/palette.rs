@@ -97,6 +97,13 @@ impl Axis {
 
 fn colors_of(app: &App, which: Row) -> Vec<(String, Color)> {
     match which {
+        // An RGB drawing gets the palette's colours as RGB, so what it
+        // applies is RGB too; spot inks and registration stay (#483).
+        Row::Main if rgb_drawing(app) => app
+            .palette
+            .iter()
+            .map(|(n, c)| (n.clone(), in_rgb(*c)))
+            .collect(),
         Row::Main => app.palette.clone(),
         Row::Document => app
             .doc()
@@ -104,6 +111,20 @@ fn colors_of(app: &App, which: Row) -> Vec<(String, Color)> {
             .iter()
             .map(|c| (name_of(app, *c), *c))
             .collect(),
+    }
+}
+
+/// Whether the drawing's primary colour mode is RGB.
+fn rgb_drawing(app: &App) -> bool {
+    app.has_document()
+        && app.doc().metadata.primary_color_mode == tracedraw_core::document::PrimaryColorMode::Rgb
+}
+
+/// `c` as an RGB colour, a spot ink or registration as it is.
+fn in_rgb(c: Color) -> Color {
+    match c {
+        Color::Spot { .. } | Color::Registration => c,
+        _ => c.convert_to("RGB"),
     }
 }
 
@@ -1175,6 +1196,28 @@ mod tests {
         app.show_welcome = false;
         click(&mut app, x);
         assert_ne!(fill(&app), before);
+    }
+
+    /// An RGB drawing's palette holds the palette's colours as RGB (named
+    /// as before); a CMYK drawing's keeps them CMYK (#483).
+    #[test]
+    fn an_rgb_drawing_gets_an_rgb_palette() {
+        let mut app = App::headless();
+        app.palette = vec![
+            ("Cyan".into(), Color::cmyk_pct(100.0, 0.0, 0.0, 0.0)),
+            ("Mine".into(), Color::rgb8(10, 20, 30)),
+        ];
+        let cmyk = colors_of(&app, Row::Main);
+        assert_eq!(cmyk, app.palette);
+        let mut metadata = app.doc().metadata.clone();
+        metadata.primary_color_mode = tracedraw_core::document::PrimaryColorMode::Rgb;
+        app.run(tracedraw_core::Command::SetMetadata { metadata });
+        let rgb = colors_of(&app, Row::Main);
+        assert_eq!(rgb.len(), 2);
+        assert!(rgb.iter().all(|(_, c)| c.model_name() == "RGB"), "{rgb:?}");
+        assert_eq!(rgb[0].0, "Cyan");
+        assert_eq!(rgb[0].1.to_rgb8(), cmyk[0].1.to_rgb8());
+        assert_eq!(rgb[1].1, Color::rgb8(10, 20, 30));
     }
 
     #[test]

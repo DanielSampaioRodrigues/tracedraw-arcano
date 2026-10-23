@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour palette: in an RGB drawing the default palette shows and applies its colours as RGB (converted, names kept); it applied CMYK colours. CMYK drawings keep the CMYK palette (#483).
+
 - Welcome Screen: the colour palette shows pale and takes no clicks, and the dockers that work on a drawing say to open or create one, instead of showing and changing the selection of the drawing behind it (#482).
 
 - Toolbox: docked on a side it fits the window's height, its buttons and icons getting smaller (down to 22 px) instead of the tools running off the bottom and needing the scroll arrows (#494).
