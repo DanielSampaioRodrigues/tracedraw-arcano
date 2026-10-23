@@ -3017,7 +3017,7 @@ mod tests {
                     for kind in 0..4u8 {
                         app.transparency_default.set_kind(kind);
                         let t = app.transparency_default.clone();
-                        app.apply_transparency(&t);
+                        app.patch_transparency(&t, &[crate::mixed::TransparencyField::Kind]);
                         let (need, w) = overflow(&ctx, &mut app);
                         assert!(need <= 0.5, "{lang}, fill {k}, transparency {kind}: {need}");
                         assert!((w - empty).abs() < 1.0, "{lang}, fill {k}: {w}");

@@ -177,13 +177,20 @@ pub fn wrap_design(app: &mut App, m: &Mockup) {
 /// cloth's shading darkens the print.
 pub fn multiply_design(app: &mut App, m: &Mockup) {
     app.select(vec![m.design]);
-    app.apply_transparency(&TransparencySettings {
-        kind: 0,
-        amount: 10.0,
-        mask: Fill::None,
-        merge: MergeMode::Multiply,
-        target: 2,
-    });
+    app.patch_transparency(
+        &TransparencySettings {
+            kind: 0,
+            amount: 10.0,
+            mask: Fill::None,
+            merge: MergeMode::Multiply,
+            target: 2,
+        },
+        &[
+            crate::mixed::TransparencyField::Kind,
+            crate::mixed::TransparencyField::Amount,
+            crate::mixed::TransparencyField::Merge,
+        ],
+    );
 }
 
 /// Step 4: the design inside a frame of the shirt's shape, so nothing

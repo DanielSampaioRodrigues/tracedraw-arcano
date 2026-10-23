@@ -805,7 +805,8 @@ fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
 /// first and last colours, and for an elliptical or square fill its
 /// outline dashed (the frame's unit circle or square).
 fn draw_fountain_handles(app: &App, painter: &Painter) {
-    if app.tool != Tool::InteractiveFill {
+    // The Transparency tool shows its mask's nodes the same way (#448).
+    if app.tool != Tool::InteractiveFill && app.tool != Tool::Transparency {
         return;
     }
     let Some((_, f, b)) = app.selected_fountain() else {

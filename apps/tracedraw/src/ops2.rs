@@ -818,60 +818,6 @@ impl App {
         self.set_tool(crate::tools::Tool::Shape);
     }
 
-    /// Apply the Transparency tool settings to the selection. Uniform
-    /// transparency is plain opacity; the other kinds use a greyscale mask
-    /// (white opaque, black transparent) blended with the merge mode.
-    pub fn apply_transparency(&mut self, settings: &crate::effects_ui::TransparencySettings) {
-        let shapes = self.selection.clone();
-        if shapes.is_empty() {
-            return;
-        }
-        let mut cmds = Vec::new();
-        for id in &shapes {
-            let Some(s) = self.doc().find_shape(*id).cloned() else {
-                continue;
-            };
-            let mut effects: Vec<Effect> = s
-                .effects
-                .iter()
-                .filter(|e| !matches!(e, Effect::Transparency { .. }))
-                .cloned()
-                .collect();
-            if settings.kind != 0 {
-                effects.push(Effect::Transparency {
-                    mask: settings.mask.clone(),
-                    merge: settings.merge,
-                    target: settings.target,
-                });
-            } else {
-                // Uniform: a merge mode other than Normal needs a mask.
-                let (effect, _) = crate::mixed::uniform_transparency(
-                    settings.amount,
-                    settings.merge,
-                    settings.target,
-                );
-                effects.extend(effect);
-            }
-            cmds.push(Command::SetEffects {
-                shape: *id,
-                effects,
-            });
-        }
-        let opacity = if settings.kind == 0 {
-            crate::mixed::uniform_transparency(settings.amount, settings.merge, settings.target).1
-        } else {
-            1.0
-        };
-        cmds.push(Command::SetOpacity {
-            shapes: shapes.clone(),
-            opacity,
-        });
-        if self.engine.undo_label() == Some("Transparency") {
-            let _ = self.engine.undo();
-        }
-        let _ = self.engine.run_batch("Transparency", &cmds);
-    }
-
     /// Remove any transparency from the selection.
     pub fn clear_transparency(&mut self) {
         let shapes = self.selection.clone();
