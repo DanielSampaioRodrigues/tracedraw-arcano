@@ -154,7 +154,7 @@ it), applied when the slider is let go.
   It was 0.8 on macOS and in the browser and 12 / 13 on Windows, to make
   the whole interface as compact as the reference drawing program; what
   made that program compact was its small button size, which the bars
-  have now (Default Button Size, Small at first, see `toolbars.md`), so
+  offer (Default Button Size: Small; Medium at first, see `toolbars.md`), so
   the text and the menus stay at the system's size (#1, #229).
 - The size is a zoom factor over the monitor's own scaling, so text stays
   sharp. Values out of 50 % to 400 % count as 100 %.
