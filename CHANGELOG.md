@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Edit Fill > Uniform: the colour's model list and a field for each value (C, M, Y, K or R, G, B and so on), as in the colour picker; it showed only the swatch and the hex code (#468).
+
 - Colour palette: in an RGB drawing the default palette shows and applies its colours as RGB (converted, names kept); it applied CMYK colours. CMYK drawings keep the CMYK palette (#483).
 
 - Welcome Screen: the colour palette shows pale and takes no clicks, and the dockers that work on a drawing say to open or create one, instead of showing and changing the selection of the drawing behind it (#482).

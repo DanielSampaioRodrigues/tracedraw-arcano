@@ -24,7 +24,10 @@ Shortcut: F11 opens the Edit Fill dialog; G is the Interactive Fill tool.
 
 Edit Fill dialog (#361, `ui/edit_fill.rs`): the fill kinds as pictures
 across the top (none, uniform, gradient, pattern, texture, mesh), then
-the kind's settings. Uniform: the colour viewer and the colour picker.
+the kind's settings. Uniform: the colour viewer and the colour picker's swatch, then the
+colour's model (RGB, CMYK, HSB, HSL, Lab, Grayscale, YIQ; a choice converts
+the colour) and a slider with a field for each of its values, and the hex
+code (#468, `edit_fill::tests::a_uniform_fill_shows_its_model_and_values`).
 Gradient: on the left a 180 point preview of the fill drawn by the
 renderer on a checker, and the fill picker (the built-in gradients); on
 the right the type, the repeat (Default, Repeat and mirror, Repeat with
