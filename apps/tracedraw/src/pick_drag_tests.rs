@@ -4651,3 +4651,47 @@ fn ctrl_keeps_the_closing_handle_to_the_constrain_angle() {
     // Free, the handle would point at 198.4°; kept to 15° steps, 195°.
     assert!((angle - 195.0).abs() < 0.5, "{angle} {closing:?}");
 }
+
+/// While a text is edited, Space types a space and Ctrl+Space leaves the
+/// text for the Pick tool, the text kept as typed (autocorrect starting
+/// the sentence with a capital) (#478).
+#[test]
+fn ctrl_space_leaves_text_editing_for_the_pick_tool() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.start_text(Point::new(50.0, 50.0), None);
+    app.text_insert("ab");
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            key(egui::Key::Space, Modifiers::NONE),
+            Event::Text(" ".into()),
+        ],
+        Modifiers::NONE,
+    );
+    assert!(app.text_edit.is_some());
+    assert_eq!(
+        app.edit_spans()
+            .map(|s| tracedraw_core::document::spans_text(&s)),
+        Some("Ab ".into())
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            key(egui::Key::Space, Modifiers::CTRL),
+            Event::Text(" ".into()),
+        ],
+        Modifiers::CTRL,
+    );
+    assert!(app.text_edit.is_none(), "editing ended");
+    assert_eq!(app.tool, Tool::Pick);
+    let id = app.selection[0];
+    match &app.doc().find_shape(id).expect("text").kind {
+        ShapeKind::Text { spans, .. } => {
+            assert_eq!(tracedraw_core::document::spans_text(spans), "Ab ")
+        }
+        other => panic!("{other:?}"),
+    }
+}

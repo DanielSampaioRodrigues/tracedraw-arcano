@@ -243,6 +243,14 @@ impl App {
     /// Keyboard input while a text is being edited.
     pub fn text_keyboard(&mut self, ctx: &egui::Context) {
         use egui::{Event, Key};
+        // Ctrl+Space leaves the text for the Pick tool, as in the
+        // reference program (Space alone types a space), before any space
+        // the key would type (#478).
+        if ctx.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(Key::Space)) {
+            self.finish_text();
+            self.set_tool(crate::tools::Tool::Pick);
+            return;
+        }
         let events = ctx.input(|i| i.events.clone());
         // Alt let go after digits: the character they number (0 first: code
         // page 1252, as the Glyphs docker shows; else the Unicode number).

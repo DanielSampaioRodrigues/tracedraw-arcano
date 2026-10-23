@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: Ctrl+Space while editing text finishes the text and switches to the Pick tool, as in the reference program; it typed a space (#478).
+
 - Shape tool on text: in right-to-left text (Arabic, Hebrew) each character's node sits under its own letter; they were bunched at one end in left-to-right order (#474).
 
 - Pen: the dashed blue preview to the pointer is drawn over a solid white line, so it stays one line over dark objects and any colour, as in the reference program (#489).
