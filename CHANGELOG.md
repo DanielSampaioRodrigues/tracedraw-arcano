@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Tracing: Repeat Last Trace and Open Last Trace Settings in the Bitmaps menu, and a bitmap's right-click menu now lists them with Centerline Trace and Outline Trace and all their presets, not only Quick Trace (#452).
+
 - Glyphs docker: the font list is the property bar's, so a font can be found by typing its name, and the line above the glyphs shows the keystroke that types the glyph (Alt+0169 for ©), as in the reference program. While editing text, Alt and a number types the character on every system, not only on Windows (#447).
 
 - Transparency tool: a gradient transparency shows its nodes on the object, as Interactive Fill does: start, end, skew, nodes added on the line and the midpoint slider between two nodes to set where the blend is half way. A drag sets the gradient from where it began to where it ended, not only its angle (#448).

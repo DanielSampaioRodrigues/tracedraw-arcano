@@ -3754,6 +3754,7 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
         if ok_cancel(ui, close) {
             let settings = st.settings.clone();
             app.trace_bitmaps(&settings);
+            app.last_trace = Some((st.preset, settings));
         }
     });
 }
