@@ -4456,7 +4456,25 @@ impl App {
             copies.push(shape);
         }
         crate::textflow::relink_copies(&cb.shapes, &mut copies);
-        for shape in copies {
+        // Copies of connected objects still in the drawing come with
+        // their connectors (#476).
+        // Only objects of this drawing count (the same id and identity):
+        // another drawing's ids may name other objects here.
+        let originals: Vec<ShapeId> = cb
+            .shapes
+            .iter()
+            .zip(&copies)
+            .map(|(o, c)| {
+                let here = self.doc().find_shape(o.id).is_some_and(|s| s.uid == o.uid);
+                if here {
+                    o.id
+                } else {
+                    c.id
+                }
+            })
+            .collect();
+        let connectors = self.connector_copies(&originals, &copies);
+        for shape in copies.into_iter().chain(connectors) {
             cmds.push(Command::AddShape { layer, shape });
         }
         if let Err(e) = self.engine.run_batch("Paste", &cmds) {
@@ -4490,8 +4508,12 @@ impl App {
             copies.push(shape);
         }
         crate::textflow::relink_copies(&shapes, &mut copies);
+        // A copy of a connected object comes with its connector (#476).
+        let originals: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
+        let connectors = self.connector_copies(&originals, &copies);
         let cmds: Vec<Command> = copies
             .into_iter()
+            .chain(connectors)
             .map(|shape| Command::AddShape { layer, shape })
             .collect();
         if cmds.is_empty() {

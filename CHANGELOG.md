@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Connectors: a copy of a connected object (Duplicate, right-click drag copy, Repeat, Copy and Paste) comes with a copy of its connector, of the same kind and style, joining the object at the other end to the copy (#476).
+
 - Convert Outline to Object (Ctrl+Shift+Q) keeps a dashed outline's dashes: each dash becomes a closed shape and the gaps stay empty; the result was a solid band (#490).
 
 - Repeat (Ctrl+R) after a copy made with a right click during a drag is one undo step, as is that copy itself; the first Undo only moved the new copy back onto the original (#471).
