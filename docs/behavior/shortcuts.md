@@ -56,7 +56,7 @@ first Undo only moving the copy back onto the original, #471). Checks:
 | --- | --- |
 | Ctrl+G, Ctrl+U | Group, Ungroup |
 | Ctrl+L, Ctrl+K | Combine, Break apart |
-| Ctrl+Q, Ctrl+Shift+Q | Convert to curves, Convert outline to object |
+| Ctrl+Q, Ctrl+Shift+Q | Convert to curves, Convert outline to object (a dashed outline keeps its dashes, each a closed shape, the pattern in widths as drawn; #490, `tools2::tests::a_dashed_outline_becomes_one_shape_per_dash`) |
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |
 | Ctrl+PgUp, Ctrl+PgDn | Forward one, back one |

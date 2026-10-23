@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Convert Outline to Object (Ctrl+Shift+Q) keeps a dashed outline's dashes: each dash becomes a closed shape and the gaps stay empty; the result was a solid band (#490).
+
 - Repeat (Ctrl+R) after a copy made with a right click during a drag is one undo step, as is that copy itself; the first Undo only moved the new copy back onto the original (#471).
 
 - Export: WebP takes the quality setting; it was ignored. The files stay lossless, and below 100 their colours are first rounded to fewer levels (near-lossless), so a lower quality makes a smaller file (#544).
