@@ -2473,11 +2473,11 @@ impl App {
         matches!(self.drag, Drag::RulerOrigin { .. })
     }
 
-    /// The colour around the page (Options > Customization), white by
-    /// default.
+    /// The colour around the page (Options > Customization): the theme's
+    /// until one is picked (white included, #530).
     pub fn desktop_color(&self) -> egui::Color32 {
         // The default white desktop follows the theme.
-        if self.settings.desktop_rgb == [255, 255, 255] {
+        if !self.settings.desktop_custom && self.settings.desktop_rgb == [255, 255, 255] {
             return crate::theme::Tokens::desktop();
         }
         let [r, g, b] = self.settings.desktop_rgb;
@@ -7021,6 +7021,24 @@ mod tests {
     /// Tool settings, what the window shows, snapping and the dockers'
     /// choices come back the next time, through the preferences file
     /// (JSON, as in the browser's storage).
+    /// The desktop is the theme's colour until one is picked; white picked
+    /// is white (it stood for the theme's colour, so picking it did
+    /// nothing, #530); Reset goes back to the theme's.
+    #[test]
+    fn a_white_desktop_picked_is_white() {
+        let mut app = App::headless();
+        let theme = crate::theme::Tokens::desktop();
+        assert_eq!(app.desktop_color(), theme);
+        app.settings.desktop_rgb = [255, 255, 255];
+        app.settings.desktop_custom = true;
+        assert_eq!(app.desktop_color(), egui::Color32::WHITE);
+        app.settings.desktop_custom = false;
+        assert_eq!(app.desktop_color(), theme);
+        // A colour kept before the flag existed still shows.
+        app.settings.desktop_rgb = [200, 10, 10];
+        assert_eq!(app.desktop_color(), egui::Color32::from_rgb(200, 10, 10));
+    }
+
     /// Delete Page with a range deletes those pages in one undo step and
     /// never every page; the page after them is the current one (#500).
     #[test]
