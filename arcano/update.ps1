@@ -50,7 +50,12 @@ if ($LASTEXITCODE -ne 0) { git reset --hard $antes; Falha 'A compilacao falhou. 
 
 Passo 'Gerando o instalador'
 $iscc = Iscc
-if (-not $iscc) { Falha 'Inno Setup nao encontrado. Rode arcano\setup.ps1 primeiro.' }
+if (-not $iscc) {
+    Aviso 'Instalando o Inno Setup (gera o instalador)...'
+    winget install --id JRSoftware.InnoSetup -e --accept-source-agreements --accept-package-agreements
+    $iscc = Iscc
+}
+if (-not $iscc) { Falha 'Inno Setup nao encontrado. Instale em jrsoftware.org/isinfo.php e rode de novo.' }
 $ver = "$base-arcano.$n"
 & $iscc "/DVersion=$ver" "/DSrcDir=$Root\target\release" (Join-Path $Root 'packaging\windows\tracedraw.iss') | Out-Host
 $setup = Join-Path $Root "dist\tracedraw-$ver-windows-x86_64-setup.exe"
