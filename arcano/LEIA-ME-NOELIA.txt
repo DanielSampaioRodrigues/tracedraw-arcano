@@ -1,0 +1,33 @@
+TraceDraw - Edicao Editora Arcano 3
+===================================
+
+INSTALAR (uma vez so)
+1. Clique duas vezes no arquivo "tracedraw-...-setup.exe" desta pasta.
+2. Se o Windows perguntar se o app pode fazer alteracoes, clique em Sim.
+   Se aparecer "O Windows protegeu o computador", clique em
+   "Mais informacoes" e depois em "Executar assim mesmo".
+3. Siga o instalador (Avancar, Avancar, Instalar). Marque "Criar um icone
+   na Area de Trabalho".
+4. Pronto: abra o TraceDraw pelo icone verde.
+
+O programa ja abre em portugues. Se abrir em ingles:
+Tools > Options > Global > General > Language > Portugues (Brasil).
+
+ATUALIZAR
+Quando o Dan publicar uma versao nova:
+Ajuda > Atualizacoes > Instalar > Instalar e reiniciar.
+O TraceDraw pergunta se quer salvar os desenhos abertos, fecha, instala
+e abre de novo sozinho.
+
+ABRIR ARQUIVOS .CDR
+Arquivo > Abrir, ou clique com o botao direito no .cdr >
+"Abrir com" > TraceDraw.
+Para nao correr risco com trabalhos importantes: no comeco, salve uma
+copia (Arquivo > Salvar como) e confira antes de entregar. O programa
+ainda e novo e alguns arquivos .cdr podem abrir com diferencas.
+
+IA (gerar imagens)
+Ferramentas > Opcoes > IA > Servico: escolha "Google Gemini" ou
+"OpenAI", cole a chave e marque "Lembrar a chave neste computador".
+Depois use o botao "Gerar com IA" no alto da tela. Embaixo do modelo
+aparece quanto custa cada imagem.

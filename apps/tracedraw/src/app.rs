@@ -1183,6 +1183,9 @@ pub struct App {
     pub updates: crate::updates::Checker,
     /// Help > Updates, Install: an AppImage replaced in place.
     pub installer: crate::updates::Installer,
+    /// A downloaded installer to start once the window has closed
+    /// (Windows, Help > Updates; see `fork.rs`).
+    pub pending_installer: Option<std::path::PathBuf>,
     /// The running check was started at start, not asked for: only a
     /// newer release, not skipped, is shown.
     pub update_quiet: bool,
@@ -2149,6 +2152,7 @@ impl App {
             highlight_whats_new: false,
             updates: Default::default(),
             installer: Default::default(),
+            pending_installer: None,
             update_quiet: false,
             recent_thumbs: Default::default(),
             shelf: Default::default(),

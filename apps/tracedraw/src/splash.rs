@@ -47,6 +47,8 @@ pub struct Splash {
     /// True once the last frame (the "opening" status, a full bar) shows.
     last_frame_drawn: bool,
     icon: Option<TextureHandle>,
+    /// The publisher's mark (Arcano edition).
+    logo: Option<TextureHandle>,
     /// F8 was held while the splash showed: the editor asks whether to
     /// reset every preference.
     pub reset_requested: bool,
@@ -72,6 +74,7 @@ impl Splash {
                 .map(|n| n.to_string_lossy().into_owned()),
             last_frame_drawn: false,
             icon: brand::icon(ctx),
+            logo: brand::publisher_logo(ctx),
             reset_requested: false,
         }
     }
@@ -105,6 +108,7 @@ impl Splash {
             texts.then_some(status.as_str()),
             texts,
             self.icon.as_ref(),
+            self.logo.as_ref(),
         );
         if fonts_ready && elapsed >= MIN_TIME {
             if self.last_frame_drawn {
@@ -144,6 +148,7 @@ fn paint(
     status: Option<&str>,
     texts: bool,
     icon: Option<&TextureHandle>,
+    logo: Option<&TextureHandle>,
 ) {
     let rect = ui.max_rect();
     let painter = ui.painter_at(rect);
@@ -152,24 +157,47 @@ fn paint(
     brand::curves(&painter, rect, 1.35 * s, &[0.24, 0.62]);
 
     let pad = 44.0 * s;
-    let icon_rect = Rect::from_min_size(rect.min + Vec2::new(pad, 64.0 * s), Vec2::splat(96.0 * s));
+    // Arcano edition: the publisher's mark at the top, then the program's
+    // icon and name with the edition underneath.
+    let logo_h = 54.0 * s;
+    let logo_rect = Rect::from_min_size(
+        rect.min + Vec2::new(pad, 40.0 * s),
+        Vec2::new(logo_h * brand::PUBLISHER_LOGO_ASPECT, logo_h),
+    );
+    brand::paint_icon(&painter, logo, logo_rect);
+    let icon_rect = Rect::from_min_size(
+        rect.min + Vec2::new(pad, 140.0 * s),
+        Vec2::splat(72.0 * s),
+    );
     brand::paint_icon(&painter, icon, icon_rect);
-    let name = brand::name_galley(&painter, 46.0 * s);
-    let tagline = texts.then(|| {
+    let name = brand::name_galley(&painter, 38.0 * s);
+    let edition = texts.then(|| {
         painter.layout_no_wrap(
-            tr("dialog.about_tagline"),
-            FontId::proportional(17.0 * s),
-            brand::TAGLINE,
+            tr("splash.edition"),
+            FontId::proportional(16.0 * s),
+            brand::NAME_ACCENT,
         )
     });
-    let block_h = name.size().y + tagline.as_ref().map_or(0.0, |g| g.size().y + 2.0 * s);
-    let left = icon_rect.right() + 24.0 * s;
+    let block_h = name.size().y + edition.as_ref().map_or(0.0, |g| g.size().y + 2.0 * s);
+    let left = icon_rect.right() + 20.0 * s;
     let mut y = icon_rect.center().y - block_h / 2.0;
     let name_h = name.size().y;
     painter.galley(Pos2::new(left, y), name, Color32::WHITE);
     y += name_h + 2.0 * s;
-    if let Some(g) = tagline {
-        painter.galley(Pos2::new(left + 2.0 * s, y), g, brand::TAGLINE);
+    if let Some(g) = edition {
+        painter.galley(Pos2::new(left + 2.0 * s, y), g, brand::NAME_ACCENT);
+    }
+    if texts {
+        let g = painter.layout_no_wrap(
+            tr("dialog.about_tagline"),
+            FontId::proportional(14.0 * s),
+            brand::TAGLINE,
+        );
+        painter.galley(
+            Pos2::new(pad, icon_rect.bottom() + 16.0 * s),
+            g,
+            brand::TAGLINE,
+        );
     }
 
     // A darker strip along the bottom for the status, the progress bar
@@ -182,7 +210,7 @@ fn paint(
     painter.rect_filled(
         strip,
         CornerRadius::ZERO,
-        Color32::from_rgba_unmultiplied(0x0A, 0x12, 0x22, 225),
+        brand::STRIP,
     );
     painter.hline(
         strip.x_range(),
@@ -228,7 +256,7 @@ fn paint(
         painter.galley(Pos2::new(track.left(), foot_y), g, brand::FOOTNOTE);
     }
     let v = painter.layout_no_wrap(
-        format!("v{}", env!("CARGO_PKG_VERSION")),
+        format!("v{}", crate::fork::version()),
         small,
         brand::FOOTNOTE,
     );

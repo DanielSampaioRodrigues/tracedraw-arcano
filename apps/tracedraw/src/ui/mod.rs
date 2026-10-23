@@ -268,6 +268,13 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             app.request_exit();
         }
         if app.quit_now {
+            // An update chosen in Help > Updates installs once the
+            // drawings are saved or let go.
+            if let Some(setup) = app.pending_installer.take() {
+                if let Err(e) = crate::fork::run_installer(&setup) {
+                    log::warn!("update installer: {e}");
+                }
+            }
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }

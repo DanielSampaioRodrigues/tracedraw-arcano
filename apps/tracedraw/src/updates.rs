@@ -14,9 +14,13 @@ use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 /// The project's latest release, as GitHub describes it.
-pub const LATEST_URL: &str = "https://api.github.com/repos/igtoth/tracedraw/releases/latest";
+pub const LATEST_URL: &str = concat!(
+    "https://api.github.com/repos/",
+    fork_repo!(),
+    "/releases/latest"
+);
 /// The release list, for when no download fits this system.
-pub const RELEASES_PAGE: &str = "https://github.com/igtoth/tracedraw/releases";
+pub const RELEASES_PAGE: &str = concat!("https://github.com/", fork_repo!(), "/releases");
 /// How often the check at start runs, seconds.
 pub const DAILY: u64 = 24 * 60 * 60;
 
@@ -31,6 +35,9 @@ pub struct Release {
     /// The release's AppImage with its digest (Linux), for installing in
     /// place.
     pub appimage: Option<Package>,
+    /// The release's installer with its digest (Windows), for installing
+    /// from the dialog.
+    pub setup: Option<Package>,
 }
 
 /// A release file that can be installed in place.
@@ -88,12 +95,27 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-/// Whether `tag` names a version later than `current`.
+/// Whether `tag` names a version later than `current`: a later upstream
+/// version, or the same one with a later edition build
+/// (`+arcano.<n>`, see `fork.rs`).
 pub fn is_newer(tag: &str, current: &str) -> bool {
+    use crate::fork::build_of;
     match (parse_version(tag), parse_version(current)) {
-        (Some(a), Some(b)) => a > b,
+        (Some(a), Some(b)) => (a, build_of(tag)) > (b, build_of(current)),
         _ => false,
     }
+}
+
+/// A release file with a usable SHA-256 digest, for installing in place.
+fn package(a: &Asset) -> Option<Package> {
+    let hex = a.digest.as_deref()?.strip_prefix("sha256:")?;
+    (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()) && a.size > 0).then(|| {
+        Package {
+            url: a.browser_download_url.clone(),
+            sha256: hex.to_ascii_lowercase(),
+            size: a.size,
+        }
+    })
 }
 
 /// The asset names that fit a system (`os` as `std::env::consts::OS`,
@@ -146,11 +168,20 @@ pub fn parse_latest(
     } else {
         None
     };
+    let setup = if os == "windows" {
+        r.assets
+            .iter()
+            .find(|a| a.name.ends_with("-setup.exe"))
+            .and_then(package)
+    } else {
+        None
+    };
     Ok(Some(Release {
         version: r.tag_name.trim_start_matches(['v', 'V']).to_string(),
         page: r.html_url,
         download,
         appimage,
+        setup,
     }))
 }
 
@@ -187,7 +218,7 @@ impl Checker {
                 };
                 let next = match crate::net::send(req).await {
                     Ok(r) if r.status == 200 => {
-                        match parse_latest(&r.body, env!("CARGO_PKG_VERSION"), "web", "wasm32") {
+                        match parse_latest(&r.body, &crate::fork::version(), "web", "wasm32") {
                             Ok(Some(r)) => UpdateState::Available(r),
                             Ok(None) => UpdateState::Latest,
                             Err(e) => UpdateState::Failed(e),
@@ -212,7 +243,7 @@ impl Checker {
                 let result = fetch().and_then(|json| {
                     parse_latest(
                         &json,
-                        env!("CARGO_PKG_VERSION"),
+                        &crate::fork::version(),
                         std::env::consts::OS,
                         std::env::consts::ARCH,
                     )
@@ -241,6 +272,24 @@ pub fn appimage_target() -> Option<std::path::PathBuf> {
     }
     let p = std::path::PathBuf::from(std::env::var_os("APPIMAGE")?);
     p.is_file().then_some(p)
+}
+
+/// Where a downloaded Windows installer goes: a file in the temporary
+/// folder (made empty when missing, so it can be replaced in place).
+pub fn setup_target() -> Option<std::path::PathBuf> {
+    if std::env::consts::OS != "windows" || crate::files::WEB {
+        return None;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let p = std::env::temp_dir().join("tracedraw-arcano-update-setup.exe");
+        if !p.is_file() {
+            std::fs::File::create(&p).ok()?;
+        }
+        Some(p)
+    }
+    #[cfg(target_arch = "wasm32")]
+    None
 }
 
 /// Where an in-place install stands.

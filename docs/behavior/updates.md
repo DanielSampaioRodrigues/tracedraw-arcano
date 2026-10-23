@@ -1,5 +1,23 @@
 # Updates
 
+Arcano edition: the check asks the edition's own repository
+(`fork_repo!` in `fork.rs`), and versions carry the edition's build
+number (`0.13.0+arcano.30`; `fork::version`), so a rebuild on newer
+upstream work is newer than the build before it at the same upstream
+version (`updates::is_newer` compares the version, then the build). On
+Windows a release's `-setup.exe` with a SHA-256 digest is offered as
+Install: it is downloaded to the temporary folder, checked like the
+AppImage, and then "Install and restart" closes TraceDraw (asking about
+unsaved drawings first) and runs the installer quietly (`/SILENT /SP-
+/CLOSEAPPLICATIONS /NORESTART`), which starts the new version. On the
+machine that builds the edition (`settings.fork_source`, or the source
+folder of a program run from its `target` folder, holding
+`arcano/update.ps1`), "This is the latest version" also offers "Bring in
+the project's new work and rebuild", which runs that script in a console
+of its own: it merges the upstream project, tests, builds, makes the
+installer, publishes it as a release of the edition's repository and
+installs it.
+
 Desktop only (the browser build is always the latest; there Help >
 Updates opens the releases page).
 

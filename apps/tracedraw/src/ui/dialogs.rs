@@ -1342,9 +1342,14 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Updates => {
             use crate::updates::UpdateState;
-            let version = env!("CARGO_PKG_VERSION");
+            let version_owned = crate::fork::version();
+            let version = version_owned.as_str();
             let close_label = tr("dialog.close");
             let install = app.installer.get();
+            // The machine that builds the edition can bring in the
+            // upstream work and rebuild (see `fork.rs`).
+            let source_script = crate::fork::source_script(&app.settings.fork_source);
+            let source_label = tr("updates.from_source");
             match app.updates.get() {
                 UpdateState::Available(r) if install != crate::updates::InstallState::Idle => {
                     use crate::updates::InstallState;
@@ -1364,6 +1369,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                 vec![close_label.clone()],
                             )
                         }
+                        InstallState::Installed(v) if r.setup.is_some() => (
+                            trf("updates.installer_ready", &[("new", v)]),
+                            vec![tr("updates.run_installer"), close_label.clone()],
+                        ),
                         InstallState::Installed(v) => (
                             trf("updates.installed", &[("new", v)]),
                             vec![close_label.clone()],
@@ -1386,6 +1395,14 @@ pub fn show(app: &mut App, ctx: &Context) {
                             app.open_url(&url);
                             close = true;
                         }
+                        Some(0)
+                            if matches!(install, InstallState::Installed(_))
+                                && r.setup.is_some() =>
+                        {
+                            app.pending_installer = crate::updates::setup_target();
+                            app.request_exit();
+                            close = true;
+                        }
                         Some(_) => close = true,
                         None => {}
                     }
@@ -1405,15 +1422,23 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 UpdateState::Latest => {
                     let text = trf("updates.latest", &[("version", version)]);
-                    if crate::ui::chrome::message_box(
+                    let mut labels: Vec<&str> = Vec::new();
+                    if source_script.is_some() {
+                        labels.push(&source_label);
+                    }
+                    labels.push(&close_label);
+                    match crate::ui::chrome::message_box(
                         ctx,
                         crate::ui::chrome::MessageIcon::Info,
                         &text,
-                        &[&close_label],
-                    )
-                    .is_some()
-                    {
-                        close = true;
+                        &labels,
+                    ) {
+                        Some(0) if source_script.is_some() => {
+                            app.run_source_update(source_script.as_deref());
+                            close = true;
+                        }
+                        Some(_) => close = true,
+                        None => {}
                     }
                 }
                 UpdateState::Available(r) => {
@@ -1426,9 +1451,12 @@ pub fn show(app: &mut App, ctx: &Context) {
                         tr("updates.notes"),
                         tr("updates.skip"),
                     );
-                    // A running AppImage can be replaced in place.
+                    // A running AppImage can be replaced in place; a
+                    // Windows installer is downloaded and run on closing.
                     let target = crate::updates::appimage_target();
-                    let in_place = r.appimage.clone().zip(target);
+                    let in_place = r.appimage.clone().zip(target).or_else(|| {
+                        r.setup.clone().zip(crate::updates::setup_target())
+                    });
                     let install_label = tr("updates.install");
                     let mut labels: Vec<&str> = Vec::new();
                     if in_place.is_some() {
@@ -4989,6 +5017,7 @@ mod tests {
                 sha256: "0".repeat(64),
                 size: 3 << 20,
             }),
+            setup: None,
         };
         let checks = [
             UpdateState::Idle,

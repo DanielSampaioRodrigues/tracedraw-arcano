@@ -3,3 +3,5 @@
 .DS_Store
 /corpus/
 /site
+/dist
+/arcano/instalador

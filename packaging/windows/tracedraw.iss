@@ -9,12 +9,17 @@
 #endif
 
 [Setup]
-AppId={{7E6E3B5C-4C1E-4F7B-9D7A-2B9D5C1A0E11}
+; Arcano edition: an AppId of its own, so it never mixes with an install
+; of the upstream release.
+AppId={{3A9F2C71-5B8E-4D06-A1C4-7E2B90D3F5A8}
 AppName=TraceDraw
+AppVerName=TraceDraw {#Version} (Edicao Editora Arcano 3)
 AppVersion={#Version}
-AppPublisher=Ighor Toth
+AppPublisher=Ighor Toth; Edicao Editora Arcano 3
 AppCopyright=Copyright (c) 2026 Ighor Toth and the TraceDraw contributors
 AppPublisherURL=https://github.com/igtoth/tracedraw
+CloseApplications=yes
+RestartApplications=no
 DefaultDirName={autopf}\TraceDraw
 DefaultGroupName=TraceDraw
 UninstallDisplayIcon={app}\tracedraw.exe
@@ -63,6 +68,8 @@ Root: HKA; Subkey: "{code:PathRegKey}"; ValueType: expandsz; ValueName: "Path"; 
 
 [Run]
 Filename: "{app}\tracedraw.exe"; Description: "{cm:LaunchProgram,TraceDraw}"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
+; An update installed quietly from Help > Updates starts the new version.
+Filename: "{app}\tracedraw.exe"; Flags: nowait shellexec runasoriginaluser; Check: WizardSilent
 
 [Code]
 function PathRegKey(Param: string): string;

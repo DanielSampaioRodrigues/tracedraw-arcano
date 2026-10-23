@@ -10,6 +10,8 @@
 
 //! TraceDraw desktop app: a thin egui shell over the engine.
 
+#[macro_use]
+mod fork;
 mod ai;
 mod ai_image;
 mod anchors;

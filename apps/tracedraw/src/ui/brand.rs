@@ -6,14 +6,36 @@ use egui::epaint::CubicBezierShape;
 use egui::{Color32, Context, CornerRadius, Painter, Pos2, Rect, Stroke, TextureHandle, Vec2};
 use std::sync::Arc;
 
-pub const TOP_LEFT: Color32 = Color32::from_rgb(0x24, 0x44, 0x75);
-pub const TOP_RIGHT: Color32 = Color32::from_rgb(0x1A, 0x31, 0x58);
-pub const BOTTOM: Color32 = Color32::from_rgb(0x0E, 0x19, 0x2D);
-pub const CURVE: Color32 = Color32::from_rgb(0x5C, 0xAE, 0xFF);
-pub const NAME_ACCENT: Color32 = Color32::from_rgb(0x7F, 0xC3, 0xFF);
-pub const TAGLINE: Color32 = Color32::from_rgb(0xC9, 0xD7, 0xEC);
+// Arcano edition: the graphite of the publisher's mark and the green of
+// this build's icon, in place of the project's blues.
+pub const TOP_LEFT: Color32 = Color32::from_rgb(0x2E, 0x2C, 0x2C);
+pub const TOP_RIGHT: Color32 = Color32::from_rgb(0x20, 0x1E, 0x1E);
+pub const BOTTOM: Color32 = Color32::from_rgb(0x14, 0x13, 0x13);
+pub const CURVE: Color32 = Color32::from_rgb(0x27, 0xCB, 0x5D);
+pub const NAME_ACCENT: Color32 = Color32::from_rgb(0x5F, 0xE0, 0x8A);
+pub const TAGLINE: Color32 = Color32::from_rgb(0xDD, 0xDA, 0xD6);
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-pub const FOOTNOTE: Color32 = Color32::from_rgb(0x8F, 0xA3, 0xC0);
+pub const FOOTNOTE: Color32 = Color32::from_rgb(0xA2, 0x9D, 0x98);
+/// The strip behind the splash screen's progress bar.
+pub const STRIP: Color32 = Color32::from_rgba_premultiplied(0x0D, 0x0C, 0x0C, 225);
+
+/// The publisher's mark for dark backgrounds, decoded once per session.
+pub fn publisher_logo(ctx: &Context) -> Option<TextureHandle> {
+    let id = egui::Id::new("publisher_logo_texture");
+    if let Some(t) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
+        return Some(t);
+    }
+    let bytes = include_bytes!("../../../../assets/arcano/logo-fundo-escuro.png");
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let color = egui::ColorImage::from_rgba_unmultiplied([w, h], img.as_raw());
+    let tex = ctx.load_texture("publisher_logo", color, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
+    Some(tex)
+}
+
+/// The width over the height of the publisher's mark.
+pub const PUBLISHER_LOGO_ASPECT: f32 = 920.0 / 256.0;
 
 /// The 128 px application icon, decoded once per session.
 pub fn icon(ctx: &Context) -> Option<TextureHandle> {
