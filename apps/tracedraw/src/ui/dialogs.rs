@@ -1009,6 +1009,10 @@ pub fn show(app: &mut App, ctx: &Context) {
             app.dialog = *back;
         }
     }
+    // The Edit Fill dialog closed some other way (Esc): its preview goes.
+    if app.fill_preview && !matches!(app.dialog, Dialog::EditFill(_)) {
+        app.end_edit_fill_preview();
+    }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
     if !matches!(dialog, Dialog::None) {
@@ -2027,6 +2031,9 @@ pub fn show(app: &mut App, ctx: &Context) {
     // A dialog's close button closes it like Esc.
     if crate::ui::chrome::take_close_request(ctx) {
         close = true;
+    }
+    if close {
+        app.end_edit_fill_preview();
     }
     // A closing dialog may have opened the next one (the next unsaved
     // drawing's question); keep that.

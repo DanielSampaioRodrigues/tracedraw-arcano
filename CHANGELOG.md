@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Edit Fill (F11): the selection shows the fill as you change it, as in the reference program, so a gradient can be judged on the object. OK keeps it as one undo step, and Cancel or Esc puts the old fill back (#436).
+
 - Less lag on heavy drawings (#345): the page is drawn on all the processor cores at once, and a page that takes long to draw is drawn on a thread of its own while the last picture stays on screen, so the window keeps answering. Each undo step keeps one copy of the drawing instead of two, objects are numbered with a faster table, snapping finds crossings without solving every pair of curves, and the bars, the cursor and the hover marks measure a large selection once instead of every frame. On a page of 5000 curves, moving an object went from 126 ms to 18 ms a frame, and hovering over all of them selected from 82 ms to 20 ms.
 
 - Toolbox: a right click on a tool button or on its empty part opens the bars' menu (Customize, button size, the bars), as on the other bars; it used to open the flyout or nothing.

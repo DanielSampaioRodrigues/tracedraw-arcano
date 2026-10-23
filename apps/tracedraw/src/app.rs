@@ -995,6 +995,9 @@ pub struct App {
     /// The visual bounds of objects with live effects, for the document
     /// revision they were measured at (see [`App::visual_bounds`]).
     pub visual_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, Rect>)>,
+    /// The Edit Fill dialog's fill is shown on the selection as an engine
+    /// preview (#436).
+    pub fill_preview: bool,
     /// The selected objects in page space, for the drawing, its revision
     /// and the selection they were gathered for (see
     /// [`App::selected_rc`]).
@@ -2032,6 +2035,7 @@ impl App {
             palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
+            fill_preview: false,
             selected_cache: std::cell::RefCell::new(None),
             view_anchor: None,
             window_layout: Default::default(),
