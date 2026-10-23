@@ -76,7 +76,7 @@ fn banner(ui: &mut Ui, icon: Option<&TextureHandle>) {
     let alpha = painter.layout_no_wrap(
         tr("dialog.alpha"),
         FontId::proportional(11.5),
-        Color32::from_rgb(0x2A, 0x1A, 0x00),
+        Color32::WHITE,
     );
     let badge = Rect::from_min_size(
         Pos2::new(chip_rect.right() + 8.0, chip_rect.top()),
@@ -85,11 +85,11 @@ fn banner(ui: &mut Ui, icon: Option<&TextureHandle>) {
     painter.rect(
         badge,
         CornerRadius::same(10),
-        Color32::from_rgb(0xF5, 0xB0, 0x2E),
+        Color32::from_rgb(0x2E, 0xA0, 0x43),
         Stroke::NONE,
         egui::StrokeKind::Inside,
     );
-    painter.galley(badge.min + Vec2::new(8.0, 3.0), alpha, Color32::BLACK);
+    painter.galley(badge.min + Vec2::new(8.0, 3.0), alpha, Color32::WHITE);
     ui.interact(badge, ui.id().with("about_alpha"), Sense::hover())
         .on_hover_text(tr("dialog.alpha_tip"));
 }

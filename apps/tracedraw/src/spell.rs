@@ -40,9 +40,24 @@ struct Loaded {
     size: usize,
 }
 
-fn state() -> &'static RwLock<(SpellConfig, Option<Arc<Loaded>>)> {
-    static STATE: OnceLock<RwLock<(SpellConfig, Option<Arc<Loaded>>)>> = OnceLock::new();
+type State = RwLock<(SpellConfig, Option<Arc<Loaded>>)>;
+
+#[cfg(not(test))]
+fn state() -> &'static State {
+    static STATE: OnceLock<State> = OnceLock::new();
     STATE.get_or_init(|| RwLock::new((SpellConfig::default(), None)))
+}
+
+/// In tests each thread (each test) has dictionaries of its own: an app
+/// made by another test configures them from its settings, and shared
+/// they changed under a test checking a folder of its own.
+#[cfg(test)]
+fn state() -> &'static State {
+    thread_local! {
+        static STATE: &'static State =
+            Box::leak(Box::new(RwLock::new((SpellConfig::default(), None))));
+    }
+    STATE.with(|s| *s)
 }
 
 /// Use the dictionaries `cfg` names from now on (read again on the next

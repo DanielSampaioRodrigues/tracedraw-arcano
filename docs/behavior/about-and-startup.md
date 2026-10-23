@@ -12,7 +12,7 @@ button) 480 points wide:
   two handles along the tangent, round handle ends), the 76 px
   application icon, the name in the bold face at 29 px ("Trace" white,
   "Draw" `#7FC3FF`), the tagline and the version in a rounded chip,
-  then an amber ALPHA badge whose tooltip says the program is at an
+  then a green ALPHA badge whose tooltip says the program is at an
   early stage: most tools work, some features are missing or
   incomplete, keep copies of important files, report problems on
   GitHub.
