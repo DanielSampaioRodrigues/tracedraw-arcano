@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Symmetry editing as in the reference program: a click or a marquee picks one of the objects inside (not the whole symmetry, not a copy), and the bar and the lines stay while you work inside it. The mirror lines can be dragged to move them, and a click on a line shows handles that turn them. The bar has icons, spin fields, Show full preview (copies as red outlines when off) and Show symmetry lines.
+- Number fields everywhere (bars, dockers, dialogs, options) have spin arrows and step with the mouse wheel; Ctrl takes a tenth of a step and Shift ten steps.
+
 - Toolbars: the Default Button Size starts at Medium on a new installation; a size already chosen is kept.
 
 - Shape tool on a B-spline: control points can be chosen by a click, Shift+click or a marquee, as nodes are; Delete removes only the chosen points (it deleted the whole curve), and dragging a chosen point moves all the chosen ones.

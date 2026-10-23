@@ -1485,7 +1485,7 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [70.0, ROW],
-                egui::DragValue::new(&mut angle)
+                crate::ui::field::NumField::new(&mut angle)
                     .speed(1.0)
                     .max_decimals(2)
                     .suffix("°"),

@@ -3971,6 +3971,8 @@ github.conflict = "यहाँ खोलने के बाद GitHub पर �
 github.exists = "उस पाथ पर पहले से एक फ़ाइल है। पहले उसे खोलें या दूसरा पाथ चुनें।"
 menu.object.symmetry_break = "सिमेट्री लिंक तोड़ें"
 symmetry.finish = "समाप्त"
+symmetry.full_preview = "पूरा पूर्वावलोकन दिखाएँ: प्रतियाँ पूरी बनाई जाती हैं (बंद: रूपरेखा)" # mt
+symmetry.show_lines = "समरूपता रेखाएँ दिखाएँ" # mt
 status.editing_symmetry = "सिमेट्री संपादन: मूल (लाल रूपरेखा) बदलें; प्रतियाँ साथ चलती हैं। समाप्त इसे बंद करता है।"
 
 options.center_dialogs = "डायलॉग बॉक्स को बीच में रखें"

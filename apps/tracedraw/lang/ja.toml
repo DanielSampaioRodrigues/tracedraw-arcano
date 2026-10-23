@@ -3971,6 +3971,8 @@ github.conflict = "ここで開いた後に GitHub 上でファイルが変更�
 github.exists = "そのパスにはすでにファイルがあります。先に開くか、別のパスを選んでください。"
 menu.object.symmetry_break = "対称のリンクを解除"
 symmetry.finish = "終了"
+symmetry.full_preview = "完全プレビューを表示: コピーを完全に描画 (オフ: アウトライン)" # mt
+symmetry.show_lines = "対称線を表示" # mt
 status.editing_symmetry = "対称を編集中: 元のオブジェクト (赤い輪郭) を変更すると複製が追従します。終了で終わります。"
 
 options.center_dialogs = "ダイアログ ボックスを中央に表示"

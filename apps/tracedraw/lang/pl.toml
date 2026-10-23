@@ -3971,6 +3971,8 @@ github.conflict = "Plik zmienił się w GitHub, odkąd go tu otwarto. Zapisz go 
 github.exists = "Pod tą ścieżką jest już plik. Najpierw go otwórz lub wybierz inną ścieżkę."
 menu.object.symmetry_break = "Przerwij połączenie symetrii"
 symmetry.finish = "Zakończ"
+symmetry.full_preview = "Pokaż pełny podgląd: kopie rysowane w całości (wyłączone: kontury)" # mt
+symmetry.show_lines = "Pokaż linie symetrii" # mt
 status.editing_symmetry = "Edycja symetrii: zmieniaj oryginał (czerwony kontur); kopie podążają. Zakończ kończy."
 
 options.center_dialogs = "Wyśrodkuj okna dialogowe"

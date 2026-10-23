@@ -3971,6 +3971,8 @@ github.conflict = "此檔案在這裡開啟後已在 GitHub 上變更。請儲�
 github.exists = "該路徑已有檔案。請先開啟它，或選擇其他路徑。"
 menu.object.symmetry_break = "中斷對稱連結"
 symmetry.finish = "完成"
+symmetry.full_preview = "顯示完整預覽：完整繪製副本（關閉：外框）" # mt
+symmetry.show_lines = "顯示對稱線" # mt
 status.editing_symmetry = "正在編輯對稱：修改原始物件（紅色輪廓），副本隨之變化。按「完成」結束。"
 
 options.center_dialogs = "對話方塊置中"

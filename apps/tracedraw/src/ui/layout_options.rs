@@ -308,7 +308,7 @@ fn unit_field(ui: &mut Ui, units: Units, unit_mm: f64, mm: f64, speed: f64) -> O
     let mut v = mm / unit_mm;
     let r = ui.add_sized(
         [110.0, 20.0],
-        egui::DragValue::new(&mut v)
+        crate::ui::field::NumField::new(&mut v)
             .speed(speed)
             .max_decimals(4)
             .suffix(format!(" {}", units.short())),
@@ -386,7 +386,10 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
         ui.add_space(16.0);
         let mut n = meta.rulers.tick_divisions;
         if ui
-            .add_sized([70.0, 20.0], egui::DragValue::new(&mut n).range(1..=100))
+            .add_sized(
+                [70.0, 20.0],
+                crate::ui::field::NumField::new(&mut n).range(1..=100),
+            )
             .changed()
         {
             meta.rulers.tick_divisions = n;
@@ -481,7 +484,7 @@ fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
                 if ui
                     .add_sized(
                         [90.0, 20.0],
-                        egui::DragValue::new(&mut v)
+                        crate::ui::field::NumField::new(&mut v)
                             .speed(0.1)
                             .max_decimals(4)
                             .range(0.0001..=1_000_000.0),
@@ -503,7 +506,7 @@ fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
                 if ui
                     .add_sized(
                         [90.0, 20.0],
-                        egui::DragValue::new(&mut v)
+                        crate::ui::field::NumField::new(&mut v)
                             .speed(0.1)
                             .max_decimals(4)
                             .range(0.0001..=1_000_000_000.0),
@@ -555,7 +558,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                     if ui
                         .add_sized(
                             [110.0, 20.0],
-                            egui::DragValue::new(&mut f)
+                            crate::ui::field::NumField::new(&mut f)
                                 .speed(0.05)
                                 .max_decimals(4)
                                 .range(0.0001..=10_000.0),
@@ -618,7 +621,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
             if ui
                 .add_sized(
                     [110.0, 20.0],
-                    egui::DragValue::new(&mut pt)
+                    crate::ui::field::NumField::new(&mut pt)
                         .speed(0.1)
                         .max_decimals(2)
                         .range(0.1..=1000.0)
@@ -738,7 +741,7 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
                     row_label(ui, "guides.number_of_columns");
                     ui.add_sized(
                         [70.0, 20.0],
-                        egui::DragValue::new(&mut form.column_count).range(1..=100),
+                        crate::ui::field::NumField::new(&mut form.column_count).range(1..=100),
                     );
                     ui.end_row();
                     row_label(ui, "guides.distance_between");
@@ -757,13 +760,13 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
                     row_label(ui, "guides.rows");
                     ui.add_sized(
                         [70.0, 20.0],
-                        egui::DragValue::new(&mut form.grid_rows).range(1..=200),
+                        crate::ui::field::NumField::new(&mut form.grid_rows).range(1..=200),
                     );
                     ui.end_row();
                     row_label(ui, "guides.columns_count");
                     ui.add_sized(
                         [70.0, 20.0],
-                        egui::DragValue::new(&mut form.grid_columns).range(1..=200),
+                        crate::ui::field::NumField::new(&mut form.grid_columns).range(1..=200),
                     );
                     ui.end_row();
                 });
@@ -969,7 +972,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 if ui
                     .add_sized(
                         [110.0, 20.0],
-                        egui::DragValue::new(&mut form.angle)
+                        crate::ui::field::NumField::new(&mut form.angle)
                             .speed(1.0)
                             .max_decimals(2)
                             .suffix("°"),

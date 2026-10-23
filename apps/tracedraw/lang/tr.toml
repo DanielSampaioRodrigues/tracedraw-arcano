@@ -3971,6 +3971,8 @@ github.conflict = "Dosya burada açıldıktan sonra GitHub'da değişti. Başka 
 github.exists = "Bu yolda zaten bir dosya var. Önce onu açın ya da başka bir yol seçin."
 menu.object.symmetry_break = "Simetri bağını kopar"
 symmetry.finish = "Bitir"
+symmetry.full_preview = "Tam önizlemeyi göster: kopyalar tam çizilir (kapalı: dış hatlar)" # mt
+symmetry.show_lines = "Simetri çizgilerini göster" # mt
 status.editing_symmetry = "Simetri düzenleniyor: aslını (kırmızı çerçeveli) değiştirin; kopyalar izler. Bitir sonlandırır."
 
 options.center_dialogs = "İletişim kutularını ortala"

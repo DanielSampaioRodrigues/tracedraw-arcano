@@ -307,13 +307,34 @@ impl App {
                 _ => (!skip(f.id) && self.shape_hit(&f, p, tol)).then_some(f.id),
             };
         }
-        self.page_layers()
+        // Editing a symmetry group: its members are picked, not the
+        // group, and never through a copy.
+        let members = self.symmetry_members_on_page();
+        for s in self
+            .page_layers()
             .into_iter()
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
-            .find(|s| !s.locked && s.visible && !skip(s.id) && self.shape_hit(s, p, tol))
-            .map(|s| s.id)
+            .filter(|s| !s.locked && s.visible)
+        {
+            if let Some((g, inside)) = &members {
+                if s.id == *g {
+                    if let Some(c) = inside
+                        .iter()
+                        .rev()
+                        .find(|c| !skip(c.id) && self.shape_hit(c, p, tol))
+                    {
+                        return Some(c.id);
+                    }
+                    continue;
+                }
+            }
+            if !skip(s.id) && self.shape_hit(s, p, tol) {
+                return Some(s.id);
+            }
+        }
+        None
     }
 
     /// `s` (in page space) is under `p` within `tol` page units: text,
@@ -529,6 +550,9 @@ impl App {
         };
         let before = self.selection.clone();
         let mut ids = before.clone();
+        // Editing a symmetry group: its members are taken, not the group.
+        let members = self.symmetry_members_on_page();
+        let mut candidates: Vec<tracedraw_core::Shape> = Vec::new();
         for s in self
             .page_layers()
             .into_iter()
@@ -536,6 +560,12 @@ impl App {
             .flat_map(|l| &l.shapes)
             .filter(|s| s.visible && !s.locked)
         {
+            match &members {
+                Some((g, inside)) if s.id == *g => candidates.extend(inside.iter().cloned()),
+                _ => candidates.push(s.clone()),
+            }
+        }
+        for s in &candidates {
             if !crate::select_region::takes(region, s, touching, &fill_counts) {
                 continue;
             }
@@ -1140,6 +1170,10 @@ impl App {
         }
         if response.drag_started_by(PointerButton::Primary) {
             self.drag_copy = false;
+            // Editing a symmetry: its mirror lines move or turn.
+            if self.symmetry_edit.is_some() && self.symmetry_press(p) {
+                return;
+            }
             // Rotate mode: the centre of rotation moves.
             if self.pivot_at(screen) {
                 self.drag = Drag::Pivot;
@@ -1265,6 +1299,11 @@ impl App {
             if self.handle_at(screen).is_some() || self.pivot_at(screen) {
                 return;
             }
+            // Editing a symmetry: a click on a mirror line shows or hides
+            // the handles that turn the lines.
+            if self.symmetry_edit.is_some() && self.symmetry_click(p) {
+                return;
+            }
             // A click on the centre mark: like a click on the selection.
             if self.center_mark_at(screen) && !mods.shift && !mods.alt {
                 self.toggle_rotate_mode();
@@ -1376,6 +1415,10 @@ impl App {
     }
 
     fn pick_drag_to(&mut self, p: Point, mods: Modifiers) {
+        if matches!(self.drag, Drag::SymmetryLines { .. }) {
+            self.symmetry_drag_to(p, mods.ctrl || mods.command);
+            return;
+        }
         if matches!(self.drag, Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) {
             self.drag_guide_to(p);
             return;
@@ -2312,6 +2355,7 @@ impl App {
                 self.finish_guide_move(at);
             }
             Drag::FountainHandle { .. }
+            | Drag::SymmetryLines { .. }
             | Drag::ContourDrag { .. }
             | Drag::Shadow { .. }
             | Drag::ShadowHandle { .. }

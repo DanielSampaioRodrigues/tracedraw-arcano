@@ -314,7 +314,10 @@ fn fountain(ui: &mut Ui, st: &mut EditFillState) {
                     }
                 }
                 if f.repeat != FountainRepeat::None {
-                    ui.add(egui::DragValue::new(&mut f.repeats).range(1..=Fountain::MAX_REPEATS));
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut f.repeats)
+                            .range(1..=Fountain::MAX_REPEATS),
+                    );
                 }
             });
             ui.add_space(4.0);

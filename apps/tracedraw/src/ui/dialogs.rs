@@ -730,7 +730,7 @@ fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOp
                         }
                     });
                 ui.add(
-                    egui::DragValue::new(&mut o.dpi)
+                    crate::ui::field::NumField::new(&mut o.dpi)
                         .range(36.0..=2400.0)
                         .suffix(" dpi"),
                 );
@@ -856,7 +856,7 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
                 let mut p = px as f64;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut p)
+                        crate::ui::field::NumField::new(&mut p)
                             .range(base as f64..=base as f64 * 10.0)
                             .speed(1.0),
                     )
@@ -873,7 +873,7 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
                 let mut pct = if row == 0 { st.pw } else { st.ph };
                 if ui
                     .add(
-                        egui::DragValue::new(&mut pct)
+                        crate::ui::field::NumField::new(&mut pct)
                             .range(100.0..=1000.0)
                             .speed(0.5)
                             .max_decimals(1),
@@ -976,7 +976,7 @@ fn unit_value(ui: &mut Ui, label: &str, mm: &mut f64, units: Units) -> bool {
         .horizontal(|ui| {
             ui.label(label);
             ui.add(
-                egui::DragValue::new(&mut v)
+                crate::ui::field::NumField::new(&mut v)
                     .speed(0.5)
                     .suffix(format!(" {}", units.short())),
             )
@@ -1068,7 +1068,7 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.go_to_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(trf("dialog.go_to_page_range", &[("n", &n.to_string())]));
-                    ui.add(egui::DragValue::new(page).range(1..=n.max(1)));
+                    ui.add(crate::ui::field::NumField::new(page).range(1..=n.max(1)));
                 });
                 if ok_cancel(ui, &mut close) {
                     app.goto_page(page.saturating_sub(1));
@@ -1079,7 +1079,7 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.insert_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.number_of_pages"));
-                    ui.add(egui::DragValue::new(count).range(1..=999));
+                    ui.add(crate::ui::field::NumField::new(count).range(1..=999));
                 });
                 ui.horizontal(|ui| {
                     ui.radio_value(after, false, tr("dialog.before"));
@@ -1594,10 +1594,16 @@ pub fn show(app: &mut App, ctx: &Context) {
                             );
                         };
                         label(ui, "dialog.table_rows");
-                        ui.add_sized([120.0, 22.0], egui::DragValue::new(rows).range(1..=200));
+                        ui.add_sized(
+                            [120.0, 22.0],
+                            crate::ui::field::NumField::new(rows).range(1..=200),
+                        );
                         ui.end_row();
                         label(ui, "dialog.table_columns");
-                        ui.add_sized([120.0, 22.0], egui::DragValue::new(cols).range(1..=200));
+                        ui.add_sized(
+                            [120.0, 22.0],
+                            crate::ui::field::NumField::new(cols).range(1..=200),
+                        );
                         ui.end_row();
                         for (key, mm) in [
                             ("dialog.height", &mut *height),
@@ -1608,7 +1614,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                             if ui
                                 .add_sized(
                                     [120.0, 22.0],
-                                    egui::DragValue::new(&mut v)
+                                    crate::ui::field::NumField::new(&mut v)
                                         .speed(0.1)
                                         .max_decimals(3)
                                         .range(units.from_mm(1.0)..=units.from_mm(5000.0))
@@ -1942,7 +1948,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                     .num_columns(2)
                     .show(ui, |ui| {
                         ui.label(tr("dialog.start_at"));
-                        ui.add(egui::DragValue::new(&mut pn.start_at).range(-999..=9999));
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut pn.start_at).range(-999..=9999),
+                        );
                         ui.end_row();
                         ui.label(tr("dialog.prefix"));
                         ui.text_edit_singleline(&mut pn.prefix);
@@ -1983,7 +1991,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                         ui.end_row();
                         ui.label(tr("dialog.size"));
                         ui.add(
-                            egui::DragValue::new(&mut pn.size_pt)
+                            crate::ui::field::NumField::new(&mut pn.size_pt)
                                 .range(4.0..=200.0)
                                 .suffix(" pt"),
                         );
@@ -2226,7 +2234,9 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             if ui
                 .add_sized(
                     [100.0, 22.0],
-                    egui::DragValue::new(&mut wv).speed(0.5).max_decimals(3),
+                    crate::ui::field::NumField::new(&mut wv)
+                        .speed(0.5)
+                        .max_decimals(3),
                 )
                 .changed()
             {
@@ -2251,7 +2261,9 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             if ui
                 .add_sized(
                     [100.0, 22.0],
-                    egui::DragValue::new(&mut hv).speed(0.5).max_decimals(3),
+                    crate::ui::field::NumField::new(&mut hv)
+                        .speed(0.5)
+                        .max_decimals(3),
                 )
                 .changed()
             {
@@ -2380,7 +2392,9 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [100.0, 22.0],
-                egui::DragValue::new(&mut b).speed(0.1).max_decimals(2),
+                crate::ui::field::NumField::new(&mut b)
+                    .speed(0.1)
+                    .max_decimals(2),
             )
             .changed()
         {
@@ -2619,7 +2633,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.resolution"));
                         ui.add(
-                            egui::DragValue::new(&mut st.dpi)
+                            crate::ui::field::NumField::new(&mut st.dpi)
                                 .range(MIN_EXPORT_DPI..=2400.0)
                                 .suffix(" dpi"),
                         );
@@ -2649,7 +2663,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         ui.label(tr("dialog.pixels"));
                         let wc = ui
                             .add(
-                                egui::DragValue::new(&mut w)
+                                crate::ui::field::NumField::new(&mut w)
                                     .range(1..=200_000)
                                     .suffix(" px"),
                             )
@@ -2657,7 +2671,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         ui.label("x");
                         let hc = ui
                             .add(
-                                egui::DragValue::new(&mut h)
+                                crate::ui::field::NumField::new(&mut h)
                                     .range(1..=200_000)
                                     .suffix(" px"),
                             )
@@ -2683,7 +2697,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.bleed"));
                         ui.add(
-                            egui::DragValue::new(&mut st.bleed_mm)
+                            crate::ui::field::NumField::new(&mut st.bleed_mm)
                                 .range(0.0..=50.0)
                                 .speed(0.5)
                                 .suffix(" mm"),
@@ -2801,9 +2815,9 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     if matches!(st.layout_kind, 1 | 3) {
                         ui.label(tr("print.grid"));
                         ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut st.cols).range(1..=20));
+                            ui.add(crate::ui::field::NumField::new(&mut st.cols).range(1..=20));
                             ui.label("x");
-                            ui.add(egui::DragValue::new(&mut st.rows).range(1..=20));
+                            ui.add(crate::ui::field::NumField::new(&mut st.rows).range(1..=20));
                         });
                         ui.end_row();
                     }
@@ -2827,7 +2841,7 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     if matches!(st.layout_kind, 1 | 3) {
                         ui.label(tr("print.gutter"));
                         ui.add(
-                            egui::DragValue::new(&mut st.gutter)
+                            crate::ui::field::NumField::new(&mut st.gutter)
                                 .range(0.0..=50.0)
                                 .speed(0.5)
                                 .suffix(" mm"),
@@ -3074,7 +3088,7 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) {
             print_group(ui, &tr("print.copies"), |ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("print.number_of_copies"));
-                    ui.add(egui::DragValue::new(&mut st.copies).range(1..=999));
+                    ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
                 });
                 ui.add_enabled(
                     st.copies > 1,
@@ -3086,7 +3100,7 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 ui.checkbox(&mut st.as_bitmap, tr("print.as_bitmap"));
                 ui.add_enabled(
                     st.as_bitmap,
-                    egui::DragValue::new(&mut st.bitmap_dpi)
+                    crate::ui::field::NumField::new(&mut st.bitmap_dpi)
                         .range(36.0..=1200.0)
                         .suffix(" dpi"),
                 );
@@ -3138,7 +3152,7 @@ fn print_tab_layout(app: &App, ui: &mut Ui, st: &mut PrintState) {
             ui.radio_value(&mut mode, 2, tr("print.scale"));
             ui.add_enabled(
                 mode == 2,
-                egui::DragValue::new(&mut st.scale)
+                crate::ui::field::NumField::new(&mut st.scale)
                     .range(1.0..=1000.0)
                     .suffix(" %"),
             );
@@ -3162,7 +3176,7 @@ fn print_tab_layout(app: &App, ui: &mut Ui, st: &mut PrintState) {
         ui.checkbox(&mut st.bleed, tr("print.bleed_limit"));
         ui.add_enabled(
             st.bleed,
-            egui::DragValue::new(&mut st.bleed_limit)
+            crate::ui::field::NumField::new(&mut st.bleed_limit)
                 .range(0.0..=50.0)
                 .speed(0.5)
                 .suffix(" mm"),
@@ -3444,11 +3458,15 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                     } = &mut st.kinds[i]
                                     {
                                         ui.add(
-                                            egui::DragValue::new(start).prefix(tr("merge.start")),
+                                            crate::ui::field::NumField::new(start)
+                                                .prefix(tr("merge.start")),
                                         );
-                                        ui.add(egui::DragValue::new(step).prefix(tr("merge.step")));
                                         ui.add(
-                                            egui::DragValue::new(digits)
+                                            crate::ui::field::NumField::new(step)
+                                                .prefix(tr("merge.step")),
+                                        );
+                                        ui.add(
+                                            crate::ui::field::NumField::new(digits)
                                                 .range(1..=12)
                                                 .prefix(tr("merge.digits")),
                                         );
@@ -3697,7 +3715,7 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
                 ui.checkbox(&mut s.black_white, tr("dialog.black_and_white"));
                 if !s.black_white {
                     ui.label(tr("dialog.colors"));
-                    ui.add(egui::DragValue::new(&mut s.colors).range(2..=256));
+                    ui.add(crate::ui::field::NumField::new(&mut s.colors).range(2..=256));
                 }
             });
             ui.checkbox(&mut s.remove_background, tr("dialog.remove_background"));
@@ -3770,7 +3788,7 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.columns"));
                     changed |= ui
-                        .add(egui::DragValue::new(&mut p.columns).range(1..=8))
+                        .add(crate::ui::field::NumField::new(&mut p.columns).range(1..=8))
                         .changed();
                 });
                 changed |= unit_value(ui, &tr("dialog.gutter"), &mut p.gutter, u);
@@ -3802,7 +3820,10 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.lines_dropped"));
                         changed |= ui
-                            .add(egui::DragValue::new(&mut p.drop_cap_lines).range(2..=10))
+                            .add(
+                                crate::ui::field::NumField::new(&mut p.drop_cap_lines)
+                                    .range(2..=10),
+                            )
                             .changed();
                     });
                 }
@@ -3895,7 +3916,7 @@ fn border_grommet_dialog(
         if ui
             .add_sized(
                 [90.0, 22.0],
-                egui::DragValue::new(&mut v)
+                crate::ui::field::NumField::new(&mut v)
                     .speed(0.1)
                     .max_decimals(3)
                     .suffix(format!(" {}", units.short())),
@@ -3995,7 +4016,10 @@ fn border_grommet_dialog(
                         ui.horizontal(|ui| {
                             ui.radio_value(&mut g.by_count, true, tr("border_grommet.number"));
                             ui.add_enabled_ui(g.by_count, |ui| {
-                                ui.add(egui::DragValue::new(&mut g.count_per_edge).range(2..=200));
+                                ui.add(
+                                    crate::ui::field::NumField::new(&mut g.count_per_edge)
+                                        .range(2..=200),
+                                );
                             });
                         });
                         ui.horizontal(|ui| {

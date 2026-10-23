@@ -3971,6 +3971,8 @@ github.conflict = "The file changed on GitHub since it was opened here. Save it 
 github.exists = "A file already exists at that path. Open it first, or choose another path."
 menu.object.symmetry_break = "Break Symmetry Link"
 symmetry.finish = "Finish"
+symmetry.full_preview = "Show full preview: copies drawn in full (off: outlines)"
+symmetry.show_lines = "Show symmetry lines"
 status.editing_symmetry = "Editing the symmetry: change the original (outlined in red); the copies follow. Finish ends it."
 
 options.center_dialogs = "Center dialog boxes"

@@ -570,6 +570,16 @@ pub enum Drag {
         horizontal: bool,
         pos: Point,
     },
+    /// The mirror lines of the symmetry being edited, dragged with the
+    /// Pick tool: moved (the centre follows the pointer) or, from a
+    /// turning handle, turned about the centre.
+    SymmetryLines {
+        id: ShapeId,
+        turn: bool,
+        from: Point,
+        start_center: Point,
+        start_angle: f64,
+    },
     /// Dragging an existing guideline: where the press was, the guideline
     /// as it was and as it is now (committed on release).
     MoveGuide {
@@ -1069,6 +1079,15 @@ pub struct App {
     /// Object > Symmetry > Edit Symmetry: the object whose symmetry is
     /// being edited.
     pub symmetry_edit: Option<ShapeId>,
+    /// The symmetry whose last change made the undo step "Edit Symmetry",
+    /// so the next change joins it.
+    pub symmetry_step: Option<ShapeId>,
+    /// A click on a mirror line shows round handles that turn the lines.
+    pub symmetry_turning: bool,
+    /// The drawing without the edited symmetry's copies (Show full
+    /// preview off), kept for the revision it was made at.
+    pub symmetry_doc:
+        std::cell::RefCell<Option<(u64, ShapeId, std::rc::Rc<tracedraw_core::Document>)>>,
     pub show_guides: bool,
     /// Selected guidelines of the active page (indices).
     pub selected_guides: Vec<usize>,
@@ -2047,6 +2066,9 @@ impl App {
             text_link_drag: None,
             clip_frame_edit: None,
             symmetry_edit: None,
+            symmetry_step: None,
+            symmetry_turning: false,
+            symmetry_doc: Default::default(),
             show_guides: true,
             selected_guides: Vec::new(),
             guide_rotate: None,

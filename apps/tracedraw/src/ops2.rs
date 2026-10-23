@@ -713,8 +713,12 @@ impl App {
     /// Object > Symmetry > Finish Editing Symmetry (Alt+Shift+E), and the
     /// symmetry bar's Finish.
     pub fn finish_symmetry_edit(&mut self) {
+        self.symmetry_turning = false;
+        self.symmetry_step = None;
+        *self.symmetry_doc.borrow_mut() = None;
         if self.symmetry_edit.take().is_some() {
             self.status.clear();
+            self.raster.borrow_mut().invalidate();
         }
     }
 
@@ -767,41 +771,6 @@ impl App {
                 _ => None,
             })
         })
-    }
-
-    /// Update the symmetry parameters of every selected object that has one.
-    pub fn set_symmetry(&mut self, center: Point, angle: f64, lines: u8) {
-        for s in self.selected_shapes() {
-            if !s
-                .effects
-                .iter()
-                .any(|e| matches!(e, Effect::Symmetry { .. }))
-            {
-                continue;
-            }
-            let effects = s
-                .effects
-                .iter()
-                .map(|e| match e {
-                    Effect::Symmetry { .. } => Effect::Symmetry {
-                        center,
-                        angle,
-                        lines,
-                    },
-                    other => other.clone(),
-                })
-                .collect();
-            if self.engine.undo_label() == Some("Symmetry") {
-                let _ = self.engine.undo();
-            }
-            let _ = self.engine.run_with_label(
-                &Command::SetEffects {
-                    shape: s.id,
-                    effects,
-                },
-                "Symmetry",
-            );
-        }
     }
 
     /// Object > Symmetry > Remove Symmetry: the copies disappear.

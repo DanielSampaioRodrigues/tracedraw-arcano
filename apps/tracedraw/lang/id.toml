@@ -3971,6 +3971,8 @@ github.conflict = "Berkas berubah di GitHub sejak dibuka di sini. Simpan di jalu
 github.exists = "Sudah ada berkas di jalur itu. Buka dulu atau pilih jalur lain."
 menu.object.symmetry_break = "Putuskan tautan simetri"
 symmetry.finish = "Selesai"
+symmetry.full_preview = "Tampilkan pratinjau penuh: salinan digambar utuh (mati: garis luar)" # mt
+symmetry.show_lines = "Tampilkan garis simetri" # mt
 status.editing_symmetry = "Mengedit simetri: ubah aslinya (garis merah); salinan mengikuti. Selesai mengakhirinya."
 
 options.center_dialogs = "Tengahkan kotak dialog"

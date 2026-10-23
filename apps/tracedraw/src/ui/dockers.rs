@@ -1065,7 +1065,7 @@ fn qr_section(
         let mut v = units.from_mm(next.pixel_mm);
         if ui
             .add(
-                egui::DragValue::new(&mut v)
+                crate::ui::field::NumField::new(&mut v)
                     .speed(0.05)
                     .max_decimals(3)
                     .range(units.from_mm(0.1)..=units.from_mm(50.0))
@@ -1303,7 +1303,7 @@ fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
                             }
                         } else {
                             let r = ui.add(
-                                egui::DragValue::new(&mut v)
+                                crate::ui::field::NumField::new(&mut v)
                                     .range(0.0..=10_000.0)
                                     .speed(0.1)
                                     .suffix(format!(" {}", u.short())),
@@ -1525,8 +1525,12 @@ fn fill_editor_mixed(
             ui.horizontal(|ui| {
                 ui.label(tr("docker.grid"));
                 let (mut r, mut c) = (m.rows, m.cols);
-                if ui.add(egui::DragValue::new(&mut r).range(1..=50)).changed()
-                    || ui.add(egui::DragValue::new(&mut c).range(1..=50)).changed()
+                if ui
+                    .add(crate::ui::field::NumField::new(&mut r).range(1..=50))
+                    .changed()
+                    || ui
+                        .add(crate::ui::field::NumField::new(&mut c).range(1..=50))
+                        .changed()
                 {
                     // The colours stay where the old grid had them.
                     *m = m.regrid(r, c);
@@ -1700,7 +1704,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             let mut pct = stop.pos * 100.0;
             if ui
                 .add(
-                    egui::DragValue::new(&mut pct)
+                    crate::ui::field::NumField::new(&mut pct)
                         .range(0.0..=100.0)
                         .suffix("%")
                         .speed(1.0),
@@ -1780,14 +1784,14 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             ui.label(tr("docker.centre_offset"));
             changed |= ui
                 .add(
-                    egui::DragValue::new(&mut f.offset.x)
+                    crate::ui::field::NumField::new(&mut f.offset.x)
                         .range(-1.0..=1.0)
                         .speed(0.01),
                 )
                 .changed();
             changed |= ui
                 .add(
-                    egui::DragValue::new(&mut f.offset.y)
+                    crate::ui::field::NumField::new(&mut f.offset.y)
                         .range(-1.0..=1.0)
                         .speed(0.01),
                 )
@@ -1833,7 +1837,10 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         ui.horizontal(|ui| {
             ui.label(tr("docker.repeat_count"));
             changed |= ui
-                .add(egui::DragValue::new(&mut f.repeats).range(1..=Fountain::MAX_REPEATS))
+                .add(
+                    crate::ui::field::NumField::new(&mut f.repeats)
+                        .range(1..=Fountain::MAX_REPEATS),
+                )
                 .changed();
         });
     }
@@ -1959,7 +1966,9 @@ pub(crate) fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
         .drag_stopped();
     ui.horizontal(|ui| {
         ui.label(tr("docker.seed"));
-        changed |= ui.add(egui::DragValue::new(&mut t.seed)).changed();
+        changed |= ui
+            .add(crate::ui::field::NumField::new(&mut t.seed))
+            .changed();
         if ui.small_button(tr("docker.regenerate")).clicked() {
             t.seed = t.seed.wrapping_add(1);
             changed = true;

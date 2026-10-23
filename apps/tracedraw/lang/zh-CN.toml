@@ -3971,6 +3971,8 @@ github.conflict = "此文件在这里打开后已在 GitHub 上更改。请保�
 github.exists = "该路径已有文件。请先打开它，或选择其他路径。"
 menu.object.symmetry_break = "断开对称链接"
 symmetry.finish = "完成"
+symmetry.full_preview = "显示完整预览：完整绘制副本（关闭：轮廓）" # mt
+symmetry.show_lines = "显示对称线" # mt
 status.editing_symmetry = "正在编辑对称：修改原始对象（红色轮廓），副本随之变化。点“完成”结束。"
 
 options.center_dialogs = "对话框居中"

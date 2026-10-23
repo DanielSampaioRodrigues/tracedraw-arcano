@@ -622,7 +622,7 @@ fn general_page(app: &mut App, ui: &mut Ui) {
             row_label(ui, &tr("options.undo_regular"));
             ui.add_sized(
                 [70.0, 22.0],
-                egui::DragValue::new(&mut app.settings.undo_levels).range(1..=99_999),
+                crate::ui::field::NumField::new(&mut app.settings.undo_levels).range(1..=99_999),
             );
             ui.end_row();
         });
@@ -680,7 +680,7 @@ fn display_page(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [80.0, 22.0],
-                egui::DragValue::new(&mut ppi)
+                crate::ui::field::NumField::new(&mut ppi)
                     .range(48.0..=400.0)
                     .speed(0.1)
                     .max_decimals(1),
@@ -766,7 +766,7 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.add_sized(
                 [80.0, 22.0],
-                egui::DragValue::new(&mut app.settings.constrain_angle)
+                crate::ui::field::NumField::new(&mut app.settings.constrain_angle)
                     .range(0.1..=90.0)
                     .max_decimals(1)
                     .speed(0.5),
@@ -778,7 +778,7 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.add_sized(
                 [80.0, 22.0],
-                egui::DragValue::new(&mut app.settings.precision).range(0..=10),
+                crate::ui::field::NumField::new(&mut app.settings.precision).range(0..=10),
             );
             ui.label(tr("options.decimal_places"));
         });
@@ -873,7 +873,7 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tr("options.node_pick_distance"));
         ui.add(
-            egui::DragValue::new(&mut n.pick_distance)
+            crate::ui::field::NumField::new(&mut n.pick_distance)
                 .range(2.0..=20.0)
                 .speed(0.2)
                 .max_decimals(0)
@@ -930,7 +930,7 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
         ui.label(tr("options.snapping_radius"));
         ui.add_sized(
             [70.0, 22.0],
-            egui::DragValue::new(&mut app.settings.snap.threshold_px).range(1.0..=100.0),
+            crate::ui::field::NumField::new(&mut app.settings.snap.threshold_px).range(1.0..=100.0),
         );
         ui.label(tr("options.pixels"));
     });
@@ -985,7 +985,7 @@ fn length_field(ui: &mut Ui, units: Units, mm: &mut f64, max_mm: f64) {
     let mut v = units.world_from_mm(*mm);
     let resp = ui.add_sized(
         [80.0, 22.0],
-        egui::DragValue::new(&mut v)
+        crate::ui::field::NumField::new(&mut v)
             .range(0.0..=units.world_from_mm(max_mm))
             .max_decimals(3)
             .speed(0.1),
@@ -1130,7 +1130,7 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
                 let mut v: f64 = ui.data_mut(|m| *m.get_temp_mut_or(id, 22.5));
                 ui.add_sized(
                     [70.0, 22.0],
-                    egui::DragValue::new(&mut v)
+                    crate::ui::field::NumField::new(&mut v)
                         .range(0.0..=179.9)
                         .max_decimals(1),
                 );
@@ -1216,7 +1216,10 @@ fn save_page(app: &mut App, ui: &mut Ui) {
     ui.indent("ab", |ui| {
         ui.horizontal(|ui| {
             ui.checkbox(&mut b.auto, tr("options.backup_every"));
-            ui.add_enabled(b.auto, egui::DragValue::new(&mut b.minutes).range(1..=999));
+            ui.add_enabled(
+                b.auto,
+                crate::ui::field::NumField::new(&mut b.minutes).range(1..=999),
+            );
             ui.label(tr("options.minutes"));
         });
         ui.add_enabled_ui(b.auto, |ui| {
@@ -1272,7 +1275,7 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.add_sized(
                 [70.0, 22.0],
-                egui::DragValue::new(&mut app.settings.text_increment_pt)
+                crate::ui::field::NumField::new(&mut app.settings.text_increment_pt)
                     .range(0.1..=100.0)
                     .max_decimals(1),
             );
@@ -1284,7 +1287,7 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
         ui.end_row();
         row_label(ui, &tr("options.default_size"));
         ui.add(
-            egui::DragValue::new(&mut app.text_size_pt)
+            crate::ui::field::NumField::new(&mut app.text_size_pt)
                 .range(1.0..=999.0)
                 .suffix(" pt"),
         );
@@ -1355,7 +1358,7 @@ fn fonts_tab(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(tr("options.recent_font_count"));
             ui.add(
-                egui::DragValue::new(&mut app.settings.recent_font_count)
+                crate::ui::field::NumField::new(&mut app.settings.recent_font_count)
                     .range(1..=crate::ui::font_list::RECENT_MAX),
             );
         });
@@ -1363,7 +1366,7 @@ fn fonts_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tr("options.font_sample_size"));
         ui.add(
-            egui::DragValue::new(&mut app.settings.font_sample_px)
+            crate::ui::field::NumField::new(&mut app.settings.font_sample_px)
                 .range(crate::ui::font_list::SAMPLE_SIZES)
                 .max_decimals(0)
                 .suffix(" pt"),
@@ -1731,7 +1734,7 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
                 })
                 .inner;
             let field = ui.add(
-                egui::DragValue::new(&mut pct)
+                crate::ui::field::NumField::new(&mut pct)
                     .range(UI_SIZE_RANGE)
                     .speed(1.0)
                     .max_decimals(0)
@@ -2442,7 +2445,7 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                         if ui
                             .add_sized(
                                 [80.0, 22.0],
-                                egui::DragValue::new(&mut v)
+                                crate::ui::field::NumField::new(&mut v)
                                     .range(0.0..=10_000.0)
                                     .speed(0.1)
                                     .suffix(format!(" {}", u.short())),
@@ -2503,14 +2506,14 @@ fn ellipse_page(app: &mut App, ui: &mut Ui) {
         grid("arc").show(ui, |ui| {
             row_label(ui, &tr("options.starting_angle"));
             ui.add(
-                egui::DragValue::new(&mut a.start_deg)
+                crate::ui::field::NumField::new(&mut a.start_deg)
                     .range(-360.0..=360.0)
                     .suffix("°"),
             );
             ui.end_row();
             row_label(ui, &tr("options.ending_angle"));
             ui.add(
-                egui::DragValue::new(&mut a.end_deg)
+                crate::ui::field::NumField::new(&mut a.end_deg)
                     .range(-360.0..=360.0)
                     .suffix("°"),
             );
@@ -2522,13 +2525,17 @@ fn ellipse_page(app: &mut App, ui: &mut Ui) {
 fn polygon_page(app: &mut App, ui: &mut Ui) {
     grid("polygon").show(ui, |ui| {
         row_label(ui, &tr("options.number_of_points"));
-        ui.add(egui::DragValue::new(&mut app.polygon_points).range(3..=500));
+        ui.add(crate::ui::field::NumField::new(&mut app.polygon_points).range(3..=500));
         ui.end_row();
         row_label(ui, &tr("options.sharpness"));
         // Stored as a fraction, shown in percent like the property bar.
         let mut pct = (app.star_sharpness * 100.0).round();
         if ui
-            .add(egui::DragValue::new(&mut pct).range(1.0..=99.0).suffix("%"))
+            .add(
+                crate::ui::field::NumField::new(&mut pct)
+                    .range(1.0..=99.0)
+                    .suffix("%"),
+            )
             .changed()
         {
             app.star_sharpness = (pct / 100.0).clamp(0.01, 0.99);
@@ -2540,7 +2547,7 @@ fn polygon_page(app: &mut App, ui: &mut Ui) {
 fn spiral_page(app: &mut App, ui: &mut Ui) {
     grid("spiral").show(ui, |ui| {
         row_label(ui, &tr("options.revolutions"));
-        ui.add(egui::DragValue::new(&mut app.spiral_revolutions).range(1..=100));
+        ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
         ui.end_row();
     });
     ui.radio_value(
@@ -2558,10 +2565,10 @@ fn spiral_page(app: &mut App, ui: &mut Ui) {
 fn graph_paper_page(app: &mut App, ui: &mut Ui) {
     grid("graph").show(ui, |ui| {
         row_label(ui, &tr("options.rows"));
-        ui.add(egui::DragValue::new(&mut app.graph_rows).range(1..=99));
+        ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
         ui.end_row();
         row_label(ui, &tr("options.columns"));
-        ui.add(egui::DragValue::new(&mut app.graph_cols).range(1..=99));
+        ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
         ui.end_row();
     });
 }
@@ -2569,10 +2576,10 @@ fn graph_paper_page(app: &mut App, ui: &mut Ui) {
 fn table_page(app: &mut App, ui: &mut Ui) {
     grid("table").show(ui, |ui| {
         row_label(ui, &tr("options.rows"));
-        ui.add(egui::DragValue::new(&mut app.table_rows).range(1..=99));
+        ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=99));
         ui.end_row();
         row_label(ui, &tr("options.columns"));
-        ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=99));
+        ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=99));
         ui.end_row();
         row_label(ui, &tr("options.table_tab_key"));
         ui.vertical(|ui| {
@@ -2614,7 +2621,7 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
             5.0
         };
         ui.add(
-            egui::DragValue::new(&mut px)
+            crate::ui::field::NumField::new(&mut px)
                 .range(1.0..=50.0)
                 .speed(0.2)
                 .suffix(" px"),
@@ -2649,7 +2656,7 @@ fn eraser_page(app: &mut App, ui: &mut Ui) {
         let mut v = u.from_mm(app.eraser_width);
         if ui
             .add(
-                egui::DragValue::new(&mut v)
+                crate::ui::field::NumField::new(&mut v)
                     .speed(0.1)
                     .suffix(format!(" {}", u.short())),
             )
@@ -2797,7 +2804,7 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
             if ui
                 .add_sized(
                     [80.0, 22.0],
-                    egui::DragValue::new(&mut dpi).range(36.0..=2400.0),
+                    crate::ui::field::NumField::new(&mut dpi).range(36.0..=2400.0),
                 )
                 .changed()
             {
@@ -2829,12 +2836,12 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
         );
         ui.horizontal(|ui| {
             let a = ui.add(
-                egui::DragValue::new(&mut dx)
+                crate::ui::field::NumField::new(&mut dx)
                     .speed(0.1)
                     .suffix(format!(" {}", u.short())),
             );
             let b = ui.add(
-                egui::DragValue::new(&mut dy)
+                crate::ui::field::NumField::new(&mut dy)
                     .speed(0.1)
                     .suffix(format!(" {}", u.short())),
             );
@@ -2957,7 +2964,7 @@ fn bleed_page(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [100.0, 22.0],
-                egui::DragValue::new(&mut b)
+                crate::ui::field::NumField::new(&mut b)
                     .speed(0.1)
                     .max_decimals(3)
                     .suffix(format!(" {}", app.units.short())),

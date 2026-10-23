@@ -4271,3 +4271,76 @@ fn bspline_control_points_are_chosen_and_deleted_alone() {
     assert!((moved[2].x - (pts[3].x + 10.0)).abs() < 1.0, "{moved:?}");
     assert!((moved[0] - pts[0]).hypot() < 0.5, "{moved:?}");
 }
+
+/// Editing a symmetry as in the reference program: a click picks one of
+/// its objects (not the group, not a copy) and the mode stays; a drag on a
+/// mirror line moves the centre; a click on a line shows handles that turn
+/// the lines; a marquee takes members; a new object joins.
+#[test]
+fn symmetry_editing_picks_members_and_drags_lines() {
+    use tracedraw_core::live::Effect;
+    let (ctx, mut app, a) = setup();
+    let b = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(10.0, 60.0, 30.0, 80.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![a, b]);
+    app.create_symmetry();
+    let g = app.symmetry_edit.expect("editing");
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The rectangle a spans 10..60 x 10..40; the line is at x = 60.
+    let (_, c0, ang0, _) = app.edited_symmetry().expect("symmetry");
+    // A click on b picks b alone; the mode and its bar stay.
+    let at = app.view.to_screen(Point::new(20.0, 70.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.selection, vec![b]);
+    assert_eq!(app.symmetry_edit, Some(g));
+    assert!(app.edited_symmetry().is_some());
+    // A click on a copy (mirrored to the right of the line) picks nothing
+    // of the symmetry.
+    let at = app.view.to_screen(Point::new(100.0, 70.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(!app.selection.contains(&g));
+    // A drag on the line, away from the centre, moves the centre.
+    let from = app.view.to_screen(Point::new(c0.x, c0.y + 40.0));
+    let to = app.view.to_screen(Point::new(c0.x + 15.0, c0.y + 40.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let (_, c1, ang1, _) = app.edited_symmetry().expect("symmetry");
+    assert!((c1.x - (c0.x + 15.0)).abs() < 0.6, "{c0:?} -> {c1:?}");
+    assert!((ang1 - ang0).abs() < 1e-9);
+    // One undo takes the move back.
+    app.undo();
+    assert!((app.edited_symmetry().unwrap().1.x - c0.x).abs() < 1e-6);
+    // A click on the line shows the turning handles; dragging one turns.
+    let on_line = app.view.to_screen(Point::new(c0.x, c0.y + 30.0));
+    click_at(&ctx, &mut app, on_line, Modifiers::NONE);
+    assert!(app.symmetry_turning);
+    let hs = app.symmetry_handles();
+    assert_eq!(hs.len(), 2);
+    let h = hs[0];
+    let v = h - c0;
+    let turned = c0 + tracedraw_core::geometry::Vec2::new(-v.y, v.x);
+    let (hf, ht) = (app.view.to_screen(h), app.view.to_screen(turned));
+    drag(&ctx, &mut app, hf, ht, Modifiers::NONE, Vec::new());
+    let (_, _, ang2, _) = app.edited_symmetry().expect("symmetry");
+    let diff = (ang2 - ang0).rem_euclid(360.0);
+    assert!((diff - 90.0).abs() < 2.0, "{ang0} -> {ang2}");
+    // A marquee round both originals takes the two members.
+    app.set_tool(Tool::Pick);
+    let m0 = app.view.to_screen(Point::new(5.0, 5.0));
+    let m1 = app.view.to_screen(Point::new(63.0, 85.0));
+    // Start the marquee off the lines and the objects.
+    app.select(Vec::new());
+    drag(&ctx, &mut app, m0, m1, Modifiers::NONE, Vec::new());
+    let mut sel = app.selection.clone();
+    sel.sort();
+    assert_eq!(sel, vec![a, b]);
+    // Still one symmetry group holding both.
+    assert!(app.doc().find_shape(g).is_some_and(|s| s
+        .effects
+        .iter()
+        .any(|e| matches!(e, Effect::Symmetry { .. }))));
+}

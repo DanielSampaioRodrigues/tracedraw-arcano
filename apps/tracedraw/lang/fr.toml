@@ -3971,6 +3971,8 @@ github.conflict = "Le fichier a changé sur GitHub depuis son ouverture ici. Enr
 github.exists = "Un fichier existe déjà à ce chemin. Ouvrez-le d'abord ou choisissez un autre chemin."
 menu.object.symmetry_break = "Rompre le lien de symétrie"
 symmetry.finish = "Terminer"
+symmetry.full_preview = "Afficher l'aperçu complet : copies dessinées entièrement (désactivé : contours)" # mt
+symmetry.show_lines = "Afficher les lignes de symétrie" # mt
 status.editing_symmetry = "Modification de la symétrie : changez l'original (contour rouge) ; les copies suivent. Terminer y met fin."
 
 options.center_dialogs = "Centrer les boîtes de dialogue"

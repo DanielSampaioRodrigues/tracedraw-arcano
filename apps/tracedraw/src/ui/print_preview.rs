@@ -172,7 +172,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
                     if !st.fit_to_page {
                         ui.add(
-                            egui::DragValue::new(&mut st.scale)
+                            crate::ui::field::NumField::new(&mut st.scale)
                                 .range(1.0..=1000.0)
                                 .suffix(" %"),
                         );

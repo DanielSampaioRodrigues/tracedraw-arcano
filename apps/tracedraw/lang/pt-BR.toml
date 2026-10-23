@@ -3971,6 +3971,8 @@ github.conflict = "O arquivo mudou no GitHub desde que foi aberto aqui. Salve em
 github.exists = "Já existe um arquivo nesse caminho. Abra-o antes ou escolha outro caminho."
 menu.object.symmetry_break = "Desfazer vínculo de simetria"
 symmetry.finish = "Concluir"
+symmetry.full_preview = "Mostrar visualização completa: cópias desenhadas por inteiro (desligado: contornos)" # mt
+symmetry.show_lines = "Mostrar linhas de simetria" # mt
 status.editing_symmetry = "Editando a simetria: altere o original (contornado em vermelho); as cópias acompanham. Concluir termina."
 
 options.center_dialogs = "Centralizar caixas de diálogo"

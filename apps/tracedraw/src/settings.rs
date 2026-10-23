@@ -222,6 +222,13 @@ pub struct Settings {
     /// multiples of this angle (degrees).
     #[serde(default = "default_constrain_angle")]
     pub constrain_angle: f64,
+    /// The symmetry bar's Show symmetry lines (on at first).
+    #[serde(default = "default_true")]
+    pub symmetry_show_lines: bool,
+    /// The symmetry bar's Show full preview: copies drawn in full while a
+    /// symmetry is edited (off at first: outlines in red).
+    #[serde(default)]
+    pub symmetry_full_preview: bool,
     /// Options > Edit: decimal places of distances in the property bar
     /// and the status bar.
     #[serde(default = "default_precision")]
@@ -1280,6 +1287,8 @@ impl Default for Settings {
             node_tracking: false,
             preview_page_border: true,
             constrain_angle: default_constrain_angle(),
+            symmetry_show_lines: true,
+            symmetry_full_preview: false,
             precision: default_precision(),
             nodes: NodePrefs::default(),
             clip_frame: ClipFramePrefs::default(),

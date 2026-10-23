@@ -3971,6 +3971,8 @@ github.conflict = "تغيّر الملف في GitHub منذ فتحه هنا. ا�
 github.exists = "يوجد ملف بالفعل في هذا المسار. افتحه أولًا أو اختر مسارًا آخر."
 menu.object.symmetry_break = "فصل رابط التناظر"
 symmetry.finish = "إنهاء"
+symmetry.full_preview = "إظهار المعاينة الكاملة: تُرسم النسخ كاملة (إيقاف: الخطوط الخارجية)" # mt
+symmetry.show_lines = "إظهار خطوط التناظر" # mt
 status.editing_symmetry = "تحرير التناظر: غيّر الأصل (المحدد بالأحمر)؛ تتبعه النسخ. «إنهاء» يُنهيه."
 
 options.center_dialogs = "توسيط مربعات الحوار"

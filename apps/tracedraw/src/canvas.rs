@@ -482,7 +482,17 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
 
     // Objects, rasterized with tiny-skia into a texture; the live drag preview
     // is applied to the selection during the render.
-    let doc: &Document = app.doc();
+    // Editing a symmetry with Show full preview off: drawn without its
+    // copies (the canvas outlines them in red); a revision of its own so
+    // the picture is not taken for the full one.
+    let without_copies = app.symmetry_without_copies();
+    let doc: &Document = without_copies.as_deref().unwrap_or(app.doc());
+    let revision = app.engine.revision()
+        ^ if without_copies.is_some() {
+            1u64 << 62
+        } else {
+            0
+        };
     // Paragraph text being resized keeps its letters while the frame
     // follows the drag (the text flows anew on release).
     let preview_ids = preview.map(|t| {
@@ -501,7 +511,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         view,
         rect,
         preview_ids,
-        app.engine.revision(),
+        revision,
         app.wireframe,
         app.simulate_overprints,
         app.rasterize_complex_effects,
@@ -727,47 +737,65 @@ fn draw_drop_frame(app: &App, painter: &Painter) {
 
 fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
-    for s in app.selected_rc().iter() {
-        for e in &s.effects {
-            let tracedraw_core::live::Effect::Symmetry {
-                center,
-                angle,
-                lines,
-            } = e
-            else {
+    let blue = Color32::from_rgb(40, 110, 220);
+    let red = Color32::from_rgb(0xE0, 0x10, 0x10);
+    // Editing a symmetry: its copies as red outlines while Show full
+    // preview is off (the renderer leaves them out then).
+    for c in app.symmetry_copies_outlined() {
+        for (pts, closed) in flatten(&c.page_path(), view) {
+            if pts.len() < 2 {
                 continue;
-            };
-            let n = (*lines).clamp(1, 12) as usize;
-            let far = 100_000.0 / view.zoom.max(0.01) as f64;
-            for k in 0..n {
-                let a = (angle + 180.0 * k as f64 / n as f64).to_radians();
-                let d = tracedraw_core::geometry::Vec2::new(a.cos(), a.sin());
-                let s0 = view.to_screen(*center - d * far);
-                let s1 = view.to_screen(*center + d * far);
-                if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
-                    dash(painter, c0, c1, Color32::from_rgb(40, 110, 220));
+            }
+            let mut pts = pts;
+            if closed {
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
                 }
             }
-            let c = view.to_screen(*center);
-            painter.circle_stroke(c, 5.0, EStroke::new(1.5, Color32::from_rgb(40, 110, 220)));
+            painter.add(egui::Shape::line(pts, EStroke::new(1.0, red)));
         }
-        // Symmetry editing: the original outlined in red (the copies are
-        // drawn as they are).
-        if app.symmetry_edit == Some(s.id) {
-            let red = EStroke::new(1.0, Color32::from_rgb(0xE0, 0x10, 0x10));
-            for (pts, closed) in flatten(&s.page_path(), view) {
-                if pts.len() < 2 {
-                    continue;
+    }
+    // The lines of the symmetry being edited, whatever is selected; else
+    // those of the selected objects.
+    let mut shown: Vec<(Point, f64, u8)> = Vec::new();
+    if let Some((_, center, angle, lines)) = app.edited_symmetry() {
+        if app.settings.symmetry_show_lines {
+            shown.push((center, angle, lines));
+        }
+    } else {
+        for s in app.selected_rc().iter() {
+            for e in &s.effects {
+                if let tracedraw_core::live::Effect::Symmetry {
+                    center,
+                    angle,
+                    lines,
+                } = e
+                {
+                    shown.push((*center, *angle, *lines));
                 }
-                let mut pts = pts;
-                if closed {
-                    if let Some(first) = pts.first().copied() {
-                        pts.push(first);
-                    }
-                }
-                painter.add(egui::Shape::line(pts, red));
             }
         }
+    }
+    for (center, angle, lines) in shown {
+        let n = lines.clamp(1, 12) as usize;
+        let far = 100_000.0 / view.zoom.max(0.01) as f64;
+        for k in 0..n {
+            let a = (angle + 180.0 * k as f64 / n as f64).to_radians();
+            let d = tracedraw_core::geometry::Vec2::new(a.cos(), a.sin());
+            let s0 = view.to_screen(center - d * far);
+            let s1 = view.to_screen(center + d * far);
+            if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
+                dash(painter, c0, c1, blue);
+            }
+        }
+        let c = view.to_screen(center);
+        painter.circle_stroke(c, 5.0, EStroke::new(1.5, blue));
+    }
+    // The turning handles, after a click on a line.
+    for h in app.symmetry_handles() {
+        let q = view.to_screen(h);
+        painter.circle_filled(q, 4.5, Color32::WHITE);
+        painter.circle_stroke(q, 4.5, EStroke::new(1.5, blue));
     }
 }
 

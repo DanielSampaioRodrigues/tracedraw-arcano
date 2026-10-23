@@ -127,6 +127,7 @@ mod spell;
 mod splash;
 mod straighten;
 mod styles;
+mod symmetry_edit;
 mod system_prefs;
 mod table;
 mod table_tool;

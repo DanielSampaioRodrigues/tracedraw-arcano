@@ -15,6 +15,8 @@ pub struct NumField<'a, N: Numeric> {
     value: &'a mut N,
     range: Option<(f64, f64)>,
     suffix: String,
+    /// A label shown just before the box ("X:").
+    prefix: String,
     min_decimals: usize,
     max_decimals: Option<usize>,
     /// Millimetres per unit of the field, for distances typed with a unit.
@@ -41,6 +43,7 @@ impl<'a, N: Numeric> NumField<'a, N> {
             value,
             range: None,
             suffix: String::new(),
+            prefix: String::new(),
             min_decimals: 0,
             max_decimals: None,
             unit_mm: None,
@@ -82,6 +85,12 @@ impl<'a, N: Numeric> NumField<'a, N> {
     /// speed).
     pub fn speed(self, speed: impl Into<f64>) -> Self {
         self.step(speed.into())
+    }
+
+    /// A label just before the box, such as `X:`.
+    pub fn prefix(mut self, prefix: impl ToString) -> Self {
+        self.prefix = prefix.to_string().trim_end().to_string();
+        self
     }
 
     pub fn suffix(mut self, suffix: impl ToString) -> Self {
@@ -163,6 +172,9 @@ impl<N: Numeric> Widget for NumField<'_, N> {
         } else {
             (self.width - SPIN_W).max(16.0)
         };
+        if !self.prefix.is_empty() {
+            ui.label(&self.prefix);
+        }
         let spacing = ui.spacing().item_spacing;
         ui.spacing_mut().item_spacing.x = 0.0;
         let mut resp = ui.add(

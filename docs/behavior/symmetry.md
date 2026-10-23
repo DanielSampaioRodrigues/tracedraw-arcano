@@ -37,10 +37,25 @@ recomputed from it.
   (`App::join_symmetry`,
   `ops2::symmetry_tests::a_symmetry_takes_several_objects_and_those_made_while_editing`).
 - Edit (Object > Symmetry > Edit Symmetry, Alt+E): the symmetry editing
-  mode. The original is outlined in red and a bar floats at the top left
-  of the drawing window: Finish, the number of mirror lines (1 to 12),
-  the centre (X, Y in the drawing's units) and the angle (0 to 360
-  degrees). Changes collapse into one undo step labelled "Symmetry".
+  mode (`symmetry_edit.rs`). A bar floats at the top left of the drawing
+  window: Finish; the mirror lines icon and their number (1 to 12); the
+  centre (X, Y in the drawing's units); the angle of rotation icon and
+  the angle (0 to 360 degrees), every number field with spin arrows and
+  the mouse wheel; Show full preview (off at first: the copies are drawn
+  as red outlines and the renderer leaves them out; on: drawn in full)
+  and Show symmetry lines (on). Both toggles are kept in the
+  preferences. A run of changes is one undo step "Edit Symmetry".
+- While editing, the bar and the lines stay whatever is selected (a
+  member picked inside, a new object, a double click): they follow the
+  object being edited, not the selection.
+- Picking while editing: a click or a marquee takes the objects inside
+  the symmetry group (its members), never the group and never a copy.
+- The mirror lines with the Pick tool: a drag on a line or on the centre
+  moves the lines (the centre follows the pointer, snapping as objects
+  do); a click on a line shows round handles at both ends of every line,
+  90 pixels from the centre, and dragging one turns the lines about the
+  centre (Ctrl: by the constrain angle); another click on a line hides
+  them (`pick_drag_tests::symmetry_editing_picks_members_and_drags_lines`).
 - Finish Editing Symmetry (Alt+Shift+E) and the bar's Finish end the
   mode; it also ends when the object is deleted or loses its symmetry.
 - Remove Symmetry (Alt+Shift+S) drops the effect; the copies disappear.
@@ -49,7 +64,8 @@ recomputed from it.
 ## Display
 
 Mirror lines are drawn as dashed selection-colour lines across the whole
-canvas while an object with the effect is selected.
+canvas while an object with the effect is selected, and while its
+symmetry is edited (unless Show symmetry lines is off).
 
 ## Checks
 

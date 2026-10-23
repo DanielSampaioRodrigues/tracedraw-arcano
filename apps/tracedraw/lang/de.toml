@@ -3971,6 +3971,8 @@ github.conflict = "Die Datei wurde auf GitHub geändert, seit sie hier geöffnet
 github.exists = "Unter diesem Pfad gibt es schon eine Datei. Öffnen Sie sie zuerst oder wählen Sie einen anderen Pfad."
 menu.object.symmetry_break = "Symmetrieverknüpfung aufheben"
 symmetry.finish = "Fertig"
+symmetry.full_preview = "Vollständige Vorschau: Kopien vollständig gezeichnet (aus: Umrisse)" # mt
+symmetry.show_lines = "Symmetrielinien anzeigen" # mt
 status.editing_symmetry = "Symmetrie wird bearbeitet: das Original (rot umrandet) ändern; die Kopien folgen. Fertig beendet sie."
 
 options.center_dialogs = "Dialogfelder zentrieren"
