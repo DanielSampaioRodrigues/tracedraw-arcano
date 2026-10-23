@@ -1192,11 +1192,16 @@ fn block_shadow(shape: &Shape, offset: Vec2, color: Color, gap: f64) -> Vec<Shap
 /// Flatten, subdivide long segments and map every point through `map`, so
 /// straight edges bend with the warp.
 pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> BezPath {
-    let step = (b.width().max(b.height()) / 64.0).max(0.05);
+    let size = b.width().max(b.height());
+    let step = (size / 64.0).max(size * 1e-4).max(1e-9);
+    // Curves are flattened finely for the object's own size: a fixed
+    // tolerance made letters, whose own space is small and scaled up by
+    // their transform, come out in facets (#455).
+    let tolerance = (size * 2e-5).clamp(1e-7, 0.05);
     let mut out = BezPath::new();
     let mut last: Option<Point> = None;
     let mut start: Option<Point> = None;
-    kurbo::flatten(path.elements().iter().copied(), 0.05, |el| match el {
+    kurbo::flatten(path.elements().iter().copied(), tolerance, |el| match el {
         PathEl::MoveTo(p) => {
             out.move_to(map(p));
             last = Some(p);
@@ -1515,6 +1520,47 @@ mod tests {
         assert!(l.x1 <= 25.0 && r.x0 >= 25.0, "{l:?} {r:?}");
         assert!(l.y1 > 20.0 && r.y1 > 20.0, "{l:?} {r:?}");
         assert!(l.y1 < 30.0 + 1e-6, "{l:?}");
+    }
+
+    /// A curve whose own space is small and scaled up by its transform
+    /// (letters are) stays smooth under an envelope: it was flattened
+    /// with a fixed tolerance and came out in facets (#455).
+    #[test]
+    fn an_envelope_keeps_small_curves_smooth() {
+        let mut s = Shape::new(
+            crate::ShapeId(5),
+            ShapeKind::Ellipse {
+                rect: Rect::new(-0.5, -0.5, 0.5, 0.5),
+                arc: None,
+            },
+        );
+        s.transform = Affine::scale(80.0);
+        let b = s.local_path().bounding_box();
+        s.effects.push(Effect::from_envelope(
+            &crate::envelope::Frame::around(b),
+            false,
+            Default::default(),
+        ));
+        let ev = evaluate(&s);
+        let page = s.transform * ev.main.local_path();
+        // Every point of the warped outline lies on the 40 mm circle, and
+        // the chords between them sag less than a few hundredths of a mm
+        // (the Bézier circle itself is off by about one).
+        let mut worst: f64 = 0.0;
+        let mut prev: Option<Point> = None;
+        for el in page.elements() {
+            let p = match el {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => *p,
+                _ => continue,
+            };
+            if let Some(q) = prev {
+                let mid = q.midpoint(p);
+                worst = worst.max((40.0 - mid.to_vec2().hypot()).abs());
+            }
+            worst = worst.max((40.0 - p.to_vec2().hypot()).abs());
+            prev = Some(p);
+        }
+        assert!(worst < 0.03, "{worst}");
     }
 
     #[test]

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Envelope, perspective and distortions keep curves smooth: the letters of an enveloped text were drawn in visible facets (#455).
+
 - T-shirt mockups work as in the reference program, and a new Help page walks through one (Effects > Making a T-shirt mockup). Three fixes made it possible:
   - An envelope, perspective or distortion on a group now bends each object from the box of the whole group and keeps its colours; before, the group vanished.
   - Uniform transparency keeps its merge mode (Multiply and the others), where it used to keep Normal only.

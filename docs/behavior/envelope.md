@@ -26,6 +26,10 @@ Ctrl+F7).
   group work the same way. The group used to be drawn as one path with
   its own empty fill, so it vanished
   (`tracedraw_core::live::tests::an_envelope_on_a_group_keeps_each_object`).
+- Curves are flattened before the mapping with a tolerance of 1/50 000
+  of the object's size (at most 0.05 units), so letters stay smooth; a
+  fixed 0.05 left chords about 2 mm long on large text
+  (`an_envelope_keeps_small_curves_smooth`, #455).
 
 ## Envelope tool (Effects group of the toolbox)
 
