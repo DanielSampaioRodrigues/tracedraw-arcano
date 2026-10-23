@@ -64,6 +64,7 @@ $pasta = Join-Path $Root 'arcano\instalador'
 New-Item -ItemType Directory -Force $pasta | Out-Null
 Get-ChildItem $pasta -Filter '*.exe' | Remove-Item -ErrorAction SilentlyContinue
 Copy-Item $setup $pasta -Force
+Copy-Item (Join-Path $Root 'arcano\LEIA-ME-NOELIA.txt') $pasta -Force -ErrorAction SilentlyContinue
 
 if (-not $NaoPublicar) {
     Passo 'Publicando para as outras maquinas'
