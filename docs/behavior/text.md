@@ -707,7 +707,14 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   on its lowest point, inside and reading left to right, both mirrors
   on; the list shows these while the text is so placed,
   `text_path::tests::top_and_bottom_placement_on_a_closed_path`),
-  Distance from path and Offset along path in the document's units,
+  Distance from path and Offset along path in the document's units
+  (a new distance, from the bar or a drag across the path, keeps the
+  text where it is along the path: the offset, measured along the
+  baseline, scales with the baseline's length, so text centred on the
+  bottom of a circle stays centred as it moves in or out; the mirrors,
+  which put the baseline on the path's other side, scale it the same
+  way, #193,
+  `text_path::tests::distance_from_the_path_keeps_the_text_in_its_place`),
   Tick snapping and its spacing (1 mm by default, kept in the
   preferences: a drag off the path then moves the text away from it in
   whole steps,

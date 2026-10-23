@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text on a path: changing the distance from the path, or pressing a mirror button with a distance set, no longer slides the text round the path; text centred on the bottom of a circle (Placement: Bottom, or both mirrors) stays centred as it moves in or out, as in the reference program (#193).
+
 - Print Merge docker: Place Inside Frame makes a shape of your own (a circle, an oval, any outline, also inside a grouped card design) the frame of a picture field, so each card's photo goes inside it, placed by Align and scale; before, the photo went into a square frame the docker made, and a shape inside a group could not be a frame at all (#460).
 
 - Browser version: every macro command (Macro Manager, Run Macro, Macro Editor, Load Macro Project) opens a message that macros run in the desktop version, with a button to its downloads; before, the commands did nothing visible or only wrote a line in the status bar.
