@@ -4736,3 +4736,44 @@ fn alt_codes_typed_on_the_keypad_give_their_character() {
         Some("\u{c1}".into())
     );
 }
+
+/// Artistic text converted to a paragraph frame (Text > Convert) grows
+/// down with its bottom handle: the flow tab sat under that handle and
+/// took the press, so the next click linked the text to another object
+/// (#503).
+#[test]
+fn the_bottom_handle_of_a_converted_frame_drags_it_taller() {
+    let (ctx, mut app, rect) = setup();
+    app.select(Vec::new());
+    app.start_text(Point::new(80.0, 80.0), None);
+    app.text_insert("Hello world");
+    app.finish_text();
+    let id = app.selection[0];
+    app.toggle_text_kind();
+    assert_eq!(app.selection, vec![id]);
+    app.set_tool(Tool::Pick);
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let size = |app: &App| match &app.doc().find_shape(id).expect("text").kind {
+        ShapeKind::Text { frame, .. } => frame.expect("a paragraph frame"),
+        other => panic!("{other:?}"),
+    };
+    let before = size(&app);
+    // The lower half of the handle, where the tab was.
+    let from = handle(&app, Handle::S) + egui::vec2(0.0, 3.0);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(0.0, 80.0),
+        Modifiers::NONE,
+        vec![],
+    );
+    assert!(app.pending_text_link.is_none(), "no text link started");
+    assert!(size(&app).height > before.height + 1.0, "{before:?}");
+    // A click on the rectangle afterwards selects it; nothing links.
+    let c = app.view.to_screen(bounds(&app, rect).center());
+    click_at(&ctx, &mut app, c, Modifiers::NONE);
+    assert!(app.next_frame(id).is_none());
+}

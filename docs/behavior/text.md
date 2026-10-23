@@ -271,9 +271,14 @@ any other object; the steps and sides follow the letters' outlines
   data as `text.next` and `text.prev`). Unlink leaves each frame with the
   text it shows.
 - The flow tab (#371): a paragraph frame that is picked, or whose text
-  does not fit, has a tab under its bottom edge's middle (a down arrow
-  when the text does not fit, two links when the frame flows on, empty
-  otherwise). A click on the tab of a frame that flows into no other
+  does not fit, has a tab under its bottom edge's middle, below the
+  selection's bottom handle (a down arrow when the text does not fit,
+  two links when the frame flows on, empty otherwise). A press on a
+  handle is the handle's, never the tab's: the tab sat under the bottom
+  handle, so dragging a frame taller (one just made by Text > Convert,
+  say) started a text link and the next click linked the text to
+  whatever it hit (#503,
+  `the_bottom_handle_of_a_converted_frame_drags_it_taller`). A click on the tab of a frame that flows into no other
   (Pick tool) waits for the next click, with the target arrow pointer
   and a hint on the status bar: on another paragraph frame, on this page
   or on another one reached meanwhile, the text flows into it; on empty

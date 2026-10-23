@@ -1338,10 +1338,13 @@ pub(crate) fn text_frame_color(f: &crate::text_frames::ShownFrame) -> Color32 {
 }
 
 /// The flow tab of a frame whose bottom edge runs from `a` to `b` on
-/// screen: hanging under its middle.
+/// screen: hanging under its middle, below the bottom handle of the
+/// selection (it sat under that handle, so dragging the frame taller
+/// started a text link instead, #503).
 pub fn flow_tab_rect(a: Pos2, b: Pos2) -> ERect {
     let mid = a + (b - a) * 0.5;
-    ERect::from_min_size(mid + egui::vec2(-6.0, 1.0), egui::vec2(12.0, 9.0))
+    let top = crate::interaction::HANDLE_OFFSET + crate::interaction::HANDLE_SIZE / 2.0 + 2.0;
+    ERect::from_min_size(mid + egui::vec2(-6.0, top), egui::vec2(12.0, 9.0))
 }
 
 /// Paragraph text frames: dashed lines in the colour `text_frame_color`

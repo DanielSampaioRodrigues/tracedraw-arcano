@@ -1200,7 +1200,11 @@ impl App {
         if response.clicked_by(PointerButton::Primary)
             || response.drag_started_by(PointerButton::Primary)
         {
-            if let Some(id) = self.flow_tab_at(screen) {
+            // A handle comes first: the tab never takes a drag of one.
+            if let Some(id) = self
+                .flow_tab_at(screen)
+                .filter(|_| self.handle_at(screen).is_none())
+            {
                 self.start_text_link(id);
                 return;
             }
