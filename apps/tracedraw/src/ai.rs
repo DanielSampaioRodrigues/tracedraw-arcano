@@ -82,7 +82,7 @@ impl Provider {
 
 /// Ready-made connections: the i18n key of the name, the kind of service
 /// and its address. The address stays editable after one is picked.
-pub const PRESETS: [(&str, Provider, &str); 8] = [
+pub const PRESETS: [(&str, Provider, &str); 9] = [
     ("aipreset.anthropic", Provider::Anthropic, ""),
     ("aipreset.openai", Provider::OpenAiCompatible, ""),
     (
@@ -115,7 +115,59 @@ pub const PRESETS: [(&str, Provider, &str); 8] = [
         Provider::OpenAiCompatible,
         "https://opencode.ai/inference/openai/v1/chat/completions",
     ),
+    (
+        "aipreset.maritaca",
+        Provider::OpenAiCompatible,
+        MARITACA_ENDPOINT,
+    ),
 ];
+
+/// Maritaca AI's chat completions address (docs.maritaca.ai, OpenAI
+/// compatibility: base `https://chat.maritaca.ai/api`).
+pub const MARITACA_ENDPOINT: &str = "https://chat.maritaca.ai/api/chat/completions";
+
+/// Maritaca AI's current models (docs.maritaca.ai/pt/modelos, checked
+/// 2026-10-23), the usual one first, with their listed prices in reais
+/// per million tokens of input and output (docs.maritaca.ai/pt/precos).
+/// The service lists no models of its own, so these are offered.
+pub const MARITACA_MODELS: [(&str, f64, f64); 3] = [
+    ("sabia-4", 5.0, 20.0),
+    ("sabiazinho-4", 1.0, 4.0),
+    ("sabia-4-thinking", 5.0, 40.0),
+];
+
+/// True when requests go to Maritaca AI.
+pub fn is_maritaca(prefs: &AiPrefs) -> bool {
+    prefs
+        .endpoint()
+        .to_ascii_lowercase()
+        .starts_with("https://chat.maritaca.ai/")
+}
+
+/// The text model a preset starts with, for services whose model list
+/// cannot be fetched.
+pub fn preset_default_model(key: &str) -> &'static str {
+    match key {
+        "aipreset.maritaca" => MARITACA_MODELS[0].0,
+        _ => "",
+    }
+}
+
+/// What one drawing request costs with `model`, as a line for under the
+/// model, when its price is listed. A request sends the instructions,
+/// the page and up to three earlier requests (a few thousand tokens) and
+/// gets one program back; the estimate takes 4,000 tokens in and 2,000
+/// out (6,000 out for a model that reasons before it answers).
+pub fn text_price_caption(prefs: &AiPrefs, model: &str) -> Option<String> {
+    if !is_maritaca(prefs) {
+        return None;
+    }
+    let (_, input, output) = MARITACA_MODELS.iter().find(|(m, _, _)| *m == model)?;
+    let out_tokens = if model.contains("thinking") { 6000.0 } else { 2000.0 };
+    let cost = 4000.0 * input / 1e6 + out_tokens * output / 1e6;
+    let shown = crate::ai_image::localize_decimal(format!("{cost:.2}"));
+    Some(trf("ai.price_request_brl", &[("price", &shown)]))
+}
 
 /// The host of the OpenCode service (its Console Inference API, at
 /// `/inference/<family>/...`; the Zen and Go models are served there),
@@ -155,12 +207,13 @@ pub fn preset_of(prefs: &AiPrefs) -> Option<usize> {
 
 /// The presets that only write text (no pictures): the model servers on
 /// this computer (Ollama, LM Studio, llama.cpp and vLLM) and OpenCode.
-const CHAT_ONLY_PRESETS: [&str; 5] = [
+const CHAT_ONLY_PRESETS: [&str; 6] = [
     "aipreset.ollama",
     "aipreset.lm_studio",
     "aipreset.llama_cpp",
     "aipreset.vllm",
     "aipreset.opencode",
+    "aipreset.maritaca",
 ];
 
 /// Google's API host: chat at its OpenAI-compatible address, pictures
@@ -217,6 +270,9 @@ pub struct AiPrefs {
     /// The model that makes pictures, when the service can (empty: the
     /// service's usual one; at an address of the user's, no pictures).
     pub image_model: String,
+    /// The size of the pictures asked for (1K, 2K or 4K), when the image
+    /// model can make it.
+    pub image_resolution: crate::ai_image::Resolution,
 }
 
 impl Default for AiPrefs {
@@ -229,6 +285,7 @@ impl Default for AiPrefs {
             remember_key: false,
             show_bar: true,
             image_model: String::new(),
+            image_resolution: crate::ai_image::Resolution::default(),
         }
     }
 }
@@ -276,7 +333,7 @@ impl AiPrefs {
             ImageSupport::OpenAi
         } else if base.starts_with(GEMINI_HOST) {
             ImageSupport::Gemini
-        } else if is_chat_only_preset(self) {
+        } else if is_chat_only_preset(self) || is_maritaca(self) {
             ImageSupport::None
         } else {
             ImageSupport::Custom { base }
@@ -312,6 +369,7 @@ impl AiPrefs {
             model,
             key: String::new(),
             remember_key: false,
+            resolution: self.image_resolution,
         })
     }
 }
@@ -795,13 +853,17 @@ impl App {
     /// the usual ones, with the model in use first when it is in neither.
     pub fn ai_model_choices(&self) -> Vec<String> {
         let mut list: Vec<String> = if self.ai.models.is_empty() {
-            self.settings
-                .ai
-                .provider
-                .preset_models()
-                .iter()
-                .map(|m| m.to_string())
-                .collect()
+            if is_maritaca(&self.settings.ai) {
+                MARITACA_MODELS.iter().map(|(m, _, _)| m.to_string()).collect()
+            } else {
+                self.settings
+                    .ai
+                    .provider
+                    .preset_models()
+                    .iter()
+                    .map(|m| m.to_string())
+                    .collect()
+            }
         } else {
             self.ai.models.clone()
         };
@@ -1460,5 +1522,47 @@ mod tests {
         let text = parse_reply(Provider::Anthropic, &reply).expect("a reply");
         eprintln!("reply: {}", text.chars().take(400).collect::<String>());
         assert!(!text.trim().is_empty());
+    }
+
+    #[test]
+    fn the_maritaca_preset_writes_drawings_with_its_own_models() {
+        let i = PRESETS
+            .iter()
+            .position(|(k, _, _)| *k == "aipreset.maritaca")
+            .expect("preset");
+        let (key, provider, endpoint) = PRESETS[i];
+        let prefs = AiPrefs {
+            provider,
+            endpoint: endpoint.to_string(),
+            model: preset_default_model(key).to_string(),
+            ..Default::default()
+        };
+        assert_eq!(preset_of(&prefs), Some(i));
+        assert!(is_maritaca(&prefs));
+        assert_eq!(prefs.model(), "sabia-4");
+        // Text only: no pictures, even at a typed address.
+        assert_eq!(prefs.image_support(), ImageSupport::None);
+        let typed = AiPrefs {
+            endpoint: "https://chat.maritaca.ai/api/chat/completions/".into(),
+            ..prefs.clone()
+        };
+        assert_eq!(typed.image_support(), ImageSupport::None);
+        // Requests go to its chat completions address with the key.
+        let r = build_request(&prefs, "mk", &[]);
+        assert_eq!(r.url, MARITACA_ENDPOINT);
+        assert!(r.headers.iter().any(|(h, v)| h.eq_ignore_ascii_case("authorization") && v == "Bearer mk"));
+        // The model list offers its models before any fetch.
+        let mut app = crate::app::App::headless();
+        app.settings.ai = prefs.clone();
+        let list = app.ai_model_choices();
+        assert_eq!(list, vec!["sabia-4", "sabiazinho-4", "sabia-4-thinking"]);
+        // A price line for each, in reais.
+        crate::i18n::with_thread_language("pt-BR", || {
+            let c = text_price_caption(&prefs, "sabia-4").expect("price");
+            assert!(c.contains("R$ 0,06"), "{c}");
+            let small = text_price_caption(&prefs, "sabiazinho-4").expect("price");
+            assert!(small.contains("R$ 0,01"), "{small}");
+        });
+        assert!(text_price_caption(&AiPrefs::default(), "claude-sonnet-5-5").is_none());
     }
 }

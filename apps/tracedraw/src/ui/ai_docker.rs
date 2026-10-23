@@ -122,7 +122,7 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                     if ui.selectable_label(current == Some(i), tr(key)).clicked() {
                         prefs.provider = *provider;
                         prefs.endpoint = endpoint.to_string();
-                        prefs.model.clear();
+                        prefs.model = crate::ai::preset_default_model(key).to_string();
                         prefs.image_model.clear();
                         app.ai.models.clear();
                         app.ai_image.models.clear();
@@ -188,6 +188,11 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             .on_hover_text(tr("ai.model"));
         });
         ui.end_row();
+        if let Some(price) = crate::ai::text_price_caption(prefs, &prefs.model()) {
+            ui.label("");
+            dim(ui, price);
+            ui.end_row();
+        }
         row_label(ui, &tr("ai.key"));
         let key = ui.add(
             egui::TextEdit::singleline(&mut app.ai.key)
@@ -203,6 +208,18 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             row_label(ui, &tr("ai.image_model"));
             image_model_field(prefs, &app.ai_image.models, ui);
             ui.end_row();
+            if let Some(image) = prefs.image_prefs() {
+                row_label(ui, &tr("aiimg.resolution"));
+                resolution_field(prefs, &image, ui);
+                ui.end_row();
+                if let Some(price) =
+                    crate::ai_image::price_caption(&image.model(), image.resolution())
+                {
+                    ui.label("");
+                    dim(ui, price);
+                    ui.end_row();
+                }
+            }
         }
     });
     if !prefs.can_make_pictures() {
@@ -224,6 +241,30 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
     if fetch {
         app.ai_fetch_models();
     }
+}
+
+/// The size of the pictures: the ones the image model makes.
+pub fn resolution_field(
+    prefs: &mut crate::ai::AiPrefs,
+    image: &crate::ai_image::ImagePrefs,
+    ui: &mut Ui,
+) {
+    use crate::ai_image::resolutions;
+    let model = image.model();
+    let offered = resolutions(image.provider, &model);
+    let shown = image.resolution();
+    egui::ComboBox::from_id_salt("ai_image_resolution")
+        .width(FIELD_W)
+        .selected_text(tr(shown.key()))
+        .show_ui(ui, |ui| {
+            for r in offered {
+                if ui.selectable_label(shown == *r, tr(r.key())).clicked() {
+                    prefs.image_resolution = *r;
+                }
+            }
+        })
+        .response
+        .on_hover_text(tr("aiimg.resolution_tip"));
 }
 
 /// The Image model field: typed, or picked from the service's image

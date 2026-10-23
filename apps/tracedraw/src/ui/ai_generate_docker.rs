@@ -38,8 +38,14 @@ fn heading(ui: &mut Ui, key: &str, reset: bool) -> bool {
 fn model_note(model: &str) -> String {
     let key = if model.contains("pro") && model.contains("gemini") {
         "aigen.model_gemini_pro"
+    } else if model.starts_with("gemini-nano-banana") {
+        "aigen.model_nano_banana"
     } else if model.contains("gemini") {
         "aigen.model_gemini"
+    } else if model.starts_with("gpt-image-2.5-sunburst") {
+        "aigen.model_gpt_sunburst"
+    } else if model.starts_with("gpt-image-2.5-flare") {
+        "aigen.model_gpt_flare"
     } else if model.starts_with("gpt-image") {
         "aigen.model_gpt_image"
     } else if model.starts_with("dall-e") {
@@ -212,6 +218,14 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                                 )
                                 .wrap(),
                             );
+                            let res = crate::ai_image::fit_resolution(
+                                prefs.provider,
+                                m,
+                                prefs.resolution,
+                            );
+                            if let Some(price) = crate::ai_image::price_caption(m, res) {
+                                ui.label(RichText::new(price).color(Tokens::text_dim()).size(11.0));
+                            }
                             r
                         })
                         .inner;
@@ -224,6 +238,34 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             });
         ui.small_button("?").on_hover_text(model_note(&current));
     });
+    // The size of the pictures, and what one costs at that size.
+    if !svg {
+        if let Some(prefs) = app.ai_image_prefs() {
+            let model = prefs.model();
+            let offered = crate::ai_image::resolutions(prefs.provider, &model);
+            let shown = prefs.resolution();
+            ui.horizontal(|ui| {
+                ui.label(tr("aiimg.resolution"));
+                ui.add_enabled_ui(offered.len() > 1, |ui| {
+                    egui::ComboBox::from_id_salt("aigen_resolution")
+                        .width((ui.available_width() - 8.0).max(80.0))
+                        .selected_text(tr(shown.key()))
+                        .show_ui(ui, |ui| {
+                            for r in offered {
+                                if ui.selectable_label(shown == *r, tr(r.key())).clicked() {
+                                    app.settings.ai.image_resolution = *r;
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(tr("aiimg.resolution_tip"));
+                });
+            });
+            if let Some(price) = crate::ai_image::price_caption(&model, shown) {
+                ui.label(RichText::new(price).color(Tokens::text_dim()).size(11.0));
+            }
+        }
+    }
     // The reference picture: needed to remix, optional otherwise.
     if !svg {
         let key = if mode == Mode::Remix {

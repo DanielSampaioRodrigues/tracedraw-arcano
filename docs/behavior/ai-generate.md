@@ -31,13 +31,51 @@ the OpenAI Images API at the same base with the image model entered.
 
 | Image API | Address (default) | Model (default) | Key |
 |---|---|---|---|
-| Google Gemini API | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-flash-image` (also offered: `gemini-3-pro-image-preview`) | `x-goog-api-key` |
-| OpenAI Images API, or a service with the same API | `https://api.openai.com/v1` | `gpt-image-1` (also `gpt-image-1-mini`, `dall-e-3`) | `Authorization: Bearer`; optional at an address of the user's |
+| Google Gemini API | `https://generativelanguage.googleapis.com/v1beta` | `gemini-nano-banana-2.1` (also offered: `gemini-3-pro-image`) | `x-goog-api-key` |
+| OpenAI Images API, or a service with the same API | `https://api.openai.com/v1` | `gpt-image-2.5-flare` (also `gpt-image-2.5-sunburst`) | `Authorization: Bearer`; optional at an address of the user's |
+
+The offered models are the current ones (checked 2026-10-23): the
+newest of each service, and the Gemini Pro model, which costs about four
+times as much for more detail. Models the services have switched off
+(`ai_image::RETIRED_IMAGE_MODELS`: `gemini-2.5-flash-image`, the
+`-preview` names, `gpt-image-1`, `gpt-image-1-mini`, DALL-E, Imagen 4)
+are asked for as their replacement at the service's own address; at an
+address of the user's the name is sent as typed.
+
+### Size
+
+Size (in the docker under the model, and in Tools > Options > AI >
+Service, kept as `ai.image_resolution`): 1K, 2K or 4K, each with its
+pixels and its width at 300 dpi; only the sizes the model makes are
+listed (`ai_image::resolutions`: 1K, 2K and 4K for the current Gemini
+models, 1K and 2K for GPT Image 2.5, 1K otherwise), and a size the model
+does not make falls to the nearest smaller one. Gemini gets
+`imageConfig.imageSize` ("2K", "4K"; 1K is its own size and is not
+named), also for edits. GPT Image 2.5 at 2K is asked for 2048 x 2048,
+2048 x 1360 or 1360 x 2048.
+
+### Price
+
+Under the model, and under each model in its list, a line gives the
+price of one picture at the chosen size (`ai_image::price_estimate`):
+the services' listed prices on 2026-10-23, standard tier, in US dollars
+with the decimal separator of the interface language
+(`aiimg.decimal_point`).
+
+| Model | 1K | 2K | 4K |
+|---|---|---|---|
+| `gemini-nano-banana-2.1` | 0.034 | 0.050 | 0.113 |
+| `gemini-3-pro-image` | 0.134 | 0.134 | 0.24 |
+| `gemini-3.1-flash-image` (if listed by the service) | 0.067 | 0.101 | 0.151 |
+| `gpt-image-2.5-flare`, `-sunburst` | 0.006 to 0.21 by quality (the service picks it) | "costs more than at 1K" | not offered |
+
+A model whose price is not known gets no line. Prices change; the line
+says it is the listed price, and the service's own price list decides.
 
 - Gemini: `POST {address}/models/{model}:generateContent` with the
   prompt (and the picture as `inline_data` for Remix and Remove
   Background), `responseModalities` TEXT and IMAGE and the aspect ratio
-  in `imageConfig`. One picture per request: asking for 3 sends 3
+  (and a size above 1K) in `imageConfig`. One picture per request: asking for 3 sends 3
   requests. Pictures come back in `inlineData`; a refusal
   (`promptFeedback.blockReason`) or text without a picture is shown.
 - OpenAI: `POST {address}/images/generations` (JSON: model, prompt, `n`
@@ -191,3 +229,10 @@ The fourth mode, Draw with words, holds what used to be the separate AI
 Drawing panel: a request in words makes or changes objects of the
 drawing through the AI service's text model (see `ai-drawing.md`). Drawings
 whose docker column had AI Drawing open show AI Generate instead.
+- Sizes and prices follow the model
+  (`ai_image::tests::sizes_and_prices_follow_the_model`); larger sizes
+  are named for Gemini and given in pixels for GPT Image 2.5
+  (`ai_image::tests::larger_sizes_are_asked_for_by_name_or_in_pixels`);
+  retired models are replaced only at the service's own address and the
+  offered models are current
+  (`ai_image::tests::retired_models_are_replaced_only_at_the_services_own_address`).

@@ -50,18 +50,190 @@ impl ImageProvider {
 
     pub fn default_model(self) -> &'static str {
         match self {
-            ImageProvider::Gemini => "gemini-2.5-flash-image",
-            ImageProvider::OpenAi => "gpt-image-1",
+            ImageProvider::Gemini => "gemini-nano-banana-2.1",
+            ImageProvider::OpenAi => "gpt-image-2.5-flare",
         }
     }
 
-    /// Models offered before the service's own list is fetched.
+    /// Models offered before the service's own list is fetched: the
+    /// current ones, newest first, and the previous one where it costs
+    /// clearly less (see `price_estimate`). Retired models are left out.
     pub fn preset_models(self) -> &'static [&'static str] {
         match self {
-            ImageProvider::Gemini => &["gemini-2.5-flash-image", "gemini-3-pro-image-preview"],
-            ImageProvider::OpenAi => &["gpt-image-1", "gpt-image-1-mini", "dall-e-3"],
+            ImageProvider::Gemini => &["gemini-nano-banana-2.1", "gemini-3-pro-image"],
+            ImageProvider::OpenAi => &["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"],
         }
     }
+}
+
+/// Image models the services have switched off, with the model that
+/// takes their place. A saved preference naming one of them would only
+/// get errors back, so it is read as its replacement.
+pub const RETIRED_IMAGE_MODELS: [(&str, &str); 8] = [
+    ("gemini-2.5-flash-image", "gemini-nano-banana-2.1"),
+    ("gemini-2.5-flash-image-preview", "gemini-nano-banana-2.1"),
+    ("gemini-3-pro-image-preview", "gemini-3-pro-image"),
+    ("gpt-image-1", "gpt-image-2.5-flare"),
+    ("gpt-image-1-mini", "gpt-image-2.5-flare"),
+    ("dall-e-3", "gpt-image-2.5-flare"),
+    ("dall-e-2", "gpt-image-2.5-flare"),
+    ("imagen-4.0-generate-001", "gemini-nano-banana-2.1"),
+];
+
+/// The model to ask for in place of `model`: its replacement when the
+/// service has retired it, else itself.
+pub fn current_model(model: &str) -> &str {
+    RETIRED_IMAGE_MODELS
+        .iter()
+        .find(|(old, _)| *old == model)
+        .map(|(_, new)| *new)
+        .unwrap_or(model)
+}
+
+/// The size of the pictures asked for. Gemini names it (`imageSize`);
+/// for the OpenAI Images API it picks the pixel size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Resolution {
+    /// About 1024 pixels on the long side.
+    #[default]
+    #[serde(rename = "1K")]
+    K1,
+    /// About 2048 pixels.
+    #[serde(rename = "2K")]
+    K2,
+    /// About 4096 pixels.
+    #[serde(rename = "4K")]
+    K4,
+}
+
+impl Resolution {
+    pub const ALL: [Resolution; 3] = [Resolution::K1, Resolution::K2, Resolution::K4];
+
+    /// The name the Gemini API takes (with an upper-case K).
+    pub fn name(self) -> &'static str {
+        match self {
+            Resolution::K1 => "1K",
+            Resolution::K2 => "2K",
+            Resolution::K4 => "4K",
+        }
+    }
+
+    /// i18n key of the name with its size in pixels and at 300 dpi.
+    pub fn key(self) -> &'static str {
+        match self {
+            Resolution::K1 => "aiimg.res_1k",
+            Resolution::K2 => "aiimg.res_2k",
+            Resolution::K4 => "aiimg.res_4k",
+        }
+    }
+}
+
+/// The sizes `model` can make: 2K and 4K for the current Gemini image
+/// models, 2K for GPT Image 2.5 (its larger sizes are experimental),
+/// 1K for the rest and for models we do not know.
+pub fn resolutions(provider: ImageProvider, model: &str) -> &'static [Resolution] {
+    let m = current_model(model);
+    match provider {
+        ImageProvider::Gemini
+            if m.starts_with("gemini-nano-banana")
+                || m.starts_with("gemini-3-pro-image")
+                || m == "gemini-3.1-flash-image" =>
+        {
+            &Resolution::ALL
+        }
+        ImageProvider::OpenAi if m.starts_with("gpt-image-2.5") => {
+            &[Resolution::K1, Resolution::K2]
+        }
+        _ => &[Resolution::K1],
+    }
+}
+
+/// The nearest size `model` can make to `wanted`.
+pub fn fit_resolution(provider: ImageProvider, model: &str, wanted: Resolution) -> Resolution {
+    let offered = resolutions(provider, model);
+    offered
+        .iter()
+        .rev()
+        .find(|r| **r as u8 <= wanted as u8)
+        .copied()
+        .unwrap_or(Resolution::K1)
+}
+
+/// What a picture costs, as the services list it (US dollars, standard
+/// tier, one picture). Checked on 2026-10-23 against
+/// ai.google.dev/gemini-api/docs/pricing (per picture by size) and
+/// developers.openai.com/api/docs/pricing (per million picture tokens:
+/// GPT Image 2.5 at 30, GPT Image 2 at 15). OpenAI prices a picture by
+/// its quality, which the service chooses ("auto"), so those are a range
+/// from the lowest quality to the highest.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Price {
+    /// One price per picture.
+    Each(f64),
+    /// From the lowest quality to the highest.
+    Range(f64, f64),
+    /// Known model, but no listed price at this size: it costs more than
+    /// at 1K.
+    Larger,
+}
+
+/// The listed price of one picture from `model` at `res`, when known.
+pub fn price_estimate(model: &str, res: Resolution) -> Option<Price> {
+    let m = current_model(model);
+    let r = res as usize;
+    if m.starts_with("gemini-nano-banana-2.1") {
+        return Some(Price::Each([0.0336, 0.0504, 0.113][r]));
+    }
+    if m.starts_with("gemini-3-pro-image") {
+        return Some(Price::Each([0.134, 0.134, 0.24][r]));
+    }
+    if m == "gemini-3.1-flash-image" {
+        return Some(Price::Each([0.067, 0.101, 0.151][r]));
+    }
+    if m.starts_with("gemini-3.1-flash-lite-image") {
+        return Some(Price::Each(0.0336));
+    }
+    if m.starts_with("gpt-image-2.5") {
+        return Some(match res {
+            Resolution::K1 => Price::Range(0.006, 0.211),
+            _ => Price::Larger,
+        });
+    }
+    None
+}
+
+/// A number of dollars with the decimal separator of the interface
+/// language and no more digits than the price needs.
+fn dollars(v: f64) -> String {
+    let s = if v < 0.1 { format!("{v:.3}") } else { format!("{v:.2}") };
+    let s = if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    };
+    localize_decimal(s)
+}
+
+/// `s`, a number written with a point, with the decimal separator of
+/// the interface language.
+pub fn localize_decimal(s: String) -> String {
+    match tr("aiimg.decimal_point").as_str() {
+        "," => s.replace('.', ","),
+        _ => s,
+    }
+}
+
+/// The price line under the model: "about US$ 0.034 a picture", or the
+/// range, or nothing for a model whose price we do not know.
+pub fn price_caption(model: &str, res: Resolution) -> Option<String> {
+    Some(match price_estimate(model, res)? {
+        Price::Each(v) => trf("aiimg.price_each", &[("price", &dollars(v))]),
+        Price::Range(lo, hi) => trf(
+            "aiimg.price_range",
+            &[("low", &dollars(lo)), ("high", &dollars(hi))],
+        ),
+        Price::Larger => tr("aiimg.price_larger"),
+    })
 }
 
 /// An image service: derived from the one AI service
@@ -79,6 +251,9 @@ pub struct ImagePrefs {
     pub model: String,
     pub key: String,
     pub remember_key: bool,
+    /// The size of the pictures asked for (from the one service).
+    #[serde(skip)]
+    pub resolution: Resolution,
 }
 
 impl ImagePrefs {
@@ -95,9 +270,18 @@ impl ImagePrefs {
         let m = self.model.trim();
         if m.is_empty() {
             self.provider.default_model().to_string()
+        } else if self.endpoint.trim().is_empty() {
+            // The service's own address: a retired model would only fail.
+            current_model(m).to_string()
         } else {
+            // A server of the user's may still use the old names.
             m.to_string()
         }
+    }
+
+    /// The size asked for, as near the chosen one as the model makes.
+    pub fn resolution(&self) -> Resolution {
+        fit_resolution(self.provider, &self.model(), self.resolution)
     }
 
     /// A service at an address of the user's may take no key.
@@ -199,6 +383,20 @@ impl Aspect {
             | Aspect::Ultrawide219 => Some(true),
             _ => Some(false),
         }
+    }
+
+    /// The OpenAI Images API size for `model` at `res`: the usual sizes
+    /// at 1K, and for GPT Image 2.5 twice as large at 2K (sides in
+    /// multiples of 16, as the API asks).
+    pub fn openai_size_at(self, model: &str, res: Resolution) -> &'static str {
+        if res != Resolution::K1 && model.starts_with("gpt-image-2.5") {
+            return match self.landscape() {
+                None => "2048x2048",
+                Some(true) => "2048x1360",
+                Some(false) => "1360x2048",
+            };
+        }
+        self.openai_size(model)
     }
 
     /// The nearest size the OpenAI Images API offers for `model`.
@@ -446,7 +644,7 @@ pub fn build_generate(
                 "model": model,
                 "prompt": prompt,
                 "n": count.clamp(1, MAX_COUNT),
-                "size": aspect.openai_size(&model),
+                "size": aspect.openai_size_at(&model, prefs.resolution()),
             });
             if model.starts_with("dall-e") {
                 body["response_format"] = json!("b64_json");
@@ -532,6 +730,14 @@ fn gemini_request(
     let mut config = json!({"responseModalities": ["TEXT", "IMAGE"]});
     if let Some(a) = aspect {
         config["imageConfig"] = json!({"aspectRatio": a.ratio()});
+    }
+    // 1K is the service's own size; larger ones are named.
+    let res = prefs.resolution();
+    if res != Resolution::K1 {
+        if !config["imageConfig"].is_object() {
+            config["imageConfig"] = json!({});
+        }
+        config["imageConfig"]["imageSize"] = json!(res.name());
     }
     let body = json!({
         "contents": [{"role": "user", "parts": parts}],
@@ -1612,25 +1818,31 @@ mod tests {
         let mut app = ready_app(ImageProvider::Gemini);
         let p = app.ai_image_prefs().expect("gemini makes pictures");
         assert_eq!(p.provider, ImageProvider::Gemini);
-        assert_eq!(p.model(), "gemini-2.5-flash-image");
+        assert_eq!(p.model(), "gemini-nano-banana-2.1");
         // Gemini's chat address is its OpenAI-compatible one; pictures go
         // to its own API.
         let r = build_generate(&p, &app.ai.key, "a cat", Aspect::Square, 1);
         assert!(r.url.starts_with(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1"
         ));
         assert!(app.ai_image_ready() && app.ai_image_tip().is_none());
         let mut app2 = ready_app(ImageProvider::OpenAi);
         let p = app2.ai_image_prefs().expect("openai makes pictures");
         assert_eq!(
             (p.provider, p.model()),
-            (ImageProvider::OpenAi, "gpt-image-1".into())
+            (ImageProvider::OpenAi, "gpt-image-2.5-flare".into())
         );
         assert_eq!(p.endpoint(), "https://api.openai.com/v1");
+        app2.settings.ai.image_model = "gpt-image-2.5-sunburst".into();
+        assert_eq!(
+            app2.ai_image_prefs().map(|p| p.model()),
+            Some("gpt-image-2.5-sunburst".into())
+        );
+        // A model OpenAI has retired is asked for as its replacement.
         app2.settings.ai.image_model = "dall-e-3".into();
         assert_eq!(
             app2.ai_image_prefs().map(|p| p.model()),
-            Some("dall-e-3".into())
+            Some("gpt-image-2.5-flare".into())
         );
         // Anthropic and the local chat-only servers make drawings only.
         app.settings.ai = crate::ai::AiPrefs::default();
@@ -1679,7 +1891,7 @@ mod tests {
         let r = build_generate(&p, "key1", "a cat", Aspect::Wide169, 2);
         assert_eq!(
             r.url,
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1:generateContent"
         );
         assert!(r
             .headers
@@ -1712,6 +1924,9 @@ mod tests {
         assert_eq!(v["n"], 4, "at most four at a time");
         assert_eq!(v["size"], "1024x1536");
         assert!(v.get("response_format").is_none());
+        // A server of the user's that still serves DALL-E 3 under that
+        // name (OpenAI itself has retired it).
+        p.endpoint = "http://my-box:9000/v1".into();
         p.model = "dall-e-3".into();
         let v: Value = serde_json::from_str(&build_generate(&p, "", "x", Aspect::Wide169, 1).body)
             .expect("json");
@@ -1720,6 +1935,7 @@ mod tests {
             (Some("1792x1024"), Some("b64_json"))
         );
         p.model.clear();
+        p.endpoint.clear();
         let e = build_edit(&p, "key2", "cut", b"\x89PNGDATA", true);
         assert_eq!(e.url, "https://api.openai.com/v1/images/edits");
         assert!(e.body.is_empty() && !e.bytes.is_empty());
@@ -2170,5 +2386,111 @@ mod tests {
         );
         app.undo();
         assert!(app.doc().all_layers().all(|l| l.shapes.is_empty()));
+    }
+
+    #[test]
+    fn sizes_and_prices_follow_the_model() {
+        // The current Gemini models make 1K, 2K and 4K; GPT Image 2.5
+        // 1K and 2K; others 1K only.
+        assert_eq!(
+            resolutions(ImageProvider::Gemini, "gemini-nano-banana-2.1"),
+            &Resolution::ALL
+        );
+        assert_eq!(
+            resolutions(ImageProvider::OpenAi, "gpt-image-2.5-flare"),
+            &[Resolution::K1, Resolution::K2]
+        );
+        assert_eq!(resolutions(ImageProvider::OpenAi, "sd-xl"), &[Resolution::K1]);
+        assert_eq!(
+            fit_resolution(ImageProvider::OpenAi, "gpt-image-2.5-flare", Resolution::K4),
+            Resolution::K2
+        );
+        // Listed prices.
+        assert_eq!(
+            price_estimate("gemini-nano-banana-2.1", Resolution::K1),
+            Some(Price::Each(0.0336))
+        );
+        assert_eq!(
+            price_estimate("gemini-3-pro-image", Resolution::K4),
+            Some(Price::Each(0.24))
+        );
+        assert_eq!(
+            price_estimate("gpt-image-2.5-sunburst", Resolution::K2),
+            Some(Price::Larger)
+        );
+        assert_eq!(price_estimate("sd-xl", Resolution::K1), None);
+        crate::i18n::with_thread_language("pt-BR", || {
+            let c = price_caption("gemini-nano-banana-2.1", Resolution::K2).expect("caption");
+            assert!(c.contains("0,05"), "{c}");
+        });
+        crate::i18n::with_thread_language("en", || {
+            let c = price_caption("gpt-image-2.5-flare", Resolution::K1).expect("caption");
+            assert!(c.contains("0.006") && c.contains("0.21"), "{c}");
+        });
+    }
+
+    #[test]
+    fn larger_sizes_are_asked_for_by_name_or_in_pixels() {
+        let mut p = ImagePrefs {
+            resolution: Resolution::K4,
+            ..Default::default()
+        };
+        let r = build_generate(&p, "k", "a cat", Aspect::Square, 1);
+        let v: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(v.pointer("/generationConfig/imageConfig/imageSize"), Some(&json!("4K")));
+        assert_eq!(v.pointer("/generationConfig/imageConfig/aspectRatio"), Some(&json!("1:1")));
+        // 1K is the service's own size: not named.
+        p.resolution = Resolution::K1;
+        let r = build_generate(&p, "k", "a cat", Aspect::Square, 1);
+        let v: Value = serde_json::from_str(&r.body).expect("json");
+        assert!(v.pointer("/generationConfig/imageConfig/imageSize").is_none());
+        // An edit (no aspect) still names a larger size.
+        p.resolution = Resolution::K2;
+        let r = build_edit(&p, "k", "remove the dog", &[1, 2, 3], false);
+        let v: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(v.pointer("/generationConfig/imageConfig/imageSize"), Some(&json!("2K")));
+        // GPT Image 2.5 at 2K: twice the usual sides.
+        let o = ImagePrefs {
+            provider: ImageProvider::OpenAi,
+            resolution: Resolution::K2,
+            ..Default::default()
+        };
+        let r = build_generate(&o, "k", "a cat", Aspect::Wide169, 1);
+        let v: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(v["model"], "gpt-image-2.5-flare");
+        assert_eq!(v["size"], "2048x1360");
+        // A model without 2K keeps its usual size.
+        let o2 = ImagePrefs {
+            model: "gpt-image-2".into(),
+            ..o
+        };
+        let r = build_generate(&o2, "k", "a cat", Aspect::Wide169, 1);
+        let v: Value = serde_json::from_str(&r.body).expect("json");
+        assert_eq!(v["size"], "1536x1024");
+    }
+
+    #[test]
+    fn retired_models_are_replaced_only_at_the_services_own_address() {
+        let official = ImagePrefs {
+            provider: ImageProvider::Gemini,
+            model: "gemini-2.5-flash-image".into(),
+            ..Default::default()
+        };
+        assert_eq!(official.model(), "gemini-nano-banana-2.1");
+        // A server of the user's may still call its model by an old name.
+        let own = ImagePrefs {
+            provider: ImageProvider::OpenAi,
+            endpoint: "http://my-box:9000/v1".into(),
+            model: "dall-e-3".into(),
+            ..Default::default()
+        };
+        assert_eq!(own.model(), "dall-e-3");
+        // The offered models are current ones only.
+        for p in [ImageProvider::Gemini, ImageProvider::OpenAi] {
+            for m in p.preset_models() {
+                assert_eq!(current_model(m), *m, "{m} is retired");
+            }
+            assert_eq!(p.preset_models().first(), Some(&p.default_model()));
+        }
     }
 }

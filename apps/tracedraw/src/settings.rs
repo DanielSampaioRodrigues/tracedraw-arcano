@@ -415,6 +415,11 @@ pub struct Settings {
     /// A release the user chose to skip: not offered again at start.
     #[serde(default)]
     pub skipped_update: String,
+    /// Arcano edition: the source folder this machine builds the edition
+    /// from (empty: the one the program runs from, when it is a build in
+    /// a source folder; see `fork.rs`).
+    #[serde(default)]
+    pub fork_source: String,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1378,6 +1383,7 @@ impl Default for Settings {
             check_updates: true,
             last_update_check: 0,
             skipped_update: String::new(),
+            fork_source: String::new(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),
@@ -1905,7 +1911,8 @@ mod tests {
         let p = s.ai.image_prefs().expect("pictures");
         assert_eq!(
             (p.provider, p.model()),
-            (ImageProvider::Gemini, "gemini-3-pro-image-preview".into())
+            // The preview name is asked for as the released model.
+            (ImageProvider::Gemini, "gemini-3-pro-image".into())
         );
         // OpenAI at its usual address: the OpenAI preset.
         let s = migrated(
@@ -1915,7 +1922,7 @@ mod tests {
         assert_eq!(crate::ai::remembered_key(&s.ai), "o-key");
         assert_eq!(
             s.ai.image_prefs().map(|p| p.model()),
-            Some("gpt-image-1".into())
+            Some("gpt-image-2.5-flare".into())
         );
         // OpenAI-compatible at the user's address: a custom address with
         // the image model kept.
@@ -1940,7 +1947,7 @@ mod tests {
         assert!(s.ai.can_make_pictures());
         assert_eq!(
             s.ai.image_prefs().map(|p| p.model()),
-            Some("gpt-image-1".into())
+            Some("gpt-image-2.5-flare".into())
         );
         // The prompt bar switch is kept.
         let s = migrated(r#"{"ai": {"show_bar": false}, "ai_image": {"provider": "open_ai"}}"#);

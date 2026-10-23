@@ -56,7 +56,16 @@ stays editable, and a typed one shows as "Custom (typed address)".
 | llama.cpp server (this computer) | `http://localhost:8080/v1/chat/completions` | no (drawings only) |
 | vLLM (this computer) | `http://localhost:8000/v1/chat/completions` | no (drawings only) |
 | OpenCode | `https://opencode.ai/inference/openai/v1/chat/completions` (the Console Inference API's OpenAI-compatible path; the Zen and Go models are chosen by name) | no (drawings only) |
+| Maritaca AI (Sabiá, drawings only) | `https://chat.maritaca.ai/api/chat/completions` (docs.maritaca.ai, OpenAI compatibility); model `sabia-4` filled in, and `sabiazinho-4` and `sabia-4-thinking` offered, since the service lists no models | no (drawings only) |
 | Custom (typed address) | the user's, OpenAI-compatible | OpenAI Images API at the same base (the address without `/chat/completions`) when an image model is entered; left empty, no pictures |
+
+For Maritaca AI a line under the model gives the estimated price of one
+drawing request in reais (`ai::text_price_caption`): 4,000 tokens in and
+2,000 out (6,000 for `sabia-4-thinking`), at the listed prices per
+million tokens (R$ 5 / 20 for `sabia-4`, 1 / 4 for `sabiazinho-4`,
+5 / 40 for `sabia-4-thinking`, checked 2026-10-23). Every address on
+`https://chat.maritaca.ai/` makes drawings only
+(`ai::tests::the_maritaca_preset_writes_drawings_with_its_own_models`).
 
 Which service can make pictures follows from the address
 (`ai::AiPrefs::image_support`): the Messages API never; an
