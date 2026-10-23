@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > General: Use hardware acceleration, with the graphics card to draw with, as in the reference program (#445). The window is now drawn with Direct3D 12, Vulkan or Metal. Turned off, or when the card cannot open the window (a virtual machine, for example), TraceDraw uses the software renderer and then OpenGL by itself and remembers what worked, so it opens where it used to fail (#439).
+
 - Print Merge works as in the reference program: Finish opens the Print Merge docker instead of merging at once. There you insert Text, Image and QR code fields from the data source's columns. An image field takes a placeholder picture and an Align and scale setting (anchor point, then Actual size, Fit proportionally, Fill proportionally or Stretch to fill). Update Field changes the selected placeholder, and Create Merged Document or Print Merged Document makes the merged pages in a new drawing (#437).
 
 - Tools > Options > AI > Service: the Model field has a list to pick from, with the models the service offers (Refresh list asks it for them) or the usual ones of its kind, as the AI bar has.

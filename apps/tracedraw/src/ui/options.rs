@@ -615,6 +615,8 @@ fn general_page(app: &mut App, ui: &mut Ui) {
         if !crate::files::WEB {
             ui.checkbox(&mut app.settings.show_splash, tr("options.show_splash"));
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        hardware_acceleration(app, ui);
     });
     chrome::section(ui, &tr("options.undo_levels"));
     ui.indent("undo", |ui| {
@@ -627,6 +629,60 @@ fn general_page(app: &mut App, ui: &mut Ui) {
             ui.end_row();
         });
     });
+}
+
+/// Use hardware acceleration and the graphics card (#445); they take
+/// effect at the next start.
+#[cfg(not(target_arch = "wasm32"))]
+fn hardware_acceleration(app: &mut App, ui: &mut Ui) {
+    let before = (
+        app.settings.hardware_acceleration,
+        app.settings.gpu_adapter.clone(),
+    );
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.checkbox(
+            &mut app.settings.hardware_acceleration,
+            tr("options.hardware_acceleration"),
+        );
+        let on = app.settings.hardware_acceleration;
+        let chosen = &mut app.settings.gpu_adapter;
+        let shown = if chosen.is_empty() {
+            tr("options.gpu_automatic")
+        } else {
+            chosen.clone()
+        };
+        ui.add_enabled_ui(on, |ui| {
+            egui::ComboBox::from_id_salt("gpu_adapter")
+                .width(260.0)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(chosen, String::new(), tr("options.gpu_automatic"));
+                    for name in crate::gpu::adapters() {
+                        ui.selectable_value(chosen, name.clone(), name);
+                    }
+                });
+        });
+    });
+    let dim = |ui: &mut Ui, text: String| {
+        ui.label(
+            egui::RichText::new(text)
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+    };
+    if let Some(name) = crate::gpu::in_use() {
+        dim(ui, trf("options.gpu_in_use", &[("name", name)]));
+    }
+    dim(ui, tr("options.restart_to_apply"));
+    // A new choice is tried afresh at the next start.
+    if (
+        app.settings.hardware_acceleration,
+        app.settings.gpu_adapter.clone(),
+    ) != before
+    {
+        app.settings.working_renderer.clear();
+    }
 }
 
 fn display_page(app: &mut App, ui: &mut Ui) {
