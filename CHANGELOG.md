@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: deleting the first node of a closed curve keeps the curve's shape, as deleting any other node does; the two segments around it kept their old handles and the curve changed (#472).
+
 - Shape tool: Ctrl or Shift while dragging a control handle keeps it to the constrain angle (15° by default), and a smooth node's other handle keeps following; Ctrl turned the node into a cusp instead and Shift did nothing (#510).
 
 - Interactive Fill: the colour node's bar and the colour picker popup have a dotted grip that drags them off the object they cover; they stay where they were put while open.
