@@ -122,16 +122,64 @@ pub struct Picture {
 /// The picture a cell names (relative paths from the data file's
 /// folder), or `None` when it does not load.
 pub fn picture(value: &str, base: Option<&std::path::Path>) -> Option<Picture> {
+    let dirs: Vec<std::path::PathBuf> = base
+        .and_then(|b| b.parent())
+        .map(|d| d.to_path_buf())
+        .into_iter()
+        .collect();
+    picture_in(value, &dirs)
+}
+
+/// The folders a picture cell's relative path is looked for in: the
+/// pictures folder chosen in the Print Merge docker, then the data
+/// file's folder (#460).
+pub fn picture_dirs(st: &PrintMergeState) -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = st.pictures.iter().cloned().collect();
+    if let Some(d) = st.path.as_deref().and_then(|p| p.parent()) {
+        dirs.push(d.to_path_buf());
+    }
+    dirs
+}
+
+/// The extensions tried for a cell that names a picture without one (an
+/// ID card's "1024" finds "1024.jpg").
+const PICTURE_EXTENSIONS: [&str; 8] = ["jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff"];
+
+/// The bytes of the picture a cell names: an absolute path as it is, a
+/// relative one in each of `dirs` in turn; a name without an extension
+/// with each picture extension.
+fn picture_bytes(value: &str, dirs: &[std::path::PathBuf]) -> Option<Vec<u8>> {
+    let name = std::path::PathBuf::from(value.trim());
+    let mut tries: Vec<std::path::PathBuf> = Vec::new();
+    if name.is_absolute() {
+        tries.push(name.clone());
+    } else {
+        tries.extend(dirs.iter().map(|d| d.join(&name)));
+        tries.push(name.clone());
+    }
+    for t in tries {
+        if let Ok(b) = crate::files::read(&t) {
+            return Some(b);
+        }
+        if t.extension().is_none() {
+            for ext in PICTURE_EXTENSIONS {
+                for e in [ext.to_string(), ext.to_uppercase()] {
+                    if let Ok(b) = crate::files::read(t.with_extension(&e)) {
+                        return Some(b);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// [`picture`] looked for in `dirs`.
+pub fn picture_in(value: &str, dirs: &[std::path::PathBuf]) -> Option<Picture> {
     if value.trim().is_empty() {
         return None;
     }
-    let mut path = std::path::PathBuf::from(value.trim());
-    if path.is_relative() {
-        if let Some(dir) = base.and_then(|b| b.parent()) {
-            path = dir.join(path);
-        }
-    }
-    let bytes = crate::files::read(&path).ok()?;
+    let bytes = picture_bytes(value, dirs)?;
     let (dx, dy) = crate::image_dpi::resolution(&bytes)
         .unwrap_or((crate::image_dpi::DEFAULT_DPI, crate::image_dpi::DEFAULT_DPI));
     let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
@@ -319,7 +367,7 @@ fn replacement(
     kind: &FieldKind,
     value: &str,
     area: Rect,
-    base: Option<&std::path::Path>,
+    dirs: &[std::path::PathBuf],
     fill: bool,
 ) -> Option<(ShapeKind, Fill)> {
     if value.trim().is_empty() {
@@ -327,7 +375,7 @@ fn replacement(
     }
     match kind {
         FieldKind::Image => {
-            let pic = picture(value, base)?;
+            let pic = picture_in(value, dirs)?;
             let (w, h) = (pic.px.0 as f64, pic.px.1 as f64);
             Some((
                 ShapeKind::Bitmap {
@@ -446,7 +494,7 @@ fn fill_shape(
             ),
             _ => (local_box(s), false),
         };
-        match replacement(&kind_of(st, i), value_of(i), area, st.path.as_deref(), fill) {
+        match replacement(&kind_of(st, i), value_of(i), area, &picture_dirs(st), fill) {
             Some((kind, fill)) => {
                 cmds.push(Command::SetShapeKind { shape: s.id, kind });
                 cmds.push(Command::SetFill {
@@ -534,7 +582,7 @@ fn named_placeholder(
                     });
                 }
             }
-            let Some(pic) = picture(value, st.path.as_deref()) else {
+            let Some(pic) = picture_in(value, &picture_dirs(st)) else {
                 return;
             };
             let (scale, anchor) = placement_of(s);
@@ -558,7 +606,7 @@ fn named_placeholder(
                 frame: s.id,
             });
         }
-        FieldKind::Qr => match replacement(&FieldKind::Qr, value, local_box(s), None, false) {
+        FieldKind::Qr => match replacement(&FieldKind::Qr, value, local_box(s), &[], false) {
             Some((kind, fill)) => {
                 cmds.push(Command::SetShapeKind { shape: s.id, kind });
                 cmds.push(Command::SetFill {
@@ -906,6 +954,66 @@ mod tests {
         assert!(near(r, Rect::new(0.0, -10.0, 40.0, 30.0)), "{r:?}");
         let r = place(area, 10.0, 10.0, Scale::Stretch, 0);
         assert!(near(r, area));
+    }
+
+    /// ID cards from a folder of photos (#460): the cells name the photos
+    /// (with or without an extension), the folder is chosen in the docker,
+    /// and each card gets its own.
+    #[test]
+    fn each_record_gets_its_photo_from_the_pictures_folder() {
+        let dir = std::env::temp_dir().join(format!("td_merge_photos_{}", std::process::id()));
+        let photos = dir.join("photos");
+        std::fs::create_dir_all(&photos).unwrap();
+        image::RgbImage::from_pixel(10, 20, image::Rgb([200, 0, 0]))
+            .save(photos.join("1001.jpg"))
+            .unwrap();
+        image::RgbaImage::from_pixel(30, 10, image::Rgba([0, 0, 200, 255]))
+            .save(photos.join("1002.png"))
+            .unwrap();
+        let mut app = App::headless();
+        let frame = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 40.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("frame");
+        app.run(Command::SetShapeName {
+            shape: frame,
+            name: Some("<Photo>".into()),
+        });
+        let st = PrintMergeState {
+            headers: vec!["Photo".into()],
+            rows: vec![vec!["1001".into()], vec!["1002.png".into()]],
+            kinds: vec![FieldKind::Image],
+            // The data file is somewhere else.
+            path: Some(dir.join("data").join("cards.xlsx")),
+            pictures: Some(photos.clone()),
+            ..Default::default()
+        };
+        perform(&mut app, &st);
+        let doc = app.doc();
+        let size_on = |page: usize| -> Option<(u32, u32)> {
+            fn find(s: &Shape) -> Option<(u32, u32)> {
+                match &s.kind {
+                    ShapeKind::Bitmap {
+                        width_px,
+                        height_px,
+                        ..
+                    } => Some((*width_px, *height_px)),
+                    ShapeKind::ClipFrame { contents, .. } => contents.iter().find_map(find),
+                    _ => None,
+                }
+            }
+            doc.pages[page]
+                .layers
+                .iter()
+                .flat_map(|l| &l.shapes)
+                .find_map(find)
+        };
+        assert_eq!(size_on(1), Some((10, 20)), "the first card, its photo");
+        assert_eq!(size_on(2), Some((30, 10)), "the second card, its own");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

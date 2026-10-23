@@ -30,7 +30,9 @@ fonte de dados que você criou ou carregou:
 - **[[merge.create]]** e **[[merge.edit]]** abrem os registros.
 - Escolha o tipo de campo, **Texto**, **Imagem** ou **Código QR**, e a coluna
   em **[[merge.columns]]**.
-- Para uma imagem, **[[merge.placeholder]]** escolhe uma imagem que representa
+- Para uma imagem, **[[merge.pictures_folder]]** escolhe a pasta onde estão as
+  fotos, quando os dados trazem só o nome dos arquivos (um nome sem extensão,
+  como `1024`, encontra `1024.jpg` ou `1024.png`). **[[merge.placeholder]]** escolhe uma imagem que representa
   as mescladas enquanto você desenha, e **[[merge.align_scale]]** define onde
   cada imagem fica na moldura: clique em um dos nove pontos para ancorá-la e
   escolha [[merge.scale_actual]], [[merge.scale_fit]], [[merge.scale_fill]]

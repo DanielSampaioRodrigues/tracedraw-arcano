@@ -469,6 +469,9 @@ pub struct PrintMergeState {
     pub adding: Option<(String, usize)>,
     /// The Go to Record field.
     pub go_to: String,
+    /// The folder picture cells are looked for in first (the Print Merge
+    /// docker's Pictures folder, #460).
+    pub pictures: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

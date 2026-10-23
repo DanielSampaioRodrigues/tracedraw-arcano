@@ -63,7 +63,13 @@ at once (#437). From top to bottom:
   records, Edit on the ones kept.
 - Text, Image or QR code: the kind of field Insert Field makes.
 - Data source columns: the field to insert.
-- For Image: Placeholder image (a picture that stands in for the merged
+- For Image: Pictures folder (#460): the folder picture cells that are
+  relative paths are looked for in first, before the data file's folder
+  (the folder button picks it, the cross forgets it); a cell naming a
+  picture without an extension ("1024") finds it with .jpg, .jpeg, .png,
+  .webp, .bmp, .gif, .tif or .tiff
+  (`each_record_gets_its_photo_from_the_pictures_folder`). Then
+  Placeholder image (a picture that stands in for the merged
   ones on the page; the folder button picks it) and Align and scale: a
   grid of nine anchor points (the point of the placeholder the picture
   is placed by) and Actual size (its own size: its resolution, else

@@ -1520,6 +1520,24 @@ mod tests {
         assert!(l.x1 <= 25.0 && r.x0 >= 25.0, "{l:?} {r:?}");
         assert!(l.y1 > 20.0 && r.y1 > 20.0, "{l:?} {r:?}");
         assert!(l.y1 < 30.0 + 1e-6, "{l:?}");
+        // Perspective on a group too (#458): each object stays, drawn.
+        g.effects = vec![Effect::Perspective {
+            corners: [
+                Point::new(0.0, 0.0),
+                Point::new(50.0, 0.0),
+                Point::new(40.0, 20.0),
+                Point::new(10.0, 20.0),
+            ],
+        }];
+        let ev = evaluate(&g);
+        let ShapeKind::Group { children } = &ev.main.kind else {
+            panic!("still a group: {:?}", ev.main.kind);
+        };
+        assert_eq!(children.len(), 2);
+        assert!(children
+            .iter()
+            .all(|c| !c.local_path().elements().is_empty()));
+        assert_eq!(children[1].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
     }
 
     /// A curve whose own space is small and scaled up by its transform

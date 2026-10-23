@@ -334,6 +334,11 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
         .as_ref()
         .map(|st| st.headers.clone())
         .unwrap_or_default();
+    let folder: Option<String> = app
+        .merge_state
+        .as_ref()
+        .and_then(|st| st.pictures.as_ref())
+        .map(|p| p.display().to_string());
     if headers.is_empty() {
         ui.label(
             egui::RichText::new(tr("merge.no_data"))
@@ -363,7 +368,30 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                 }
             });
         let mut browse = false;
+        let mut pick_folder = false;
+        let mut clear_folder = false;
         if d.kind == 1 {
+            // Where picture cells that name only a file are looked for
+            // first: one folder of photos for all the cards (#460).
+            ui.add_space(4.0);
+            ui.label(tr("merge.pictures_folder"));
+            ui.horizontal(|ui| {
+                pick_folder = ui
+                    .button("\u{1F4C2}")
+                    .on_hover_text(tr("merge.pictures_folder_tip"))
+                    .clicked();
+                let shown = folder
+                    .clone()
+                    .unwrap_or_else(|| tr("merge.pictures_folder_data"));
+                ui.label(
+                    egui::RichText::new(shown)
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+                if folder.is_some() && ui.small_button("\u{2715}").clicked() {
+                    clear_folder = true;
+                }
+            });
             ui.add_space(4.0);
             ui.label(tr("merge.placeholder"));
             ui.horizontal(|ui| {
@@ -430,6 +458,18 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
             .clicked()
         {
             app.create_merged_document(true);
+        }
+        if pick_folder {
+            if let Some(dir) = crate::files::pick_folder() {
+                if let Some(st) = app.merge_state.as_mut() {
+                    st.pictures = Some(dir);
+                }
+            }
+        }
+        if clear_folder {
+            if let Some(st) = app.merge_state.as_mut() {
+                st.pictures = None;
+            }
         }
         if browse {
             crate::files::Dialog::new()

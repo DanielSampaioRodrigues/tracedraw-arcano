@@ -29,7 +29,9 @@ data source you created or loaded:
 - **[[merge.create]]** and **[[merge.edit]]** open the records.
 - Choose the kind of field, **Text**, **Picture** or **QR code**, and the
   column under **[[merge.columns]]**.
-- For a picture, **[[merge.placeholder]]** chooses a picture that stands in
+- For a picture, **[[merge.pictures_folder]]** chooses the folder your photos
+  are in, when the data names only their files (a name without an extension,
+  such as `1024`, finds `1024.jpg` or `1024.png`). **[[merge.placeholder]]** chooses a picture that stands in
   for the merged ones while you design, and **[[merge.align_scale]]** sets
   where each picture goes in its frame: click one of the nine points to
   anchor it, then choose [[merge.scale_actual]], [[merge.scale_fit]],

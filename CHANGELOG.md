@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge docker: a Pictures folder for the photos the data names, so a folder of 50 photos fills 50 ID cards, each with its own; a name without an extension finds the .jpg or .png (#460).
+
 - Tracing: Repeat Last Trace and Open Last Trace Settings in the Bitmaps menu, and a bitmap's right-click menu now lists them with Centerline Trace and Outline Trace and all their presets, not only Quick Trace (#452).
 
 - Glyphs docker: the font list is the property bar's, so a font can be found by typing its name, and the line above the glyphs shows the keystroke that types the glyph (Alt+0169 for ©), as in the reference program. While editing text, Alt and a number types the character on every system, not only on Windows (#447).
