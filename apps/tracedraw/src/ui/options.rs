@@ -238,6 +238,8 @@ pub struct OptionsSnapshot {
     eraser_square: bool,
     text_font: String,
     text_size_pt: f64,
+    text_default_font: String,
+    text_default_size: f64,
     text_hyphenation: bool,
     show_non_printing: bool,
     workspace: crate::app::Workspace,
@@ -285,6 +287,8 @@ impl OptionsSnapshot {
             eraser_square: app.eraser_square,
             text_font: app.text_font.clone(),
             text_size_pt: app.text_size_pt,
+            text_default_font: app.text_default_font.clone(),
+            text_default_size: app.text_default_size,
             text_hyphenation: app.text_hyphenation,
             show_non_printing: app.show_non_printing,
             workspace: app.workspace,
@@ -341,6 +345,8 @@ impl OptionsSnapshot {
         app.eraser_square = self.eraser_square;
         app.text_font = self.text_font;
         app.text_size_pt = self.text_size_pt;
+        app.text_default_font = self.text_default_font;
+        app.text_default_size = self.text_default_size;
         app.text_hyphenation = self.text_hyphenation;
         app.show_non_printing = self.show_non_printing;
         app.show_dockers = self.show_dockers;
@@ -1338,15 +1344,22 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
             ui.label(tr("options.points"));
         });
         ui.end_row();
+        // The font and size of new text, whatever text is selected (#449).
         row_label(ui, &tr("options.default_font"));
-        crate::ui::font_list::text_font_list(app, ui, "options_default_font", 220.0);
+        crate::ui::font_list::default_font_list(app, ui, "options_default_font", 220.0);
         ui.end_row();
         row_label(ui, &tr("options.default_size"));
-        ui.add(
-            crate::ui::field::NumField::new(&mut app.text_size_pt)
-                .range(1.0..=999.0)
-                .suffix(" pt"),
-        );
+        if ui
+            .add(
+                crate::ui::field::NumField::new(&mut app.text_default_size)
+                    .range(1.0..=999.0)
+                    .suffix(" pt"),
+            )
+            .changed()
+            && !app.has_text_target()
+        {
+            app.text_size_pt = app.text_default_size;
+        }
         ui.end_row();
     });
     ui.checkbox(

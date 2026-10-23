@@ -965,6 +965,10 @@ pub struct App {
     pub shadow_default: tracedraw_core::Shadow,
     pub text_font: String,
     pub text_size_pt: f64,
+    /// The font and size of new text (Options > Text > Display): the
+    /// fields above follow the text selected, these do not (#449).
+    pub text_default_font: String,
+    pub text_default_size: f64,
     pub text_bold: bool,
     pub text_italic: bool,
     pub text_underline: bool,
@@ -2022,6 +2026,8 @@ impl App {
             shadow_default: tracedraw_core::Shadow::default(),
             text_font: "Arial".into(),
             text_size_pt: 24.0,
+            text_default_font: "Arial".into(),
+            text_default_size: 24.0,
             text_bold: false,
             text_italic: false,
             text_underline: false,
@@ -2733,8 +2739,8 @@ impl App {
             contour: self.contour,
             eraser_width: self.eraser_width,
             eraser_square: self.eraser_square,
-            text_font: self.text_font.clone(),
-            text_size_pt: self.text_size_pt,
+            text_font: self.text_default_font.clone(),
+            text_size_pt: self.text_default_size,
             text_hyphenation: self.text_hyphenation,
             envelope_mode: self.envelope_mode.id().into(),
             envelope_mapping: self.envelope_mapping.id().into(),
@@ -2795,6 +2801,8 @@ impl App {
             self.text_font = t.text_font.clone();
         }
         self.text_size_pt = finite(t.text_size_pt, 0.5, 3000.0, 24.0);
+        self.text_default_font = self.text_font.clone();
+        self.text_default_size = self.text_size_pt;
         self.text_hyphenation = t.text_hyphenation;
         self.envelope_mode = tracedraw_core::envelope::Mode::from_id(&t.envelope_mode);
         self.envelope_mapping = tracedraw_core::envelope::Mapping::from_id(&t.envelope_mapping);
@@ -6924,6 +6932,9 @@ mod tests {
         app.spiral_revolutions = 7;
         app.text_font = "Georgia".into();
         app.text_size_pt = 36.0;
+        // The font and size of new text are what is kept (#449).
+        app.text_default_font = "Georgia".into();
+        app.text_default_size = 36.0;
         app.eraser_square = true;
         app.show_grid = true;
         app.show_page_border = false;

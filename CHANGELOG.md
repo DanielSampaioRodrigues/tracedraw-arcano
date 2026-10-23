@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Text > Display: the default font and size can be changed while a text is selected, and they no longer turn into the selected text's font and size; with nothing selected the Text tool's bar shows them (#449).
+
 - Envelope, perspective and distortions keep curves smooth: the letters of an enveloped text were drawn in visible facets (#455).
 
 - T-shirt mockups work as in the reference program, and a new Help page walks through one (Effects > Making a T-shirt mockup). Three fixes made it possible:

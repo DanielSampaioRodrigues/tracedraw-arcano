@@ -1603,6 +1603,12 @@ const TEXT_ALIGNS: [(tracedraw_core::TextAlign, crate::ui::propbar::Pic, &str); 
 /// paragraph text), the Text docker and Edit Text.
 fn text_properties(app: &mut App, ui: &mut Ui) {
     use crate::ui::propbar::{pic_button, Pic};
+    // With no text to change the bar shows the font and size of new text,
+    // not those of the text selected last (#449).
+    if !app.has_text_target() && app.live_font.is_none() {
+        app.text_font = app.text_default_font.clone();
+        app.text_size_pt = app.text_default_size;
+    }
     let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0);
     changed |= text_size_list(app, ui);
     for (on, label, key) in [
@@ -2006,11 +2012,17 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
     }
     if let Some(s) = picked {
         app.text_size_pt = s;
+        if !app.has_text_target() {
+            app.text_default_size = s;
+        }
         egui::Popup::close_id(&ctx, popup_id);
         return true;
     }
     if field.changed() {
         app.text_size_pt = size;
+        if !app.has_text_target() {
+            app.text_default_size = size;
+        }
         return true;
     }
     false
