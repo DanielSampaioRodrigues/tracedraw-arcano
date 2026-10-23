@@ -109,6 +109,11 @@ impl App {
             self.vo.more.clear();
         }
         if response.dragged_by(PointerButton::Primary) {
+            // Shift or Alt held (or let go) during the drag: one side, or
+            // both again, from then on (#492).
+            if let Some(d) = &mut self.vo.drag {
+                d.one_side = mods.shift || mods.alt;
+            }
             self.variable_outline_drag(p);
         }
         if response.drag_stopped() || response.clicked_by(PointerButton::Primary) {
