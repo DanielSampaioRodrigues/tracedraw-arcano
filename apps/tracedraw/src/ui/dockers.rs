@@ -1695,10 +1695,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     for i in 0..n {
         let stop = &mut f.stops[i];
         ui.horizontal(|ui| {
-            let [r, g, b] = stop.color.to_rgb8();
-            let mut rgb = [r, g, b];
-            if ui.color_edit_button_srgb(&mut rgb).changed() {
-                stop.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+            if crate::ui::color_picker::color_button(ui, &mut stop.color) {
                 changed = true;
             }
             let mut pct = stop.pos * 100.0;

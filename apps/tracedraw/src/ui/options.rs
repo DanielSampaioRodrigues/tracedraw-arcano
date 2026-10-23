@@ -2988,11 +2988,8 @@ fn background_page(app: &mut App, ui: &mut Ui) {
                 Some(Fill::Solid(c)) => *c,
                 _ => Color::WHITE,
             };
-            let [r, g, b] = c.to_rgb8();
-            let mut rgb = [r, g, b];
-            let changed = ui.color_edit_button_srgb(&mut rgb).changed();
+            let changed = crate::ui::color_picker::color_button(ui, &mut c);
             if changed || !matches!(current, Some(Fill::Solid(_))) {
-                c = Color::rgb8(rgb[0], rgb[1], rgb[2]);
                 app.run(Command::SetPageBackground {
                     page,
                     background: Some(Fill::Solid(c)),

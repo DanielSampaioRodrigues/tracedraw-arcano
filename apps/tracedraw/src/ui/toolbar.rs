@@ -1329,9 +1329,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     let a = dir.to_radians();
                     offset = CVec2::new(depth * a.cos(), depth * a.sin());
                 }
-                let mut rgb = color.to_rgb8();
-                if ui.color_edit_button_srgb(&mut rgb).changed() {
-                    color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                if crate::ui::color_picker::color_button(ui, &mut color) {
                     changed = true;
                 }
                 ui.label(
@@ -2440,18 +2438,18 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         }
     }
     vsep(ui);
+    // The same picker as everywhere (the colour's own model, a Model
+    // list), not a plain RGB one (#442).
     let color_button = |ui: &mut Ui, c: &mut tracedraw_core::Color, mixed: bool| -> bool {
-        let mut rgb = c.to_rgb8();
-        let r = ui.color_edit_button_srgb(&mut rgb);
+        let at = ui.cursor().min;
+        let changed = crate::ui::color_picker::color_button(ui, c);
         if mixed {
-            crate::ui::field::mixed_swatch(ui, r.rect);
+            crate::ui::field::mixed_swatch(
+                ui,
+                egui::Rect::from_min_size(at, egui::vec2(40.0, 18.0)),
+            );
         }
-        if r.changed() {
-            *c = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
-            true
-        } else {
-            false
-        }
+        changed
     };
     // A setting the user set; when it was mixed it applies to every
     // object even if it equals the value shown.
@@ -2584,8 +2582,15 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         _ => {}
     }
     if changed {
+        // Dragging in the picker is one step, and the colour joins the
+        // document palette when the button is let go, as in the
+        // Properties docker; not one step and one palette colour for
+        // every colour passed over (#442).
+        let live = app.live_fill.is_some() || ui.input(|i| i.pointer.any_down());
         if shapes.is_empty() {
             app.apply_fill_or_default(fill);
+        } else if live && !matches!(fill, Fill::Fountain(_)) {
+            app.apply_fill_live(fill);
         } else {
             app.patch_selection_fill(&old, &fill, &touched);
         }
@@ -2927,10 +2932,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             }
         }
     }
-    let [r, g, b] = sh.color.to_rgb8();
-    let mut rgb = [r, g, b];
-    if ui.color_edit_button_srgb(&mut rgb).changed() {
-        sh.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+    if crate::ui::color_picker::color_button(ui, &mut sh.color) {
         changed = true;
     }
     if changed {

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour picker: Lab, Grayscale and YIQ can be chosen again in the Model list; the click on them closed the popup instead (#440). The Interactive Fill bar, the Text docker, shadows, gradient stops, tables, the palette editor and the page background now use the same picker as the Properties docker, with its Model list, and dragging in the bar's colour is one undo step that adds one colour to the document palette, not one for every colour passed over (#442).
+
 - Options > General: Use hardware acceleration, with the graphics card to draw with, as in the reference program (#445). The window is now drawn with Direct3D 12, Vulkan or Metal. Turned off, or when the card cannot open the window (a virtual machine, for example), TraceDraw uses the software renderer and then OpenGL by itself and remembers what worked, so it opens where it used to fail (#439).
 
 - Print Merge works as in the reference program: Finish opens the Print Merge docker instead of merging at once. There you insert Text, Image and QR code fields from the data source's columns. An image field takes a placeholder picture and an Align and scale setting (anchor point, then Actual size, Fit proportionally, Fill proportionally or Stretch to fill). Update Field changes the selected placeholder, and Create Merged Document or Print Merged Document makes the merged pages in a new drawing (#437).

@@ -3979,11 +3979,7 @@ fn border_grommet_dialog(
                             ui.end_row();
                             if st.border == BorderKind::Solid {
                                 ui.label(tr("border_grommet.border_color"));
-                                let [r, g, b] = st.color.to_rgb8();
-                                let mut rgb = [r, g, b];
-                                if ui.color_edit_button_srgb(&mut rgb).changed() {
-                                    st.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
-                                }
+                                crate::ui::color_picker::color_button(ui, &mut st.color);
                                 ui.end_row();
                             }
                         });
@@ -4320,10 +4316,9 @@ fn palette_editor_dialog(
             if let Some((name, c)) = pal.colors.get_mut(i) {
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(name);
-                    let [r, g, b] = c.to_rgb8();
-                    let mut rgb = [r, g, b];
-                    if ui.color_edit_button_srgb(&mut rgb).changed() && !pal.builtin {
-                        *c = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                    let mut edited = *c;
+                    if crate::ui::color_picker::color_button(ui, &mut edited) && !pal.builtin {
+                        *c = edited;
                     }
                     ui.label(crate::app::color_description(*c));
                 });
