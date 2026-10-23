@@ -345,7 +345,7 @@ pub fn background(app: &mut App, ui: &mut Ui, bar: Bar) {
 /// The bar's context menu on `resp`. Each place that opens it (a grip, the
 /// bar's background, a floating title) keeps its own popup, so one menu
 /// never shows twice in a frame.
-fn bar_menu(app: &mut App, resp: &egui::Response, bar: Bar) {
+pub fn bar_menu(app: &mut App, resp: &egui::Response, bar: Bar) {
     egui::Popup::context_menu(resp)
         .id(resp.id.with("bar_menu"))
         .style(crate::ui::menus::menu_popup_style)

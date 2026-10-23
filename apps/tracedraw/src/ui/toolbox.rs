@@ -123,6 +123,9 @@ pub fn toolbox(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
     if !app.drawing_shown() {
         ui.disable();
     }
+    // A right click on the toolbox's empty part opens its menu, as on the
+    // other bars.
+    crate::ui::bars::background(app, ui, crate::ui::bars::Bar::Toolbox);
     match dock {
         Dock::Top | Dock::Bottom => {
             crate::ui::overflow::row(ui, "toolbox_row", |ui| tools(app, ui, dock));
@@ -242,7 +245,7 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
             .interact_pointer_pos()
             .is_some_and(|p| arrow_zone.contains(p));
 
-        // Opening the flyout: the arrow, a right click, a drag, or a press
+        // Opening the flyout: the arrow, a drag, or a press
         // held for 0.4 s; with a flyout already open, hovering opens this
         // one instead.
         if has_flyout {
@@ -257,7 +260,6 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
             }
             let switch = resp.hovered() && app.flyout_open.is_some_and(|o| o != gi);
             if (resp.clicked() && on_arrow)
-                || resp.secondary_clicked()
                 || resp.drag_started()
                 || resp.long_touched()
                 || held
@@ -266,6 +268,9 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
                 app.flyout_open = Some(gi);
             }
         }
+        // A right click on a tool button opens the toolbox's menu
+        // (customize, button size, the bars), as on the other bars.
+        crate::ui::bars::bar_menu(app, &resp, crate::ui::bars::Bar::Toolbox);
         // A plain click picks the shown tool (not when it opened the flyout).
         if resp.clicked() && !(has_flyout && on_arrow) && app.flyout_open != Some(gi) {
             app.set_tool(shown);

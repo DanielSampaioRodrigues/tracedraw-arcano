@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Toolbox: a right click on a tool button or on its empty part opens the bars' menu (Customize, button size, the bars), as on the other bars; it used to open the flyout or nothing.
+
 - Symmetry editing as in the reference program: a click or a marquee picks one of the objects inside (not the whole symmetry, not a copy), and the bar and the lines stay while you work inside it. The mirror lines can be dragged to move them, and a click on a line shows handles that turn them. The bar has icons, spin fields, Show full preview (copies as red outlines when off) and Show symmetry lines.
 - Number fields everywhere (bars, dockers, dialogs, options) have spin arrows and step with the mouse wheel; Ctrl takes a tenth of a step and Shift ten steps.
 

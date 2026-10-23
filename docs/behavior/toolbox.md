@@ -5,9 +5,11 @@
   separator lines after the Shape, Zoom, Polygon, Text, Connector,
   Transparency and Fill groups (before the "+"). A button shows the tool last used from its flyout
   (kept in the settings); the active tool's button is tinted.
+- A right click on a tool button or on the toolbox's empty part opens the
+  bars' menu (Customize, button size, the bars), as on the other bars.
 - Buttons with a flyout have a small arrow at the bottom-right. Clicking
-  the arrow, right-clicking, dragging, or pressing and holding the button
-  for 0.4 s opens the flyout; a click elsewhere picks the tool the button
+  the arrow, dragging, or pressing and holding the button for 0.4 s
+  opens the flyout; a click elsewhere picks the tool the button
   shows. While a flyout is open, hovering another flyout button opens that
   one instead; moving away from the toolbox or clicking elsewhere closes
   it.
