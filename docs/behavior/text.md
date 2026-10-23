@@ -386,8 +386,9 @@ Window > Panels > Glyphs. From the top:
   1252 has it ("Keystroke: Alt+0169" for ©, `keystroke`). While text is
   edited, digits typed with Alt held give a character when Alt is let go:
   with a leading zero the code page 1252 number, else the Unicode number
-  (`text_editing::alt_code_char`); on Windows the system does this itself
-  and TraceDraw leaves it to it.
+  (`text_editing::alt_code_char`), on every system: on Windows the
+  windowing layer drops the character the system makes of them (#469).
+  The keypad digits count with Num Lock off too (the physical key).
 - A grid of large cells with the glyphs the font draws in that range
   (from its character map), scrolled row by row. The tip names the
   character and its code point. A small arrow under a glyph means the

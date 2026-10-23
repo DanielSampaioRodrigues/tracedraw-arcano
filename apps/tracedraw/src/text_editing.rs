@@ -290,6 +290,7 @@ impl App {
                 }
                 Event::Key {
                     key,
+                    physical_key,
                     pressed: true,
                     modifiers,
                     ..
@@ -297,9 +298,12 @@ impl App {
                     let shift = modifiers.shift;
                     let ctrl = modifiers.command;
                     // Alt and digits: a character by its number, typed when
-                    // Alt is let go (Windows does this itself).
-                    if !cfg!(target_os = "windows") && modifiers.alt && !ctrl {
-                        if let Some(d) = digit_of(*key) {
+                    // Alt is let go. On Windows too: the windowing layer
+                    // drops the character the system makes of them (#469).
+                    // The physical key reads the keypad with Num Lock off.
+                    if modifiers.alt && !ctrl {
+                        if let Some(d) = physical_key.and_then(digit_of).or_else(|| digit_of(*key))
+                        {
                             self.alt_code.push(d);
                             continue;
                         }

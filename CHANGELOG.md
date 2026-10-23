@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: Alt codes type their character on Windows (Alt+0193 gives Á, or the glyph a symbol font draws there, as the Glyphs docker's keystroke says); nothing was typed (#469).
+
 - Text: Ctrl+Space while editing text finishes the text and switches to the Pick tool, as in the reference program; it typed a space (#478).
 
 - Shape tool on text: in right-to-left text (Arabic, Hebrew) each character's node sits under its own letter; they were bunched at one end in left-to-right order (#474).

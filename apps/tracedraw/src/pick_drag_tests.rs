@@ -4695,3 +4695,44 @@ fn ctrl_space_leaves_text_editing_for_the_pick_tool() {
         other => panic!("{other:?}"),
     }
 }
+
+/// Alt held while 0193 is typed on the keypad gives Á when Alt is let
+/// go, the keystroke the Glyphs docker shows; with Num Lock off the
+/// keypad sends Insert, End, PageDown and PageDown, read by their
+/// physical keys (#469).
+#[test]
+fn alt_codes_typed_on_the_keypad_give_their_character() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.start_text(Point::new(50.0, 50.0), None);
+    let pad = |logical: egui::Key, physical: egui::Key| Event::Key {
+        key: logical,
+        physical_key: Some(physical),
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::ALT,
+    };
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            pad(egui::Key::Insert, egui::Key::Num0),
+            pad(egui::Key::End, egui::Key::Num1),
+            pad(egui::Key::PageDown, egui::Key::Num9),
+            pad(egui::Key::PageDown, egui::Key::Num3),
+        ],
+        Modifiers::ALT,
+    );
+    assert_eq!(
+        app.edit_spans()
+            .map(|s| tracedraw_core::document::spans_text(&s)),
+        Some(String::new()),
+        "nothing typed while Alt is held"
+    );
+    frame(&ctx, &mut app, vec![], Modifiers::NONE);
+    assert_eq!(
+        app.edit_spans()
+            .map(|s| tracedraw_core::document::spans_text(&s)),
+        Some("\u{c1}".into())
+    );
+}
