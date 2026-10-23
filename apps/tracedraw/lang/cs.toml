@@ -667,6 +667,7 @@ doc.page_n = "Stránka {n}"
 doc.untitled_n = "Bez názvu-{n}"
 docker.add_color = "Přidat barvu"
 docker.add_docker = "Přidat panel"
+docker.no_drawing = "Chcete-li použít tento panel, otevřete nebo vytvořte kresbu." # mt
 docker.add_effect = "Přidat efekt"
 docker.add_field = "Přidat pole"
 docker.add_new = "Přidat nový"

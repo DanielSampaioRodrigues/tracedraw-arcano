@@ -667,6 +667,7 @@ doc.page_n = "Sayfa {n}"
 doc.untitled_n = "Adsız-{n}"
 docker.add_color = "Renk ekle"
 docker.add_docker = "Panel ekle"
+docker.no_drawing = "Bu yerleşik pencereyi kullanmak için bir çizim açın veya oluşturun." # mt
 docker.add_effect = "Efekt ekle"
 docker.add_field = "Alan ekle"
 docker.add_new = "Yeni ekle"

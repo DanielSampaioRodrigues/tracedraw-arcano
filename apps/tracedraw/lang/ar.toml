@@ -667,6 +667,7 @@ doc.page_n = "صفحة {n}"
 doc.untitled_n = "بدون عنوان-{n}"
 docker.add_color = "إضافة لون"
 docker.add_docker = "إضافة لوحة"
+docker.no_drawing = "افتح رسمًا أو أنشئ واحدًا لاستخدام هذه اللوحة." # mt
 docker.add_effect = "إضافة تأثير"
 docker.add_field = "إضافة حقل"
 docker.add_new = "إضافة جديد"

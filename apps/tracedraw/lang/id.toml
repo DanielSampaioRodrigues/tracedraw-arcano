@@ -667,6 +667,7 @@ doc.page_n = "Halaman {n}"
 doc.untitled_n = "Tanpa judul-{n}"
 docker.add_color = "Tambah warna"
 docker.add_docker = "Tambah panel"
+docker.no_drawing = "Buka atau buat gambar untuk menggunakan panel ini." # mt
 docker.add_effect = "Tambah efek"
 docker.add_field = "Tambah bidang"
 docker.add_new = "Tambah baru"

@@ -667,6 +667,7 @@ doc.page_n = "Page {n}"
 doc.untitled_n = "Sans titre-{n}"
 docker.add_color = "Ajouter une couleur"
 docker.add_docker = "Ajouter un panneau"
+docker.no_drawing = "Ouvrez ou créez un dessin pour utiliser ce menu fixe." # mt
 docker.add_effect = "Ajouter un effet"
 docker.add_field = "Ajouter un champ"
 docker.add_new = "Ajouter"

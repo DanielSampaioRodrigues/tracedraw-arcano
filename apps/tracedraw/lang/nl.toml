@@ -667,6 +667,7 @@ doc.page_n = "Pagina {n}"
 doc.untitled_n = "Naamloos-{n}"
 docker.add_color = "Kleur toevoegen"
 docker.add_docker = "Een paneel toevoegen"
+docker.no_drawing = "Open of maak een tekening om dit koppelvenster te gebruiken." # mt
 docker.add_effect = "Effect toevoegen"
 docker.add_field = "Veld toevoegen"
 docker.add_new = "Nieuwe toevoegen"

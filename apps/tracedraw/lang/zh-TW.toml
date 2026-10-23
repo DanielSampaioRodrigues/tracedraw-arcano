@@ -667,6 +667,7 @@ doc.page_n = "頁面 {n}"
 doc.untitled_n = "未命名-{n}"
 docker.add_color = "新增色彩"
 docker.add_docker = "新增面板"
+docker.no_drawing = "開啟或新增繪圖以使用此泊塢視窗。" # mt
 docker.add_effect = "新增效果"
 docker.add_field = "新增欄位"
 docker.add_new = "新增"

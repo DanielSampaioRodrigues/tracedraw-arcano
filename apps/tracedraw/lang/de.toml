@@ -667,6 +667,7 @@ doc.page_n = "Seite {n}"
 doc.untitled_n = "Unbenannt-{n}"
 docker.add_color = "Farbe hinzufügen"
 docker.add_docker = "Bereich hinzufügen"
+docker.no_drawing = "Öffnen oder erstellen Sie eine Zeichnung, um dieses Andockfenster zu verwenden." # mt
 docker.add_effect = "Effekt hinzufügen"
 docker.add_field = "Feld hinzufügen"
 docker.add_new = "Neu hinzufügen"

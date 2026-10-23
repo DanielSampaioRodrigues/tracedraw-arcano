@@ -667,6 +667,7 @@ doc.page_n = "Страница {n}"
 doc.untitled_n = "Без имени-{n}"
 docker.add_color = "Добавить цвет"
 docker.add_docker = "Добавить панель"
+docker.no_drawing = "Откройте или создайте рисунок, чтобы использовать эту панель." # mt
 docker.add_effect = "Добавить эффект"
 docker.add_field = "Добавить поле"
 docker.add_new = "Добавить новую"

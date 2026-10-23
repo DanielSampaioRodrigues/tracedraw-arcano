@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Welcome Screen: the colour palette shows pale and takes no clicks, and the dockers that work on a drawing say to open or create one, instead of showing and changing the selection of the drawing behind it (#482).
+
 - Toolbox: docked on a side it fits the window's height, its buttons and icons getting smaller (down to 22 px) instead of the tools running off the bottom and needing the scroll arrows (#494).
 
 - Property bar: the page size, nudge, duplicate distance, autofit margin and origin fields have one set of up/down arrows; a second pair beside each field did the same job. The field's own arrows and wheel step as the extra pair did (1 unit, 0.1 for nudge and duplicate) (#488).

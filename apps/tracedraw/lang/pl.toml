@@ -667,6 +667,7 @@ doc.page_n = "Strona {n}"
 doc.untitled_n = "Bez tytułu-{n}"
 docker.add_color = "Dodaj kolor"
 docker.add_docker = "Dodaj panel"
+docker.no_drawing = "Otwórz lub utwórz rysunek, aby użyć tego okna dokowanego." # mt
 docker.add_effect = "Dodaj efekt"
 docker.add_field = "Dodaj pole"
 docker.add_new = "Dodaj nową"

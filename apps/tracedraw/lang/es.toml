@@ -667,6 +667,7 @@ doc.page_n = "Página {n}"
 doc.untitled_n = "Sin título-{n}"
 docker.add_color = "Añadir color"
 docker.add_docker = "Añadir un panel"
+docker.no_drawing = "Abra o cree un dibujo para usar esta ventana acoplable." # mt
 docker.add_effect = "Añadir efecto"
 docker.add_field = "Añadir campo"
 docker.add_new = "Añadir nueva"
