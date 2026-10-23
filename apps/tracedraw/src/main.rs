@@ -88,6 +88,8 @@ mod mcp_link;
 mod media;
 mod mesh_tool;
 mod mixed;
+#[cfg(test)]
+mod mockup_tests;
 mod multipage;
 mod net;
 mod new_document;

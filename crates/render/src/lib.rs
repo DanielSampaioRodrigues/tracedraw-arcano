@@ -623,10 +623,13 @@ impl Renderer<'_> {
             let frame_path = self.screen * (transform * frame.page_path());
             if let Some(sk_frame) = to_sk_path(&frame_path) {
                 let (w, h) = (self.pixmap.width(), self.pixmap.height());
-                if let (Some(mut layer), Some(mut mask)) =
-                    (Pixmap::new(w, h), tiny_skia::Mask::new(w, h))
-                {
+                if let Some(mut mask) = tiny_skia::Mask::new(w, h) {
                     mask.fill_path(&sk_frame, FillRule::EvenOdd, true, Transform::identity());
+                    // The contents are drawn over a copy of what lies
+                    // beneath, so their merge modes (Multiply on a photo,
+                    // say) work on it as outside a frame; inside the frame
+                    // the copy then takes the place of the page (#13).
+                    let mut layer = self.pixmap.clone();
                     {
                         let mut sub = self.sub(&mut layer);
                         for c in contents {
@@ -634,18 +637,28 @@ impl Renderer<'_> {
                             sub.draw_shape(c, t);
                         }
                     }
-                    let pp = tiny_skia::PixmapPaint {
-                        opacity: shape.opacity.clamp(0.0, 1.0) as f32,
-                        ..Default::default()
-                    };
-                    self.pixmap.draw_pixmap(
-                        0,
-                        0,
-                        layer.as_ref(),
-                        &pp,
-                        Transform::identity(),
-                        Some(&mask),
-                    );
+                    let b = sk_frame.bounds();
+                    let x0 = (b.left().floor().max(0.0) as usize).min(w as usize);
+                    let x1 = (b.right().ceil().max(0.0) as usize).min(w as usize);
+                    let y0 = (b.top().floor().max(0.0) as usize).min(h as usize);
+                    let y1 = (b.bottom().ceil().max(0.0) as usize).min(h as usize);
+                    let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
+                    let m = mask.data();
+                    let src = layer.data();
+                    let dst = self.pixmap.data_mut();
+                    for y in y0..y1 {
+                        for x in x0..x1 {
+                            let i = y * w as usize + x;
+                            let k = m[i] as f32 / 255.0 * opacity;
+                            if k <= 0.0 {
+                                continue;
+                            }
+                            for c in 0..4 {
+                                let (a, b) = (dst[i * 4 + c] as f32, src[i * 4 + c] as f32);
+                                dst[i * 4 + c] = (a + (b - a) * k).round() as u8;
+                            }
+                        }
+                    }
                 }
             }
             if frame.stroke.is_some() {
@@ -4062,6 +4075,66 @@ mod band_tests {
             let _ = tracedraw_core::Command::AddShape { layer, shape: sh }.apply(&mut doc);
         }
         (doc, page)
+    }
+
+    /// Inside a clip frame an object with the Multiply merge mode
+    /// multiplies what lies beneath the frame, as outside it (a design on
+    /// a photo of a shirt keeps the cloth's shading).
+    #[test]
+    fn merge_modes_inside_a_clip_frame_reach_the_backdrop() {
+        use tracedraw_core::live::{Effect, MergeMode};
+        let mut doc = Document::default();
+        let page = doc.pages[0].id;
+        let layer = doc.layers_for_page(page).unwrap()[0].id;
+        let rect = |id: u64, r: tracedraw_core::geometry::Rect, c: Color| {
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(id),
+                ShapeKind::Rect {
+                    rect: r,
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = tracedraw_core::Fill::Solid(c);
+            s.stroke = None;
+            s
+        };
+        let area = tracedraw_core::geometry::Rect::new(0.0, 0.0, 40.0, 40.0);
+        let back = rect(1, area, Color::rgb8(128, 128, 128));
+        let mut red = rect(2, area, Color::rgb8(255, 0, 0));
+        red.effects.push(Effect::Transparency {
+            mask: tracedraw_core::Fill::Solid(Color::Gray { v: 1.0 }),
+            merge: MergeMode::Multiply,
+            target: 2,
+        });
+        let mut frame = rect(3, area, Color::WHITE);
+        frame.fill = tracedraw_core::Fill::None;
+        let clip = Shape::new(
+            tracedraw_core::ShapeId(4),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![red],
+            },
+        );
+        for s in [back, clip] {
+            let _ = tracedraw_core::Command::AddShape { layer, shape: s }.apply(&mut doc);
+        }
+        let opts = RenderOptions {
+            width: 40,
+            height: 40,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 40.0,
+            },
+            ..RenderOptions::default()
+        };
+        let px = render_page(&doc, page, &opts).unwrap();
+        let c = px.pixel(20, 20).unwrap().demultiply();
+        assert!(
+            (c.red() as i32 - 128).abs() <= 3 && c.green() <= 3,
+            "red times grey: {c:?}"
+        );
     }
 
     /// A page drawn in bands on several threads matches the page drawn

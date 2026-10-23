@@ -843,6 +843,14 @@ impl App {
                     merge: settings.merge,
                     target: settings.target,
                 });
+            } else {
+                // Uniform: a merge mode other than Normal needs a mask.
+                let (effect, _) = crate::mixed::uniform_transparency(
+                    settings.amount,
+                    settings.merge,
+                    settings.target,
+                );
+                effects.extend(effect);
             }
             cmds.push(Command::SetEffects {
                 shape: *id,
@@ -850,7 +858,7 @@ impl App {
             });
         }
         let opacity = if settings.kind == 0 {
-            1.0 - (settings.amount / 100.0).clamp(0.0, 1.0)
+            crate::mixed::uniform_transparency(settings.amount, settings.merge, settings.target).1
         } else {
             1.0
         };

@@ -6,6 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- T-shirt mockups work as in the reference program, and a new Help page walks through one (Effects > Making a T-shirt mockup). Three fixes made it possible:
+  - An envelope, perspective or distortion on a group now bends each object from the box of the whole group and keeps its colours; before, the group vanished.
+  - Uniform transparency keeps its merge mode (Multiply and the others), where it used to keep Normal only.
+  - Objects inside a clip frame blend with what lies beneath the frame through their merge mode, so a print clipped to a shirt keeps the cloth's shading.
+
 - Colour picker: Lab, Grayscale and YIQ can be chosen again in the Model list; the click on them closed the popup instead (#440). The Interactive Fill bar, the Text docker, shadows, gradient stops, tables, the palette editor and the page background now use the same picker as the Properties docker, with its Model list, and dragging in the bar's colour is one undo step that adds one colour to the document palette, not one for every colour passed over (#442).
 
 - Options > General: Use hardware acceleration, with the graphics card to draw with, as in the reference program (#445). The window is now drawn with Direct3D 12, Vulkan or Metal. Turned off, or when the card cannot open the window (a virtual machine, for example), TraceDraw uses the software renderer and then OpenGL by itself and remembers what worked, so it opens where it used to fail (#439).

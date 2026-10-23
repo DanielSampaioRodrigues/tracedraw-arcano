@@ -476,8 +476,7 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
     for effect in &shape.effects {
         match effect {
             Effect::Distort(how) => {
-                let p = crate::effects::distort(&main.local_path(), *how);
-                set_path(&mut main, p);
+                reshape(&mut main, &|p, b| crate::effects::distort_in(p, b, *how));
             }
             Effect::Envelope {
                 nodes,
@@ -487,14 +486,13 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                 mapping,
             } => {
                 if let Some(frame) = crate::envelope::Frame::from_parts(nodes, handles, corners) {
-                    let p =
-                        crate::envelope::apply(&main.local_path(), &frame, *keep_lines, *mapping);
-                    set_path(&mut main, p);
+                    reshape(&mut main, &|p, b| {
+                        crate::envelope::apply_in(p, b, &frame, *keep_lines, *mapping)
+                    });
                 }
             }
             Effect::Perspective { corners } => {
-                let p = perspective(&main.local_path(), corners);
-                set_path(&mut main, p);
+                reshape(&mut main, &|p, b| perspective_in(p, b, corners));
             }
             Effect::Contour {
                 steps,
@@ -631,6 +629,65 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
         }
     }
     Evaluated { below, main, above }
+}
+
+/// Reshape `shape` by `f`, which works in the shape's own space. A group
+/// (or a clip frame) is reshaped object by object, each keeping its own
+/// fill and outline, as the reference program does with an envelope on a
+/// group; the whole would otherwise become one path with the group's
+/// empty fill and vanish.
+/// `f` takes a path and the box mapped by the effect: the shape's own
+/// bounding box, for a group the box of all its objects.
+fn reshape(shape: &mut Shape, f: &dyn Fn(&BezPath, Rect) -> BezPath) {
+    let b = shape.local_path().bounding_box();
+    match &mut shape.kind {
+        ShapeKind::Group { children } => {
+            for c in children.iter_mut() {
+                reshape_inside(c, Affine::IDENTITY, b, f);
+            }
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            reshape_inside(frame, Affine::IDENTITY, b, f);
+            for c in contents.iter_mut() {
+                reshape_inside(c, Affine::IDENTITY, b, f);
+            }
+        }
+        _ => {
+            let p = f(&shape.local_path(), b);
+            set_path(shape, p);
+        }
+    }
+}
+
+/// [`reshape`] for an object inside a group whose space is `parent` times
+/// the object's transform away from the object's own.
+fn reshape_inside(
+    shape: &mut Shape,
+    parent: Affine,
+    b: Rect,
+    f: &dyn Fn(&BezPath, Rect) -> BezPath,
+) {
+    let t = parent * shape.transform;
+    match &mut shape.kind {
+        ShapeKind::Group { children } => {
+            for c in children.iter_mut() {
+                reshape_inside(c, t, b, f);
+            }
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            reshape_inside(frame, t, b, f);
+            for c in contents.iter_mut() {
+                reshape_inside(c, t, b, f);
+            }
+        }
+        _ => {
+            if t.determinant().abs() < 1e-12 {
+                return;
+            }
+            let warped = f(&(t * shape.local_path()), b);
+            set_path(shape, t.inverse() * warped);
+        }
+    }
 }
 
 fn set_path(shape: &mut Shape, path: BezPath) {
@@ -1185,7 +1242,12 @@ pub fn map_homography(h: &[f64; 8], p: Point) -> Point {
 }
 
 pub fn perspective(path: &BezPath, corners: &[Point; 4]) -> BezPath {
-    let b = path.bounding_box();
+    perspective_in(path, path.bounding_box(), corners)
+}
+
+/// As [`perspective`], with the box `b` mapped onto the corners instead
+/// of the path's own bounding box.
+pub fn perspective_in(path: &BezPath, b: Rect, corners: &[Point; 4]) -> BezPath {
     if b.width() < 1e-9 || b.height() < 1e-9 {
         return path.clone();
     }
@@ -1415,6 +1477,44 @@ mod tests {
         let back = serde_json::to_value(&e).expect("json");
         assert!(back.get("handles").is_none() && back.get("corners").is_none());
         assert_eq!(back.get("mapping").and_then(|m| m.as_str()), Some("putty"));
+    }
+
+    /// An envelope on a group reshapes each object from the box of them
+    /// all, each keeping its fill; the group used to become one path with
+    /// the group's empty fill and vanish.
+    #[test]
+    fn an_envelope_on_a_group_keeps_each_object() {
+        let mut left = rect_shape();
+        left.id = crate::ShapeId(2);
+        let mut right = rect_shape();
+        right.id = crate::ShapeId(3);
+        right.transform = Affine::translate((30.0, 0.0));
+        right.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        let mut g = Shape::new(
+            crate::ShapeId(4),
+            ShapeKind::Group {
+                children: vec![left, right],
+            },
+        );
+        let b = Rect::new(0.0, 0.0, 50.0, 20.0);
+        let mut frame = crate::envelope::Frame::around(b);
+        // The top middle raised: an arch over both.
+        frame.move_node(5, Vec2::new(0.0, 10.0), crate::envelope::Mode::SingleArc);
+        g.effects
+            .push(Effect::from_envelope(&frame, false, Default::default()));
+        let ev = evaluate(&g);
+        let ShapeKind::Group { children } = &ev.main.kind else {
+            panic!("still a group: {:?}", ev.main.kind);
+        };
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[1].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
+        let page = |s: &Shape| (s.transform * s.local_path()).bounding_box();
+        let (l, r) = (page(&children[0]), page(&children[1]));
+        // Each stays on its side of the box, and the arch lifts the inner
+        // edges more than the outer ones.
+        assert!(l.x1 <= 25.0 && r.x0 >= 25.0, "{l:?} {r:?}");
+        assert!(l.y1 > 20.0 && r.y1 > 20.0, "{l:?} {r:?}");
+        assert!(l.y1 < 30.0 + 1e-6, "{l:?}");
     }
 
     #[test]

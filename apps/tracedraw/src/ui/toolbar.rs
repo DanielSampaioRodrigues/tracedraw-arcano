@@ -1762,6 +1762,8 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
             }
             if let Some(m) = &t.mask {
                 set.mask = m.clone();
+            }
+            if t.kind >= 1 {
                 set.merge = t.merge;
                 set.target = t.target;
             }
