@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Status bar: a double click on the fill opens the Edit Fill dialog box and on the outline the Outline Pen dialog box, as in the reference program, instead of the Properties panel (#465).
+
 ## 0.13.0 (2026-10-23)
 
 - Print Merge docker: a Pictures folder for the photos the data names, so a folder of 50 photos fills 50 ID cards, each with its own; a name without an extension finds the .jpg or .png (#460).
