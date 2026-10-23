@@ -167,7 +167,10 @@ nodes do not show and cannot be taken.
 
 | Action | Behaviour |
 |---|---|
-| Drag a control point | the spline follows (`Command::SetSpline`: the outline becomes the spline of the points, open or closed as it was); one undo step "Edit B-Spline" for the drag |
+| Click a control point | chooses it alone (drawn filled); Shift+click adds it, Ctrl+click adds or removes it |
+| Marquee (or lasso) | chooses the control points inside, of every selected B-spline |
+| Delete | removes the chosen control points, the curve kept (a spline left with fewer than two goes); one undo step "Delete Nodes" (`pick_drag_tests::bspline_control_points_are_chosen_and_deleted_alone`) |
+| Drag a control point | the spline follows (`Command::SetSpline`: the outline becomes the spline of the points, open or closed as it was); a chosen point drags every chosen point of its spline with it; one undo step "Edit B-Spline" for the drag |
 | Double-click the control polygon | a control point there, between the two the line joins, at the foot of the pointer on the line |
 | Double-click a control point | removes it (two always stay) |
 | Click the control polygon | keeps the selection, as a click near a node does |

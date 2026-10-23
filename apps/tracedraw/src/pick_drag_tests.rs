@@ -4209,3 +4209,65 @@ fn a_scale_handle_follows_the_pointer_from_the_start() {
         assert!((got - want).abs() < 0.01, "step {i}: {got} {want}");
     }
 }
+
+/// The Shape tool on a B-spline: a marquee round one control point
+/// chooses it alone, Delete removes that point and keeps the curve, a
+/// click chooses one and Shift+click adds another, and a drag of a chosen
+/// point moves the chosen ones together (a delete took the whole curve).
+#[test]
+fn bspline_control_points_are_chosen_and_deleted_alone() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::BSpline);
+    let pts = [
+        Point::new(100.0, 150.0),
+        Point::new(130.0, 190.0),
+        Point::new(180.0, 180.0),
+        Point::new(190.0, 140.0),
+        Point::new(150.0, 120.0),
+    ];
+    for p in pts {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    app.finish_curve();
+    let id = app.selection[0];
+    let spline = |app: &App| app.doc().find_shape(id).and_then(|s| s.spline.clone());
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // A marquee round the second point only.
+    let a = app
+        .view
+        .to_screen(pts[1] + tracedraw_core::geometry::Vec2::new(-6.0, -6.0));
+    let b = app
+        .view
+        .to_screen(pts[1] + tracedraw_core::geometry::Vec2::new(6.0, 6.0));
+    drag(&ctx, &mut app, a, b, Modifiers::NONE, Vec::new());
+    assert_eq!(app.node_selection, vec![(id, 1)]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Delete, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let left = spline(&app).expect("the curve stays");
+    assert_eq!(left.len(), 4, "{left:?}");
+    assert!(left.iter().all(|p| (*p - pts[1]).hypot() > 1.0));
+    // A click chooses one point, Shift+click another; a drag moves both.
+    let at = app.view.to_screen(pts[2]);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.node_selection, vec![(id, 1)]);
+    let at = app.view.to_screen(pts[3]);
+    click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+    assert_eq!(app.node_selection, vec![(id, 1), (id, 2)]);
+    let from = app.view.to_screen(pts[2]);
+    let to = app
+        .view
+        .to_screen(pts[2] + tracedraw_core::geometry::Vec2::new(10.0, 0.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let moved = spline(&app).expect("spline");
+    assert!((moved[1].x - (pts[2].x + 10.0)).abs() < 1.0, "{moved:?}");
+    assert!((moved[2].x - (pts[3].x + 10.0)).abs() < 1.0, "{moved:?}");
+    assert!((moved[0] - pts[0]).hypot() < 0.5, "{moved:?}");
+}

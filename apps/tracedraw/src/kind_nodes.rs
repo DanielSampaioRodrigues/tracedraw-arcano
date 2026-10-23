@@ -449,6 +449,42 @@ pub fn spline_with_point(s: &Shape, p: Point, tol: f64) -> Option<Vec<Point>> {
     Some(out)
 }
 
+/// The control points of the B-spline `start` with the points `indices`
+/// moved together, so that the point `grab` lands on `p` (page space):
+/// several chosen control points dragged as one.
+pub fn spline_moved_many(
+    start: &Shape,
+    indices: &[usize],
+    grab: usize,
+    p: Point,
+) -> Option<Vec<Point>> {
+    let mut pts = start.spline.clone()?;
+    let lp = start.transform.inverse() * p;
+    if !lp.is_finite() {
+        return None;
+    }
+    let d = lp - *pts.get(grab)?;
+    for &i in indices {
+        if let Some(q) = pts.get_mut(i) {
+            *q += d;
+        }
+    }
+    Some(pts)
+}
+
+/// The control points of the B-spline `s` without the points `indices`;
+/// `None` when fewer than two would remain.
+pub fn spline_without_many(s: &Shape, indices: &[usize]) -> Option<Vec<Point>> {
+    let pts = s.spline.as_ref()?;
+    let out: Vec<Point> = pts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !indices.contains(i))
+        .map(|(_, p)| *p)
+        .collect();
+    (out.len() >= 2).then_some(out)
+}
+
 /// The control points of the B-spline `s` without the point `index`;
 /// `None` when two would not remain.
 pub fn spline_without(s: &Shape, index: usize) -> Option<Vec<Point>> {

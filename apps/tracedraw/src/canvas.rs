@@ -1758,8 +1758,13 @@ fn draw_nodes(app: &App, painter: &Painter) {
                     3.0,
                 ));
             }
-            for p in poly {
-                let fill = prefs.unselected_filled.then_some(Color32::WHITE);
+            for (index, p) in poly.into_iter().enumerate() {
+                // Chosen control points are filled, as chosen nodes are.
+                let fill = if app.node_selection.contains(&(s.id, index)) {
+                    Some(main)
+                } else {
+                    prefs.unselected_filled.then_some(Color32::WHITE)
+                };
                 node_marker(painter, p, size, prefs.cusp, fill, main);
             }
             continue;

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool on a B-spline: control points can be chosen by a click, Shift+click or a marquee, as nodes are; Delete removes only the chosen points (it deleted the whole curve), and dragging a chosen point moves all the chosen ones.
+
 - Segment Delete: curves inside a group (an imported ornament, for example) are now cut by a click and by a drag, as in the reference program; nothing happened before. A drag also takes level and upright lines, which it used to skip (#427).
 
 ## 0.12.0 (2026-10-23)
