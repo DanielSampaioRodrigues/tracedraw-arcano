@@ -1934,6 +1934,55 @@ impl App {
         self.set_paragraph_style(id, p);
     }
 
+    /// The selected texts Text > Use Hyphenation acts on: none while a
+    /// text is being edited.
+    fn hyphenation_targets(&self) -> Vec<ShapeId> {
+        if self.text_edit.is_some() {
+            return Vec::new();
+        }
+        self.selected_shapes()
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
+            .map(|s| s.id)
+            .collect()
+    }
+
+    /// Whether Text > Use Hyphenation shows checked: every selected text
+    /// hyphenates; with no text selected, or one being edited, whether new
+    /// text does.
+    pub fn uses_hyphenation(&self) -> bool {
+        let ids = self.hyphenation_targets();
+        if ids.is_empty() {
+            return self.text_hyphenation;
+        }
+        ids.iter().all(|id| {
+            self.doc()
+                .find_shape(*id)
+                .and_then(|s| self.paragraph_style_of(s))
+                .is_some_and(|(_, p)| p.hyphenate)
+        })
+    }
+
+    /// Text > Use Hyphenation: the selected texts hyphenate (or stop, when
+    /// they all did), as in the reference program; before, only text made
+    /// afterwards did, so turning it on for a selected text changed
+    /// nothing (#255). With no text selected, or while one is edited, it
+    /// is the setting new text takes, the text being edited following.
+    pub fn toggle_use_hyphenation(&mut self) {
+        let ids = self.hyphenation_targets();
+        if ids.is_empty() {
+            self.text_hyphenation = !self.text_hyphenation;
+            if let Some(spans) = self.edit_spans() {
+                self.set_edit_spans(spans);
+            }
+            return;
+        }
+        let on = !self.uses_hyphenation();
+        for id in ids {
+            self.edit_paragraph_style(id, |p| p.hyphenate = on);
+        }
+    }
+
     /// Whether any selected object wraps paragraph text, and the wrap
     /// style of the first one.
     pub fn wrap_state(&self) -> (bool, tracedraw_core::TextWrap) {

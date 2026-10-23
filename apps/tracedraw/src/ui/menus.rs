@@ -2886,11 +2886,8 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         app.toggle_baseline_grid();
     }
     sep(ui);
-    if check(ui, "menu.text.use_hyphenation", "", app.text_hyphenation) {
-        app.text_hyphenation = !app.text_hyphenation;
-        if let Some(spans) = app.edit_spans() {
-            app.set_edit_spans(spans);
-        }
+    if check(ui, "menu.text.use_hyphenation", "", app.uses_hyphenation()) {
+        app.toggle_use_hyphenation();
     }
     if item(ui, "menu.text.custom_hyphens", "", true) {
         app.dialog = Dialog::CustomHyphens(Default::default());

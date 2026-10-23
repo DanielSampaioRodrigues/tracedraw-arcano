@@ -545,8 +545,9 @@ mod tests {
     }
 
     /// Real hyphenation dictionaries, where `HUNSPELL_TEST_DIR` holds
-    /// them (not in the repository): English, Brazilian Portuguese and
-    /// German (eight-bit, two levels).
+    /// them (not in the repository): English, Brazilian Portuguese,
+    /// German (eight-bit, two levels) and Italian (apostrophes, words
+    /// followed by punctuation, #255).
     #[test]
     #[ignore]
     fn real_hyphenation_files() {
@@ -557,11 +558,15 @@ mod tests {
         let found = find_hyphenation(Some(&dir));
         let names: Vec<&str> = found.iter().map(|d| d.name.as_str()).collect();
         eprintln!("{names:?}");
-        let cases: [(&str, &str, &[usize]); 4] = [
+        let cases: [(&str, &str, &[usize]); 8] = [
             ("hyph_en_US", "hyphenation", &[2, 6]),
             ("hyph_pt_BR", "computador", &[3, 5, 7]),
             ("hyph_de_DE", "Haustür", &[4]),
             ("hyph_de_DE", "Schifffahrt", &[6]),
+            ("hyph_it_IT", "informazione", &[2, 5, 7]),
+            ("hyph_it_IT", "informazione,", &[2, 5, 7]),
+            ("hyph_it_IT", "dell'università", &[8, 11]),
+            ("hyph_it_IT", "«sillabazione»", &[4, 6, 8]),
         ];
         for (name, word, want) in cases {
             let d = found.iter().find(|d| d.name == name).expect(name);

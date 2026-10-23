@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Hyphenation: a word with a comma, full stop or quotation mark next to it can break at a line's end (before, any punctuation kept the whole word on the next line, in every language), words with an apostrophe break too (Italian *dell'informazione*), and Text > Use Hyphenation now turns hyphenation on for the selected text instead of only for text made afterwards. Checked with the Italian, English, Portuguese and German dictionaries (#255).
+
 - Text on a path: changing the distance from the path, or pressing a mirror button with a distance set, no longer slides the text round the path; text centred on the bottom of a circle (Placement: Bottom, or both mirrors) stays centred as it moves in or out, as in the reference program (#193).
 
 - Print Merge docker: Place Inside Frame makes a shape of your own (a circle, an oval, any outline, also inside a grouped card design) the frame of a picture field, so each card's photo goes inside it, placed by Align and scale; before, the photo went into a square frame the docker made, and a shape inside a group could not be a frame at all (#460).
