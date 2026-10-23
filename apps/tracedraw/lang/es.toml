@@ -2509,6 +2509,7 @@ options.colors = "Colores"
 options.columns = "Columnas:"
 options.command_bars = "Barras de comandos"
 options.command_bars_hint = "Mostrar estas barras:"
+options.toolbar_drag_hint = "Con estas páginas abiertas (o con Alt pulsada), arrastre un botón de la barra Estándar o Zoom para moverlo, o fuera de la barra para quitarlo. Arrastre un comando de la página Comandos a una de esas barras para añadirlo. Restablecer en la página Barras de comandos recupera los botones iniciales." # mt
 options.commands = "Comandos"
 options.commands_hint = "Asigne a cualquier comando de menú un atajo propio: haga clic en su botón y pulse las teclas (Esc cancela). El atajo integrado sigue funcionando hasta que otro comando lo use."
 options.constrain_angle = "Ángulo de restricción:"

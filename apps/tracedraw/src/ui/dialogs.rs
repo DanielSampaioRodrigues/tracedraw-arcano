@@ -1033,7 +1033,19 @@ pub fn show(app: &mut App, ctx: &Context) {
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
     if !matches!(dialog, Dialog::None) {
-        crate::ui::chrome::modal_blocker(ctx);
+        // The Customization options leave the toolbars whose buttons they
+        // let move open (#563).
+        let holes: Vec<egui::Rect> = if matches!(dialog, Dialog::Options)
+            && app.options_page.set() == crate::ui::options::OptionsSet::Customization
+        {
+            app.shown_bar_slots
+                .iter()
+                .map(|s| s.rect.expand(2.0))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        crate::ui::chrome::modal_blocker_except(ctx, &holes);
     }
     let mut close = false;
     match &mut dialog {

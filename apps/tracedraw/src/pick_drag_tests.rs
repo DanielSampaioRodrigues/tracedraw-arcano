@@ -5067,3 +5067,136 @@ fn trim_with_one_object_waits_for_the_target() {
     );
     assert!(app.doc().find_shape(target).is_some());
 }
+
+/// With the Customization options open, a toolbar button dragged off
+/// the bars goes away and one dragged along its bar moves; with them
+/// closed a drag does nothing to the bar. The Zoom toolbar shows
+/// pictures, not words (#563).
+#[test]
+fn toolbar_buttons_move_and_leave_in_customize_mode() {
+    use crate::ui::bar_items::{items, ItemBar};
+    let (ctx, mut app, _) = setup();
+    app.show_zoom_toolbar = true;
+    let settle = |ctx: &egui::Context, app: &mut App| {
+        for _ in 0..20 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    };
+    settle(&ctx, &mut app);
+    let slot = |app: &App, bar: ItemBar| {
+        app.shown_bar_slots
+            .iter()
+            .find(|s| s.bar == bar)
+            .cloned()
+            .expect("bar drawn")
+    };
+    // The Zoom bar: its level box, then square picture buttons.
+    let zoom = slot(&app, ItemBar::Zoom);
+    assert_eq!(zoom.items.len(), ItemBar::Zoom.defaults().len());
+    let side = crate::theme::Tokens::bar_button();
+    for (id, r) in ItemBar::Zoom.defaults().iter().zip(&zoom.items) {
+        if id.starts_with("zoom_") && *id != "zoom_levels" {
+            assert!((r.width() - side).abs() < 0.5, "{id} {r:?}");
+        }
+    }
+    // Closed options: a drag of Print leaves the bar as it is.
+    let print = ItemBar::Standard
+        .defaults()
+        .iter()
+        .position(|i| *i == "print")
+        .expect("print");
+    let at = slot(&app, ItemBar::Standard).items[print].center();
+    drag(
+        &ctx,
+        &mut app,
+        at,
+        Pos2::new(60.0, 600.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert!(items(&app, ItemBar::Standard).contains(&"print".to_string()));
+    settle(&ctx, &mut app);
+    // Open: off the bars it goes.
+    app.options_page = crate::ui::options::OptionsPage::CommandBars;
+    app.dialog = crate::ui::dialogs::Dialog::Options;
+    settle(&ctx, &mut app);
+    let at = slot(&app, ItemBar::Standard).items[print].center();
+    drag(
+        &ctx,
+        &mut app,
+        at,
+        Pos2::new(60.0, 600.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    settle(&ctx, &mut app);
+    let now = items(&app, ItemBar::Standard);
+    assert!(!now.contains(&"print".to_string()), "{now:?}");
+    assert_eq!(slot(&app, ItemBar::Standard).items.len(), now.len());
+    // New moved after Save (between the second and third buttons).
+    let s = slot(&app, ItemBar::Standard);
+    let gap = Pos2::new(
+        (s.items[2].right() + s.items[3].left()) / 2.0 + 1.0,
+        s.items[2].center().y,
+    );
+    drag(
+        &ctx,
+        &mut app,
+        s.items[0].center(),
+        gap,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let now = items(&app, ItemBar::Standard);
+    assert_eq!(&now[..3], ["open", "save", "new"], "{now:?}");
+    // A command dragged from the Commands page onto the Zoom bar joins it.
+    app.options_page = crate::ui::options::OptionsPage::Commands;
+    app.shortcut_editor.filter = "convert to curves".into();
+    settle(&ctx, &mut app);
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    let row = texts(&mut app)
+        .into_iter()
+        .find(|(t, _)| t.trim() == "Convert to Curves")
+        .map(|(_, p)| p)
+        .expect("the command's row");
+    settle(&ctx, &mut app);
+    let z = slot(&app, ItemBar::Zoom);
+    let end = Pos2::new(
+        z.items.last().expect("buttons").right() - 2.0,
+        z.items[1].center().y,
+    );
+    drag(&ctx, &mut app, row, end, Modifiers::NONE, Vec::new());
+    let zoom_items = items(&app, ItemBar::Zoom);
+    assert_eq!(
+        zoom_items.last().map(String::as_str),
+        Some("menu.object.convert_to_curves"),
+        "{zoom_items:?}"
+    );
+    // Reset brings them back.
+    crate::ui::bars::reset(&mut app);
+    assert_eq!(items(&app, ItemBar::Standard)[0], "new");
+    assert!(items(&app, ItemBar::Standard).contains(&"print".to_string()));
+}

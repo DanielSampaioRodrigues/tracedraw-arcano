@@ -1210,6 +1210,12 @@ pub struct App {
     pub right_drag: Option<crate::drop_menu::RightDrag>,
     /// A bar being moved (see ui/bars.rs).
     pub bar_drag: Option<crate::ui::bars::BarDrag>,
+    /// A toolbar button being moved, and where the bars that take them
+    /// were drawn this frame (see ui/bar_items.rs).
+    pub bar_item_drag: Option<crate::ui::bar_items::ItemDrag>,
+    pub bar_slots: Vec<crate::ui::bar_items::Slot>,
+    /// The same, as the last frame left them.
+    pub shown_bar_slots: Vec<crate::ui::bar_items::Slot>,
     /// The Time Tracker's clock (see time_tracker.rs).
     pub tracker: crate::time_tracker::Clock,
     pub drop_menu: Option<crate::drop_menu::DropMenu>,
@@ -2171,6 +2177,9 @@ impl App {
             navigator_open: false,
             right_drag: None,
             bar_drag: None,
+            bar_item_drag: None,
+            bar_slots: Vec::new(),
+            shown_bar_slots: Vec::new(),
             tracker: Default::default(),
             drop_menu: None,
             objects_collapsed: Default::default(),

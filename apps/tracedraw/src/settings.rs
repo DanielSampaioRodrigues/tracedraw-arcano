@@ -206,6 +206,10 @@ pub struct Settings {
     /// Where the toolbox, palette, toolbars and status bar sit.
     #[serde(default)]
     pub bars: crate::ui::bars::BarLayout,
+    /// The buttons of the Standard and Zoom toolbars, by bar, when
+    /// changed (see ui/bar_items.rs).
+    #[serde(default)]
+    pub bar_items: std::collections::BTreeMap<String, Vec<String>>,
     /// The main window as it was left: maximized, else its inner size in
     /// points ([0, 0] until the first exit).
     #[serde(default = "default_true")]
@@ -1347,6 +1351,7 @@ impl Default for Settings {
             colored_icons: false,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
+            bar_items: Default::default(),
             window_maximized: true,
             window_size: [0.0, 0.0],
             time_tracker: TimeTrackerPrefs::default(),

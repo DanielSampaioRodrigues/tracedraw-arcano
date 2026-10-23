@@ -2509,6 +2509,7 @@ options.colors = "Barvy"
 options.columns = "Sloupce:"
 options.command_bars = "Příkazové lišty"
 options.command_bars_hint = "Zobrazit tyto lišty:"
+options.toolbar_drag_hint = "Když jsou tyto stránky otevřené (nebo se stisknutým Alt), přetáhněte tlačítko panelu Standardní nebo Lupa, chcete-li jej přesunout, nebo mimo panel, chcete-li jej odebrat. Přetažením příkazu ze stránky Příkazy na jeden z těchto panelů jej přidáte. Obnovit na stránce Panely příkazů vrátí původní tlačítka." # mt
 options.commands = "Příkazy"
 options.commands_hint = "Přiřaďte libovolnému příkazu nabídky vlastní zkratku: klikněte na jeho tlačítko a stiskněte klávesy (Esc akci zruší). Vestavěná zkratka funguje, dokud ji nepřevezme jiný příkaz."
 options.constrain_angle = "Omezující úhel:"

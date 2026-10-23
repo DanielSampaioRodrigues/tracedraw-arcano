@@ -2509,6 +2509,7 @@ options.colors = "Couleurs"
 options.columns = "Colonnes :"
 options.command_bars = "Barres de commandes"
 options.command_bars_hint = "Afficher ces barres :"
+options.toolbar_drag_hint = "Pendant que ces pages sont ouvertes (ou avec Alt enfoncée), faites glisser un bouton de la barre Standard ou Zoom pour le déplacer, ou hors de la barre pour le retirer. Faites glisser une commande de la page Commandes sur l'une de ces barres pour l'ajouter. Réinitialiser, dans la page Barres de commandes, rétablit les boutons d'origine." # mt
 options.commands = "Commandes"
 options.commands_hint = "Donnez à toute commande de menu votre propre raccourci : cliquez sur son bouton, puis appuyez sur les touches (Échap arrête). Le raccourci intégré reste actif tant qu'aucune autre commande ne le prend."
 options.constrain_angle = "Angle de contrainte :"

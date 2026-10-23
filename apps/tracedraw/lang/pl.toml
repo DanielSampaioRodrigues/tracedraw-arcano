@@ -2509,6 +2509,7 @@ options.colors = "Kolory"
 options.columns = "Kolumny:"
 options.command_bars = "Paski poleceń"
 options.command_bars_hint = "Pokaż te paski:"
+options.toolbar_drag_hint = "Gdy te strony są otwarte (lub z wciśniętym Alt), przeciągnij przycisk paska Standardowy lub Powiększenie, aby go przenieść, albo poza pasek, aby go usunąć. Przeciągnij polecenie ze strony Polecenia na jeden z tych pasków, aby je dodać. Resetuj na stronie Paski poleceń przywraca pierwotne przyciski." # mt
 options.commands = "Polecenia"
 options.commands_hint = "Przypisz dowolnemu poleceniu menu własny skrót: kliknij jego przycisk, a następnie naciśnij klawisze (Esc przerywa). Wbudowany skrót działa, dopóki nie przejmie go inne polecenie."
 options.constrain_angle = "Kąt ograniczenia:"

@@ -230,6 +230,25 @@ and the status bar move (`ui/bars.rs`).
   the icon or in its place); Workspace (Export Workspace, Import
   Workspace, the same as Window > Workspace); and Customize..., which
   opens Options > Customization > Command Bars.
+- The buttons of the Standard and Zoom toolbars are lists the user can
+  change (`ui/bar_items.rs`, `settings.bar_items`, kept only when changed;
+  in an exported workspace too). In customize mode, with Tools > Options >
+  Customization open (its dialog leaves those two bars open to the
+  pointer) or with Alt held, a press on a button no longer runs it: the
+  button is outlined under the pointer, a drag carries its picture, a
+  line marks the gap it would go to, and on release it moves there (along
+  its bar or to the other one) or, released off both bars, goes away.
+  Commands and tools dragged from the Commands page join the bar at the
+  gap; a command already on that bar only moves. Added buttons show the
+  command's menu picture (its name when it has none) and run it as its
+  menu item would; a tool's button selects the tool and stays pushed in
+  while it is the tool. Reset (Command Bars page) and Reset Bar Positions
+  bring the first buttons back. The Zoom toolbar shows the zoom box and
+  picture buttons, as on the Zoom tool's property bar: Zoom In, Zoom Out,
+  Zoom to Selected, to All Objects, to Page, to Page Width, to Page
+  Height (#563). Checked by
+  `pick_drag_tests::toolbar_buttons_move_and_leave_in_customize_mode` and
+  `bar_items::tests`.
 - Lock Toolbars hides the grips, stops every drag and greys the places in
   the menu. Reset Bar Positions puts every bar at its first place and
   shows it; the lock stays as it was.

@@ -2509,6 +2509,7 @@ options.colors = "色"
 options.columns = "列:"
 options.command_bars = "コマンド バー"
 options.command_bars_hint = "表示するバー:"
+options.toolbar_drag_hint = "これらのページを開いている間（または Alt を押しながら）、標準ツールバーやズームツールバーのボタンをドラッグすると移動し、バーの外へドラッグすると削除されます。コマンドページからコマンドをこれらのバーにドラッグすると追加されます。コマンドバーページのリセットで元のボタンに戻ります。" # mt
 options.commands = "コマンド"
 options.commands_hint = "任意のメニューコマンドに独自のショートカットを設定できます。ボタンをクリックしてキーを押してください（Esc で中止）。組み込みのショートカットは、別のコマンドに割り当てられるまで有効です。"
 options.constrain_angle = "角度の制限:"

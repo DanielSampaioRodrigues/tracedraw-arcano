@@ -487,6 +487,13 @@ pub(crate) fn draw_menu_picture(
     }
 }
 
+/// Whether the menu item `key` has a picture to draw.
+pub(crate) fn has_menu_picture(key: &str) -> bool {
+    menu_icon(key).is_some()
+        || menu_pic(key).is_some()
+        || crate::ui::menu_glyphs::for_key(key).is_some()
+}
+
 /// Property bar picture for a menu item, when it has one.
 fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
     use crate::ui::propbar::Pic;

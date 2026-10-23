@@ -2509,6 +2509,7 @@ options.colors = "颜色"
 options.columns = "列："
 options.command_bars = "命令栏"
 options.command_bars_hint = "显示以下栏："
+options.toolbar_drag_hint = "打开这些页面时（或按住 Alt），拖动标准工具栏或缩放工具栏上的按钮可移动它，拖出工具栏可将其删除。将命令页面中的命令拖到这些工具栏上即可添加。命令栏页面中的重置可恢复原始按钮。" # mt
 options.commands = "命令"
 options.commands_hint = "为任意菜单命令设置自己的快捷键：单击其按钮，然后按下按键（Esc 取消）。内置快捷键在被其他命令占用前仍然有效。"
 options.constrain_angle = "限制角度："

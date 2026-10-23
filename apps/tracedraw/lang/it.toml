@@ -2509,6 +2509,7 @@ options.colors = "Colori"
 options.columns = "Colonne:"
 options.command_bars = "Barre dei comandi"
 options.command_bars_hint = "Mostra queste barre:"
+options.toolbar_drag_hint = "Con queste pagine aperte (o tenendo premuto Alt), trascina un pulsante della barra Standard o Zoom per spostarlo, o fuori dalla barra per rimuoverlo. Trascina un comando dalla pagina Comandi su una di queste barre per aggiungerlo. Ripristina nella pagina Barre dei comandi riporta i pulsanti iniziali." # mt
 options.commands = "Comandi"
 options.commands_hint = "Assegna una tua scorciatoia a qualsiasi comando di menu: fai clic sul suo pulsante, poi premi i tasti (Esc interrompe). Una scorciatoia integrata continua a funzionare finché un altro comando non la prende."
 options.constrain_angle = "Angolo di vincolo:"

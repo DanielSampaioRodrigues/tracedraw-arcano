@@ -2509,6 +2509,7 @@ options.colors = "Renkler"
 options.columns = "Sütunlar:"
 options.command_bars = "Komut Çubukları"
 options.command_bars_hint = "Bu çubukları göster:"
+options.toolbar_drag_hint = "Bu sayfalar açıkken (veya Alt basılıyken) Standart ya da Yakınlaştırma araç çubuğundaki bir düğmeyi taşımak için sürükleyin, kaldırmak için çubuğun dışına sürükleyin. Eklemek için Komutlar sayfasından bir komutu bu çubuklardan birine sürükleyin. Komut Çubukları sayfasındaki Sıfırla ilk düğmeleri geri getirir." # mt
 options.commands = "Komutlar"
 options.commands_hint = "Herhangi bir menü komutuna kendi kısayolunuzu verin: düğmesine tıklayın, ardından tuşlara basın (Esc durdurur). Yerleşik bir kısayol, başka bir komut onu alana kadar çalışmaya devam eder."
 options.constrain_angle = "Kısıtlama açısı:"

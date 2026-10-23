@@ -2509,6 +2509,7 @@ options.colors = "Warna"
 options.columns = "Kolom:"
 options.command_bars = "Bilah perintah"
 options.command_bars_hint = "Tampilkan bilah ini:"
+options.toolbar_drag_hint = "Selama halaman ini terbuka (atau dengan Alt ditahan), seret tombol bilah alat Standar atau Zoom untuk memindahkannya, atau keluar dari bilah untuk menghapusnya. Seret perintah dari halaman Perintah ke salah satu bilah ini untuk menambahkannya. Atur Ulang di halaman Bilah Perintah mengembalikan tombol semula." # mt
 options.commands = "Perintah"
 options.commands_hint = "Beri setiap perintah menu pintasan Anda sendiri: klik tombolnya, lalu tekan tombol keyboard (Esc membatalkan). Pintasan bawaan tetap berfungsi sampai perintah lain mengambilnya."
 options.constrain_angle = "Sudut batasan:"

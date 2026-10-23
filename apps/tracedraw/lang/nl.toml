@@ -2509,6 +2509,7 @@ options.colors = "Kleuren"
 options.columns = "Kolommen:"
 options.command_bars = "Opdrachtbalken"
 options.command_bars_hint = "Deze balken weergeven:"
+options.toolbar_drag_hint = "Terwijl deze pagina's open zijn (of met Alt ingedrukt) sleept u een knop van de werkbalk Standaard of Zoom om hem te verplaatsen, of van de balk af om hem te verwijderen. Sleep een opdracht van de pagina Opdrachten naar een van deze balken om hem toe te voegen. Herstellen op de pagina Opdrachtbalken zet de oorspronkelijke knoppen terug." # mt
 options.commands = "Opdrachten"
 options.commands_hint = "Geef elke menuopdracht een eigen sneltoets: klik op de knop ervan en druk daarna op de toetsen (Esc stopt). Een ingebouwde sneltoets blijft werken tot een andere opdracht hem overneemt."
 options.constrain_angle = "Hoekbeperking:"

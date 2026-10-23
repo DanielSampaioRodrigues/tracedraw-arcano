@@ -2075,6 +2075,11 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
         app.shortcut_editor.entries = crate::ui::menus::commands(app, &ctx);
     }
     capture_keys(app, ui);
+    ui.label(
+        egui::RichText::new(tr("options.toolbar_drag_hint"))
+            .color(Tokens::text_dim())
+            .size(11.0),
+    );
     let category_name = |c: Option<&str>| match c {
         None => tr("options.all_commands"),
         Some(TOOLBOX) => tr("menu.window.toolbar_toolbox"),
@@ -2171,10 +2176,23 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
 
 /// One row of the list: the command's picture and name.
 fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
+    // A command or a tool dragged onto the Standard or Zoom toolbar
+    // joins it (#563).
+    let item = match c.tool {
+        Some(t) => Some(format!("{}{}", crate::ui::bar_items::TOOL, t.id())),
+        None => c.id.starts_with("menu.").then(|| c.id.clone()),
+    };
     let (row, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), ROW_H),
-        egui::Sense::click(),
+        if item.is_some() {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::click()
+        },
     );
+    if let (true, Some(item)) = (resp.drag_started(), item) {
+        app.bar_item_drag = Some(crate::ui::bar_items::ItemDrag { item, from: None });
+    }
     let on = app.shortcut_editor.selected.as_deref() == Some(c.id.as_str());
     if on {
         ui.painter()
@@ -2387,6 +2405,11 @@ fn command_bars_page(app: &mut App, ui: &mut Ui) {
         ui.vertical(|ui| {
             ui.set_width(230.0);
             ui.label(tr("options.command_bars_hint"));
+            ui.label(
+                egui::RichText::new(tr("options.toolbar_drag_hint"))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
+            );
             egui::Frame::new()
                 .stroke(egui::Stroke::new(1.0, Tokens::border()))
                 .fill(crate::theme::Tokens::field())
