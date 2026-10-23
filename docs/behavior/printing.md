@@ -51,7 +51,12 @@ has one.
 - Composite: Print text in black (fills, outlines and character colours
   of every text); Always overprint black (100 % black fills and outlines
   overprint).
-- Layout: As in document, Fit to page or Scale (percent); Bleed limit
+- Layout: As in document, Fit to page or Scale (percent). Fit to page
+  also brings objects that run off the page inside it: the objects the
+  page shows (every printed one when the range is the selection) shrink
+  as one to fit it, centred, when they do not fit; objects wholly off the
+  page stay out (#534, `fit_contents_to_page`,
+  `export::tests::fit_to_page_shrinks_what_runs_off_the_page`). Bleed limit
   (how far beyond the page objects print, 4 mm by default); the
   imposition, sheet, gap and the sketch (below).
 - Prepress: Invert and Mirror (the whole sheet, marks included; Invert
@@ -72,11 +77,10 @@ over its settings), fills the window with the sheets exactly as Print
 sends them: the imposition, the marks, Mirror and Invert, built by the
 same function (`export::print_sheets`).
 
-- Top bar: Print (prints these settings and closes), Close (Esc), the
-  sheet shown with previous and next (Page Up, Page Down), the Plate
+- Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), the Plate
   (Composite, then cyan, magenta, yellow, black and each spot ink) while
-  Print separations is on, and Zoom from 25 to 400 % of the fitted size
-  with Fit.
+  Print separations is on, Zoom from 25 to 400 % of the fitted size
+  with Fit, and Close (Esc) at the right end (#534).
 - Left: the Print dialog's options (all pages, fit, scale, prepress and
   layout with its sketch); every change rebuilds the sheets at once.
 - A plate shows the ink's coverage in grey, black = full ink, as the

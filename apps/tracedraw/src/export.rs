@@ -433,6 +433,47 @@ fn postscript_level(ps: String, level: u8) -> String {
 /// The sheets the printer gets for the Print dialog's settings: the pages
 /// imposed with their marks, mirrored and inverted when asked. Print and
 /// Print Preview both start here, so the preview shows what prints.
+/// The objects `page` shows (every one with `all`) scaled down and moved
+/// as one to fit inside it, centred, when they run off it; objects wholly
+/// off the page stay out of it.
+fn fit_contents_to_page(page: &mut tracedraw_core::document::Page, all: bool) {
+    const EPS: f64 = 1e-6;
+    let area = page.rect();
+    let shows = |b: &Rect| {
+        all || (b.x0 <= area.x1 && b.x1 >= area.x0 && b.y0 <= area.y1 && b.y1 >= area.y0)
+    };
+    let Some(b) = page
+        .layers
+        .iter()
+        .flat_map(|l| &l.shapes)
+        .map(|s| s.bounds())
+        .filter(|b| b.width().is_finite() && b.height().is_finite() && shows(b))
+        .reduce(|a, b| a.union(b))
+    else {
+        return;
+    };
+    let inside = b.x0 >= area.x0 - EPS
+        && b.y0 >= area.y0 - EPS
+        && b.x1 <= area.x1 + EPS
+        && b.y1 <= area.y1 + EPS;
+    if inside {
+        return;
+    }
+    let k = (area.width() / b.width().max(EPS))
+        .min(area.height() / b.height().max(EPS))
+        .min(1.0);
+    let t = Affine::translate(area.center().to_vec2())
+        * Affine::scale(k)
+        * Affine::translate(-b.center().to_vec2());
+    for layer in page.layers.iter_mut() {
+        for s in layer.shapes.iter_mut() {
+            if shows(&s.bounds()) {
+                s.transform = t * s.transform;
+            }
+        }
+    }
+}
+
 pub fn print_sheets(app: &App, st: &PrintState) -> Document {
     let mut doc = app.engine.document().clone();
     let current = doc.pages.iter().position(|p| p.id == app.page).unwrap_or(0);
@@ -448,6 +489,14 @@ pub fn print_sheets(app: &App, st: &PrintState) -> Document {
             for layer in page.layers.iter_mut() {
                 layer.shapes.retain(|s| app.selection.contains(&s.id));
             }
+        }
+    }
+    // Fit to page: objects running off the page (the selection, when
+    // that is printed) shrink to fit inside it, centred, rather than
+    // being cut at its edge (#534).
+    if st.fit_to_page {
+        for page in doc.pages.iter_mut() {
+            fit_contents_to_page(page, st.range == 3);
         }
     }
     for page in doc.pages.iter_mut() {
@@ -1571,6 +1620,55 @@ mod tests {
             replace_in("cat concat", "cat", "dog", false, true),
             "dog concat"
         );
+    }
+
+    /// Fit to page shrinks objects running off the page to fit inside it,
+    /// centred; objects wholly off the page stay out (#534).
+    #[test]
+    fn fit_to_page_shrinks_what_runs_off_the_page() {
+        let mut app = App::headless();
+        let size = app.page_size();
+        let rect = |app: &mut App, r: Rect| {
+            app.new_shape(ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect")
+        };
+        // Twice the page's width, off its right edge; another wholly off.
+        let wide = rect(
+            &mut app,
+            Rect::new(10.0, 10.0, 10.0 + size.width * 2.0, 60.0),
+        );
+        let away = rect(&mut app, Rect::new(-300.0, 0.0, -250.0, 50.0));
+        let mut page = app.doc().pages[0].clone();
+        fit_contents_to_page(&mut page, false);
+        let bounds = |page: &tracedraw_core::document::Page, id| {
+            page.layers
+                .iter()
+                .flat_map(|l| &l.shapes)
+                .find(|s| s.id == id)
+                .map(|s| s.bounds())
+                .expect("shape")
+        };
+        let b = bounds(&page, wide);
+        assert!(b.x0 >= -1e-6 && b.x1 <= size.width + 1e-6, "{b:?}");
+        assert!((b.width() - size.width).abs() < 1e-6, "as wide as the page");
+        assert!((b.center().y - size.height / 2.0).abs() < 1e-6, "centred");
+        assert_eq!(bounds(&page, away), Rect::new(-300.0, 0.0, -250.0, 50.0));
+        // Printing the selection fits it whatever it covers.
+        let mut page = app.doc().pages[0].clone();
+        fit_contents_to_page(&mut page, true);
+        assert!(bounds(&page, away).x0 >= -1e-6);
+        // Objects inside the page stay as they are.
+        let mut page = app.doc().pages[0].clone();
+        page.layers
+            .iter_mut()
+            .for_each(|l| l.shapes.retain(|s| s.id != wide && s.id != away));
+        let before = page.clone();
+        fit_contents_to_page(&mut page, false);
+        assert_eq!(page, before);
     }
 }
 

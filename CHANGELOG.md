@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print: Fit to page shrinks objects that run off the page (or the selection printed) to fit inside it, centred; they were cut at the page's edge. Print Preview's Close button sits at the right end of its bar (#534).
+
 - Options > Customization > Appearance: the desktop colour button shows the colour around the page, and white picked makes the desktop white; white stood for the theme's colour, so picking it changed nothing until another colour had been picked (#530).
 
 - Smart Fill fills enclosed areas off the page, on the desktop, and in drawings of any size; it worked only inside the page and gave up on drawings much larger than it. An area is open when the flood reaches past the outlines, not when it covers almost the whole page (#499).

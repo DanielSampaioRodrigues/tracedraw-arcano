@@ -33,6 +33,8 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
 ## Layout {#layout}
 
 - **Como no documento**, **Ajustar à página** ou **Escala** em porcentagem.
+  **Ajustar à página** também reduz objetos maiores que a página (ou a
+  seleção, quando só ela é impressa) para que saiam inteiros nela.
 - **Limite de sangria**: até onde além da página os objetos são impressos
   (4 mm de início).
 - A imposição: várias páginas em uma folha, ou um livreto, cujas páginas são

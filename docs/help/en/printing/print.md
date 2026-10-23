@@ -30,7 +30,9 @@ printer and print. In the browser version, the PDF is downloaded.
 
 ## Layout {#layout}
 
-- **As in document**, **Fit to page**, or **Scale** to a percentage.
+- **As in document**, **Fit to page**, or **Scale** to a percentage. **Fit
+  to page** also shrinks objects larger than the page (or the selection, when
+  you print only that) so they print whole on it.
 - **Bleed limit**: how far beyond the page objects print (4 mm at first).
 - The imposition: several pages on one sheet, or a booklet, whose pages are
   paired for folding, with the sheet size and the gap between pages. A sketch
