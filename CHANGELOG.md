@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.14.0 (2026-10-23)
+
 - Variable Outline: a width node dragged along the path slides along it, and its reach handles change its width; a drag on a node could only change its width (#479).
 
 - Variable Outline: the width eases along a smooth curve between nodes however close they are; short spans on long paths ran in a few straight pieces. Shift or Alt for one side counts while dragging, not only when the drag starts (#492).
