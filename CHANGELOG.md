@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Smart Fill fills enclosed areas off the page, on the desktop, and in drawings of any size; it worked only inside the page and gave up on drawings much larger than it. An area is open when the flood reaches past the outlines, not when it covers almost the whole page (#499).
+
 - Print: Keep page size keeps the pages at their size for Several Pages per Sheet and Step and Repeat too; the pages shrank once the columns and rows no longer fit the sheet. The grid stays as set, and a warning says when pages run off the sheet. Columns and rows go up to 99, not 20 (#496).
 
 - Print Merge: the data grid selects a block of cells by dragging across them (or over the record numbers or field names for whole records or fields), with Add (as many empty records after it), Delete (its records) and Clear (its cells, also the Delete key) (#501).
