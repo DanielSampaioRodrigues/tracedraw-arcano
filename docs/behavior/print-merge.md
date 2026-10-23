@@ -12,8 +12,11 @@ Columns and View Single Record; the records; + and - (add a record, delete
 the current one) and the navigation (first, previous, next, last, Go to
 Record); Save Data Source, Finish and Cancel.
 
-- Import File reads a CSV whose first line names the fields (comma or
-  semicolon, whichever the first line has more of), or an Excel workbook
+- Import File reads a CSV whose first line names the fields (comma,
+  semicolon or tab, whichever the first line has most of; UTF-8 with or
+  without its byte order mark, UTF-16 with its mark, else code page 1252,
+  as Excel saves CSV on Windows: that one failed to read as UTF-8, #495,
+  `export::tests::data_files_in_every_encoding_read`), or an Excel workbook
   (`.xlsx`): its first sheet, shared, inline and formula strings, numbers
   as plain text (whole numbers without a decimal point), TRUE and FALSE,
   empty rows and trailing empty cells left out (`tracedraw_io::xlsx`,

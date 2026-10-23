@@ -942,17 +942,52 @@ fn user_dir(env: &str, name: &str) -> Option<std::path::PathBuf> {
 
 // ----- print merge ---------------------------------------------------------------
 
-pub fn parse_csv(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
-    let delim = if text
-        .lines()
-        .next()
-        .map(|l| l.matches(';').count() > l.matches(',').count())
-        .unwrap_or(false)
-    {
-        b';'
-    } else {
-        b','
+/// The text of a data file as spreadsheets save it: UTF-8 (with or
+/// without the byte order mark), UTF-16 with its mark (Excel's Unicode
+/// Text), else code page 1252 (Excel's CSV on Windows), which failed to
+/// read as UTF-8 (#495).
+pub fn decode_text(bytes: &[u8]) -> String {
+    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        return String::from_utf8_lossy(rest).into_owned();
+    }
+    let utf16 = |rest: &[u8], le: bool| {
+        let units: Vec<u16> = rest
+            .chunks_exact(2)
+            .map(|c| {
+                if le {
+                    u16::from_le_bytes([c[0], c[1]])
+                } else {
+                    u16::from_be_bytes([c[0], c[1]])
+                }
+            })
+            .collect();
+        String::from_utf16_lossy(&units)
     };
+    if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        return utf16(rest, true);
+    }
+    if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        return utf16(rest, false);
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => bytes
+            .iter()
+            .map(|&b| crate::ui::glyphs_docker::from_cp1252(b).unwrap_or('\u{FFFD}'))
+            .collect(),
+    }
+}
+
+/// Records of a CSV text: the first row names the fields; the separator
+/// is the comma, semicolon or tab the first row holds most of.
+pub fn parse_csv(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
+    let first = text.lines().next().unwrap_or_default();
+    let delim = b",;\t"
+        .iter()
+        .copied()
+        .max_by_key(|d| first.matches(*d as char).count())
+        .filter(|d| first.contains(*d as char))
+        .unwrap_or(b',');
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(delim)
         .flexible(true)
@@ -1496,6 +1531,33 @@ mod tests {
         assert_eq!(r[1][1], "Lisboa");
         let (h2, _) = parse_csv("a;b\n1;2\n");
         assert_eq!(h2, vec!["a", "b"]);
+        let (h3, r3) = parse_csv("a\tb, c\n1\t2\n");
+        assert_eq!(h3, vec!["a", "b, c"]);
+        assert_eq!(r3[0], vec!["1", "2"]);
+    }
+
+    /// Data files as spreadsheets save them read: UTF-8 with its mark (no
+    /// stray mark in the first field), UTF-16 (Unicode Text) and code page
+    /// 1252, which Excel writes CSV in on Windows (#495).
+    #[test]
+    fn data_files_in_every_encoding_read() {
+        let mut bom = vec![0xEF, 0xBB, 0xBF];
+        bom.extend("Nome,Cidade\nJoão,Évora\n".as_bytes());
+        let (h, r) = parse_csv(&decode_text(&bom));
+        assert_eq!(h, vec!["Nome", "Cidade"]);
+        assert_eq!(r[0], vec!["João", "Évora"]);
+        let mut le = vec![0xFF, 0xFE];
+        for u in "Name\tCity\nAna\tPorto\n".encode_utf16() {
+            le.extend(u.to_le_bytes());
+        }
+        let (h, r) = parse_csv(&decode_text(&le));
+        assert_eq!(h, vec!["Name", "City"]);
+        assert_eq!(r[0], vec!["Ana", "Porto"]);
+        // "João" and the euro sign in code page 1252 are not UTF-8.
+        let ansi = b"Name;Price\nJo\xe3o;5 \x80\n";
+        let (h, r) = parse_csv(&decode_text(ansi));
+        assert_eq!(h, vec!["Name", "Price"]);
+        assert_eq!(r[0], vec!["João", "5 €"]);
     }
 
     #[test]

@@ -192,8 +192,9 @@ pub fn picture_in(value: &str, dirs: &[std::path::PathBuf]) -> Option<Picture> {
     })
 }
 
-/// The records of a data file: a CSV (comma or semicolon) or an Excel
-/// workbook's first sheet (`.xlsx`); the first row names the fields.
+/// The records of a data file: a CSV (comma, semicolon or tab, in any
+/// encoding [`crate::export::decode_text`] reads) or an Excel workbook's
+/// first sheet (`.xlsx`); the first row names the fields.
 pub fn read_data(path: &std::path::Path) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
     let excel = path
         .extension()
@@ -208,8 +209,10 @@ pub fn read_data(path: &std::path::Path) -> Result<(Vec<String>, Vec<Vec<String>
         let headers = rows.remove(0);
         return Ok((headers, rows));
     }
-    let text = crate::files::read_to_string(path).map_err(|e| e.to_string())?;
-    Ok(crate::export::parse_csv(&text))
+    let bytes = crate::files::read(path).map_err(|e| e.to_string())?;
+    Ok(crate::export::parse_csv(&crate::export::decode_text(
+        &bytes,
+    )))
 }
 
 /// Field types guessed from a data file: a field whose name says picture

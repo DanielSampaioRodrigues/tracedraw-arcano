@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge: CSV files saved by Excel on Windows import; they are in code page 1252, not UTF-8, and failed to read. UTF-16 files (Excel's Unicode Text) and tab-separated files import too, and a UTF-8 byte order mark no longer sticks to the first field's name (#495).
+
 - Paragraph text: the bottom handle of a selected frame drags it taller; the flow tab sat under that handle and took the press, so the next click linked the text to another object (after Text > Convert, for one). The tab now hangs below the handle (#503).
 
 - Fonts: on Windows the font lists offer only the fonts Windows lists as installed; a font uninstalled while in use left its file in the font folder until the next restart and was still offered. A font for new text that is no longer installed gives way to Arial at start, instead of being named in the bars while text was drawn with a stand-in (#504).

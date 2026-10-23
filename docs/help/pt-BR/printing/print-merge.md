@@ -10,8 +10,10 @@ QR. Cada registro dos seus dados vira uma cópia da página, preenchida.
    menor e maior em um objeto de texto, como `<Name>`.
 2. Escolha [[menu.file > menu.file.print_merge > menu.file.print_merge_create]].
 3. Acrescente os dados:
-   - **Importar arquivo** lê um arquivo CSV ou uma pasta do Excel (`.xlsx`,
-     a primeira planilha) cuja primeira linha nomeia os campos. Campos com
+   - **Importar arquivo** lê um arquivo CSV (separado por vírgulas,
+     ponto e vírgula ou tabulações, como o Excel ou outro programa o
+     salva) ou uma pasta do Excel (`.xlsx`, a primeira planilha) cuja
+     primeira linha nomeia os campos. Campos com
      nome de foto ou imagem, ou cujas células são arquivos de imagem,
      começam como imagens, campos com QR no nome como códigos QR; os tipos
      aparecem logo para serem mudados;

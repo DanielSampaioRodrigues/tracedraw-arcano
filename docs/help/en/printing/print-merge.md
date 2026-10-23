@@ -10,8 +10,9 @@ your data becomes a copy of the page, filled in.
    in a text object, such as `<Name>`.
 2. Choose [[menu.file > menu.file.print_merge > menu.file.print_merge_create]].
 3. Add the data:
-   - **Import file** reads a CSV file or an Excel workbook (`.xlsx`, its
-     first sheet) whose first line names the fields. Fields named like a
+   - **Import file** reads a CSV file (separated by commas, semicolons or
+     tabs, as Excel or any other program saves it) or an Excel workbook
+     (`.xlsx`, its first sheet) whose first line names the fields. Fields named like a
      photo or a picture, or whose cells are picture files, start as
      pictures, fields named QR as QR codes; the types show at once to be
      changed;
