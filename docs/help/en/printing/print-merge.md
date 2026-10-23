@@ -40,6 +40,10 @@ data source you created or loaded:
 - **[[merge.insert_field]]** puts the field in the text you are editing, or
   places a new text, picture frame or QR square in the middle of the view.
   Move and size it like any object.
+- To put each photo inside a shape of your own (a circle, an oval, any
+  outline, also inside a grouped card design), choose Image and the photo
+  column, select the shape and click **[[merge.place_inside]]**. Every card's
+  photo then goes inside that shape, placed by the alignment and scale.
 - Select a field and click **[[merge.update_field]]** to change its column or
   its alignment and scale.
 - **[[merge.create_document]]** makes the merged pages in a new drawing: the

@@ -40,6 +40,11 @@ fonte de dados que você criou ou carregou:
 - **[[merge.insert_field]]** põe o campo no texto que você está editando, ou
   cria um texto, uma moldura de imagem ou um quadrado de QR no meio da
   visualização. Mova e redimensione como qualquer objeto.
+- Para colocar cada foto dentro de uma forma sua (um círculo, um oval,
+  qualquer contorno, também dentro de um cartão agrupado), escolha Imagem e a
+  coluna da foto, selecione a forma e clique em **[[merge.place_inside]]**. A
+  foto de cada cartão vai para dentro dessa forma, conforme o alinhamento e a
+  escala.
 - Selecione um campo e clique em **[[merge.update_field]]** para mudar a coluna
   ou o alinhamento e a escala.
 - **[[merge.create_document]]** cria as páginas mescladas em um desenho novo: a

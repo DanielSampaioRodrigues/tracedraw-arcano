@@ -83,6 +83,15 @@ at once (#437). From top to bottom:
   data (`PrintMerge.Scale`: actual, fit, fill or stretch;
   `PrintMerge.Anchor`: 0 top left to 8 bottom right, row by row). QR
   code makes a 40 mm square named `<Field>`. One undo step each.
+- Place Inside Frame (Image only; enabled with something selected): each
+  selected object that is not a text or a group (a circle, an oval, any
+  outline, a clip frame), on the page or inside a group, is named
+  `<Field>` of the chosen column and keeps the Align and scale shown; on
+  the page, with a placeholder picture chosen, the picture goes inside
+  it. One undo step "Place Inside Frame". Nothing selected: the status
+  bar says to select the shape first
+  (`print_merge_docker::tests::place_inside_frame_uses_the_users_shapes_also_in_a_group`,
+  #460).
 - Update Field (when a placeholder is selected: a text holding only
   `<Field>`, or an object named `<Field>`): the selected placeholders
   take the chosen column, and with Image the Align and scale shown.
@@ -100,11 +109,12 @@ record, right after it, in the records' order, names the copies
 "<page> 1", "<page> 2", ... and fills them. It is two undo steps (the
 copies, then the fills).
 
-An object named `<Field>` of a picture field on the page (not in a
-group) takes the record's picture inside it as a clip frame, placed by
-its Align and scale (placeholders without it fill it from the centre, as
-before); a clip frame's old contents, such as the placeholder picture,
-give way. An object named `<Field>` of a QR field becomes the code, as
+An object named `<Field>` of a picture field takes the record's picture
+inside it as a clip frame, placed by its Align and scale (placeholders
+without it fill it from the centre, as before); a clip frame's old
+contents, such as the placeholder picture, give way. On the page the
+picture is placed inside the object; inside a group the object becomes,
+in place, a clip frame of its own outline holding the picture (#460). An object named `<Field>` of a QR field becomes the code, as
 large as its box allows.
 
 ## Checks
