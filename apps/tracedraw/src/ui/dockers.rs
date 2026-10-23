@@ -878,7 +878,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 // A group shows what is inside it; values that differ
                 // across the selection show as mixed, and an edit changes
                 // only what was edited on each object.
-                let base = app.paint_targets().into_iter().next();
+                let base = app.first_paint_target();
                 let old = base
                     .as_ref()
                     .map_or(first.stroke.clone(), |b| b.stroke.clone());
@@ -908,7 +908,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 }
             }
             "fill" => {
-                let base = app.paint_targets().into_iter().next();
+                let base = app.first_paint_target();
                 let old = base.as_ref().map_or(first.fill.clone(), |b| b.fill.clone());
                 let mix = app.selection_fill_mix();
                 let mut fill = old.clone();

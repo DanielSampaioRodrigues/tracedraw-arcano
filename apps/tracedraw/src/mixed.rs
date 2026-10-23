@@ -154,6 +154,20 @@ pub fn transparency_mixed(ts: &[ShapeTransparency]) -> Vec<TransparencyField> {
 impl App {
     /// The objects the selection's fill and outline editors show and
     /// change: the selected objects, a group standing for what is in it.
+    /// The first of [`Self::paint_targets`], without copying the others
+    /// (the bars ask for it every frame, #345).
+    pub fn first_paint_target(&self) -> Option<Shape> {
+        let selected = self.selected_rc();
+        let mut first = Vec::new();
+        for s in selected.iter() {
+            leaf_refs(s, &mut first);
+            if let Some(f) = first.first() {
+                return Some((*f).clone());
+            }
+        }
+        None
+    }
+
     pub fn paint_targets(&self) -> Vec<Shape> {
         let mut out = Vec::new();
         for s in self.selected_rc().iter() {

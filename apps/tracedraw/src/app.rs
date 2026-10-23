@@ -1784,6 +1784,8 @@ pub struct SelectedCache {
     key: (u64, u64, tracedraw_core::PageId),
     selection: Vec<ShapeId>,
     shapes: std::rc::Rc<Vec<Shape>>,
+    /// Their visual bounds, once asked for.
+    bounds: std::cell::RefCell<Option<std::rc::Rc<Vec<Rect>>>>,
 }
 
 /// An action Edit > Repeat can repeat.
@@ -3627,6 +3629,7 @@ impl App {
                 key,
                 selection: self.selection.clone(),
                 shapes: shapes.clone(),
+                bounds: Default::default(),
             });
         }
         shapes
@@ -3712,10 +3715,43 @@ impl App {
     /// The selection's bounds as drawn: live effects (an envelope, a
     /// contour...) included.
     pub fn selection_bounds(&self) -> Option<Rect> {
-        self.selected_rc()
+        self.selected_bounds()
             .iter()
-            .map(|s| self.visual_bounds(s))
+            .copied()
             .reduce(|a, b| a.union(b))
+    }
+
+    /// The visual bounds of each of [`Self::selected_rc`], in its order:
+    /// kept with the gathered selection, since the bars, the canvas, the
+    /// cursor and the status bar ask for them many times a frame and
+    /// thousands of selected objects made each answer slow (#345).
+    pub fn selected_bounds(&self) -> std::rc::Rc<Vec<Rect>> {
+        let shapes = self.selected_rc();
+        let cached = |c: &SelectedCache| {
+            std::rc::Rc::ptr_eq(&c.shapes, &shapes)
+                .then(|| c.bounds.borrow().clone())
+                .flatten()
+        };
+        if let Ok(cache) = self.selected_cache.try_borrow() {
+            if let Some(b) = cache.as_ref().and_then(cached) {
+                return b;
+            }
+        }
+        let b = std::rc::Rc::new(
+            shapes
+                .iter()
+                .map(|s| self.visual_bounds(s))
+                .collect::<Vec<_>>(),
+        );
+        if let Ok(cache) = self.selected_cache.try_borrow() {
+            if let Some(c) = cache
+                .as_ref()
+                .filter(|c| std::rc::Rc::ptr_eq(&c.shapes, &shapes))
+            {
+                *c.bounds.borrow_mut() = Some(b.clone());
+            }
+        }
+        b
     }
 
     /// The bounds of what `s` (in page space) draws, its live effects

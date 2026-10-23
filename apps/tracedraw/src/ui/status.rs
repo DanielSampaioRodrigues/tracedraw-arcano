@@ -424,7 +424,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     // Fill and outline of the selection, or of new objects.
     let shapes = app.selected_rc();
     // A clip frame shows its frame's, a group its first member's.
-    let (fill, stroke) = match app.paint_targets().first() {
+    let (fill, stroke) = match app.first_paint_target().as_ref() {
         Some(s) => (s.fill.clone(), s.stroke.clone()),
         None => (app.default_fill(), app.default_stroke()),
     };

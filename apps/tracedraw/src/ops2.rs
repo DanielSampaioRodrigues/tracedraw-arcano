@@ -997,6 +997,17 @@ impl App {
     /// The clip frame under `p` (page) that is not part of the selection
     /// being moved, for a drop into it.
     pub fn frame_under_pointer(&self, p: Point) -> Option<ShapeId> {
+        // Without a clip frame on the page there is nothing to drop on;
+        // this runs every frame of a move, so the hit test below (which
+        // asks each object for its top-level object) is skipped.
+        let frames = self
+            .page_layers()
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .any(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }));
+        if !frames {
+            return None;
+        }
         let doc = self.doc();
         let moved = |id: ShapeId| {
             self.selection.contains(&id)

@@ -1150,14 +1150,12 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
     let view = &app.view;
     // What the objects draw (live effects included), moved by the
     // transform being previewed.
-    let bounds = shapes
+    let bounds = app
+        .selected_bounds()
         .iter()
-        .map(|s| {
-            let b = app.visual_bounds(s);
-            match preview {
-                Some(t) => t.transform_rect_bbox(b),
-                None => b,
-            }
+        .map(|&b| match preview {
+            Some(t) => t.transform_rect_bbox(b),
+            None => b,
         })
         .reduce(|a, b| a.union(b))
         .unwrap_or(Rect::ZERO);

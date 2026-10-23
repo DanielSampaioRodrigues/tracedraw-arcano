@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Less lag on heavy drawings (#345): the page is drawn on all the processor cores at once, and a page that takes long to draw is drawn on a thread of its own while the last picture stays on screen, so the window keeps answering. Each undo step keeps one copy of the drawing instead of two, objects are numbered with a faster table, snapping finds crossings without solving every pair of curves, and the bars, the cursor and the hover marks measure a large selection once instead of every frame. On a page of 5000 curves, moving an object went from 126 ms to 18 ms a frame, and hovering over all of them selected from 82 ms to 20 ms.
+
 - Toolbox: a right click on a tool button or on its empty part opens the bars' menu (Customize, button size, the bars), as on the other bars; it used to open the flyout or nothing.
 
 - Symmetry editing as in the reference program: a click or a marquee picks one of the objects inside (not the whole symmetry, not a copy), and the bar and the lines stay while you work inside it. The mirror lines can be dragged to move them, and a click on a line shows handles that turn them. The bar has icons, spin fields, Show full preview (copies as red outlines when off) and Show symmetry lines.

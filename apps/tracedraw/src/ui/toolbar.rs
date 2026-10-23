@@ -2359,7 +2359,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     use tracedraw_core::style::FountainKind;
     // The first object's fill; values that differ across the selection
     // show as mixed, and a change goes only into what was changed.
-    let base = app.paint_targets().into_iter().next();
+    let base = app.first_paint_target();
     let old = base
         .as_ref()
         .map(|s| s.fill.clone())
