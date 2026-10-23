@@ -63,6 +63,7 @@ request with a JSON-RPC error (-32000) saying how to turn the option on.
 | `export` | `path`, `page_index` (0), `dpi` (96) | SVG, PDF, EPS, DXF, EMF, WMF, PLT, PSD, HTML or PNG by extension |
 | `run_script` | `source` | Runs the JavaScript object model (`Application`, `ActiveDocument`, `ActivePage`, `ActiveLayer`, `ActiveSelection`, `Shapes`, `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`, `CreateCurve`, `Fill`, `Outline`, `Move`, `Rotate`, `Stretch`, `Duplicate`, `Delete`, ...) and returns what it printed; the whole script is one undo step |
 | `document_info` | | Title, file, modified flag, pages with size, layers with visibility and lock, every object with id, type, name, bounds in mm, fill, outline, opacity, text and font, group children, effect count; the selection |
+| `render_page` | `page_index` (default: the page being edited), `max_px` (1024; 256 to 2048) | A PNG picture of the page on white, `max_px` on its longer side, as MCP image content, with a line giving the page, its size and the resolution; for the agent to look at what it drew |
 | `undo`, `redo` | | One step back or forward, then the description |
 
 New objects go to the active layer: the layer picked in the Objects
@@ -96,3 +97,6 @@ The same rule applies to drawing in the window.
   (`mcp_link::tests::the_option_starts_and_stops_listening`).
 - Checked on screen: `tracedraw --mcp-window` drew a star and a line of
   text in the open window.
+- `render_page` answers with an image of the page: red where a script
+  drew, white elsewhere, at the asked size; a missing page is an error
+  (`mcp::tests::render_page_shows_the_page_as_a_picture`).

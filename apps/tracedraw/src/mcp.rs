@@ -64,6 +64,19 @@ pub fn handle_line(app: &mut App, line: &str) -> Option<String> {
         "tools/call" => {
             let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
+            if name == "render_page" {
+                // A picture of the page, for the agent to look at.
+                return Some(
+                    json!({"jsonrpc": "2.0", "id": id, "result": match render_page(app, &args) {
+                        Ok((png, text)) => json!({"content": [
+                            {"type": "image", "data": png, "mimeType": "image/png"},
+                            {"type": "text", "text": text},
+                        ], "isError": false}),
+                        Err(e) => json!({"content": [{"type": "text", "text": e}], "isError": true}),
+                    }})
+                    .to_string(),
+                );
+            }
             match call_tool(app, name, &args) {
                 Ok(text) => {
                     Ok(json!({"content": [{"type": "text", "text": text}], "isError": false}))
@@ -126,6 +139,12 @@ pub fn tool_list() -> Vec<Value> {
             "document_info",
             "Describe the document: title, pages, layers and every object with its id, type, name, bounds in millimetres, fill and outline.",
             json!({}),
+            &[],
+        ),
+        tool(
+            "render_page",
+            "Look at a page: returns a PNG picture of it on white (default: the page being edited), at most max_px pixels on its longer side (default 1024, 256 to 2048). Use it to check what a script drew before going on.",
+            json!({"page_index": {"type": "integer"}, "max_px": {"type": "integer"}}),
             &[],
         ),
         tool("undo", "Undo the last change.", json!({}), &[]),
@@ -244,6 +263,53 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
         }
         other => Err(format!("unknown tool: {other}")),
     }
+}
+
+/// The `render_page` tool: the page as a base64 PNG on white, and a line
+/// saying which page and at what size.
+fn render_page(app: &App, args: &Value) -> Result<(String, String), String> {
+    use base64::Engine as _;
+    let doc = app.engine.document();
+    let index = args
+        .get("page_index")
+        .and_then(|v| v.as_u64())
+        .map(|i| i as usize)
+        .unwrap_or_else(|| app.page_index());
+    let page = doc
+        .pages
+        .get(index)
+        .ok_or_else(|| format!("page_index {index} out of range"))?;
+    let max_px = args
+        .get("max_px")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1024)
+        .clamp(256, 2048) as f64;
+    let long_mm = page.size.width.max(page.size.height).max(1.0);
+    let dpi = (max_px * 25.4 / long_mm).clamp(1.0, 2400.0);
+    let pm = tracedraw_render::render_page_image(doc, page.id, dpi).ok_or("render failed")?;
+    let mut white =
+        tiny_skia::Pixmap::new(pm.width(), pm.height()).ok_or("render failed")?;
+    white.fill(tiny_skia::Color::WHITE);
+    white.draw_pixmap(
+        0,
+        0,
+        pm.as_ref(),
+        &Default::default(),
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    let png = white.encode_png().map_err(|e| e.to_string())?;
+    let text = format!(
+        "page {} of {}, {:.1} x {:.1} mm, {} x {} px ({:.0} dpi)",
+        index + 1,
+        doc.pages.len(),
+        page.size.width,
+        page.size.height,
+        white.width(),
+        white.height(),
+        dpi
+    );
+    Ok((base64::engine::general_purpose::STANDARD.encode(png), text))
 }
 
 fn export_to(app: &App, path: &std::path::Path, page_index: usize, dpi: f64) -> Result<(), String> {
@@ -442,5 +508,51 @@ mod tests {
         }
         assert!(!dir.join("bad.cdr").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_page_shows_the_page_as_a_picture() {
+        let mut app = App::headless();
+        call(
+            &mut app,
+            1,
+            "tools/call",
+            json!({"name": "new_document", "arguments": {"width_mm": 200, "height_mm": 100}}),
+        );
+        call(
+            &mut app,
+            2,
+            "tools/call",
+            json!({"name": "run_script", "arguments": {"source":
+                "const r = ActiveLayer.CreateRectangle(0, 0, 100, 100); r.Fill.ApplyUniformFill(Color.RGB(255, 0, 0));"}}),
+        );
+        let r = call(
+            &mut app,
+            3,
+            "tools/call",
+            json!({"name": "render_page", "arguments": {"max_px": 400}}),
+        );
+        let content = &r["result"]["content"];
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["mimeType"], "image/png");
+        use base64::Engine as _;
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(content[0]["data"].as_str().expect("data"))
+            .expect("base64");
+        let img = image::load_from_memory(&png).expect("png").to_rgba8();
+        assert_eq!((img.width(), img.height()), (400, 200));
+        // Red on the left half, white on the right.
+        assert_eq!(img.get_pixel(50, 100).0, [255, 0, 0, 255]);
+        assert_eq!(img.get_pixel(350, 100).0, [255, 255, 255, 255]);
+        assert!(content[1]["text"].as_str().is_some_and(|t| t.contains("200.0 x 100.0 mm")));
+        // A page that is not there.
+        let r = call(
+            &mut app,
+            4,
+            "tools/call",
+            json!({"name": "render_page", "arguments": {"page_index": 9}}),
+        );
+        assert_eq!(r["result"]["isError"], true);
     }
 }
