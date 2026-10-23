@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Variable Outline: a width node dragged along the path slides along it, and its reach handles change its width; a drag on a node could only change its width (#479).
+
 - Variable Outline: the width eases along a smooth curve between nodes however close they are; short spans on long paths ran in a few straight pieces. Shift or Alt for one side counts while dragging, not only when the drag starts (#492).
 
 - Connectors: a copy of a connected object (Duplicate, right-click drag copy, Repeat, Copy and Paste) comes with a copy of its connector, of the same kind and style, joining the object at the other end to the copy (#476).

@@ -15,6 +15,12 @@ length with width nodes.
   pointer is on changes (#374); it counts while the drag goes on, so
   pressing or letting go of it mid-drag switches between one side and
   both (#492).
+- A drag that starts on a node's centre slides the node along the path
+  when it first moves along the path (kept between its neighbours), and
+  changes its reach when it first moves across it; a drag from one of a
+  node's reach handles (the dots at its ends) changes its reach. One undo
+  step per drag (#479,
+  `width_nodes_slide_along_the_path_and_their_handles_change_the_reach`).
 - Picking several nodes: Shift+click picks the nodes from the picked one
   to the one clicked; Ctrl+click adds a node or takes it out; a plain
   click picks one alone. A drag that starts on a picked node changes
