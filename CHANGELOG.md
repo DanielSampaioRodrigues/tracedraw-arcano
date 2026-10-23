@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser version: opening or creating a drawing froze the page in 0.13.0 (the time measured for the lag fix of #441 is not available in the browser and stopped the program); it opens and draws again.
+
 - Status bar: a double click on the fill opens the Edit Fill dialog box and on the outline the Outline Pen dialog box, as in the reference program, instead of the Properties panel (#465).
 
 ## 0.13.0 (2026-10-23)
