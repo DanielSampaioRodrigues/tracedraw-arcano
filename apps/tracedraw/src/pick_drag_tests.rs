@@ -4488,3 +4488,75 @@ fn a_lone_symmetry_object_is_picked_alone_and_takes_new_drawings() {
     };
     assert_eq!(kids, 2);
 }
+
+fn double_click_at(ctx: &egui::Context, app: &mut App, at: Pos2) {
+    let m = Modifiers::NONE;
+    // Past the triple-click time since the last click.
+    for _ in 0..40 {
+        frame(ctx, app, Vec::new(), m);
+    }
+    frame(ctx, app, vec![Event::PointerMoved(at)], m);
+    for _ in 0..2 {
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Primary, m)],
+            m,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Primary, m)],
+            m,
+        );
+    }
+    for _ in 0..20 {
+        frame(ctx, app, Vec::new(), m);
+    }
+}
+
+/// A finished symmetry is one object, as in the reference program: a
+/// click picks the whole of it and a drag moves it all; a double click
+/// goes back into editing it, where a click picks one object inside.
+#[test]
+fn a_finished_symmetry_is_picked_whole_and_a_double_click_edits_it() {
+    let (ctx, mut app, a) = setup();
+    let b = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(10.0, 60.0, 30.0, 80.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![a, b]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        200, 30, 30,
+    )));
+    app.create_symmetry();
+    let g = app.symmetry_edit.expect("editing");
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The bar's Finish, clicked.
+    let finish = app.canvas_rect.min + egui::vec2(14.0 + 10.0 + 30.0, 14.0 + 6.0 + 9.0);
+    click_at(&ctx, &mut app, finish, Modifiers::NONE);
+    assert_eq!(app.symmetry_edit, None, "Finish ends the editing");
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let on_a = app.view.to_screen(Point::new(30.0, 25.0));
+    click_at(&ctx, &mut app, on_a, Modifiers::NONE);
+    assert_eq!(app.symmetry_edit, None, "a click does not edit");
+    assert_eq!(app.selection, vec![g], "the whole symmetry");
+    let before = app.doc().shape_on_page(g).expect("g").bounds();
+    let to = app.view.to_screen(Point::new(50.0, 25.0));
+    drag(&ctx, &mut app, on_a, to, Modifiers::NONE, Vec::new());
+    let after = app.doc().shape_on_page(g).expect("g").bounds();
+    assert!(
+        (after.x0 - before.x0 - 20.0).abs() < 1.0,
+        "{before:?} -> {after:?}"
+    );
+    // Off the selection's centre mark (a double click there resets it).
+    let on_a = app.view.to_screen(Point::new(36.0, 14.0));
+    double_click_at(&ctx, &mut app, on_a);
+    assert_eq!(app.symmetry_edit, Some(g), "a double click edits it");
+    click_at(&ctx, &mut app, on_a, Modifiers::NONE);
+    assert_eq!(app.selection, vec![a], "one object inside");
+}

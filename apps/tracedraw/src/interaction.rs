@@ -1434,6 +1434,21 @@ impl App {
                 }
             }
             if let Some(id) = self.hit_test(p) {
+                // An object with a symmetry (or inside one): editing the
+                // symmetry, as in the reference program.
+                if self.symmetry_edit.is_none() {
+                    let top = self.doc().top_level_of(id).unwrap_or(id);
+                    let has = self.doc().find_shape(top).is_some_and(|s| {
+                        s.effects
+                            .iter()
+                            .any(|e| matches!(e, tracedraw_core::live::Effect::Symmetry { .. }))
+                    });
+                    if has {
+                        self.select(vec![top]);
+                        self.edit_symmetry();
+                        return;
+                    }
+                }
                 // A group or clip frame: into focus mode.
                 if self.focus_on_double_click(id) {
                     self.focus_on(id);

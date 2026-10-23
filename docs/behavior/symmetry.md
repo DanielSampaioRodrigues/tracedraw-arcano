@@ -63,6 +63,10 @@ recomputed from it.
   them (`pick_drag_tests::symmetry_editing_picks_members_and_drags_lines`).
 - Finish Editing Symmetry (Alt+Shift+E) and the bar's Finish end the
   mode; it also ends when the object is deleted or loses its symmetry.
+- Out of the mode a symmetry is one object: a click picks the whole of
+  it and a drag moves it all; a double click on it (or on an object
+  inside it) goes back into editing it, instead of into focus mode
+  (`pick_drag_tests::a_finished_symmetry_is_picked_whole_and_a_double_click_edits_it`).
 - Remove Symmetry (Alt+Shift+S) drops the effect; the copies disappear.
 - Break Symmetry Link (Alt+X) bakes the copies into objects of their own.
 

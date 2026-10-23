@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Symmetry: a double click on a symmetry goes back into editing it, as in the reference program; it opened the group's focus mode instead, so after Finish the only way back was the menu.
+
 - Guidelines: Copy, Cut and Paste work on selected guidelines (no objects selected), pasting them in the same place, and the Transformations docker moves, rotates, scales and copies them; the Help says where the Ctrl+D duplicate offset is set (#376).
 
 - Hyphenation: a word with a comma, full stop or quotation mark next to it can break at a line's end (before, any punctuation kept the whole word on the next line, in every language), words with an apostrophe break too (Italian *dell'informazione*), and Text > Use Hyphenation now turns hyphenation on for the selected text instead of only for text made afterwards. Checked with the Italian, English, Portuguese and German dictionaries (#255).
