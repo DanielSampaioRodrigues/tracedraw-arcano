@@ -68,6 +68,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::AiGenerate => crate::ui::ai_generate_docker::ai_generate(app, ui),
         DockerTab::Effects => crate::ui::effects_docker::effects_docker(app, ui),
         DockerTab::Macros => crate::ui::macros_ui::manager(app, ui),
+        DockerTab::PrintMerge => crate::ui::print_merge_docker::print_merge(app, ui),
         _ => {}
     }
 }

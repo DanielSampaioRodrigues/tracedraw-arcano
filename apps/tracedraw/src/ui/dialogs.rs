@@ -3661,11 +3661,18 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 if ui.button(tr("dialog.cancel")).clicked() {
                     *close = true;
                 }
+                // Finish keeps the data source and opens the Print Merge
+                // docker, where the fields are put on the page and the
+                // merge is made, as in the reference program (#437).
                 if ui
-                    .add_enabled(!st.rows.is_empty(), egui::Button::new(tr("merge.finish")))
+                    .add_enabled(
+                        !st.headers.is_empty(),
+                        egui::Button::new(tr("merge.finish")),
+                    )
                     .clicked()
                 {
-                    pm::perform(app, st);
+                    app.merge_state = Some(st.clone());
+                    app.open_docker(crate::app::DockerTab::PrintMerge);
                     *close = true;
                 }
             });

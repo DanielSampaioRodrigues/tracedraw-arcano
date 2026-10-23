@@ -1064,6 +1064,8 @@ pub struct App {
     pub page_numbers: PageNumberSettings,
     /// Last loaded print-merge data, for Edit / Perform without reloading.
     pub merge_state: Option<crate::ui::dialogs::PrintMergeState>,
+    /// The Print Merge docker's choices.
+    pub merge_docker: crate::ui::print_merge_docker::MergeDocker,
     pub show_welcome: bool,
     /// Object > Clip to Frame > Place Inside Frame is waiting for a click on the frame.
     pub pending_clip_frame: bool,
@@ -1597,10 +1599,11 @@ pub enum DockerTab {
     AiGenerate,
     Effects,
     Macros,
+    PrintMerge,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 42] = [
+    pub const ALL: [DockerTab; 43] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1643,6 +1646,7 @@ impl DockerTab {
         DockerTab::Shelf,
         DockerTab::Effects,
         DockerTab::Macros,
+        DockerTab::PrintMerge,
     ];
 
     /// Window > Panels, in groups divided by separators, in the order of
@@ -1659,6 +1663,7 @@ impl DockerTab {
             DockerTab::Symbols,
             DockerTab::FindReplace,
             DockerTab::Export,
+            DockerTab::PrintMerge,
             DockerTab::AiGenerate,
         ],
         &[DockerTab::Transformations, DockerTab::Coordinates],
@@ -1749,6 +1754,7 @@ impl DockerTab {
             DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Macros => "docker.macros",
             DockerTab::Effects => "docker.effects",
+            DockerTab::PrintMerge => "docker.print_merge",
         }
     }
 
@@ -2063,6 +2069,7 @@ impl App {
             dialog: crate::ui::dialogs::Dialog::None,
             dialog_help: crate::help::HOME,
             merge_state: None,
+            merge_docker: Default::default(),
             page_numbers: PageNumberSettings::default(),
             show_welcome: false,
             pending_clip_frame: false,
