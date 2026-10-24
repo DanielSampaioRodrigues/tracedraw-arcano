@@ -2656,6 +2656,7 @@ options.pages_count = "Sayfa sayısı: {n}"
 options.palette_auto_update = "Belge paletini otomatik güncelle"
 options.palette_context_menu = "Bağlam menüsü"
 options.palette_no_color = "\"Renk Yok\" kutusunu göster"
+options.palette_rows = "Satırlar:" # mt
 options.palette_right_button = "Sağ fare düğmesi"
 options.palette_set_outline = "Anahat rengini ayarla"
 options.palette_show_document = "Belge paletini göster"

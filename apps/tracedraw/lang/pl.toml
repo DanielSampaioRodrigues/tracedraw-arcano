@@ -2656,6 +2656,7 @@ options.pages_count = "Liczba stron: {n}"
 options.palette_auto_update = "Automatycznie aktualizuj paletę dokumentu"
 options.palette_context_menu = "Menu kontekstowe"
 options.palette_no_color = "Pokaż pole \"Brak koloru\""
+options.palette_rows = "Wiersze:" # mt
 options.palette_right_button = "Prawy przycisk myszy"
 options.palette_set_outline = "Ustaw kolor konturu"
 options.palette_show_document = "Pokaż paletę dokumentu"

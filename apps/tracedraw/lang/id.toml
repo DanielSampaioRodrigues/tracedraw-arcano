@@ -2656,6 +2656,7 @@ options.pages_count = "{n} halaman"
 options.palette_auto_update = "Perbarui palet dokumen secara otomatis"
 options.palette_context_menu = "Menu konteks"
 options.palette_no_color = "Tampilkan kotak \"Tanpa warna\""
+options.palette_rows = "Baris:" # mt
 options.palette_right_button = "Tombol kanan mouse"
 options.palette_set_outline = "Atur warna garis luar"
 options.palette_show_document = "Tampilkan palet dokumen"

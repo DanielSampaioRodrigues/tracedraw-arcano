@@ -2656,6 +2656,7 @@ options.pages_count = "{n} পৃষ্ঠা"
 options.palette_auto_update = "ডকুমেন্ট প্যালেট স্বয়ংক্রিয়ভাবে আপডেট করুন"
 options.palette_context_menu = "প্রসঙ্গ মেনু"
 options.palette_no_color = "\"কোনো রং নয়\" ঘর দেখান"
+options.palette_rows = "সারি:" # mt
 options.palette_right_button = "মাউসের ডান বোতাম"
 options.palette_set_outline = "আউটলাইনের রং সেট করুন"
 options.palette_show_document = "ডকুমেন্ট প্যালেট দেখান"

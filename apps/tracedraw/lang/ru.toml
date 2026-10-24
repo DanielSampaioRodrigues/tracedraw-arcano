@@ -2656,6 +2656,7 @@ options.pages_count = "Страниц: {n}"
 options.palette_auto_update = "Автоматически обновлять палитру документа"
 options.palette_context_menu = "Контекстное меню"
 options.palette_no_color = "Показывать ячейку «Нет цвета»"
+options.palette_rows = "Строки:" # mt
 options.palette_right_button = "Правая кнопка мыши"
 options.palette_set_outline = "Задать цвет абриса"
 options.palette_show_document = "Показывать палитру документа"

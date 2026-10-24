@@ -2656,6 +2656,7 @@ options.pages_count = "{n} page(s)"
 options.palette_auto_update = "Mettre à jour automatiquement la palette du document"
 options.palette_context_menu = "Menu contextuel"
 options.palette_no_color = "Afficher la case « Aucune couleur »"
+options.palette_rows = "Rangées :" # mt
 options.palette_right_button = "Bouton droit de la souris"
 options.palette_set_outline = "Définir la couleur du contour"
 options.palette_show_document = "Afficher la palette du document"

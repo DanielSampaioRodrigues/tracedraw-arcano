@@ -2656,6 +2656,7 @@ options.pages_count = "{n} पृष्ठ"
 options.palette_auto_update = "दस्तावेज़ पैलेट स्वचालित रूप से अपडेट करें"
 options.palette_context_menu = "संदर्भ मेनू"
 options.palette_no_color = "\"कोई रंग नहीं\" वेल दिखाएँ"
+options.palette_rows = "पंक्तियाँ:" # mt
 options.palette_right_button = "दायाँ माउस बटन"
 options.palette_set_outline = "आउटलाइन रंग सेट करें"
 options.palette_show_document = "दस्तावेज़ पैलेट दिखाएँ"

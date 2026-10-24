@@ -2656,6 +2656,7 @@ options.pages_count = "{n} ページ"
 options.palette_auto_update = "ドキュメント パレットを自動的に更新"
 options.palette_context_menu = "コンテキスト メニュー"
 options.palette_no_color = "[色なし] ウェルを表示"
+options.palette_rows = "行数:" # mt
 options.palette_right_button = "マウスの右ボタン"
 options.palette_set_outline = "アウトラインの色を設定"
 options.palette_show_document = "ドキュメント パレットを表示"

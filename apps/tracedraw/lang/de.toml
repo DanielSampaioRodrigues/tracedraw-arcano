@@ -2656,6 +2656,7 @@ options.pages_count = "{n} Seite(n)"
 options.palette_auto_update = "Dokumentpalette automatisch aktualisieren"
 options.palette_context_menu = "Kontextmenü"
 options.palette_no_color = "Feld \"Keine Farbe\" anzeigen"
+options.palette_rows = "Zeilen:" # mt
 options.palette_right_button = "Rechte Maustaste"
 options.palette_set_outline = "Umrissfarbe festlegen"
 options.palette_show_document = "Dokumentpalette anzeigen"

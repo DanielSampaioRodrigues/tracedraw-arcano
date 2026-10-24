@@ -450,9 +450,12 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             }
         };
         if show_palette {
-            side(panel("palette"), palette::ROW_H)
-                .frame(palette_frame)
-                .show(ui, |ui| palette::palette_column(app, ui));
+            side(
+                panel("palette"),
+                palette::thickness(app, palette::Row::Main),
+            )
+            .frame(palette_frame)
+            .show(ui, |ui| palette::palette_column(app, ui));
         }
     }
 
@@ -557,9 +560,12 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
                 .show(ui, |ui| palette::document_palette_row(app, ui));
         }
         if show_palette && matches!(palette_dock, Dock::Bottom | Dock::Top) {
-            side(panel("palette"), palette::ROW_H)
-                .frame(palette_frame)
-                .show(ui, |ui| palette::palette_row(app, ui));
+            side(
+                panel("palette"),
+                palette::thickness(app, palette::Row::Main),
+            )
+            .frame(palette_frame)
+            .show(ui, |ui| palette::palette_row(app, ui));
         }
     }
     // The AI prompt bar, over the palette rows, while a service is set up.

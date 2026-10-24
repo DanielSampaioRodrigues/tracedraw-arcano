@@ -2656,6 +2656,7 @@ options.pages_count = "{n} pagina('s)"
 options.palette_auto_update = "Het documentpalet automatisch bijwerken"
 options.palette_context_menu = "Contextmenu"
 options.palette_no_color = "Vakje \"Geen kleur\" weergeven"
+options.palette_rows = "Rijen:" # mt
 options.palette_right_button = "Rechtermuisknop"
 options.palette_set_outline = "Omtrekkleur instellen"
 options.palette_show_document = "Het documentpalet weergeven"

@@ -2656,6 +2656,7 @@ options.pages_count = "{n} 頁"
 options.palette_auto_update = "自動更新文件調色盤"
 options.palette_context_menu = "快顯功能表"
 options.palette_no_color = "顯示「無色彩」色塊"
+options.palette_rows = "列數：" # mt
 options.palette_right_button = "滑鼠右鍵"
 options.palette_set_outline = "設定外框色彩"
 options.palette_show_document = "顯示文件調色盤"

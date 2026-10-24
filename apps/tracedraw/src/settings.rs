@@ -780,6 +780,16 @@ pub struct PalettePrefs {
     pub show_document: bool,
     /// The default palette itself (Window > Toolbars, the bars' menu).
     pub show_palette: bool,
+    /// Rows of swatches the default palette shows (columns docked on a
+    /// side), 1 to 3 (#610).
+    pub rows: u8,
+}
+
+impl PalettePrefs {
+    /// [`Self::rows`] brought into 1 to 3.
+    pub fn rows(&self) -> usize {
+        self.rows.clamp(1, 3) as usize
+    }
 }
 
 impl Default for PalettePrefs {
@@ -790,6 +800,7 @@ impl Default for PalettePrefs {
             show_no_color: true,
             show_document: true,
             show_palette: true,
+            rows: 1,
         }
     }
 }

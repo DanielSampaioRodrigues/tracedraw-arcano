@@ -1910,6 +1910,20 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(&mut p.show_document, tr("options.palette_show_document"));
     crate::ui::chrome::section(ui, &tr("options.palette_swatches"));
     ui.checkbox(&mut p.show_no_color, tr("options.palette_no_color"));
+    // Rows of the default palette (columns docked on a side, #610).
+    p.rows = p.rows.clamp(1, 3);
+    grid("palette_rows").show(ui, |ui| {
+        row_label(ui, &tr("options.palette_rows"));
+        combo(
+            ui,
+            "opt_palette_rows",
+            &mut p.rows,
+            &[1, 2, 3],
+            |n| n.to_string(),
+            60.0,
+        );
+        ui.end_row();
+    });
     crate::ui::chrome::section(ui, &tr("options.palette_right_button"));
     ui.radio_value(
         &mut p.right_click_outline,

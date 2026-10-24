@@ -2656,6 +2656,7 @@ options.pages_count = "{n} صفحة (صفحات)"
 options.palette_auto_update = "تحديث لوحة ألوان المستند تلقائيًا"
 options.palette_context_menu = "قائمة السياق"
 options.palette_no_color = "إظهار خانة \"بلا لون\""
+options.palette_rows = "الصفوف:" # mt
 options.palette_right_button = "زر الفأرة الأيمن"
 options.palette_set_outline = "تعيين لون المخطط"
 options.palette_show_document = "إظهار لوحة ألوان المستند"

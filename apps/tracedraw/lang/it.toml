@@ -2656,6 +2656,7 @@ options.pages_count = "{n} pagina/e"
 options.palette_auto_update = "Aggiorna automaticamente la tavolozza del documento"
 options.palette_context_menu = "Menu contestuale"
 options.palette_no_color = "Mostra il campione \"Nessun colore\""
+options.palette_rows = "Righe:" # mt
 options.palette_right_button = "Pulsante destro del mouse"
 options.palette_set_outline = "Imposta il colore del contorno"
 options.palette_show_document = "Mostra la tavolozza del documento"

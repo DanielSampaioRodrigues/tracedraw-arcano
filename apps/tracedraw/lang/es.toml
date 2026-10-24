@@ -2656,6 +2656,7 @@ options.pages_count = "{n} página(s)"
 options.palette_auto_update = "Actualizar automáticamente la paleta del documento"
 options.palette_context_menu = "Menú contextual"
 options.palette_no_color = "Mostrar casilla \"Sin color\""
+options.palette_rows = "Filas:" # mt
 options.palette_right_button = "Botón derecho del ratón"
 options.palette_set_outline = "Establecer color del contorno"
 options.palette_show_document = "Mostrar la paleta del documento"

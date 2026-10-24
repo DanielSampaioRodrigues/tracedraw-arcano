@@ -2656,6 +2656,7 @@ options.pages_count = "Stránky: {n}"
 options.palette_auto_update = "Automaticky aktualizovat paletu dokumentu"
 options.palette_context_menu = "Místní nabídka"
 options.palette_no_color = "Zobrazit pole „Bez barvy“"
+options.palette_rows = "Řádky:" # mt
 options.palette_right_button = "Pravé tlačítko myši"
 options.palette_set_outline = "Nastavit barvu obrysu"
 options.palette_show_document = "Zobrazit paletu dokumentu"

@@ -2656,6 +2656,7 @@ options.pages_count = "{n} 页"
 options.palette_auto_update = "自动更新文档调色板"
 options.palette_context_menu = "上下文菜单"
 options.palette_no_color = "显示“无颜色”色井"
+options.palette_rows = "行数：" # mt
 options.palette_right_button = "鼠标右键"
 options.palette_set_outline = "设置轮廓颜色"
 options.palette_show_document = "显示文档调色板"

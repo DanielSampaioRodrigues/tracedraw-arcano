@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The default colour palette can show two or three rows of swatches (columns when docked on a side), set in Options > Customization > Color Palette > Rows, so more colours are in reach without scrolling; the arrows and the wheel then scroll a column at a time (#610).
+
 - Convert to Curves (Ctrl+Q) now works on dimensions: the dimension becomes a group of plain curves (its lines, its filled arrowheads and its label as curves) that no longer measures, each editable with the Shape tool. It used to do nothing. An angular dimension's arc is now a few smooth curves instead of dozens of short lines (#640).
 
 - Text editing on the canvas: the caret is now a black bar with a white edge instead of the interface's text colour, which in the dark themes was a light grey lost on the white page, and selected characters get a clearly darker shade. Table cells being edited show the same caret and shade (#632).
