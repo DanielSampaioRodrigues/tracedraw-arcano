@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening .cdr files: pages longer than 10 m on a side, such as a 22 m banner, keep their size up to 100 m, the bound the CMX reader already had. They opened as A4, with the warning that the page size looked wrong.
+
 - Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
 
 - When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
