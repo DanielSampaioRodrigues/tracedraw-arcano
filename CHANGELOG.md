@@ -6,12 +6,6 @@ full, row-by-row status.
 
 ## Unreleased
 
-- `tracedraw-cli convert`: what the .cdr reader skipped or guessed (a fill it cannot read yet, a page size it does not take, objects left out) now goes to stderr as warnings, as for the other formats it reads. Only `info` showed it, so a converted file could miss part of the drawing without a word.
-
-- Opening .cdr files: pages longer than 10 m on a side, such as a 22 m banner, keep their size up to 100 m, the bound the CMX reader already had. They opened as A4, with the warning that the page size looked wrong.
-
-- Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
-
 - The log now names the processor, its threads and the Windows build, says at the first frame how long the start took and how large the window is in pixels, and with `RUST_LOG=debug` sums up the frames every 10 s (count, input, build times, gaps and why they were asked for), so a report of a slow window shows where the time goes (#616).
 
 - The preferences are no longer serialized on every frame to see whether they changed: only on frames with a key, text, a click or a dropped file, and at most once a second otherwise. A pointer move now costs about 0.1 µs there instead of about 20 µs, more on an older PC (#616).
@@ -29,6 +23,12 @@ full, row-by-row status.
 - Shape tool: corner widgets. A curve being edited shows a small circle inside each corner; dragging one into its corner rounds the corners on the canvas as you drag, every corner of the curve together, or only the chosen nodes' corners when nodes are chosen. Works on open curves too; the status bar shows the radius, and the drag is one undo step (#635).
 
 - View > Page > Mask Outside Page: an optional mode that covers everything outside the page with the desktop colour, with the page border drawn over the objects, so the page shows as it will print while you keep drawing and editing. Objects outside the page still show faintly and stay editable; the setting is kept with the other view settings (#615).
+
+- `tracedraw-cli convert`: what the .cdr reader skipped or guessed (a fill it cannot read yet, a page size it does not take, objects left out) now goes to stderr as warnings, as for the other formats it reads. Only `info` showed it, so a converted file could miss part of the drawing without a word.
+
+- Opening .cdr files: pages longer than 10 m on a side, such as a 22 m banner, keep their size up to 100 m, the bound the CMX reader already had. They opened as A4, with the warning that the page size looked wrong.
+
+- Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
 
 - When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
 
