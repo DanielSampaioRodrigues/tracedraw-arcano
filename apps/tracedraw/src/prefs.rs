@@ -188,6 +188,8 @@ pub struct FormatPrefs {
     pub export_dpi: f64,
     /// JPEG and WebP quality, 1 to 100.
     pub export_quality: u8,
+    /// WebP without loss.
+    pub export_webp_lossless: bool,
     /// PNG, WebP and GIF.
     pub export_transparent: bool,
     /// PDF: 0 plain, 1 X-1a, 2 X-3, 3 X-4.
@@ -221,11 +223,12 @@ impl Default for FormatPrefs {
             export_format: st.format,
             export_dpi: st.dpi,
             export_quality: st.quality,
+            export_webp_lossless: st.webp_lossless,
             export_transparent: st.transparent,
             pdf_standard: st.pdf_standard,
             output_condition: st.output_condition,
             pdf_bleed_mm: st.bleed_mm,
-            remember_last: false,
+            remember_last: true,
             import_place: ImportPlace::AsInFile,
             cdr_version: tracedraw_cdr::write::NEWEST_VERSION,
             save_new_as_cdr: false,
@@ -362,6 +365,7 @@ impl FormatPrefs {
             },
             quality: self.export_quality.clamp(1, 100),
             transparent: self.export_transparent,
+            webp_lossless: self.export_webp_lossless,
             pdf_standard: if self.pdf_standard < PDF_STANDARDS.len() {
                 self.pdf_standard
             } else {
@@ -388,6 +392,7 @@ impl FormatPrefs {
         self.export_format = st.format;
         self.export_dpi = st.dpi;
         self.export_quality = st.quality;
+        self.export_webp_lossless = st.webp_lossless;
         self.export_transparent = st.transparent;
         self.pdf_standard = st.pdf_standard;
         self.output_condition = st.output_condition.clone();

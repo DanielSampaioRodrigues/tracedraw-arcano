@@ -1237,6 +1237,9 @@ pub struct App {
     /// Autofit Page's popup open: the margin shown and the frame it was
     /// drawn in, for the outline of the page it would make (#594).
     pub autofit_preview: Option<(f64, u64)>,
+    /// The choices of the last File > Export of this session, which the
+    /// next one starts with (#617).
+    pub last_export: Option<crate::ui::dialogs::ExportState>,
     /// Print Merge's Place Inside Frame waiting for a click on the shape
     /// that holds the picture (#577).
     pub pending_merge_frame: bool,
@@ -2255,6 +2258,7 @@ impl App {
             pending_shaping: None,
             pending_merge_frame: false,
             autofit_preview: None,
+            last_export: None,
             pending_copy_effect: None,
             pending_copy_envelope: false,
             pending_clone_effect: None,
@@ -6139,16 +6143,44 @@ impl App {
     }
 
     /// File > Export (Ctrl+E, the toolbar button): the Export dialog with
-    /// every format, starting with the choices of Options > Global > File
-    /// Formats.
+    /// every format, starting with the choices of the last export of this
+    /// session, else those of Options > Global > File Formats (#617).
     pub fn export(&mut self) {
-        let st = self.settings.formats.state();
+        let mut st = self
+            .last_export
+            .clone()
+            .unwrap_or_else(|| self.settings.formats.state());
+        st.remember = true;
         // "Do not show filter dialog": straight to the file.
         if self.settings.formats.skip_export_dialog {
             crate::ui::dialogs::export_with_file_dialog(self, &st);
+            self.keep_export_choices(&st);
             return;
         }
         self.dialog = crate::ui::dialogs::Dialog::Export(st);
+    }
+
+    /// A File > Export done with `st`: the next export of the session
+    /// starts with its choices, and with Options > Global > File Formats >
+    /// Remember the settings of the last export on, so does the next
+    /// session (#617). The presets for the web and office keep nothing.
+    pub fn keep_export_choices(&mut self, st: &crate::ui::dialogs::ExportState) {
+        if !st.remember {
+            return;
+        }
+        let mut kept = st.clone();
+        // The file's own title and tags are not choices, and Selected only
+        // was for that selection: the next export, which may go straight to
+        // the file, starts with the whole page again.
+        kept.title.clear();
+        kept.tags.clear();
+        kept.selection_only = false;
+        kept.preset_name = None;
+        self.last_export = Some(kept);
+        if self.settings.formats.remember_last {
+            self.settings.formats.remember(st);
+            self.settings.save();
+        }
     }
 
     /// After a drawing opened: say which objects could not be read and

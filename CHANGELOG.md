@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- File > Export now starts with the choices of the last export of the session (format, resolution, quality, transparency, pages and PDF settings; Selected only starts off again) instead of resetting them each time. To keep them for the next session too, turn on Options > Global > File Formats > Remember the settings of the last export, which new preferences now have on and which now keeps WebP lossless as well (#617).
+
 - Print Preview: the box for each ink now stands under Print separations in the left panel, as asked, instead of in the top bar, where a drawing with many spot inks pushed Zoom and Close out of the window (#571).
 
 - The Welcome Screen tab can be closed while a drawing is open: it shrinks to its house, which shows the Welcome Screen again, and stays closed after a restart until the Welcome Screen is shown (#677).

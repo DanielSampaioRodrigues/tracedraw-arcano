@@ -39,8 +39,8 @@ pub fn dpi_for_pixels(mm: f64, px: u32) -> Option<f64> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportState {
-    /// File > Export opened it and Options > Global > File Formats keeps
-    /// the last export's choices: exporting stores them.
+    /// File > Export opened it: exporting keeps the choices for the next
+    /// export (`App::keep_export_choices`).
     pub remember: bool,
     pub format: usize,
     pub dpi: f64,
@@ -3034,10 +3034,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 return;
             }
             export_with_file_dialog(app, st);
-            if st.remember {
-                app.settings.formats.remember(st);
-                app.settings.save();
-            }
+            app.keep_export_choices(st);
         }
     });
 }

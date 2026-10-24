@@ -66,9 +66,18 @@ lossless, and below 100 the colours are first rounded to fewer levels
 (near-lossless, #544). The browser build has no lossy encoder and always
 writes the lossless way (#592, `export::tests::webp_quality_shrinks_the_file`).
 
+## Starting choices
+
+File > Export starts with the choices of the last export of the session
+(Selected only off again, the file's title and tags empty), else those
+of Options > Global > File Formats, which keep the last
+export's choices for the next session while Remember the settings of the
+last export is on (on in new preferences; `options.md`, #617).
+
 ## Checks
 
 - `export::tests::the_export_preview_shows_the_page_and_estimates_the_size`
+- `pick_drag_tests::the_export_dialog_starts_with_the_last_exports_choices`
 - `export::tests::sizes_read_in_kilobytes_and_megabytes`
 - `ui::dialogs::tests::a_pixel_size_sets_the_resolution_that_gives_it`
 

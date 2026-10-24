@@ -6663,3 +6663,60 @@ fn the_welcome_tab_closes_to_its_house() {
     assert!(rect_of(&ctx, WELCOME_TAB).is_some());
     assert!(rect_of(&ctx, WELCOME_CLOSE).is_none());
 }
+
+#[test]
+fn the_export_dialog_starts_with_the_last_exports_choices() {
+    use crate::ui::dialogs::Dialog;
+    let (ctx, mut app, _) = setup();
+    let ctrl_e = |ctx: &egui::Context, app: &mut App| {
+        app.dialog = Dialog::None;
+        frame(
+            ctx,
+            app,
+            vec![key(egui::Key::E, Modifiers::COMMAND)],
+            Modifiers::COMMAND,
+        );
+        match &app.dialog {
+            Dialog::Export(st) => st.clone(),
+            other => panic!("no Export dialog: {other:?}"),
+        }
+    };
+    let first = ctrl_e(&ctx, &mut app);
+    assert!(first.remember);
+    assert!(app.settings.formats.remember_last, "on at first");
+    // A JPEG at quality 100 and 150 dpi exported...
+    let mut st = first.clone();
+    st.format = 3;
+    st.quality = 100;
+    st.dpi = 150.0;
+    st.title = "Poster".into();
+    st.selection_only = true;
+    st.all_pages = true;
+    app.settings.formats.remember_last = false;
+    app.keep_export_choices(&st);
+    // ...is what the next export starts with, the file's title and
+    // Selected only left out.
+    let next = ctrl_e(&ctx, &mut app);
+    assert_eq!((next.format, next.quality, next.dpi), (3, 100, 150.0));
+    assert!(next.title.is_empty());
+    assert!(!next.selection_only, "Selected only is for one export");
+    assert!(next.all_pages);
+    // "Do not show filter dialog" goes straight to the file with the same
+    // starting choices, so it never exports a selection that is gone.
+    assert_eq!(
+        app.last_export.as_ref().map(|e| e.selection_only),
+        Some(false)
+    );
+    // With Remember off the next session still starts as the options say.
+    assert_ne!(app.settings.formats.export_quality, 100);
+    app.settings.formats.remember_last = true;
+    app.keep_export_choices(&next);
+    assert_eq!(app.settings.formats.export_quality, 100);
+    assert_eq!(app.settings.formats.state().format, 3);
+    // Export for Web keeps nothing.
+    let mut web = crate::ui::dialogs::ExportState::web();
+    web.quality = 10;
+    app.keep_export_choices(&web);
+    assert_eq!(ctrl_e(&ctx, &mut app).quality, 100);
+    app.dialog = Dialog::None;
+}
