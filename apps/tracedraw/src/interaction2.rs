@@ -92,7 +92,8 @@ impl App {
             }
         } else if self.pending_text_path {
             self.pending_text_path = false;
-            if let Some(t) = target {
+            // The path the preview showed, near the pointer or under it.
+            if let Some(t) = self.text_path_target(p).or(target) {
                 self.fit_text_to_picked_path(t, Some(p));
                 return true;
             }

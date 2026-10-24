@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fit Text to Path: while it waits for the path, the pointer near a path shows the text where a click puts it, centred on the nearest point and as far from the path as the pointer, with the distance and a red mark where the text begins; the click places it so. Nothing showed until the click, which always put the text on the path itself.
+
 - Toolbars: a new installation starts with Small buttons (Default Button Size), as the reference program does; it started with Medium. A size already saved in the preferences stays.
 
 - Symmetry: Finish selects the whole symmetry. The object picked inside it while editing (the last one drawn, for one) stayed selected, so the next drag moved that object alone, as if it had been double-clicked into.

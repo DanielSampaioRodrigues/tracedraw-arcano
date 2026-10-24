@@ -124,6 +124,12 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_fountain_handles(app, painter);
     draw_shadow_handles(app, painter);
 
+    // Fit Text to Path waiting for its path: the text on the one near.
+    if app.pending_text_path {
+        if let Some(p) = app.pointer_page {
+            draw_text_path_preview(app, painter, p);
+        }
+    }
     // 3-point tools: base segment waiting for the third click, previewed to the pointer.
     if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
         let stroke = EStroke::new(1.0, Tokens::SELECTION);
@@ -1137,6 +1143,49 @@ fn draw_along_path(app: &App, painter: &Painter, start: Point, current: Point) {
             Tokens::DRAG_OUTLINE,
         );
     }
+}
+
+/// Fit Text to Path waiting for its path, the pointer near one: the
+/// selected text where a click puts it, outlined in blue, the line it
+/// stands on dashed, a dashed line from the path to the pointer with the
+/// distance, and a red mark where the text begins.
+fn draw_text_path_preview(app: &App, painter: &Painter, p: Point) {
+    let Some(pv) = app.text_path_preview(p) else {
+        return;
+    };
+    let view = &app.view;
+    let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
+    let stroke = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
+    for (mut pts, closed) in flatten(&pv.letters, view) {
+        if closed {
+            if let Some(first) = pts.first().copied() {
+                pts.push(first);
+            }
+        }
+        painter.add(egui::Shape::line(pts.clone(), halo));
+        painter.add(egui::Shape::line(pts, stroke));
+    }
+    for (pts, _) in flatten(&pv.line, view) {
+        dashed_polyline(painter, &pts, stroke, 4.0, 3.0);
+    }
+    let (near, at) = (view.to_screen(pv.nearest), view.to_screen(p));
+    dashed_polyline(painter, &[near, at], stroke, 4.0, 3.0);
+    let u = app.units;
+    painter.text(
+        at + egui::vec2(6.0, 4.0),
+        egui::Align2::LEFT_TOP,
+        format!("{:.2} {}", u.from_mm(pv.distance), u.short()),
+        egui::FontId::proportional(11.0),
+        Tokens::DRAG_OUTLINE,
+    );
+    let (sp, dir) = pv.start;
+    let c = view.to_screen(sp);
+    // Across the line, as long either side.
+    let n = egui::vec2(-dir.y as f32, dir.x as f32);
+    painter.line_segment(
+        [c - n * 9.0, c + n * 9.0],
+        EStroke::new(2.0, Color32::from_rgb(0xE0, 0x20, 0x20)),
+    );
 }
 
 fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {

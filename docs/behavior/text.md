@@ -699,6 +699,16 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   at once. Otherwise the status bar asks for a click on the path (a
   right-click cancels): the selected text goes on it, or with no text
   selected an empty text starts on the path, ready to type.
+- While it waits, the pointer over a path or within 150 screen pixels of
+  one shows the selected text where a click puts it: its letters
+  outlined in blue, the line they stand on dashed, a dashed line from
+  the nearest point of the path to the pointer with the distance (in
+  the drawing's units), and a red mark across the line where the text
+  begins. The text is centred on that nearest point and stands as far
+  from the path as the pointer is, on the pointer's side; the click
+  places it so, near the path or on it (`text_path_target`,
+  `text_path_preview`; texts, pictures and groups are not paths;
+  `text_path::tests::the_path_near_the_pointer_previews_the_text_and_a_click_places_it`).
 - The text itself goes on the path (no copy is left behind) and stays
   selected as one object, drawn in its fill. On an open path the letters
   follow the path from its start with the text's alignment. On a closed
