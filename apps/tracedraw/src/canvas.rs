@@ -124,8 +124,6 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_fountain_handles(app, painter);
     draw_shadow_handles(app, painter);
 
-    // Autofit Page's popup open: the page it would make (#594).
-    draw_autofit_preview(app, painter);
     // Fit Text to Path waiting for its path: the text on the one near.
     if app.pending_text_path {
         if let Some(p) = app.pointer_page {
@@ -436,8 +434,16 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     }
 
     // Page: a flat grey shadow offset right and down, the white page, a
-    // one-pixel grey border (pixel-aligned so it stays crisp).
-    let paper = page_screen_rect(app);
+    // one-pixel grey border (pixel-aligned so it stays crisp). While
+    // Autofit Page's popup is open the page shows at the size it would
+    // take, around the drawing (#594, #604).
+    let shown = app
+        .autofit_preview_rect(painter.ctx().cumulative_frame_nr())
+        .unwrap_or_else(|| app.page_rect());
+    let paper = {
+        let r = view.rect_to_screen(shown);
+        ERect::from_min_max(r.min.round(), r.max.round())
+    };
     if app.show_page_border {
         painter.rect_filled(
             paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
@@ -457,7 +463,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     if app.show_bleed {
         let b = app.doc().metadata.bleed.max(0.0);
         if b > 0.0 {
-            let r = view.rect_to_screen(app.page_rect().inflate(b, b));
+            let r = view.rect_to_screen(shown.inflate(b, b));
             painter.rect_stroke(
                 r,
                 0.0,
@@ -468,7 +474,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     }
     if app.show_printable_area {
         // Printable area: the page minus the printer's typical 5 mm hardware margin.
-        let r = view.rect_to_screen(app.page_rect().inflate(-5.0, -5.0));
+        let r = view.rect_to_screen(shown.inflate(-5.0, -5.0));
         let dash = 4.0;
         for (a, b) in [
             (r.left_top(), r.right_top()),
@@ -1145,37 +1151,6 @@ fn draw_along_path(app: &App, painter: &Painter, start: Point, current: Point) {
             Tokens::DRAG_OUTLINE,
         );
     }
-}
-
-/// The page Autofit Page would make while its popup is open: the drawing's
-/// bounds and the margin around them, dashed, with its size (#594).
-fn draw_autofit_preview(app: &App, painter: &Painter) {
-    let Some(page) = app.autofit_preview_rect(painter.ctx().cumulative_frame_nr()) else {
-        return;
-    };
-    let r = app.view.rect_to_screen(page);
-    let stroke = EStroke::new(1.5, Color32::from_rgb(0xE0, 0x20, 0x20));
-    let pts = [
-        r.left_top(),
-        r.right_top(),
-        r.right_bottom(),
-        r.left_bottom(),
-        r.left_top(),
-    ];
-    dashed_polyline(painter, &pts, stroke, 6.0, 4.0);
-    let u = app.units;
-    painter.text(
-        r.right_top() + egui::vec2(6.0, 0.0),
-        egui::Align2::LEFT_TOP,
-        format!(
-            "{:.2} x {:.2} {}",
-            u.from_mm(page.width()),
-            u.from_mm(page.height()),
-            u.short()
-        ),
-        egui::FontId::proportional(11.0),
-        Color32::from_rgb(0xE0, 0x20, 0x20),
-    );
 }
 
 /// Fit Text to Path waiting for its path, the pointer near one: the
