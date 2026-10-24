@@ -21,6 +21,8 @@ pub struct PrintPreview {
     pub plate: usize,
     /// Zoom over the fitted size (1 = the sheet fits the window).
     pub zoom: f32,
+    /// A drag on the sheet moves the page information, not the artwork.
+    pub move_info: bool,
     built: Option<(String, Document)>,
     texture: Option<(String, egui::TextureHandle)>,
 }
@@ -32,6 +34,7 @@ impl PrintPreview {
             sheet: 0,
             plate: 0,
             zoom: 1.0,
+            move_info: false,
             built: None,
             texture: None,
         }
@@ -191,6 +194,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
                 ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
                 ui.checkbox(&mut st.page_info, tr("print.page_info_mark"));
+                if st.page_info {
+                    ui.horizontal(|ui| {
+                        ui.add_space(18.0);
+                        ui.checkbox(&mut pv.move_info, tr("print.move_info"));
+                    });
+                }
+                let st = &mut pv.st;
                 if st.info_offset != (0.0, 0.0)
                     && ui
                         .small_button(tr("print.info_reset"))
@@ -199,6 +209,36 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 {
                     st.info_offset = (0.0, 0.0);
                 }
+                // Where the artwork sits on its page: a drag on the sheet
+                // moves it too (#536).
+                ui.horizontal(|ui| {
+                    ui.label(tr("print.art_position"));
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut st.art_offset.0)
+                            .range(-1000.0..=1000.0)
+                            .speed(0.5)
+                            .prefix("x ")
+                            .suffix(" mm")
+                            .width(70.0),
+                    );
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut st.art_offset.1)
+                            .range(-1000.0..=1000.0)
+                            .speed(0.5)
+                            .prefix("y ")
+                            .suffix(" mm")
+                            .width(70.0),
+                    );
+                    if ui
+                        .add_enabled(
+                            st.art_offset != (0.0, 0.0),
+                            egui::Button::new(tr("print.art_reset")).small(),
+                        )
+                        .clicked()
+                    {
+                        st.art_offset = (0.0, 0.0);
+                    }
+                });
                 ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
                 ui.checkbox(&mut st.invert, tr("dialog.invert"));
                 ui.separator();
@@ -235,28 +275,25 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
             }
             let size = egui::vec2(w as f32, h as f32);
-            let info = pv.st.page_info;
+            // A drag moves the artwork, or the page information when
+            // that is asked for (#388, #536).
+            let info = pv.st.page_info && pv.move_info;
             let mut moved: Option<egui::Vec2> = None;
             egui::ScrollArea::both().show(ui, |ui| {
                 let avail = ui
                     .available_size()
                     .max(size + egui::vec2(2.0 * margin, 2.0 * margin));
-                let sense = if info {
-                    egui::Sense::drag()
+                let (r, resp) = ui.allocate_exact_size(avail, egui::Sense::drag());
+                let resp = resp.on_hover_text(if info {
+                    tr("print.info_drag_tip")
                 } else {
-                    egui::Sense::hover()
-                };
-                let (r, resp) = ui.allocate_exact_size(avail, sense);
-                // With the page information on, a drag on the sheet moves
-                // it (#388).
-                if info {
-                    let resp = resp.on_hover_text(tr("print.info_drag_tip"));
-                    if resp.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
-                    }
-                    if resp.dragged() {
-                        moved = Some(resp.drag_delta());
-                    }
+                    tr("print.art_drag_tip")
+                });
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+                }
+                if resp.dragged() {
+                    moved = Some(resp.drag_delta());
                 }
                 let sheet_rect = egui::Rect::from_center_size(r.center(), size);
                 let p = ui.painter();
@@ -278,8 +315,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Screen points over the sheet are `zoom` per millimetre;
                 // the sheet's y runs up.
                 let k = zoom.max(1e-6);
-                pv.st.info_offset.0 += f64::from(d.x) / k;
-                pv.st.info_offset.1 -= f64::from(d.y) / k;
+                let target = if info {
+                    &mut pv.st.info_offset
+                } else {
+                    &mut pv.st.art_offset
+                };
+                target.0 += f64::from(d.x) / k;
+                target.1 -= f64::from(d.y) / k;
             }
         });
 

@@ -530,6 +530,18 @@ pub fn print_sheets(app: &App, st: &PrintState) -> Document {
             fit_contents_to_page(page, st.range == 3);
         }
     }
+    // Moved in Print Preview: clear of the printer's margins (#536).
+    let (dx, dy) = st.art_offset;
+    if (dx != 0.0 || dy != 0.0) && dx.is_finite() && dy.is_finite() {
+        let t = Affine::translate((dx, dy));
+        for page in doc.pages.iter_mut() {
+            for layer in page.layers.iter_mut() {
+                for s in layer.shapes.iter_mut() {
+                    s.transform = t * s.transform;
+                }
+            }
+        }
+    }
     for page in doc.pages.iter_mut() {
         for layer in page.layers.iter_mut() {
             for s in layer.shapes.iter_mut() {
@@ -1677,6 +1689,54 @@ mod tests {
             let d = pm.pixel(37, 21).expect("pixel").demultiply();
             [d.red(), d.green(), d.blue(), d.alpha()]
         });
+    }
+
+    /// The artwork moved in Print Preview prints moved by that much on
+    /// the sheet; at first it stays (#536).
+    #[test]
+    fn the_artwork_moved_in_print_preview_prints_moved() {
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: tracedraw_core::geometry::Rect::new(20.0, 20.0, 60.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+        let st = PrintState {
+            fit_to_page: false,
+            ..PrintState::default()
+        };
+        // The page goes on the sheet in a frame that clips it: the
+        // rectangle is inside, with the frame's transform.
+        let bounds = |doc: &Document| {
+            doc.pages[0]
+                .layers
+                .iter()
+                .flat_map(|l| &l.shapes)
+                .find_map(|s| match &s.kind {
+                    ShapeKind::ClipFrame { contents, .. } => contents
+                        .iter()
+                        .find(|c| matches!(c.kind, ShapeKind::Rect { .. }))
+                        .map(|c| {
+                            let mut c = c.clone();
+                            c.transform = s.transform * c.transform;
+                            c.bounds()
+                        }),
+                    _ => None,
+                })
+                .expect("the rectangle")
+        };
+        let at_first = bounds(&print_sheets(&app, &st));
+        let moved = PrintState {
+            art_offset: (5.0, -3.0),
+            ..st.clone()
+        };
+        let b = bounds(&print_sheets(&app, &moved));
+        assert!(
+            (b.x0 - at_first.x0 - 5.0).abs() < 1e-6,
+            "{b:?} {at_first:?}"
+        );
+        assert!((b.y0 - at_first.y0 + 3.0).abs() < 1e-6);
     }
 
     /// Fit to page shrinks objects running off the page to fit inside it,

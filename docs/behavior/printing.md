@@ -85,6 +85,14 @@ same function (`export::print_sheets`).
   layout with its sketch); every change rebuilds the sheets at once.
 - A plate shows the ink's coverage in grey, black = full ink, as the
   separations print; registration colour shows on every plate.
+- A drag on the sheet moves the artwork on its page (the move cursor and
+  a tip say so), clear of the margins a printer leaves blank; Artwork
+  position on the left shows and takes the move in millimetres (x right,
+  y up) with Reset. Print prints it so: `export::print_sheets` moves
+  every object of the printed pages by it before the imposition (#536,
+  `export::tests::the_artwork_moved_in_print_preview_prints_moved`).
+  With the page information on, "Drag moves the page information" makes
+  a drag move that instead (#388).
 
 ## Imposition
 

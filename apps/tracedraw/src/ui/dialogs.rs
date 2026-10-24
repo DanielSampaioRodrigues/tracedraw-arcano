@@ -208,6 +208,9 @@ pub struct PrintState {
     /// Where the page information sits, moved from its place (mm, x and
     /// y) by a drag in Print Preview (#388).
     pub info_offset: (f64, f64),
+    /// The artwork moved on its page before printing (mm, x and y up),
+    /// by a drag in Print Preview or its fields (#536).
+    pub art_offset: (f64, f64),
     pub invert: bool,
     pub color_bars: bool,
     pub densitometer: bool,
@@ -425,6 +428,7 @@ impl Default for PrintState {
             back_side: false,
             keep_size: false,
             info_offset: (0.0, 0.0),
+            art_offset: (0.0, 0.0),
             invert: false,
             color_bars: false,
             densitometer: false,

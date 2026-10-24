@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Preview: a drag on the sheet moves the artwork on the paper before printing (clear of the margins the printer cannot print), with Artwork position fields and Reset on the left; Print prints it where it was put. A drag moved only the page information (#536).
+
 - Export: presets with names. "+" saves the format and its settings (resolution, quality, transparency, selection only, all pages, PDF choices) as a preset; the Preset list puts them back, each shown with its format; presets can be renamed and deleted, and stay in the preferences (#547).
 
 - Publish to PDF: Objects > Bitmaps downsamples colour, gray and black-and-white pictures to a resolution of your choice, compresses colour and gray pictures as JPEG with a quality, and can leave text and line art uncompressed. Gray pictures take one channel. The Web preset now makes small files (150 dpi, JPEG 75). Pictures always went in at full resolution, lossless (#550).
