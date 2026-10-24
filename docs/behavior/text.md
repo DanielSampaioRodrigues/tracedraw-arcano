@@ -555,6 +555,15 @@ rest), then any installed face that has the letter, upright faces of the
 run's weight first. Spaces, controls and combining marks stay with the
 letter before them. A letter no face has is drawn with the run's face.
 
+Each script is shaped on its own: a run is cut where its letters change
+from one script to another (Latin, Greek, Cyrillic, Devanagari, Bengali
+and the other Indian scripts, Thai, Lao, Tibetan, Myanmar, Khmer), what
+the scripts share (spaces, digits, punctuation) going with the run
+before it. Shaped together, Hindi after a Latin word took the Latin rules
+and showed its half forms with a visible halant and its conjuncts apart
+(#599, `tests::text_is_shaped_one_script_at_a_time`). Text with Hebrew
+or Arabic letters is shaped as one run.
+
 Variable fonts draw at weight 400, or 700 for bold, on their weight
 axis (within its range), and slant on their italic or slant axis for
 italic when the face is upright; only what no axis gives is made
