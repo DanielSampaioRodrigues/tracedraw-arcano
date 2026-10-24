@@ -101,11 +101,12 @@ Imported objects go (File > Import, Ctrl+I): where the file has them
 (the default), or centred in the middle of the view; the move is part of
 the import's undo step.
 
-Saving .cdr files: the Version new drawings are saved in (`cdr_version`,
-27 by default, 14 to 27; a value out of range from a file is brought
-into it). Saving a `.cdr` file sets it to the version chosen there; a
-drawing opened from a `.cdr` file keeps its own when TraceDraw saves
-that version (`files.md`).
+Saving .cdr files: the Version Save As starts at and new drawings are
+saved in (`cdr_version`, 27 by default, 14 to 27; a value out of range
+from a file is brought into it); a drawing opened from a `.cdr` file
+keeps its own for Save when TraceDraw saves that version (`files.md`).
+Save new drawings as .cdr files (`save_new_as_cdr`, off): Save As
+starts at the CDR type for a drawing without a file (#613).
 
 ### Bitmap Tracing
 
@@ -187,6 +188,7 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 
 ## Checks
 
+- `pick_drag_tests::save_as_starts_at_the_cdr_type_and_version_the_options_set`
 - `ui::options::tests::every_page_belongs_to_one_dialog`
 - `ui::options::tests::cancel_puts_settings_and_document_back`
 - `ui::options::tests::every_page_draws`

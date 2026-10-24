@@ -2521,6 +2521,7 @@ options.bitmap_editor_system = "PNG ファイル用のシステムのプログ�
 options.bitmap_editor_hint = "The program file, e.g. gimp, C:\\Program Files\\GIMP 3\\bin\\gimp.exe or /Applications/GIMP.app. Empty: the system's program for PNG files. Saving in the editor updates the picture in TraceDraw." # mt
 options.calibrate_help = "画面に定規を当て、下の目盛りが一致するまで解像度を変えてください。ズーム 100% で図面が実寸で表示されます。"
 options.cdr_save_section = ".cdr ファイルの保存"
+options.save_new_as_cdr = "新しい図面を .cdr ファイルとして保存" # mt
 options.cdr_version_hint = "新しい図面はこのバージョンで保存されます。.cdr ファイルから開いた図面はそのバージョンを保ちます。［名前を付けて保存］は毎回確認します。"
 options.choose_bitmap = "ビットマップを選択..."
 options.choose_location = "場所を選択:"

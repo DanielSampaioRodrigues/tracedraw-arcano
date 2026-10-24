@@ -2521,6 +2521,7 @@ options.bitmap_editor_system = "برنامج النظام لملفات PNG" # mt
 options.bitmap_editor_hint = "The program file, e.g. gimp, C:\\Program Files\\GIMP 3\\bin\\gimp.exe or /Applications/GIMP.app. Empty: the system's program for PNG files. Saving in the editor updates the picture in TraceDraw." # mt
 options.calibrate_help = "ضع مسطرة على الشاشة وغيّر الدقة حتى تتطابق العلامات أدناه معها. بعد ذلك يعرض التكبير 100% الرسومات بحجمها الحقيقي."
 options.cdr_save_section = "حفظ ملفات .cdr"
+options.save_new_as_cdr = "حفظ الرسومات الجديدة كملفات .cdr" # mt
 options.cdr_version_hint = "تُحفظ الرسومات الجديدة بهذا الإصدار، ويحتفظ الرسم المفتوح من ملف .cdr بإصداره. يسأل «حفظ باسم» في كل مرة."
 options.choose_bitmap = "اختيار صورة نقطية..."
 options.choose_location = "اختيار الموقع:"

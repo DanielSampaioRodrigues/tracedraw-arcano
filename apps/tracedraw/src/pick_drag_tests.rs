@@ -5989,3 +5989,31 @@ fn ctrl_q_bakes_an_envelope() {
     assert!(s.effects.is_empty(), "{:?}", s.effects);
     assert!(s.bounds().y1 > 41.0, "{:?}", s.bounds());
 }
+
+#[test]
+fn save_as_starts_at_the_cdr_type_and_version_the_options_set() {
+    let (ctx, mut app, _) = setup();
+    let save_as = |ctx: &egui::Context, app: &mut App| {
+        frame(
+            ctx,
+            app,
+            vec![key(egui::Key::S, Modifiers::COMMAND | Modifiers::SHIFT)],
+            Modifiers::COMMAND | Modifiers::SHIFT,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+        match &app.dialog {
+            crate::ui::dialogs::Dialog::SaveAs(st) => (st.cdr, st.version),
+            other => panic!("no Save Drawing dialog: {other:?}"),
+        }
+    };
+    // By default a new drawing is offered as TraceDraw, version 27 for .cdr.
+    assert_eq!(
+        save_as(&ctx, &mut app),
+        (false, tracedraw_cdr::write::NEWEST_VERSION)
+    );
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    // Options > Global > File Formats: version 15 and .cdr for new drawings.
+    app.settings.formats.cdr_version = 15;
+    app.settings.formats.save_new_as_cdr = true;
+    assert_eq!(save_as(&ctx, &mut app), (true, 15));
+}

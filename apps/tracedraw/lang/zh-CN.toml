@@ -2521,6 +2521,7 @@ options.bitmap_editor_system = "系统用于 PNG 文件的程序" # mt
 options.bitmap_editor_hint = "The program file, e.g. gimp, C:\\Program Files\\GIMP 3\\bin\\gimp.exe or /Applications/GIMP.app. Empty: the system's program for PNG files. Saving in the editor updates the picture in TraceDraw." # mt
 options.calibrate_help = "将直尺贴在屏幕上，调整分辨率直到下方刻度与之一致。之后 100% 缩放将以实际尺寸显示绘图。"
 options.cdr_save_section = "保存 .cdr 文件"
+options.save_new_as_cdr = "将新绘图保存为 .cdr 文件" # mt
 options.cdr_version_hint = "新绘图以此版本保存；从 .cdr 文件打开的绘图保留其版本。“另存为”每次都会询问。"
 options.choose_bitmap = "选择位图..."
 options.choose_location = "选择位置："

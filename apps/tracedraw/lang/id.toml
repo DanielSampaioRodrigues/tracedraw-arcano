@@ -2521,6 +2521,7 @@ options.bitmap_editor_system = "Program sistem untuk file PNG" # mt
 options.bitmap_editor_hint = "The program file, e.g. gimp, C:\\Program Files\\GIMP 3\\bin\\gimp.exe or /Applications/GIMP.app. Empty: the system's program for PNG files. Saving in the editor updates the picture in TraceDraw." # mt
 options.calibrate_help = "Tempelkan penggaris ke layar dan ubah resolusi sampai tanda di bawah cocok. Zoom 100% lalu menampilkan gambar dalam ukuran sebenarnya."
 options.cdr_save_section = "Menyimpan berkas .cdr"
+options.save_new_as_cdr = "Simpan gambar baru sebagai file .cdr" # mt
 options.cdr_version_hint = "Gambar baru disimpan dalam versi ini; gambar yang dibuka dari berkas .cdr mempertahankan versinya. Simpan Sebagai selalu menanyakannya."
 options.choose_bitmap = "Pilih bitmap..."
 options.choose_location = "Pilih lokasi:"

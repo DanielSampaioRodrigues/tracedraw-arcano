@@ -2521,6 +2521,7 @@ options.bitmap_editor_system = "PNG dosyaları için sistem programı" # mt
 options.bitmap_editor_hint = "The program file, e.g. gimp, C:\\Program Files\\GIMP 3\\bin\\gimp.exe or /Applications/GIMP.app. Empty: the system's program for PNG files. Saving in the editor updates the picture in TraceDraw." # mt
 options.calibrate_help = "Ekrana bir cetvel tutun ve aşağıdaki işaretler onunla eşleşene kadar çözünürlüğü değiştirin. Bundan sonra %100 yakınlaştırma çizimleri gerçek boyutlarında gösterir."
 options.cdr_save_section = ".cdr dosyalarını kaydetme"
+options.save_new_as_cdr = "Yeni çizimleri .cdr dosyası olarak kaydet" # mt
 options.cdr_version_hint = "Yeni çizimler bu sürümde kaydedilir; bir .cdr dosyasından açılan çizim kendi sürümünü korur. Farklı Kaydet her seferinde sorar."
 options.choose_bitmap = "Bitmap seç..."
 options.choose_location = "Konum seçin:"
