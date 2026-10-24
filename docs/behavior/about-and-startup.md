@@ -132,6 +132,20 @@ and `--reset-settings` starts open windows of their own.
   shown in a message box naming that file, once; the Windows build has
   no console, so a start that failed showed nothing (#570,
   `startup_log::tests::the_log_and_the_crash_report_go_in_the_settings_folder`).
+- At start the log names the processor and its threads (and on Windows
+  the version and build, from `RtlGetVersion`), and wgpu's own lines on
+  which backends started and which adapters it left out
+  (`wgpu_core::instance` at debug; the default filter is
+  `info,wgpu_core::instance=debug`, `RUST_LOG` replaces it). The first
+  frame logs how long the start took, the window's size in pixels, the
+  pixels per point and the monitor's size. With `RUST_LOG=debug` (or
+  `info,tracedraw=debug`) a line every 10 s while frames happen gives
+  their count, how many had input, the mean and longest time to build
+  one, the mean and longest gap between them, and the five most frequent
+  reasons a frame was asked for; an idle window logs nothing, and with
+  debug off nothing is measured (#616,
+  `frame_stats::tests::frames_are_summed_up_every_ten_seconds`,
+  `startup_log::tests::the_log_names_the_computer`).
 - The Windows builds link the C runtime statically (`.cargo/config.toml`,
   `+crt-static`): they do not need `vcruntime140.dll` (#570).
 - The browser build draws with WebGL.

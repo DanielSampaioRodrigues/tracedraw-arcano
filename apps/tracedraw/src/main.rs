@@ -60,6 +60,8 @@ mod fill_tool;
 mod focus;
 #[cfg(any(target_arch = "wasm32", test))]
 mod font_folder;
+#[cfg(not(target_arch = "wasm32"))]
+mod frame_stats;
 mod frame_type;
 mod fx;
 mod github;
@@ -388,6 +390,10 @@ impl eframe::App for Shell {
         let Some(app) = self.app.as_mut() else {
             return;
         };
+        // The first frame's window size, and frame statistics at debug
+        // level (#616).
+        #[cfg(not(target_arch = "wasm32"))]
+        let began = frame_stats::begin(ui.ctx());
         // Fonts text asked for (browser build), and fonts that arrived.
         #[cfg(target_arch = "wasm32")]
         web::sync_ui_fonts(ui.ctx());
@@ -447,6 +453,8 @@ impl eframe::App for Shell {
         app.autosave_settings(Some(ui.ctx()));
         // Bitmaps edited outside follow their files.
         app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
+        #[cfg(not(target_arch = "wasm32"))]
+        frame_stats::end(ui.ctx(), began);
     }
 
     /// Keep the toolbox, dockers and other preferences for the next session.

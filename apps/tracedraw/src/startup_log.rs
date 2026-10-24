@@ -66,15 +66,21 @@ pub fn init() {
             .open(log_path(d))
             .ok()
     });
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .target(env_logger::Target::Pipe(Box::new(Tee { file })))
-        .init();
+    crate::frame_stats::mark_start();
+    // wgpu's own lines on which backends started and which adapters it
+    // left out come at debug; they are few and only at the start (#616).
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,wgpu_core::instance=debug"),
+    )
+    .target(env_logger::Target::Pipe(Box::new(Tee { file })))
+    .init();
     log::info!(
         "TraceDraw {} on {} {}",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH
     );
+    log::info!("{}", system());
     let dir = Mutex::new(dir);
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -91,6 +97,68 @@ pub fn init() {
         default(info);
         show(&report, saved.as_deref());
     }));
+}
+
+/// The computer, for the log (#616): the processor and how many threads
+/// it runs, and on Windows the build.
+fn system() -> String {
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let cpu = std::env::var("PROCESSOR_IDENTIFIER")
+        .ok()
+        .or_else(cpu_model)
+        .unwrap_or_else(|| "unknown processor".into());
+    let mut text = format!("{cpu}, {threads} threads");
+    if let Some(v) = windows_version() {
+        text.push_str(&format!(", Windows {v}"));
+    }
+    text
+}
+
+/// The processor's name from `/proc/cpuinfo` (Linux).
+fn cpu_model() -> Option<String> {
+    let info = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+    info.lines()
+        .find(|l| l.starts_with("model name"))
+        .and_then(|l| l.split_once(':'))
+        .map(|(_, v)| v.trim().to_string())
+}
+
+/// The Windows version and build, as the system reports it (not the
+/// compatibility version an application manifest would get).
+#[cfg(windows)]
+fn windows_version() -> Option<String> {
+    #[repr(C)]
+    struct OsVersionInfo {
+        size: u32,
+        major: u32,
+        minor: u32,
+        build: u32,
+        platform: u32,
+        service_pack: [u16; 128],
+    }
+    #[link(name = "ntdll", kind = "raw-dylib")]
+    unsafe extern "system" {
+        fn RtlGetVersion(info: *mut OsVersionInfo) -> i32;
+    }
+    let mut info = OsVersionInfo {
+        size: std::mem::size_of::<OsVersionInfo>() as u32,
+        major: 0,
+        minor: 0,
+        build: 0,
+        platform: 0,
+        service_pack: [0; 128],
+    };
+    // SAFETY: the structure is OSVERSIONINFOW with its size filled in, as
+    // RtlGetVersion expects; it only writes into it.
+    let status = unsafe { RtlGetVersion(&mut info) };
+    (status == 0).then(|| format!("{}.{} build {}", info.major, info.minor, info.build))
+}
+
+#[cfg(not(windows))]
+fn windows_version() -> Option<String> {
+    None
 }
 
 /// The panic as text: where and what, and the version.
@@ -179,5 +247,13 @@ mod tests {
         assert!(text.contains("no adapter"), "{text}");
         assert!(text.contains(env!("CARGO_PKG_VERSION")));
         assert!(text.contains("startup_log.rs"));
+    }
+
+    /// The log names the processor and its threads (#616).
+    #[test]
+    fn the_log_names_the_computer() {
+        let s = system();
+        assert!(s.contains(" threads"), "{s}");
+        assert!(!s.starts_with(", "), "{s}");
     }
 }
