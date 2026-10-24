@@ -1584,6 +1584,40 @@ mod curves_and_target_tests {
         assert_eq!(app.engine.revision(), rev);
     }
 
+    /// An ellipse converts to one closed curve of four nodes, at its
+    /// right, bottom, left and top, each smooth (#625).
+    #[test]
+    fn an_ellipse_becomes_a_closed_curve_of_four_nodes() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 70.0, 50.0),
+                arc: None,
+            })
+            .expect("an ellipse");
+        app.select(vec![id]);
+        app.convert_to_curves();
+        let Some(ShapeKind::Path { path, closed }) = app.doc().find_shape(id).map(|s| &s.kind)
+        else {
+            panic!("a curve");
+        };
+        assert!(*closed, "closed");
+        let nodes = tracedraw_core::nodes::nodes(path);
+        assert_eq!(nodes.len(), 4, "{path:?}");
+        let at: Vec<_> = nodes.iter().map(|n| (n.pos.x, n.pos.y)).collect();
+        assert_eq!(
+            at,
+            vec![(70.0, 30.0), (40.0, 50.0), (10.0, 30.0), (40.0, 10.0)]
+        );
+        for i in 0..4 {
+            assert_eq!(
+                tracedraw_core::nodes::node_type(path, nodes[i].index),
+                tracedraw_core::nodes::NodeType::Symmetrical,
+                "{path:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_bitmap_is_not_converted() {
         let mut app = App::headless();
