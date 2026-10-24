@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen and Bezier: a click on an end node of an open curve, selected or not, now goes on drawing that curve as if you had never stopped. The next segment leaves along the mirror of the end's handle, so the preview is curved and the join is smooth. The curve had to be selected first, and the new segment always started straight (#630).
+
 - Font lists: the mouse wheel over the font name box (with the list closed) now steps to the next or previous font, changing the selected or edited text at each notch (#665).
 
 - Shape tool on rectangles: corner nodes can be chosen several at a time, with Shift+click or Ctrl+click (which also takes a chosen corner out) or with a marquee or freehand marquee over them, and dragging a chosen corner then rounds just the chosen corners, so the two top corners or any three can be rounded together. Only all four corners or a single one could be rounded before (#671).

@@ -2571,7 +2571,9 @@ fn a_pen_click_after_a_pulled_node_follows_its_handle() {
     let s1 = cubic(segs[1]);
     assert!(near(s1.p1, Point::new(150.0, 170.0)), "{s1:?}");
     assert!(near(s1.p2, c) && near(s1.p3, c), "{s1:?}");
-    // The next segment leaves the clicked node straight.
+    // The next segment leaves the clicked node straight. (The first
+    // curve goes, or a click on its end node would continue it, #630.)
+    app.delete_selection();
     app.set_tool(Tool::Pen);
     app.select(Vec::new());
     click_page(&ctx, &mut app, a);
@@ -6174,5 +6176,58 @@ fn chosen_rectangle_corners_round_together() {
         1,
         "{:?}",
         app.rect_corners_selected
+    );
+}
+
+/// Pen: a click on the end node of an open curve that is not selected
+/// goes on from it as if drawing had never stopped: the next segment
+/// leaves along the mirror of the end's handle, the preview is curved,
+/// and the new nodes join that curve smoothly (#630).
+#[test]
+fn the_pen_continues_an_unselected_curve_with_the_mirrored_handle() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    let b = Point::new(140.0, 150.0);
+    pull(&ctx, &mut app, a, Point::new(110.0, 140.0));
+    pull(&ctx, &mut app, b, Point::new(150.0, 160.0));
+    app.finish_curve();
+    let id = app.selection[0];
+    let before = shape_count(&app);
+    // Unselected, then the Pen again on its end node.
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    click_page(&ctx, &mut app, b);
+    assert_eq!(app.selection, vec![id], "the curve is taken up");
+    let c = app.curve.clone().expect("a curve going on");
+    assert_eq!(c.nodes.len(), 1);
+    assert!(near(c.nodes[0].0, b), "{c:?}");
+    // The curve arrived at b along the mirror of the pulled handle, at
+    // (130, 140); the next segment leaves along (150, 160).
+    let out = c.nodes[0].1.expect("a handle to leave along");
+    assert!(near(out, Point::new(150.0, 160.0)), "{out:?}");
+    let pointer = Point::new(180.0, 150.0);
+    let look = crate::pen_look::curve_look(&c, Some(pointer), true, None);
+    let preview = look.preview.expect("a preview");
+    assert!(
+        preview
+            .elements()
+            .iter()
+            .any(|e| matches!(e, tracedraw_core::geometry::PathEl::CurveTo(..))),
+        "curved: {preview:?}"
+    );
+    click_page(&ctx, &mut app, pointer);
+    app.finish_curve();
+    assert_eq!(shape_count(&app), before, "no new object");
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    // Smooth through b: the handles on either side are in line.
+    let (s0, s1) = (cubic(segs[0]), cubic(segs[1]));
+    let (i, o) = (s0.p2 - b, s1.p1 - b);
+    assert!(
+        (i.x * o.y - i.y * o.x).abs() < 1e-6 && i.dot(o) < 0.0,
+        "{s0:?} {s1:?}"
     );
 }
