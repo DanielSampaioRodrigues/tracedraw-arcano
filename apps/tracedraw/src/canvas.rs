@@ -124,6 +124,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_fountain_handles(app, painter);
     draw_shadow_handles(app, painter);
 
+    // Autofit Page's popup open: the page it would make (#594).
+    draw_autofit_preview(app, painter);
     // Fit Text to Path waiting for its path: the text on the one near.
     if app.pending_text_path {
         if let Some(p) = app.pointer_page {
@@ -1143,6 +1145,37 @@ fn draw_along_path(app: &App, painter: &Painter, start: Point, current: Point) {
             Tokens::DRAG_OUTLINE,
         );
     }
+}
+
+/// The page Autofit Page would make while its popup is open: the drawing's
+/// bounds and the margin around them, dashed, with its size (#594).
+fn draw_autofit_preview(app: &App, painter: &Painter) {
+    let Some(page) = app.autofit_preview_rect(painter.ctx().cumulative_frame_nr()) else {
+        return;
+    };
+    let r = app.view.rect_to_screen(page);
+    let stroke = EStroke::new(1.5, Color32::from_rgb(0xE0, 0x20, 0x20));
+    let pts = [
+        r.left_top(),
+        r.right_top(),
+        r.right_bottom(),
+        r.left_bottom(),
+        r.left_top(),
+    ];
+    dashed_polyline(painter, &pts, stroke, 6.0, 4.0);
+    let u = app.units;
+    painter.text(
+        r.right_top() + egui::vec2(6.0, 0.0),
+        egui::Align2::LEFT_TOP,
+        format!(
+            "{:.2} x {:.2} {}",
+            u.from_mm(page.width()),
+            u.from_mm(page.height()),
+            u.short()
+        ),
+        egui::FontId::proportional(11.0),
+        Color32::from_rgb(0xE0, 0x20, 0x20),
+    );
 }
 
 /// Fit Text to Path waiting for its path, the pointer near one: the

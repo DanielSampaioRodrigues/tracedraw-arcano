@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Autofit Page: while its popup is open, the page it would make shows on the drawing as a dashed outline with its size, following the margin as it is typed (#594).
+
 - Print Merge: "On every page" beside the placeholder picture puts it in the same shape and place on every page with Place Inside Frame, in the matching shape of each page or a copy of the frame (#598).
 
 - Edit Bitmap opens pictures in the bitmap editor of your choice (Tools > Options > Global > File Locations: GIMP or any program); empty, it uses the system's program for PNG files as before (#593).

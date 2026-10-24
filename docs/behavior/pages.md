@@ -45,6 +45,9 @@ free on every side (`App::fit_page_to_drawing_with_margin`; a margin
 that is not a number counts as none). Checked by
 `ops2::fit_page_tests::the_page_fits_the_selection_or_the_drawing` and
 `ui::propbar::tests::the_page_bar_draws_with_its_fit_page_button`.
+While the popup is open the page Autofit Page would make shows on the
+drawing as a dashed red outline with its size, following the margin as
+it is typed (#594, `ops2::tests::the_autofit_preview_is_the_drawing_and_its_margin`).
 
 ## Delete Page
 

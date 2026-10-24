@@ -115,6 +115,22 @@ impl App {
         self.fit_page_to_drawing_with_margin(0.0);
     }
 
+    /// The page Autofit Page would make while its popup is open (#594):
+    /// the drawing's bounds with the margin around them. The popup sets
+    /// it each frame; one set more than a frame before `frame` is stale.
+    pub fn autofit_preview_rect(&self, frame: u64) -> Option<tracedraw_core::geometry::Rect> {
+        let (margin, set) = self.autofit_preview?;
+        if frame.saturating_sub(set) > 1 {
+            return None;
+        }
+        let m = if margin.is_finite() {
+            margin.max(0.0)
+        } else {
+            0.0
+        };
+        self.drawing_bounds().map(|b| b.inflate(m, m))
+    }
+
     /// The property bar's Autofit Page: [`Self::fit_page_to_drawing`]
     /// with `margin` mm left free around the drawing on every side.
     pub fn fit_page_to_drawing_with_margin(&mut self, margin: f64) {
@@ -3001,6 +3017,28 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// While Autofit Page's popup is open the page it would make is the
+    /// drawing's bounds and the margin; a value left from frames before
+    /// shows nothing (#594).
+    #[test]
+    fn the_autofit_preview_is_the_drawing_and_its_margin() {
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: tracedraw_core::geometry::Rect::new(10.0, 20.0, 60.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+        assert!(app.autofit_preview_rect(5).is_none());
+        app.autofit_preview = Some((5.0, 5));
+        let r = app.autofit_preview_rect(6).expect("page");
+        assert!(
+            (r.width() - 60.0).abs() < 1e-6 && (r.height() - 40.0).abs() < 1e-6,
+            "{r:?}"
+        );
+        assert!(app.autofit_preview_rect(8).is_none(), "stale");
+    }
 
     /// Repeat Last Trace and Open Last Trace Settings follow the last
     /// trace, whichever way it was made (#452).

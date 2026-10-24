@@ -1579,6 +1579,14 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 fitted = true;
             }
         });
+    // While the popup is open the page it would make shows on the canvas,
+    // following the margin as it is typed (#594).
+    app.autofit_preview = egui::Popup::is_id_open(&ctx, popup_id).then(|| {
+        (
+            app.settings.fit_page_margin.max(0.0),
+            ctx.cumulative_frame_nr(),
+        )
+    });
     if fitted {
         app.fit_page_to_drawing_with_margin(app.settings.fit_page_margin);
         app.fit_pending = true;
