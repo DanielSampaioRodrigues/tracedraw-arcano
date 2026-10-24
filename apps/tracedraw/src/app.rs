@@ -1210,6 +1210,9 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
+    /// Autofit Page's popup open: the margin shown and the frame it was
+    /// drawn in, for the outline of the page it would make (#594).
+    pub autofit_preview: Option<(f64, u64)>,
     /// Print Merge's Place Inside Frame waiting for a click on the shape
     /// that holds the picture (#577).
     pub pending_merge_frame: bool,
@@ -2196,6 +2199,7 @@ impl App {
             pending_copy_properties: false,
             pending_shaping: None,
             pending_merge_frame: false,
+            autofit_preview: None,
             pending_copy_effect: None,
             pending_copy_envelope: false,
             pending_clone_effect: None,

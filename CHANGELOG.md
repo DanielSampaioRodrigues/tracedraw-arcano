@@ -6,6 +6,28 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Property bars: the up and down arrows (and the mouse wheel) of the rotation angle, scale %, arc angles, dimension text size and line width, corner radius and Transform toolbar fields now apply at every click. After clicking into the box, only the first arrow click worked.
+
+- A right click while dragging (move, scale, rotate, skew, and mirroring with Ctrl and a side handle) now leaves the original and makes the copy whichever button you release first. Releasing the left button first, or both at once, used to count as a click: on empty canvas it emptied the selection and nothing was copied. The scale, rotate and skew pointers now also show the copy's plus (#528).
+
+- Segment Delete: dragging a box deletes every segment the box touches, whole, up to the crossings at its ends (a closed shape nothing crosses goes whole), as other programs do; it used to delete only the segments lying wholly inside, so a box across an ornament deleted nothing. A click that slips a few pixels still deletes, and a drag on a crowded page is about ten times faster (#528).
+
+## 0.16.0 (2026-10-24)
+
+- Text > Join Lines into Paragraph: the selected lines of artistic text (a PDF brings its text one object per line) become one paragraph text with the same first baseline and line spacing, so text typed into it flows on to the next lines (#599).
+
+- Text: Hindi (and the other Indian scripts) after a Latin word on the same line keeps its half letters and conjuncts; the line was shaped with the Latin rules, which showed the halant under half letters. Seen in text taken from PDFs (#599).
+
+- Print Preview: Transform shows handles around the artwork to stretch it on either axis (or the x and y percentages typed) and a drag inside moves it; Print prints it so (#595). Print: a Smart Board 16:9 sheet, Custom sheet sizes that can be saved with a name, and Stretch to fill, which fills the sheet inside the margins on each axis (#591).
+
+- Export: WebP can be lossy (Lossless off, the default): the quality then shrinks the file as other programs do, a tenth of the lossless size at low qualities. Lossless keeps the earlier behaviour. The browser version stays lossless (#592).
+
+- Autofit Page: while its popup is open, the page itself grows or shrinks live to the size it would take around the drawing, following the margin as it is typed (#594, #604).
+
+- Print Merge: "On every page" beside the placeholder picture puts it in the same shape and place on every page with Place Inside Frame, in the matching shape of each page or a copy of the frame (#598).
+
+- Edit Bitmap opens pictures in the bitmap editor of your choice (Tools > Options > Global > File Locations: GIMP or any program); empty, it uses the system's program for PNG files as before (#593).
+
 ## 0.15.0 (2026-10-24)
 
 - Windows: the program carries the C runtime it needs (no Visual C++ redistributable required). A start that fails now says so: the log is written to `tracedraw.log` in the settings folder (`%APPDATA%\TraceDraw`, or `tracedraw-settings` beside a portable copy), and a crash shows a message and writes `crash.log` there; nothing was shown before (#570).

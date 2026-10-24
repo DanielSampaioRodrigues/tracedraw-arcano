@@ -434,8 +434,16 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     }
 
     // Page: a flat grey shadow offset right and down, the white page, a
-    // one-pixel grey border (pixel-aligned so it stays crisp).
-    let paper = page_screen_rect(app);
+    // one-pixel grey border (pixel-aligned so it stays crisp). While
+    // Autofit Page's popup is open the page shows at the size it would
+    // take, around the drawing (#594, #604).
+    let shown = app
+        .autofit_preview_rect(painter.ctx().cumulative_frame_nr())
+        .unwrap_or_else(|| app.page_rect());
+    let paper = {
+        let r = view.rect_to_screen(shown);
+        ERect::from_min_max(r.min.round(), r.max.round())
+    };
     if app.show_page_border {
         painter.rect_filled(
             paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
@@ -455,7 +463,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     if app.show_bleed {
         let b = app.doc().metadata.bleed.max(0.0);
         if b > 0.0 {
-            let r = view.rect_to_screen(app.page_rect().inflate(b, b));
+            let r = view.rect_to_screen(shown.inflate(b, b));
             painter.rect_stroke(
                 r,
                 0.0,
@@ -466,7 +474,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     }
     if app.show_printable_area {
         // Printable area: the page minus the printer's typical 5 mm hardware margin.
-        let r = view.rect_to_screen(app.page_rect().inflate(-5.0, -5.0));
+        let r = view.rect_to_screen(shown.inflate(-5.0, -5.0));
         let dash = 4.0;
         for (a, b) in [
             (r.left_top(), r.right_top()),
