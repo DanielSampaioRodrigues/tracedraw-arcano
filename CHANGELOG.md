@@ -24,8 +24,6 @@ full, row-by-row status.
 
 - View > Page > Mask Outside Page: an optional mode that covers everything outside the page with the desktop colour, with the page border drawn over the objects, so the page shows as it will print while you keep drawing and editing. Objects outside the page still show faintly and stay editable; the setting is kept with the other view settings (#615).
 
-- Opening .cdr files: pages longer than 10 m on a side, such as a 22 m banner, keep their size up to 100 m, the bound the CMX reader already had. They opened as A4, with the warning that the page size looked wrong.
-
 - Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
 
 - When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
