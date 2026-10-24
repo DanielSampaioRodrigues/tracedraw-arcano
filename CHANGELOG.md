@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.17.0 (2026-10-24)
+
 - Convert to Curves (Ctrl+Q) and Break Apart (Ctrl+K) now make an envelope, perspective or distortion part of the curves. Convert to Curves did nothing on an enveloped curve, and Break Apart lost the warp. Enveloped text breaks into one curve per letter, each warped as the whole text was, holes kept; a group with an envelope stays a group of warped curves. A warp after a contour, blend or extrusion stays live, and bitmaps keep theirs (#647).
 
 - Outline Pen: the Variable Outline width nodes can be dragged along their bar, staying between their neighbours, with the fields following (a drag there moved the whole dialog). A drag on empty bar adds a node and slides it, and a typed position keeps the nodes in order (#652).
