@@ -19,29 +19,9 @@ use tracedraw_core::{
 pub struct ClipboardContent {
     pub text: Option<String>,
     pub image: Option<image::RgbaImage>,
-    /// Files copied in a file manager.
-    pub files: Vec<std::path::PathBuf>,
 }
 
 impl ClipboardContent {
-    pub fn is_empty(&self) -> bool {
-        self.text.is_none() && self.image.is_none() && self.files.is_empty()
-    }
-
-    /// A summary of the content, to tell whether the clipboard changed
-    /// since TraceDraw copied.
-    pub fn fingerprint(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        self.text.hash(&mut h);
-        self.image
-            .as_ref()
-            .map(|i| (i.width(), i.height(), i.as_raw()))
-            .hash(&mut h);
-        self.files.hash(&mut h);
-        h.finish()
-    }
-
     pub fn is_svg(&self) -> bool {
         self.text
             .as_deref()
@@ -68,25 +48,7 @@ pub fn read_system() -> ClipboardContent {
     let image = cb.get_image().ok().and_then(|img| {
         image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())
     });
-    let files = cb
-        .get()
-        .file_list()
-        .unwrap_or_default()
-        .into_iter()
-        .map(without_line_end)
-        .collect();
-    ClipboardContent { text, image, files }
-}
-
-/// A path from a copied file list without the carriage return its line
-/// may keep: the list's lines end in CR LF and the clipboard library
-/// splits it at LF only.
-#[cfg(not(target_arch = "wasm32"))]
-fn without_line_end(path: std::path::PathBuf) -> std::path::PathBuf {
-    match path.to_str() {
-        Some(s) if s.ends_with(['\r', '\n']) => s.trim_end_matches(['\r', '\n']).into(),
-        _ => path,
-    }
+    ClipboardContent { text, image }
 }
 
 /// Put text on the system clipboard (best effort).
@@ -131,25 +93,8 @@ impl App {
             return;
         };
         self.copy();
-        write_text(&svg);
-        self.mark_system_clipboard(Some(&svg));
-    }
-
-    /// Remember what the system clipboard holds right after a copy here
-    /// (`written`: the text the copy put there), so that a paste can tell
-    /// whether something was copied elsewhere since.
-    pub fn mark_system_clipboard(&mut self, written: Option<&str>) {
-        // A browser hands the clipboard only to paste events: what was
-        // written is what a paste event brings back.
-        let now = match written {
-            Some(text) if crate::files::WEB => ClipboardContent {
-                text: Some(text.to_string()),
-                ..Default::default()
-            },
-            _ => read_system(),
-        };
-        if let Some(cb) = self.clipboard.as_mut() {
-            cb.system = now.fingerprint();
+        if let Some(svg) = self.selection_svg() {
+            write_text(&svg);
         }
     }
 
@@ -213,39 +158,14 @@ impl App {
         }
     }
 
-    /// Edit > Paste: what was copied last, here or in another
-    /// application.
+    /// Ctrl+V: the internal clipboard first, then whatever the system offers
+    /// (SVG as objects, an image as a bitmap, text as artistic text).
     pub fn paste_any(&mut self) {
-        self.paste_with_event_text(None);
-    }
-
-    /// Ctrl+V, with the text of the paste event when there was one (a
-    /// browser offers the clipboard's text only that way).
-    pub fn paste_with_event_text(&mut self, text: Option<String>) {
-        let mut content = read_system();
-        if crate::files::WEB {
-            content.text = text.filter(|t| !t.is_empty());
-        }
-        self.paste_from(content);
-    }
-
-    /// Paste the objects copied here while the system clipboard still
-    /// holds what that copy left there; otherwise what the system offers:
-    /// files are imported, SVG becomes objects, an image a bitmap, text
-    /// artistic text.
-    pub fn paste_from(&mut self, content: ClipboardContent) {
-        if let Some(cb) = &self.clipboard {
-            if content.is_empty() || cb.system == content.fingerprint() {
-                self.paste();
-                return;
-            }
-        }
-        if !content.files.is_empty() {
-            for path in &content.files {
-                self.import_path(path);
-            }
+        if self.clipboard.is_some() {
+            self.paste();
             return;
         }
+        let content = read_system();
         if content.is_svg() {
             if let Some(t) = content.text {
                 self.paste_as_svg(&t);

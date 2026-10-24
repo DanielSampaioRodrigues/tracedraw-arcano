@@ -541,7 +541,6 @@ impl App {
             system: 0,
             guides: Vec::new(),
         });
-        self.mark_system_clipboard(None);
         true
     }
 

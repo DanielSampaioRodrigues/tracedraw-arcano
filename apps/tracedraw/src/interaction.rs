@@ -129,56 +129,14 @@ pub fn skew_transform(
 }
 
 /// Whether `events` hold a copy, a cut and a paste request (the forms the
-/// windowing layer gives Ctrl+C, Ctrl+X and Ctrl+V), with the pasted text.
-fn clipboard_events(events: &[egui::Event]) -> (bool, bool, Option<String>) {
-    let mut out = (false, false, None);
+/// windowing layer gives Ctrl+C, Ctrl+X and Ctrl+V).
+fn clipboard_events(events: &[egui::Event]) -> (bool, bool, bool) {
+    let mut out = (false, false, false);
     for e in events {
         match e {
             egui::Event::Copy => out.0 = true,
             egui::Event::Cut => out.1 = true,
-            egui::Event::Paste(t) => out.2 = Some(t.clone()),
-            _ => {}
-        }
-    }
-    out
-}
-
-/// The paste shortcuts: Ctrl+V (Cmd+V), Shift+Insert and the Paste key.
-fn is_paste_key(key: egui::Key, mods: Modifiers) -> bool {
-    key == Key::Paste || (mods.command && key == Key::V) || (mods.shift && key == Key::Insert)
-}
-
-/// Whether a paste shortcut went up without a paste event or a press
-/// before it. The windowing layer turns the shortcut into a paste event
-/// only while the system clipboard holds text and drops the key press
-/// otherwise (a picture or files copied in another application), so its
-/// release is all that is left of it. `seen` keeps a paste event or press
-/// across frames until the key goes up.
-fn paste_without_text(events: &[egui::Event], seen: &mut bool) -> bool {
-    let mut out = false;
-    for e in events {
-        match e {
-            egui::Event::Paste(_) => *seen = true,
-            egui::Event::Key {
-                key,
-                pressed,
-                modifiers,
-                ..
-            } if is_paste_key(*key, *modifiers) => {
-                if *pressed {
-                    *seen = true;
-                } else {
-                    out |= !*seen;
-                    *seen = false;
-                }
-            }
-            // V let go after Ctrl: not a paste, and the next one starts
-            // afresh.
-            egui::Event::Key {
-                key: Key::V,
-                pressed: false,
-                ..
-            } => *seen = false,
+            egui::Event::Paste(_) => out.2 = true,
             _ => {}
         }
     }
@@ -2931,9 +2889,7 @@ impl App {
         // paste events instead of key presses; a paste event comes only
         // while the system clipboard holds text, which a copy here puts
         // there. Either form counts, once per frame.
-        let (copy_event, cut_event, paste_text) = clipboard_events(&input.events);
-        let paste_event = paste_text.is_some();
-        let pasted_without_text = paste_without_text(&input.events, &mut self.paste_seen);
+        let (copy_event, cut_event, paste_event) = clipboard_events(&input.events);
         let shift_held = input.modifiers.shift;
         if (pressed(Key::C, cmd) || copy_event) && !(segments && self.copy_segments()) {
             self.copy_with_system();
@@ -2941,8 +2897,8 @@ impl App {
         if (pressed(Key::X, cmd) || cut_event) && !(segments && self.cut_segments()) {
             self.cut();
         }
-        if pressed(Key::V, cmd) || (paste_event && !shift_held) || pasted_without_text {
-            self.paste_with_event_text(paste_text);
+        if pressed(Key::V, cmd) || (paste_event && !shift_held) {
+            self.paste_any();
         } else if paste_event && shift_held {
             self.paste_in_view();
         }
