@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Edit Fill: the dialog keeps its size and place, and OK and Cancel stay put, when switching between no fill, uniform, gradient, pattern, texture and mesh (#654).
+
 - The drawing tools' cross hair and the text I-beam are now drawn black with a white edge, so they show on a page of any colour; on Windows the system ones could appear white on a white page. A shape being drawn now follows the pointer from the first frame of the drag, and the window keeps one frame queued instead of two, so what is drawn under the pointer trails it less (#655).
 
 - Opening a file from the file manager or the command line while TraceDraw is running now opens it in a new tab of the running window, which comes to the front, instead of starting the whole program again. `--new-instance` still opens a separate window. On Linux, selecting several files opens them all in one window (#646).
