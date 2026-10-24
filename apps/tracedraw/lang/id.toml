@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "Jarak duplikat, vertikal"
 toolbar.fit_page_tip = "Paskan halaman ke gambar" # mt
 toolbar.fit_margin = "Margin:" # mt
 toolbar.autofit_page = "Paskan Halaman Otomatis" # mt
+toolbar.autofit_live_preview = "Pratinjau langsung" # mt
 toolbar.edit_bitmap = "Edit bitmap"
 toolbar.elastic_tip = "Mode elastis"
 toolbar.ellipse = "Elips"

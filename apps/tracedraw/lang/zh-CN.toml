@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "再制距离，垂直"
 toolbar.fit_page_tip = "使页面适合绘图" # mt
 toolbar.fit_margin = "边距：" # mt
 toolbar.autofit_page = "自动适合页面" # mt
+toolbar.autofit_live_preview = "实时预览" # mt
 toolbar.edit_bitmap = "编辑位图"
 toolbar.elastic_tip = "弹性模式"
 toolbar.ellipse = "椭圆"

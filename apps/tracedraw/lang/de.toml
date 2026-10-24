@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "Duplizierabstand, vertikal"
 toolbar.fit_page_tip = "Seite an Zeichnung anpassen" # mt
 toolbar.fit_margin = "Rand:" # mt
 toolbar.autofit_page = "Seite automatisch anpassen" # mt
+toolbar.autofit_live_preview = "Live-Vorschau" # mt
 toolbar.edit_bitmap = "Bitmap bearbeiten"
 toolbar.elastic_tip = "Elastischer Modus"
 toolbar.ellipse = "Ellipse"

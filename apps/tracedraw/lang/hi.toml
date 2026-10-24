@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "डुप्लिकेट दूरी, लंब�
 toolbar.fit_page_tip = "पृष्ठ को चित्र के अनुसार फ़िट करें" # mt
 toolbar.fit_margin = "मार्जिन:" # mt
 toolbar.autofit_page = "पृष्ठ ऑटोफ़िट करें" # mt
+toolbar.autofit_live_preview = "लाइव पूर्वावलोकन" # mt
 toolbar.edit_bitmap = "बिटमैप संपादित करें"
 toolbar.elastic_tip = "इलास्टिक मोड"
 toolbar.ellipse = "दीर्घवृत्त"

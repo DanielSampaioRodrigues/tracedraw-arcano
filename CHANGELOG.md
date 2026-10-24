@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Autofit Page: the popup has a Live preview check box. On (as before), the page shows the size it would get while the margin is typed; off, the page stays as it is until Autofit Page is clicked. The choice is kept (#659).
+
 - An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, bottom, left and top. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).
 
 - Save As now starts at the `.cdr` version chosen in Options > Global > File Formats instead of always offering version 27. A new option there, Save new drawings as .cdr files, makes Save As start at the CDR type for a drawing without a file (#613).

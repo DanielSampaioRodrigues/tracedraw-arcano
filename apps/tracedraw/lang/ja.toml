@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "複製の間隔 (垂直)"
 toolbar.fit_page_tip = "ページを描画に合わせる" # mt
 toolbar.fit_margin = "余白:" # mt
 toolbar.autofit_page = "ページを自動調整" # mt
+toolbar.autofit_live_preview = "ライブプレビュー" # mt
 toolbar.edit_bitmap = "ビットマップを編集"
 toolbar.elastic_tip = "エラスティック モード"
 toolbar.ellipse = "楕円"

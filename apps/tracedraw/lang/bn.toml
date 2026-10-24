@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "অনুলিপি দূরত্ব, উল্�
 toolbar.fit_page_tip = "পৃষ্ঠাকে অঙ্কনের সাথে মানানসই করুন" # mt
 toolbar.fit_margin = "মার্জিন:" # mt
 toolbar.autofit_page = "পৃষ্ঠা স্বয়ংক্রিয়ভাবে মানানসই করুন" # mt
+toolbar.autofit_live_preview = "লাইভ প্রিভিউ" # mt
 toolbar.edit_bitmap = "বিটম্যাপ সম্পাদনা"
 toolbar.elastic_tip = "স্থিতিস্থাপক মোড"
 toolbar.ellipse = "উপবৃত্ত"

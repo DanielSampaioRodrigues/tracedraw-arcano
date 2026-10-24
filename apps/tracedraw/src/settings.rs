@@ -169,6 +169,10 @@ pub struct Settings {
     /// drawing when the page is fitted to it.
     #[serde(default)]
     pub fit_page_margin: f64,
+    /// Autofit Page's popup shows the page it would make while open
+    /// (#659).
+    #[serde(default = "default_true")]
+    pub fit_page_preview: bool,
     /// The toolbox's own button size, when it does not follow the default.
     #[serde(default)]
     pub toolbox_button_size: Option<ButtonSize>,
@@ -1351,6 +1355,7 @@ impl Default for Settings {
             toolbox_hidden: Vec::new(),
             button_size: ButtonSize::Small,
             fit_page_margin: 0.0,
+            fit_page_preview: true,
             toolbox_button_size: None,
             toolbox_captions: Captions::ImageOnly,
             ui_size: 0.0,

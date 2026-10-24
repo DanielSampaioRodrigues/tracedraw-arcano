@@ -1479,6 +1479,11 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Autofit Page's popup (there is one property bar).
+pub(crate) fn autofit_popup_id() -> egui::Id {
+    egui::Id::new("autofit_page_popup")
+}
+
 pub fn page_bar(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
     let presets = crate::ui::dialogs::paper_presets();
@@ -1550,7 +1555,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         has_objects,
         false,
     );
-    let popup_id = ui.make_persistent_id("autofit_page_popup");
+    let popup_id = autofit_popup_id();
     if fit.clicked() {
         egui::Popup::toggle_id(ui.ctx(), popup_id);
     }
@@ -1568,6 +1573,10 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                     app.settings.fit_page_margin = m.max(0.0);
                 }
             });
+            ui.checkbox(
+                &mut app.settings.fit_page_preview,
+                tr("toolbar.autofit_live_preview"),
+            );
             ui.add_space(4.0);
             if ui
                 .add_sized(
@@ -1580,8 +1589,10 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
             }
         });
     // While the popup is open the page it would make shows on the canvas,
-    // following the margin as it is typed (#594).
-    app.autofit_preview = egui::Popup::is_id_open(&ctx, popup_id).then(|| {
+    // following the margin as it is typed (#594), unless Live preview is
+    // off (#659).
+    let preview = app.settings.fit_page_preview && egui::Popup::is_id_open(&ctx, popup_id);
+    app.autofit_preview = preview.then(|| {
         (
             app.settings.fit_page_margin.max(0.0),
             ctx.cumulative_frame_nr(),
@@ -3260,6 +3271,42 @@ mod tests {
             draw_pic(ui.painter(), rect, Pic::FitPage, Tokens::text());
         });
         out.textures_delta.clear();
+    }
+
+    /// With Live preview on the open popup shows the page Autofit Page
+    /// would make; off, the page stays as it is (#659).
+    #[test]
+    fn the_autofit_popup_previews_only_with_live_preview_on() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: R::new(10.0, 10.0, 60.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a layer");
+        let run = |app: &mut App| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.horizontal(|ui| page_bar(app, ui));
+            });
+            out.textures_delta.clear();
+        };
+        run(&mut app);
+        assert!(app.autofit_preview.is_none(), "closed");
+        egui::Popup::open_id(&ctx, autofit_popup_id());
+        assert!(app.settings.fit_page_preview, "on at first");
+        run(&mut app);
+        assert!(app.autofit_preview.is_some());
+        assert!(app
+            .autofit_preview_rect(ctx.cumulative_frame_nr())
+            .is_some());
+        app.settings.fit_page_preview = false;
+        run(&mut app);
+        assert!(egui::Popup::is_id_open(&ctx, autofit_popup_id()));
+        assert!(app.autofit_preview.is_none());
+        assert!(app
+            .autofit_preview_rect(ctx.cumulative_frame_nr())
+            .is_none());
     }
 
     #[test]

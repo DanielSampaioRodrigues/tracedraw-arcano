@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "Odległość duplikatu w pionie"
 toolbar.fit_page_tip = "Dopasuj stronę do rysunku" # mt
 toolbar.fit_margin = "Margines:" # mt
 toolbar.autofit_page = "Dopasuj stronę automatycznie" # mt
+toolbar.autofit_live_preview = "Podgląd na żywo" # mt
 toolbar.edit_bitmap = "Edytuj bitmapę"
 toolbar.elastic_tip = "Tryb elastyczny"
 toolbar.ellipse = "Elipsa"

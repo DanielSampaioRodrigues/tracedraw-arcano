@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "Смещение дубликата по вертик
 toolbar.fit_page_tip = "Подогнать страницу под рисунок" # mt
 toolbar.fit_margin = "Поле:" # mt
 toolbar.autofit_page = "Автоподбор страницы" # mt
+toolbar.autofit_live_preview = "Предпросмотр в реальном времени" # mt
 toolbar.edit_bitmap = "Изменить растр"
 toolbar.elastic_tip = "Эластичный режим"
 toolbar.ellipse = "Эллипс"

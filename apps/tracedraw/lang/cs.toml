@@ -3591,6 +3591,7 @@ toolbar.duplicate_y_tip = "Vzdálenost duplikátu, svisle"
 toolbar.fit_page_tip = "Přizpůsobit stránku kresbě" # mt
 toolbar.fit_margin = "Okraj:" # mt
 toolbar.autofit_page = "Automaticky přizpůsobit stránku" # mt
+toolbar.autofit_live_preview = "Živý náhled" # mt
 toolbar.edit_bitmap = "Upravit bitmapu"
 toolbar.elastic_tip = "Pružný režim"
 toolbar.ellipse = "Elipsa"
