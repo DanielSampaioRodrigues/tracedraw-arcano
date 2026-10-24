@@ -3175,6 +3175,7 @@ splash.loading_fonts = "正在載入字型..."
 splash.opening = "正在開啟 {name}..."
 splash.preparing = "正在準備工作區..."
 status.ai_drawn = "AI 繪圖：{n} 項變更。"
+status.already_open = "{name} 已開啟" # mt
 status.anchor_added = "已新增錨點。拖曳可移動，按 Delete 或按兩下可移除"
 status.anchor_hint = "在物件內按一下即可新增錨點；連接線會貼齊錨點"
 status.area_fill_open = "此處沒有封閉區域"

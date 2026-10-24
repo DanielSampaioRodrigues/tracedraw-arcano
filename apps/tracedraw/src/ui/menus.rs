@@ -1698,7 +1698,8 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.file.is_some() && app.engine.is_dirty(),
     ) {
         if let Some(p) = app.file.clone() {
-            app.open_path(p);
+            // Read again (not the open drawing shown, see `open_path`).
+            app.open_path_with_password(p, "");
         }
     }
     sep(ui);

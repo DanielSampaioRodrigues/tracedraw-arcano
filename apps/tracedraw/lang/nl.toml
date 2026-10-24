@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Lettertypen laden..."
 splash.opening = "{name} openen..."
 splash.preparing = "De werkruimte voorbereiden..."
 status.ai_drawn = "AI-tekenen: {n} wijziging(en)."
+status.already_open = "{name} is al geopend" # mt
 status.anchor_added = "Anker toegevoegd. Sleep om het te verplaatsen, Delete of dubbelklik om het te verwijderen"
 status.anchor_hint = "Klik binnen het object om een anker toe te voegen; verbindingslijnen kleven aan ankers"
 status.area_fill_open = "Hier is geen ingesloten gebied"

@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Загрузка шрифтов..."
 splash.opening = "Открытие {name}..."
 splash.preparing = "Подготовка рабочей области..."
 status.ai_drawn = "Рисование с ИИ: изменений {n}."
+status.already_open = "{name} уже открыт" # mt
 status.anchor_added = "Якорь добавлен. Перетащите, чтобы переместить; Delete или двойной щелчок удаляет"
 status.anchor_hint = "Щёлкните внутри объекта, чтобы добавить якорь; соединители привязываются к якорям"
 status.area_fill_open = "Здесь нет замкнутой области"

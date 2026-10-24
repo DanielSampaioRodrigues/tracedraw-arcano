@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Schriften werden geladen..."
 splash.opening = "{name} wird geöffnet..."
 splash.preparing = "Arbeitsbereich wird vorbereitet..."
 status.ai_drawn = "KI-Zeichnen: {n} Änderung(en)."
+status.already_open = "{name} ist bereits geöffnet" # mt
 status.anchor_added = "Anker hinzugefügt. Ziehen zum Verschieben, Entf oder Doppelklick zum Entfernen"
 status.anchor_hint = "In das Objekt klicken, um einen Anker hinzuzufügen; Verbindungslinien rasten an Ankern ein"
 status.area_fill_open = "Hier gibt es keinen geschlossenen Bereich"

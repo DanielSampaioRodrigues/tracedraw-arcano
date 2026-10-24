@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Caricamento dei font..."
 splash.opening = "Apertura di {name}..."
 splash.preparing = "Preparazione dell'area di lavoro..."
 status.ai_drawn = "Disegno IA: {n} modifica/he."
+status.already_open = "{name} è già aperto" # mt
 status.anchor_added = "Ancoraggio aggiunto. Trascinalo per spostarlo, Delete o doppio clic per rimuoverlo"
 status.anchor_hint = "Fai clic all'interno dell'oggetto per aggiungere un ancoraggio; i connettori si agganciano agli ancoraggi"
 status.area_fill_open = "Nessuna area chiusa qui"

@@ -3175,6 +3175,7 @@ splash.loading_fonts = "फ़ॉन्ट लोड हो रहे हैं.
 splash.opening = "{name} खोला जा रहा है..."
 splash.preparing = "कार्यक्षेत्र तैयार हो रहा है..."
 status.ai_drawn = "AI ड्रॉइंग: {n} बदलाव।"
+status.already_open = "{name} पहले से खुला है" # mt
 status.anchor_added = "एंकर जोड़ा गया। खींचकर हिलाएँ, Delete या डबल-क्लिक से हटाएँ"
 status.anchor_hint = "एंकर जोड़ने के लिए ऑब्जेक्ट के अंदर क्लिक करें; कनेक्टर एंकर से जुड़ते हैं"
 status.area_fill_open = "यहाँ कोई बंद क्षेत्र नहीं है"

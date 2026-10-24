@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Yazı tipleri yükleniyor..."
 splash.opening = "{name} açılıyor..."
 splash.preparing = "Çalışma alanı hazırlanıyor..."
 status.ai_drawn = "YZ Çizim, değişiklik sayısı: {n}."
+status.already_open = "{name} zaten açık" # mt
 status.anchor_added = "Bağlantı noktası eklendi. Taşımak için sürükleyin, kaldırmak için Delete tuşuna basın veya çift tıklayın"
 status.anchor_hint = "Bağlantı noktası eklemek için nesnenin içine tıklayın; bağlayıcılar bağlantı noktalarına yapışır"
 status.area_fill_open = "Burada kapalı alan yok"

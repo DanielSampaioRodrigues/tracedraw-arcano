@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Memuat font..."
 splash.opening = "Membuka {name}..."
 splash.preparing = "Menyiapkan ruang kerja..."
 status.ai_drawn = "Menggambar dengan AI: {n} perubahan."
+status.already_open = "{name} sudah terbuka" # mt
 status.anchor_added = "Jangkar ditambahkan. Seret untuk memindahkan, Delete atau klik ganda untuk menghapus"
 status.anchor_hint = "Klik di dalam objek untuk menambah jangkar; konektor menempel pada jangkar"
 status.area_fill_open = "Tidak ada area tertutup di sini"

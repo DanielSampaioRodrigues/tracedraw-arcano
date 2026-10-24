@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Načítání písem..."
 splash.opening = "Otevírání {name}..."
 splash.preparing = "Příprava pracovního prostoru..."
 status.ai_drawn = "Kreslení s AI (počet změn: {n})."
+status.already_open = "{name} je už otevřený" # mt
 status.anchor_added = "Kotva přidána. Tažením ji přesunete, klávesou Delete nebo dvojitým kliknutím ji odeberete"
 status.anchor_hint = "Kliknutím dovnitř objektu přidáte kotvu; spojnice se ke kotvám přichytávají"
 status.area_fill_open = "Zde není žádná uzavřená oblast"

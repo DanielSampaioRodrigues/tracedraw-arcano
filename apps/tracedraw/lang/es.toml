@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Cargando fuentes..."
 splash.opening = "Abriendo {name}..."
 splash.preparing = "Preparando el espacio de trabajo..."
 status.ai_drawn = "Dibujar con palabras: {n} cambio(s)."
+status.already_open = "{name} ya está abierto" # mt
 status.anchor_added = "Ancla añadida. Arrastre para moverla, Supr o doble clic para quitarla"
 status.anchor_hint = "Haga clic dentro del objeto para añadir un ancla; los conectores se ajustan a las anclas"
 status.area_fill_open = "No hay ninguna área cerrada aquí"

@@ -3175,6 +3175,7 @@ splash.loading_fonts = "ফন্ট লোড হচ্ছে..."
 splash.opening = "{name} খোলা হচ্ছে..."
 splash.preparing = "কর্মক্ষেত্র প্রস্তুত হচ্ছে..."
 status.ai_drawn = "এআই অঙ্কন: {n}টি পরিবর্তন।"
+status.already_open = "{name} ইতিমধ্যে খোলা আছে" # mt
 status.anchor_added = "অ্যাঙ্কর যোগ হয়েছে। সরাতে টানুন, মুছতে Delete বা ডাবল-ক্লিক করুন"
 status.anchor_hint = "অ্যাঙ্কর যোগ করতে অবজেক্টের ভিতরে ক্লিক করুন; সংযোগকারীগুলি অ্যাঙ্করে লেগে যায়"
 status.area_fill_open = "এখানে কোনো আবদ্ধ এলাকা নেই"

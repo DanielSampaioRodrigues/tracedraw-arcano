@@ -3175,6 +3175,7 @@ splash.loading_fonts = "جارٍ تحميل الخطوط..."
 splash.opening = "جارٍ فتح {name}..."
 splash.preparing = "جارٍ تجهيز مساحة العمل..."
 status.ai_drawn = "الرسم بالذكاء الاصطناعي: {n} تغيير."
+status.already_open = "{name} مفتوح بالفعل" # mt
 status.anchor_added = "تمت إضافة نقطة ارتساء. اسحبها لنقلها، أو Delete أو النقر المزدوج لإزالتها"
 status.anchor_hint = "انقر داخل الكائن لإضافة نقطة ارتساء؛ تلتصق الموصلات بنقاط الارتساء"
 status.area_fill_open = "لا توجد منطقة مغلقة هنا"

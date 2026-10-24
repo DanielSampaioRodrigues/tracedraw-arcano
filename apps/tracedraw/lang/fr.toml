@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Chargement des polices..."
 splash.opening = "Ouverture de {name}..."
 splash.preparing = "Préparation de l'espace de travail..."
 status.ai_drawn = "Dessin par IA : {n} modification(s)."
+status.already_open = "{name} est déjà ouvert" # mt
 status.anchor_added = "Ancre ajoutée. Faites-la glisser pour la déplacer, Suppr ou double-clic pour la retirer"
 status.anchor_hint = "Cliquez dans l'objet pour ajouter une ancre ; les connecteurs s'accrochent aux ancres"
 status.area_fill_open = "Aucune zone fermée à cet endroit"

@@ -3175,6 +3175,7 @@ splash.loading_fonts = "フォントを読み込んでいます..."
 splash.opening = "{name} を開いています..."
 splash.preparing = "ワークスペースを準備しています..."
 status.ai_drawn = "AI 描画: {n} 件の変更。"
+status.already_open = "{name} はすでに開いています" # mt
 status.anchor_added = "アンカーを追加しました。ドラッグで移動、Delete またはダブルクリックで削除"
 status.anchor_hint = "オブジェクト内をクリックしてアンカーを追加。コネクタはアンカーにスナップします"
 status.area_fill_open = "ここには閉じた領域がありません"

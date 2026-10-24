@@ -864,6 +864,10 @@ pub struct App {
     /// `App::patch_selection_stroke_live`).
     pub live_stroke: Option<(u64, Option<Color>)>,
     pub file: Option<PathBuf>,
+    /// The file the drawing was read from, in any format (canonical), until
+    /// it is saved under a name of its own: opening that file again shows
+    /// this drawing instead of a second copy (#645).
+    pub opened_from: Option<PathBuf>,
     /// The drawing's file in a GitHub repository, when it came from one.
     pub remote: Option<crate::github::Remote>,
     /// The last vector object's picture without its bitmap effects, by its
@@ -2004,6 +2008,7 @@ impl App {
             live_fill: None,
             live_stroke: None,
             file: None,
+            opened_from: None,
             remote: None,
             vector_fx_base: Default::default(),
             github: Default::default(),
@@ -5073,8 +5078,38 @@ impl App {
             .pick_file(self, |app, p| app.open_path(p));
     }
 
+    /// Open `path`, or show the drawing already open from it (read from
+    /// it, or saved to it) instead of reading it into a second tab (#645).
+    /// Every way of opening a file comes here; templates (always a new,
+    /// untitled drawing, see [`App::open_as_template`]) and Revert read the
+    /// file again.
     pub fn open_path(&mut self, path: PathBuf) {
+        if !is_template_path(&path) {
+            if let Some(i) = self.tab_with_file(&path) {
+                self.switch_document(i);
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.status = crate::i18n::trf("status.already_open", &[("name", &name)]);
+                self.settings.touch_recent(&path);
+                self.settings.save();
+                return;
+            }
+        }
         self.open_path_with_password(path, "");
+    }
+
+    /// Open `path` as a template: a new, untitled drawing even when the file
+    /// is open already.
+    pub fn open_as_template(&mut self, path: PathBuf) {
+        let tabs = self.docs.len();
+        self.open_path_with_password(path, "");
+        if self.docs.len() > tabs {
+            self.file = None;
+            self.opened_from = None;
+            self.show_welcome = false;
+        }
     }
 
     /// The kind of file `path` holds, by its extension, except that an
@@ -5469,6 +5504,8 @@ impl App {
         match result {
             Ok((doc, msg)) => {
                 self.open_document(doc, None);
+                self.opened_from = (!crate::files::WEB && !is_template_path(&path))
+                    .then(|| crate::files::canonical(&path));
                 self.cdr_version = cdr_version;
                 self.cdr_unsaved_version =
                     opened_version.filter(|v| *v < tracedraw_cdr::write::CHECKED_SINCE);
@@ -5635,6 +5672,9 @@ impl App {
             Ok(()) => {
                 self.engine.mark_saved();
                 self.file = Some(path.clone());
+                // The drawing is the saved file's now, not the one it was
+                // read from.
+                self.opened_from = None;
                 self.status =
                     crate::i18n::trf("status.saved", &[("p", &path.display().to_string())]);
                 self.settings.touch_recent(&path);
@@ -6829,6 +6869,16 @@ pub fn color_description(c: Color) -> String {
         Color::Registration => "Registration".into(),
         Color::Spot { ink, tint, .. } => format!("Spot {ink} {:.0}%", tint * 100.0),
     }
+}
+
+/// True for a template's path (`.tdt`, `.cdt`, `.cdrt`, any case): opened,
+/// it makes a new untitled drawing every time.
+pub(crate) fn is_template_path(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        ["tdt", "cdt", "cdrt"]
+            .iter()
+            .any(|t| e.eq_ignore_ascii_case(t))
+    })
 }
 
 /// True for a path ending in `.cdr` (any case).

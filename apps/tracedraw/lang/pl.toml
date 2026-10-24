@@ -3175,6 +3175,7 @@ splash.loading_fonts = "Wczytywanie czcionek..."
 splash.opening = "Otwieranie {name}..."
 splash.preparing = "Przygotowywanie obszaru roboczego..."
 status.ai_drawn = "Rysowanie AI, liczba zmian: {n}."
+status.already_open = "{name} jest już otwarty" # mt
 status.anchor_added = "Dodano punkt zakotwiczenia. Przeciągnij, aby go przesunąć; Delete lub dwukrotne kliknięcie usuwa go"
 status.anchor_hint = "Kliknij wewnątrz obiektu, aby dodać punkt zakotwiczenia; łączniki przyciągają do punktów zakotwiczenia"
 status.area_fill_open = "Brak zamkniętego obszaru w tym miejscu"
