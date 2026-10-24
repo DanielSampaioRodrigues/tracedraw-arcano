@@ -120,10 +120,18 @@ fn rgb_drawing(app: &App) -> bool {
         && app.doc().metadata.primary_color_mode == tracedraw_core::document::PrimaryColorMode::Rgb
 }
 
-/// `c` as an RGB colour, a spot ink or registration as it is.
+/// `c` as an RGB colour, a spot ink or registration as it is. A CMYK
+/// colour takes the plain RGB of its inks, not the press simulation, so
+/// the palette's black is 0 0 0, its red 255 0 0 and its tints the
+/// matching RGB tints (#620).
 fn in_rgb(c: Color) -> Color {
     match c {
         Color::Spot { .. } | Color::Registration => c,
+        Color::Cmyk { c, m, y, k } => {
+            let ink = |v: f32| (1.0 - v.clamp(0.0, 1.0)) * (1.0 - k.clamp(0.0, 1.0));
+            let byte = |v: f32| (ink(v) * 255.0).round() as u8;
+            Color::rgb8(byte(c), byte(m), byte(y))
+        }
         _ => c.convert_to("RGB"),
     }
 }
@@ -1217,8 +1225,37 @@ mod tests {
         assert_eq!(rgb.len(), 2);
         assert!(rgb.iter().all(|(_, c)| c.model_name() == "RGB"), "{rgb:?}");
         assert_eq!(rgb[0].0, "Cyan");
-        assert_eq!(rgb[0].1.to_rgb8(), cmyk[0].1.to_rgb8());
+        assert_eq!(rgb[0].1, Color::rgb8(0, 255, 255));
         assert_eq!(rgb[1].1, Color::rgb8(10, 20, 30));
+    }
+
+    /// The default palette in an RGB drawing holds clean RGB values: black
+    /// 0 0 0, white 255 255 255, the primaries at full, the tints as RGB
+    /// tints (#620).
+    #[test]
+    fn the_default_palette_of_an_rgb_drawing_is_clean_rgb() {
+        let mut app = App::headless();
+        let mut metadata = app.doc().metadata.clone();
+        metadata.primary_color_mode = tracedraw_core::document::PrimaryColorMode::Rgb;
+        app.run(tracedraw_core::Command::SetMetadata { metadata });
+        let rgb = colors_of(&app, Row::Main);
+        let of = |name: &str| {
+            rgb.iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, c)| *c)
+                .expect(name)
+        };
+        assert_eq!(rgb.len(), 99);
+        assert_eq!(of("Black"), Color::rgb8(0, 0, 0));
+        assert_eq!(of("White"), Color::rgb8(255, 255, 255));
+        assert_eq!(of("50% Black"), Color::rgb8(128, 128, 128));
+        assert_eq!(of("Red"), Color::rgb8(255, 0, 0));
+        assert_eq!(of("Green"), Color::rgb8(0, 255, 0));
+        assert_eq!(of("Blue"), Color::rgb8(0, 0, 255));
+        assert_eq!(of("Yellow"), Color::rgb8(255, 255, 0));
+        assert_eq!(of("Magenta"), Color::rgb8(255, 0, 255));
+        assert_eq!(of("Orange"), Color::rgb8(255, 102, 0));
+        assert!(rgb.iter().all(|(_, c)| c.model_name() == "RGB"));
     }
 
     #[test]

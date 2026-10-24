@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The default palette of an RGB drawing now holds clean RGB values instead of the CMYK colours as the press would print them: black is 0 0 0, white 255 255 255, red 255 0 0, and the tints are the matching RGB tints. CMYK drawings keep the CMYK palette (#620).
+
 - Autofit Page: the popup has a Live preview check box. On (as before), the page shows the size it would get while the margin is typed; off, the page stays as it is until Autofit Page is clicked. The choice is kept (#659).
 
 - An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, bottom, left and top. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).

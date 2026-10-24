@@ -38,9 +38,14 @@ to Deep Blue 60 60 0 60).
 
 In a drawing whose primary colour mode is RGB (New Document's colour
 mode, Document Properties) the default palette shows and applies its
-colours as RGB, converted as the colour management converts (names kept;
-spot inks and registration stay as they are); a CMYK drawing keeps them
-CMYK (#483, `ui::palette::tests::an_rgb_drawing_gets_an_rgb_palette`).
+colours as clean RGB values (names kept; spot inks and registration stay
+as they are): each CMYK colour takes the plain RGB of its inks,
+R = 255 (1 - C)(1 - K) and so on, not the press simulation, so Black is
+0 0 0, White 255 255 255, Red 255 0 0, 50% Black 128 128 128 and
+Orange 255 102 0; other colours are converted as the colour management
+converts. A CMYK drawing keeps them CMYK (#483, #620,
+`ui::palette::tests::an_rgb_drawing_gets_an_rgb_palette`,
+`ui::palette::tests::the_default_palette_of_an_rgb_drawing_is_clean_rgb`).
 
 ## Using a palette
 
@@ -102,6 +107,7 @@ update the document palette (on).
 - `ui::palette::tests::mixing_moves_a_tenth_of_the_way`
 - `ui::palette::tests::applying_a_colour_adds_it_to_the_document_palette_in_the_same_step`
 - `ui::palette::tests::rows_fit_whole_swatches`
+- `ui::palette::tests::the_default_palette_of_an_rgb_drawing_is_clean_rgb`
 - `ui::dockers::tests::a_fill_dragged_in_the_picker_is_one_step_and_one_palette_colour`
 - `color_drop::tests` (fill inside, outline on the edge, No Color, an
   object without a fill, the document palette)
