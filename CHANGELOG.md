@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The preferences are no longer serialized on every frame to see whether they changed: only on frames with a key, text, a click or a dropped file, and at most once a second otherwise. A pointer move now costs about 0.1 µs there instead of about 20 µs, more on an older PC (#616).
+
 - Pictures are decoded once and kept for every thread that draws the page. The canvas draws in bands on one thread per core, and each band decoded every picture it crossed again on every redraw: six large photos took about 1.1 s and 540 MB extra per redraw on four cores (more with more cores). Now a redraw after the first takes about 20 ms, thumbnails and the navigator reuse the same pictures, and the decoded pictures kept are capped at 512 MB.
 
 - Tracing (Quick Trace and Outline Trace): outlines come out as smooth Bezier curves fitted to the shapes instead of stair-stepped polylines, with far fewer nodes; corners stay sharp (Corner smoothness rounds more of them), and stray specks and the fringes of soft edges no longer become curves of their own (fewer the lower the detail). Smoothing 0 still follows the pixel edges (#611).

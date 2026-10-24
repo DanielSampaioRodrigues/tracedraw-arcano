@@ -1276,7 +1276,9 @@ pub struct App {
     /// preferences as last saved or looked at (JSON), to save them only
     /// when they changed.
     pub settings_written: Option<web_time::Instant>,
-    pub settings_saved: Option<String>,
+    pub settings_saved: Option<Vec<u8>>,
+    /// When `autosave_settings` last looked at the preferences (#616).
+    pub settings_looked: Option<web_time::Instant>,
     /// A change waits to be written (see `autosave_settings`).
     pub settings_pending: bool,
     /// The layer made active in the Objects docker: new objects go there
@@ -1923,6 +1925,36 @@ pub enum TransformTab {
     Skew,
 }
 
+/// The preferences' JSON, into a buffer of `hint` bytes so that it is
+/// not grown on the way (#616).
+fn settings_json(s: &crate::settings::Settings, hint: usize) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(hint);
+    serde_json::to_writer(&mut out, s).ok()?;
+    Some(out)
+}
+
+/// Whether this frame's input could have changed a preference: a key,
+/// text, a click or a release, the clipboard or a dropped file. Pointer
+/// moves, held buttons and the wheel cannot by themselves (a drag ends in
+/// a release).
+fn input_may_change_settings(i: &egui::InputState) -> bool {
+    use egui::Event;
+    !i.raw.dropped_files.is_empty()
+        || i.events.iter().any(|e| {
+            matches!(
+                e,
+                Event::Key { .. }
+                    | Event::Text(_)
+                    | Event::Paste(_)
+                    | Event::Copy
+                    | Event::Cut
+                    | Event::Ime(_)
+                    | Event::PointerButton { .. }
+                    | Event::WindowFocused(_)
+            )
+        })
+}
+
 impl App {
     /// The editor in the window of `ctx`, whose fonts are already
     /// installed (see `theme::install_fonts` and the splash screen).
@@ -2239,6 +2271,7 @@ impl App {
             objects_open_groups: Default::default(),
             settings_written: None,
             settings_saved: None,
+            settings_looked: None,
             settings_pending: false,
             objects_page_closed: false,
             objects_master_closed: false,
@@ -2795,7 +2828,8 @@ impl App {
     pub fn save_settings(&mut self) {
         self.sync_settings();
         self.settings.save();
-        self.settings_saved = serde_json::to_string(&self.settings).ok();
+        let hint = self.settings_saved.as_ref().map_or(0, Vec::len);
+        self.settings_saved = settings_json(&self.settings, hint);
         self.settings_pending = false;
     }
 
@@ -3030,18 +3064,33 @@ impl App {
     /// closing the tab saves nothing); written at most once a second (a
     /// window being resized changes them every frame), with a frame asked
     /// for when a write has to wait. Not while Options is open: its Cancel
-    /// puts them back.
+    /// puts them back. Looked at on the frames whose input could change
+    /// them (a key, a click, text, a dropped file) and at most once a
+    /// second otherwise, not on every pointer move or animation frame,
+    /// which cost a full serialization each on slow computers (#616); a
+    /// frame that does not look asks for one when the second is up.
     pub fn autosave_settings(&mut self, ctx: Option<&egui::Context>) {
         if self.options_snapshot.is_some() {
             return;
         }
-        if self.settings_changed() {
-            self.settings_pending = true;
+        let now = web_time::Instant::now();
+        let input = ctx.is_none_or(|c| c.input(input_may_change_settings));
+        let second = std::time::Duration::from_secs(1);
+        let since = self.settings_looked.map(|t| now.duration_since(t));
+        if input || since.is_none_or(|d| d >= second) {
+            self.settings_looked = Some(now);
+            if self.settings_changed() {
+                self.settings_pending = true;
+            }
+        } else if let (Some(ctx), Some(d)) = (ctx, since) {
+            // A change this frame made (a maximized window, a worker's
+            // result) is looked at when the second is up, even if no
+            // frame comes by itself: one frame after a burst, none idle.
+            ctx.request_repaint_after(second.saturating_sub(d));
         }
         if !self.settings_pending {
             return;
         }
-        let now = web_time::Instant::now();
         let gap = std::time::Duration::from_secs(1);
         let wait = self
             .settings_written
@@ -3060,10 +3109,11 @@ impl App {
     /// from the ones last saved or looked at, which are then remembered.
     pub fn settings_changed(&mut self) -> bool {
         self.sync_settings();
-        let Ok(now) = serde_json::to_string(&self.settings) else {
+        let hint = self.settings_saved.as_ref().map_or(0, Vec::len);
+        let Some(now) = settings_json(&self.settings, hint + 64) else {
             return false;
         };
-        if self.settings_saved.as_deref() == Some(now.as_str()) {
+        if self.settings_saved.as_ref() == Some(&now) {
             return false;
         }
         self.settings_saved = Some(now);
@@ -7586,6 +7636,7 @@ mod tests {
         // it, which it asks for.
         app.polygon_points = 10;
         let ctx = egui::Context::default();
+        app.settings_looked = None;
         app.autosave_settings(Some(&ctx));
         assert!(app.settings_pending);
         app.settings_written = app
@@ -7593,6 +7644,133 @@ mod tests {
             .and_then(|t| t.checked_sub(std::time::Duration::from_secs(2)));
         app.autosave_settings(Some(&ctx));
         assert!(!app.settings_pending);
+    }
+
+    /// A frame of `events` through `app`'s autosave, as the window runs
+    /// it after the interface.
+    /// The frame it asks for next.
+    fn autosave_frame(
+        app: &mut App,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+    ) -> std::time::Duration {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| app.autosave_settings(Some(ui.ctx())));
+        out.textures_delta.clear();
+        out.viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.repaint_delay)
+            .unwrap_or(std::time::Duration::MAX)
+    }
+
+    /// The preferences are looked at on the frames whose input could
+    /// change them and at most once a second otherwise: a pointer move
+    /// or an animation frame does not serialize them all (#616).
+    #[test]
+    fn preferences_are_looked_at_only_when_they_could_have_changed() {
+        let mut app = App::headless();
+        let ctx = egui::Context::default();
+        autosave_frame(&mut app, &ctx, Vec::new());
+        let looked = app.settings_looked.expect("the first frame looks");
+        let seen = app.settings_saved.clone();
+        // Within the second, pointer moves alone look at nothing; the
+        // frame asks for one when the second is up.
+        app.polygon_points = 7;
+        let moved = egui::Event::PointerMoved(egui::pos2(10.0, 10.0));
+        let next = autosave_frame(&mut app, &ctx, vec![moved.clone()]);
+        assert_eq!(app.settings_looked, Some(looked));
+        assert_eq!(app.settings_saved, seen);
+        assert!(next <= std::time::Duration::from_secs(1), "{next:?}");
+        // A click is looked at at once.
+        let click = egui::Event::PointerButton {
+            pos: egui::pos2(10.0, 10.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        autosave_frame(&mut app, &ctx, vec![click]);
+        assert_ne!(app.settings_saved, seen);
+        assert!(app.settings_pending || app.settings_written.is_some());
+        // A second later any frame looks again (a change from a worker or
+        // a resized window).
+        app.polygon_points = 8;
+        let before = app.settings_saved.clone();
+        app.settings_looked = app
+            .settings_looked
+            .and_then(|t| t.checked_sub(std::time::Duration::from_secs(2)));
+        autosave_frame(&mut app, &ctx, vec![moved]);
+        assert_ne!(app.settings_saved, before);
+        // Only discrete input counts.
+        let key = egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let i = |events| {
+            let c = egui::Context::default();
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            c.run_ui(input, |_| {}).textures_delta.clear();
+            c.input(input_may_change_settings)
+        };
+        assert!(i(vec![key]));
+        assert!(i(vec![egui::Event::Text("a".into())]));
+        assert!(!i(vec![egui::Event::PointerMoved(egui::pos2(1.0, 1.0))]));
+        assert!(!i(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        }]));
+        assert!(!i(Vec::new()));
+    }
+
+    /// What the preferences check costs a frame, before (the whole JSON
+    /// text built and compared on every frame) and now: run with
+    /// `cargo test --release -p tracedraw -- --ignored
+    /// settings_check_cost --nocapture`.
+    #[test]
+    #[ignore]
+    fn settings_check_cost() {
+        let mut app = App::headless();
+        app.settings.recent_files = (0..20)
+            .map(|i| format!("/some/folder/drawing {i}.cdr").into())
+            .collect();
+        let n = 2000;
+        let mut last = None;
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            app.sync_settings();
+            let now = serde_json::to_string(&app.settings).ok();
+            if now != last {
+                last = now;
+            }
+        }
+        eprintln!("before, JSON text every frame: {:?}", t.elapsed() / n);
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            app.settings_changed();
+        }
+        eprintln!("a full look now: {:?}", t.elapsed() / n);
+        let ctx = egui::Context::default();
+        let moved = egui::RawInput {
+            events: vec![egui::Event::PointerMoved(egui::pos2(10.0, 10.0))],
+            ..Default::default()
+        };
+        ctx.run_ui(moved, |_| {}).textures_delta.clear();
+        app.settings_looked = Some(web_time::Instant::now());
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            app.autosave_settings(Some(&ctx));
+        }
+        eprintln!("a pointer-move frame now: {:?}", t.elapsed() / n);
     }
 
     #[test]

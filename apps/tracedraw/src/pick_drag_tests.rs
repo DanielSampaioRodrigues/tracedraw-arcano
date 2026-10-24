@@ -6570,3 +6570,54 @@ fn overlays_are_drawn_on_a_white_line() {
     assert!(shapes.iter().any(|s| matches!(s, egui::Shape::LineSegment { stroke, .. }
         if stroke.color == egui::Color32::WHITE && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3)));
 }
+
+/// An idle window asks for no frame (#616): once the start has settled,
+/// frames with no input request no repaint, with a drawing open (and its
+/// dockers) and on the Welcome Screen, the window's per-frame work (the
+/// preferences autosave, linked bitmaps) included. A frame asked for
+/// here keeps a slow computer drawing for nothing.
+#[test]
+fn an_idle_window_asks_for_no_frame() {
+    for welcome in [false, true] {
+        let (ctx, mut app, _) = setup();
+        app.show_welcome = welcome;
+        let mut delays = Vec::new();
+        for i in 0..40 {
+            // Time passes between the frames: animations end, and a
+            // preferences look or write that had to wait is due.
+            let back = |t: Option<web_time::Instant>| {
+                t.and_then(|t| t.checked_sub(std::time::Duration::from_secs(2)))
+            };
+            app.settings_looked = back(app.settings_looked);
+            if app.settings_pending {
+                app.settings_written = back(app.settings_written);
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                time: Some(10.0 + i as f64 * 2.0),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                crate::ui::root(&mut app, ui);
+                app.autosave_settings(Some(ui.ctx()));
+                app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
+            });
+            out.textures_delta.clear();
+            let delay = out
+                .viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .map(|v| v.repaint_delay)
+                .unwrap_or(std::time::Duration::MAX);
+            delays.push(delay);
+        }
+        let tail = &delays[delays.len() - 10..];
+        assert!(
+            tail.iter().all(|d| *d == std::time::Duration::MAX),
+            "welcome {welcome}: frames asked for while idle: {delays:?} ({:?})",
+            ctx.repaint_causes()
+        );
+    }
+}
