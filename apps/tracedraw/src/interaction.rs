@@ -1722,13 +1722,20 @@ impl App {
             };
         }
         if response.dragged_by(PointerButton::Primary) {
+            // The pointer now: on the frame the drag starts `p` is where
+            // the button went down, the pointer already a few pixels away,
+            // and the corner sat behind it (#655).
+            let now = response
+                .hover_pos()
+                .map(|s| self.snap_point(self.view.to_page(s)))
+                .unwrap_or(p);
             if let Drag::Box {
                 start,
                 current,
                 from_center,
             } = &mut self.drag
             {
-                let mut q = p;
+                let mut q = now;
                 if mods.ctrl {
                     // Constrain to a square/circle.
                     let d = q - *start;

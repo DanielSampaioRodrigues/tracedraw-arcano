@@ -1187,7 +1187,7 @@ fn the_pointer_shows_moves_for_objects_and_guidelines() {
     };
     assert_eq!(
         crate::ui::cursors::ruler_drag_cursor(&app),
-        Some(egui::CursorIcon::ResizeVertical)
+        Some(ToolCursor::System(egui::CursorIcon::ResizeVertical))
     );
     app.drag = Drag::None;
 }
@@ -5925,4 +5925,48 @@ fn joining_curves_leaves_a_symmetry_where_it_was() {
     };
     let c = sym_center(&app, kept);
     assert!(close(c.x, 35.0) && close(c.y, 60.0), "{c:?}");
+}
+
+/// Drawing a rectangle, the corner being dragged is where the pointer is
+/// in the same frame (no frame behind it), and the pointer shown is the
+/// drawn cross hair, not the system's (#655).
+#[test]
+fn drawing_a_rectangle_the_corner_keeps_up_with_the_pointer() {
+    let (ctx, mut app, _) = setup();
+    app.set_tool(Tool::Rectangle);
+    app.snap.off = true;
+    let from = app.view.to_screen(Point::new(100.0, 150.0));
+    let to = app.view.to_screen(Point::new(140.0, 120.0));
+    let n = Modifiers::NONE;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], n);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, n)],
+        n,
+    );
+    let mut checked = 0;
+    for i in 1..=8 {
+        let p = from + (to - from) * (i as f32 / 8.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+        if let Drag::Box { current, .. } = app.drag {
+            let want = app.view.to_page(p);
+            assert!(
+                close(current.x, want.x) && close(current.y, want.y),
+                "{current:?} {want:?}"
+            );
+            checked += 1;
+        }
+        assert_eq!(
+            crate::ui::cursors::for_tool(&app, false, true, false, Some(p)),
+            ToolCursor::Badge(Tool::Rectangle)
+        );
+    }
+    assert!(checked >= 6, "the drag was followed: {checked}");
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, n)],
+        n,
+    );
 }
