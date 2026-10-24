@@ -4639,7 +4639,8 @@ impl App {
     }
 
     /// Convert to Curves: shapes and text become curves; a table becomes a
-    /// group of curves (cell fills, borders, text) and a symbol instance
+    /// group of curves (cell fills, borders, text), a dimension a group of
+    /// its lines, arrowheads and label as curves, and a symbol instance
     /// a group of its symbol's objects as curves. An envelope, perspective
     /// or distortion becomes part of the curves (#647). Bitmaps are left as
     /// they are, with a note in the status bar.
@@ -4659,6 +4660,13 @@ impl App {
         let symbols = self.doc().symbols.clone();
         let mut cmds = Vec::new();
         for s in &shapes {
+            // A dimension becomes a group of plain curves (#640).
+            if bake {
+                if let Some(mut c) = self.dimension_curves_commands(s) {
+                    cmds.append(&mut c);
+                    continue;
+                }
+            }
             let engine = &mut self.engine;
             let mut next_id = || engine.new_shape_id();
             let c = if bake {
@@ -4697,9 +4705,9 @@ impl App {
 
     /// Something selected that Convert to Curves would change.
     pub fn can_convert_to_curves(&self) -> bool {
-        self.selected_shapes()
-            .iter()
-            .any(|s| s.converts_to_curves() || s.has_outline_warp())
+        self.selected_shapes().iter().any(|s| {
+            s.converts_to_curves() || s.has_outline_warp() || crate::dimensions::is_dimension(s)
+        })
     }
 
     /// Order: 0 = to front, 1 = forward one, 2 = back one, 3 = to back.
