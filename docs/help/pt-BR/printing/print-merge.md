@@ -24,7 +24,7 @@ QR. Cada registro dos seus dados vira uma cópia da página, preenchida.
 
 ![A caixa de diálogo Mesclagem de impressão](../../img/printing-print-merge.png)
 
-## O painel Mala direta {#docker}
+## O painel Impressão mesclada {#docker}
 
 O painel [[docker.print_merge]] (também em Janela > Painéis) trabalha com a
 fonte de dados que você criou ou carregou:
