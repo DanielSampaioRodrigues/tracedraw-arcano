@@ -711,14 +711,19 @@ impl App {
     }
 
     /// Object > Symmetry > Finish Editing Symmetry (Alt+Shift+E), and the
-    /// symmetry bar's Finish.
+    /// symmetry bar's Finish. The symmetry is then selected as one object:
+    /// the object picked inside it while editing stayed selected, so the
+    /// next drag moved that object alone, as if inside a group.
     pub fn finish_symmetry_edit(&mut self) {
         self.symmetry_turning = false;
         self.symmetry_step = None;
         *self.symmetry_doc.borrow_mut() = None;
-        if self.symmetry_edit.take().is_some() {
+        if let Some(id) = self.symmetry_edit.take() {
             self.status.clear();
             self.raster.borrow_mut().invalidate();
+            if self.doc().find_shape(id).is_some() {
+                self.select(vec![id]);
+            }
         }
     }
 

@@ -5200,3 +5200,51 @@ fn toolbar_buttons_move_and_leave_in_customize_mode() {
     assert_eq!(items(&app, ItemBar::Standard)[0], "new");
     assert!(items(&app, ItemBar::Standard).contains(&"print".to_string()));
 }
+
+/// A symmetry of two objects (one drawn while editing): after Finish the
+/// symmetry is selected, not the object picked inside it, and a drag
+/// moves the whole symmetry.
+#[test]
+fn finish_selects_the_whole_symmetry_of_several_objects() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.create_symmetry();
+    // Another object drawn while editing joins the symmetry.
+    app.set_tool(Tool::Rectangle);
+    let a = app.view.to_screen(Point::new(20.0, 60.0));
+    let b = app.view.to_screen(Point::new(40.0, 80.0));
+    drag(&ctx, &mut app, a, b, Modifiers::NONE, vec![]);
+    app.set_tool(Tool::Pick);
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let sym = app.symmetry_edit.expect("editing");
+    assert!(matches!(
+        app.doc().find_shape(sym).map(|s| &s.kind),
+        Some(ShapeKind::Group { .. })
+    ));
+    assert_ne!(app.selection, vec![sym], "the new object is picked inside");
+    app.finish_symmetry_edit();
+    assert_eq!(app.symmetry_edit, None);
+    assert_eq!(app.selection, vec![sym], "the whole symmetry");
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let x0 = bounds(&app, sym).x0;
+    let inner = bounds(&app, id).x0;
+    let c = app.view.to_screen(bounds(&app, id).center());
+    drag(
+        &ctx,
+        &mut app,
+        c,
+        c + egui::vec2(80.0, 0.0),
+        Modifiers::NONE,
+        vec![],
+    );
+    assert_eq!(app.selection, vec![sym]);
+    assert!(bounds(&app, sym).x0 > x0 + 5.0, "the symmetry moved");
+    assert!(
+        (page_bounds(&app, id).x0 - inner) > 5.0,
+        "its objects with it"
+    );
+}
