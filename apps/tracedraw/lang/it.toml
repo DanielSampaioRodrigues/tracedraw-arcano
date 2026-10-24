@@ -2341,6 +2341,7 @@ menu.view.grid = "Griglia"
 menu.view.guidelines = "Linee guida"
 menu.view.normal = "Normale"
 menu.view.page = "Pagina"
+menu.view.mask_outside_page = "Maschera fuori pagina" # mt
 menu.view.page_border = "Bordo pagina"
 menu.view.page_sorter = "Vista ordinamento pagine"
 menu.view.multipage = "Multipage View"

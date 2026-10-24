@@ -2341,6 +2341,7 @@ menu.view.grid = "Gitter"
 menu.view.guidelines = "Hilfslinien"
 menu.view.normal = "Normal"
 menu.view.page = "Seite"
+menu.view.mask_outside_page = "Außerhalb der Seite abdecken" # mt
 menu.view.page_border = "Seitenrand"
 menu.view.page_sorter = "Seitensortierungsansicht"
 menu.view.multipage = "Multipage View"

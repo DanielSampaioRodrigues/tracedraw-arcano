@@ -556,8 +556,92 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         );
     }
 
+    if app.mask_outside_page {
+        mask_outside_pages(app, painter, rect, paper);
+    }
     draw_pixel_grid(app, painter, rect);
     draw_empty_clip_frames(app, painter);
+}
+
+/// How much of the desktop colour covers what lies outside the pages
+/// when Mask Outside Page is on: objects there still show faintly, so
+/// they can be found and picked.
+pub(crate) const OUTSIDE_PAGE_MASK: f32 = 0.85;
+
+/// Mask Outside Page (#615): the desktop colour, nearly opaque, over the
+/// window outside the page (every page in Multipage View), and the page
+/// border over the objects. A few rectangles a frame.
+fn mask_outside_pages(app: &App, painter: &Painter, rect: ERect, paper: ERect) {
+    let mut pages = vec![paper];
+    if app.multipage {
+        pages.extend(
+            app.multipage_layout()
+                .iter()
+                .filter(|(id, _)| *id != app.page)
+                .map(|(_, r)| {
+                    let r = app.view.rect_to_screen(*r);
+                    ERect::from_min_max(r.min.round(), r.max.round())
+                })
+                .filter(|r| r.intersects(rect)),
+        );
+    }
+    let mask = app.desktop_color().gamma_multiply(OUTSIDE_PAGE_MASK);
+    for r in outside(rect, &pages) {
+        painter.rect_filled(r, 0.0, mask);
+    }
+    for p in &pages {
+        painter.rect_stroke(
+            *p,
+            0.0,
+            EStroke::new(1.0, Tokens::page_border()),
+            epaint::StrokeKind::Outside,
+        );
+    }
+}
+
+/// The parts of `area` no rectangle of `holes` covers, as rectangles:
+/// bands between the holes' top and bottom edges, each cut at the holes
+/// crossing it.
+pub(crate) fn outside(area: ERect, holes: &[ERect]) -> Vec<ERect> {
+    let holes: Vec<ERect> = holes
+        .iter()
+        .map(|h| h.intersect(area))
+        .filter(|h| h.width() > 0.0 && h.height() > 0.0)
+        .collect();
+    let mut ys: Vec<f32> = vec![area.top(), area.bottom()];
+    for h in &holes {
+        ys.push(h.top());
+        ys.push(h.bottom());
+    }
+    ys.sort_by(f32::total_cmp);
+    ys.dedup();
+    let mut out = Vec::new();
+    for band in ys.windows(2) {
+        let (y0, y1) = (band[0], band[1]);
+        if y1 <= y0 {
+            continue;
+        }
+        let mut cuts: Vec<(f32, f32)> = holes
+            .iter()
+            .filter(|h| h.top() < y1 && h.bottom() > y0)
+            .map(|h| (h.left(), h.right()))
+            .collect();
+        cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut x = area.left();
+        for (l, r) in cuts {
+            if l > x {
+                out.push(ERect::from_min_max(Pos2::new(x, y0), Pos2::new(l, y1)));
+            }
+            x = x.max(r);
+        }
+        if x < area.right() {
+            out.push(ERect::from_min_max(
+                Pos2::new(x, y0),
+                Pos2::new(area.right(), y1),
+            ));
+        }
+    }
+    out
 }
 
 /// The drawing of a window that is not the active one (Window > Cascade
@@ -2683,6 +2767,31 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The parts of the window outside the pages: bands around one page,
+    /// and around two side by side, with nothing left over or covered.
+    #[test]
+    fn the_mask_covers_everything_outside_the_pages() {
+        let area = ERect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 80.0));
+        let page = ERect::from_min_max(Pos2::new(20.0, 10.0), Pos2::new(60.0, 70.0));
+        let parts = outside(area, &[page]);
+        let covered: f32 = parts.iter().map(|r| r.area()).sum();
+        assert!(
+            (covered - (area.area() - page.area())).abs() < 1e-3,
+            "{parts:?}"
+        );
+        assert!(parts.iter().all(|r| !r.intersects(page.shrink(0.01))));
+        let second = ERect::from_min_max(Pos2::new(70.0, 30.0), Pos2::new(120.0, 50.0));
+        let parts = outside(area, &[page, second]);
+        let covered: f32 = parts.iter().map(|r| r.area()).sum();
+        let inside = page.area() + second.intersect(area).area();
+        assert!((covered - (area.area() - inside)).abs() < 1e-3, "{parts:?}");
+        assert!(parts
+            .iter()
+            .all(|r| !r.intersects(page.shrink(0.01)) && !r.intersects(second.shrink(0.01))));
+        // No page in view: the whole window.
+        assert_eq!(outside(area, &[]), vec![area]);
+    }
 
     #[test]
     fn grid_lines_thin_out_and_follow_the_origin() {

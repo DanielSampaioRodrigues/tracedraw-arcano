@@ -2341,6 +2341,7 @@ menu.view.grid = "Cuadrícula"
 menu.view.guidelines = "Líneas guía"
 menu.view.normal = "Normal"
 menu.view.page = "Página"
+menu.view.mask_outside_page = "Enmascarar fuera de la página" # mt
 menu.view.page_border = "Borde de página"
 menu.view.page_sorter = "Vista de clasificador de páginas"
 menu.view.multipage = "Vista de varias páginas"

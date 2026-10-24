@@ -2341,6 +2341,7 @@ menu.view.grid = "Сетка"
 menu.view.guidelines = "Направляющие"
 menu.view.normal = "Обычный"
 menu.view.page = "Страница"
+menu.view.mask_outside_page = "Скрыть вне страницы" # mt
 menu.view.page_border = "Граница страницы"
 menu.view.page_sorter = "Сортировщик страниц"
 menu.view.multipage = "Multipage View"

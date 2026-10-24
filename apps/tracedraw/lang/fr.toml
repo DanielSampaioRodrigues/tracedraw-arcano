@@ -2341,6 +2341,7 @@ menu.view.grid = "Grille"
 menu.view.guidelines = "Repères"
 menu.view.normal = "Normal"
 menu.view.page = "Page"
+menu.view.mask_outside_page = "Masquer hors de la page" # mt
 menu.view.page_border = "Bordure de page"
 menu.view.page_sorter = "Affichage Trieuse de pages"
 menu.view.multipage = "Multipage View"

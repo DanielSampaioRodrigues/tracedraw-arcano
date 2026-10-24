@@ -2341,6 +2341,7 @@ menu.view.grid = "Mřížka"
 menu.view.guidelines = "Vodítka"
 menu.view.normal = "Normální"
 menu.view.page = "Stránka"
+menu.view.mask_outside_page = "Maskovat mimo stránku" # mt
 menu.view.page_border = "Okraj stránky"
 menu.view.page_sorter = "Zobrazení pro řazení stránek"
 menu.view.multipage = "Multipage View"

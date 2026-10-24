@@ -2341,6 +2341,7 @@ menu.view.grid = "شبكة"
 menu.view.guidelines = "خطوط الإرشاد"
 menu.view.normal = "عادي"
 menu.view.page = "صفحة"
+menu.view.mask_outside_page = "إخفاء ما خارج الصفحة" # mt
 menu.view.page_border = "حد الصفحة"
 menu.view.page_sorter = "عرض مصنّف الصفحات"
 menu.view.multipage = "Multipage View"

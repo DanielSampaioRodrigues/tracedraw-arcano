@@ -2341,6 +2341,7 @@ menu.view.grid = "ग्रिड"
 menu.view.guidelines = "गाइडलाइन"
 menu.view.normal = "सामान्य"
 menu.view.page = "पृष्ठ"
+menu.view.mask_outside_page = "पृष्ठ के बाहर ढकें" # mt
 menu.view.page_border = "पृष्ठ बॉर्डर"
 menu.view.page_sorter = "पृष्ठ सॉर्टर दृश्य"
 menu.view.multipage = "Multipage View"

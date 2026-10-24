@@ -2341,6 +2341,7 @@ menu.view.grid = "格點"
 menu.view.guidelines = "參考線"
 menu.view.normal = "一般"
 menu.view.page = "頁面"
+menu.view.mask_outside_page = "遮罩頁面以外區域" # mt
 menu.view.page_border = "頁面邊框"
 menu.view.page_sorter = "頁面排序器檢視"
 menu.view.multipage = "Multipage View"

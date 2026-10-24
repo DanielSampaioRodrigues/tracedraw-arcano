@@ -1175,6 +1175,11 @@ pub struct App {
     pub rasterize_complex_effects: bool,
     pub show_bleed: bool,
     pub show_printable_area: bool,
+    /// View > Page > Mask Outside Page: the desktop is drawn over what
+    /// lies outside the page, with the page border over the objects, so
+    /// the page shows as it will print while every object stays editable
+    /// (#615).
+    pub mask_outside_page: bool,
     pub show_pixel_grid: bool,
     pub show_baseline_grid: bool,
     pub options_page: crate::ui::dialogs::OptionsPage,
@@ -2173,6 +2178,7 @@ impl App {
             rasterize_complex_effects: true,
             show_bleed: false,
             show_printable_area: false,
+            mask_outside_page: false,
             show_pixel_grid: true,
             show_baseline_grid: false,
             options_page: crate::ui::dialogs::OptionsPage::General,
@@ -2938,6 +2944,7 @@ impl App {
             page_border: self.show_page_border,
             bleed: self.show_bleed,
             printable_area: self.show_printable_area,
+            mask_outside_page: self.mask_outside_page,
             pixel_grid: self.show_pixel_grid,
             baseline_grid: self.show_baseline_grid,
             non_printing: self.show_non_printing,
@@ -2955,6 +2962,7 @@ impl App {
         self.show_page_border = v.page_border;
         self.show_bleed = v.bleed;
         self.show_printable_area = v.printable_area;
+        self.mask_outside_page = v.mask_outside_page;
         self.show_pixel_grid = v.pixel_grid;
         self.show_baseline_grid = v.baseline_grid;
         self.show_non_printing = v.non_printing;

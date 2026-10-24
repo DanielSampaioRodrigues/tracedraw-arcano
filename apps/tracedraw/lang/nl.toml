@@ -2341,6 +2341,7 @@ menu.view.grid = "Raster"
 menu.view.guidelines = "Hulplijnen"
 menu.view.normal = "Normaal"
 menu.view.page = "Pagina"
+menu.view.mask_outside_page = "Buiten de pagina maskeren" # mt
 menu.view.page_border = "Paginarand"
 menu.view.page_sorter = "Paginasorteerweergave"
 menu.view.multipage = "Multipage View"

@@ -2341,6 +2341,7 @@ menu.view.grid = "গ্রিড"
 menu.view.guidelines = "গাইডলাইন"
 menu.view.normal = "সাধারণ"
 menu.view.page = "পৃষ্ঠা"
+menu.view.mask_outside_page = "পৃষ্ঠার বাইরে ঢেকে দিন" # mt
 menu.view.page_border = "পৃষ্ঠার সীমানা"
 menu.view.page_sorter = "পেজ সর্টার ভিউ"
 menu.view.multipage = "Multipage View"

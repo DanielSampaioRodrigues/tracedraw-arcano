@@ -2341,6 +2341,7 @@ menu.view.grid = "Kisi"
 menu.view.guidelines = "Garis Panduan"
 menu.view.normal = "Normal"
 menu.view.page = "Halaman"
+menu.view.mask_outside_page = "Tutupi di luar halaman" # mt
 menu.view.page_border = "Batas Halaman"
 menu.view.page_sorter = "Tampilan Pengurut Halaman"
 menu.view.multipage = "Multipage View"

@@ -2341,6 +2341,7 @@ menu.view.grid = "Siatka"
 menu.view.guidelines = "Linie pomocnicze"
 menu.view.normal = "Normalny"
 menu.view.page = "Strona"
+menu.view.mask_outside_page = "Maskuj poza stroną" # mt
 menu.view.page_border = "Krawędź strony"
 menu.view.page_sorter = "Widok sortowania stron"
 menu.view.multipage = "Multipage View"

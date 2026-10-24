@@ -6231,3 +6231,105 @@ fn the_pen_continues_an_unselected_curve_with_the_mirrored_handle() {
         "{s0:?} {s1:?}"
     );
 }
+
+/// The shapes and texts of one frame: every filled rectangle with its
+/// colour, and every text with its centre.
+fn painted(
+    ctx: &egui::Context,
+    app: &mut App,
+) -> (Vec<(egui::Rect, egui::Color32)>, Vec<(String, Pos2)>) {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    let mut rects = Vec::new();
+    let mut texts = Vec::new();
+    fn walk(
+        s: &egui::Shape,
+        rects: &mut Vec<(egui::Rect, egui::Color32)>,
+        texts: &mut Vec<(String, Pos2)>,
+    ) {
+        match s {
+            egui::Shape::Rect(r) => rects.push((r.rect, r.fill)),
+            egui::Shape::Text(t) => texts.push((
+                t.galley.text().to_string(),
+                t.pos + t.galley.rect.center().to_vec2(),
+            )),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, rects, texts)),
+            _ => {}
+        }
+    }
+    out.shapes
+        .iter()
+        .for_each(|c| walk(&c.shape, &mut rects, &mut texts));
+    (rects, texts)
+}
+
+/// View > Page > Mask Outside Page covers what lies outside the page
+/// with the desktop colour, over the objects, and leaves the page clear;
+/// the objects stay editable, and the menu turns it off again (#615).
+#[test]
+fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
+    let (ctx, mut app, id) = setup();
+    // The rectangle reaches past the page's left edge.
+    app.select(vec![id]);
+    app.nudge(Vec2::new(-30.0, 0.0));
+    let mask = app
+        .desktop_color()
+        .gamma_multiply(crate::canvas::OUTSIDE_PAGE_MASK);
+    let page = app.view.rect_to_screen(app.page_rect());
+    let left_of_page = Pos2::new(page.left() - 5.0, page.center().y);
+    let masked_at = |rects: &[(egui::Rect, egui::Color32)], p: Pos2| {
+        rects.iter().any(|(r, c)| *c == mask && r.contains(p))
+    };
+    let (rects, _) = painted(&ctx, &mut app);
+    assert!(!masked_at(&rects, left_of_page), "off at first");
+    let menu_item = |ctx: &egui::Context, app: &mut App, name: &str| {
+        let (_, texts) = painted(ctx, app);
+        texts
+            .into_iter()
+            .find(|(t, _)| t.trim() == name)
+            .map(|(_, p)| p)
+            .unwrap_or_else(|| panic!("{name} in the menus"))
+    };
+    let view = menu_item(&ctx, &mut app, "View");
+    click_at(&ctx, &mut app, view, Modifiers::NONE);
+    let page_menu = menu_item(&ctx, &mut app, "Page");
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(page_menu)],
+        Modifiers::NONE,
+    );
+    for _ in 0..10 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let item = menu_item(&ctx, &mut app, "Mask Outside Page");
+    click_at(&ctx, &mut app, item, Modifiers::NONE);
+    assert!(app.mask_outside_page);
+    let (rects, _) = painted(&ctx, &mut app);
+    assert!(masked_at(&rects, left_of_page), "the desktop is covered");
+    assert!(!masked_at(&rects, page.center()), "the page is not");
+    // Still a live drawing: the rectangle moves with a drag.
+    let x0 = bounds(&app, id).x0;
+    let c = app.view.to_screen(bounds(&app, id).center());
+    drag(
+        &ctx,
+        &mut app,
+        c,
+        c + egui::vec2(40.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert!(bounds(&app, id).x0 > x0 + 1.0, "moved");
+    // The preference keeps it.
+    assert!(app.view_prefs().mask_outside_page);
+    app.mask_outside_page = false;
+    let (rects, _) = painted(&ctx, &mut app);
+    assert!(!masked_at(&rects, left_of_page));
+}

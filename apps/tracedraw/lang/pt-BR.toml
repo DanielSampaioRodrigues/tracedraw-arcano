@@ -2341,6 +2341,7 @@ menu.view.grid = "Grade"
 menu.view.guidelines = "Linhas-guia"
 menu.view.normal = "Normal"
 menu.view.page = "Página"
+menu.view.mask_outside_page = "Mascarar fora da página" # mt
 menu.view.page_border = "Borda da página"
 menu.view.page_sorter = "Classificador de páginas"
 menu.view.multipage = "Visualização de várias páginas"

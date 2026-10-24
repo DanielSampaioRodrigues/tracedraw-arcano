@@ -2341,6 +2341,7 @@ menu.view.grid = "Izgara"
 menu.view.guidelines = "Kılavuz Çizgileri"
 menu.view.normal = "Normal"
 menu.view.page = "Sayfa"
+menu.view.mask_outside_page = "Sayfa dışını maskele" # mt
 menu.view.page_border = "Sayfa Kenarlığı"
 menu.view.page_sorter = "Sayfa Sıralayıcı Görünümü"
 menu.view.multipage = "Multipage View"

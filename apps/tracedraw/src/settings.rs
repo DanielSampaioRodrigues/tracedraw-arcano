@@ -1099,6 +1099,8 @@ pub struct ViewPrefs {
     pub page_border: bool,
     pub bleed: bool,
     pub printable_area: bool,
+    /// View > Page > Mask Outside Page (#615).
+    pub mask_outside_page: bool,
     pub pixel_grid: bool,
     pub baseline_grid: bool,
     pub non_printing: bool,
@@ -1119,6 +1121,7 @@ impl Default for ViewPrefs {
             page_border: true,
             bleed: false,
             printable_area: false,
+            mask_outside_page: false,
             pixel_grid: true,
             baseline_grid: false,
             non_printing: false,

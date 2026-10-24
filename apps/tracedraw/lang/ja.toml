@@ -2341,6 +2341,7 @@ menu.view.grid = "グリッド"
 menu.view.guidelines = "ガイドライン"
 menu.view.normal = "標準"
 menu.view.page = "ページ"
+menu.view.mask_outside_page = "ページ外をマスク" # mt
 menu.view.page_border = "ページ境界"
 menu.view.page_sorter = "ページソーター表示"
 menu.view.multipage = "Multipage View"
