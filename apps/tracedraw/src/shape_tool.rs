@@ -380,7 +380,8 @@ impl App {
                     .map(|s| curves_on_double_click(&s.kind));
                 self.select(vec![id]);
                 if shape == Some(true) {
-                    self.convert_to_curves();
+                    // The nodes to edit; an envelope being edited stays.
+                    self.convert_selection_to_curves(false);
                 }
             }
             return;

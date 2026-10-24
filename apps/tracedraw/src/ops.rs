@@ -413,7 +413,17 @@ impl App {
         // words, a single word into its characters; curves into their
         // subpaths. One undo step for the whole selection.
         let mut cmds = Vec::new();
-        for id in &ids {
+        // Top of the stack first: an object's pieces go right above it, so
+        // the places read for the objects below it stay true.
+        let mut order = ids.clone();
+        order.sort_by_key(|id| std::cmp::Reverse(self.doc().locate(*id).map_or(0, |(_, i)| i)));
+        for id in &order {
+            // An envelope, perspective or distortion first becomes part of
+            // the curves (#647).
+            if let Some(mut c) = self.warp_break_commands(*id) {
+                cmds.append(&mut c);
+                continue;
+            }
             match self.text_break_commands(*id) {
                 Some(mut c) => cmds.append(&mut c),
                 None => cmds.push(Command::BreakApart { shape: *id }),
@@ -433,6 +443,80 @@ impl App {
             .collect();
         pieces.sort_by_key(|id| id.0);
         self.select(pieces);
+    }
+
+    /// The commands that break apart `id` when it has an outline warp a bake
+    /// takes (`None` otherwise): the warp made part of its curves (#647),
+    /// then a text in one curve per letter (each warped as the whole text
+    /// is, holes kept), a curve in its parts. The first piece keeps the
+    /// object; the others go right above it with its look and other
+    /// effects. Groups, clip frames, tables and symbols have nothing to
+    /// break and keep their warps (Convert to Curves bakes them), and so
+    /// does a text inside a group.
+    pub(crate) fn warp_break_commands(
+        &mut self,
+        id: tracedraw_core::ShapeId,
+    ) -> Option<Vec<Command>> {
+        let doc = self.doc();
+        let shape = doc.find_shape(id)?.clone();
+        if matches!(
+            shape.kind,
+            ShapeKind::Group { .. }
+                | ShapeKind::ClipFrame { .. }
+                | ShapeKind::Table(_)
+                | ShapeKind::SymbolInstance { .. }
+        ) {
+            return None;
+        }
+        let place = doc.locate(id).ok();
+        let letters = tracedraw_core::live::warped_letters(&shape);
+        if letters.is_some() && place.is_none() {
+            return None;
+        }
+        let baked = tracedraw_core::live::bake_outline_warps(&shape)?;
+        let closed = |p: &tracedraw_core::geometry::BezPath| {
+            p.elements()
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
+        };
+        let mut cmds = vec![Command::SetEffectStack {
+            shape: id,
+            effects: baked.effects.clone(),
+            parked: baked.parked_effects.clone(),
+        }];
+        match (place, letters) {
+            (Some((layer, index)), Some(letters)) if !letters.is_empty() => {
+                for (k, path) in letters.into_iter().enumerate() {
+                    let kind = ShapeKind::Path {
+                        closed: closed(&path),
+                        path,
+                    };
+                    if k == 0 {
+                        cmds.push(Command::SetShapeKind { shape: id, kind });
+                    } else {
+                        let mut s = baked.clone();
+                        s.id = self.engine.new_shape_id();
+                        s.uid = None;
+                        s.kind = kind;
+                        let new_id = s.id;
+                        cmds.push(Command::AddShape { layer, shape: s });
+                        cmds.push(Command::Reorder {
+                            shape: new_id,
+                            layer,
+                            index: index + k,
+                        });
+                    }
+                }
+            }
+            _ => {
+                cmds.push(Command::SetShapeKind {
+                    shape: id,
+                    kind: baked.kind,
+                });
+                cmds.push(Command::BreakApart { shape: id });
+            }
+        }
+        Some(cmds)
     }
 
     /// The commands that break the artistic text `id` apart (`None` when

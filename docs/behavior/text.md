@@ -233,6 +233,16 @@ piece keeps the object, the others go just above it, all selected, in one
 "Break Apart" undo step. A single letter, paragraph text and text on a
 path stay as they are
 (`text_effect_tests::break_apart_splits_text_into_lines_words_then_letters`).
+Text with an envelope, perspective or distortion breaks instead into
+one curve per letter (an accent stays with its letter, underlines and
+strikethroughs are one more curve), each warped as the whole text was
+(a twister turns each letter by its distance across the whole text) and
+keeping its holes, a single letter too, in one "Break Apart" step that
+Undo takes back to the text with its envelope. Several texts broken
+together keep their stacking order
+(`text_effect_tests::break_apart_bakes_the_envelope_into_letter_curves`,
+`text_effect_tests::break_apart_keeps_the_hole_of_a_single_warped_letter`,
+`text_effect_tests::breaking_several_warped_texts_keeps_the_stacking_order`).
 
 Text takes blends (with another text or any object) and extrusions like
 any other object; the steps and sides follow the letters' outlines

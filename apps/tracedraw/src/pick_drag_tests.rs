@@ -5970,3 +5970,22 @@ fn drawing_a_rectangle_the_corner_keeps_up_with_the_pointer() {
         n,
     );
 }
+
+/// Ctrl+Q on an enveloped object makes the envelope part of its curve
+/// (#647): it did nothing once the object was a curve.
+#[test]
+fn ctrl_q_bakes_an_envelope() {
+    let (ctx, mut app, id) = setup();
+    app.apply_envelope_preset(crate::envelope_edit::Preset::Arch);
+    frame(&ctx, &mut app, vec![], Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Q, Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    let s = app.doc().find_shape(id).expect("shape");
+    assert!(matches!(s.kind, ShapeKind::Path { .. }), "{:?}", s.kind);
+    assert!(s.effects.is_empty(), "{:?}", s.effects);
+    assert!(s.bounds().y1 > 41.0, "{:?}", s.bounds());
+}

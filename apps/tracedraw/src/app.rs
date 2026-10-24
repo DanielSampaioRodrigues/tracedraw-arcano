@@ -4640,17 +4640,46 @@ impl App {
 
     /// Convert to Curves: shapes and text become curves; a table becomes a
     /// group of curves (cell fills, borders, text) and a symbol instance
-    /// a group of its symbol's objects as curves. Bitmaps are left as they
-    /// are, with a note in the status bar.
+    /// a group of its symbol's objects as curves. An envelope, perspective
+    /// or distortion becomes part of the curves (#647). Bitmaps are left as
+    /// they are, with a note in the status bar.
     pub fn convert_to_curves(&mut self) {
+        self.convert_selection_to_curves(true);
+    }
+
+    /// [`App::convert_to_curves`]; `bake` false keeps the outline warps
+    /// live (the Shape tool converting an object to edit its nodes).
+    pub(crate) fn convert_selection_to_curves(&mut self, bake: bool) {
         let shapes = self.selected_shapes();
+        self.convert_shapes_to_curves(shapes, bake);
+    }
+
+    /// [`App::convert_selection_to_curves`] for `shapes`, one undo step.
+    pub(crate) fn convert_shapes_to_curves(&mut self, shapes: Vec<Shape>, bake: bool) {
         let symbols = self.doc().symbols.clone();
         let mut cmds = Vec::new();
         for s in &shapes {
             let engine = &mut self.engine;
             let mut next_id = || engine.new_shape_id();
-            if let Some(kind) = s.curves_kind(&symbols, &mut next_id) {
-                cmds.push(Command::SetShapeKind { shape: s.id, kind });
+            let c = if bake {
+                s.converted_to_curves(&symbols, &mut next_id)
+            } else {
+                s.curves_kind(&symbols, &mut next_id)
+                    .map(|kind| Shape { kind, ..s.clone() })
+            };
+            let Some(c) = c else {
+                continue;
+            };
+            cmds.push(Command::SetShapeKind {
+                shape: s.id,
+                kind: c.kind,
+            });
+            if c.effects != s.effects || c.parked_effects != s.parked_effects {
+                cmds.push(Command::SetEffectStack {
+                    shape: s.id,
+                    effects: c.effects,
+                    parked: c.parked_effects,
+                });
             }
         }
         if shapes
@@ -4668,7 +4697,9 @@ impl App {
 
     /// Something selected that Convert to Curves would change.
     pub fn can_convert_to_curves(&self) -> bool {
-        self.selected_shapes().iter().any(Shape::converts_to_curves)
+        self.selected_shapes()
+            .iter()
+            .any(|s| s.converts_to_curves() || s.has_outline_warp())
     }
 
     /// Order: 0 = to front, 1 = forward one, 2 = back one, 3 = to back.
