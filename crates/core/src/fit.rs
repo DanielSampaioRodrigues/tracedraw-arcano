@@ -22,16 +22,40 @@ const MAX_DEPTH: usize = 24;
 /// `path` as lines and cubic curves within `tolerance` (mm) of its
 /// vertices. Curves in the input are flattened first.
 pub fn fit_path(path: &BezPath, tolerance: f64) -> BezPath {
+    fit_path_with_nodes(path, tolerance, &[])
+}
+
+/// [`fit_path`], with a smooth node wherever a vertex lies within the
+/// tolerance of one of `nodes`, its tangent along the node's direction
+/// (either way round): the places where a stroke's round end meets its
+/// sides, which a curve would otherwise run across.
+pub fn fit_path_with_nodes(path: &BezPath, tolerance: f64, nodes: &[(Point, Vec2)]) -> BezPath {
     let tol = if tolerance.is_finite() && tolerance > 0.0 {
         tolerance
     } else {
         0.01
     };
+    let mut nodes: Vec<(Point, Vec2)> = nodes
+        .iter()
+        .filter(|(p, t)| p.is_finite() && unit(*t).is_some())
+        .copied()
+        .collect();
+    nodes.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
     let mut out = BezPath::new();
     for (pts, closed) in subpaths(path, tol) {
-        fit_subpath(&pts, closed, tol, &mut out);
+        fit_subpath(&pts, closed, tol, &nodes, &mut out);
     }
     out
+}
+
+/// The node of `nodes` (sorted by x) within `tol` of `p`.
+fn node_at(nodes: &[(Point, Vec2)], p: Point, tol: f64) -> Option<(Point, Vec2)> {
+    let from = nodes.partition_point(|n| n.0.x < p.x - tol);
+    nodes[from..]
+        .iter()
+        .take_while(|n| n.0.x <= p.x + tol)
+        .find(|n| (n.0 - p).hypot() <= tol)
+        .and_then(|n| Some((n.0, unit(n.1)?)))
 }
 
 /// The subpaths of `path` as vertex lists without repeated points, with a
@@ -95,34 +119,54 @@ struct Break {
 
 /// `pts` without the vertices that lie within `tol` of the lines between
 /// their neighbours (the rounding of polygon operations along straight
-/// runs). A closed loop is opened at its sharpest turn.
-fn thin(pts: &[Point], closed: bool, tol: f64) -> Vec<Point> {
+/// runs), keeping those `keep` names. A closed loop is opened at a kept
+/// vertex, or else at its sharpest turn.
+fn thin(pts: &[Point], closed: bool, tol: f64, keep: &dyn Fn(Point) -> bool) -> Vec<Point> {
     let n = pts.len();
     if n < 4 {
         return pts.to_vec();
     }
-    if !closed {
-        return crate::geometry::simplify(pts, tol);
-    }
-    let turn = |i: usize| {
-        let (a, b, c) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
-        let (u, v) = (b - a, c - b);
-        u.cross(v).atan2(u.dot(v)).abs()
+    let kept: Vec<bool> = pts.iter().map(|p| keep(*p)).collect();
+    let start = if closed {
+        let turn = |i: usize| {
+            let (a, b, c) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
+            let (u, v) = (b - a, c - b);
+            u.cross(v).atan2(u.dot(v)).abs()
+        };
+        kept.iter().position(|k| *k).unwrap_or_else(|| {
+            (0..n)
+                .max_by(|a, b| turn(*a).total_cmp(&turn(*b)))
+                .unwrap_or(0)
+        })
+    } else {
+        0
     };
-    let start = (0..n)
-        .max_by(|a, b| turn(*a).total_cmp(&turn(*b)))
-        .unwrap_or(0);
-    let ring: Vec<Point> = (0..=n).map(|i| pts[(start + i) % n]).collect();
-    let mut out = crate::geometry::simplify(&ring, tol);
-    out.pop();
+    let count = if closed { n + 1 } else { n };
+    let ring: Vec<Point> = (0..count).map(|i| pts[(start + i) % n]).collect();
+    // Thin each stretch between kept vertices on its own.
+    let mut out: Vec<Point> = Vec::with_capacity(ring.len());
+    let mut from = 0;
+    for i in 1..ring.len() {
+        let last = i + 1 == ring.len();
+        if last || kept[(start + i) % n] {
+            let part = crate::geometry::simplify(&ring[from..=i], tol);
+            out.extend(part.iter().skip(usize::from(!out.is_empty())));
+            from = i;
+        }
+    }
+    if closed {
+        out.pop();
+    }
     if out.len() < 3 {
         return pts.to_vec();
     }
     out
 }
 
-fn fit_subpath(pts: &[Point], closed: bool, tol: f64, out: &mut BezPath) {
-    let thinned = thin(pts, closed, tol * 0.02);
+fn fit_subpath(pts: &[Point], closed: bool, tol: f64, nodes: &[(Point, Vec2)], out: &mut BezPath) {
+    let thinned = thin(pts, closed, tol * 0.02, &|p| {
+        node_at(nodes, p, tol).is_some()
+    });
     let pts = &thinned[..];
     let n = pts.len();
     let Some(&first) = pts.first() else {
@@ -177,8 +221,26 @@ fn fit_subpath(pts: &[Point], closed: bool, tol: f64, out: &mut BezPath) {
         t_in: None,
         t_out: None,
     };
-    let mut breaks: Vec<(usize, Break)> =
-        (0..n).filter(|i| corner[*i]).map(|i| (i, free)).collect();
+    let mut breaks: Vec<(usize, Break)> = (0..n)
+        .filter_map(|i| {
+            if corner[i] {
+                return Some((i, free));
+            }
+            // A given node, at the vertex nearest to it: its direction,
+            // the way the path runs.
+            let (q, t) = node_at(nodes, at(i), tol)?;
+            let d = (at(i) - q).hypot();
+            let nearer = |j: Option<usize>| j.is_some_and(|j| (at(j) - q).hypot() < d);
+            let prev = (i > 0 || closed).then(|| (i + n - 1) % n);
+            let next = (i + 1 < n || closed).then(|| (i + 1) % n);
+            if nearer(prev) || nearer(next) {
+                return None;
+            }
+            let along = tangent_at(pts, i, closed, tol * REACH);
+            let t = Some(if t.dot(along) < 0.0 { -t } else { t });
+            Some((i, Break { t_in: t, t_out: t }))
+        })
+        .collect();
     if breaks.is_empty() {
         // A smooth closed loop: split at its leftmost and rightmost
         // points, where an ellipse has its nodes.
@@ -221,7 +283,7 @@ fn fit_subpath(pts: &[Point], closed: bool, tol: f64, out: &mut BezPath) {
         let (j, end) = breaks[(k + 1) % breaks.len()];
         let j = if j <= i { j + n } else { j };
         let run: Vec<Point> = (i..=j).map(at).collect();
-        fit_run(&run, start.t_out, end.t_in, tol, 0, out);
+        fit_run(&run, start.t_out, end.t_in, tol, out);
     }
     if closed {
         out.close_path();
@@ -314,23 +376,30 @@ fn end_tangent(pts: &[Point], reach: f64) -> Vec2 {
         .unwrap_or_else(fallback)
 }
 
+/// One fitted piece of a run: the points `from..=to` it covers, the
+/// directions it leaves and arrives in, and what it is.
+struct Piece {
+    from: usize,
+    to: usize,
+    t1: Vec2,
+    t2: Vec2,
+    seg: Seg,
+}
+
+enum Seg {
+    Line,
+    Curve(CubicBez),
+    /// The points as they are, where no curve fitted.
+    Lines,
+}
+
 /// Fit the points of one smooth run (at least two), leaving `pts[0]`
 /// along `t1` and arriving at its last point along `t2` (from the run's
 /// own points when `None`), appending to `out` (which already stands at
-/// `pts[0]`).
-fn fit_run(
-    pts: &[Point],
-    t1: Option<Vec2>,
-    t2: Option<Vec2>,
-    tol: f64,
-    depth: usize,
-    out: &mut BezPath,
-) {
-    let Some(&p3) = pts.last() else {
-        return;
-    };
-    if pts.len() == 2 || straight(pts, tol) {
-        out.line_to(p3);
+/// `pts[0]`). The run is split in the middle until each piece fits, then
+/// neighbouring pieces that fit as one are joined again.
+fn fit_run(pts: &[Point], t1: Option<Vec2>, t2: Option<Vec2>, tol: f64, out: &mut BezPath) {
+    if pts.len() < 2 {
         return;
     }
     let reach = tol * REACH;
@@ -344,6 +413,98 @@ fn fit_run(
             .collect();
         -end_tangent(&back, reach)
     });
+    let mut pieces = Vec::new();
+    split_run(pts, 0, pts.len() - 1, t1, t2, tol, 0, &mut pieces);
+    // Join neighbours while one curve does for both.
+    let mut i = 0;
+    while i + 1 < pieces.len() {
+        let (a, b) = (&pieces[i], &pieces[i + 1]);
+        let joinable = !matches!(a.seg, Seg::Lines) && !matches!(b.seg, Seg::Lines);
+        let joined = if joinable {
+            try_fit(&pts[a.from..=b.to], a.t1, b.t2, tol)
+        } else {
+            None
+        };
+        if let Some(seg) = joined {
+            let (from, to, t1, t2) = (a.from, b.to, a.t1, b.t2);
+            pieces[i] = Piece {
+                from,
+                to,
+                t1,
+                t2,
+                seg,
+            };
+            pieces.remove(i + 1);
+            // The joined piece may now join the one before.
+            i = i.saturating_sub(1);
+        } else {
+            i += 1;
+        }
+    }
+    for p in pieces {
+        match p.seg {
+            Seg::Line => out.line_to(pts[p.to]),
+            Seg::Curve(bez) => emit(bez, tol, out),
+            Seg::Lines => {
+                for q in &pts[p.from + 1..=p.to] {
+                    out.line_to(*q);
+                }
+            }
+        }
+    }
+}
+
+/// Fit `pts[from..=to]` as one piece, or split it in the middle (so the
+/// nodes fall evenly: the middle of a round end, the quarters of an
+/// ellipse) and fit the halves; corners, where features need nodes of
+/// their own, are breaks already.
+#[allow(clippy::too_many_arguments)]
+fn split_run(
+    pts: &[Point],
+    from: usize,
+    to: usize,
+    t1: Vec2,
+    t2: Vec2,
+    tol: f64,
+    depth: usize,
+    pieces: &mut Vec<Piece>,
+) {
+    let part = &pts[from..=to];
+    let piece = |seg| Piece {
+        from,
+        to,
+        t1,
+        t2,
+        seg,
+    };
+    if let Some(seg) = try_fit(part, t1, t2, tol) {
+        pieces.push(piece(seg));
+        return;
+    }
+    let n = part.len();
+    if depth >= MAX_DEPTH || n < 3 {
+        pieces.push(piece(Seg::Lines));
+        return;
+    }
+    let u = chord_params(part);
+    let split = u
+        .iter()
+        .enumerate()
+        .min_by(|a, b| (a.1 - 0.5).abs().total_cmp(&(b.1 - 0.5).abs()))
+        .map(|(i, _)| i)
+        .unwrap_or(n / 2)
+        .clamp(1, n - 2);
+    let tc = tangent_at(part, split, false, tol * REACH);
+    let mid = from + split;
+    split_run(pts, from, mid, t1, tc, tol, depth + 1, pieces);
+    split_run(pts, mid, to, tc, t2, tol, depth + 1, pieces);
+}
+
+/// `pts` as one line or one curve within `tol`, if they fit.
+fn try_fit(pts: &[Point], t1: Vec2, t2: Vec2, tol: f64) -> Option<Seg> {
+    if pts.len() == 2 || straight(pts, tol) {
+        return Some(Seg::Line);
+    }
     let mut u = chord_params(pts);
     let mut bez = generate(pts, &u, t1, t2);
     let mut err = max_error(pts, &bez, &u);
@@ -359,30 +520,7 @@ fn fit_run(
             }
         }
     }
-    if err <= tol {
-        emit(bez, tol, out);
-        return;
-    }
-    let n = pts.len();
-    if depth >= MAX_DEPTH || n < 3 {
-        for p in &pts[1..] {
-            out.line_to(*p);
-        }
-        return;
-    }
-    // Split in the middle of the run, so the nodes fall evenly (the
-    // middle of a round cap, the quarters of an ellipse); corners, where
-    // features need nodes of their own, are breaks already.
-    let split = u
-        .iter()
-        .enumerate()
-        .min_by(|a, b| (a.1 - 0.5).abs().total_cmp(&(b.1 - 0.5).abs()))
-        .map(|(i, _)| i)
-        .unwrap_or(n / 2)
-        .clamp(1, n - 2);
-    let tc = tangent_at(pts, split, false, reach);
-    fit_run(&pts[..=split], Some(t1), Some(tc), tol, depth + 1, out);
-    fit_run(&pts[split..], Some(tc), Some(t2), tol, depth + 1, out);
+    (err <= tol).then_some(Seg::Curve(bez))
 }
 
 /// Every point within `tol` of the chord from the first to the last.
@@ -566,6 +704,51 @@ mod tests {
         }
         let fit = fit_path(&p, 0.01);
         assert_eq!(count(&fit), (1, 0));
+    }
+
+    #[test]
+    fn given_nodes_split_a_stadium_where_its_ends_meet_its_sides() {
+        use crate::geometry::Vec2;
+        // A 2 mm wide line from (0,0) to (40,0) with round ends, the ends
+        // fanned in many short lines.
+        let mut p = BezPath::new();
+        p.move_to(Point::new(0.0, -1.0));
+        p.line_to(Point::new(40.0, -1.0));
+        let steps = 60;
+        for i in 1..steps {
+            let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / steps as f64;
+            p.line_to(Point::new(40.0 + a.cos(), a.sin()));
+        }
+        p.line_to(Point::new(40.0, 1.0));
+        p.line_to(Point::new(0.0, 1.0));
+        for i in 1..steps {
+            let a = std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / steps as f64;
+            p.line_to(Point::new(a.cos(), a.sin()));
+        }
+        p.close_path();
+        let x = Vec2::new(1.0, 0.0);
+        let nodes = [
+            (Point::new(0.0, -1.0), x),
+            (Point::new(0.0, 1.0), x),
+            (Point::new(40.0, -1.0), x),
+            (Point::new(40.0, 1.0), x),
+        ];
+        let fit = super::fit_path_with_nodes(&p, 0.01, &nodes);
+        // Two straight sides, each end two curves meeting at its tip.
+        assert_eq!(count(&fit), (2, 4), "{:?}", fit.elements());
+        let ends: Vec<Point> = fit
+            .elements()
+            .iter()
+            .filter_map(|e| e.end_point())
+            .collect();
+        for q in [
+            Point::new(41.0, 0.0),
+            Point::new(-1.0, 0.0),
+            Point::new(0.0, 1.0),
+            Point::new(40.0, -1.0),
+        ] {
+            assert!(ends.iter().any(|p| (*p - q).hypot() < 0.02), "{q:?}");
+        }
     }
 
     #[test]

@@ -19,8 +19,13 @@ loses its outline. One undo step, and the new objects are selected.
   becomes two rings of a few curves each, not hundreds of short lines
   (#622). Each smooth run between corners is fitted by least squares,
   refined by Newton steps and split in the middle until it fits, so the
-  nodes fall evenly; a smooth closed ring is split at its leftmost and
+  nodes fall evenly, and neighbouring pieces that fit as one curve are
+  joined again; a smooth closed ring is split at its leftmost and
   rightmost points.
+- Round ends and round corners are real curves: each round end is two
+  curves meeting at its tip, with smooth nodes where it meets the sides,
+  and a round corner one or two curves between nodes where it meets
+  them; straight sides stay single lines (#623).
 
 ## Checks
 
@@ -32,7 +37,17 @@ loses its outline. One undo step, and the new objects are selected.
   (`tools2::tests::an_ellipse_outline_becomes_a_few_curves`).
 - Given a straight line with butt ends, the result is a rectangle of
   four lines (`tools2::tests::a_straight_outline_becomes_a_rectangle`).
-- The fitting: a flattened circle becomes four curves within 0.02 mm,
+- Given a line with a corner, round ends and round corners, the result
+  is four straight sides, two curves per end and one for the corner,
+  with nodes at the tips and where the ends meet the sides
+  (`tools2::tests::round_ends_and_corners_become_few_curves`); on a
+  curved path the ends also meet the sides at nodes and the whole
+  outline stays within 16 segments
+  (`tools2::tests::round_ends_of_a_curve_meet_its_sides_at_nodes`).
+- The fitting: given nodes where a stadium's ends meet its sides, it
+  becomes two lines and four curves with nodes at the tips
+  (`tracedraw_core::fit::tests::given_nodes_split_a_stadium_where_its_ends_meet_its_sides`);
+  a flattened circle becomes four curves within 0.02 mm,
   a rectangle four lines, collinear points one line, an open arc one
   curve keeping its ends, and degenerate input does not panic
   (`tracedraw_core::fit::tests::a_flattened_circle_becomes_four_curves`,
