@@ -293,6 +293,19 @@ pub fn font_list_live(
     current: &str,
     width: f32,
 ) -> (Option<FontPick>, Option<FontPick>) {
+    font_list_with(app, ui, id_salt, current, width, true)
+}
+
+/// [`font_list_live`]; `wheel` lets the mouse wheel over the closed list
+/// pick the family before or after the current one (#665).
+fn font_list_with(
+    app: &mut App,
+    ui: &mut Ui,
+    id_salt: &str,
+    current: &str,
+    width: f32,
+    wheel: bool,
+) -> (Option<FontPick>, Option<FontPick>) {
     let id = ui.make_persistent_id(("font_list", id_salt));
     let popup_id = id.with("popup");
     let ctx = ui.ctx().clone();
@@ -420,8 +433,37 @@ pub fn font_list_live(
             .position(|r| matches!(r, Row::Family(f) if f == current));
     }
 
-    // Keys while the field has the focus.
+    // The wheel over the closed list: the family after (down) or before
+    // (up) the current one, as the list orders them (#665).
     let open = egui::Popup::is_id_open(&ctx, popup_id);
+    let mut wheeled = false;
+    if wheel && !open && ui.rect_contains_pointer(anchor) {
+        let step = ui.input(|i| {
+            i.raw.events.iter().rev().find_map(|e| match e {
+                egui::Event::MouseWheel { delta, .. } if delta.y != 0.0 => Some(delta.y),
+                _ => None,
+            })
+        });
+        if let Some(dy) = step {
+            // The bar under the list does not scroll as well.
+            ui.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
+            let at = families.iter().position(|f| f == current);
+            let next = match (at, dy < 0.0) {
+                (Some(i), true) => (i + 1).min(families.len().saturating_sub(1)),
+                (Some(i), false) => i.saturating_sub(1),
+                (None, _) => 0,
+            };
+            if let Some(f) = families.get(next).filter(|f| *f != current) {
+                pick = Some(FontPick {
+                    family: f.clone(),
+                    style: None,
+                });
+                wheeled = true;
+            }
+        }
+    }
+
+    // Keys while the field has the focus.
     if open && field.has_focus() {
         let (down, up, enter, escape) = ctx.input_mut(|i| {
             (
@@ -494,7 +536,7 @@ pub fn font_list_live(
         })
     };
 
-    if let Some(p) = &pick {
+    if let Some(p) = pick.as_ref().filter(|_| !wheeled) {
         crate::ui::font_list::remember(&mut app.settings.recent_fonts, &p.family);
         egui::Popup::close_id(&ctx, popup_id);
         st.typed = None;
@@ -510,7 +552,10 @@ pub fn font_list_live(
 /// shows the family under the pointer (#370).
 pub fn text_font_list(app: &mut App, ui: &mut Ui, id_salt: &str, width: f32) -> bool {
     let current = app.text_settings_shown().0;
-    let (pick, live) = font_list_live(app, ui, id_salt, &current, width);
+    // The wheel changes the text's font, never asks for the font of new
+    // text (a dialog at every turn of the wheel).
+    let wheel = app.has_text_target() || id_salt == "options_default_font";
+    let (pick, live) = font_list_with(app, ui, id_salt, &current, width, wheel);
     // Only the lists that set the text's font preview it; the one that
     // owns the preview ends it when it closes.
     let owner = id_salt.to_string();
@@ -1441,6 +1486,93 @@ mod live_tests {
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
         out.textures_delta.clear();
         assert_eq!((app.text_font.as_str(), app.text_size_pt), ("Arial", 48.0));
+    }
+
+    /// The wheel over the closed font list of the bar picks the family
+    /// after (down) or before (up) the current one, for the selected text;
+    /// it does not open the list, keep the families as used last, or ask
+    /// for the font of new text when nothing is selected (#665).
+    #[test]
+    fn the_wheel_over_the_font_list_steps_the_font() {
+        let mut app = App::headless();
+        let families = app.font_families.clone();
+        if families.len() < 3 {
+            return;
+        }
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Text {
+                spans: vec![tracedraw_core::TextSpan::new("Text", &families[1], 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        app.sync_text_defaults_from(id);
+        let recent = app.settings.recent_fonts.clone();
+        let ctx = crate::theme::ui_context();
+        let origin = egui::pos2(100.0, 100.0);
+        let run = |app: &mut App, events: Vec<egui::Event>| -> bool {
+            let mut changed = false;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Area::new(egui::Id::new("font_bar"))
+                        .fixed_pos(origin)
+                        .show(ui.ctx(), |ui| {
+                            changed = text_font_list(app, ui, "propbar_font", 180.0);
+                        });
+                },
+            );
+            out.textures_delta.clear();
+            changed
+        };
+        let wheel = |app: &mut App, dy: f32| {
+            run(
+                app,
+                vec![egui::Event::PointerMoved(origin + egui::vec2(40.0, 8.0))],
+            );
+            run(
+                app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, dy),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            )
+        };
+        run(&mut app, Vec::new());
+        // Down: the next family; up twice: back past it to the first.
+        assert!(wheel(&mut app, -1.0));
+        assert_eq!(app.text_font, families[2]);
+        assert!(wheel(&mut app, 1.0));
+        assert_eq!(app.text_font, families[1]);
+        assert!(wheel(&mut app, 1.0));
+        assert_eq!(app.text_font, families[0]);
+        // At the top it stays.
+        assert!(!wheel(&mut app, 1.0));
+        assert_eq!(app.text_font, families[0]);
+        assert_eq!(app.settings.recent_fonts, recent);
+        let popup = egui::Id::new("font_bar")
+            .with(("font_list", "propbar_font"))
+            .with("popup");
+        assert!(!egui::Popup::is_id_open(&ctx, popup));
+        // Nothing selected: the wheel leaves the font of new text alone
+        // and asks nothing.
+        app.select(Vec::new());
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        assert!(!wheel(&mut app, -1.0));
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
     }
 
     fn text_of(app: &App, id: tracedraw_core::ShapeId) -> (String, f64) {

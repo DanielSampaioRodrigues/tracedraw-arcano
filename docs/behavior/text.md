@@ -92,6 +92,13 @@ Text and Glyphs dockers and Options (default font):
   itself first, then names starting with them, then the rest. Down and Up
   move through the list, Enter takes the highlighted family, Escape
   closes the list and puts the name back.
+- The mouse wheel over the closed list (the field or its arrow) takes
+  the family after (wheel down) or before (wheel up) the one in use, in
+  the list's order, stopping at the ends; the families used last stay as
+  they were. In the property bar and the Text docker it acts only on text
+  being edited or selected: with nothing to change it does nothing
+  rather than ask for the font of new text (#665,
+  `ui::font_list::live_tests::the_wheel_over_the_font_list_steps_the_font`).
 - At the top of the list, the number of families shown and what to show:
   all fonts, installed fonts, the fonts in this drawing, or (in the
   browser) the fonts to download.
