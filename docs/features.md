@@ -225,7 +225,6 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
 | Import EPS, PostScript and PRN print files (interpreter: paths, images, text, clips, shadings, patterns, prologs; one page per `showpage` at its `/PageSize`), and `.ai` files written as PostScript (the format's versions before the PDF-based ones) | works (see `behavior/eps-import.md`) |
 | Import PSD/PSB (layers as bitmaps with opacity, visibility and masks) | works (see `behavior/psd-import.md`) |
-| Files dropped on the window: imported into the shown drawing, otherwise opened (a picture gets a new drawing); a hint while files are dragged over; desktop and browser | works (see `behavior/drop-files.md`) |
 | Import EMF and WMF (GDI paths, pens, brushes, text, DIB bitmaps, clips); export EMF and WMF | works (see `behavior/emf-wmf.md`) |
 | Import CMX: pages, layers, groups, curves, rectangles, ellipses, uniform and fountain fills, outlines with dashes and arrowheads, embedded 24-bit images, clips, text (from the drawn characters); not yet lenses and other fill types | partial (see `behavior/cmx-import.md`) |
 | Acquire image (scanner) | not applicable: no scanner stack in pure Rust; import the scanned file instead |

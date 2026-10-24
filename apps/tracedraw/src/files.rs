@@ -411,39 +411,6 @@ pub fn run_finished(app: &mut App) {
     }
 }
 
-/// Files dropped on the window this frame: `then` runs with each one's
-/// path, at once natively, on a later frame in a browser (where the bytes
-/// are read first and kept under `/upload/<name>` like a picked file).
-pub fn take_dropped(
-    ctx: &egui::Context,
-    app: &mut App,
-    then: impl FnOnce(&mut App, PathBuf) + Clone + 'static,
-) {
-    let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-    for file in dropped {
-        #[cfg(not(target_arch = "wasm32"))]
-        then.clone()(app, file.path().to_path_buf());
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = &app;
-            let then = then.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                match file.bytes_async().await {
-                    Ok(bytes) => {
-                        let name = file.path().file_name().unwrap_or_default();
-                        let path = PathBuf::from("/upload").join(name);
-                        store(&path, bytes);
-                        let job: Job = Box::new(then);
-                        FINISHED.with(|f| f.borrow_mut().push((job, path)));
-                        crate::web::request_repaint();
-                    }
-                    Err(e) => log::warn!("{}: {e}", file.path().display()),
-                }
-            });
-        }
-    }
-}
-
 /// The path picked for `key` by [`Dialog::pick_into`], once.
 pub fn take_picked(key: &str) -> Option<PathBuf> {
     PICKED.with(|p| p.borrow_mut().remove(key))

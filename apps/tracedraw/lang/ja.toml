@@ -3221,7 +3221,6 @@ status.drag_move = "dx: {dx}  dy: {dy}  距離: {d}  角度: {a}°"
 status.drag_rotate = "回転: {a}°"
 status.drag_scale = "拡大縮小: {sx} % x {sy} %"
 status.drag_skew = "傾斜: {a}°"
-status.drop_unsupported = "{p} は開くことも読み込むこともできません" # mt
 status.duplicated_in_place = "同じ位置に複製しました (+)"
 status.editing_clip_frame = "フレームの内容を編集中: 移動や編集をしてから「内容の編集を終了」を選びます"
 status.editing_text = "テキストを編集中"

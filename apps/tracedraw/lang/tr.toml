@@ -3221,7 +3221,6 @@ status.drag_move = "dx: {dx}  dy: {dy}  Uzaklık: {d}  Açı: {a}°"
 status.drag_rotate = "Döndürme: {a}°"
 status.drag_scale = "Ölçek: {sx} % x {sy} %"
 status.drag_skew = "Eğme: {a}°"
-status.drop_unsupported = "{p} açılamıyor veya içe aktarılamıyor" # mt
 status.duplicated_in_place = "Yerinde çoğaltıldı (+)"
 status.editing_clip_frame = "Çerçevenin içeriği düzenleniyor: taşıyın veya düzenleyin, ardından İçerik Düzenlemeyi Bitir'i seçin"
 status.editing_text = "Metin düzenleniyor"

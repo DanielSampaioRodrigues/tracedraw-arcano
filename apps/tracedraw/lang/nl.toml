@@ -3221,7 +3221,6 @@ status.drag_move = "dx: {dx}  dy: {dy}  Afstand: {d}  Hoek: {a}°"
 status.drag_rotate = "Rotatie: {a}°"
 status.drag_scale = "Schaal: {sx} % x {sy} %"
 status.drag_skew = "Schuintrekken: {a}°"
-status.drop_unsupported = "{p} kan niet worden geopend of geïmporteerd" # mt
 status.duplicated_in_place = "Op dezelfde plaats gedupliceerd (+)"
 status.editing_clip_frame = "De inhoud van het kader bewerken: verplaats of bewerk de inhoud en kies daarna Bewerken van inhoud voltooien"
 status.editing_text = "Tekst bewerken"

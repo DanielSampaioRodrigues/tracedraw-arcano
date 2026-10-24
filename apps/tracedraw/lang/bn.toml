@@ -3221,7 +3221,6 @@ status.drag_move = "dx: {dx}  dy: {dy}  দূরত্ব: {d}  কোণ: {a}�
 status.drag_rotate = "ঘূর্ণন: {a}°"
 status.drag_scale = "স্কেল: {sx} % x {sy} %"
 status.drag_skew = "তির্যক: {a}°"
-status.drop_unsupported = "{p} খোলা বা আমদানি করা যায় না" # mt
 status.duplicated_in_place = "একই জায়গায় ডুপ্লিকেট করা হয়েছে (+)"
 status.editing_clip_frame = "ফ্রেমের বিষয়বস্তু সম্পাদনা চলছে: সরান বা সম্পাদনা করুন, তারপর বিষয়বস্তু সম্পাদনা শেষ করুন বেছে নিন"
 status.editing_text = "টেক্সট সম্পাদনা চলছে"

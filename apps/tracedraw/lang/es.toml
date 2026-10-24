@@ -3221,7 +3221,6 @@ status.drag_move = "dx: {dx}  dy: {dy}  Distancia: {d}  Ángulo: {a}°"
 status.drag_rotate = "Rotación: {a}°"
 status.drag_scale = "Escala: {sx} % x {sy} %"
 status.drag_skew = "Inclinación: {a}°"
-status.drop_unsupported = "No se puede abrir ni importar {p}" # mt
 status.duplicated_in_place = "Duplicado en el mismo lugar (+)"
 status.editing_clip_frame = "Editando el contenido del marco: muévalo o edítelo y luego elija Terminar edición del contenido"
 status.editing_text = "Editando texto"
