@@ -10,8 +10,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ButtonSize {
-    Small,
     #[default]
+    Small,
     Medium,
     Large,
 }
@@ -152,7 +152,8 @@ pub struct Settings {
     #[serde(default)]
     pub toolbox_hidden: Vec<String>,
     /// The bars' menu > Customize > Default Button Size: how large the
-    /// buttons of every bar are (Medium at first; a choice saved stays).
+    /// buttons of every bar are (Small at first, as in the reference
+    /// program; a size already saved stays).
     #[serde(default)]
     pub button_size: ButtonSize,
     /// The property bar's Autofit Page: the margin (mm) left around the
@@ -1337,7 +1338,7 @@ impl Default for Settings {
             desktop_custom: false,
             status_info: crate::ui::status::StatusInfo::default(),
             toolbox_hidden: Vec::new(),
-            button_size: ButtonSize::Medium,
+            button_size: ButtonSize::Small,
             fit_page_margin: 0.0,
             toolbox_button_size: None,
             toolbox_captions: Captions::ImageOnly,

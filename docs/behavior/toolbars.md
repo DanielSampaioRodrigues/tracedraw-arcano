@@ -216,7 +216,7 @@ and the status bar move (`ui/bars.rs`).
   Text, Zoom and Transform toolbars, the time tracker); Customize; Lock
   Toolbars and Reset Bar Positions. Window > Toolbars has the same list,
   Lock Toolbars and Reset Bar Positions.
-- Customize holds: Default Button Size (Small, Medium, Large, Medium at
+- Customize holds: Default Button Size (Small, Medium, Large, Small at
   first: the buttons of every bar are 24, 32 or 40 px square, the
   property bar's 21, 28 or 35; `settings.button_size`, `theme::set_button_sizes`); Toolbox
   Toolbar (Reset to Default: every flyout shown as at first, each button

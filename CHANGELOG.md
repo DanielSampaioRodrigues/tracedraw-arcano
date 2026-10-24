@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Toolbars: a new installation starts with Small buttons (Default Button Size), as the reference program does; it started with Medium. A size already saved in the preferences stays.
+
 - Symmetry: Finish selects the whole symmetry. The object picked inside it while editing (the last one drawn, for one) stayed selected, so the next drag moved that object alone, as if it had been double-clicked into.
 
 - Toolbars: the buttons of the Standard and Zoom toolbars can be changed. With Tools > Options > Customization open (or with Alt held), drag a button along its bar to move it, onto the other bar, or off the bars to remove it; drag a command or a tool from the Commands page onto a bar to add it. Reset on the Command Bars page brings the first buttons back. The Zoom toolbar shows pictures, as the Zoom tool's property bar does; it showed words only (#563).
