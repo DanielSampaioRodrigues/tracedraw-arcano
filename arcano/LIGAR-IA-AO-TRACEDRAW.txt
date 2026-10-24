@@ -1,0 +1,83 @@
+TraceDraw - Edicao Editora Arcano 3
+Ligar uma IA ao TraceDraw (MCP)
+===================================
+
+Com isto, a IA (Claude, ChatGPT e outras) desenha e edita no desenho que
+esta aberto na sua tela, ve o que voce selecionou e confere o resultado.
+Cada coisa que ela faz vira um passo de desfazer (Ctrl+Z).
+Nao precisa instalar nada a mais: o MCP vem dentro do TraceDraw.
+
+PASSO 1 - No TraceDraw (uma vez so)
+Ferramentas > Opcoes > Global > Geral > marque
+"Deixar agentes de IA deste computador editarem o desenho aberto (MCP)".
+A barra de baixo passa a mostrar que agentes de IA podem editar.
+
+PASSO 2 - No aplicativo de IA (uma vez em cada aplicativo)
+
+* Claude (aplicativo do computador)
+  Clique duas vezes em REGISTRAR-MCP-CLAUDE.bat, nesta pasta.
+  Depois feche o Claude por completo (botao direito no icone perto do
+  relogio > Sair) e abra de novo.
+
+* Qualquer outro aplicativo que aceite MCP local (STDIO)
+  Os dados sao sempre estes:
+    Nome ......: tracedraw
+    Comando ...: C:\Program Files\TraceDraw\tracedraw.exe
+    Argumento .: --mcp-window
+  (Se o TraceDraw foi instalado "so para este usuario", o comando e
+   C:\Users\SEU-USUARIO\AppData\Local\Programs\TraceDraw\tracedraw.exe)
+
+  ChatGPT (aplicativo do computador): nas configuracoes, na parte de
+  apps/conectores, ligue o modo de desenvolvedor e adicione um servidor
+  MCP local (STDIO) com o comando e o argumento acima.
+
+  Cursor: arquivo C:\Users\SEU-USUARIO\.cursor\mcp.json
+  Gemini CLI: arquivo C:\Users\SEU-USUARIO\.gemini\settings.json
+  LM Studio, Windsurf: o arquivo mcp.json do programa
+  Em todos esses, o conteudo e:
+
+    {
+      "mcpServers": {
+        "tracedraw": {
+          "command": "C:\\Program Files\\TraceDraw\\tracedraw.exe",
+          "args": ["--mcp-window"]
+        }
+      }
+    }
+
+  (Se o arquivo ja tiver outros servidores, acrescente so o bloco
+   "tracedraw" dentro de "mcpServers", separado por virgula.)
+
+  VS Code: arquivo .vscode\mcp.json (ou nas configuracoes do usuario):
+
+    {
+      "servers": {
+        "tracedraw": {
+          "type": "stdio",
+          "command": "C:\\Program Files\\TraceDraw\\tracedraw.exe",
+          "args": ["--mcp-window"]
+        }
+      }
+    }
+
+  Claude Code (terminal):
+    claude mcp add tracedraw -- "C:\Program Files\TraceDraw\tracedraw.exe" --mcp-window
+
+  Codex (terminal): arquivo C:\Users\SEU-USUARIO\.codex\config.toml
+    [mcp_servers.tracedraw]
+    command = 'C:\Program Files\TraceDraw\tracedraw.exe'
+    args = ["--mcp-window"]
+
+PASSO 3 - Testar
+Com o TraceDraw aberto, peca a IA:
+  "O que eu tenho selecionado no TraceDraw?"
+ou
+  "Desenhe um circulo vermelho ao lado do meu retangulo no TraceDraw."
+O circulo deve aparecer na sua tela.
+
+SE NAO FUNCIONAR
+- Deixe so UMA janela do TraceDraw aberta. Com mais de uma, a IA usa a
+  janela em que voce mexeu por ultimo (clique nela antes de pedir).
+- Confira se a opcao do Passo 1 esta marcada.
+- Feche e abra o aplicativo de IA de novo.
+- IAs que funcionam so no navegador nao conseguem usar o TraceDraw.

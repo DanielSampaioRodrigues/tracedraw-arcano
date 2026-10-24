@@ -26,8 +26,13 @@ Para nao correr risco com trabalhos importantes: no comeco, salve uma
 copia (Arquivo > Salvar como) e confira antes de entregar. O programa
 ainda e novo e alguns arquivos .cdr podem abrir com diferencas.
 
-IA (gerar imagens)
-Ferramentas > Opcoes > IA > Servico: escolha "Google Gemini" ou
-"OpenAI", cole a chave e marque "Lembrar a chave neste computador".
-Depois use o botao "Gerar com IA" no alto da tela. Embaixo do modelo
-aparece quanto custa cada imagem.
+IA (gerar e editar imagens)
+Ferramentas > Opcoes > IA > Chaves: cole a chave de cada servico que
+for usar (Gemini, OpenAI, Recraft, Magnific, Stability) e clique em
+"Testar". Depois use o painel "Gerar com IA": na linha "Servico" escolha
+a empresa, e embaixo do modelo aparece quanto custa cada imagem.
+O quinto botao do painel edita a imagem selecionada (aumentar qualidade,
+expandir, tirar ou trocar o fundo, reiluminar, vetorizar).
+
+IA DESENHANDO NO TRACEDRAW (Claude, ChatGPT e outras)
+Veja o arquivo LIGAR-IA-AO-TRACEDRAW.txt nesta pasta.
