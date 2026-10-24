@@ -3579,12 +3579,7 @@ fn the_move_goes_on_after_a_right_click() {
     let n = Modifiers::NONE;
     let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, n);
     frame(&ctx, &mut app, vec![Event::PointerMoved(from)], n);
-    frame(
-        &ctx,
-        &mut app,
-        vec![button(from, true, PointerButton::Primary, n)],
-        n,
-    );
+    frame(&ctx, &mut app, vec![button(from, true, PointerButton::Primary, n)], n);
     let mut p = from;
     for _ in 0..4 {
         p += egui::vec2(20.0, 0.0);
@@ -3599,12 +3594,7 @@ fn the_move_goes_on_after_a_right_click() {
         frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
     }
     assert!(app.transforming(), "the move goes on");
-    frame(
-        &ctx,
-        &mut app,
-        vec![button(p, false, PointerButton::Primary, n)],
-        n,
-    );
+    frame(&ctx, &mut app, vec![button(p, false, PointerButton::Primary, n)], n);
     frame(&ctx, &mut app, Vec::new(), n);
     assert_eq!(shape_count(&app), 2);
     assert!(close(bounds(&app, id).x0, 10.0), "the original stays");
