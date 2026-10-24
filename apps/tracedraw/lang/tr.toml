@@ -2430,6 +2430,7 @@ merge.insert_field = "Alan ekle" # mt
 merge.place_inside = "Çerçevenin içine yerleştir" # mt
 merge.place_inside_tip = "Seçili şekli bu resim alanının çerçevesi yapar: her kartta fotoğraf, Hizala ve ölçekle ayarına göre içine yerleştirilir. Daire, oval veya herhangi bir kontur ile, bir grubun içinde de çalışır." # mt
 merge.place_inside_none = "Önce resmi içerecek şekli seçin." # mt
+merge.place_inside_click = "Fotoğrafı tutacak şekle tıklayın (Esc iptal eder)" # mt
 merge.place_inside_done = "Seçili şekil artık resim alanının çerçevesi." # mt
 merge.kind_image = "Resim"
 merge.kind_number = "Sayı"

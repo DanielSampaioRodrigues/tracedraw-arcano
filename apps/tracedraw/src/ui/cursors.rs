@@ -287,6 +287,7 @@ pub fn for_tool(
         || app.pending_order.is_some()
         || app.pending_text_link.is_some()
         || app.pending_shaping.is_some()
+        || app.pending_merge_frame
     {
         return ToolCursor::TargetArrow;
     }

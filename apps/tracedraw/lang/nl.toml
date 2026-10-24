@@ -2430,6 +2430,7 @@ merge.insert_field = "Veld invoegen" # mt
 merge.place_inside = "In kader plaatsen" # mt
 merge.place_inside_tip = "Maakt de geselecteerde vorm het kader van dit afbeeldingsveld: op elke kaart komt de foto erin, geplaatst volgens Uitlijnen en schalen. Werkt met een cirkel, ovaal of elke contour, ook in een groep." # mt
 merge.place_inside_none = "Selecteer eerst de vorm die de afbeelding moet bevatten." # mt
+merge.place_inside_click = "Klik op de vorm die de foto bevat (Esc annuleert)" # mt
 merge.place_inside_done = "De geselecteerde vorm is nu het kader van het afbeeldingsveld." # mt
 merge.kind_image = "Afbeelding"
 merge.kind_number = "Getal"

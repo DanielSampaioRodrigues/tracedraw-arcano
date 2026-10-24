@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge: Place Inside Frame with nothing selected waits for a click on the shape, with the Place Inside arrow as the pointer, and takes the shape clicked (also inside a group). It was greyed until a shape was selected (#577).
+
 - Print Preview with separations: a box for each ink, always in view, instead of a list. One ink shows its plate; several show what those inks print together, to check two or three colours at once (#571).
 
 - Duplicate (Ctrl+D) repeats what was done to the copy: duplicate an object, move, scale or turn the copy while it stays selected, and each next Duplicate takes the same step from the last copy, as in the reference program. It always used the duplicate offset (#559).

@@ -1207,6 +1207,9 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
+    /// Print Merge's Place Inside Frame waiting for a click on the shape
+    /// that holds the picture (#577).
+    pub pending_merge_frame: bool,
     /// Weld, Trim or Intersect waiting for a click on the target, with
     /// what it leaves of the source and the target (#562).
     pub pending_shaping: Option<(crate::ops::Shaping, bool, bool)>,
@@ -2184,6 +2187,7 @@ impl App {
             scale_locked: false,
             pending_copy_properties: false,
             pending_shaping: None,
+            pending_merge_frame: false,
             pending_copy_effect: None,
             pending_copy_envelope: false,
             pending_clone_effect: None,

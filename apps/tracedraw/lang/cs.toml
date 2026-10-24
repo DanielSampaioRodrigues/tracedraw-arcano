@@ -2430,6 +2430,7 @@ merge.insert_field = "Vložit pole" # mt
 merge.place_inside = "Umístit do rámečku" # mt
 merge.place_inside_tip = "Udělá z vybraného tvaru rámeček tohoto obrazového pole: na každé kartě se fotka vloží dovnitř, umístěná podle Zarovnat a měřítko. Funguje s kruhem, oválem nebo libovolným obrysem, i ve skupině." # mt
 merge.place_inside_none = "Nejprve vyberte tvar, který má obrázek obsahovat." # mt
+merge.place_inside_click = "Klepněte na tvar, který bude obsahovat fotografii (Esc zruší)" # mt
 merge.place_inside_done = "Vybraný tvar je nyní rámečkem obrazového pole." # mt
 merge.kind_image = "Obrázek"
 merge.kind_number = "Číslo"

@@ -5418,3 +5418,32 @@ fn font_sizes_show_and_type_in_the_text_units() {
         "{after}"
     );
 }
+
+/// Print Merge's Place Inside Frame with nothing selected waits for a
+/// click on the shape, the pointer the Place Inside arrow; the click
+/// takes the shape under it, Esc cancels (#577).
+#[test]
+fn place_inside_frame_waits_for_a_click_with_its_arrow() {
+    let (ctx, mut app, id) = setup();
+    app.select(Vec::new());
+    app.pending_merge_frame = true;
+    let at = app.view.to_screen(bounds(&app, id).center());
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(at)),
+        ToolCursor::TargetArrow
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(!app.pending_merge_frame, "Esc cancels");
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    app.pending_merge_frame = true;
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(!app.pending_merge_frame);
+    assert_eq!(app.selection, vec![id], "the shape clicked");
+}

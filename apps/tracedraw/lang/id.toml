@@ -2430,6 +2430,7 @@ merge.insert_field = "Sisipkan bidang" # mt
 merge.place_inside = "Tempatkan di dalam bingkai" # mt
 merge.place_inside_tip = "Menjadikan bentuk yang dipilih sebagai bingkai bidang gambar ini: di setiap kartu foto masuk ke dalamnya, ditempatkan menurut Ratakan dan skala. Berfungsi dengan lingkaran, oval, atau garis bentuk apa pun, juga di dalam grup." # mt
 merge.place_inside_none = "Pilih dulu bentuk yang akan memuat gambar." # mt
+merge.place_inside_click = "Klik bentuk yang akan menampung foto (Esc membatalkan)" # mt
 merge.place_inside_done = "Bentuk yang dipilih kini menjadi bingkai bidang gambar." # mt
 merge.kind_image = "Gambar"
 merge.kind_number = "Angka"

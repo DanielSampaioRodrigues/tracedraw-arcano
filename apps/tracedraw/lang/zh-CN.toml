@@ -2430,6 +2430,7 @@ merge.insert_field = "插入字段" # mt
 merge.place_inside = "置于框架内" # mt
 merge.place_inside_tip = "将所选形状设为此图像字段的框架：每张卡片上的照片都会放入其中，按“对齐和缩放”放置。适用于圆形、椭圆或任意轮廓，组内也可以。" # mt
 merge.place_inside_none = "请先选择用来容纳图像的形状。" # mt
+merge.place_inside_click = "单击用于容纳照片的形状（Esc 取消）" # mt
 merge.place_inside_done = "所选形状现在是图像字段的框架。" # mt
 merge.kind_image = "图片"
 merge.kind_number = "数字"

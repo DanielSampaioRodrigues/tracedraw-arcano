@@ -2430,6 +2430,7 @@ merge.insert_field = "Wstaw pole" # mt
 merge.place_inside = "Umieść w ramce" # mt
 merge.place_inside_tip = "Czyni zaznaczony kształt ramką tego pola obrazu: na każdej karcie zdjęcie trafia do jego wnętrza, umieszczone według Wyrównaj i skaluj. Działa z kołem, owalem lub dowolnym konturem, także w grupie." # mt
 merge.place_inside_none = "Najpierw zaznacz kształt, który ma zawierać obraz." # mt
+merge.place_inside_click = "Kliknij kształt, który będzie zawierał zdjęcie (Esc anuluje)" # mt
 merge.place_inside_done = "Zaznaczony kształt jest teraz ramką pola obrazu." # mt
 merge.kind_image = "Obraz"
 merge.kind_number = "Liczba"

@@ -20,6 +20,7 @@ impl App {
         let waiting = self.pending_order.is_some()
             || self.pending_copy_properties
             || self.pending_shaping.is_some()
+            || self.pending_merge_frame
             || self.pending_copy_effect.is_some()
             || self.pending_copy_envelope
             || self.pending_clone_effect.is_some()
@@ -33,6 +34,7 @@ impl App {
             self.pending_order = None;
             self.pending_copy_properties = false;
             self.pending_shaping = None;
+            self.pending_merge_frame = false;
             self.pending_copy_effect = None;
             self.pending_copy_envelope = false;
             self.pending_clone_effect = None;
@@ -52,6 +54,18 @@ impl App {
             self.pending_palette_sample = more;
             if let Some(c) = self.sample_color_at(p, false) {
                 self.add_to_document_palette(c);
+            }
+            return true;
+        }
+        if self.pending_merge_frame {
+            // The shape under the pointer, also one inside a group.
+            self.pending_merge_frame = false;
+            match self.hits_at(p, true).first().copied() {
+                Some(id) => {
+                    self.select(vec![id]);
+                    self.place_merge_field_inside();
+                }
+                None => self.status = tr("status.cancelled"),
             }
             return true;
         }

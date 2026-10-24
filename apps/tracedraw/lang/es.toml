@@ -2430,6 +2430,7 @@ merge.insert_field = "Insertar campo" # mt
 merge.place_inside = "Colocar dentro del marco" # mt
 merge.place_inside_tip = "Convierte la forma seleccionada en el marco de este campo de imagen: en cada tarjeta la foto va dentro de ella, colocada según Alinear y escalar. Funciona con un círculo, un óvalo o cualquier contorno, también dentro de un grupo." # mt
 merge.place_inside_none = "Seleccione primero la forma que debe contener la imagen." # mt
+merge.place_inside_click = "Haga clic en la forma que contendrá la foto (Esc cancela)" # mt
 merge.place_inside_done = "La forma seleccionada es ahora el marco del campo de imagen." # mt
 merge.kind_image = "Imagen"
 merge.kind_number = "Número"
