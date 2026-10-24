@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pictures are decoded once and kept for every thread that draws the page. The canvas draws in bands on one thread per core, and each band decoded every picture it crossed again on every redraw: six large photos took about 1.1 s and 540 MB extra per redraw on four cores (more with more cores). Now a redraw after the first takes about 20 ms, thumbnails and the navigator reuse the same pictures, and the decoded pictures kept are capped at 512 MB.
+
 - Tracing (Quick Trace and Outline Trace): outlines come out as smooth Bezier curves fitted to the shapes instead of stair-stepped polylines, with far fewer nodes; corners stay sharp (Corner smoothness rounds more of them), and stray specks and the fringes of soft edges no longer become curves of their own (fewer the lower the detail). Smoothing 0 still follows the pixel edges (#611).
 
 - Saving a `.tdraw` and auto-backup now write the file as it is made instead of building the whole file in memory first: saving a drawing of 183 MB peaked at 2.4 GB and left about 2 GB held afterwards; now it stays near the drawing's own size. Auto-backup also runs on a thread of its own, so the window no longer stops every 20 minutes while a large drawing is backed up, and a backup cut short never replaces a whole one.

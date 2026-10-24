@@ -4215,6 +4215,50 @@ mod band_tests {
         );
     }
 
+    /// One picture cache serves every band: a picture across all bands of
+    /// a render is decoded once, and the next render decodes nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bands_share_one_decode_of_a_picture() {
+        let mut pm = Pixmap::new(37, 23).unwrap();
+        pm.fill(tiny_skia::Color::from_rgba8(12, 200, 99, 255));
+        let png = pm.encode_png().unwrap();
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                width_px: 37,
+                height_px: 23,
+                png: png.clone(),
+                fx: None,
+            },
+        );
+        s.fill = Fill::None;
+        s.stroke = None;
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let page = doc.pages[0].id;
+        doc.pages[0].layers[0].shapes.push(s);
+        let opts = RenderOptions {
+            width: 800,
+            height: 800,
+            view: ViewTransform {
+                zoom: 8.0,
+                origin_x: 0.0,
+                origin_y: 800.0,
+            },
+            ..RenderOptions::default()
+        };
+        let Some(first) = render_page_in_bands(&doc, page, &opts) else {
+            // One core: no bands.
+            return;
+        };
+        let green = |y| first.pixel(400, y).map(|p| p.green());
+        assert_eq!(green(30), Some(200));
+        assert_eq!(green(770), Some(200));
+        render_page_in_bands(&doc, page, &opts).unwrap();
+        assert_eq!(image_cache::decodes_of(&png), 1);
+    }
+
     /// A page drawn in bands on several threads matches the page drawn
     /// whole, drop shadows included (their blur reaches across bands).
     #[test]
