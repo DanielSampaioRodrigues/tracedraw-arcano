@@ -376,12 +376,18 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                     EStroke::NONE,
                 ));
             }
-            painter.line_segment(
-                [view.to_screen(top), view.to_screen(bottom)],
-                EStroke::new(1.5, Tokens::text()),
-            );
+            draw_text_caret(painter, view.to_screen(top), view.to_screen(bottom));
             ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
         }
+    }
+}
+
+/// The caret of text being edited: black on a white edge, so it shows on
+/// the white page and on dark fills alike (the interface's text colour
+/// is light in the dark themes, #632).
+pub(crate) fn draw_text_caret(painter: &Painter, top: Pos2, bottom: Pos2) {
+    for stroke in TEXT_CARET {
+        painter.line_segment([top, bottom], stroke);
     }
 }
 
@@ -1080,14 +1086,11 @@ fn draw_table_cells(app: &App, painter: &Painter) {
             let pts: Vec<Pos2> = q.iter().map(|p| view.to_screen(*p)).collect();
             painter.add(egui::Shape::convex_polygon(
                 pts,
-                Color32::from_rgba_unmultiplied(0x00, 0x78, 0xD7, 70),
+                TEXT_SELECTION,
                 EStroke::NONE,
             ));
         }
-        painter.line_segment(
-            [view.to_screen(top), view.to_screen(bottom)],
-            EStroke::new(1.5, Tokens::text()),
-        );
+        draw_text_caret(painter, view.to_screen(top), view.to_screen(bottom));
         ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
     }
 }
@@ -1400,8 +1403,21 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
 }
 
 /// The shade over selected characters of a text being edited: a
-/// see-through grey, so coloured letters keep their colour under it.
-pub(crate) const TEXT_SELECTION: Color32 = Color32::from_rgba_premultiplied(64, 64, 64, 80);
+/// see-through grey, so coloured letters keep their colour under it, dark
+/// enough to stand out on the white page (#632).
+pub(crate) const TEXT_SELECTION: Color32 = Color32::from_rgba_premultiplied(40, 40, 40, 150);
+
+/// The caret's strokes, drawn in order: a white edge, then the black bar.
+pub(crate) const TEXT_CARET: [EStroke; 2] = [
+    EStroke {
+        width: 3.5,
+        color: Color32::WHITE,
+    },
+    EStroke {
+        width: 1.5,
+        color: Color32::BLACK,
+    },
+];
 
 /// A text that does not fit: its frame is red.
 const OVERFLOW_RED: Color32 = Color32::from_rgb(220, 30, 30);

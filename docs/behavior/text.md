@@ -177,6 +177,13 @@ concatenated spans; the layout's line boxes give its place on the page.
 | Undo of typing | the typing of one editing session of one text is one step ("Edit Text"); a session folds keystrokes only into its own step, while it is the last one, so editing another text never touches it (#373, `text_editing::tests::editing_a_second_text_keeps_the_edit_of_the_first`) |
 | Typing while a field has the keyboard (the font search field, a docker's box) | goes to the field only; the text waits until the field lets the keyboard go (#342, `pick_drag_tests::typing_in_a_focused_field_leaves_the_edited_text_alone`) |
 
+The caret is a black bar on a white edge, so it shows on the white page
+and on dark fills whatever the interface theme; selected characters are
+shaded a see-through mid grey, coloured letters keeping their colour
+under it. Table cells being edited show the same caret and shade (#632,
+`pick_drag_tests::the_text_caret_is_black_on_a_white_edge`,
+`text_frames::tests` checks the shade).
+
 The property bar's font, size and style buttons act on the selected
 characters while a selection exists, and show the style at the caret
 (the character before it). On a selection a button changes only what it

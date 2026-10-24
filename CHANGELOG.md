@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text editing on the canvas: the caret is now a black bar with a white edge instead of the interface's text colour, which in the dark themes was a light grey lost on the white page, and selected characters get a clearly darker shade. Table cells being edited show the same caret and shade (#632).
+
 - Font lists now follow the dark themes: the font names are drawn in the theme's text colour instead of near black on the dark list, and so are the characters of the Glyphs docker. The preview under the list and the font sampler keep dark text on their white card (#660).
 
 - The default palette of an RGB drawing now holds clean RGB values instead of the CMYK colours as the press would print them: black is 0 0 0, white 255 255 255, red 255 0 0, and the tints are the matching RGB tints. CMYK drawings keep the CMYK palette (#620).

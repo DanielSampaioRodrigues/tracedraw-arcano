@@ -2368,6 +2368,49 @@ fn typing_in_a_focused_field_leaves_the_edited_text_alone() {
     assert_eq!(app.edit_text(), "abe");
 }
 
+/// The caret of text being edited is black on a white edge, whatever the
+/// interface theme (its text colour is light in the dark themes and the
+/// caret was lost on the white page, #632).
+#[test]
+fn the_text_caret_is_black_on_a_white_edge() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.settings.autocorrect.enabled = false;
+    app.start_text(Point::new(30.0, 50.0), None);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("ab".into())],
+        Modifiers::NONE,
+    );
+    let (top, bottom, _) = app.text_caret_geometry().expect("caret");
+    let ends = [app.view.to_screen(top), app.view.to_screen(bottom)];
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+    out.textures_delta.clear();
+    let strokes: Vec<egui::Stroke> = out
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::LineSegment { points, stroke }
+                if points[0].distance(ends[0]) < 0.01 && points[1].distance(ends[1]) < 0.01 =>
+            {
+                Some(*stroke)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strokes, crate::canvas::TEXT_CARET.to_vec());
+    assert_eq!(strokes[1].color, egui::Color32::BLACK);
+    assert!(strokes[0].width > strokes[1].width);
+}
+
 /// With alignment guides on (and every other snapping off), a move of the
 /// rectangle near another one lands its top edge on the other's top and
 /// shows the line while the button is down; a scale handle lines up the
