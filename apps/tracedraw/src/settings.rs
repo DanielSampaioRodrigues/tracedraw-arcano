@@ -80,6 +80,9 @@ pub struct Settings {
     pub recent_files: Vec<PathBuf>,
     pub workspace: String,
     pub show_welcome_on_start: bool,
+    /// The Welcome Screen tab was closed: it shows as its house alone
+    /// until the Welcome Screen is shown again (#677).
+    pub welcome_tab_closed: bool,
     /// Options > Tools > Table: what Tab does in a cell.
     #[serde(default)]
     pub table: crate::table_tool::TablePrefs,
@@ -1308,6 +1311,7 @@ impl Default for Settings {
             recent_files: Vec::new(),
             workspace: "default".into(),
             show_welcome_on_start: true,
+            welcome_tab_closed: false,
             table: Default::default(),
             units: "mm".into(),
             nudge_mm: 2.54,

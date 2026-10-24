@@ -6621,3 +6621,45 @@ fn an_idle_window_asks_for_no_frame() {
         );
     }
 }
+
+/// The Welcome Screen tab closes to its house while a drawing is open;
+/// the house shows the Welcome Screen again with its whole tab (#677).
+#[test]
+fn the_welcome_tab_closes_to_its_house() {
+    use crate::ui::tabs::{WELCOME_CLOSE, WELCOME_TAB};
+    let (ctx, mut app, _) = setup();
+    let rect_of =
+        |ctx: &egui::Context, id: &str| ctx.read_response(egui::Id::new(id)).map(|r| r.rect);
+    let press = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        click_at(ctx, app, at, Modifiers::NONE);
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    app.show_welcome = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let wide = rect_of(&ctx, WELCOME_TAB).expect("welcome tab");
+    let close = rect_of(&ctx, WELCOME_CLOSE).expect("close button");
+    press(&ctx, &mut app, close.center());
+    assert!(!app.show_welcome, "the drawing shows");
+    assert!(app.settings.welcome_tab_closed);
+    let house = rect_of(&ctx, WELCOME_TAB).expect("house");
+    assert!(house.width() < wide.width() / 2.0, "{house:?} {wide:?}");
+    assert!(rect_of(&ctx, WELCOME_CLOSE).is_none());
+    press(&ctx, &mut app, house.center());
+    assert!(app.show_welcome);
+    assert!(!app.settings.welcome_tab_closed);
+    let back = rect_of(&ctx, WELCOME_TAB).expect("welcome tab");
+    assert!(
+        (back.width() - wide.width()).abs() < 0.5,
+        "{back:?} {wide:?}"
+    );
+    // With no drawing open there is nothing else to show: no close button.
+    let ctx = crate::theme::ui_context();
+    let mut app = App::headless();
+    app.close_active_document();
+    assert!(!app.has_document());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(rect_of(&ctx, WELCOME_TAB).is_some());
+    assert!(rect_of(&ctx, WELCOME_CLOSE).is_none());
+}
