@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "PDF भेजने के लिए कोई फ�
 status.sent_to = "PDF {path} में लिखा गया"
 status.settings_reset = "सभी सेटिंग डिफ़ॉल्ट पर लौट आईं"
 status.settings_saved = "सेटिंग्स डिफ़ॉल्ट के रूप में सहेजी गईं"
+status.software_renderer = "विंडो एक सॉफ़्टवेयर एडैप्टर बना रहा है ({name}): हर फ़्रेम CPU पर बनता है, इसलिए TraceDraw बिना छाया के प्रति सेकंड 30 फ़्रेम तक सीमित रहता है। ग्राफ़िक्स कार्ड का अपना ड्राइवर इंस्टॉल करने से यह तेज़ हो जाएगा।" # mt
 status.shaping_empty = "शेपिंग से खाली परिणाम मिला"
 status.style_created = "शैली बनाई गई और चयन से लिंक की गई"
 status.swatch_fill = "फ़िल"

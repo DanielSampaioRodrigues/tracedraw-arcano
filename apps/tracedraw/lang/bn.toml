@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "PDF পাঠানোর জন্য কোনো 
 status.sent_to = "PDF {path} এ লেখা হয়েছে"
 status.settings_reset = "সব সেটিং ডিফল্টে ফিরেছে"
 status.settings_saved = "সেটিংস ডিফল্ট হিসেবে সংরক্ষিত"
+status.software_renderer = "একটি সফটওয়্যার অ্যাডাপ্টার উইন্ডো আঁকছে ({name}): প্রতিটি ফ্রেম CPU-তে আঁকা হয়, তাই TraceDraw ছায়া ছাড়া প্রতি সেকেন্ডে ৩০ ফ্রেমে সীমিত থাকে। গ্রাফিক্স কার্ডের নিজস্ব ড্রাইভার ইনস্টল করলে এটি দ্রুত হবে।" # mt
 status.shaping_empty = "শেপিং-এ খালি ফলাফল হয়েছে"
 status.style_created = "স্টাইল তৈরি হয়ে নির্বাচনের সাথে লিঙ্ক হয়েছে"
 status.swatch_fill = "ফিল"

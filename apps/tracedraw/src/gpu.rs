@@ -241,6 +241,179 @@ fn rank(t: eframe::wgpu::DeviceType) -> u8 {
     }
 }
 
+/// Whether a software adapter draws the window of this run (#616): every
+/// frame is then rasterized on the CPU, so the window paces its frames,
+/// casts no shadows and shows the system's pointers.
+static SOFTWARE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The software adapter's name, until the status bar has said it once.
+static SOFTWARE_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn software() -> bool {
+    SOFTWARE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The name of the software adapter drawing the window, once: the first
+/// call after the window opened on one, then never again.
+pub fn take_software_note() -> Option<String> {
+    if !software() {
+        return None;
+    }
+    SOFTWARE_NOTE.lock().ok().and_then(|mut n| n.take())
+}
+
+/// Whether an adapter or OpenGL renderer `name` rasterizes on the CPU:
+/// WARP, the GDI OpenGL 1.1 of a Windows without a card driver, Mesa's
+/// llvmpipe, softpipe and lavapipe, SwiftShader.
+pub fn is_software_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    [
+        "basic render",
+        "gdi generic",
+        "llvmpipe",
+        "softpipe",
+        "lavapipe",
+        "swiftshader",
+    ]
+    .iter()
+    .any(|s| n.contains(s))
+}
+
+/// Note whether the window opened on a software adapter.
+fn note_software(cc: &eframe::CreationContext<'_>) {
+    let found = if let Some(rs) = cc.wgpu_render_state.as_ref() {
+        let i = rs.adapter.get_info();
+        (i.device_type == eframe::wgpu::DeviceType::Cpu || is_software_name(&i.name))
+            .then_some(i.name)
+    } else if let Some(gl) = cc.gl.as_ref() {
+        use eframe::glow::HasContext;
+        // SAFETY: a plain query on the current context eframe just made.
+        let name = unsafe { gl.get_parameter_string(eframe::glow::RENDERER) };
+        is_software_name(&name).then_some(name)
+    } else {
+        None
+    };
+    if let Some(name) = found {
+        log::warn!("a software adapter draws the window ({name}): frames paced to {FRAME_CAP} a second, no shadows, system pointers");
+        SOFTWARE.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut n) = SOFTWARE_NOTE.lock() {
+            *n = Some(name);
+        }
+    }
+}
+
+/// Frames a second on a software adapter (#616).
+pub const FRAME_CAP: u32 = 30;
+
+/// How long a frame that begins at `now` waits so that frames begin at
+/// least `gap` apart, the last one having begun at `last`.
+pub fn frame_wait(
+    last: Option<web_time::Instant>,
+    now: web_time::Instant,
+    gap: std::time::Duration,
+) -> std::time::Duration {
+    last.map(|l| gap.saturating_sub(now.saturating_duration_since(l)))
+        .unwrap_or_default()
+}
+
+/// Keeps a software adapter to [`FRAME_CAP`] frames a second: every
+/// pointer move is a frame, and each costs a full-window rasterization on
+/// the CPU, so without a cap the window takes every core and input queues
+/// up. The pointer moves in between are merged into the next frame.
+#[derive(Default)]
+pub struct Pacer {
+    last: Option<web_time::Instant>,
+}
+
+impl Pacer {
+    /// The pacer of a window just opened, noting whether a software
+    /// adapter draws it.
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        note_software(cc);
+        Pacer::default()
+    }
+
+    /// At the start of a frame: wait as long as the cap asks (never on a
+    /// graphics card).
+    pub fn pace(&mut self) {
+        if !software() {
+            return;
+        }
+        let gap = std::time::Duration::from_secs(1) / FRAME_CAP;
+        let wait = frame_wait(self.last, web_time::Instant::now(), gap);
+        if !wait.is_zero() {
+            std::thread::sleep(wait);
+        }
+        self.last = Some(web_time::Instant::now());
+    }
+}
+
+#[cfg(test)]
+mod software_tests {
+    use super::*;
+
+    /// The renderers that draw on the CPU are known by name, whatever
+    /// the case (#616).
+    #[test]
+    fn software_renderers_are_recognised() {
+        for n in [
+            "Microsoft Basic Render Driver",
+            "GDI Generic",
+            "llvmpipe (LLVM 15.0.7, 256 bits)",
+            "softpipe",
+            "Google SwiftShader",
+            "lavapipe",
+        ] {
+            assert!(is_software_name(n), "{n}");
+        }
+        for n in [
+            "Intel(R) HD Graphics 4000",
+            "NVIDIA GeForce GT 730",
+            "AMD Radeon HD 6450",
+        ] {
+            assert!(!is_software_name(n), "{n}");
+        }
+    }
+
+    /// Frames begin at least the gap apart: one that comes sooner waits
+    /// the rest, a later one waits nothing (#616).
+    #[test]
+    fn frames_are_paced_to_the_cap() {
+        let gap = std::time::Duration::from_secs(1) / FRAME_CAP;
+        let t0 = web_time::Instant::now();
+        let ms = std::time::Duration::from_millis;
+        assert_eq!(frame_wait(None, t0, gap), std::time::Duration::ZERO);
+        assert_eq!(frame_wait(Some(t0), t0, gap), gap);
+        assert_eq!(frame_wait(Some(t0), t0 + ms(10), gap), gap - ms(10));
+        assert_eq!(
+            frame_wait(Some(t0), t0 + gap, gap),
+            std::time::Duration::ZERO
+        );
+        assert_eq!(
+            frame_wait(Some(t0), t0 + ms(500), gap),
+            std::time::Duration::ZERO
+        );
+        // A clock that went back waits at most one gap.
+        assert_eq!(frame_wait(Some(t0 + ms(5)), t0, gap), gap);
+        // The cap holds over a run of frames that come at once: 30
+        // frames a second take at least a second.
+        let mut last = None;
+        let mut now = t0;
+        for _ in 0..FRAME_CAP {
+            now += frame_wait(last, now, gap);
+            last = Some(now);
+        }
+        assert!(now - t0 >= gap * (FRAME_CAP - 1));
+        // A graphics card is never paced.
+        assert!(!software());
+        let before = web_time::Instant::now();
+        let mut p = Pacer::default();
+        p.pace();
+        p.pace();
+        assert!(before.elapsed() < gap);
+    }
+}
+
 /// The renderer and the wgpu set-up of a start in `mode`; `wanted` names
 /// the graphics card chosen (empty: the fastest).
 pub fn options(

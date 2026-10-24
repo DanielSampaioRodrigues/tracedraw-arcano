@@ -135,6 +135,19 @@ and `--reset-settings` starts open windows of their own.
 - The Windows builds link the C runtime statically (`.cargo/config.toml`,
   `+crt-static`): they do not need `vcruntime140.dll` (#570).
 - The browser build draws with WebGL.
+- A software adapter drawing the window (wgpu's CPU adapter, WARP on
+  Windows, or an OpenGL renderer named GDI Generic, llvmpipe, softpipe,
+  lavapipe or SwiftShader) rasterizes every frame on the CPU, and every
+  pointer move is a frame, so the window then keeps lighter (#616):
+  frames begin at least 1/30 s apart (the pointer moves in between are
+  merged into the next frame), menus, dialogs and dockers cast no
+  shadows, and the drawn pointers (cross hair, I-beam, hands, magnifiers
+  and the others) give way to the system's nearest, as a drawn one
+  trails the real pointer by a slow frame. The status bar says it once,
+  naming the adapter, and the log says it at start. A graphics card is
+  never paced (`gpu::tests::frames_are_paced_to_the_cap`,
+  `gpu::tests::software_renderers_are_recognised`,
+  `ui::cursors::tests::a_software_adapter_shows_the_system_pointers`).
 
 ## Back to the defaults
 

@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "PDF'nin gönderileceği klasör bulunamadı"
 status.sent_to = "PDF yazıldı: {path}"
 status.settings_reset = "Tüm ayarlar varsayılan değerlerine döndü"
 status.settings_saved = "Ayarlar varsayılan olarak kaydedildi"
+status.software_renderer = "Pencereyi bir yazılım bağdaştırıcısı çiziyor ({name}): her kare işlemcide çizildiği için TraceDraw gölgesiz, saniyede 30 kareyle sınırlı kalır. Ekran kartının kendi sürücüsünü kurmak hızlandırır." # mt
 status.shaping_empty = "Şekillendirme boş bir sonuç üretti"
 status.style_created = "Stil oluşturuldu ve seçime bağlandı"
 status.swatch_fill = "Dolgu"

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
+
 - With hardware acceleration on, TraceDraw no longer draws the window on the CPU's software adapter when no graphics card is usable: it tries OpenGL next and the software adapter only last, keeps going when the OpenGL set-up panics, says in a message box when no renderer can open the window, and logs every graphics adapter with why it was taken or left. An older PC sat at full CPU with the window crawling, with hardware acceleration on or off, and `--renderer=gl` showed nothing (#616).
 
 - Print on Windows: the Printer list now shows the printers Windows has, network printers included, the default one first, and prints straight to the one chosen with the copies asked for. Before, Windows offered only the PDF viewer and PDF or PostScript files (#614).

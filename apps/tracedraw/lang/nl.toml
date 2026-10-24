@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "Geen map gevonden om de PDF naartoe te sturen"
 status.sent_to = "PDF geschreven naar {path}"
 status.settings_reset = "Alle instellingen staan weer op hun standaardwaarde"
 status.settings_saved = "Instellingen opgeslagen als standaard"
+status.software_renderer = "Een software-adapter tekent het venster ({name}): elk beeld wordt op de CPU getekend, dus TraceDraw houdt het bij 30 beelden per seconde zonder schaduwen. Het eigen stuurprogramma van de videokaart installeren maakt het sneller." # mt
 status.shaping_empty = "Vormgeven leverde een leeg resultaat op"
 status.style_created = "Stijl gemaakt en gekoppeld aan de selectie"
 status.swatch_fill = "Vulling"

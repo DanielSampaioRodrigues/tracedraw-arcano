@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "Nessuna cartella trovata in cui inviare il PDF"
 status.sent_to = "PDF scritto in {path}"
 status.settings_reset = "Tutte le impostazioni sono tornate ai valori predefiniti"
 status.settings_saved = "Impostazioni salvate come predefinite"
+status.software_renderer = "Un adattatore software disegna la finestra ({name}): ogni fotogramma è disegnato dalla CPU, quindi TraceDraw si limita a 30 fotogrammi al secondo senza ombre. Installare il driver proprio della scheda grafica lo rende più veloce." # mt
 status.shaping_empty = "La modellazione ha prodotto un risultato vuoto"
 status.style_created = "Stile creato e collegato alla selezione"
 status.swatch_fill = "Riempimento"

@@ -328,6 +328,9 @@ struct Shell {
     /// Files later starts handed over (see instance.rs).
     #[cfg(not(target_arch = "wasm32"))]
     handed_over: Option<std::sync::mpsc::Receiver<Vec<std::path::PathBuf>>>,
+    /// Frames paced on a software adapter (#616).
+    #[cfg(not(target_arch = "wasm32"))]
+    pacer: gpu::Pacer,
 }
 
 impl Shell {
@@ -342,6 +345,8 @@ impl Shell {
             open: None,
             #[cfg(not(target_arch = "wasm32"))]
             handed_over: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            pacer: gpu::Pacer::new(cc),
         }
     }
 
@@ -353,12 +358,15 @@ impl Shell {
             splash: Some(splash::Splash::start(&cc.egui_ctx, open.as_deref())),
             open,
             handed_over: None,
+            pacer: gpu::Pacer::new(cc),
         }
     }
 }
 
 impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.pacer.pace();
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(splash) = self.splash.as_mut() {
             if splash.update(ui) == splash::Step::Wait {

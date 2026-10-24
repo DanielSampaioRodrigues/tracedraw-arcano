@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "找不到可傳送 PDF 的資料夾"
 status.sent_to = "已將 PDF 寫入 {path}"
 status.settings_reset = "所有設定都已還原為預設值"
 status.settings_saved = "已將設定儲存為預設值"
+status.software_renderer = "視窗由軟體介面卡繪製（{name}）：每一格都在 CPU 上繪製，因此 TraceDraw 限制為每秒 30 格且不繪製陰影。安裝顯示卡本身的驅動程式會更快。" # mt
 status.shaping_empty = "造形產生了空白結果"
 status.style_created = "已建立樣式並連結至選取範圍"
 status.swatch_fill = "填色"

@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "PDF の送信先フォルダーが見つかりませ
 status.sent_to = "PDF を {path} に書き出しました"
 status.settings_reset = "すべての設定を既定値に戻しました"
 status.settings_saved = "設定を既定値として保存しました"
+status.software_renderer = "ソフトウェア アダプターがウィンドウを描画しています ({name}): すべてのフレームを CPU で描くため、TraceDraw は影なしで毎秒 30 フレームに抑えます。グラフィックカード専用のドライバーをインストールすると速くなります。" # mt
 status.shaping_empty = "整形の結果が空になりました"
 status.style_created = "スタイルを作成し、選択範囲にリンクしました"
 status.swatch_fill = "塗り"

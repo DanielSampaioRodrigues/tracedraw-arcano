@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "Tidak ditemukan folder untuk mengirim PDF"
 status.sent_to = "PDF ditulis ke {path}"
 status.settings_reset = "Semua pengaturan kembali ke bawaan"
 status.settings_saved = "Pengaturan disimpan sebagai bawaan"
+status.software_renderer = "Adaptor perangkat lunak menggambar jendela ({name}): setiap bingkai digambar di CPU, jadi TraceDraw membatasi diri pada 30 bingkai per detik tanpa bayangan. Memasang driver kartu grafis sendiri membuatnya lebih cepat." # mt
 status.shaping_empty = "Pembentukan menghasilkan hasil kosong"
 status.style_created = "Gaya dibuat dan ditautkan ke pilihan"
 status.swatch_fill = "Isian"

@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "Nebyla nalezena žádná složka, kam odeslat PDF"
 status.sent_to = "PDF zapsáno do {path}"
 status.settings_reset = "Všechna nastavení jsou zpět na výchozích hodnotách"
 status.settings_saved = "Nastavení uložena jako výchozí"
+status.software_renderer = "Okno kreslí softwarový adaptér ({name}): každý snímek se kreslí na procesoru, proto se TraceDraw omezí na 30 snímků za sekundu bez stínů. Instalace vlastního ovladače grafické karty jej zrychlí." # mt
 status.shaping_empty = "Tvarování vytvořilo prázdný výsledek"
 status.style_created = "Styl vytvořen a propojen s výběrem"
 status.swatch_fill = "Výplň"

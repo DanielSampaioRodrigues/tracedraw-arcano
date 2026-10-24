@@ -3299,6 +3299,7 @@ status.send_to_no_folder = "لم يُعثر على مجلد لإرسال ملف 
 status.sent_to = "تمت كتابة PDF في {path}"
 status.settings_reset = "عادت كل الإعدادات إلى قيمها الافتراضية"
 status.settings_saved = "تم حفظ الإعدادات كافتراضية"
+status.software_renderer = "يرسم مُحوِّل برمجي النافذة ({name}): تُرسم كل إطار على المعالج، لذا يقتصر TraceDraw على 30 إطارًا في الثانية دون ظلال. تثبيت برنامج التشغيل الخاص ببطاقة الرسومات يجعله أسرع." # mt
 status.shaping_empty = "أنتج التشكيل نتيجة فارغة"
 status.style_created = "تم إنشاء النمط وربطه بالتحديد"
 status.swatch_fill = "التعبئة"
