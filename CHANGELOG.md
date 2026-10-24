@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
+
 - When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
 
 - With hardware acceleration on, TraceDraw no longer draws the window on the CPU's software adapter when no graphics card is usable: it tries OpenGL next and the software adapter only last, keeps going when the OpenGL set-up panics, says in a message box when no renderer can open the window, and logs every graphics adapter with why it was taken or left. An older PC sat at full CPU with the window crawling, with hardware acceleration on or off, and `--renderer=gl` showed nothing (#616).
