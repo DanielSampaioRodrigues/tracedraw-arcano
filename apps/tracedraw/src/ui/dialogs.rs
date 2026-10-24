@@ -58,6 +58,11 @@ pub struct ExportState {
     /// The file's title and tags (keywords), for formats that keep them.
     pub title: String,
     pub tags: String,
+    /// The export preset chosen (its name), empty for none (#547).
+    pub preset: String,
+    /// A name being typed for a new preset (false) or for renaming the
+    /// chosen one (true).
+    pub preset_name: Option<(String, bool)>,
 }
 
 impl Default for ExportState {
@@ -77,6 +82,8 @@ impl Default for ExportState {
             script: None,
             title: String::new(),
             tags: String::new(),
+            preset: String::new(),
+            preset_name: None,
         }
     }
 }
@@ -2666,6 +2673,98 @@ pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
         });
 }
 
+/// The Export dialog's presets (#547): a list of the saved ones (each
+/// with its format), "+" to save the choices under a name, rename and
+/// delete for the chosen one.
+fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
+    ui.horizontal(|ui| {
+        ui.label(tr("dialog.export_preset"));
+        let presets = app.settings.formats.export_presets.clone();
+        let label = |p: &crate::prefs::ExportPreset| {
+            let fmt = EXPORT_FORMATS.get(p.format).map(|f| f.0).unwrap_or("?");
+            format!("{} ({fmt})", p.name)
+        };
+        let shown = presets
+            .iter()
+            .find(|p| p.name == st.preset)
+            .map(label)
+            .unwrap_or_else(|| tr("dialog.export_preset_none"));
+        egui::ComboBox::from_id_salt("export_preset")
+            .selected_text(shown)
+            .width(170.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(st.preset.is_empty(), tr("dialog.export_preset_none"))
+                    .clicked()
+                {
+                    st.preset.clear();
+                }
+                for p in &presets {
+                    if ui.selectable_label(p.name == st.preset, label(p)).clicked() {
+                        p.apply(st);
+                    }
+                }
+            });
+        if ui
+            .small_button("+")
+            .on_hover_text(tr("dialog.export_preset_add"))
+            .clicked()
+        {
+            st.preset_name = Some((String::new(), false));
+        }
+        let chosen = !st.preset.is_empty();
+        if ui
+            .add_enabled(chosen, egui::Button::new("\u{270e}").small())
+            .on_hover_text(tr("dialog.export_preset_rename"))
+            .clicked()
+        {
+            st.preset_name = Some((st.preset.clone(), true));
+        }
+        if ui
+            .add_enabled(chosen, egui::Button::new("\u{2212}").small())
+            .on_hover_text(tr("dialog.export_preset_delete"))
+            .clicked()
+        {
+            app.settings.formats.delete_preset(&st.preset);
+            st.preset.clear();
+        }
+    });
+    let mut done: Option<bool> = None;
+    if let Some((name, _)) = st.preset_name.as_mut() {
+        ui.horizontal(|ui| {
+            let r = ui.add(
+                egui::TextEdit::singleline(name)
+                    .desired_width(170.0)
+                    .hint_text(tr("dialog.export_preset_name")),
+            );
+            if !r.has_focus() && name.is_empty() {
+                r.request_focus();
+            }
+            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.small_button(tr("dialog.ok")).clicked() || enter {
+                done = Some(true);
+            }
+            if ui.small_button(tr("dialog.cancel")).clicked() {
+                done = Some(false);
+            }
+        });
+    }
+    if let Some(ok) = done {
+        if let (true, Some((name, renaming))) = (ok, st.preset_name.clone()) {
+            let name = name.trim().to_string();
+            let saved = if renaming {
+                app.settings.formats.rename_preset(&st.preset, &name)
+            } else {
+                app.settings.formats.save_preset(&name, st)
+            };
+            if saved {
+                st.preset = name;
+            }
+        }
+        st.preset_name = None;
+    }
+}
+
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {
     window(
         ctx,
@@ -2681,6 +2780,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
             ui.add_space(14.0);
             ui.vertical(|ui| {
                 ui.set_width(300.0);
+                export_presets_row(app, ui, st);
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.format"));
                     let scripted: Vec<crate::scripting::ScriptFilter> = app

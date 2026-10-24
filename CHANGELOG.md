@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Export: presets with names. "+" saves the format and its settings (resolution, quality, transparency, selection only, all pages, PDF choices) as a preset; the Preset list puts them back, each shown with its format; presets can be renamed and deleted, and stay in the preferences (#547).
+
 - Publish to PDF: Objects > Bitmaps downsamples colour, gray and black-and-white pictures to a resolution of your choice, compresses colour and gray pictures as JPEG with a quality, and can leave text and line art uncompressed. Gray pictures take one channel. The Web preset now makes small files (150 dpi, JPEG 75). Pictures always went in at full resolution, lossless (#550).
 
 - Dimensions: the property bar of the dimension tools sets the label's font and colour, the line colour and width, the arrowheads (arrow, open arrow, dot, tick, none) and rounded line ends, for new dimensions and the selected ones. Lines were always black hairlines and the label took the current font (#475).
