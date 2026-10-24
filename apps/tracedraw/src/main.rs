@@ -283,6 +283,8 @@ fn main() -> eframe::Result<()> {
         )
     }));
     startup_log::quiet_panics(false);
+    // A panic of the last renderer was reported as a crash already.
+    let reported = result.is_err() && next.is_none();
     let result = match result {
         Ok(r) => r,
         Err(panic) if gpu::window_opened() => std::panic::resume_unwind(panic),
@@ -309,7 +311,9 @@ fn main() -> eframe::Result<()> {
         }
     }
     log::error!("the window could not be opened with {mode:?}: {e}");
-    startup_log::no_window(&e.to_string());
+    if !reported {
+        startup_log::no_window(&e.to_string());
+    }
     Err(e)
 }
 

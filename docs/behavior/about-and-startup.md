@@ -121,7 +121,8 @@ and `--reset-settings` starts open windows of their own.
   the driver offers no matching pixel format) is caught and logged, and
   the next renderer is tried; it is not written to `crash.log` or shown.
   When no renderer is left, the reason is logged and shown in a message
-  box naming the log, and TraceDraw ends with an error.
+  box naming the log (a panic of the last one is shown as a crash, with
+  `crash.log`), and TraceDraw ends with an error.
 - The log names every graphics adapter wgpu offers (backend, type,
   vendor and device ids, driver) with why it was taken or left, the
   renderer each start tries and the one that opened the window; an
