@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dimensions: the property bar of the dimension tools sets the label's font and colour, the line colour and width, the arrowheads (arrow, open arrow, dot, tick, none) and rounded line ends, for new dimensions and the selected ones. Lines were always black hairlines and the label took the current font (#475).
+
 - Text: Options > Text > Display > Text units sets the unit font sizes are shown and typed in (points at first; millimetres, centimetres, inches and the other units of the rulers), for large work. A unit typed with the value counts, as in the other fields (#529).
 
 - Text: a font or size picked on the property bar or the Text docker with nothing selected asks whether it becomes the default for new text, as the reference program does. It changed the default without a word, so new text could start in another font than Arial after a pick made by mistake.
