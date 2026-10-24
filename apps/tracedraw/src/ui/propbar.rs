@@ -2015,6 +2015,26 @@ pub(crate) fn parse_outline_width(text: &str, units: Units) -> Option<Option<f64
     })
 }
 
+/// The width the wheel steps to from `width` in the outline width list
+/// (no outline, hairline, then the widths of unit `u`): the next one up
+/// (wheel up) or down. `None` at the end of the list (#663).
+pub(crate) fn outline_width_step(width: Option<f64>, up: bool, u: Units) -> Option<Option<f64>> {
+    let hair = tracedraw_core::Stroke::HAIRLINE;
+    let list: Vec<Option<f64>> = [None, Some(hair)]
+        .into_iter()
+        .chain(outline_width_presets(u).into_iter().map(Some))
+        .collect();
+    // Where `width` falls among the list's widths (no outline below all).
+    let key = |w: Option<f64>| w.map_or(-1.0, |w| w.max(hair));
+    let at = key(width);
+    let eps = 1e-9;
+    if up {
+        list.into_iter().find(|w| key(*w) > at + eps)
+    } else {
+        list.into_iter().rev().find(|w| key(*w) < at - eps)
+    }
+}
+
 /// Take the outline off the selection, or off new objects when nothing is
 /// selected.
 fn set_no_outline(app: &mut App) {
@@ -2030,13 +2050,15 @@ fn set_no_outline(app: &mut App) {
 }
 
 /// The outline width: a box typed into (Enter or leaving it applies, Esc
-/// puts it back) and an arrow dropping the usual widths. Returns the
-/// width picked or typed.
+/// puts it back) and an arrow dropping the usual widths; with `wheel`,
+/// the mouse wheel over it steps through those widths. Returns the width
+/// picked, typed or stepped to.
 fn outline_width_box(
     app: &mut App,
     ui: &mut Ui,
     width: Option<f64>,
     mixed: bool,
+    wheel: bool,
 ) -> Option<Option<f64>> {
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("outline_width_list");
@@ -2095,6 +2117,24 @@ fn outline_width_box(
         resp.rect.union(arrow_rect)
     });
     let anchor = inner.inner;
+    // The wheel over the closed list: the next width up or down (#663).
+    if wheel && !egui::Popup::is_id_open(&ctx, popup_id) && ui.rect_contains_pointer(anchor) {
+        let step = ui.input(|i| {
+            i.raw.events.iter().rev().find_map(|e| match e {
+                egui::Event::MouseWheel { delta, .. } if delta.y != 0.0 => Some(delta.y),
+                _ => None,
+            })
+        });
+        if let Some(dy) = step {
+            ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
+            // A width being typed goes; the step counts from the one held.
+            ui.data_mut(|d| d.remove::<String>(id));
+            ui.memory_mut(|m| m.surrender_focus(id));
+            if let Some(w) = outline_width_step(width, dy > 0.0, app.outline_units()) {
+                picked = Some(w);
+            }
+        }
+    }
     egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
         .open_memory(None)
         .width(anchor.width())
@@ -2138,7 +2178,16 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
     let mix = app.selection_stroke_mix();
     label_pic(ui, Pic::Pen, &tr("toolbar.outline_width"));
     let width = stroke.as_ref().map(|s| s.width);
-    match outline_width_box(app, ui, width, mix.presence || mix.has(StrokeField::Width)) {
+    // The wheel changes the selection's outline only, never asks about
+    // the outline of new objects at each notch.
+    let wheel = !app.selection.is_empty();
+    match outline_width_box(
+        app,
+        ui,
+        width,
+        mix.presence || mix.has(StrokeField::Width),
+        wheel,
+    ) {
         Some(None) => set_no_outline(app),
         Some(Some(w)) => app.apply_outline_width(w),
         None => {}
@@ -3332,6 +3381,123 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    /// The wheel steps through the outline width list: no outline,
+    /// hairline, then the widths of the unit, from wherever the width is
+    /// (#663).
+    #[test]
+    fn the_wheel_steps_through_the_outline_widths() {
+        let hair = tracedraw_core::Stroke::HAIRLINE;
+        for u in OUTLINE_UNITS {
+            let p = outline_width_presets(u);
+            assert_eq!(outline_width_step(None, true, u), Some(Some(hair)));
+            assert_eq!(outline_width_step(None, false, u), None);
+            assert_eq!(outline_width_step(Some(hair), false, u), Some(None));
+            // The first width above the hairline (in inches the first is
+            // the hairline itself).
+            let above = p.iter().copied().find(|w| *w > hair + 1e-9);
+            assert_eq!(outline_width_step(Some(hair), true, u), above.map(Some));
+            assert_eq!(outline_width_step(Some(p[2]), true, u), Some(Some(p[3])));
+            assert_eq!(outline_width_step(Some(p[2]), false, u), Some(Some(p[1])));
+            if p[0] > hair {
+                assert_eq!(outline_width_step(Some(p[0]), false, u), Some(Some(hair)));
+            }
+            // Between two widths: the one above or below.
+            let mid = (p[1] + p[2]) / 2.0;
+            assert_eq!(outline_width_step(Some(mid), true, u), Some(Some(p[2])));
+            assert_eq!(outline_width_step(Some(mid), false, u), Some(Some(p[1])));
+            // At the widest it stays.
+            let last = *p.last().expect("widths");
+            assert_eq!(outline_width_step(Some(last), true, u), None);
+            assert_eq!(
+                outline_width_step(Some(last * 3.0), false, u),
+                Some(Some(last))
+            );
+        }
+    }
+
+    /// The wheel over the property bar's outline width box changes the
+    /// selection's outline to the next width up or down, one undo step a
+    /// notch; with nothing selected it does nothing (#663).
+    #[test]
+    fn the_wheel_over_the_outline_width_changes_it() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: R::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        let p = outline_width_presets(app.outline_units());
+        app.apply_outline_width(p[2]);
+        let width = |app: &App| {
+            app.doc()
+                .find_shape(id)
+                .and_then(|s| s.stroke.as_ref().map(|s| s.width))
+        };
+        assert_eq!(width(&app), Some(p[2]));
+        let origin = egui::pos2(100.0, 100.0);
+        let run = |app: &mut App, events: Vec<egui::Event>| -> egui::Rect {
+            let mut box_id = egui::Id::NULL;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 400.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Area::new(egui::Id::new("outline_bar"))
+                        .fixed_pos(origin)
+                        .show(ui.ctx(), |ui| {
+                            ui.horizontal(|ui| {
+                                box_id = ui.make_persistent_id("outline_width_box");
+                                outline_part(app, ui);
+                            });
+                        });
+                },
+            );
+            out.textures_delta.clear();
+            ctx.read_response(box_id)
+                .map(|r| r.rect)
+                .unwrap_or(egui::Rect::NOTHING)
+        };
+        // The bar settles over the first frames.
+        run(&mut app, Vec::new());
+        run(&mut app, Vec::new());
+        let field = run(&mut app, Vec::new());
+        assert!(field.is_positive() && field.top() >= origin.y, "{field:?}");
+        let wheel = |app: &mut App, dy: f32| {
+            run(app, vec![egui::Event::PointerMoved(field.center())]);
+            run(
+                app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, dy),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        };
+        let depth = app.engine.history_labels().0.len();
+        wheel(&mut app, 1.0);
+        assert_eq!(width(&app), Some(p[3]));
+        wheel(&mut app, -1.0);
+        wheel(&mut app, -1.0);
+        assert_eq!(width(&app), Some(p[1]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 3);
+        // Nothing selected: nothing changes, nothing is asked.
+        app.select(Vec::new());
+        wheel(&mut app, 1.0);
+        assert_eq!(width(&app), Some(p[1]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 3);
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
     }
 
     #[test]
