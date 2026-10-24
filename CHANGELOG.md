@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Variable Length tool: a stroke made much wider than its own outline width is now drawn whole on screen. Parts of it reaching far from the path could be left out of the picture, so the stroke looked cut off with a flat edge on one side (#626).
+
 - Canvas overlays show on any colour: a shape being drawn has a black hairline on a white line over its outline, so it no longer disappears into a black outline; the selection handles are black with a white edge; and the Shape tool's and curve tools' control handles are dashed on a white line, with white-edged arrow heads (#670).
 
 - Shape tool: corner widgets. A curve being edited shows a small circle inside each corner; dragging one into its corner rounds the corners on the canvas as you drag, every corner of the curve together, or only the chosen nodes' corners when nodes are chosen. Works on open curves too; the status bar shows the radius, and the drag is one undo step (#635).
