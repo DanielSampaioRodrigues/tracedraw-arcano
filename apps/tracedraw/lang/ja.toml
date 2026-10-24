@@ -2522,6 +2522,7 @@ options.constrain_key = "角度を固定するキー" # mt
 options.custom_size = "カスタム"
 options.decimal_places = "桁 (小数点以下)"
 options.default_font = "既定のフォント:"
+options.text_units = "テキストの単位:" # mt
 options.default_guide_color = "既定のガイドラインの色:"
 options.default_preset_guide_color = "既定のプリセット ガイドラインの色:"
 options.default_size = "既定のサイズ:"

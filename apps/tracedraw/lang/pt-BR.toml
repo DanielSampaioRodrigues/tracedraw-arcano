@@ -2522,6 +2522,7 @@ options.constrain_key = "Tecla que trava o ângulo" # mt
 options.custom_size = "Personalizado"
 options.decimal_places = "casas decimais"
 options.default_font = "Fonte padrão:"
+options.text_units = "Unidade do texto:" # mt
 options.default_guide_color = "Cor padrão das linhas-guia:"
 options.default_preset_guide_color = "Cor padrão das linhas-guia predefinidas:"
 options.default_size = "Tamanho padrão:"

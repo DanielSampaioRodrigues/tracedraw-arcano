@@ -2522,6 +2522,7 @@ options.constrain_key = "कोण सीमित करने की कुं
 options.custom_size = "कस्टम"
 options.decimal_places = "दशमलव स्थान"
 options.default_font = "डिफ़ॉल्ट फ़ॉन्ट:"
+options.text_units = "टेक्स्ट इकाइयाँ:" # mt
 options.default_guide_color = "डिफ़ॉल्ट गाइडलाइन रंग:"
 options.default_preset_guide_color = "डिफ़ॉल्ट प्रीसेट गाइडलाइन रंग:"
 options.default_size = "डिफ़ॉल्ट आकार:"

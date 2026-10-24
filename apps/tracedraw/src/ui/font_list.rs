@@ -1226,6 +1226,11 @@ impl App {
                 .any(|s| matches!(s.kind, tracedraw_core::ShapeKind::Text { .. }))
     }
 
+    /// The unit font sizes are shown and typed in (#529).
+    pub fn text_units(&self) -> crate::app::Units {
+        crate::app::Units::from_id(&self.settings.text_units)
+    }
+
     /// The answer OK to "make it the default of new text?": the font
     /// (with its style) and the size new text gets.
     pub fn set_text_defaults(

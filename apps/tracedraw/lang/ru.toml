@@ -2522,6 +2522,7 @@ options.constrain_key = "Клавиша ограничения угла" # mt
 options.custom_size = "Пользовательский"
 options.decimal_places = "знаков после запятой"
 options.default_font = "Шрифт по умолчанию:"
+options.text_units = "Единицы текста:" # mt
 options.default_guide_color = "Цвет направляющих по умолчанию:"
 options.default_preset_guide_color = "Цвет шаблонных направляющих по умолчанию:"
 options.default_size = "Размер по умолчанию:"

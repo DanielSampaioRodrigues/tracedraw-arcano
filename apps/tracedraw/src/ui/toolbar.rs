@@ -2145,7 +2145,10 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
 
 /// The font size: a field and an arrow dropping the usual sizes.
 pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
-    let mut size = app.text_size_pt;
+    // Shown and typed in the text units (points at first, #529); kept in
+    // points.
+    let u = app.text_units();
+    let mut shown_size = u.from_pt(app.text_size_pt);
     let mut picked: Option<f64> = None;
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("text_size_list");
@@ -2153,10 +2156,12 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
         ui.spacing_mut().item_spacing.x = 0.0;
         let field = ui
             .add(
-                crate::ui::field::NumField::new(&mut size)
-                    .speed(0.5)
-                    .range(1.0..=3000.0)
-                    .suffix(" pt")
+                crate::ui::field::NumField::new(&mut shown_size)
+                    .speed(u.from_pt(0.5))
+                    .range(u.from_pt(1.0)..=u.from_pt(3000.0))
+                    .max_decimals(if u == crate::app::Units::Points { 1 } else { 3 })
+                    .unit_mm(u.mm())
+                    .suffix(format!(" {}", u.short()))
                     .width(62.0),
             )
             .rich_tip(tr("toolbar.font_size"));
@@ -2183,6 +2188,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
         (field, anchor)
     });
     let (field, anchor) = inner.inner;
+    let size = u.to_pt(shown_size);
     let current = app.text_settings_shown().3;
     // The size last under the pointer while the list is open: the text
     // shows it (#370).
@@ -2196,7 +2202,11 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                 .max_height(320.0)
                 .show(ui, |ui| {
                     for s in TEXT_SIZES {
-                        let label = format!("{s} pt");
+                        let label = format!(
+                            "{} {}",
+                            crate::ui::field::format_number(u.from_pt(s), false, 0, Some(2)),
+                            u.short()
+                        );
                         let r = ui.selectable_label((current - s).abs() < 1e-6, label);
                         if r.clicked() {
                             picked = Some(s);

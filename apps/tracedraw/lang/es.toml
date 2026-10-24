@@ -2522,6 +2522,7 @@ options.constrain_key = "Tecla para restringir el ángulo" # mt
 options.custom_size = "Personalizado"
 options.decimal_places = "posiciones decimales"
 options.default_font = "Fuente predeterminada:"
+options.text_units = "Unidades de texto:" # mt
 options.default_guide_color = "Color predeterminado de línea guía:"
 options.default_preset_guide_color = "Color predeterminado de líneas guía preajustadas:"
 options.default_size = "Tamaño predeterminado:"

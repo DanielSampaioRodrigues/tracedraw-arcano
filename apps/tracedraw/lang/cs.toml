@@ -2522,6 +2522,7 @@ options.constrain_key = "Klávesa omezení úhlu" # mt
 options.custom_size = "Vlastní"
 options.decimal_places = "desetinných míst"
 options.default_font = "Výchozí písmo:"
+options.text_units = "Jednotky textu:" # mt
 options.default_guide_color = "Výchozí barva vodítek:"
 options.default_preset_guide_color = "Výchozí barva vodítek z předvoleb:"
 options.default_size = "Výchozí velikost:"

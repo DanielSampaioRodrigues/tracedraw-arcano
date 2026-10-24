@@ -2522,6 +2522,7 @@ options.constrain_key = "限制角度的按鍵" # mt
 options.custom_size = "自訂"
 options.decimal_places = "小數位數"
 options.default_font = "預設字型："
+options.text_units = "文字單位：" # mt
 options.default_guide_color = "預設參考線色彩："
 options.default_preset_guide_color = "預設集參考線的預設色彩："
 options.default_size = "預設大小："

@@ -286,6 +286,14 @@ impl Units {
     pub fn from_mm(self, v: f64) -> f64 {
         v / self.mm()
     }
+    /// A font size in points shown in this unit (#529).
+    pub fn from_pt(self, pt: f64) -> f64 {
+        self.from_mm(pt * 25.4 / 72.0)
+    }
+    /// A font size typed in this unit, in points.
+    pub fn to_pt(self, v: f64) -> f64 {
+        self.to_mm(v) * 72.0 / 25.4
+    }
     pub fn to_mm(self, v: f64) -> f64 {
         v * self.mm()
     }

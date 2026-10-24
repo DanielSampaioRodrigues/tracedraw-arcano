@@ -2522,6 +2522,7 @@ options.constrain_key = "مفتاح تقييد الزاوية" # mt
 options.custom_size = "مخصص"
 options.decimal_places = "منازل عشرية"
 options.default_font = "الخط الافتراضي:"
+options.text_units = "وحدات النص:" # mt
 options.default_guide_color = "لون خط الإرشاد الافتراضي:"
 options.default_preset_guide_color = "لون خطوط الإرشاد المسبقة الافتراضي:"
 options.default_size = "الحجم الافتراضي:"

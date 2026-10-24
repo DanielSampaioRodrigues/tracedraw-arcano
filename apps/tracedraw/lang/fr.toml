@@ -2522,6 +2522,7 @@ options.constrain_key = "Touche de contrainte d'angle" # mt
 options.custom_size = "Personnalisé"
 options.decimal_places = "décimales"
 options.default_font = "Police par défaut :"
+options.text_units = "Unités du texte :" # mt
 options.default_guide_color = "Couleur par défaut des repères :"
 options.default_preset_guide_color = "Couleur par défaut des repères prédéfinis :"
 options.default_size = "Taille par défaut :"

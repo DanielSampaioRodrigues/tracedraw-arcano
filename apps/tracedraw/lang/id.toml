@@ -2522,6 +2522,7 @@ options.constrain_key = "Tombol pembatas sudut" # mt
 options.custom_size = "Kustom"
 options.decimal_places = "tempat desimal"
 options.default_font = "Fon bawaan:"
+options.text_units = "Satuan teks:" # mt
 options.default_guide_color = "Warna garis bantu default:"
 options.default_preset_guide_color = "Warna garis bantu preset default:"
 options.default_size = "Ukuran bawaan:"

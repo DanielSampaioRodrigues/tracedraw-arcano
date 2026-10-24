@@ -2522,6 +2522,7 @@ options.constrain_key = "Klawisz ograniczający kąt" # mt
 options.custom_size = "Własny"
 options.decimal_places = "miejsc po przecinku"
 options.default_font = "Domyślna czcionka:"
+options.text_units = "Jednostki tekstu:" # mt
 options.default_guide_color = "Domyślny kolor linii pomocniczych:"
 options.default_preset_guide_color = "Domyślny kolor wstępnie ustawionych linii pomocniczych:"
 options.default_size = "Domyślny rozmiar:"

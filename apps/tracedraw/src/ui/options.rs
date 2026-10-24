@@ -1345,20 +1345,41 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
         });
         ui.end_row();
         // The font and size of new text, whatever text is selected (#449).
+        // The unit of font sizes everywhere (#529): points, or millimetres
+        // and the like for large work.
+        row_label(ui, &tr("options.text_units"));
+        let u = app.text_units();
+        egui::ComboBox::from_id_salt("options_text_units")
+            .selected_text(u.label())
+            .width(160.0)
+            .show_ui(ui, |ui| {
+                for v in Units::ALL {
+                    if ui.selectable_label(v == u, v.label()).clicked() {
+                        app.settings.text_units = v.id().to_string();
+                    }
+                }
+            });
+        ui.end_row();
         row_label(ui, &tr("options.default_font"));
         crate::ui::font_list::default_font_list(app, ui, "options_default_font", 220.0);
         ui.end_row();
         row_label(ui, &tr("options.default_size"));
+        let u = app.text_units();
+        let mut shown = u.from_pt(app.text_default_size);
         if ui
             .add(
-                crate::ui::field::NumField::new(&mut app.text_default_size)
-                    .range(1.0..=999.0)
-                    .suffix(" pt"),
+                crate::ui::field::NumField::new(&mut shown)
+                    .range(u.from_pt(1.0)..=u.from_pt(999.0))
+                    .max_decimals(if u == Units::Points { 1 } else { 3 })
+                    .unit_mm(u.mm())
+                    .suffix(format!(" {}", u.short())),
             )
             .changed()
-            && !app.has_text_target()
         {
-            app.text_size_pt = app.text_default_size;
+            app.text_default_size = u.to_pt(shown);
+            if !app.has_text_target() {
+                app.text_size_pt = app.text_default_size;
+            }
         }
         ui.end_row();
     });

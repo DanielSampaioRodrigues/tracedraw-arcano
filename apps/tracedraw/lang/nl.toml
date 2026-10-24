@@ -2522,6 +2522,7 @@ options.constrain_key = "Toets voor hoekbeperking" # mt
 options.custom_size = "Aangepast"
 options.decimal_places = "decimalen"
 options.default_font = "Standaardlettertype:"
+options.text_units = "Teksteenheden:" # mt
 options.default_guide_color = "Standaardkleur hulplijnen:"
 options.default_preset_guide_color = "Standaardkleur vooringestelde hulplijnen:"
 options.default_size = "Standaardgrootte:"

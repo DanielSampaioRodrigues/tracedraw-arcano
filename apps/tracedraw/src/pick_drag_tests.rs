@@ -5328,3 +5328,93 @@ fn a_size_picked_with_nothing_selected_asks_before_changing_the_default() {
     assert_eq!(app.text_default_size, 36.0);
     assert_eq!(app.text_default_font, "Arial");
 }
+
+/// With Options > Text > Text units at millimetres the property bar shows
+/// font sizes in millimetres, and a size typed in them is kept in points;
+/// a unit typed with the value counts (#529).
+#[test]
+fn font_sizes_show_and_type_in_the_text_units() {
+    use crate::app::Units;
+    assert!((Units::Millimeters.from_pt(72.0) - 25.4).abs() < 1e-9);
+    assert!((Units::Centimeters.to_pt(2.54) - 72.0).abs() < 1e-9);
+    assert!((Units::Points.from_pt(24.0) - 24.0).abs() < 1e-12);
+    let (ctx, mut app, _) = setup();
+    app.start_text(Point::new(20.0, 100.0), None);
+    app.text_insert("Big");
+    app.finish_text();
+    let t = app.selection[0];
+    app.settings.text_units = "mm".into();
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    for _ in 0..5 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let size = match &app.doc().find_shape(t).expect("text").kind {
+        ShapeKind::Text { spans, .. } => spans[0].size_pt,
+        _ => unreachable!(),
+    };
+    let shown = format!(
+        "{} mm",
+        crate::ui::field::format_number(Units::Millimeters.from_pt(size), false, 0, Some(3))
+    );
+    // The object's height can read the same: the size field is the
+    // rightmost.
+    let field = texts(&mut app)
+        .into_iter()
+        .filter(|(s, _)| s.trim() == shown)
+        .max_by(|a, b| a.1.x.total_cmp(&b.1.x))
+        .map(|(_, p)| p)
+        .unwrap_or_else(|| panic!("the size field showing {shown}"));
+    click_at(&ctx, &mut app, field, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::A, Modifiers::COMMAND)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("1cm".into())],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let after = match &app.doc().find_shape(t).expect("text").kind {
+        ShapeKind::Text { spans, .. } => spans[0].size_pt,
+        _ => unreachable!(),
+    };
+    assert!(
+        (after - Units::Centimeters.to_pt(1.0)).abs() < 0.01,
+        "{after}"
+    );
+}

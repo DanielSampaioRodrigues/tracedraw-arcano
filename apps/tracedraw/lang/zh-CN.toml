@@ -2522,6 +2522,7 @@ options.constrain_key = "约束角度的按键" # mt
 options.custom_size = "自定义"
 options.decimal_places = "位小数"
 options.default_font = "默认字体:"
+options.text_units = "文本单位：" # mt
 options.default_guide_color = "默认辅助线颜色："
 options.default_preset_guide_color = "默认预设辅助线颜色："
 options.default_size = "默认大小:"

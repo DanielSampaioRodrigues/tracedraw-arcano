@@ -117,6 +117,11 @@ pub struct Settings {
     /// by default); widths are kept in millimetres.
     #[serde(default = "default_outline_units")]
     pub outline_units: String,
+    /// Options > Text > Display > Text units: the unit font sizes are shown
+    /// and typed in (a unit id, "pt" by default); sizes are kept in
+    /// points (#529).
+    #[serde(default = "default_outline_units")]
+    pub text_units: String,
     /// Grid, ruler and guideline settings new drawings start with
     /// (Document Options > Save as Default).
     #[serde(default)]
@@ -1298,6 +1303,7 @@ impl Default for Settings {
             custom_arrowheads: Vec::new(),
             custom_dashes: Vec::new(),
             outline_units: default_outline_units(),
+            text_units: default_outline_units(),
             document_defaults: DocumentDefaults::default(),
             startup: Startup::default(),
             undo_levels: default_undo_levels(),

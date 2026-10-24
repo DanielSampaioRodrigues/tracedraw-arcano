@@ -2522,6 +2522,7 @@ options.constrain_key = "Taste für den Winkelraster" # mt
 options.custom_size = "Benutzerdefiniert"
 options.decimal_places = "Dezimalstellen"
 options.default_font = "Standardschrift:"
+options.text_units = "Texteinheiten:" # mt
 options.default_guide_color = "Standardfarbe der Hilfslinien:"
 options.default_preset_guide_color = "Standardfarbe der Vorgabe-Hilfslinien:"
 options.default_size = "Standardgröße:"

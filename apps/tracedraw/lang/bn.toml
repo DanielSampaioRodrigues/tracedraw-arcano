@@ -2522,6 +2522,7 @@ options.constrain_key = "কোণ সীমাবদ্ধ করার কী"
 options.custom_size = "কাস্টম"
 options.decimal_places = "দশমিক স্থান"
 options.default_font = "ডিফল্ট ফন্ট:"
+options.text_units = "টেক্সটের একক:" # mt
 options.default_guide_color = "ডিফল্ট গাইডলাইনের রং:"
 options.default_preset_guide_color = "ডিফল্ট প্রিসেট গাইডলাইনের রং:"
 options.default_size = "ডিফল্ট আকার:"

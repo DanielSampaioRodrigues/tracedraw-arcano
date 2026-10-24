@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: Options > Text > Display > Text units sets the unit font sizes are shown and typed in (points at first; millimetres, centimetres, inches and the other units of the rulers), for large work. A unit typed with the value counts, as in the other fields (#529).
+
 - Text: a font or size picked on the property bar or the Text docker with nothing selected asks whether it becomes the default for new text, as the reference program does. It changed the default without a word, so new text could start in another font than Arial after a pick made by mistake.
 
 - Fit Text to Path: while it waits for the path, the pointer near a path shows the text where a click puts it, centred on the nearest point and as far from the path as the pointer, with the distance and a red mark where the text begins; the click places it so. Nothing showed until the click, which always put the text on the path itself.

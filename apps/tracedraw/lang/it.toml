@@ -2522,6 +2522,7 @@ options.constrain_key = "Tasto che vincola l'angolo" # mt
 options.custom_size = "Personalizzata"
 options.decimal_places = "cifre decimali"
 options.default_font = "Font predefinito:"
+options.text_units = "Unità del testo:" # mt
 options.default_guide_color = "Colore predefinito delle linee guida:"
 options.default_preset_guide_color = "Colore predefinito delle linee guida preimpostate:"
 options.default_size = "Dimensione predefinita:"

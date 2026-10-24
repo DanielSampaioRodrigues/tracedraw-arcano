@@ -2522,6 +2522,7 @@ options.constrain_key = "Açı kısıtlama tuşu" # mt
 options.custom_size = "Özel"
 options.decimal_places = "ondalık basamak"
 options.default_font = "Varsayılan yazı tipi:"
+options.text_units = "Metin birimleri:" # mt
 options.default_guide_color = "Varsayılan kılavuz çizgisi rengi:"
 options.default_preset_guide_color = "Varsayılan hazır kılavuz çizgisi rengi:"
 options.default_size = "Varsayılan boyut:"
