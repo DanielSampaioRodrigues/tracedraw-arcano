@@ -966,6 +966,32 @@ pub fn open_with_system(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", tr("status.could_not_open_viewer")))
 }
 
+/// The program and arguments that open `path` in `editor`: the
+/// program itself, or on macOS an application bundle through `open -a`.
+pub fn editor_command(editor: &str, path: &Path) -> (String, Vec<String>) {
+    let editor = editor.trim().trim_matches('"');
+    let file = path.display().to_string();
+    if cfg!(target_os = "macos") && editor.trim_end_matches('/').ends_with(".app") {
+        return ("open".into(), vec!["-a".into(), editor.into(), file]);
+    }
+    (editor.into(), vec![file])
+}
+
+/// Open `path` in the bitmap editor of the preferences, or with the
+/// system's program when none is set (#593).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn open_in_editor(editor: &str, path: &Path) -> Result<(), String> {
+    if editor.trim().is_empty() {
+        return open_with_system(path);
+    }
+    let (program, args) = editor_command(editor, path);
+    std::process::Command::new(&program)
+        .args(&args)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("{}: {program}: {e}", tr("status.could_not_open_viewer")))
+}
+
 impl App {
     /// Open a web page in the system browser (a new tab in the browser
     /// build).
@@ -1784,6 +1810,24 @@ mod tests {
             "{b:?} {at_first:?}"
         );
         assert!((b.y0 - at_first.y0 + 3.0).abs() < 1e-6);
+    }
+
+    /// The bitmap editor of the preferences gets the file as its argument;
+    /// a macOS application bundle opens through `open -a` (#593).
+    #[test]
+    fn the_bitmap_editor_gets_the_file() {
+        let p = Path::new("/tmp/bitmap-7.png");
+        let (prog, args) = editor_command(" \"/usr/bin/gimp\" ", p);
+        assert_eq!(prog, "/usr/bin/gimp");
+        assert_eq!(args, vec!["/tmp/bitmap-7.png".to_string()]);
+        let (prog, args) = editor_command("/Applications/GIMP.app", p);
+        if cfg!(target_os = "macos") {
+            assert_eq!(prog, "open");
+            assert_eq!(args[0], "-a");
+        } else {
+            assert_eq!(prog, "/Applications/GIMP.app");
+            assert_eq!(args.len(), 1);
+        }
     }
 
     /// Fit to page shrinks objects running off the page to fit inside it,
