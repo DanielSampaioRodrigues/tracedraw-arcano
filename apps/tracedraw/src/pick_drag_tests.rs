@@ -1842,6 +1842,47 @@ fn copy_cut_and_paste_events_work_on_objects() {
     assert!((b.center() - view).hypot() < 1e-6);
 }
 
+/// With only a picture or files on the system clipboard the windowing
+/// layer drops the Ctrl+V press and sends no paste event: the release of
+/// V with Ctrl still pastes, once; a release after a paste event does not.
+#[test]
+fn ctrl_v_pastes_when_only_its_release_comes_through() {
+    let (ctx, mut app, _) = setup();
+    let n = shape_count(&app);
+    let v_up = |mods: Modifiers| Event::Key {
+        key: egui::Key::V,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: mods,
+    };
+    frame(&ctx, &mut app, vec![Event::Copy], Modifiers::COMMAND);
+    frame(
+        &ctx,
+        &mut app,
+        vec![v_up(Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(shape_count(&app), n + 1);
+    // A paste event, then the release in a later frame: one paste.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Paste("x".into())],
+        Modifiers::COMMAND,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![v_up(Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(shape_count(&app), n + 2);
+    // V let go without Ctrl is typing, not a paste.
+    frame(&ctx, &mut app, vec![v_up(Modifiers::NONE)], Modifiers::NONE);
+    assert_eq!(shape_count(&app), n + 2);
+}
+
 #[test]
 fn handles_stand_outside_the_box_and_grabbing_one_does_not_jump() {
     let (ctx, mut app, id) = setup();
