@@ -294,6 +294,10 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     if !app.has_document() {
         app.show_welcome = true;
     }
+    // Files dropped on the window, and what a drop would do while they
+    // are dragged over it.
+    app.take_dropped_files(&ctx);
+    app.draw_drop_hint(&ctx);
     // Options > Display > Show tooltips.
     let delay = if app.settings.show_tooltips {
         0.5

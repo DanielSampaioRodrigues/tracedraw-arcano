@@ -3221,6 +3221,7 @@ status.drag_move = "dx: {dx}  dy: {dy}  दूरी: {d}  कोण: {a}°"
 status.drag_rotate = "घुमाव: {a}°"
 status.drag_scale = "स्केल: {sx} % x {sy} %"
 status.drag_skew = "तिरछापन: {a}°"
+status.drop_unsupported = "{p} को खोला या आयात नहीं किया जा सकता" # mt
 status.duplicated_in_place = "उसी जगह डुप्लिकेट किया गया (+)"
 status.editing_clip_frame = "फ़्रेम की सामग्री संपादित हो रही है: उसे खिसकाएँ या संपादित करें, फिर सामग्री संपादन समाप्त करें चुनें"
 status.editing_text = "टेक्स्ट संपादित हो रहा है"

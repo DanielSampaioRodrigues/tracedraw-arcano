@@ -3221,6 +3221,7 @@ status.drag_move = "dx: {dx}  dy: {dy}  المسافة: {d}  الزاوية: {a}
 status.drag_rotate = "التدوير: {a}°"
 status.drag_scale = "التحجيم: {sx} % x {sy} %"
 status.drag_skew = "الإمالة: {a}°"
+status.drop_unsupported = "يتعذر فتح {p} أو استيراده" # mt
 status.duplicated_in_place = "تم التكرار في المكان نفسه (+)"
 status.editing_clip_frame = "تحرير محتوى الإطار: انقله أو حرره ثم اختر إنهاء تحرير المحتوى"
 status.editing_text = "تحرير النص"

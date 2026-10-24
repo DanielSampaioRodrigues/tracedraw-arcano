@@ -3221,6 +3221,7 @@ status.drag_move = "dx: {dx}  dy: {dy}  Distanza: {d}  Angolo: {a}°"
 status.drag_rotate = "Rotazione: {a}°"
 status.drag_scale = "Scala: {sx} % x {sy} %"
 status.drag_skew = "Inclinazione: {a}°"
+status.drop_unsupported = "Impossibile aprire o importare {p}" # mt
 status.duplicated_in_place = "Duplicato sul posto (+)"
 status.editing_clip_frame = "Modifica del contenuto della cornice: spostalo o modificalo, poi scegli Termina modifica del contenuto"
 status.editing_text = "Modifica del testo"

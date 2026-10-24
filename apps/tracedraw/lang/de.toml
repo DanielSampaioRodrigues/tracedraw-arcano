@@ -3221,6 +3221,7 @@ status.drag_move = "dx: {dx}  dy: {dy}  Abstand: {d}  Winkel: {a}°"
 status.drag_rotate = "Drehung: {a}°"
 status.drag_scale = "Skalierung: {sx} % x {sy} %"
 status.drag_skew = "Neigung: {a}°"
+status.drop_unsupported = "{p} kann weder geöffnet noch importiert werden" # mt
 status.duplicated_in_place = "An gleicher Stelle dupliziert (+)"
 status.editing_clip_frame = "Inhalt des Rahmens wird bearbeitet: verschieben oder bearbeiten, dann Inhaltsbearbeitung beenden wählen"
 status.editing_text = "Text wird bearbeitet"

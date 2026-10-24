@@ -3221,6 +3221,7 @@ status.drag_move = "dx: {dx}  dy: {dy}  Расстояние: {d}  Угол: {a}
 status.drag_rotate = "Поворот: {a}°"
 status.drag_scale = "Масштаб: {sx} % x {sy} %"
 status.drag_skew = "Наклон: {a}°"
+status.drop_unsupported = "Невозможно открыть или импортировать {p}" # mt
 status.duplicated_in_place = "Продублировано на месте (+)"
 status.editing_clip_frame = "Редактирование содержимого рамки: переместите или измените его, затем выберите «Завершить редактирование содержимого»"
 status.editing_text = "Редактирование текста"
