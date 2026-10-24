@@ -80,4 +80,7 @@ Write-Host ''
 Write-Host 'Agora: no TraceDraw, Ferramentas > Opcoes > Global > Geral, ligue'
 Write-Host '"Deixar agentes de IA deste computador editarem o desenho aberto (MCP)",'
 Write-Host 'e feche e abra o aplicativo do ChatGPT (com o TraceDraw ja aberto).'
+Write-Host ''
+Write-Host 'IMPORTANTE: use o modo Codex. No alto a esquerda troque "ChatGPT"'
+Write-Host 'por "Codex" - o chat comum nao recebe ferramentas locais.'
 Fechar

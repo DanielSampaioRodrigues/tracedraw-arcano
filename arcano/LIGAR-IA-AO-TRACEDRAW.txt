@@ -27,9 +27,12 @@ PASSO 2 - No aplicativo de IA (uma vez em cada aplicativo)
   (Se o TraceDraw foi instalado "so para este usuario", o comando e
    C:\Users\SEU-USUARIO\AppData\Local\Programs\TraceDraw\tracedraw.exe)
 
-  ChatGPT (aplicativo do computador): nas configuracoes, na parte de
-  apps/conectores, ligue o modo de desenvolvedor e adicione um servidor
-  MCP local (STDIO) com o comando e o argumento acima.
+  ChatGPT (aplicativo do computador)
+  Clique duas vezes em REGISTRAR-MCP-CHATGPT.bat, nesta pasta. Ele grava
+  o servidor em C:\Users\SEU-USUARIO\.codex\config.toml.
+  Depois feche e abra o aplicativo e, IMPORTANTE, use o modo Codex:
+  no alto a esquerda troque "ChatGPT" por "Codex". O chat comum nao
+  recebe ferramentas locais - so o Codex, que e o agente.
 
   Cursor: arquivo C:\Users\SEU-USUARIO\.cursor\mcp.json
   Gemini CLI: arquivo C:\Users\SEU-USUARIO\.gemini\settings.json
@@ -80,4 +83,7 @@ SE NAO FUNCIONAR
   janela em que voce mexeu por ultimo (clique nela antes de pedir).
 - Confira se a opcao do Passo 1 esta marcada.
 - Feche e abra o aplicativo de IA de novo.
+- No aplicativo do ChatGPT, confira se voce esta no modo Codex (menu do
+  alto: "ChatGPT" -> "Codex"). No chat comum as ferramentas locais nao
+  aparecem, mesmo com o servidor ligado no painel de Plugins.
 - IAs que funcionam so no navegador nao conseguem usar o TraceDraw.
