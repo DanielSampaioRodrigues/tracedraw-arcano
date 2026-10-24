@@ -6458,3 +6458,115 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
         _ => panic!("a curve"),
     }
 }
+
+/// Every shape of one frame, nested ones taken out of their lists.
+fn frame_shapes(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<egui::Shape> {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    fn walk(s: egui::Shape, all: &mut Vec<egui::Shape>) {
+        match s {
+            egui::Shape::Vec(v) => v.into_iter().for_each(|s| walk(s, all)),
+            s => all.push(s),
+        }
+    }
+    let mut all = Vec::new();
+    out.shapes.into_iter().for_each(|c| walk(c.shape, &mut all));
+    all
+}
+
+/// Overlays show on any colour (#670): a rectangle being drawn has a
+/// black line on a white one over its outline, the selection handles
+/// are black with a white edge, and a node's control handle is dashed on
+/// a white line with a white-edged head.
+#[test]
+fn overlays_are_drawn_on_a_white_line() {
+    let (ctx, mut app, id) = setup();
+    // The selection handles: black boxes with a white edge.
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    let handles = shapes
+        .iter()
+        .filter(|s| {
+            matches!(s, egui::Shape::Rect(r) if r.fill == egui::Color32::BLACK
+                && r.stroke.color == egui::Color32::WHITE && r.stroke.width >= 1.0)
+        })
+        .count();
+    assert!(handles >= 8, "{handles}");
+    // A rectangle being drawn.
+    app.select(Vec::new());
+    app.set_tool(Tool::Rectangle);
+    let a = app.view.to_screen(Point::new(80.0, 80.0));
+    let b = app.view.to_screen(Point::new(120.0, 110.0));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(a)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(a, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    for i in 1..=3 {
+        let p = a + (b - a) * (i as f32 / 3.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+    }
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    let line = |color: egui::Color32, width: f32| {
+        shapes.iter().position(|s| {
+            matches!(s, egui::Shape::LineSegment { points, stroke }
+                if stroke.color == color && (stroke.width - width).abs() < 1e-3
+                    && points.iter().all(|p| (p.x - b.x).abs() < 2.0 || (p.x - a.x).abs() < 2.0
+                        || (p.y - b.y).abs() < 2.0 || (p.y - a.y).abs() < 2.0))
+        })
+    };
+    let white = line(egui::Color32::WHITE, crate::canvas::HALO_WIDTH).expect("a white line");
+    let black = line(egui::Color32::BLACK, crate::canvas::HALO_INNER).expect("a black line");
+    assert!(black > white, "the black line over the white one");
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(b, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // A curve's control handle with the Shape tool.
+    use tracedraw_core::geometry::BezPath;
+    let mut p = BezPath::new();
+    p.move_to((20.0, 120.0));
+    p.curve_to((40.0, 150.0), (70.0, 150.0), (90.0, 120.0));
+    let curve = app
+        .new_shape(ShapeKind::Path {
+            path: p,
+            closed: false,
+        })
+        .expect("curve");
+    let _ = id;
+    app.select(vec![curve]);
+    app.set_tool(Tool::Shape);
+    app.select_all_nodes();
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    let heads = shapes
+        .iter()
+        .filter(|s| {
+            matches!(s, egui::Shape::Path(ps) if ps.closed && ps.points.len() == 3
+                && ps.stroke.color == egui::epaint::ColorMode::Solid(egui::Color32::WHITE))
+        })
+        .count();
+    assert!(heads >= 2, "{heads}");
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::LineSegment { stroke, .. }
+        if stroke.color == egui::Color32::WHITE && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3)));
+}

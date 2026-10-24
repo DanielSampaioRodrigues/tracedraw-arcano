@@ -15,8 +15,9 @@ A curve selected with the Shape tool shows its outline in the node
 colour (Options > Nodes and Handles, blue by default), its nodes as small
 markers by type (squares for cusps by default) and the first node of each
 subpath as a slightly larger triangle. A selected node's control
-handles are dashed lines from the node, each ending in a solid arrow head
-at its control point (the curve tools show the handles of the curve
+handles are dashed lines from the node on a white line twice as wide,
+each ending in a solid arrow head with a white edge at its control point
+(so they show on any colour, #670) (the curve tools show the handles of the curve
 being drawn the same way). The arrow showing the curve's
 direction is off by default (Options > Nodes and Handles).
 
@@ -229,6 +230,7 @@ Reduce Nodes, Curve smoothness.
 
 - `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`
 - `tracedraw_core` `corner_cut::tests::corners_and_the_largest_fillet_they_take`
+- `pick_drag_tests::overlays_are_drawn_on_a_white_line`
 - `pick_drag_tests::nodes_are_taken_within_the_pick_distance_and_a_near_miss_keeps_the_selection`
 - `pick_drag_tests::the_shape_tool_says_a_rectangle_is_still_a_rectangle`
 - `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`

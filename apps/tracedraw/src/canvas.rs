@@ -136,10 +136,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         painter.line_segment([view.to_screen(a), view.to_screen(b)], stroke);
         let preview = three_point_preview(app.tool, a, b, c);
         for (pts, closed) in flatten(&preview, view) {
-            if closed {
-                painter.add(epaint::PathShape::closed_line(pts, stroke));
-            } else {
-                painter.add(epaint::PathShape::line(pts, stroke));
+            if pts.len() > 1 {
+                haloed_polyline(painter, &pts, closed, Color32::BLACK);
             }
         }
     }
@@ -708,6 +706,8 @@ fn dashed_selection_line(painter: &Painter, pts: &[Pos2]) {
 /// The outline of the object being drawn, in the colour and width of the
 /// default outline (at least one pixel wide; the selection colour when new
 /// objects get no outline), so the preview looks like the result.
+/// Over it, a black line on a white one, so the shape's edge shows on
+/// any outline and any colour under it (#670).
 fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
     let view = &app.view;
     let stroke = match &app.default_stroke() {
@@ -719,10 +719,36 @@ fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
             continue;
         }
         if closed {
-            painter.add(epaint::PathShape::closed_line(pts, stroke));
+            painter.add(epaint::PathShape::closed_line(pts.clone(), stroke));
         } else {
-            painter.add(epaint::PathShape::line(pts, stroke));
+            painter.add(epaint::PathShape::line(pts.clone(), stroke));
         }
+        haloed_polyline(painter, &pts, closed, Color32::BLACK);
+    }
+}
+
+/// The width of the white line under an overlay's coloured one, and of
+/// the coloured one: half of it, as the reference program draws its
+/// overlays (#670).
+pub(crate) const HALO_WIDTH: f32 = 2.0;
+pub(crate) const HALO_INNER: f32 = 1.0;
+
+/// An overlay line that shows on any colour: `inner` on a white line
+/// twice as wide. Plain segments, which cost less than a path shape in
+/// an overlay redrawn every frame.
+pub(crate) fn haloed_polyline(painter: &Painter, pts: &[Pos2], closed: bool, inner: Color32) {
+    let segs = || {
+        pts.windows(2).map(|w| [w[0], w[1]]).chain(
+            closed
+                .then(|| [pts[pts.len() - 1], pts[0]])
+                .filter(|_| pts.len() > 2),
+        )
+    };
+    for seg in segs() {
+        painter.line_segment(seg, EStroke::new(HALO_WIDTH, Color32::WHITE));
+    }
+    for seg in segs() {
+        painter.line_segment(seg, EStroke::new(HALO_INNER, inner));
     }
 }
 
@@ -1400,14 +1426,18 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         // Objects chosen inside a group show round handles.
         let nested = app.selection_nested();
         let size = crate::interaction::HANDLE_SIZE;
+        // Black with a white edge, so they show on a dark drawing (#670).
+        let edge = EStroke::new(1.0, Color32::WHITE);
         for (_, p) in app.handle_positions(bounds) {
             if nested {
-                painter.circle_filled(p, size / 2.0 + 0.5, Color32::BLACK);
+                painter.circle(p, size / 2.0 + 0.5, Color32::BLACK, edge);
             } else {
-                painter.rect_filled(
+                painter.rect(
                     ERect::from_center_size(p, egui::vec2(size, size)),
                     0.0,
                     Color32::BLACK,
+                    edge,
+                    epaint::StrokeKind::Outside,
                 );
             }
         }
@@ -1778,12 +1808,21 @@ fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32
     let head = 7.0_f32.min(len);
     let base = ctrl - u * head;
     if len > head {
-        dashed_polyline(painter, &[node, base], EStroke::new(1.0, color), 4.0, 3.0);
+        // Dashes on a white line and a head with a white edge, so the
+        // handle shows on any colour (#670).
+        painter.line_segment([node, base], EStroke::new(HALO_WIDTH, Color32::WHITE));
+        dashed_polyline(
+            painter,
+            &[node, base],
+            EStroke::new(HALO_INNER, color),
+            4.0,
+            3.0,
+        );
     }
     painter.add(epaint::PathShape::convex_polygon(
         vec![ctrl, base + n * 3.5, base - n * 3.5],
         color,
-        EStroke::NONE,
+        EStroke::new(1.0, Color32::WHITE),
     ));
 }
 
