@@ -376,7 +376,12 @@ the preferences, `text_sections_closed`).
   see Paragraph formatting), otherwise every selected text object, one
   undo step each.
   With no text selected the font, style, size, underline and alignment
-  become those of new text.
+  become those of new text; a font or size picked so first asks
+  ("You have not selected anything. Use this setting as the default for
+  new text?", OK or Cancel), as the reference program does, since a pick
+  made by mistake changed the font of every new text without a word
+  (`pick_drag_tests::a_size_picked_with_nothing_selected_asks_before_changing_the_default`).
+  The Enter that applies a typed size does not answer the question.
 - Labels show without a trailing colon.
 
 ## Glyphs docker

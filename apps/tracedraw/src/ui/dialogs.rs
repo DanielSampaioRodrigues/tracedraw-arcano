@@ -650,6 +650,13 @@ pub enum Dialog {
         version: u16,
     },
     ConfirmClose,
+    /// A font or size picked with no text selected: make it the default
+    /// of new text? (as the reference program asks)
+    TextDefaults {
+        font: Option<String>,
+        style: Option<(bool, bool)>,
+        size: Option<f64>,
+    },
     /// Reset every preference to the defaults? (F8 while TraceDraw
     /// starts, Options > Global.)
     ConfirmResetSettings,
@@ -1532,6 +1539,22 @@ pub fn show(app: &mut App, ctx: &Context) {
                     crate::recovery::dismiss(found, false);
                     close = true;
                 }
+                None => {}
+            }
+        }
+        Dialog::TextDefaults { font, style, size } => {
+            let (ok, cancel) = (tr("dialog.ok"), tr("dialog.cancel"));
+            match crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &tr("dialog.text_defaults_question"),
+                &[&ok, &cancel],
+            ) {
+                Some(0) => {
+                    app.set_text_defaults(font.take(), *style, *size);
+                    close = true;
+                }
+                Some(_) => close = true,
                 None => {}
             }
         }

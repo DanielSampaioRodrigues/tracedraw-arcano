@@ -559,6 +559,7 @@ dialog.resample = "Sampel Ulang"
 dialog.reset = "Atur ulang"
 dialog.reset_active_channel = "Atur ulang saluran aktif"
 dialog.reset_settings_question = "Kembalikan semua pengaturan TraceDraw ke bawaan? Pintasan, bilah, kotak alat, opsi palet, ukuran antarmuka, dan preferensi lain kembali seperti saat TraceDraw dipasang. Gambar Anda dan daftar gambar terbaru tetap disimpan."
+dialog.text_defaults_question = "Anda belum memilih apa pun. Gunakan setelan ini sebagai bawaan untuk teks baru?" # mt
 dialog.recover_question = "TraceDraw tidak ditutup dengan benar terakhir kali. {n} gambar dapat dipulihkan dari cadangan otomatis: {names}. Pulihkan?"
 dialog.recover = "Pulihkan"
 dialog.discard = "Buang"

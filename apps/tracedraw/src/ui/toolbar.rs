@@ -2224,19 +2224,34 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
     } else if app.live_font.as_ref().is_some_and(|l| l.owner == owner) {
         app.end_font_preview();
     }
+    // With no text to change, the size would be the one of new text:
+    // asked first.
+    let ask = |app: &mut App, s: f64| {
+        // The Enter that applied the size is not the question's OK.
+        ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        app.dialog = crate::ui::dialogs::Dialog::TextDefaults {
+            font: None,
+            style: None,
+            size: Some(s),
+        };
+    };
     if let Some(s) = picked {
-        app.text_size_pt = s;
-        if !app.has_text_target() {
-            app.text_default_size = s;
-        }
         egui::Popup::close_id(&ctx, popup_id);
+        if !app.has_text_target() {
+            ask(app, s);
+            return false;
+        }
+        app.text_size_pt = s;
         return true;
+    }
+    // The field reports a change once a value is applied (Enter, leaving
+    // it, the arrows), not at each keystroke.
+    if field.changed() && !app.has_text_target() {
+        ask(app, size);
+        return false;
     }
     if field.changed() {
         app.text_size_pt = size;
-        if !app.has_text_target() {
-            app.text_default_size = size;
-        }
         return true;
     }
     false

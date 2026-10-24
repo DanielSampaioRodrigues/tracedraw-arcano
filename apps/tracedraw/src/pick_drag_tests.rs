@@ -5248,3 +5248,83 @@ fn finish_selects_the_whole_symmetry_of_several_objects() {
         "its objects with it"
     );
 }
+
+/// A size typed on the property bar with no text selected asks before it
+/// becomes the size of new text, as the reference program does; OK makes
+/// it the default, Cancel leaves the default as it was.
+#[test]
+fn a_size_picked_with_nothing_selected_asks_before_changing_the_default() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Text);
+    let before = app.text_default_size;
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    for _ in 0..5 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let shown = format!("{} pt", before);
+    let field = texts(&mut app)
+        .into_iter()
+        .find(|(t, _)| t.trim() == shown)
+        .map(|(_, p)| p)
+        .expect("the size field");
+    click_at(&ctx, &mut app, field, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::A, Modifiers::COMMAND)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("36".into())],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    match &app.dialog {
+        crate::ui::dialogs::Dialog::TextDefaults { size, font, .. } => {
+            assert_eq!(*size, Some(36.0));
+            assert!(font.is_none());
+        }
+        other => panic!("no question: {:?}", std::mem::discriminant(other)),
+    }
+    assert_eq!(app.text_default_size, before, "not before OK");
+    // Cancel: the default stays; OK: it changes.
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    assert_eq!(app.text_default_size, before);
+    app.set_text_defaults(Some("Arial".into()), None, Some(36.0));
+    assert_eq!(app.text_default_size, 36.0);
+    assert_eq!(app.text_default_font, "Arial");
+}

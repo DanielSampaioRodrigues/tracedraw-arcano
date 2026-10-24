@@ -559,6 +559,7 @@ dialog.resample = "রিস্যাম্পল"
 dialog.reset = "রিসেট"
 dialog.reset_active_channel = "সক্রিয় চ্যানেল রিসেট"
 dialog.reset_settings_question = "TraceDraw-এর সব সেটিং ডিফল্টে ফেরাবেন? শর্টকাট, বার, টুলবক্স, প্যালেটের বিকল্প, ইন্টারফেসের আকার ও অন্যান্য পছন্দ TraceDraw যেমন আসে তেমন হয়ে যাবে। আপনার ড্রয়িং ও সাম্প্রতিক ড্রয়িংয়ের তালিকা থেকে যাবে।"
+dialog.text_defaults_question = "আপনি কিছু নির্বাচন করেননি। এই সেটিংটি নতুন টেক্সটের ডিফল্ট হিসেবে ব্যবহার করবেন?" # mt
 dialog.recover_question = "গতবার TraceDraw ঠিকভাবে বন্ধ হয়নি। স্বয়ংক্রিয় ব্যাকআপ থেকে {n}টি ড্রয়িং ফেরানো যায়: {names}। ফেরাবেন?"
 dialog.recover = "ফেরান"
 dialog.discard = "বাতিল"

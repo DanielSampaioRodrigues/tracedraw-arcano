@@ -559,6 +559,7 @@ dialog.resample = "重新取樣"
 dialog.reset = "重設"
 dialog.reset_active_channel = "重設作用中的色版"
 dialog.reset_settings_question = "要將 TraceDraw 的所有設定還原為預設值嗎？快速鍵、列、工具箱、調色盤選項、介面大小與其他偏好設定都會恢復為初始狀態。您的繪圖與最近使用的繪圖清單會保留。"
+dialog.text_defaults_question = "您沒有選取任何物件。將此設定用作新文字的預設值嗎？" # mt
 dialog.recover_question = "TraceDraw 上次未正常關閉。可從自動備份復原 {n} 個繪圖: {names}。是否復原?"
 dialog.recover = "復原"
 dialog.discard = "捨棄"

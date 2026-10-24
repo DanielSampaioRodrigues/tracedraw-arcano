@@ -559,6 +559,7 @@ dialog.resample = "Rééchantillonner"
 dialog.reset = "Réinitialiser"
 dialog.reset_active_channel = "Réinitialiser la couche active"
 dialog.reset_settings_question = "Rétablir tous les réglages de TraceDraw par défaut ? Raccourcis, barres, boîte à outils, options de la palette, taille de l'interface et autres préférences reviennent tels que TraceDraw est livré. Vos dessins et la liste des dessins récents sont conservés."
+dialog.text_defaults_question = "Vous n'avez rien sélectionné. Utiliser ce réglage par défaut pour le nouveau texte ?" # mt
 dialog.recover_question = "TraceDraw ne s'est pas fermé correctement la dernière fois. {n} dessin(s) peuvent être récupérés de la sauvegarde automatique : {names}. Les récupérer ?"
 dialog.recover = "Récupérer"
 dialog.discard = "Ignorer"
