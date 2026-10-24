@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "প্রথমে বিষয়বস্
 status.clone_of_clone = "ক্লোনের ক্লোন করা যায় না; বরং তার মাস্টারের ক্লোন করুন"
 status.cloned_effect = "ইফেক্ট ক্লোন হয়েছে: ক্লোন সম্পাদনা না করা পর্যন্ত এটি উৎস অবজেক্টের ইফেক্ট অনুসরণ করে"
 status.command_unavailable = "{name} এখন উপলব্ধ নয়"
+status.corner_radius = "কোণের ব্যাসার্ধ: {r}" # mt
 status.could_not_encode_image = "ছবি এনকোড করা যায়নি: {e}"
 status.could_not_open = "{p} খোলা যায়নি: {e}"
 status.could_not_open_viewer = "সিস্টেম ভিউয়ার খোলা যায়নি"

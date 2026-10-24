@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: corner widgets. A curve being edited shows a small circle inside each corner; dragging one into its corner rounds the corners on the canvas as you drag, every corner of the curve together, or only the chosen nodes' corners when nodes are chosen. Works on open curves too; the status bar shows the radius, and the drag is one undo step (#635).
+
 - View > Page > Mask Outside Page: an optional mode that covers everything outside the page with the desktop colour, with the page border drawn over the objects, so the page shows as it will print while you keep drawing and editing. Objects outside the page still show faintly and stay editable; the setting is kept with the other view settings (#615).
 
 - `tracedraw-cli convert`: what the .cdr reader skipped or guessed (a fill it cannot read yet, a page size it does not take, objects left out) now goes to stderr as warnings, as for the other formats it reads. Only `info` showed it, so a converted file could miss part of the drawing without a word.

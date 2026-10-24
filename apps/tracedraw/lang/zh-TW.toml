@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "請先選取內容，然後選擇框架"
 status.clone_of_clone = "無法仿製仿製物件；請改為仿製其主物件"
 status.cloned_effect = "已仿製效果：在編輯仿製物件之前，它會跟隨來源物件的效果"
 status.command_unavailable = "{name} 目前無法使用"
+status.corner_radius = "圓角半徑：{r}" # mt
 status.could_not_encode_image = "無法編碼影像：{e}"
 status.could_not_open = "無法開啟 {p}：{e}"
 status.could_not_open_viewer = "無法開啟系統檢視器"

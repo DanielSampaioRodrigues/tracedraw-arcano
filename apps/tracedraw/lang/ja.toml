@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "先に内容を選択し、次にフレー�
 status.clone_of_clone = "クローンはクローンできません。代わりにマスターをクローンしてください"
 status.cloned_effect = "効果を複製しました。複製を編集するまで元オブジェクトの効果に追従します"
 status.command_unavailable = "{name} は現在使用できません"
+status.corner_radius = "角の半径: {r}" # mt
 status.could_not_encode_image = "画像をエンコードできません: {e}"
 status.could_not_open = "{p} を開けません: {e}"
 status.could_not_open_viewer = "システムのビューアーを開けませんでした"

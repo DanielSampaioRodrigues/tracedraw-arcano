@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Selecione o conteúdo primeiro e depois esc
 status.clone_of_clone = "Um clone não pode ser clonado; clone o mestre dele"
 status.cloned_effect = "Efeito clonado: ele segue o efeito do objeto de origem até o clone ser editado"
 status.command_unavailable = "{name} não está disponível agora"
+status.corner_radius = "Raio do canto: {r}" # mt
 status.could_not_encode_image = "Não foi possível codificar a imagem: {e}"
 status.could_not_open = "Não foi possível abrir {p}: {e}"
 status.could_not_open_viewer = "Não foi possível abrir o visualizador do sistema"

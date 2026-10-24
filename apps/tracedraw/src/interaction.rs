@@ -2466,6 +2466,7 @@ impl App {
             | Drag::RulerOrigin { .. }
             | Drag::Node { .. }
             | Drag::KindNode { .. }
+            | Drag::CornerWidget(_)
             | Drag::Handle { .. }
             | Drag::None => {}
         }

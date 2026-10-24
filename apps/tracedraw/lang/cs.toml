@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Nejprve vyberte obsah, poté zvolte rámeč
 status.clone_of_clone = "Klon nelze klonovat; klonujte raději jeho předlohu"
 status.cloned_effect = "Efekt naklonován: řídí se efektem zdrojového objektu, dokud klon neupravíte"
 status.command_unavailable = "{name} nyní není k dispozici"
+status.corner_radius = "Poloměr rohu: {r}" # mt
 status.could_not_encode_image = "Obrázek nelze zakódovat: {e}"
 status.could_not_open = "Nelze otevřít {p}: {e}"
 status.could_not_open_viewer = "Systémový prohlížeč nelze otevřít"

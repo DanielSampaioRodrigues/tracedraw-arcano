@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Seleziona prima il contenuto, poi scegli la
 status.clone_of_clone = "Un clone non si può clonare; clona invece il suo originale"
 status.cloned_effect = "Effetto clonato: segue l'effetto dell'oggetto di origine finché il clone non viene modificato"
 status.command_unavailable = "{name} non è disponibile ora"
+status.corner_radius = "Raggio dell'angolo: {r}" # mt
 status.could_not_encode_image = "Impossibile codificare l'immagine: {e}"
 status.could_not_open = "Impossibile aprire {p}: {e}"
 status.could_not_open_viewer = "Impossibile aprire il visualizzatore di sistema"

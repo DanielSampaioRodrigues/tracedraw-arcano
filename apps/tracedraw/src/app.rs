@@ -452,6 +452,9 @@ pub enum Drag {
     Node {
         last: Point,
     },
+    /// Dragging a corner widget (Shape tool): the corners round as it
+    /// moves (#635).
+    CornerWidget(Box<crate::corner_widgets::CornerDrag>),
     /// Dragging a control handle (Shape tool).
     Handle {
         shape: ShapeId,
@@ -1048,6 +1051,8 @@ pub struct App {
     /// Whether each paragraph text overflows its frame, by document
     /// revision (laying text out every frame would be slow).
     pub overflow_cache: std::cell::RefCell<(u64, std::collections::HashMap<ShapeId, bool>)>,
+    /// The corners the Shape tool's corner widgets stand on.
+    pub corner_cache: std::cell::RefCell<crate::corner_widgets::CornerCache>,
     pub wireframe: bool,
     /// Families the font lists show: installed, carried by drawings, and
     /// (browser build) offered by the page's font folder.
@@ -2114,6 +2119,7 @@ impl App {
             window_layout: Default::default(),
             window_layout_seen: None,
             overflow_cache: Default::default(),
+            corner_cache: Default::default(),
             wireframe: false,
             font_families: tracedraw_text::fonts().available_families(),
             font_catalog: Default::default(),

@@ -2153,6 +2153,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
             epaint::StrokeKind::Outside,
         );
     }
+    crate::corner_widgets::draw(app, painter, main);
 }
 
 /// A line of `pattern` (on and off lengths in pixels; empty for solid).

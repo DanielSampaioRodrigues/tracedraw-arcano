@@ -480,6 +480,12 @@ impl App {
                     return;
                 }
             }
+            // A corner widget rounds the corners (#635).
+            if let Some(w) = self.corner_widget_at(p) {
+                if self.start_corner_drag(w, p) {
+                    return;
+                }
+            }
             if let Some((shape, index, which)) = self.ctrl_handle_at(p) {
                 self.drag = Drag::Handle {
                     shape,
@@ -583,6 +589,7 @@ impl App {
                     };
                 }
                 Drag::NodeMove { .. } => self.node_move_to(p, mods),
+                Drag::CornerWidget(d) => self.corner_drag_to(*d, p),
                 Drag::NodeTransform {
                     handle,
                     start,
@@ -770,6 +777,10 @@ impl App {
             if let Some(hit) = self.node_at(p) {
                 self.segment_spot = None;
                 self.click_node((hit.shape, hit.index), mods);
+                return;
+            }
+            // A click on a corner widget keeps the selection.
+            if self.corner_widget_at(p).is_some() {
                 return;
             }
             // A click on a segment chooses the segment: it is drawn

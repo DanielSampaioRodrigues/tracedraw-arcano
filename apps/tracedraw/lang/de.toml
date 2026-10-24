@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Zuerst den Inhalt auswählen, dann den Rahm
 status.clone_of_clone = "Ein Klon kann nicht geklont werden; klonen Sie stattdessen sein Original"
 status.cloned_effect = "Effekt geklont: er folgt dem Effekt des Quellobjekts, bis der Klon bearbeitet wird"
 status.command_unavailable = "{name} ist gerade nicht verfügbar"
+status.corner_radius = "Eckenradius: {r}" # mt
 status.could_not_encode_image = "Bild konnte nicht kodiert werden: {e}"
 status.could_not_open = "{p} konnte nicht geöffnet werden: {e}"
 status.could_not_open_viewer = "Der Systembetrachter konnte nicht geöffnet werden"

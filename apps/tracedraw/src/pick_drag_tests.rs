@@ -6333,3 +6333,128 @@ fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
     let (rects, _) = painted(&ctx, &mut app);
     assert!(!masked_at(&rects, left_of_page));
 }
+
+/// The Shape tool's corner widgets (#635): with no node chosen, dragging
+/// one into its corner rounds every corner of the curve together, live,
+/// in one undo step; with a node chosen only its corner shows a widget
+/// and rounds; an open curve rounds its inner corners.
+#[test]
+fn corner_widgets_round_every_corner_or_the_chosen_ones() {
+    use tracedraw_core::geometry::{BezPath, PathEl, Shape as _};
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    let mut square = BezPath::new();
+    square.move_to((20.0, 20.0));
+    square.line_to((60.0, 20.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((20.0, 60.0));
+    square.close_path();
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square.clone(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => panic!("a curve"),
+    };
+    let arcs = |p: &BezPath| {
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..)))
+            .count()
+    };
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 4, "one on every corner");
+    // Each sits inside the square, near its node.
+    let inside = egui::Rect::from_two_pos(
+        app.view.to_screen(Point::new(20.0, 20.0)),
+        app.view.to_screen(Point::new(60.0, 60.0)),
+    );
+    assert!(widgets.iter().all(|w| inside.contains(w.at)));
+    // Dragged 5 mm into its corner (towards the square's centre).
+    let w = widgets[0];
+    let centre = app.view.to_screen(Point::new(40.0, 40.0));
+    let dir = (centre - w.at).normalized();
+    let to = w.at + dir * (5.0 * app.view.zoom);
+    let undo_before = app.engine.undo_label().map(str::to_string);
+    drag(&ctx, &mut app, w.at, to, Modifiers::NONE, Vec::new());
+    let rounded = path_of(&app);
+    assert_eq!(arcs(&rounded), 4, "every corner rounded");
+    // The arc's middle came about 5 mm into the corner: a fillet of about
+    // 5 / (sqrt 2 - 1) mm on a right angle.
+    let b = rounded.bounding_box();
+    assert!(
+        (b.width() - 40.0).abs() < 1e-6,
+        "the sides keep their place"
+    );
+    let r = crate::corner_widgets::radius_for(5.0, std::f64::consts::FRAC_PI_2);
+    assert!((r - 12.07).abs() < 0.1, "{r}");
+    assert!(
+        (rounded.area().abs() - (1600.0 - (4.0 - std::f64::consts::PI) * r * r)).abs() < 3.0,
+        "{}",
+        rounded.area()
+    );
+    assert!(app.status.contains("12.07"), "{}", app.status);
+    // One undo step.
+    app.undo();
+    assert_eq!(path_of(&app), square);
+    assert_eq!(app.engine.undo_label().map(str::to_string), undo_before);
+    // A chosen node: only its corner has a widget, and only it rounds.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let node = app.view.to_screen(Point::new(60.0, 60.0));
+    click_at(&ctx, &mut app, node, Modifiers::NONE);
+    assert_eq!(app.node_selection.len(), 1, "{:?}", app.node_selection);
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 1);
+    let w = widgets[0];
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at + dir * 30.0,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert_eq!(arcs(&path_of(&app)), 1, "that corner only");
+    // An open zigzag rounds its two inner corners.
+    let mut zig = BezPath::new();
+    zig.move_to((20.0, 100.0));
+    zig.line_to((50.0, 100.0));
+    zig.line_to((50.0, 130.0));
+    zig.line_to((80.0, 130.0));
+    let open = app
+        .new_shape(ShapeKind::Path {
+            path: zig,
+            closed: false,
+        })
+        .expect("zigzag");
+    app.select(vec![open]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 2);
+    let w = widgets[0];
+    let node = app.view.to_screen(Point::new(50.0, 100.0));
+    let dir = (w.at - node).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at + dir * 20.0,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    match &app.doc().find_shape(open).expect("zigzag").kind {
+        ShapeKind::Path { path, closed } => {
+            assert!(!closed);
+            assert_eq!(arcs(path), 2, "both inner corners");
+        }
+        _ => panic!("a curve"),
+    }
+}

@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Selecteer eerst de inhoud en kies daarna he
 status.clone_of_clone = "Een kloon kan niet worden gekloond; kloon in plaats daarvan het origineel"
 status.cloned_effect = "Effect gekloond: het volgt het effect van het bronobject tot de kloon wordt bewerkt"
 status.command_unavailable = "{name} is nu niet beschikbaar"
+status.corner_radius = "Hoekstraal: {r}" # mt
 status.could_not_encode_image = "Kan afbeelding niet coderen: {e}"
 status.could_not_open = "Kan {p} niet openen: {e}"
 status.could_not_open_viewer = "Kan de viewer van het systeem niet openen"

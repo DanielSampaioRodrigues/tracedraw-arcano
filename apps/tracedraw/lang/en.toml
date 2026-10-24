@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Select the contents first, then choose the 
 status.clone_of_clone = "A clone cannot be cloned; clone its master instead"
 status.cloned_effect = "Effect cloned: it follows the source object's effect until the clone is edited"
 status.command_unavailable = "{name} is not available now"
+status.corner_radius = "Corner radius: {r}"
 status.could_not_encode_image = "Could not encode image: {e}"
 status.could_not_open = "Could not open {p}: {e}"
 status.could_not_open_viewer = "Could not open the system viewer"

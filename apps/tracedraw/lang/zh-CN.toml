@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "先选择内容，再选择框架"
 status.clone_of_clone = "不能克隆克隆对象；请改为克隆其主对象"
 status.cloned_effect = "效果已克隆：在克隆被编辑前它跟随源对象的效果"
 status.command_unavailable = "{name} 当前不可用"
+status.corner_radius = "圆角半径：{r}" # mt
 status.could_not_encode_image = "无法编码图像：{e}"
 status.could_not_open = "无法打开 {p}：{e}"
 status.could_not_open_viewer = "无法打开系统查看器"

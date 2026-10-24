@@ -34,6 +34,7 @@ mod connectors;
 mod contour_tool;
 mod coords;
 mod copy_effect;
+mod corner_widgets;
 mod corners;
 mod crop_tool;
 mod curve_join;

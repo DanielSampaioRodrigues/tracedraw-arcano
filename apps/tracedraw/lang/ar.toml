@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "حدد المحتوى أولاً، ثم ا�
 status.clone_of_clone = "لا يمكن استنساخ نسخة مرتبطة؛ استنسخ أصلها بدلًا منها"
 status.cloned_effect = "تم استنساخ التأثير: يتبع تأثير الكائن المصدر حتى يتم تحرير النسخة"
 status.command_unavailable = "{name} غير متاح الآن"
+status.corner_radius = "نصف قطر الزاوية: {r}" # mt
 status.could_not_encode_image = "تعذّر ترميز الصورة: {e}"
 status.could_not_open = "تعذّر فتح {p}: {e}"
 status.could_not_open_viewer = "تعذّر فتح عارض النظام"

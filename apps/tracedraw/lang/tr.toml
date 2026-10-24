@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Önce içeriği seçin, ardından çerçeve
 status.clone_of_clone = "Bir klon klonlanamaz; bunun yerine asıl nesnesini klonlayın"
 status.cloned_effect = "Efekt klonlandı: klon düzenlenene kadar kaynak nesnenin efektini izler"
 status.command_unavailable = "{name} şu anda kullanılamıyor"
+status.corner_radius = "Köşe yarıçapı: {r}" # mt
 status.could_not_encode_image = "Görüntü kodlanamadı: {e}"
 status.could_not_open = "{p} açılamadı: {e}"
 status.could_not_open_viewer = "Sistem görüntüleyicisi açılamadı"

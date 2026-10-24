@@ -3203,6 +3203,7 @@ status.clip_frame_select_contents = "Сначала выберите содер�
 status.clone_of_clone = "Клон нельзя клонировать; клонируйте его оригинал"
 status.cloned_effect = "Эффект клонирован: он следует эффекту исходного объекта, пока клон не изменят"
 status.command_unavailable = "Команда «{name}» сейчас недоступна"
+status.corner_radius = "Радиус угла: {r}" # mt
 status.could_not_encode_image = "Не удалось закодировать изображение: {e}"
 status.could_not_open = "Не удалось открыть {p}: {e}"
 status.could_not_open_viewer = "Не удалось открыть системную программу просмотра"
