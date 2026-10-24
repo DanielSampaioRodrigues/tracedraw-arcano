@@ -1,4 +1,4 @@
-//! The Arcano edition: what this build changes from the upstream project,
+﻿//! The Arcano edition: what this build changes from the upstream project,
 //! kept in one place so that merging upstream work stays easy.
 //!
 //! - Releases come from the edition's own repository (`fork_repo!`), whose
@@ -16,7 +16,7 @@
 #[macro_export]
 macro_rules! fork_repo {
     () => {
-        "danielgnosis3/tracedraw-arcano"
+        "DanielSampaioRodrigues/tracedraw-arcano"
     };
 }
 
