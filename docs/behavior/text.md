@@ -262,6 +262,21 @@ any other object; the steps and sides follow the letters' outlines
   text scales as a whole. With other objects in the selection each is
   scaled as usual, all in one undo step.
 
+### Join Lines into Paragraph
+
+Text > Join Lines into Paragraph (and the object menu, two or more
+artistic texts selected) makes the selected lines one paragraph text, for
+text that came one object per line (a PDF's): typing into it flows the
+words on to the next lines. The lines go in reading order, top to bottom,
+joined by a space; a gap between baselines more than half again the usual
+one starts a new paragraph. The frame is as wide as the widest line (and
+a little more), with room for two more lines; the first baseline stays
+where it was and the line spacing is the usual distance between the
+baselines, in points. The lines must be turned and sized alike, in the
+same group, else the status bar says so and nothing changes. One undo
+step; the first line's object keeps its fill and outline (#599,
+`ops2::tests::lines_of_text_join_into_a_paragraph_that_flows`).
+
 ## Linked frames
 
 - Text > Paragraph Text Frame > Link: with two paragraph frames

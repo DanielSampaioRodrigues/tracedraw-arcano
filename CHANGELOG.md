@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text > Join Lines into Paragraph: the selected lines of artistic text (a PDF brings its text one object per line) become one paragraph text with the same first baseline and line spacing, so text typed into it flows on to the next lines (#599).
+
 - Text: Hindi (and the other Indian scripts) after a Latin word on the same line keeps its half letters and conjuncts; the line was shaped with the Latin rules, which showed the halant under half letters. Seen in text taken from PDFs (#599).
 
 - Print Preview: Transform shows handles around the artwork to stretch it on either axis (or the x and y percentages typed) and a drag inside moves it; Print prints it so (#595). Print: a Smart Board 16:9 sheet, Custom sheet sizes that can be saved with a name, and Stretch to fill, which fills the sheet inside the margins on each axis (#591).
