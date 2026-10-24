@@ -47,7 +47,11 @@ recomputed from it.
   preferences. A run of changes is one undo step "Edit Symmetry".
 - While editing, the bar and the lines stay whatever is selected (a
   member picked inside, a new object, a double click): they follow the
-  object being edited, not the selection.
+  object being edited, not the selection. Only then: after Finish the
+  bar and the mirror lines go, and the symmetry, selected whole, shows
+  its selection box alone like any object (a click takes it whole, a
+  drag moves it whole;
+  `pick_drag_tests::finish_on_the_symmetry_bar_leaves_one_object`).
 - Picking while editing: a click or a marquee takes the objects inside
   the symmetry group (its members), never the group and never a copy.
   A symmetry made of one object picks that object alone: a click on a
@@ -62,7 +66,10 @@ recomputed from it.
   centre (Ctrl: by the constrain angle); another click on a line hides
   them (`pick_drag_tests::symmetry_editing_picks_members_and_drags_lines`).
 - Finish Editing Symmetry (Alt+Shift+E) and the bar's Finish end the
-  mode; it also ends when the object is deleted or loses its symmetry.
+  mode and select the whole symmetry, not the object picked inside it
+  while editing (which a drag then moved alone)
+  (`pick_drag_tests::finish_selects_the_whole_symmetry_of_several_objects`);
+  the mode also ends when the object is deleted or loses its symmetry.
 - Out of the mode a symmetry is one object: a click picks the whole of
   it and a drag moves it all; a double click on it (or on an object
   inside it) goes back into editing it, instead of into focus mode
