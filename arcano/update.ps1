@@ -66,7 +66,7 @@ Get-ChildItem $pasta -Filter '*.exe' | Remove-Item -ErrorAction SilentlyContinue
 Copy-Item $setup $pasta -Force
 Copy-Item (Join-Path $Root 'arcano\LEIA-ME-NOELIA.txt') $pasta -Force -ErrorAction SilentlyContinue
 # O que liga uma IA ao TraceDraw vai junto com o instalador.
-foreach ($f in 'LIGAR-IA-AO-TRACEDRAW.txt', 'REGISTRAR-MCP-CLAUDE.bat', 'registrar-mcp-claude.ps1') {
+foreach ($f in 'LIGAR-IA-AO-TRACEDRAW.txt', 'REGISTRAR-MCP-CLAUDE.bat', 'registrar-mcp-claude.ps1', 'REGISTRAR-MCP-CHATGPT.bat', 'registrar-mcp-chatgpt.ps1') {
     Copy-Item (Join-Path $Root "arcano\$f") $pasta -Force -ErrorAction SilentlyContinue
 }
 
