@@ -910,6 +910,11 @@ pub struct App {
     pub toolbox_caption_w: f32,
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
+    /// The last Duplicate: each original and its copy. While the copies
+    /// are the selection, the next Duplicate repeats what was done to
+    /// them since (moved, scaled, turned), as the reference program's
+    /// smart duplicate does (#559).
+    pub last_duplicate: Vec<(ShapeId, ShapeId)>,
     // Defaults for new objects (no fill, black hairline).
     pub polygon_points: u32,
     pub star_sharpness: f64,
@@ -2016,6 +2021,7 @@ impl App {
             toolbox_caption_w: 0.0,
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
+            last_duplicate: Vec::new(),
             polygon_points: 5,
             star_sharpness: 0.5,
             star_complex: false,
@@ -4519,13 +4525,32 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
+        // The copies of the last Duplicate still selected: each new copy
+        // takes the step from its original to it (the offset, or what was
+        // done to the copy since).
+        let step_of = |id: ShapeId| -> Option<Affine> {
+            let (orig, _) = self.last_duplicate.iter().find(|(_, c)| *c == id)?;
+            let o = self.doc().find_shape(*orig)?;
+            let c = self.doc().find_shape(id)?;
+            (o.transform.determinant().abs() > 1e-12).then(|| c.transform * o.transform.inverse())
+        };
+        let steps: Vec<Option<Affine>> = shapes.iter().map(|s| step_of(s.id)).collect();
+        let smart = !self.last_duplicate.is_empty()
+            && self.selection.len() == self.last_duplicate.len()
+            && steps.iter().all(Option::is_some);
         let mut ids = Vec::new();
         let mut copies = Vec::new();
-        for s in &shapes {
+        let mut pairs = Vec::new();
+        for (s, step) in shapes.iter().zip(steps) {
             let id = self.engine.new_shape_id();
             let mut shape = reid(s.clone(), id, &mut self.engine);
-            shape.transform = Affine::translate(self.duplicate_offset) * shape.transform;
+            let step = match step {
+                Some(m) if smart => m,
+                _ => Affine::translate(self.duplicate_offset),
+            };
+            shape.transform = step * shape.transform;
             ids.push(id);
+            pairs.push((s.id, id));
             copies.push(shape);
         }
         crate::textflow::relink_copies(&shapes, &mut copies);
@@ -4544,6 +4569,7 @@ impl App {
             self.status = e.to_string();
         }
         self.select(ids.clone());
+        self.last_duplicate = pairs;
         if self.symmetry_edit.is_some() {
             self.join_symmetry(&ids);
         }
@@ -6822,6 +6848,57 @@ pub(crate) fn cdr_font_faces(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Duplicate, then the copy moved or scaled while it stays selected:
+    /// the next Duplicate repeats that step from the copy, as the
+    /// reference program does; with something else selected it is the
+    /// plain offset again (#559).
+    #[test]
+    fn duplicate_repeats_what_was_done_to_the_copy() {
+        let mut app = App::headless();
+        let a = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![a]);
+        let x0 = |app: &App, id: ShapeId| app.doc().find_shape(id).expect("shape").bounds().x0;
+        let w = |app: &App, id: ShapeId| app.doc().find_shape(id).expect("shape").bounds().width();
+        app.duplicate();
+        let b = app.selection[0];
+        assert!(
+            (x0(&app, b) - app.duplicate_offset.x).abs() < 1e-9,
+            "the offset at first"
+        );
+        // Moved to 20 mm from the original.
+        let dx = 20.0 - app.duplicate_offset.x;
+        app.transform_selection(Affine::translate((dx, -app.duplicate_offset.y)));
+        assert!((x0(&app, b) - 20.0).abs() < 1e-9);
+        app.duplicate();
+        let c = app.selection[0];
+        assert!((x0(&app, c) - 40.0).abs() < 1e-6, "{}", x0(&app, c));
+        app.duplicate();
+        let d = app.selection[0];
+        assert!((x0(&app, d) - 60.0).abs() < 1e-6);
+        // Scaled by 10 % about its left edge: each next copy 10 % larger.
+        app.select(vec![a]);
+        app.duplicate();
+        let e = app.selection[0];
+        let left = x0(&app, e);
+        app.transform_selection(
+            Affine::translate((left, 0.0)) * Affine::scale(1.1) * Affine::translate((-left, 0.0)),
+        );
+        app.duplicate();
+        let f = app.selection[0];
+        assert!((w(&app, f) - 12.1).abs() < 1e-6, "{}", w(&app, f));
+        // Something else selected: the plain offset.
+        app.select(vec![a]);
+        app.duplicate();
+        let g = app.selection[0];
+        assert!((x0(&app, g) - app.duplicate_offset.x).abs() < 1e-9);
+    }
 
     #[test]
     fn templates_open_as_drawings() {

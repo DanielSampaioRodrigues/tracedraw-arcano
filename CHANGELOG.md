@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Duplicate (Ctrl+D) repeats what was done to the copy: duplicate an object, move, scale or turn the copy while it stays selected, and each next Duplicate takes the same step from the last copy, as in the reference program. It always used the duplicate offset (#559).
+
 - Print Preview: a drag on the sheet moves the artwork on the paper before printing (clear of the margins the printer cannot print), with Artwork position fields and Reset on the left; Print prints it where it was put. A drag moved only the page information (#536).
 
 - Export: presets with names. "+" saves the format and its settings (resolution, quality, transparency, selection only, all pages, PDF choices) as a preset; the Preset list puts them back, each shown with its format; presets can be renamed and deleted, and stay in the preferences (#547).

@@ -264,7 +264,10 @@ impl App {
     pub(crate) fn duplicate_in_place(&mut self) {
         let saved = self.duplicate_offset;
         self.duplicate_offset = Vec2::ZERO;
+        // Copies in place are not a Duplicate the next one repeats (#559).
+        self.last_duplicate.clear();
         self.duplicate();
+        self.last_duplicate.clear();
         self.duplicate_offset = saved;
     }
 
