@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Preview: Transform shows handles around the artwork to stretch it on either axis (or the x and y percentages typed) and a drag inside moves it; Print prints it so (#595). Print: a Smart Board 16:9 sheet, Custom sheet sizes that can be saved with a name, and Stretch to fill, which fills the sheet inside the margins on each axis (#591).
+
 - Export: WebP can be lossy (Lossless off, the default): the quality then shrinks the file as other programs do, a tenth of the lossless size at low qualities. Lossless keeps the earlier behaviour. The browser version stays lossless (#592).
 
 - Autofit Page: while its popup is open, the page it would make shows on the drawing as a dashed outline with its size, following the margin as it is typed (#594).

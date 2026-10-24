@@ -568,18 +568,6 @@ pub fn print_sheets(app: &App, st: &PrintState) -> Document {
             fit_contents_to_page(page, st.range == 3);
         }
     }
-    // Moved in Print Preview: clear of the printer's margins (#536).
-    let (dx, dy) = st.art_offset;
-    if (dx != 0.0 || dy != 0.0) && dx.is_finite() && dy.is_finite() {
-        let t = Affine::translate((dx, dy));
-        for page in doc.pages.iter_mut() {
-            for layer in page.layers.iter_mut() {
-                for s in layer.shapes.iter_mut() {
-                    s.transform = t * s.transform;
-                }
-            }
-        }
-    }
     for page in doc.pages.iter_mut() {
         for layer in page.layers.iter_mut() {
             for s in layer.shapes.iter_mut() {
@@ -894,6 +882,11 @@ pub fn print_layout(app: &App, st: &PrintState, doc: &Document) -> crate::imposi
         keep_size: st.keep_size,
         info_offset: st.info_offset,
         paper_margins: st.margins,
+        // Moved and stretched in Print Preview, the whole page with its
+        // clip, clear of the printer's margins (#536, #595).
+        page_offset: st.art_offset,
+        page_stretch: st.art_stretch,
+        stretch_fit: st.stretch_fit,
         marks: crate::imposition::Marks {
             crop: st.crop_marks,
             registration: st.registration_marks,
