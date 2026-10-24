@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Verwerkt palet: {n} kleuren"
 dialog.proof_profile = "Proefprofiel"
 dialog.qr_empty = "Voer de tekst in die moet worden gecodeerd."
 dialog.quality = "Kwaliteit"
+dialog.webp_lossless = "Verliesvrij" # mt
 dialog.rating = "Beoordeling:"
 dialog.registration_marks = "Registratietekens"
 dialog.remove_background = "Achtergrond verwijderen"

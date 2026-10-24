@@ -549,6 +549,7 @@ dialog.processed_palette_n = "প্রক্রিয়াকৃত প্য�
 dialog.proof_profile = "প্রুফ প্রোফাইল"
 dialog.qr_empty = "এনকোড করার টেক্সট লিখুন।"
 dialog.quality = "গুণমান"
+dialog.webp_lossless = "ক্ষতিহীন" # mt
 dialog.rating = "রেটিং:"
 dialog.registration_marks = "রেজিস্ট্রেশন মার্ক"
 dialog.remove_background = "পটভূমি সরান"

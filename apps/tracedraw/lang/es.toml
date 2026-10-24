@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Paleta procesada: {n} colores"
 dialog.proof_profile = "Perfil de prueba"
 dialog.qr_empty = "Escriba el texto a codificar."
 dialog.quality = "Calidad"
+dialog.webp_lossless = "Sin pérdida" # mt
 dialog.rating = "Valoración:"
 dialog.registration_marks = "Marcas de registro"
 dialog.remove_background = "Quitar fondo"

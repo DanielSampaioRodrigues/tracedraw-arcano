@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Przetworzona paleta: kolorów: {n}"
 dialog.proof_profile = "Profil próby kolorów"
 dialog.qr_empty = "Wpisz tekst do zakodowania."
 dialog.quality = "Jakość"
+dialog.webp_lossless = "Bezstratnie" # mt
 dialog.rating = "Ocena:"
 dialog.registration_marks = "Znaczniki pasowania"
 dialog.remove_background = "Usuń tło"

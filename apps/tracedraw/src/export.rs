@@ -149,7 +149,7 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 } else {
                     path.to_path_buf()
                 };
-                write_raster(&pm, &target, ext, st.quality)?;
+                write_raster(&pm, &target, ext, st.quality, st.webp_lossless)?;
             }
         }
     }
@@ -171,8 +171,14 @@ pub(crate) fn pdfx_profile(app: &App, standard: tracedraw_io::pdf::PdfStandard) 
         .flatten()
 }
 
-fn write_raster(pm: &tiny_skia::Pixmap, path: &Path, ext: &str, quality: u8) -> Result<(), String> {
-    let bytes = encode_raster(pm, ext, quality)?;
+fn write_raster(
+    pm: &tiny_skia::Pixmap,
+    path: &Path,
+    ext: &str,
+    quality: u8,
+    lossless: bool,
+) -> Result<(), String> {
+    let bytes = encode_raster_with(pm, ext, quality, lossless)?;
     crate::files::write(path, bytes).map_err(|e| e.to_string())
 }
 
@@ -238,7 +244,9 @@ pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) 
         "pdf" | "ai" => Some(tracedraw_io::pdf::document_to_pdf(&doc).len()),
         "png" | "jpg" | "bmp" | "tif" | "webp" | "gif" | "psd" => {
             let enc = if ext == "psd" { "tif" } else { ext };
-            let bytes = encode_raster(preview, enc, st.quality).ok()?.len() as f64;
+            let bytes = encode_raster_with(preview, enc, st.quality, st.webp_lossless)
+                .ok()?
+                .len() as f64;
             let full = (bounds.width() / 25.4 * st.dpi) * (bounds.height() / 25.4 * st.dpi);
             let shown = (preview.width() as f64 * preview.height() as f64).max(1.0);
             let pages = if st.all_pages && !st.selection_only {
@@ -285,8 +293,34 @@ fn near_lossless(img: &mut image::RgbaImage, quality: u8) {
     }
 }
 
-/// Encode a rendered page in the bitmap format `ext`.
+/// Encode a rendered page in the bitmap format `ext` (WebP lossless).
+#[cfg(test)]
 fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u8>, String> {
+    encode_raster_with(pm, ext, quality, true)
+}
+
+/// A WebP file with lossy compression at `quality` (1 to 100), alpha
+/// kept; `None` where no lossy encoder is built in (the browser).
+#[cfg(not(target_arch = "wasm32"))]
+fn webp_lossy(img: &image::RgbaImage, quality: u8) -> Option<Vec<u8>> {
+    let enc = webp::Encoder::from_rgba(img.as_raw(), img.width(), img.height());
+    Some(enc.encode(f32::from(quality.clamp(1, 100))).to_vec())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn webp_lossy(_img: &image::RgbaImage, _quality: u8) -> Option<Vec<u8>> {
+    None
+}
+
+/// Encode a rendered page in the bitmap format `ext`; WebP lossless
+/// (`lossless`, colours rounded below quality 100) or lossy at the
+/// quality (#592).
+fn encode_raster_with(
+    pm: &tiny_skia::Pixmap,
+    ext: &str,
+    quality: u8,
+    lossless: bool,
+) -> Result<Vec<u8>, String> {
     let (w, h) = (pm.width(), pm.height());
     let mut rgba = Vec::with_capacity((w * h * 4) as usize);
     for p in pm.pixels() {
@@ -319,10 +353,14 @@ fn encode_raster(pm: &tiny_skia::Pixmap, ext: &str, quality: u8) -> Result<Vec<u
                 .map_err(|e| e.to_string())?;
         }
         image::ImageFormat::WebP => {
-            // The WebP encoder at hand writes lossless files only; below
-            // 100 the colours are first rounded to fewer levels, WebP's
-            // near-lossless way, so quality shrinks the file (#544).
             let mut rgba = dynimg.to_rgba8();
+            // Lossy: much smaller, the quality as the encoder takes it
+            // (#592). Lossless (or no lossy encoder, in the browser): below
+            // 100 the colours are first rounded to fewer levels, WebP's
+            // near-lossless way, so quality still shrinks the file (#544).
+            if let Some(bytes) = (!lossless).then(|| webp_lossy(&rgba, quality)).flatten() {
+                return Ok(bytes);
+            }
             near_lossless(&mut rgba, quality);
             rgba.write_to(&mut out, format).map_err(|e| e.to_string())?;
         }
@@ -1749,7 +1787,23 @@ mod tests {
             *p = tiny_skia::PremultipliedColorU8::from_rgba(x, y.wrapping_mul(2), x ^ y ^ n, 255)
                 .expect("pixel");
         }
+        // Lossy: far smaller at a low quality, and still a WebP (#592).
+        let lossy = encode_raster_with(&pm, "webp", 10, false).expect("webp");
+        let lossy_high = encode_raster_with(&pm, "webp", 90, false).expect("webp");
+        assert!(
+            lossy.len() < lossy_high.len(),
+            "{} vs {}",
+            lossy.len(),
+            lossy_high.len()
+        );
+        assert!(image::load_from_memory(&lossy).is_ok());
         let full = encode_raster(&pm, "webp", 100).expect("webp");
+        assert!(
+            lossy.len() * 3 < full.len(),
+            "{} vs {}",
+            lossy.len(),
+            full.len()
+        );
         let low = encode_raster(&pm, "webp", 40).expect("webp");
         assert!(
             low.len() < full.len() * 3 / 4,

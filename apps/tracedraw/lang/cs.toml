@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Zpracovaná paleta (počet barev: {n})"
 dialog.proof_profile = "Profil pro nátisk"
 dialog.qr_empty = "Zadejte text, který se má zakódovat."
 dialog.quality = "Kvalita"
+dialog.webp_lossless = "Bezeztrátově" # mt
 dialog.rating = "Hodnocení:"
 dialog.registration_marks = "Pasovací značky"
 dialog.remove_background = "Odstranit pozadí"

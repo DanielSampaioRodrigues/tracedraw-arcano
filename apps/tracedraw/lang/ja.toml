@@ -549,6 +549,7 @@ dialog.processed_palette_n = "処理済みパレット: {n} 色"
 dialog.proof_profile = "プルーフプロファイル"
 dialog.qr_empty = "エンコードするテキストを入力してください。"
 dialog.quality = "品質"
+dialog.webp_lossless = "可逆圧縮" # mt
 dialog.rating = "評価:"
 dialog.registration_marks = "レジストレーションマーク"
 dialog.remove_background = "背景を削除"

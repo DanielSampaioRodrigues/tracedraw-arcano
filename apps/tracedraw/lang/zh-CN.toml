@@ -549,6 +549,7 @@ dialog.processed_palette_n = "处理后的调色板: {n} 种颜色"
 dialog.proof_profile = "校样配置文件"
 dialog.qr_empty = "请输入要编码的文本。"
 dialog.quality = "质量"
+dialog.webp_lossless = "无损" # mt
 dialog.rating = "评级:"
 dialog.registration_marks = "套准标记"
 dialog.remove_background = "移除背景"

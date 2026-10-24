@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Palet terproses: {n} warna"
 dialog.proof_profile = "Profil pruf"
 dialog.qr_empty = "Masukkan teks yang akan dienkode."
 dialog.quality = "Kualitas"
+dialog.webp_lossless = "Lossless" # mt
 dialog.rating = "Peringkat:"
 dialog.registration_marks = "Tanda registrasi"
 dialog.remove_background = "Hapus latar belakang"

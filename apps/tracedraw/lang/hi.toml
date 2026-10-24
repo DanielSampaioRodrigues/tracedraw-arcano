@@ -549,6 +549,7 @@ dialog.processed_palette_n = "संसाधित पैलेट: {n} रं�
 dialog.proof_profile = "प्रूफ़ प्रोफ़ाइल"
 dialog.qr_empty = "एन्कोड करने के लिए टेक्स्ट दर्ज करें।"
 dialog.quality = "गुणवत्ता"
+dialog.webp_lossless = "हानिरहित" # mt
 dialog.rating = "रेटिंग:"
 dialog.registration_marks = "रजिस्ट्रेशन मार्क"
 dialog.remove_background = "पृष्ठभूमि हटाएँ"

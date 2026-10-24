@@ -549,6 +549,7 @@ dialog.processed_palette_n = "اللوحة المعالجة: {n} لون"
 dialog.proof_profile = "ملف تعريف التجربة"
 dialog.qr_empty = "أدخل النص المطلوب ترميزه."
 dialog.quality = "الجودة"
+dialog.webp_lossless = "بلا فقد" # mt
 dialog.rating = "التقييم:"
 dialog.registration_marks = "علامات التسجيل"
 dialog.remove_background = "إزالة الخلفية"

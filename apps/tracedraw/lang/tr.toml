@@ -549,6 +549,7 @@ dialog.processed_palette_n = "İşlenen palet: {n} renk"
 dialog.proof_profile = "Prova profili"
 dialog.qr_empty = "Kodlanacak metni girin."
 dialog.quality = "Kalite"
+dialog.webp_lossless = "Kayıpsız" # mt
 dialog.rating = "Derecelendirme:"
 dialog.registration_marks = "Kayıt işaretleri"
 dialog.remove_background = "Arka planı kaldır"

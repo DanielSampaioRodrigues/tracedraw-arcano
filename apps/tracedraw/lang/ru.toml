@@ -549,6 +549,7 @@ dialog.processed_palette_n = "Обработанная палитра: {n} цв�
 dialog.proof_profile = "Профиль цветопробы"
 dialog.qr_empty = "Введите текст для кодирования."
 dialog.quality = "Качество"
+dialog.webp_lossless = "Без потерь" # mt
 dialog.rating = "Оценка:"
 dialog.registration_marks = "Приводочные метки"
 dialog.remove_background = "Удалить фон"

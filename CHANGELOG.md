@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Export: WebP can be lossy (Lossless off, the default): the quality then shrinks the file as other programs do, a tenth of the lossless size at low qualities. Lossless keeps the earlier behaviour. The browser version stays lossless (#592).
+
 - Autofit Page: while its popup is open, the page it would make shows on the drawing as a dashed outline with its size, following the margin as it is typed (#594).
 
 - Print Merge: "On every page" beside the placeholder picture puts it in the same shape and place on every page with Place Inside Frame, in the matching shape of each page or a copy of the frame (#598).

@@ -235,6 +235,7 @@ pub struct ExportPreset {
     pub pdf_standard: usize,
     pub bleed_mm: f64,
     pub output_condition: String,
+    pub webp_lossless: bool,
 }
 
 impl Default for ExportPreset {
@@ -258,6 +259,7 @@ impl ExportPreset {
             pdf_standard: st.pdf_standard,
             bleed_mm: st.bleed_mm,
             output_condition: st.output_condition.clone(),
+            webp_lossless: st.webp_lossless,
         }
     }
 
@@ -284,6 +286,7 @@ impl ExportPreset {
         if !self.output_condition.trim().is_empty() {
             st.output_condition = self.output_condition.chars().take(64).collect();
         }
+        st.webp_lossless = self.webp_lossless;
         st.preset = self.name.clone();
     }
 }

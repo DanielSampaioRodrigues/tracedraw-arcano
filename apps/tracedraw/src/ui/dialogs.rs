@@ -58,6 +58,8 @@ pub struct ExportState {
     /// The file's title and tags (keywords), for formats that keep them.
     pub title: String,
     pub tags: String,
+    /// WebP without loss (else lossy at the quality, #592).
+    pub webp_lossless: bool,
     /// The export preset chosen (its name), empty for none (#547).
     pub preset: String,
     /// A name being typed for a new preset (false) or for renaming the
@@ -82,6 +84,7 @@ impl Default for ExportState {
             script: None,
             title: String::new(),
             tags: String::new(),
+            webp_lossless: false,
             preset: String::new(),
             preset_name: None,
         }
@@ -2859,6 +2862,9 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     });
                     if st.format == 2 || st.format == 6 || st.format == 7 {
                         ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"));
+                    }
+                    if st.format == 6 {
+                        ui.checkbox(&mut st.webp_lossless, tr("dialog.webp_lossless"));
                     }
                     if st.format == 3 || st.format == 6 {
                         ui.add(crate::ui::Rail(
