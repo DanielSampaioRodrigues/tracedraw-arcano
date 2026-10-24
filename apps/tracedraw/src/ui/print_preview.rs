@@ -17,8 +17,9 @@ pub struct PrintPreview {
     pub st: PrintState,
     /// Index of the sheet shown.
     pub sheet: usize,
-    /// 0 = composite, n = the n-th plate of [`plates`].
-    pub plate: usize,
+    /// The inks shown while Print separations is on, one per plate of
+    /// [`plates`] (all at first, #571).
+    pub inks: Vec<bool>,
     /// Zoom over the fitted size (1 = the sheet fits the window).
     pub zoom: f32,
     /// A drag on the sheet moves the page information, not the artwork.
@@ -32,7 +33,7 @@ impl PrintPreview {
         PrintPreview {
             st,
             sheet: 0,
-            plate: 0,
+            inks: Vec::new(),
             zoom: 1.0,
             move_info: false,
             built: None,
@@ -75,6 +76,38 @@ pub fn shown_page(
     }
     let p = plates(doc).get(plate - 1)?.0;
     Some(plate_page(page, p))
+}
+
+/// The page shown with the inks ticked: every ink, the sheet as it is; one
+/// ink, its plate in grey (black = full ink); some, the colours those
+/// inks print (#571).
+pub fn shown_page_inks(
+    doc: &Document,
+    sheet: usize,
+    inks: &[bool],
+    separations: bool,
+) -> Option<tracedraw_core::document::Page> {
+    let page = doc.pages.get(sheet)?;
+    let all = plates(doc);
+    let on: Vec<usize> = (0..all.len())
+        .filter(|i| inks.get(*i).copied().unwrap_or(true))
+        .collect();
+    if !separations || on.len() == all.len() {
+        return Some(page.clone());
+    }
+    if let [one] = on.as_slice() {
+        return shown_page(doc, sheet, one + 1, true);
+    }
+    let mut process = [false; 4];
+    let mut spots = Vec::new();
+    for i in on {
+        match all[i].0 {
+            crate::export::Plate::Process(k) if k < 4 => process[k] = true,
+            crate::export::Plate::Spot(id) => spots.push(id),
+            _ => {}
+        }
+    }
+    Some(crate::export::inks_page(page, process, &spots))
 }
 
 /// The names of the plates, translated for the process inks.
@@ -137,16 +170,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
                 ui.separator();
                 if pv.st.separations {
+                    // Each ink with a box, always in view: one alone shows
+                    // its plate, several print together (#571).
                     let names = plate_names(sheets(app, &mut pv));
-                    pv.plate = pv.plate.min(names.len() - 1);
-                    ui.label(tr("print.plate"));
-                    egui::ComboBox::from_id_salt("print_preview_plate")
-                        .selected_text(names[pv.plate].clone())
-                        .show_ui(ui, |ui| {
-                            for (i, name) in names.iter().enumerate() {
-                                ui.selectable_value(&mut pv.plate, i, name.clone());
-                            }
-                        });
+                    let inks = names.len().saturating_sub(1);
+                    pv.inks.resize(inks, true);
+                    ui.label(tr("print.inks"));
+                    for (i, name) in names.iter().skip(1).enumerate() {
+                        ui.checkbox(&mut pv.inks[i], name.clone());
+                    }
                     ui.separator();
                 }
                 ui.label(tr("print.zoom"));
@@ -251,10 +283,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             let area = ui.available_rect_before_wrap();
             let separations = pv.st.separations;
-            let (sheet, plate) = (pv.sheet, pv.plate);
-            let Some(page) = shown_page(sheets(app, &mut pv), sheet, plate, separations) else {
+            let sheet = pv.sheet;
+            let inks = pv.inks.clone();
+            let Some(page) = shown_page_inks(sheets(app, &mut pv), sheet, &inks, separations)
+            else {
                 return;
             };
+            let plate: String = inks.iter().map(|on| if *on { '1' } else { '0' }).collect();
             let margin = 24.0;
             let fit = ((area.width() - 2.0 * margin) as f64 / page.size.width.max(1e-6))
                 .min((area.height() - 2.0 * margin) as f64 / page.size.height.max(1e-6))
@@ -441,6 +476,41 @@ mod tests {
             Fill::Solid(Color::Cmyk { .. })
         ));
         assert!(shown_page(&doc, 5, 0, false).is_none());
+        // Ticked inks (#571): one alone is its plate in grey; cyan and
+        // yellow together keep only those channels; every ink, the sheet.
+        let fill = |inks: &[bool]| {
+            shown_page_inks(&doc, 0, inks, true).expect("page").layers[0].shapes[0]
+                .fill
+                .clone()
+        };
+        assert!(
+            matches!(fill(&[false, true, false, false]), Fill::Solid(Color::Gray { v }) if (v - 0.5).abs() < 1e-6)
+        );
+        match fill(&[true, false, true, false]) {
+            Fill::Solid(Color::Cmyk { c, m, y, k }) => {
+                assert!((c - 1.0).abs() < 1e-6 && m == 0.0 && y == 0.0 && k == 0.0)
+            }
+            f => panic!("{f:?}"),
+        }
+        assert_eq!(
+            fill(&[true; 4]),
+            Fill::Solid(Color::Cmyk {
+                c: 1.0,
+                m: 0.5,
+                y: 0.0,
+                k: 0.0
+            })
+        );
+        assert_eq!(
+            fill(&[]),
+            Fill::Solid(Color::Cmyk {
+                c: 1.0,
+                m: 0.5,
+                y: 0.0,
+                k: 0.0
+            }),
+            "all at first"
+        );
     }
 
     #[test]

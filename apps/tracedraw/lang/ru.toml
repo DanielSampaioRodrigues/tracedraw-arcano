@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "Допечатная подготовка"
 print.text_black = "Печатать текст чёрным"
 print.zoom = "Масштаб"
+print.inks = "Краски:" # mt
 publish.allow_accessibility = "Доступ к тексту для экранных дикторов"
 publish.allow_annotate = "Добавление комментариев"
 publish.allow_assemble = "Вставка, удаление и поворот страниц"

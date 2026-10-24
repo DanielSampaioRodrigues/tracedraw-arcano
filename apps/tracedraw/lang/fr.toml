@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "Prépresse"
 print.text_black = "Imprimer le texte en noir"
 print.zoom = "Zoom"
+print.inks = "Encres :" # mt
 publish.allow_accessibility = "Accès au texte pour les lecteurs d'écran"
 publish.allow_annotate = "Ajouter des commentaires"
 publish.allow_assemble = "Insérer, supprimer et faire pivoter des pages"

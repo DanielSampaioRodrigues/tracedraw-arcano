@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "Předtisková příprava"
 print.text_black = "Tisknout text černě"
 print.zoom = "Lupa"
+print.inks = "Barvy:" # mt
 publish.allow_accessibility = "Přístup k textu pro čtečky obrazovky"
 publish.allow_annotate = "Přidávat komentáře"
 publish.allow_assemble = "Vkládat, odstraňovat a otáčet stránky"

@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "প্রিপ্রেস"
 print.text_black = "লেখা কালোতে প্রিন্ট"
 print.zoom = "জুম"
+print.inks = "কালি:" # mt
 publish.allow_accessibility = "স্ক্রিন রিডারের জন্য লেখায় প্রবেশ"
 publish.allow_annotate = "মন্তব্য যোগ"
 publish.allow_assemble = "পৃষ্ঠা যোগ, মুছে ফেলা ও ঘোরানো"

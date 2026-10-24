@@ -782,6 +782,52 @@ pub fn plate_page(
     p
 }
 
+/// A page as printed with only some inks (#571): process colours keep
+/// the channels of the inks on, spot colours show when their ink is on
+/// and are paper otherwise; registration colour prints with every ink.
+pub fn inks_page(
+    page: &tracedraw_core::document::Page,
+    process: [bool; 4],
+    spots: &[u32],
+) -> tracedraw_core::document::Page {
+    use tracedraw_core::{Color, Fill};
+    let spots = spots.to_vec();
+    let keep = move |c: Color| -> Color {
+        let on = |i: usize, v: f32| if process[i] { v } else { 0.0 };
+        match c {
+            Color::Registration => Color::Cmyk {
+                c: on(0, 1.0),
+                m: on(1, 1.0),
+                y: on(2, 1.0),
+                k: on(3, 1.0),
+            },
+            Color::Spot { ink, .. } if spots.contains(&ink) => c,
+            Color::Spot { .. } => Color::Gray { v: 1.0 },
+            other => match other.convert_to("CMYK") {
+                Color::Cmyk { c, m, y, k } => Color::Cmyk {
+                    c: on(0, c),
+                    m: on(1, m),
+                    y: on(2, y),
+                    k: on(3, k),
+                },
+                same => same,
+            },
+        }
+    };
+    let mut p = page.clone();
+    for layer in p.layers.iter_mut() {
+        for s in layer.shapes.iter_mut() {
+            if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
+                if let Some(c) = s.fill.preview_color() {
+                    s.fill = Fill::Solid(c);
+                }
+            }
+            map_colors(s, &keep);
+        }
+    }
+    p
+}
+
 /// The print layout for the Print dialog's settings: the imposition, the
 /// sheet, the bleed and the marks.
 pub fn print_layout(app: &App, st: &PrintState, doc: &Document) -> crate::imposition::Options {

@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "印前"
 print.text_black = "以黑色打印文本"
 print.zoom = "缩放"
+print.inks = "油墨：" # mt
 publish.allow_accessibility = "屏幕阅读器可读取文本"
 publish.allow_annotate = "添加注释"
 publish.allow_assemble = "插入、删除和旋转页面"

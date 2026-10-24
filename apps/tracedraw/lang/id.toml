@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "Pracetak"
 print.text_black = "Cetak teks dalam hitam"
 print.zoom = "Zoom"
+print.inks = "Tinta:" # mt
 publish.allow_accessibility = "Akses teks untuk pembaca layar"
 publish.allow_annotate = "Tambah komentar"
 publish.allow_assemble = "Sisipkan, hapus, dan putar halaman"

@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "Baskı öncesi"
 print.text_black = "Metni siyah yazdır"
 print.zoom = "Yakınlaştırma"
+print.inks = "Mürekkepler:" # mt
 publish.allow_accessibility = "Ekran okuyucular için metin erişimi"
 publish.allow_annotate = "Yorum ekleme"
 publish.allow_assemble = "Sayfa ekleme, silme ve döndürme"

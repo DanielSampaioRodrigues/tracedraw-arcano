@@ -77,9 +77,13 @@ over its settings), fills the window with the sheets exactly as Print
 sends them: the imposition, the marks, Mirror and Invert, built by the
 same function (`export::print_sheets`).
 
-- Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), the Plate
-  (Composite, then cyan, magenta, yellow, black and each spot ink) while
-  Print separations is on, Zoom from 25 to 400 % of the fitted size
+- Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), the Inks
+  while Print separations is on: a box for cyan, magenta, yellow, black
+  and each spot ink, all ticked at first (#571). Every ink ticked shows
+  the sheet as it is; one alone shows its plate in grey; some show the
+  colours those inks print together (process colours keep the channels
+  ticked, a spot colour shows when its ink is ticked and is paper
+  otherwise; `print_preview::tests::plates_split_the_sheet_by_ink`), Zoom from 25 to 400 % of the fitted size
   with Fit, and Close (Esc) at the right end (#534).
 - Left: the Print dialog's options (all pages, fit, scale, prepress and
   layout with its sketch); every change rebuilds the sheets at once.

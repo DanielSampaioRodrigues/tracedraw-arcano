@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Preview with separations: a box for each ink, always in view, instead of a list. One ink shows its plate; several show what those inks print together, to check two or three colours at once (#571).
+
 - Duplicate (Ctrl+D) repeats what was done to the copy: duplicate an object, move, scale or turn the copy while it stays selected, and each next Duplicate takes the same step from the last copy, as in the reference program. It always used the duplicate offset (#559).
 
 - Print Preview: a drag on the sheet moves the artwork on the paper before printing (clear of the margins the printer cannot print), with Artwork position fields and Reset on the left; Print prints it where it was put. A drag moved only the page information (#536).

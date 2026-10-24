@@ -2961,6 +2961,7 @@ print.tab_postscript = "PostScript"
 print.tab_prepress = "プリプレス"
 print.text_black = "テキストを黒で印刷"
 print.zoom = "ズーム"
+print.inks = "インク:" # mt
 publish.allow_accessibility = "スクリーンリーダーによるテキストアクセス"
 publish.allow_annotate = "注釈の追加"
 publish.allow_assemble = "ページの挿入、削除、回転"
