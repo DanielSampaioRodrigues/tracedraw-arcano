@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print on Windows: the Printer list now shows the printers Windows has, network printers included, the default one first, and prints straight to the one chosen with the copies asked for. Before, Windows offered only the PDF viewer and PDF or PostScript files (#614).
+
 - Property bar: the mouse wheel over the outline width box now changes the selected objects' outline to the next width of the list up or down, one undo step a notch (#663).
 
 - Convert Outline to Object (Ctrl+Shift+Q) now gives clean shapes: curves stay real curves with handles, straight parts stay straight, and the result has as few nodes as keep its shape, instead of hundreds of tiny straight segments. The outline of an ellipse also no longer has a notch where the ellipse starts (#622).
