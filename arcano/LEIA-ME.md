@@ -163,10 +163,19 @@ Ferramentas disponíveis:
 | `new_document` | cria um documento novo |
 | `save` | salva em `.tdraw` ou `.cdr`, na versão 7 a 27 |
 | `export` | exporta em PDF, PNG, SVG e outros formatos |
-| `run_script` | roda um script com o modelo de objetos completo; tudo o que um clique faz, o script faz, e cada script vira um passo de desfazer |
-| `document_info` | descreve páginas, camadas e objetos |
-| `render_page` | mostra a página como imagem (novo) |
+| `run_script` | roda um script no desenho aberto, no modelo do TraceDraw ou no das macros; tudo o que um clique faz, o script faz, e cada script vira um passo de desfazer; se der erro, nada fica pela metade |
+| `api_reference` | o manual dos dois modelos de script |
+| `document_info` | descreve páginas, camadas e objetos, a seleção, a parte da página que aparece na tela e as abas abertas |
+| `get_selection` / `select` | lê o que você selecionou e seleciona objetos |
+| `render_page` | mostra a página como imagem |
+| `render_area` | mostra de perto a seleção, objetos, um retângulo ou o que está na tela |
+| `font_metrics` / `list_fonts` | medidas reais da fonte e lista das fontes instaladas |
+| `windows` / `use_window` / `switch_document` | lista as janelas e as abas abertas e escolhe uma |
 | `undo` / `redo` | desfaz e refaz |
+
+A IA trabalha na **janela em que você mexeu por último**, e toda resposta
+diz em qual janela e desenho ela está. Com duas janelas abertas, ela pode
+listar as duas (`windows`) e escolher uma (`use_window`).
 
 Aplicativos que só aceitam servidores MCP remotos (pela internet) não
 conseguem usar este servidor local.

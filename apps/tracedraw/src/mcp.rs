@@ -64,6 +64,20 @@ pub fn handle_line(app: &mut App, line: &str) -> Option<String> {
         "tools/call" => {
             let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
+            // The Arcano edition's tools first (`mcp_plus.rs`).
+            if let Some(r) = crate::mcp_plus::call(app, name, &args) {
+                let result = match r {
+                    Ok(crate::mcp_plus::Reply::Text(text)) => {
+                        json!({"content": [{"type": "text", "text": text}], "isError": false})
+                    }
+                    Ok(crate::mcp_plus::Reply::Image { png_base64, text }) => json!({"content": [
+                        {"type": "image", "data": png_base64, "mimeType": "image/png"},
+                        {"type": "text", "text": text},
+                    ], "isError": false}),
+                    Err(e) => json!({"content": [{"type": "text", "text": e}], "isError": true}),
+                };
+                return Some(json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string());
+            }
             if name == "render_page" {
                 // A picture of the page, for the agent to look at.
                 return Some(
@@ -104,6 +118,17 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 pub fn tool_list() -> Vec<Value> {
+    // The Arcano edition's tools, its versions replacing these by name.
+    let plus = crate::mcp_plus::tools();
+    let mut list: Vec<Value> = upstream_tools()
+        .into_iter()
+        .filter(|t| !plus.iter().any(|p| p["name"] == t["name"]))
+        .collect();
+    list.extend(plus);
+    list
+}
+
+fn upstream_tools() -> Vec<Value> {
     vec![
         tool(
             "open",

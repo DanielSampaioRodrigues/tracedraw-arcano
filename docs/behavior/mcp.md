@@ -100,3 +100,58 @@ The same rule applies to drawing in the window.
 - `render_page` answers with an image of the page: red where a script
   drew, white elsewhere, at the asked size; a missing page is an error
   (`mcp::tests::render_page_shows_the_page_as_a_picture`).
+
+## Arcano edition: working beside the user
+
+The edition's tools are in `apps/tracedraw/src/mcp_plus.rs` (asked
+first by `mcp.rs`) and the bridge's own in `mcp_link.rs`. An agent works
+in the window the user works in, and always knows which one.
+
+**Which window.** Each listening window also writes
+`mcp-windows/<pid>.json` in the preferences folder. The window that has
+the keyboard points `mcp-window.json` at itself (checked at most once a
+second), so the bridge follows the window the user used last, not the
+one opened last. When that window closes, the link passes to the other
+window used last; when it cannot be reached, the bridge tries the others.
+Every answer from a window ends with a line naming it:
+`[TraceDraw window <pid> · drawing "<title>" · page n of m]`.
+
+| Tool | Arguments | Effect |
+| --- | --- | --- |
+| `windows` (bridge) | | The windows that let agents in: process id, drawing in front, open drawings, which one the tools work in and which one the user used last |
+| `use_window` (bridge) | `window` (pid; 0 follows the user again) | Work in that window; when it closes, the bridge follows the user again and says so |
+| `window_info` | | The answering window's pid, drawing, file, open drawings, objects on the page, selected count |
+| `document_info` | `page_index` (optional) | Upstream's description plus `window`, `open_documents` (index, title, active), `active_page_index`, `active_layer`, `view` (the part of the page shown, mm, and the zoom) and the coordinate convention |
+| `switch_document` | `index` | Brings that drawing's tab to the front |
+| `get_selection` | | The selected objects in full and the selection's bounds |
+| `select` | `ids`, `add` | Selects as a click would (the objects' page comes to the front); an unknown id or objects on two pages are refused |
+| `render_area` | `area` (`selection`, default when something is selected, `view`, `page`), or `ids` or `rect_mm`; `padding_mm` (3), `max_px` (1024; 128 to 2048), `page_index` | A PNG on white of just that part of the page, drawn at that size (not cut from a page picture), and a line giving the area in mm and the resolution |
+| `font_metrics` | `family`, `size_pt` (12), `bold`, `italic`, `text` | The face's ascent, descent, line height, cap height and x-height in mm, from its tables; with text, its advance width and its letters' ink bounds from the baseline start. A font that is not installed is an error naming similar families, never a substitute's measures |
+| `list_fonts` | `filter` | Up to 200 families with their faces, and how many matched |
+| `api_reference` | `model` | The object model as `run_script` defines it, with the conventions (mm, lower-left origin, y up) |
+| `run_script` | `source`, `model` (`tracedraw` default, or `vba`: the model macros use) | One undo step named "AI agent". All or nothing: a script that throws keeps none of its changes (upstream keeps what ran before the error) |
+
+### Checks (Arcano edition)
+
+- Two windows: the one opened last is followed until the other takes the
+  keyboard; `tools/list` through the bridge carries `windows`,
+  `use_window` and `render_area`; every answer names its window;
+  `windows` lists both; `use_window` sends the tools to the other one,
+  an unknown pid is refused, 0 follows the user again; closing the
+  followed window passes the link on, closing both removes it
+  (`mcp_link::tests::agents_follow_the_window_in_use_and_can_pick_one`).
+- A script that throws leaves the page as it was; a good one is one undo
+  step (`mcp_plus::tests::a_failed_script_leaves_nothing_behind`).
+- The macro model: `cdrMillimeter`, `CreateEllipse2` and `RGBAssign`
+  draw a red circle at the right place; an unknown model is refused
+  (`mcp_plus::tests::scripts_in_the_macro_model`).
+- `api_reference` gives both models (`mcp_plus::tests::the_reference_names_the_models`).
+- Selecting by id, reading the selection and its bounds, refusing an
+  unknown id, clearing (`mcp_plus::tests::selection_is_read_and_set`).
+- `render_area` of a 10 mm selected square at 200 px is that square
+  filling the picture; a rectangle of empty page is white; with nothing
+  selected the page; asking for the selection then is an error
+  (`mcp_plus::tests::render_area_looks_at_objects_closely`).
+- `font_metrics` of an installed font at 72 pt has an ascent between 10
+  and 30 mm, twice that at 144 pt, and a width for text; a font that is
+  not installed is an error (`mcp_plus::tests::fonts_are_measured_not_guessed`).

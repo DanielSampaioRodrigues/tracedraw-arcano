@@ -88,6 +88,7 @@ mod macros;
 mod mcp;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp_link;
+mod mcp_plus;
 mod media;
 mod mesh_tool;
 mod mixed;

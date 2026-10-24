@@ -315,7 +315,20 @@ pub fn run(app: &mut App, src: &str) -> Result<Vec<String>, String> {
 // Called by the VBA macro runner (another part of the app).
 #[allow(dead_code)]
 pub fn run_vgcore(app: &mut App, src: &str, label: &'static str) -> Result<Vec<String>, String> {
-    run_host(app, src, Trust::User, label, true).map(|(output, _)| output)
+    run_host(app, src, Trust::User, label, true, true).map(|(output, _)| output)
+}
+
+/// Run a script an AI agent sent over MCP (Arcano edition): with the
+/// user's access, in TraceDraw's object model or (`vg`) the one VBA macros
+/// use, but nothing applied unless the whole script runs, so a failed
+/// attempt leaves no half-made objects. One undo step named `label`.
+pub fn run_agent(app: &mut App, src: &str, vg: bool, label: &'static str) -> Result<Vec<String>, String> {
+    run_host(app, src, Trust::User, label, vg, false).map(|(output, _)| output)
+}
+
+/// TraceDraw's object model as scripts see it (the MCP `api_reference`).
+pub fn object_model_source() -> &'static str {
+    PRELUDE
 }
 
 /// Run a script an AI service wrote: no file access, loops, call depth
@@ -448,7 +461,7 @@ fn run_with(
     trust: Trust,
     label: &'static str,
 ) -> Result<(Vec<String>, usize), String> {
-    run_host(app, src, trust, label, false)
+    run_host(app, src, trust, label, false, trust == Trust::User)
 }
 
 fn run_host(
@@ -457,6 +470,7 @@ fn run_host(
     trust: Trust,
     label: &'static str,
     vg: bool,
+    keep_partial: bool,
 ) -> Result<(Vec<String>, usize), String> {
     let mut host = host_for(app, trust);
     host.vg = vg;
@@ -477,7 +491,7 @@ fn run_host(
         }
         Err(e) => {
             // The user's scripts keep what ran before the error.
-            if trust == Trust::User {
+            if keep_partial {
                 apply(app, inner.commands, inner.selection, inner.page, label);
             }
             return Err(e);

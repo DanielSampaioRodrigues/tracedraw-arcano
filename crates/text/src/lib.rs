@@ -697,6 +697,20 @@ struct Line {
     bullet_x: Option<f64>,
 }
 
+/// A face's measurements at a size, in mm ([`FontSystem::face_metrics`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceMetrics {
+    /// The family the face belongs to.
+    pub family: String,
+    pub units_per_em: u32,
+    pub ascent: f64,
+    pub descent: f64,
+    /// Ascent, descent and the face's line gap.
+    pub line_height: f64,
+    pub cap_height: Option<f64>,
+    pub x_height: Option<f64>,
+}
+
 pub struct TextLayout {
     pub path: BezPath,
     /// Logical bounds, mm.
@@ -1673,6 +1687,59 @@ impl FontSystem {
             ..style.clone()
         };
         self.outline(&[span]).bounds.width()
+    }
+
+    /// A face's own measurements at `size_pt`, in mm: ascent, descent and
+    /// line height (with the face's line gap), cap height and x-height
+    /// (from the face's tables, else measured on "H" and "x"), and the
+    /// face's units per em. `None` when no face of `family` is installed
+    /// or carried (a substitute would answer for another font).
+    pub fn face_metrics(
+        &self,
+        family: &str,
+        bold: bool,
+        italic: bool,
+        size_pt: f64,
+    ) -> Option<FaceMetrics> {
+        if !self.has_family(family) {
+            return None;
+        }
+        let id = self.face_for(family, bold, italic)?;
+        let (data, index) = self.face_data(id)?;
+        let face = ttf_parser::Face::parse(&data, index).ok()?;
+        let upem = face.units_per_em() as f64;
+        let scale = size_pt * PT_MM / upem;
+        let glyph_top = |ch: char| {
+            let g = face.glyph_index(ch)?;
+            face.glyph_bounding_box(g).map(|b| b.y_max as f64 * scale)
+        };
+        let cap = face
+            .capital_height()
+            .filter(|h| *h > 0)
+            .map(|h| h as f64 * scale)
+            .or_else(|| glyph_top('H'));
+        let x = face
+            .x_height()
+            .filter(|h| *h > 0)
+            .map(|h| h as f64 * scale)
+            .or_else(|| glyph_top('x'));
+        let ascent = face.ascender() as f64 * scale;
+        let descent = -(face.descender() as f64) * scale;
+        let gap = face.line_gap() as f64 * scale;
+        let db = self.db();
+        let face_name = db
+            .face(id)
+            .and_then(|f| f.families.first().map(|(n, _)| n.clone()))
+            .unwrap_or_else(|| family.to_string());
+        Some(FaceMetrics {
+            family: face_name,
+            units_per_em: upem as u32,
+            ascent,
+            descent,
+            line_height: ascent + descent + gap,
+            cap_height: cap,
+            x_height: x,
+        })
     }
 
     // ----- shaping -----------------------------------------------------------
