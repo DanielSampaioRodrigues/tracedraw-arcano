@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Convert Outline to Object (Ctrl+Shift+Q) now gives clean shapes: curves stay real curves with handles, straight parts stay straight, and the result has as few nodes as keep its shape, instead of hundreds of tiny straight segments. The outline of an ellipse also no longer has a notch where the ellipse starts (#622).
+
 - Print Merge, On every page: Create Merged Document and Print Merged Document now fill the pages of the open drawing, one record per page, instead of making a new drawing. With no placeholder picture but a pictures folder chosen, Place Inside Frame gives each page of the drawing its own picture from the folder, in name order, in the same frame (#618).
 
 - Pen and Bezier: a click on an end node of an open curve, selected or not, now goes on drawing that curve as if you had never stopped. The next segment leaves along the mirror of the end's handle, so the preview is curved and the join is smooth. The curve had to be selected first, and the new segment always started straight (#630).
