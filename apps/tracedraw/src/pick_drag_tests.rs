@@ -6060,3 +6060,51 @@ fn save_as_starts_at_the_cdr_type_and_version_the_options_set() {
     app.settings.formats.save_new_as_cdr = true;
     assert_eq!(save_as(&ctx, &mut app), (true, 15));
 }
+
+#[test]
+fn the_options_dialogs_are_tabs_of_one_window() {
+    use crate::ui::dialogs::{Dialog, OptionsPage};
+    use crate::ui::options::{tab_rect_id, OptionsSet};
+    let (ctx, mut app, _) = setup();
+    app.dialog = Dialog::Options;
+    app.options_page = OptionsPage::Display;
+    // The window takes its place over the first frames.
+    for _ in 0..4 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let tab = |ctx: &egui::Context, s: OptionsSet| {
+        ctx.data(|d| d.get_temp::<egui::Rect>(tab_rect_id(s)))
+            .unwrap_or_else(|| panic!("no tab for {s:?}"))
+            .center()
+    };
+    // Every set has its tab, Document Options too while a drawing is open.
+    for s in OptionsSet::ALL {
+        tab(&ctx, s);
+    }
+    click_at(
+        &ctx,
+        &mut app,
+        tab(&ctx, OptionsSet::Global),
+        Modifiers::NONE,
+    );
+    assert_eq!(app.options_page, OptionsPage::GlobalGeneral);
+    assert!(matches!(app.dialog, Dialog::Options));
+    click_at(
+        &ctx,
+        &mut app,
+        tab(&ctx, OptionsSet::Document),
+        Modifiers::NONE,
+    );
+    assert_eq!(app.options_page, OptionsPage::DocumentGeneral);
+    // Back on the first tab, the page shown there last.
+    click_at(&ctx, &mut app, tab(&ctx, OptionsSet::App), Modifiers::NONE);
+    assert_eq!(app.options_page, OptionsPage::Display);
+    // Cancel still closes the one window.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(matches!(app.dialog, Dialog::None), "{:?}", app.dialog);
+}
