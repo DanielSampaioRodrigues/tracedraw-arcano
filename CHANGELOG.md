@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outline Pen: the Variable Outline width nodes can be dragged along their bar, staying between their neighbours, with the fields following (a drag there moved the whole dialog). A drag on empty bar adds a node and slides it, and a typed position keeps the nodes in order (#652).
+
 - Edit Fill: the dialog keeps its size and place, and OK and Cancel stay put, when switching between no fill, uniform, gradient, pattern, texture and mesh (#654).
 
 - The drawing tools' cross hair and the text I-beam are now drawn black with a white edge, so they show on a page of any colour; on Windows the system ones could appear white on a white page. A shape being drawn now follows the pointer from the first frame of the drag, and the window keeps one frame queued instead of two, so what is drawn under the pointer trails it less (#655).
