@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening a file from the file manager or the command line while TraceDraw is running now opens it in a new tab of the running window, which comes to the front, instead of starting the whole program again. `--new-instance` still opens a separate window. On Linux, selecting several files opens them all in one window (#646).
+
 - Opening a file that is already open (Welcome Screen, File > Open, Open Recent, a dropped file, the command line) now shows its tab instead of opening it again in a new one, unsaved changes kept. A .cdr or other drawing counts as that file until it is saved under another name; templates still open as new drawings (#645).
 
 - Symmetry: after Finish, a symmetry moves, scales, rotates and mirrors as one object, with its copies and mirror lines. The lines used to stay where they were, so the copies mirrored the move and a handle rearranged them, as if the symmetry were still being edited. The drag outline shows the copies too. Duplicate, Step and Repeat and copies made during a drag take the lines along, and a symmetry inside a group follows the group. While editing, moving the object still leaves the lines in place.
