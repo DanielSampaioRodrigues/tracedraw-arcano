@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows: the program carries the C runtime it needs (no Visual C++ redistributable required). A start that fails now says so: the log is written to `tracedraw.log` in the settings folder (`%APPDATA%\TraceDraw`, or `tracedraw-settings` beside a portable copy), and a crash shows a message and writes `crash.log` there; nothing was shown before (#570).
+
 - PDF import in Text mode: Hindi and other Devanagari text comes back in the order it is typed. The short i sign (ि) and the reph (र्) were taken in the order the PDF draws them, so they sat on the wrong letters (#585).
 
 - Print Preview: paper margins for each side, typed in the left panel or set by dragging their dashed lines on the sheet; the pages go inside them, clear of what the printer cannot print (#580, #582).
