@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- PDF import in Text mode: Hindi and other Devanagari text comes back in the order it is typed. The short i sign (ि) and the reph (र्) were taken in the order the PDF draws them, so they sat on the wrong letters (#585).
+
 - Print Preview: paper margins for each side, typed in the left panel or set by dragging their dashed lines on the sheet; the pages go inside them, clear of what the printer cannot print (#580, #582).
 
 - Print Merge: Place Inside Frame with nothing selected waits for a click on the shape, with the Place Inside arrow as the pointer, and takes the shape clicked (also inside a group). It was greyed until a shape was selected (#577).
