@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Odstranit skvrny"
 dialog.bg_despeckle_tip = "Odstranit i malé volné skvrny, které zůstaly v pozadí"
 dialog.bg_clean_edges = "Vyčistit barvy okraje"
 dialog.bg_clean_edges_tip = "Odebrat barvu starého pozadí z poloprůhledných pixelů okraje, aby nebyl vidět lem"
+dialog.no_window = "TraceDraw nedokázal otevřít okno žádným vykreslovačem: {reason}\n\nPodrobnosti jsou v {log}. Obvykle pomůže nainstalovat vlastní ovladač grafické karty. Přiložte tento soubor k hlášení na https://github.com/igtoth/tracedraw/issues" # mt

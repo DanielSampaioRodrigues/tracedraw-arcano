@@ -98,18 +98,34 @@ and `--reset-settings` starts open windows of their own.
 - The desktop window is drawn with wgpu (Direct3D 12, Vulkan or Metal).
   Options > General > Use hardware acceleration (on) picks the graphics
   card named beside it, or with Fastest available a separate card before
-  a built-in one, a virtual one, others, and a software adapter last.
-  Off, the software adapter (WARP on Windows, a CPU Vulkan driver
+  a built-in one, a virtual one, then others; never a software adapter
+  (#616). Off, the software adapter (WARP on Windows, a CPU Vulkan driver
   elsewhere). Options shows what draws the window in this run; the
   choice takes effect at the next start.
-- A start that cannot open the window that way runs TraceDraw again
-  with `--renderer=software`, and if that fails too with `--renderer=gl`
-  (OpenGL, as earlier versions drew), the other arguments kept; the
-  first process waits for it. The renderer that opened the window when
-  the first choice did not is kept in the settings (`working_renderer`)
-  and used straight away next time; changing the choice in Options
-  clears it (`gpu::tests::a_renderer_that_fails_hands_over_to_the_next`).
+- A start that cannot open the window that way runs TraceDraw again with
+  the next renderer, the other arguments kept; the first process waits
+  for it. With hardware acceleration on the order is the graphics card,
+  then `--renderer=gl` (OpenGL, as earlier versions drew), then
+  `--renderer=software`: the software adapter draws every frame on the
+  CPU and always opens, so it is the last resort. With it off: the
+  software adapter, then OpenGL. A computer whose card no wgpu backend
+  accepts (an old driver, no Direct3D 12) thus draws with OpenGL instead
+  of on the CPU (#616). The renderer that opened the window when the
+  first choice did not is kept in the settings (`working_renderer`) and
+  used straight away next time (and OpenGL from there falls back to the
+  software adapter); changing the choice in Options clears it
+  (`gpu::tests::a_renderer_that_fails_hands_over_to_the_next`,
+  `gpu::tests::hardware_mode_never_draws_on_the_software_adapter`).
   So a virtual machine without a usable graphics card opens.
+- A panic while a renderer starts (eframe's OpenGL set-up panics when
+  the driver offers no matching pixel format) is caught and logged, and
+  the next renderer is tried; it is not written to `crash.log` or shown.
+  When no renderer is left, the reason is logged and shown in a message
+  box naming the log, and TraceDraw ends with an error.
+- The log names every graphics adapter wgpu offers (backend, type,
+  vendor and device ids, driver) with why it was taken or left, the
+  renderer each start tries and the one that opened the window; an
+  OpenGL start adds the driver's vendor, renderer and versions.
 - The log goes to `tracedraw.log` in the settings folder as well as to
   the console (written afresh each start; a start handed over to the
   next renderer adds to it). A panic is written to `crash.log` there and

@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Usuń plamki"
 dialog.bg_despeckle_tip = "Usuń też małe luźne plamki pozostałe w tle"
 dialog.bg_clean_edges = "Oczyść kolory krawędzi"
 dialog.bg_clean_edges_tip = "Usuń kolor starego tła z półprzezroczystych pikseli krawędzi, aby nie było widać obwódki"
+dialog.no_window = "TraceDraw nie mógł otworzyć okna żadnym rendererem: {reason}\n\nSzczegóły są w {log}. Zwykle pomaga zainstalowanie własnego sterownika karty graficznej. Dołącz ten plik do zgłoszenia na https://github.com/igtoth/tracedraw/issues" # mt

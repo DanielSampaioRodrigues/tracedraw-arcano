@@ -6,7 +6,17 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+
+/// While a renderer starts and another is left to try, a panic is that
+/// renderer failing (eframe's OpenGL set-up can panic, #616): it is
+/// logged, and neither written to `crash.log` nor shown.
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+pub fn quiet_panics(on: bool) {
+    QUIET.store(on, Ordering::SeqCst);
+}
 
 /// The log file of this run, in `dir`.
 pub fn log_path(dir: &Path) -> PathBuf {
@@ -69,6 +79,10 @@ pub fn init() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let report = report(info);
+        if QUIET.load(Ordering::SeqCst) {
+            log::warn!("the renderer failed to start: {report}");
+            return;
+        }
         log::error!("{report}");
         let saved = dir.lock().ok().and_then(|d| d.clone()).and_then(|d| {
             let path = crash_path(&d);
@@ -98,6 +112,21 @@ pub fn report(info: &std::panic::PanicHookInfo<'_>) -> String {
         std::env::consts::ARCH,
         std::backtrace::Backtrace::force_capture()
     )
+}
+
+/// Tell the user that no renderer could open the window, naming the log
+/// (#616): the Windows build has no console, so they would see nothing.
+pub fn no_window(reason: &str) {
+    let log = crate::settings::config_dir()
+        .map(|d| log_path(&d).display().to_string())
+        .unwrap_or_default();
+    let text = crate::i18n::trf("dialog.no_window", &[("reason", reason), ("log", &log)]);
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("TraceDraw")
+        .set_description(text)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
 }
 
 /// Tell the user, who would otherwise see nothing (no console on

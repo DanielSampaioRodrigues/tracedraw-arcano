@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Flecken entfernen"
 dialog.bg_despeckle_tip = "Auch kleine lose Flecken im Hintergrund entfernen"
 dialog.bg_clean_edges = "Kantenfarben bereinigen"
 dialog.bg_clean_edges_tip = "Die Farbe des alten Hintergrunds aus halbtransparenten Kantenpixeln entfernen, damit kein Saum sichtbar ist"
+dialog.no_window = "TraceDraw konnte sein Fenster mit keinem Renderer öffnen: {reason}\n\nDie Einzelheiten stehen in {log}. Meist hilft es, den eigenen Treiber der Grafikkarte zu installieren. Bitte hängen Sie diese Datei an ein Issue auf https://github.com/igtoth/tracedraw/issues an" # mt

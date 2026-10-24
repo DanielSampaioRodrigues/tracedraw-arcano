@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Lekeleri kaldır"
 dialog.bg_despeckle_tip = "Arka planda kalan küçük dağınık lekeleri de kaldır"
 dialog.bg_clean_edges = "Kenar renklerini temizle"
 dialog.bg_clean_edges_tip = "Yarı saydam kenar piksellerinden eski arka planın rengini çıkar, böylece hale görünmez"
+dialog.no_window = "TraceDraw penceresini hiçbir oluşturucuyla açamadı: {reason}\n\nAyrıntılar {log} dosyasında. Ekran kartının kendi sürücüsünü kurmak genellikle işe yarar. Lütfen bu dosyayı https://github.com/igtoth/tracedraw/issues adresinde bir kayda ekleyin" # mt

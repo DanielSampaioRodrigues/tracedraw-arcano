@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Hapus bintik"
 dialog.bg_despeckle_tip = "Hapus juga bintik kecil lepas yang tersisa di latar"
 dialog.bg_clean_edges = "Bersihkan warna tepi"
 dialog.bg_clean_edges_tip = "Buang warna latar lama dari piksel tepi yang semi-transparan, agar tidak tampak lingkaran cahaya"
+dialog.no_window = "TraceDraw tidak dapat membuka jendelanya dengan renderer apa pun: {reason}\n\nDetailnya ada di {log}. Memasang driver kartu grafis sendiri biasanya membantu. Lampirkan berkas itu ke sebuah issue di https://github.com/igtoth/tracedraw/issues" # mt

@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Vlekjes verwijderen"
 dialog.bg_despeckle_tip = "Ook kleine losse vlekjes in de achtergrond verwijderen"
 dialog.bg_clean_edges = "Randkleuren opschonen"
 dialog.bg_clean_edges_tip = "De kleur van de oude achtergrond uit halfdoorzichtige randpixels halen, zodat er geen rand zichtbaar is"
+dialog.no_window = "TraceDraw kon zijn venster met geen enkele renderer openen: {reason}\n\nDe details staan in {log}. Het eigen stuurprogramma van de videokaart installeren helpt meestal. Voeg dat bestand toe aan een issue op https://github.com/igtoth/tracedraw/issues" # mt

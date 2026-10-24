@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "धब्बे हटाएँ"
 dialog.bg_despeckle_tip = "पृष्ठभूमि में बचे छोटे अलग धब्बे भी हटाएँ"
 dialog.bg_clean_edges = "किनारे के रंग साफ़ करें"
 dialog.bg_clean_edges_tip = "अर्ध-पारदर्शी किनारे के पिक्सेल से पुरानी पृष्ठभूमि का रंग निकालें, ताकि आभामंडल न दिखे"
+dialog.no_window = "TraceDraw किसी भी रेंडरर से अपनी विंडो नहीं खोल सका: {reason}\n\nविवरण {log} में है। ग्राफ़िक्स कार्ड का अपना ड्राइवर इंस्टॉल करने से आमतौर पर मदद मिलती है। कृपया वह फ़ाइल https://github.com/igtoth/tracedraw/issues पर किसी इश्यू के साथ संलग्न करें" # mt

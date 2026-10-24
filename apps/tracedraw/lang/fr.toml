@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Supprimer les taches"
 dialog.bg_despeckle_tip = "Supprimer aussi les petits points isolés restés dans l'arrière-plan"
 dialog.bg_clean_edges = "Nettoyer les couleurs du bord"
 dialog.bg_clean_edges_tip = "Retirer la couleur de l'ancien arrière-plan des pixels semi-transparents du bord, pour éviter un halo"
+dialog.no_window = "TraceDraw n'a pu ouvrir sa fenêtre avec aucun moteur de rendu : {reason}\n\nLes détails sont dans {log}. Installer le pilote propre de la carte graphique aide en général. Joignez ce fichier à un ticket sur https://github.com/igtoth/tracedraw/issues" # mt

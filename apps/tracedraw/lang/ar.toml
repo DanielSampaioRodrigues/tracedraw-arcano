@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "إزالة البقع"
 dialog.bg_despeckle_tip = "إزالة البقع الصغيرة المتفرقة المتبقية في الخلفية أيضًا"
 dialog.bg_clean_edges = "تنظيف ألوان الحافة"
 dialog.bg_clean_edges_tip = "إزالة لون الخلفية القديمة من بكسلات الحافة شبه الشفافة حتى لا تظهر هالة"
+dialog.no_window = "تعذّر على TraceDraw فتح نافذته بأي مُصيّر: {reason}\n\nالتفاصيل في {log}. عادةً ما يساعد تثبيت برنامج التشغيل الخاص ببطاقة الرسومات. يُرجى إرفاق هذا الملف ببلاغ على https://github.com/igtoth/tracedraw/issues" # mt

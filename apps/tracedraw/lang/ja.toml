@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "斑点を削除"
 dialog.bg_despeckle_tip = "背景に残った小さな斑点も削除する"
 dialog.bg_clean_edges = "エッジの色をきれいにする"
 dialog.bg_clean_edges_tip = "半透明のエッジピクセルから元の背景色を取り除き、縁取りが出ないようにする"
+dialog.no_window = "TraceDraw はどのレンダラーでもウィンドウを開けませんでした: {reason}\n\n詳細は {log} にあります。グラフィックカード専用のドライバーをインストールすると、たいてい改善します。そのファイルを https://github.com/igtoth/tracedraw/issues の Issue に添付してください" # mt

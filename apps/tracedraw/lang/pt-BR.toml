@@ -5093,3 +5093,4 @@ dialog.bg_despeckle = "Remover manchas"
 dialog.bg_despeckle_tip = "Remover também pequenos pontos soltos que ficaram no fundo"
 dialog.bg_clean_edges = "Limpar cores da borda"
 dialog.bg_clean_edges_tip = "Tirar a cor do fundo antigo dos pixels semitransparentes da borda, para não aparecer halo"
+dialog.no_window = "O TraceDraw não conseguiu abrir sua janela com nenhum renderizador: {reason}\n\nOs detalhes estão em {log}. Instalar o driver próprio da placa de vídeo geralmente ajuda. Anexe esse arquivo a uma issue em https://github.com/igtoth/tracedraw/issues" # mt
