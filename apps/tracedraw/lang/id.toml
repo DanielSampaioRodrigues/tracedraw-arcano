@@ -2984,7 +2984,6 @@ print.margin_left = "Margin kiri" # mt
 print.margin_right = "Margin kanan" # mt
 print.margin_top = "Margin atas" # mt
 print.margin_bottom = "Margin bawah" # mt
-print.inks = "Tinta:" # mt
 publish.allow_accessibility = "Akses teks untuk pembaca layar"
 publish.allow_annotate = "Tambah komentar"
 publish.allow_assemble = "Sisipkan, hapus, dan putar halaman"

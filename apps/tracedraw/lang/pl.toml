@@ -2984,7 +2984,6 @@ print.margin_left = "Lewy margines" # mt
 print.margin_right = "Prawy margines" # mt
 print.margin_top = "Górny margines" # mt
 print.margin_bottom = "Dolny margines" # mt
-print.inks = "Farby:" # mt
 publish.allow_accessibility = "Dostęp do tekstu dla czytników ekranu"
 publish.allow_annotate = "Dodawanie komentarzy"
 publish.allow_assemble = "Wstawianie, usuwanie i obracanie stron"

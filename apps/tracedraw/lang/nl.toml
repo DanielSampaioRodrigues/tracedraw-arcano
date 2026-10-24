@@ -2984,7 +2984,6 @@ print.margin_left = "Linkermarge" # mt
 print.margin_right = "Rechtermarge" # mt
 print.margin_top = "Bovenmarge" # mt
 print.margin_bottom = "Ondermarge" # mt
-print.inks = "Inkten:" # mt
 publish.allow_accessibility = "Teksttoegang voor schermlezers"
 publish.allow_annotate = "Opmerkingen toevoegen"
 publish.allow_assemble = "Pagina's invoegen, verwijderen en roteren"

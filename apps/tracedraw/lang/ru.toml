@@ -2984,7 +2984,6 @@ print.margin_left = "Левое поле" # mt
 print.margin_right = "Правое поле" # mt
 print.margin_top = "Верхнее поле" # mt
 print.margin_bottom = "Нижнее поле" # mt
-print.inks = "Краски:" # mt
 publish.allow_accessibility = "Доступ к тексту для экранных дикторов"
 publish.allow_annotate = "Добавление комментариев"
 publish.allow_assemble = "Вставка, удаление и поворот страниц"

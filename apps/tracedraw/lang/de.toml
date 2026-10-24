@@ -2984,7 +2984,6 @@ print.margin_left = "Linker Rand" # mt
 print.margin_right = "Rechter Rand" # mt
 print.margin_top = "Oberer Rand" # mt
 print.margin_bottom = "Unterer Rand" # mt
-print.inks = "Farben:" # mt
 publish.allow_accessibility = "Textzugriff für Bildschirmleser"
 publish.allow_annotate = "Kommentare hinzufügen"
 publish.allow_assemble = "Seiten einfügen, löschen und drehen"

@@ -2984,7 +2984,6 @@ print.margin_left = "बायाँ हाशिया" # mt
 print.margin_right = "दायाँ हाशिया" # mt
 print.margin_top = "ऊपरी हाशिया" # mt
 print.margin_bottom = "निचला हाशिया" # mt
-print.inks = "स्याही:" # mt
 publish.allow_accessibility = "स्क्रीन रीडर के लिए टेक्स्ट एक्सेस"
 publish.allow_annotate = "टिप्पणियाँ जोड़ना"
 publish.allow_assemble = "पृष्ठ जोड़ना, हटाना और घुमाना"

@@ -2984,7 +2984,6 @@ print.margin_left = "左余白" # mt
 print.margin_right = "右余白" # mt
 print.margin_top = "上余白" # mt
 print.margin_bottom = "下余白" # mt
-print.inks = "インク:" # mt
 publish.allow_accessibility = "スクリーンリーダーによるテキストアクセス"
 publish.allow_annotate = "注釈の追加"
 publish.allow_assemble = "ページの挿入、削除、回転"

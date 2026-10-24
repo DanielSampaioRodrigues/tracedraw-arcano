@@ -2984,7 +2984,6 @@ print.margin_left = "Sol kenar boşluğu" # mt
 print.margin_right = "Sağ kenar boşluğu" # mt
 print.margin_top = "Üst kenar boşluğu" # mt
 print.margin_bottom = "Alt kenar boşluğu" # mt
-print.inks = "Mürekkepler:" # mt
 publish.allow_accessibility = "Ekran okuyucular için metin erişimi"
 publish.allow_annotate = "Yorum ekleme"
 publish.allow_assemble = "Sayfa ekleme, silme ve döndürme"

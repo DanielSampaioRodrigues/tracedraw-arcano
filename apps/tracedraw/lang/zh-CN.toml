@@ -2984,7 +2984,6 @@ print.margin_left = "左边距" # mt
 print.margin_right = "右边距" # mt
 print.margin_top = "上边距" # mt
 print.margin_bottom = "下边距" # mt
-print.inks = "油墨：" # mt
 publish.allow_accessibility = "屏幕阅读器可读取文本"
 publish.allow_annotate = "添加注释"
 publish.allow_assemble = "插入、删除和旋转页面"

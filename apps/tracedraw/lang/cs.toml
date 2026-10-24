@@ -2984,7 +2984,6 @@ print.margin_left = "Levý okraj" # mt
 print.margin_right = "Pravý okraj" # mt
 print.margin_top = "Horní okraj" # mt
 print.margin_bottom = "Dolní okraj" # mt
-print.inks = "Barvy:" # mt
 publish.allow_accessibility = "Přístup k textu pro čtečky obrazovky"
 publish.allow_annotate = "Přidávat komentáře"
 publish.allow_assemble = "Vkládat, odstraňovat a otáčet stránky"

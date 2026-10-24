@@ -2984,7 +2984,6 @@ print.margin_left = "左邊界" # mt
 print.margin_right = "右邊界" # mt
 print.margin_top = "上邊界" # mt
 print.margin_bottom = "下邊界" # mt
-print.inks = "油墨：" # mt
 publish.allow_accessibility = "供螢幕閱讀程式存取文字"
 publish.allow_annotate = "新增註解"
 publish.allow_assemble = "插入、刪除與旋轉頁面"

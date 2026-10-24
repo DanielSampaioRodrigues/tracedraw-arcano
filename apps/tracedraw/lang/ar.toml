@@ -2984,7 +2984,6 @@ print.margin_left = "الهامش الأيسر" # mt
 print.margin_right = "الهامش الأيمن" # mt
 print.margin_top = "الهامش العلوي" # mt
 print.margin_bottom = "الهامش السفلي" # mt
-print.inks = "الأحبار:" # mt
 publish.allow_accessibility = "وصول قارئات الشاشة إلى النص"
 publish.allow_annotate = "إضافة تعليقات"
 publish.allow_assemble = "إدراج الصفحات وحذفها وتدويرها"

@@ -2984,7 +2984,6 @@ print.margin_left = "বাম মার্জিন" # mt
 print.margin_right = "ডান মার্জিন" # mt
 print.margin_top = "উপরের মার্জিন" # mt
 print.margin_bottom = "নিচের মার্জিন" # mt
-print.inks = "কালি:" # mt
 publish.allow_accessibility = "স্ক্রিন রিডারের জন্য লেখায় প্রবেশ"
 publish.allow_annotate = "মন্তব্য যোগ"
 publish.allow_assemble = "পৃষ্ঠা যোগ, মুছে ফেলা ও ঘোরানো"

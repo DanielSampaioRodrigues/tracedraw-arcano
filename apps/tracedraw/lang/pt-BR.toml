@@ -2984,7 +2984,6 @@ print.margin_left = "Margem esquerda" # mt
 print.margin_right = "Margem direita" # mt
 print.margin_top = "Margem superior" # mt
 print.margin_bottom = "Margem inferior" # mt
-print.inks = "Tintas:" # mt
 publish.allow_accessibility = "Acesso ao texto para leitores de tela"
 publish.allow_annotate = "Adicionar comentários"
 publish.allow_assemble = "Inserir, excluir e girar páginas"
