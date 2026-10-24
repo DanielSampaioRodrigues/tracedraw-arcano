@@ -156,6 +156,10 @@ terminator's ends, a rounded callout) keep their size in long boxes.
 
 ## Checks
 
+- Given a 3 mm black default outline, while a rectangle or an ellipse is
+  dragged out, the outline is painted at its width and the edge line is
+  painted after it, on top (#621,
+  `pick_drag_tests::the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline`).
 - `pick_drag_tests::overlays_are_drawn_on_a_white_line`
 - `common_shapes::tests::every_shape_fills_its_box`: every shape stays in
   its box and fills at least 80 % of it both ways, and is named.
