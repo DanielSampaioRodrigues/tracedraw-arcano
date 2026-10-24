@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Segment Delete: dragging a box deletes every segment the box touches, whole, up to the crossings at its ends (a closed shape nothing crosses goes whole), as other programs do; it used to delete only the segments lying wholly inside, so a box across an ornament deleted nothing. A click that slips a few pixels still deletes, and a drag on a crowded page is about ten times faster (#528).
+
 ## 0.16.0 (2026-10-24)
 
 - Text > Join Lines into Paragraph: the selected lines of artistic text (a PDF brings its text one object per line) become one paragraph text with the same first baseline and line spacing, so text typed into it flows on to the next lines (#599).

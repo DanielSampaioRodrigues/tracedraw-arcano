@@ -2236,9 +2236,10 @@ impl App {
                 from_center,
             } => {
                 let r = App::box_rect(start, current, from_center);
-                // The knife cuts along the dragged line, in its direction;
-                // shape tools take the normalised box.
-                let (a, b) = if self.tool == Tool::Knife {
+                // The knife cuts along the dragged line, in its direction,
+                // and Segment Delete needs the press (a slipped click is
+                // taken there); shape tools take the normalised box.
+                let (a, b) = if matches!(self.tool, Tool::Knife | Tool::SegmentDelete) {
                     (start, current)
                 } else {
                     (Point::new(r.x0, r.y0), Point::new(r.x1, r.y1))
