@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Symmetry: after Finish, a symmetry moves, scales, rotates and mirrors as one object, with its copies and mirror lines. The lines used to stay where they were, so the copies mirrored the move and a handle rearranged them, as if the symmetry were still being edited. The drag outline shows the copies too. Duplicate, Step and Repeat and copies made during a drag take the lines along, and a symmetry inside a group follows the group. While editing, moving the object still leaves the lines in place.
+
 - Property bars: the up and down arrows (and the mouse wheel) of the rotation angle, scale %, arc angles, dimension text size and line width, corner radius and Transform toolbar fields now apply at every click. After clicking into the box, only the first arrow click worked.
 
 - A right click while dragging (move, scale, rotate, skew, and mirroring with Ctrl and a side handle) now leaves the original and makes the copy whichever button you release first. Releasing the left button first, or both at once, used to count as a click: on empty canvas it emptied the selection and nothing was copied. The scale, rotate and skew pointers now also show the copy's plus (#528).

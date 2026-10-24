@@ -3888,9 +3888,15 @@ impl App {
 
     pub fn run(&mut self, cmd: Command) {
         self.break_clone_links_for(&cmd);
+        let keep = self.edited_lines_kept(std::slice::from_ref(&cmd));
         if let Err(e) = self.engine.run(&cmd) {
             self.status = format!("{}: {e}", cmd.label());
             return;
+        }
+        if let Some(k) = keep {
+            if let Err(e) = self.engine.amend(&k) {
+                self.status = e.to_string();
+            }
         }
         self.sync_effect_clones_for(&cmd);
         self.sync_object_clones();
@@ -4556,7 +4562,7 @@ impl App {
                 Some(m) if smart => m,
                 _ => Affine::translate(self.duplicate_offset),
             };
-            shape.transform = step * shape.transform;
+            shape.transform_by(step);
             ids.push(id);
             pairs.push((s.id, id));
             copies.push(shape);
@@ -4913,6 +4919,47 @@ impl App {
         if let Err(e) = self.engine.run_batch("Outline Width", &cmds) {
             self.status = e.to_string();
         }
+    }
+
+    /// The symmetry being edited, when `cmds` move or scale it: a command
+    /// that puts its effects back as they are now. While a symmetry is
+    /// edited its mirror lines stay where they are as its object is moved,
+    /// scaled or turned; out of edit mode they go with the object
+    /// (`Shape::transform_by`).
+    pub fn edited_lines_kept(&self, cmds: &[Command]) -> Option<Command> {
+        let id = self.symmetry_edit?;
+        cmds.iter()
+            .any(|c| matches!(c, Command::TransformShapes { shapes, .. } if shapes.contains(&id)))
+            .then(|| self.effects_as_now(id))
+            .flatten()
+    }
+
+    /// [`Engine::run_batch`] keeping the edited symmetry's mirror lines
+    /// in place (see [`App::edited_lines_kept`]), in the same undo step.
+    pub fn run_batch_keeping_lines(
+        &mut self,
+        label: &'static str,
+        cmds: &[Command],
+    ) -> tracedraw_core::Result<()> {
+        let keep = self.edited_lines_kept(cmds);
+        self.engine.run_batch(label, cmds)?;
+        if let Some(k) = keep {
+            self.engine.amend(&k)?;
+        }
+        Ok(())
+    }
+
+    /// Put `id`'s live effects back as they are now (those switched off
+    /// too), for a command that changes only the space an outline is
+    /// written in, not where it is: a TransformShapes doing that would
+    /// carry a symmetry's mirror lines away from the outline.
+    pub fn effects_as_now(&self, id: ShapeId) -> Option<Command> {
+        let s = self.doc().find_shape(id)?;
+        Some(Command::SetEffectStack {
+            shape: id,
+            effects: s.effects.clone(),
+            parked: s.parked_effects.clone(),
+        })
     }
 
     pub fn transform_selection(&mut self, t: Affine) {
@@ -6460,7 +6507,7 @@ impl App {
             })
             .collect();
         if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Clear Transformations", &cmds);
+            let _ = self.run_batch_keeping_lines("Clear Transformations", &cmds);
         }
     }
 

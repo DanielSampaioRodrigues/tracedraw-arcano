@@ -692,6 +692,26 @@ impl App {
                 });
             }
         }
+        // A copy of the lone object came with a symmetry of its own: it
+        // goes, the group's mirrors the copy (two would mirror it twice).
+        for id in &ids {
+            if let Some(n) = self.doc().find_shape(*id) {
+                if n.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Symmetry { .. }))
+                {
+                    cmds.push(Command::SetEffects {
+                        shape: *id,
+                        effects: n
+                            .effects
+                            .iter()
+                            .filter(|e| !matches!(e, Effect::Symmetry { .. }))
+                            .cloned()
+                            .collect(),
+                    });
+                }
+            }
+        }
         members.extend(ids.iter().copied());
         cmds.push(Command::Group { shapes: members });
         for cmd in &cmds {
@@ -721,6 +741,8 @@ impl App {
     pub fn edit_symmetry(&mut self) {
         if let Some((id, ..)) = self.selected_symmetry() {
             self.symmetry_edit = Some(id);
+            // Measured from now on without the copies (as picked).
+            self.visual_cache.borrow_mut().1.clear();
             self.select(vec![id]);
             self.status = tr("status.editing_symmetry");
         }
@@ -737,6 +759,21 @@ impl App {
         if let Some(id) = self.symmetry_edit.take() {
             self.status.clear();
             self.raster.borrow_mut().invalidate();
+            // Nothing of the editing stays. The boxes measured while it was
+            // edited are the object's own (without the copies): measured
+            // again. A group of the symmetry entered by a double click on a
+            // member, or the Shape tool that switched to, would still pick
+            // a member instead of the whole.
+            self.visual_cache.borrow_mut().1.clear();
+            let inside = self
+                .focus_target()
+                .is_some_and(|f| f == id || self.doc().ancestors(f).contains(&id));
+            if inside {
+                self.exit_focus();
+            }
+            if self.tool == crate::tools::Tool::Shape {
+                self.set_tool(crate::tools::Tool::Pick);
+            }
             if self.doc().find_shape(id).is_some() {
                 self.select(vec![id]);
             }
@@ -1301,7 +1338,7 @@ impl App {
             .filter(|id| *id != keep)
             .collect();
         // The joined outline is in page space: the kept curve's transform
-        // goes back to none.
+        // goes back to none (its effects stay where they are).
         let mut cmds = vec![
             Command::TransformShapes {
                 shapes: vec![keep],
@@ -1315,6 +1352,7 @@ impl App {
                 },
             },
         ];
+        cmds.extend(self.effects_as_now(keep));
         if !others.is_empty() {
             cmds.push(Command::DeleteShapes { shapes: others });
         }
@@ -1508,7 +1546,7 @@ impl App {
         let l = tmp.pages[0].layers[0].id;
         for s in &shapes {
             let mut c = s.clone();
-            c.transform = Affine::translate((-bounds.x0, -bounds.y0)) * c.transform;
+            c.transform_by(Affine::translate((-bounds.x0, -bounds.y0)));
             if let Ok(layer) = tmp.layer_mut(l) {
                 layer.shapes.push(c);
             }
@@ -2413,7 +2451,7 @@ impl App {
             else {
                 continue;
             };
-            let cmds = vec![
+            let mut cmds = vec![
                 Command::SetShapeKind {
                     shape: s.id,
                     kind: ShapeKind::Text {
@@ -2431,6 +2469,7 @@ impl App {
                         * s.transform.inverse(),
                 },
             ];
+            cmds.extend(self.effects_as_now(s.id));
             if let Err(e) = self.engine.run_batch("Straighten Text", &cmds) {
                 self.status = e.to_string();
             }
@@ -2785,7 +2824,7 @@ impl App {
             for s in &shapes {
                 let mut c = s.clone();
                 c.id = self.engine.new_shape_id();
-                c.transform = Affine::translate((dx * k as f64, dy * k as f64)) * c.transform;
+                c.transform_by(Affine::translate((dx * k as f64, dy * k as f64)));
                 new_sel.push(c.id);
                 cmds.push(Command::AddShape { layer, shape: c });
             }
@@ -3079,7 +3118,7 @@ impl App {
             g
         };
         // Symbol definition is placed at the origin.
-        def.transform = Affine::translate((-b.x0, -b.y0)) * def.transform;
+        def.transform_by(Affine::translate((-b.x0, -b.y0)));
         def.id = ShapeId(0);
         let index = self.doc().symbols.len();
         let name = format!("Symbol {}", index + 1);
