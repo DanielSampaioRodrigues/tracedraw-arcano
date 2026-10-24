@@ -1,0 +1,100 @@
+# Edição Editora Arcano 3: every push to the `arcano` branch is tested,
+# built for Windows with the edition's build number and published as a
+# release (v<version>+arcano.<n>) with one installer, which Help > Updates
+# offers on the editora's machines. The upstream "build" workflow is
+# disabled in the edition's repository (it would attach a second
+# installer without the build number).
+name: arcano
+
+on:
+  push:
+    branches: [arcano]
+  workflow_dispatch:
+
+# One release at a time, in order; a newer push waits for the one running.
+concurrency:
+  group: arcano-release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev fonts-dejavu-core
+      - run: cargo test --workspace
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The build number is the count of commits: the whole history.
+          fetch-depth: 0
+      - name: Version
+        id: ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          n=$(git rev-list --count HEAD)
+          tag="v${base}+arcano.${n}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "n=$n" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$tag is already published" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.ver.outputs.exists == 'false'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.ver.outputs.exists == 'false'
+      - name: Build
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          ARCANO_BUILD: ${{ steps.ver.outputs.n }}
+        run: cargo build --release -p tracedraw -p tracedraw-cli
+      - name: Installer
+        if: steps.ver.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.base }}-arcano.${{ steps.ver.outputs.n }}"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVersion=$ver" "/DSrcDir=$PWD\target\release" packaging\windows\tracedraw.iss
+          if (-not (Test-Path "dist\tracedraw-$ver-windows-x86_64-setup.exe")) { throw "no installer" }
+      - name: Release
+        if: steps.ver.outputs.exists == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.ver.outputs.tag }}"
+          prev=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          {
+            echo "Edição Editora Arcano 3, versão ${{ steps.ver.outputs.base }} (Arcano ${{ steps.ver.outputs.n }})."
+            echo
+            echo "Para instalar: Ajuda > Atualizações > Instalar, ou o arquivo -setup.exe abaixo."
+            if [[ -n "$prev" ]] && git rev-parse -q --verify "refs/tags/$prev" > /dev/null; then
+              echo
+              echo "Mudanças desde $prev:"
+              git log --no-merges --format='- %s' "$prev..HEAD" | head -n 80
+            fi
+          } > notes.md
+          gh release create "$tag" dist/*-setup.exe --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "TraceDraw ${{ steps.ver.outputs.base }} (Arcano ${{ steps.ver.outputs.n }})" \
+            --notes-file notes.md --latest

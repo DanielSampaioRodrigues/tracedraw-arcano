@@ -47,8 +47,16 @@ O script:
 1. busca as novidades do projeto original e junta com as nossas mudanças;
 2. testa e compila;
 3. gera o instalador em `arcano\instalador\`;
-4. publica esse instalador no GitHub da editora;
+4. envia o código para o GitHub da editora;
 5. instala nesta máquina.
+
+**Quem publica as versões é o GitHub** (`.github/workflows/arcano.yml`):
+cada envio para a branch `arcano` é testado, compilado para Windows com
+o número da edição e publicado como versão `v<versão>+arcano.<n>`, com um
+instalador só. Leva uns 30 minutos; o andamento aparece em *Actions ›
+arcano*. A automação "build" do projeto original fica desligada no
+repositório da editora: ela anexava um segundo instalador sem o número
+da edição.
 
 Se alguma novidade entrar em conflito com uma mudança nossa, ele para sem
 alterar nada.

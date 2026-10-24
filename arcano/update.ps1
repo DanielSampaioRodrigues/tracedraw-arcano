@@ -71,12 +71,12 @@ foreach ($f in 'LIGAR-IA-AO-TRACEDRAW.txt', 'REGISTRAR-MCP-CLAUDE.bat', 'registr
 }
 
 if (-not $NaoPublicar) {
-    Passo 'Publicando para as outras maquinas'
-    $repo = Repo-Da-Edicao
+    # O GitHub compila e publica a versao (.github/workflows/arcano.yml):
+    # um instalador so, com o numero da edicao. Daqui so vai o codigo.
+    Passo 'Enviando o codigo para o GitHub da editora'
     git push origin arcano
-    $tag = "v$base+arcano.$n"
-    gh release create $tag $setup --repo $repo --target arcano --title "TraceDraw $base (Arcano $n)" --notes "Edicao Editora Arcano 3. $novas novidade(s) do projeto original nesta versao."
-    if ($LASTEXITCODE -ne 0) { Aviso 'Nao consegui publicar esta versao; as outras maquinas ainda nao a veem.' }
+    if ($LASTEXITCODE -ne 0) { Aviso 'Nao consegui enviar; as outras maquinas ainda nao recebem esta versao.' }
+    else { Aviso "O GitHub publica a versao v$base+arcano.$n em uns 30 minutos (Actions > arcano)." }
 }
 
 Passo 'Instalando nesta maquina'
