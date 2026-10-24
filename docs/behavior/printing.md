@@ -89,6 +89,14 @@ same function (`export::print_sheets`).
   layout with its sketch); every change rebuilds the sheets at once.
 - A plate shows the ink's coverage in grey, black = full ink, as the
   separations print; registration colour shows on every plate.
+- Paper margins (left, right, top, bottom, mm, 0 at first) keep the
+  paper's edges clear: the pages and their marks go in the middle of what
+  is left, shrinking to fit inside it unless Keep size is on; a sheet
+  fitted to the pages grows by them (`imposition::tests::pages_sit_inside_the_paper_margins`).
+  They are typed in the left panel or set by dragging their dashed blue
+  lines on the sheet (within 6 pixels; the pointer turns to a resize
+  arrow and the line under it is drawn bolder; a drag inwards makes the
+  margin larger, 0 to 200 mm; #580, #582).
 - A drag on the sheet moves the artwork on its page (the move cursor and
   a tip say so), clear of the margins a printer leaves blank; Artwork
   position on the left shows and takes the move in millimetres (x right,

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Preview: paper margins for each side, typed in the left panel or set by dragging their dashed lines on the sheet; the pages go inside them, clear of what the printer cannot print (#580, #582).
+
 - Print Merge: Place Inside Frame with nothing selected waits for a click on the shape, with the Place Inside arrow as the pointer, and takes the shape clicked (also inside a group). It was greyed until a shape was selected (#577).
 
 - Print Preview with separations: a box for each ink, always in view, instead of a list. One ink shows its plate; several show what those inks print together, to check two or three colours at once (#571).

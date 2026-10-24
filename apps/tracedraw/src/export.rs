@@ -855,6 +855,7 @@ pub fn print_layout(app: &App, st: &PrintState, doc: &Document) -> crate::imposi
         back_side: st.back_side,
         keep_size: st.keep_size,
         info_offset: st.info_offset,
+        paper_margins: st.margins,
         marks: crate::imposition::Marks {
             crop: st.crop_marks,
             registration: st.registration_marks,

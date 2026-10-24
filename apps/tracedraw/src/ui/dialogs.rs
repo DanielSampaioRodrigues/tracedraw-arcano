@@ -211,6 +211,9 @@ pub struct PrintState {
     /// The artwork moved on its page before printing (mm, x and y up),
     /// by a drag in Print Preview or its fields (#536).
     pub art_offset: (f64, f64),
+    /// The paper's margins kept clear (mm: left, right, top, bottom), set
+    /// in Print Preview by value or by dragging their lines (#580, #582).
+    pub margins: [f64; 4],
     pub invert: bool,
     pub color_bars: bool,
     pub densitometer: bool,
@@ -429,6 +432,7 @@ impl Default for PrintState {
             keep_size: false,
             info_offset: (0.0, 0.0),
             art_offset: (0.0, 0.0),
+            margins: [0.0; 4],
             invert: false,
             color_bars: false,
             densitometer: false,

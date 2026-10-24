@@ -24,6 +24,8 @@ pub struct PrintPreview {
     pub zoom: f32,
     /// A drag on the sheet moves the page information, not the artwork.
     pub move_info: bool,
+    /// The margin line being dragged (0 left, 1 right, 2 top, 3 bottom).
+    pub margin_drag: Option<usize>,
     built: Option<(String, Document)>,
     texture: Option<(String, egui::TextureHandle)>,
 }
@@ -36,6 +38,7 @@ impl PrintPreview {
             inks: Vec::new(),
             zoom: 1.0,
             move_info: false,
+            margin_drag: None,
             built: None,
             texture: None,
         }
@@ -241,6 +244,29 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 {
                     st.info_offset = (0.0, 0.0);
                 }
+                // The paper's margins kept clear: typed here, or their
+                // dashed lines dragged on the sheet (#580, #582).
+                ui.label(tr("print.margins"));
+                ui.horizontal(|ui| {
+                    for (i, key) in [
+                        "print.margin_left",
+                        "print.margin_right",
+                        "print.margin_top",
+                        "print.margin_bottom",
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut st.margins[i])
+                                .range(0.0..=200.0)
+                                .speed(0.5)
+                                .suffix(" mm")
+                                .width(62.0),
+                        )
+                        .on_hover_text(tr(key));
+                    }
+                });
                 // Where the artwork sits on its page: a drag on the sheet
                 // moves it too (#536).
                 ui.horizontal(|ui| {
@@ -324,13 +350,57 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 } else {
                     tr("print.art_drag_tip")
                 });
-                if resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+                let sheet_rect = egui::Rect::from_center_size(r.center(), size);
+                // The margins' lines on the sheet (mm, y up).
+                let k = zoom as f32;
+                let m = pv.st.margins.map(|v| v.max(0.0) as f32);
+                let (left, right) = (sheet_rect.left() + m[0] * k, sheet_rect.right() - m[1] * k);
+                let (top, bottom) = (sheet_rect.top() + m[2] * k, sheet_rect.bottom() - m[3] * k);
+                let near = |p: egui::Pos2| -> Option<usize> {
+                    let inside_y = p.y >= top - 6.0 && p.y <= bottom + 6.0;
+                    let inside_x = p.x >= left - 6.0 && p.x <= right + 6.0;
+                    [
+                        (inside_y && (p.x - left).abs() <= 6.0, 0),
+                        (inside_y && (p.x - right).abs() <= 6.0, 1),
+                        (inside_x && (p.y - top).abs() <= 6.0, 2),
+                        (inside_x && (p.y - bottom).abs() <= 6.0, 3),
+                    ]
+                    .into_iter()
+                    .find(|(hit, _)| *hit)
+                    .map(|(_, i)| i)
+                };
+                let over = resp.hover_pos().and_then(near);
+                if resp.drag_started() {
+                    pv.margin_drag = resp.interact_pointer_pos().and_then(near);
+                }
+                let edge = pv.margin_drag.or(over);
+                if resp.hovered() || pv.margin_drag.is_some() {
+                    ui.ctx().set_cursor_icon(match edge {
+                        Some(0 | 1) => egui::CursorIcon::ResizeHorizontal,
+                        Some(_) => egui::CursorIcon::ResizeVertical,
+                        None => egui::CursorIcon::Move,
+                    });
                 }
                 if resp.dragged() {
-                    moved = Some(resp.drag_delta());
+                    let d = resp.drag_delta();
+                    match pv.margin_drag {
+                        Some(i) => {
+                            // Inwards makes the margin larger.
+                            let along = match i {
+                                0 => d.x,
+                                1 => -d.x,
+                                2 => d.y,
+                                _ => -d.y,
+                            };
+                            let v = &mut pv.st.margins[i];
+                            *v = (*v + f64::from(along) / zoom.max(1e-6)).clamp(0.0, 200.0);
+                        }
+                        None => moved = Some(d),
+                    }
                 }
-                let sheet_rect = egui::Rect::from_center_size(r.center(), size);
+                if resp.drag_stopped() {
+                    pv.margin_drag = None;
+                }
                 let p = ui.painter();
                 p.rect_filled(
                     sheet_rect.translate(egui::vec2(4.0, 4.0)),
@@ -344,6 +414,37 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                         egui::Color32::WHITE,
                     );
+                }
+                // The margins dashed in blue, the one under the pointer or
+                // dragged bolder.
+                for (i, (a, b)) in [
+                    (
+                        egui::pos2(left, sheet_rect.top()),
+                        egui::pos2(left, sheet_rect.bottom()),
+                    ),
+                    (
+                        egui::pos2(right, sheet_rect.top()),
+                        egui::pos2(right, sheet_rect.bottom()),
+                    ),
+                    (
+                        egui::pos2(sheet_rect.left(), top),
+                        egui::pos2(sheet_rect.right(), top),
+                    ),
+                    (
+                        egui::pos2(sheet_rect.left(), bottom),
+                        egui::pos2(sheet_rect.right(), bottom),
+                    ),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let width = if edge == Some(i) { 2.0 } else { 1.0 };
+                    p.extend(egui::Shape::dashed_line(
+                        &[a, b],
+                        egui::Stroke::new(width, Tokens::ACCENT),
+                        5.0,
+                        4.0,
+                    ));
                 }
             });
             if let Some(d) = moved {
