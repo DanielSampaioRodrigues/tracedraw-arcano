@@ -9,7 +9,10 @@ Windows a release's `-setup.exe` with a SHA-256 digest is offered as
 Install: it is downloaded to the temporary folder, checked like the
 AppImage, and then "Install and restart" closes TraceDraw (asking about
 unsaved drawings first) and runs the installer quietly (`/SILENT /SP-
-/CLOSEAPPLICATIONS /NORESTART`), which starts the new version. On the
+/CLOSEAPPLICATIONS /NORESTART`) from a hidden PowerShell that waits for
+it and, when it succeeds, starts the new version as the user (an
+elevated installer started quietly cannot start a program as the user:
+it stopped with "CallSpawnServer: Unexpected response"). On the
 machine that builds the edition (`settings.fork_source`, or the source
 folder of a program run from its `target` folder, holding
 `arcano/update.ps1`), "This is the latest version" also offers "Bring in

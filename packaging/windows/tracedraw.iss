@@ -68,8 +68,9 @@ Root: HKA; Subkey: "{code:PathRegKey}"; ValueType: expandsz; ValueName: "Path"; 
 
 [Run]
 Filename: "{app}\tracedraw.exe"; Description: "{cm:LaunchProgram,TraceDraw}"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
-; An update installed quietly from Help > Updates starts the new version.
-Filename: "{app}\tracedraw.exe"; Flags: nowait shellexec runasoriginaluser; Check: WizardSilent
+; An update installed quietly from Help > Updates is started again by
+; TraceDraw's own helper (fork.rs, run_installer): an elevated installer
+; started quietly cannot start a program as the user.
 
 [Code]
 function PathRegKey(Param: string): string;

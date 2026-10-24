@@ -158,20 +158,63 @@ pub fn run_source_update(script: &std::path::Path) -> Result<(), String> {
     cmd.current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// Start a downloaded installer quietly; it closes TraceDraw, installs
-/// and starts the new version (Windows).
+/// Start a downloaded installer quietly; it closes TraceDraw and installs
+/// the new version, which then starts again (Windows).
+///
+/// The new version is started by a hidden PowerShell that waits for the
+/// installer, as the user, rather than by the installer itself: an
+/// installer that elevated itself and was started quietly cannot start a
+/// program as the user ("CallSpawnServer: Unexpected response").
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_installer(setup: &std::path::Path) -> Result<(), String> {
-    std::process::Command::new(setup)
-        .args(["/SILENT", "/SP-", "/CLOSEAPPLICATIONS", "/NORESTART"])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    if cfg!(windows) {
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command"])
+            .arg(relaunch_script(setup, &exe))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    } else {
+        std::process::Command::new(setup)
+            .args(INSTALLER_FLAGS)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// How a downloaded installer runs: quietly, closing TraceDraw, without
+/// restarting Windows.
+const INSTALLER_FLAGS: [&str; 4] = ["/SILENT", "/SP-", "/CLOSEAPPLICATIONS", "/NORESTART"];
+
+/// The PowerShell that runs the installer, waits for it and, when it
+/// succeeded, starts `exe` again.
+fn relaunch_script(setup: &std::path::Path, exe: &std::path::Path) -> String {
+    // A PowerShell string in single quotes: a quote is written twice.
+    let quote = |p: &std::path::Path| format!("'{}'", p.display().to_string().replace('\'', "''"));
+    let flags: Vec<String> = INSTALLER_FLAGS.iter().map(|f| format!("'{f}'")).collect();
+    format!(
+        "$p = Start-Process -FilePath {} -ArgumentList {} -Wait -PassThru; if ($p.ExitCode -eq 0) {{ Start-Process -FilePath {} }}",
+        quote(setup),
+        flags.join(","),
+        quote(exe)
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_new_version_starts_after_the_installer() {
+        let s = relaunch_script(
+            std::path::Path::new(r"C:\Temp\it's-setup.exe"),
+            std::path::Path::new(r"C:\Program Files\TraceDraw\tracedraw.exe"),
+        );
+        assert!(s.starts_with(r"$p = Start-Process -FilePath 'C:\Temp\it''s-setup.exe' -ArgumentList '/SILENT','/SP-','/CLOSEAPPLICATIONS','/NORESTART' -Wait -PassThru"), "{s}");
+        assert!(s.ends_with(r"if ($p.ExitCode -eq 0) { Start-Process -FilePath 'C:\Program Files\TraceDraw\tracedraw.exe' }"), "{s}");
+    }
 
     #[test]
     fn versions_carry_the_build_number() {
