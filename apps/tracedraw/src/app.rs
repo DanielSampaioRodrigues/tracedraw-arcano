@@ -813,6 +813,13 @@ pub const IMPORT_EXTENSIONS: &[&str] = &[
     "gif", "webp", "tif", "tiff",
 ];
 
+/// Auto-backups being written on a thread: the folder, and each file's
+/// name with how its write went.
+struct AutoBackupJob {
+    dir: PathBuf,
+    thread: std::thread::JoinHandle<Vec<(String, Result<(), String>)>>,
+}
+
 pub struct App {
     pub engine: Engine,
     pub page: PageId,
@@ -1201,6 +1208,8 @@ pub struct App {
     pub pending_command: Option<String>,
     /// When the last auto-backup ran (set on the first frame).
     pub last_auto_backup: Option<web_time::Instant>,
+    /// The auto-backup being written on a thread of its own.
+    auto_backup_job: Option<AutoBackupJob>,
     /// Linked bitmaps' files as last seen (`watch_linked_bitmaps`): the
     /// modification time of each, and when they were last looked at.
     pub linked_mtimes: std::collections::HashMap<ShapeId, std::time::SystemTime>,
@@ -2193,6 +2202,7 @@ impl App {
             shortcut_editor: Default::default(),
             pending_command: None,
             last_auto_backup: None,
+            auto_backup_job: None,
             linked_mtimes: Default::default(),
             linked_checked: None,
             session: None,
@@ -5709,6 +5719,7 @@ impl App {
             // Fonts that came with other drawings go along (text imported
             // or pasted from them), and, with Embed fonts on, the
             // installed fonts the text uses whose licence allows it.
+            self.backup_before_save(&path);
             let version = self
                 .tdraw_version
                 .unwrap_or(tracedraw_core::document::TDRAW_FORMAT_VERSION);
@@ -5719,12 +5730,23 @@ impl App {
             } else {
                 std::borrow::Cow::Borrowed(&*carried)
             };
-            doc.to_json_version(version)
-                .map(String::into_bytes)
-                .map_err(|e| e.to_string())
+            // Written to the file as it is made: the JSON of a large
+            // drawing is several times its size.
+            let result = crate::files::write_with(&path, |w| {
+                doc.write_json_version(w, version)
+                    .map_err(std::io::Error::other)
+            })
+            .map_err(|e| e.to_string());
+            return self.saved_to(path, result);
         };
         self.backup_before_save(&path);
         let result = bytes.and_then(|b| crate::files::write(&path, b).map_err(|e| e.to_string()));
+        self.saved_to(path, result);
+    }
+
+    /// After writing the drawing to `path`: its state, the status line and
+    /// the recent files.
+    fn saved_to(&mut self, path: PathBuf, result: Result<(), String>) {
         match result {
             Ok(()) => {
                 self.engine.mark_saved();
@@ -5773,6 +5795,9 @@ impl App {
         if !b.auto || crate::files::WEB {
             return false;
         }
+        if self.auto_backup_job.is_some() {
+            return self.finish_auto_backup(false);
+        }
         let due = std::time::Duration::from_secs(u64::from(b.minutes.max(1)) * 60);
         let last = *self.last_auto_backup.get_or_insert(now);
         if now.duration_since(last) < due {
@@ -5782,26 +5807,75 @@ impl App {
         let Some(dir) = b.auto_dir.clone().or_else(App::auto_backup_dir_default) else {
             return false;
         };
-        let mut saved = false;
-        let mut jobs: Vec<(String, String)> = Vec::new();
+        // Copies of the drawings (pictures are shared, not copied) go to
+        // a thread that writes them as they are made, so the window does
+        // not stop while a large drawing is written.
+        let mut jobs: Vec<(String, tracedraw_core::Document)> = Vec::new();
         let fonts = tracedraw_text::fonts();
         if self.has_document() && self.engine.is_dirty() {
-            if let Ok(json) = fonts.with_carried_fonts(self.doc()).to_json() {
-                jobs.push((self.backup_name(None), json));
-            }
+            let doc = fonts.with_carried_fonts(self.doc()).into_owned();
+            jobs.push((self.backup_name(None), doc));
         }
         for (i, slot) in self.docs.iter().enumerate() {
             if i != self.active_doc && slot.engine.is_dirty() {
-                if let Ok(json) = fonts.with_carried_fonts(slot.engine.document()).to_json() {
-                    jobs.push((self.backup_name(Some(i)), json));
-                }
+                let doc = fonts
+                    .with_carried_fonts(slot.engine.document())
+                    .into_owned();
+                jobs.push((self.backup_name(Some(i)), doc));
             }
         }
-        for (name, json) in jobs {
-            match crate::files::write_creating(dir.join(&name), json) {
+        if jobs.is_empty() {
+            return false;
+        }
+        let to = dir.clone();
+        let thread = std::thread::Builder::new()
+            .name("auto-backup".into())
+            .spawn(move || {
+                jobs.into_iter()
+                    .map(|(name, doc)| {
+                        let written = crate::files::write_creating_with(to.join(&name), |w| {
+                            doc.write_json_version(
+                                w,
+                                tracedraw_core::document::TDRAW_FORMAT_VERSION,
+                            )
+                            .map_err(std::io::Error::other)
+                        });
+                        (name, written.map_err(|e| e.to_string()))
+                    })
+                    .collect()
+            });
+        match thread {
+            Ok(thread) => self.auto_backup_job = Some(AutoBackupJob { dir, thread }),
+            Err(e) => log::warn!("auto-backup not started: {e}"),
+        }
+        false
+    }
+
+    /// The auto-backup being written, when it is done (or at once with
+    /// `wait`): its files go into this session's records. True when one
+    /// was saved.
+    fn finish_auto_backup(&mut self, wait: bool) -> bool {
+        if !wait
+            && !self
+                .auto_backup_job
+                .as_ref()
+                .is_some_and(|j| j.thread.is_finished())
+        {
+            return false;
+        }
+        let Some(job) = self.auto_backup_job.take() else {
+            return false;
+        };
+        let Ok(results) = job.thread.join() else {
+            log::warn!("auto-backup stopped");
+            return false;
+        };
+        let mut saved = false;
+        for (name, result) in results {
+            match result {
                 Ok(()) => {
                     saved = true;
-                    if let Some(s) = self.session.as_mut().filter(|s| s.dir() == dir) {
+                    if let Some(s) = self.session.as_mut().filter(|s| s.dir() == job.dir) {
                         s.wrote(&name, crate::recovery::now_secs());
                     }
                 }
@@ -5938,6 +6012,9 @@ impl App {
 
     /// A clean exit: this session's marker and auto-backups go.
     pub fn end_session(&mut self) {
+        // A backup still being written finishes first, so the clean exit
+        // removes it with the others.
+        self.finish_auto_backup(true);
         if let Some(s) = self.session.take() {
             s.end();
         }
@@ -7681,7 +7758,9 @@ mod tests {
         let t0 = web_time::Instant::now();
         assert!(!first.auto_backup_tick(t0));
         rect_shape(&mut first, Rect::new(0.0, 0.0, 10.0, 10.0), true);
-        assert!(first.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
+        // Written on a thread of its own: not saved on the frame it starts.
+        assert!(!first.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
+        assert!(first.finish_auto_backup(true));
         // A second session while the first still checks in: nothing.
         let mut second = App::headless();
         second.settings.backup.auto_dir = Some(dir.clone());
@@ -7742,9 +7821,25 @@ mod tests {
         assert!(!app.auto_backup_tick(t0));
         rect_shape(&mut app, Rect::new(0.0, 0.0, 20.0, 10.0), true);
         assert!(!app.auto_backup_tick(t0 + std::time::Duration::from_secs(30)));
-        assert!(app.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
-        let saved: Vec<_> = std::fs::read_dir(dir.join("auto")).unwrap().collect();
-        assert_eq!(saved.len(), 1);
+        let due = t0 + std::time::Duration::from_secs(61);
+        assert!(!app.auto_backup_tick(due));
+        // A later frame reports it once the thread has written it.
+        let waited = web_time::Instant::now();
+        while !app.auto_backup_tick(due) {
+            assert!(
+                waited.elapsed().as_secs() < 60,
+                "auto-backup never finished"
+            );
+            std::thread::yield_now();
+        }
+        let saved: Vec<_> = std::fs::read_dir(dir.join("auto"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(saved, ["AutoBackup_of_art.tdraw"], "no .part left");
+        let back = std::fs::read_to_string(dir.join("auto").join(&saved[0])).unwrap();
+        assert!(tracedraw_core::Document::from_json(&back).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

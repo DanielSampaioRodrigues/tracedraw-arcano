@@ -4228,6 +4228,34 @@ impl Document {
     /// for a newer number), for an older TraceDraw: the current layout is
     /// taken down one step at a time ([`DOWN_STEPS`]).
     pub fn to_json_version(&self, version: u32) -> Result<String> {
+        let mut out = Vec::new();
+        self.write_json_version(&mut out, version)?;
+        // serde_json writes UTF-8 only.
+        Ok(String::from_utf8(out)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+    }
+
+    /// Write the `.tdraw` JSON of format `version` to `w` as it is made.
+    /// The current format goes straight to the writer; only an older one
+    /// builds the whole tree in memory first (many times the drawing's
+    /// size), to take it down.
+    pub fn write_json_version<W: std::io::Write>(&self, w: W, version: u32) -> Result<()> {
+        if (version as usize) >= DOWN_STEPS.len() {
+            #[derive(Serialize)]
+            struct Versioned<'a> {
+                #[serde(flatten)]
+                doc: &'a Document,
+                format_version: u32,
+            }
+            serde_json::to_writer_pretty(
+                w,
+                &Versioned {
+                    doc: self,
+                    format_version: TDRAW_FORMAT_VERSION,
+                },
+            )?;
+            return Ok(());
+        }
         let mut v = serde_json::to_value(self)?;
         if let serde_json::Value::Object(m) = &mut v {
             m.insert(
@@ -4238,7 +4266,8 @@ impl Document {
         for step in DOWN_STEPS.iter().skip(version as usize).rev() {
             step(&mut v);
         }
-        Ok(serde_json::to_string_pretty(&v)?)
+        serde_json::to_writer_pretty(w, &v)?;
+        Ok(())
     }
 
     /// Read a `.tdraw` file of any version: older ones are brought up to
@@ -4643,6 +4672,64 @@ mod tests {
         }
         p.close_path();
         p
+    }
+
+    /// The file is written as it is made, and reads as the same JSON the
+    /// tree built in memory gave.
+    #[test]
+    fn tdraw_json_streams_to_the_writer() {
+        let mut doc = Document::new("Streamed", crate::geometry::Size::new(100.0, 50.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 5.0),
+                radius: 1.0,
+                corners: None,
+            },
+        );
+        s.fill = crate::Fill::Solid(crate::Color::rgb8(10, 20, 30));
+        doc.layer_mut(layer).expect("layer").shapes.push(s);
+        // A writer that sees the text in pieces, never all at once.
+        struct Pieces {
+            text: Vec<u8>,
+            writes: usize,
+        }
+        impl std::io::Write for Pieces {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.writes += 1;
+                self.text.extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut w = Pieces {
+            text: Vec::new(),
+            writes: 0,
+        };
+        doc.write_json_version(&mut w, TDRAW_FORMAT_VERSION)
+            .expect("written");
+        assert!(w.writes > 10, "{} writes", w.writes);
+        // The tree printed f32 values through f64 (0.6000000238418579
+        // for 0.6); both read back as the same drawing.
+        let mut tree = serde_json::to_value(&doc).expect("value");
+        tree.as_object_mut().expect("object").insert(
+            FORMAT_VERSION_KEY.into(),
+            serde_json::Value::from(TDRAW_FORMAT_VERSION),
+        );
+        let streamed = std::str::from_utf8(&w.text).expect("utf-8");
+        let a = Document::from_json(streamed).expect("streamed");
+        let b = Document::from_json(&tree.to_string()).expect("tree");
+        assert_eq!(
+            serde_json::to_value(&a).expect("a"),
+            serde_json::to_value(&b).expect("b")
+        );
+        assert_eq!(doc.to_json().expect("json").as_bytes(), &w.text[..]);
+        let back = a;
+        assert_eq!(back.pages, doc.pages);
     }
 
     #[test]
