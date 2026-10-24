@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool on rectangles: corner nodes can be chosen several at a time, with Shift+click or Ctrl+click (which also takes a chosen corner out) or with a marquee or freehand marquee over them, and dragging a chosen corner then rounds just the chosen corners, so the two top corners or any three can be rounded together. Only all four corners or a single one could be rounded before (#671).
+
 - Tools > Options is now one window with a tab for each set of options along the top (TraceDraw, Customization, Tools, Global, Workspaces, AI and Document Options while a drawing is open), so every option can be reached without closing the dialog and opening another menu item. Each tab comes back to the page it showed last, and OK or Cancel covers the changes made on every tab (#633).
 
 - The default colour palette can show two or three rows of swatches (columns when docked on a side), set in Options > Customization > Color Palette > Rows, so more colours are in reach without scrolling; the arrows and the wheel then scroll a column at a time (#610).

@@ -141,7 +141,9 @@ step.
 | Action | Behaviour |
 |---|---|
 | Drag a rectangle corner node | every corner grows or shrinks by the same amount, in the current corner style; a square corner has one node, a cut one a node at each end |
-| Ctrl+drag a corner node, or click it first | that corner only (the chosen corner's node is filled) |
+| Ctrl+drag a corner node | that corner only |
+| Click a corner node; Shift+click or Ctrl+click; marquee or freehand marquee over corner nodes | chooses that corner alone; adds the corner to the chosen ones or takes it out; chooses the corners with a node inside (on every selected rectangle). Chosen corners' nodes are filled (#671) |
+| Drag a chosen corner node | the chosen corners only, all by the same amount, so two or three corners round together and the others keep theirs (#671) |
 | Drag an ellipse node | pie when the pointer is inside the ellipse, arc outside; a whole ellipse's node starts at the top and the way it turns picks which end it becomes |
 | Drag a polygon node | its mirrored nodes follow: a vertex moves every vertex in or out (the points between them stay, and keep their turn); a point between two vertices moves all of those: in or out sharpens the star, around the centre turns them (a twisted star; within 1 degree of straight it stays untwisted; Ctrl keeps the turn they have) |
 
@@ -213,6 +215,10 @@ Reduce Nodes, Curve smoothness.
 - `node_edit::tests::a_freehand_marquee_picks_the_nodes_inside`
 - `node_edit::tests::extend_to_close_and_smoothness`
 - `kind_nodes::tests::dragging_a_corner_rounds_all_corners_or_one`
+- `kind_nodes::tests::chosen_corners_round_together` (#671)
+- `kind_nodes::tests::single_corner_needs_ctrl_and_chosen_corners_go_together`
+- `pick_drag_tests::chosen_rectangle_corners_round_together` (marquee,
+  Shift+click, drag; #671)
 - `kind_nodes::tests::rounded_corners_grow_by_the_same_amount`
 - `kind_nodes::tests::corners_drag_in_page_units_on_scaled_rectangles`
 - `kind_nodes::tests::the_ellipse_node_opens_a_pie_inside_and_an_arc_outside`

@@ -1922,7 +1922,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
                 let chosen = matches!(
                     node,
                     crate::kind_nodes::KindNode::Corner { corner, .. }
-                        if app.rect_corner_selected == Some((s.id, corner))
+                        if app.rect_corners_selected.contains(&(s.id, corner))
                 );
                 let fill = if chosen {
                     Some(main)

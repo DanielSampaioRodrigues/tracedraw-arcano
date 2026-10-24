@@ -6108,3 +6108,71 @@ fn the_options_dialogs_are_tabs_of_one_window() {
     );
     assert!(matches!(app.dialog, Dialog::None), "{:?}", app.dialog);
 }
+
+/// The page radius of each corner of rectangle `id`.
+fn corner_radii(app: &App, id: ShapeId) -> [f64; 4] {
+    app.doc()
+        .find_shape(id)
+        .and_then(|s| s.page_corners())
+        .map(|c| c.radii)
+        .expect("a rectangle")
+}
+
+/// Shape tool on a rectangle: a marquee over two corners chooses both,
+/// Shift adds a corner to a click's, and dragging a chosen corner then
+/// rounds the chosen corners only (#671).
+#[test]
+fn chosen_rectangle_corners_round_together() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let screen = |app: &App, x: f64, y: f64| app.view.to_screen(Point::new(x, y));
+    // A marquee round the two corners at y = 40.
+    let (from, to) = (screen(&app, 0.0, 45.0), screen(&app, 70.0, 35.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(
+        app.rect_corners_selected.len(),
+        2,
+        "{:?}",
+        app.rect_corners_selected
+    );
+    let (from, to) = (screen(&app, 60.0, 40.0), screen(&app, 54.0, 40.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let r = corner_radii(&app, id);
+    let rounded: Vec<bool> = r.iter().map(|v| *v > 1.0).collect();
+    assert_eq!(rounded.iter().filter(|b| **b).count(), 2, "{r:?}");
+    for v in r.iter().filter(|v| **v > 1.0) {
+        assert!((v - 6.0).abs() < 0.2, "{r:?}");
+    }
+    let before = r;
+    // A click on one corner at y = 10 and Shift on the other: those two.
+    let at = screen(&app, 10.0, 10.0);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let at = screen(&app, 60.0, 10.0);
+    click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+    assert_eq!(
+        app.rect_corners_selected.len(),
+        2,
+        "{:?}",
+        app.rect_corners_selected
+    );
+    let (from, to) = (screen(&app, 60.0, 10.0), screen(&app, 60.0, 14.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let r = corner_radii(&app, id);
+    for i in 0..4 {
+        if before[i] > 1.0 {
+            assert!((r[i] - before[i]).abs() < 1e-6, "the top ones stay: {r:?}");
+        } else {
+            assert!((r[i] - 4.0).abs() < 0.2, "the bottom ones round: {r:?}");
+        }
+    }
+    // Shift on a chosen corner takes it out again.
+    let at = screen(&app, 60.0, 14.0);
+    click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+    assert_eq!(
+        app.rect_corners_selected.len(),
+        1,
+        "{:?}",
+        app.rect_corners_selected
+    );
+}
