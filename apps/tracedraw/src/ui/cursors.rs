@@ -834,24 +834,40 @@ fn drag_move(painter: &Painter, tip: Pos2, copy: bool) {
         ));
     }
     if copy {
-        let s = Rect::from_min_size(at(15.0, 17.0), Vec2::splat(9.0));
-        painter.rect(
-            s,
-            CornerRadius::ZERO,
-            HALO,
-            Stroke::new(1.0, INK),
-            egui::StrokeKind::Inside,
-        );
-        let c = s.center();
-        painter.line_segment(
-            [c - Vec2::new(2.5, 0.0), c + Vec2::new(2.5, 0.0)],
-            Stroke::new(1.2, INK),
-        );
-        painter.line_segment(
-            [c - Vec2::new(0.0, 2.5), c + Vec2::new(0.0, 2.5)],
-            Stroke::new(1.2, INK),
-        );
+        copy_plus(painter, at(15.0, 17.0));
     }
+}
+
+/// The plus in a square that says a drag leaves the original, at the
+/// lower right of the pointer `p` (a scale, turn or slant after a right
+/// click; a move's own pointer draws it beside its box).
+pub fn paint_copy_plus(ctx: &egui::Context, p: Pos2) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("tool_cursor_copy"),
+    ));
+    copy_plus(&painter, p + Vec2::new(14.0, 16.0));
+}
+
+/// A 9-point square with a plus, its top left at `at`.
+fn copy_plus(painter: &Painter, at: Pos2) {
+    let s = Rect::from_min_size(at, Vec2::splat(9.0));
+    painter.rect(
+        s,
+        CornerRadius::ZERO,
+        HALO,
+        Stroke::new(1.0, INK),
+        egui::StrokeKind::Inside,
+    );
+    let c = s.center();
+    painter.line_segment(
+        [c - Vec2::new(2.5, 0.0), c + Vec2::new(2.5, 0.0)],
+        Stroke::new(1.2, INK),
+    );
+    painter.line_segment(
+        [c - Vec2::new(0.0, 2.5), c + Vec2::new(0.0, 2.5)],
+        Stroke::new(1.2, INK),
+    );
 }
 
 /// A lens centred on the hot spot with a handle to the lower right and a

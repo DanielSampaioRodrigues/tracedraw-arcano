@@ -860,7 +860,9 @@ impl App {
         // A drag starts after the pointer moved a few pixels; hit-test at the
         // press position so small targets like nodes and handles are caught.
         let mut p = p;
-        if response.drag_started() {
+        // (Not during a transform: a right press there restarts egui's drag
+        // and its origin is that press.)
+        if response.drag_started() && !self.transforming() {
             if let Some(origin) = response.ctx.input(|i| i.pointer.press_origin()) {
                 screen = origin;
                 p = self.view.to_page(origin);
@@ -886,19 +888,21 @@ impl App {
                     "status.drag_copy_off"
                 });
             }
-            // egui ends a drag when any button goes up (the right one, for
-            // a copy): the transform goes on while the left button is held
-            // and ends when it goes up.
-            if !response.dragged() && !response.drag_stopped_by(PointerButton::Primary) {
-                if response.ctx.input(|i| i.pointer.primary_down()) {
-                    self.note_drop_keys(&response.ctx);
-                    self.pick_drag_to(p, mods);
-                    self.stamp_on_space(response);
-                } else {
-                    self.end_drag();
-                }
-                return;
+            // The transform runs from the press until the left button goes
+            // up, whatever the right button does meanwhile. egui takes a
+            // press of either button for the start of a new click or drag:
+            // after a right press it reports the left release as a click
+            // (which picked, or emptied the selection on bare canvas,
+            // before the copy was made) and a held right press as a new
+            // drag. Neither reaches the tools here.
+            if response.ctx.input(|i| i.pointer.primary_down()) {
+                self.note_drop_keys(&response.ctx);
+                self.pick_drag_to(p, mods);
+                self.stamp_on_space(response);
+            } else {
+                self.end_drag();
             }
+            return;
         } else if matches!(self.tool, Tool::Pick | Tool::FreeformPick)
             && self.right_drag_input(response, p)
         {

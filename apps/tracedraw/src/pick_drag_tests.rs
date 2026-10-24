@@ -5447,3 +5447,211 @@ fn place_inside_frame_waits_for_a_click_with_its_arrow() {
     assert!(!app.pending_merge_frame);
     assert_eq!(app.selection, vec![id], "the shape clicked");
 }
+
+/// How the buttons go up after a right click during a drag, as a desktop
+/// sends them: each in a frame of its own, the left first or the right
+/// first, or both in one frame.
+#[derive(Clone, Copy, Debug)]
+enum Release {
+    RightThenLeft,
+    LeftThenRight,
+    BothRightFirst,
+    BothLeftFirst,
+}
+
+const RELEASES: [Release; 4] = [
+    Release::RightThenLeft,
+    Release::LeftThenRight,
+    Release::BothRightFirst,
+    Release::BothLeftFirst,
+];
+
+/// A primary drag from `from` to `to` with `mods` held and a right click
+/// at its end, the buttons going up as `release` says.
+fn drag_with_right_click(
+    ctx: &egui::Context,
+    app: &mut App,
+    from: Pos2,
+    to: Pos2,
+    mods: Modifiers,
+    release: Release,
+) {
+    let left = |p: Pos2, down: bool| button(p, down, PointerButton::Primary, mods);
+    let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, mods);
+    frame(ctx, app, vec![Event::PointerMoved(from)], mods);
+    frame(ctx, app, vec![left(from, true)], mods);
+    for i in 1..=4 {
+        let p = from + (to - from) * (i as f32 / 4.0);
+        frame(ctx, app, vec![Event::PointerMoved(p)], mods);
+    }
+    frame(ctx, app, vec![right(to, true)], mods);
+    match release {
+        Release::RightThenLeft => {
+            frame(ctx, app, vec![right(to, false)], mods);
+            frame(ctx, app, vec![left(to, false)], mods);
+        }
+        Release::LeftThenRight => {
+            frame(ctx, app, vec![left(to, false)], mods);
+            frame(ctx, app, vec![right(to, false)], mods);
+        }
+        Release::BothRightFirst => frame(ctx, app, vec![right(to, false), left(to, false)], mods),
+        Release::BothLeftFirst => frame(ctx, app, vec![left(to, false), right(to, false)], mods),
+    }
+    frame(ctx, app, Vec::new(), Modifiers::NONE);
+}
+
+/// A right click during a move leaves the original and moves a copy,
+/// whichever button goes up first: the left one first used to count as a
+/// click on the bare canvas, which emptied the selection before the copy
+/// was made, so nothing happened at all.
+#[test]
+fn a_right_click_copy_survives_any_release_order() {
+    for release in RELEASES {
+        let (ctx, mut app, id) = setup();
+        let from = app.view.to_screen(Point::new(35.0, 25.0));
+        // Dropped on bare canvas, well right of the rectangle.
+        let to = app.view.to_screen(Point::new(135.0, 25.0));
+        drag_with_right_click(&ctx, &mut app, from, to, Modifiers::NONE, release);
+        assert_eq!(shape_count(&app), 2, "{release:?}");
+        assert!(
+            close(bounds(&app, id).x0, 10.0),
+            "the original stays: {release:?}"
+        );
+        let copy = app
+            .selection
+            .first()
+            .copied()
+            .expect("the copy is selected");
+        assert_ne!(copy, id, "{release:?}");
+        assert!(
+            close(bounds(&app, copy).x0, 110.0),
+            "{release:?} {:?}",
+            bounds(&app, copy)
+        );
+        assert!(app.context_menu.is_none(), "{release:?}");
+        assert_eq!(app.tool, Tool::Pick, "{release:?}");
+        assert!(!app.rotate_mode, "{release:?}");
+        assert!(!app.transforming(), "{release:?}");
+    }
+}
+
+/// Dropped on another object, the copy is still of what was dragged; the
+/// other object stays as it was.
+#[test]
+fn a_right_click_copy_dropped_on_another_object_copies_the_dragged_one() {
+    for release in [Release::LeftThenRight, Release::BothLeftFirst] {
+        let (ctx, mut app, id) = setup();
+        let other = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(120.0, 10.0, 150.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![other]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            30, 30, 200,
+        )));
+        app.select(vec![id]);
+        let other_before = bounds(&app, other);
+        let from = app.view.to_screen(Point::new(35.0, 25.0));
+        let to = app.view.to_screen(Point::new(135.0, 25.0));
+        drag_with_right_click(&ctx, &mut app, from, to, Modifiers::NONE, release);
+        assert_eq!(shape_count(&app), 3, "{release:?}");
+        assert_eq!(bounds(&app, other), other_before, "{release:?}");
+        assert!(close(bounds(&app, id).x0, 10.0), "{release:?}");
+        let copy = app.selection.first().copied().expect("copy");
+        assert!(copy != id && copy != other, "{release:?}");
+        assert!(close(bounds(&app, copy).x0, 110.0), "{release:?}");
+    }
+}
+
+/// Mirror duplication with the mouse alone: the left handle dragged
+/// across the right one with Ctrl (whole steps of 100 %), a right click,
+/// release: the original stays, a mirrored copy lies beside it.
+#[test]
+fn a_right_click_during_a_ctrl_mirror_leaves_a_mirrored_copy() {
+    for release in [Release::RightThenLeft, Release::LeftThenRight] {
+        let (ctx, mut app, id) = setup();
+        let w = handle(&app, Handle::W);
+        let to = egui::pos2(app.view.to_screen(Point::new(110.0, 25.0)).x, w.y);
+        drag_with_right_click(&ctx, &mut app, w, to, Modifiers::CTRL, release);
+        assert_eq!(shape_count(&app), 2, "{release:?}");
+        let original = app.doc().find_shape(id).expect("original");
+        assert!(close(original.bounds().x0, 10.0) && close(original.bounds().x1, 60.0));
+        assert!(original.transform.determinant() > 0.0);
+        let copy = app.selection.first().copied().expect("copy");
+        assert_ne!(copy, id);
+        let c = app.doc().find_shape(copy).expect("copy");
+        let b = c.bounds();
+        assert!(close(b.x0, 60.0) && close(b.x1, 110.0), "{release:?} {b:?}");
+        assert!(c.transform.determinant() < 0.0, "mirrored: {release:?}");
+    }
+}
+
+/// In rotate mode (a second click on the selection) a right click during
+/// a turn or a slant leaves the original and transforms a copy.
+#[test]
+fn a_right_click_during_a_turn_or_a_slant_leaves_the_original() {
+    for which in [Handle::NE, Handle::N] {
+        let (ctx, mut app, id) = setup();
+        app.rotate_mode = true;
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        let from = handle(&app, which);
+        let to = from + egui::vec2(-60.0, -60.0);
+        drag_with_right_click(
+            &ctx,
+            &mut app,
+            from,
+            to,
+            Modifiers::NONE,
+            Release::LeftThenRight,
+        );
+        assert_eq!(shape_count(&app), 2, "{which:?}");
+        let original = app.doc().find_shape(id).expect("original");
+        assert_eq!(original.transform, Affine::IDENTITY, "{which:?}");
+        let copy = app.selection.first().copied().expect("copy");
+        assert_ne!(copy, id);
+        let t = app.doc().find_shape(copy).expect("copy").transform;
+        assert_ne!(t, Affine::IDENTITY, "the copy turned or slanted: {which:?}");
+    }
+}
+
+/// A second right click takes the copy back even when that press is held
+/// while the pointer moves: the move goes on from where it began, it does
+/// not start again from the right press.
+#[test]
+fn a_held_second_right_press_takes_the_copy_back_and_the_move_goes_on() {
+    let (ctx, mut app, id) = setup();
+    let n = Modifiers::NONE;
+    let left = |p: Pos2, down: bool| button(p, down, PointerButton::Primary, n);
+    let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, n);
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], n);
+    frame(&ctx, &mut app, vec![left(from, true)], n);
+    let mut p = from;
+    for _ in 0..4 {
+        p += egui::vec2(20.0, 0.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+    }
+    frame(&ctx, &mut app, vec![right(p, true)], n);
+    frame(&ctx, &mut app, vec![right(p, false)], n);
+    assert!(app.drag_copy);
+    // The second press, held while the pointer goes 40 px further.
+    frame(&ctx, &mut app, vec![right(p, true)], n);
+    for _ in 0..4 {
+        p += egui::vec2(10.0, 0.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+    }
+    frame(&ctx, &mut app, vec![right(p, false)], n);
+    frame(&ctx, &mut app, vec![left(p, false)], n);
+    frame(&ctx, &mut app, Vec::new(), n);
+    assert_eq!(shape_count(&app), 1, "no copy");
+    let moved = app.view.to_page(p) - app.view.to_page(from);
+    assert!(
+        close(bounds(&app, id).x0, 10.0 + moved.x),
+        "{:?} {moved:?}",
+        bounds(&app, id)
+    );
+    assert_eq!(app.selection, vec![id]);
+}
