@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge: "On every page" beside the placeholder picture puts it in the same shape and place on every page with Place Inside Frame, in the matching shape of each page or a copy of the frame (#598).
+
 - Edit Bitmap opens pictures in the bitmap editor of your choice (Tools > Options > Global > File Locations: GIMP or any program); empty, it uses the system's program for PNG files as before (#593).
 
 ## 0.15.0 (2026-10-24)
