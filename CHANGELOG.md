@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Font lists now follow the dark themes: the font names are drawn in the theme's text colour instead of near black on the dark list, and so are the characters of the Glyphs docker. The preview under the list and the font sampler keep dark text on their white card (#660).
+
 - The default palette of an RGB drawing now holds clean RGB values instead of the CMYK colours as the press would print them: black is 0 0 0, white 255 255 255, red 255 0 0, and the tints are the matching RGB tints. CMYK drawings keep the CMYK palette (#620).
 
 - Autofit Page: the popup has a Live preview check box. On (as before), the page shows the size it would get while the margin is typed; off, the page stays as it is until Autofit Page is clicked. The choice is kept (#659).

@@ -156,8 +156,13 @@ impl FontPreviews {
     }
 }
 
+/// The colour of text pictures shown on a white card (the preview, the
+/// font sampler), as the text would print.
+pub const CARD_INK: Color32 = Color32::from_gray(0x20);
+
 /// `text` set in `family` (bold and italic as `style`) with `em_px`
-/// pixels to the em, black on transparent, and its baseline's distance
+/// pixels to the em, a white mask on transparent (tinted where it is
+/// painted: the theme's text colour in lists, #660), and its baseline's distance
 /// from the top in pixels. `None` when the family is not installed (its
 /// stand-in would show instead) or the text draws nothing.
 pub fn render_text(
@@ -191,7 +196,7 @@ pub fn render_text(
     let path = tracedraw_render::to_sk_path(&layout.path)?;
     let mut pixmap = tiny_skia::Pixmap::new(w, h)?;
     let mut paint = tiny_skia::Paint::default();
-    paint.set_color_rgba8(0x20, 0x20, 0x20, 0xff);
+    paint.set_color_rgba8(0xff, 0xff, 0xff, 0xff);
     paint.anti_alias = true;
     let baseline = (ascent * scale) as f32 + pad as f32;
     let t = tiny_skia::Transform::from_row(
@@ -900,7 +905,7 @@ fn draw_row(
                     (clip.bottom() - shown.top()) / size.y.max(1.0),
                 ),
             );
-            painter.image(p.texture.id(), clip, uv, Color32::WHITE);
+            painter.image(p.texture.id(), clip, uv, Tokens::text());
         }
         None => {
             let font = egui::FontId::proportional((sample * 0.8).clamp(12.0, 22.0));
@@ -1014,7 +1019,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
                 p.texture.id(),
                 shown,
                 Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                Color32::WHITE,
+                CARD_INK,
             );
         }
         None => {
@@ -1023,7 +1028,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
                 egui::Align2::CENTER_CENTER,
                 tr("font_list.no_preview"),
                 egui::FontId::proportional(12.0),
-                Tokens::text_dim(),
+                Color32::from_gray(0x80),
             );
         }
     }
@@ -1038,7 +1043,7 @@ fn preview(app: &mut App, ui: &mut Ui, family: &str, style: (bool, bool), ppp: f
         egui::Align2::LEFT_BOTTOM,
         format!("{family} ({style_name})"),
         egui::FontId::proportional(11.5),
-        Tokens::text(),
+        CARD_INK,
     );
 }
 
@@ -1108,13 +1113,72 @@ mod tests {
             image.size
         );
         assert!(baseline > 10.0 && baseline < image.size[1] as f32);
-        // Ink, and transparent paper.
+        // Ink, and transparent paper. The ink is a white mask, tinted
+        // where it is painted (#660).
         assert!(image.pixels.iter().any(|p| p.a() > 200));
+        assert!(image.pixels.iter().any(|p| p.r() == 255 && p.a() == 255));
         assert!(image.pixels.iter().any(|p| p.a() == 0));
         // A family that is not installed draws nothing (its stand-in would
         // be a lie), and so does no text.
         assert!(render_text("No Such Family 12345", "Abc", (false, false), 24.0).is_none());
         assert!(render_text(&family, "", (false, false), 24.0).is_none());
+    }
+
+    /// The names in the list are drawn in the theme's text colour, light
+    /// on the dark themes, not dark on the dark popup (#660).
+    #[test]
+    fn names_take_the_theme_text_colour() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let fonts = tracedraw_text::fonts();
+        let Some(family) = app
+            .font_families
+            .iter()
+            .find(|f| fonts.family_info(f).is_some_and(|i| !i.symbol))
+            .cloned()
+        else {
+            return;
+        };
+        let mut st = ListState::default();
+        let rows = vec![Row::Family(family.clone())];
+        let families = vec![family.clone()];
+        let mut tints = Vec::new();
+        // Twice: the picture is made on the first frame.
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1200.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let (mut pick, mut hovered) = (None, None);
+            let mut out = ctx.run_ui(input, |ui| {
+                list_body(
+                    &mut app,
+                    ui,
+                    &mut st,
+                    &rows,
+                    &families,
+                    &family,
+                    false,
+                    &mut pick,
+                    &mut hovered,
+                );
+            });
+            out.textures_delta.clear();
+            tints.clear();
+            for s in &out.shapes {
+                if let egui::Shape::Mesh(m) = &s.shape {
+                    if m.texture_id != egui::TextureId::default() {
+                        tints.extend(m.vertices.iter().map(|v| v.color));
+                    }
+                }
+            }
+        }
+        assert!(!tints.is_empty());
+        assert!(tints.iter().all(|c| *c != Color32::WHITE), "{tints:?}");
+        assert!(tints.iter().all(|c| c.r() == c.g() && c.g() == c.b()));
     }
 
     /// The list draws open, with every filter, styles shown, a long list

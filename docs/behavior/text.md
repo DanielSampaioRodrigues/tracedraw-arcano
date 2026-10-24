@@ -97,7 +97,8 @@ Text and Glyphs dockers and Options (default font):
   browser) the fonts to download.
 - "Used last": the last five families picked in any font list, newest
   first (kept in the preferences, `recent_fonts`), while nothing is typed.
-- Every family, its name drawn in its own font (in the interface font for
+- Every family, its name drawn in its own font in the theme's text
+  colour, light on the dark themes (#660; in the interface font for
   a symbol font and for a family not here yet), with an icon of how it is
   built: T TrueType, O OpenType (PostScript outlines), V variable, D came
   with the drawing, a downward arrow downloaded the first time it is used
@@ -670,7 +671,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   the fonts used last keep the newest five
   (`ui::font_list::tests::the_fonts_used_last_keep_the_newest_first`);
   names are drawn in their own font, and a family not installed or no
-  text draws nothing (`ui::font_list::tests::names_are_drawn_in_their_own_font`);
+  text draws nothing (`ui::font_list::tests::names_are_drawn_in_their_own_font`),
+  in the theme's text colour (`ui::font_list::tests::names_take_the_theme_text_colour`);
   the list draws with every filter, a family's styles shown and typed text
   (`ui::font_list::tests::the_list_draws_in_every_state`); families tell
   how they are built, their style names, whether they came with a drawing
