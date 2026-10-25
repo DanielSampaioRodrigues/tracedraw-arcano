@@ -1892,7 +1892,8 @@ mod tests {
                     (got.x1, want.x1),
                     (got.y1, want.y1),
                 ] {
-                    assert!((g - w).abs() < 1e-3, "{effects:?}: {got:?} != {want:?}");
+                    // Contours are fitted with curves within 0.05 mm (#821).
+                    assert!((g - w).abs() < 0.05, "{effects:?}: {got:?} != {want:?}");
                 }
             }
         }
