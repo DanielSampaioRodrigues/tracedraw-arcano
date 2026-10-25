@@ -7963,4 +7963,56 @@ fn add_column_offers_a_number_range() {
             texts.iter().map(|(t, _)| t).collect::<Vec<_>>()
         );
     }
+/// With the wheel zooming (the default), a notch zooms in one glide over
+/// a few frames, as a scroll moves, instead of one jump; the frames
+/// together still zoom 1.15 a notch, about the pointer (#766).
+#[test]
+fn a_wheel_notch_zooms_in_a_glide() {
+    let (ctx, mut app, _) = setup();
+    assert!(app.settings.wheel_zooms);
+    let at = Pos2::new(700.0, 500.0);
+    let page_at = app.view.to_page(at);
+    let z0 = app.view.zoom;
+    let mut t = 10.0;
+    let mut step = |app: &mut App, events: Vec<Event>| {
+        t += 1.0 / 60.0;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            time: Some(t),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+    };
+    step(&mut app, vec![Event::PointerMoved(at)]);
+    step(&mut app, vec![Event::PointerMoved(at)]);
+    step(
+        &mut app,
+        vec![Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    let first = app.view.zoom / z0;
+    assert!(
+        first > 1.0 && first < 1.14,
+        "the first frame zooms part of it: {first}"
+    );
+    for _ in 0..60 {
+        step(&mut app, Vec::new());
+    }
+    let total = app.view.zoom / z0;
+    assert!((total - 1.15).abs() < 0.01, "a notch in all: {total}");
+    // About the pointer: the page point under it stays.
+    let now = app.view.to_page(at);
+    assert!(
+        (now.x - page_at.x).abs() < 0.5 && (now.y - page_at.y).abs() < 0.5,
+        "{now:?} {page_at:?}"
+    );
 }

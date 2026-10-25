@@ -724,8 +724,16 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
                     app.view.pan(egui::vec2(scroll.y, scroll.x));
                 } else if mods.ctrl && scroll != egui::Vec2::ZERO {
                     app.view.pan(scroll);
-                } else if notches != 0.0 {
-                    app.view.zoom_at(h, zoom_factor);
+                } else if scroll.y != 0.0 {
+                    // The smoothed wheel delta, spread over a few frames
+                    // as a scroll is, so a notch zooms in one glide
+                    // instead of one jump; its frames multiply to the same
+                    // 1.15 a notch (#766).
+                    let per_notch = ui
+                        .ctx()
+                        .options(|o| o.input_options.line_scroll_speed)
+                        .max(1.0);
+                    app.view.zoom_at(h, 1.15f32.powf(scroll.y / per_notch));
                 }
             } else if mods.ctrl && notches != 0.0 {
                 app.view.zoom_at(h, zoom_factor);
