@@ -32,7 +32,7 @@ rulers:
 Each drawing keeps its own pages, objects, undo history, selection, view
 (zoom and scroll), file, page number settings and drawing units.
 Switching tabs ends the interaction in progress (a drag, text or table
-cell editing, a curve being drawn, clip frame editing).
+cell editing, a curve being drawn, clip frame editing, symmetry editing).
 
 New and opened drawings get a tab after the last one. A file that is
 open already is not read into a second tab (#645): opening it again (the
