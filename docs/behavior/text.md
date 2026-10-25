@@ -430,7 +430,10 @@ Window > Panels > Glyphs. From the top:
 
 - Recent glyphs: the glyphs inserted last, newest first (up to 24, kept
   in the preferences as font and glyph); empty, it says "Shows the most
-  recently used glyphs". A click inserts one again in its own font.
+  recently used glyphs". A click inserts one again in its own font. The
+  box takes the theme's field colour (white in the light themes, dark in
+  the dark ones), so the glyphs, drawn in the theme's text colour, stay
+  readable (#660).
 - The font list (every family installed or carried by a drawing): the
   property bar's list, with its search as you type and font previews
   (#447).
