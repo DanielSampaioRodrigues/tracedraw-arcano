@@ -139,6 +139,18 @@ and `--reset-settings` starts open windows of their own.
   When no renderer is left, the reason is logged and shown in a message
   box naming the log (a panic of the last one is shown as a crash, with
   `crash.log`), and TraceDraw ends with an error.
+- A renderer can also end the program without an error to hand on: a
+  graphics driver that crashes the process, or hangs it until it is
+  closed, inside wgpu's set-up. So before the window is opened the start
+  writes the renderer it tries to `renderer-attempt` in the settings
+  folder, and removes the file as soon as the window is open. A start
+  that finds the file logs "the last start did not open the window with
+  ..." and begins with the renderer after that one (after the last one,
+  the first choice again); `--renderer=` from a hand-over still wins.
+  The renderer that then opens the window is remembered as above, so a
+  computer whose card crashes in wgpu opens with OpenGL from the second
+  start on, without `--renderer=gl` typed (#570,
+  `gpu::tests::a_start_that_never_opened_its_window_is_followed_by_the_next_renderer`).
 - The log names every graphics adapter wgpu offers (backend, type,
   vendor and device ids, driver) with why it was taken or left, the
   renderer each start tries and the one that opened the window; an

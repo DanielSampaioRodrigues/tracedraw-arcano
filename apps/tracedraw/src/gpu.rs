@@ -52,12 +52,16 @@ impl Mode {
     }
 
     /// The renderer a start uses: the one `--renderer=` names (a start
-    /// before could not open the window), else the one that opened it
-    /// last time when the first choice did not, else the graphics card or,
-    /// with hardware acceleration off, the software adapter.
-    pub fn for_start(args: &[String], s: &crate::settings::Settings) -> Mode {
+    /// before could not open the window), else the one after `failed`,
+    /// the renderer the last start tried without its window ever opening
+    /// (it crashed or hung inside the graphics driver, #570), else the one
+    /// that opened it last time when the first choice did not, else the
+    /// graphics card or, with hardware acceleration off, the software
+    /// adapter.
+    pub fn for_start(args: &[String], s: &crate::settings::Settings, failed: Option<Mode>) -> Mode {
         let first = Mode::first(s);
         Mode::from_args(args)
+            .or_else(|| failed.map(|f| f.next(first).unwrap_or(first)))
             .or_else(|| Mode::from_name(&s.working_renderer).filter(|m| *m != first))
             .unwrap_or(first)
     }
@@ -157,6 +161,57 @@ pub fn window_opened() -> bool {
     OPENED.load(Ordering::SeqCst)
 }
 
+/// The file that names the renderer a start is trying, written before
+/// the window is opened and removed as soon as it is. A start that finds
+/// it knows the last one never got a window with that renderer: the
+/// driver crashed the program or hung it, so nothing could hand over to
+/// the next renderer (#570).
+const ATTEMPT_FILE: &str = "renderer-attempt";
+
+fn attempt_path() -> Option<std::path::PathBuf> {
+    crate::settings::config_dir().map(|d| d.join(ATTEMPT_FILE))
+}
+
+/// The renderer the last start tried without its window opening.
+pub fn failed_attempt() -> Option<Mode> {
+    failed_attempt_at(&attempt_path()?)
+}
+
+fn failed_attempt_at(path: &std::path::Path) -> Option<Mode> {
+    let text = std::fs::read_to_string(path).ok()?;
+    Mode::from_name(text.trim())
+}
+
+/// Note that this start tries `mode` (see `ATTEMPT_FILE`).
+pub fn begin_attempt(mode: Mode) {
+    if let Some(path) = attempt_path() {
+        begin_attempt_at(&path, mode);
+    }
+}
+
+fn begin_attempt_at(path: &std::path::Path, mode: Mode) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = std::fs::write(path, mode.name()) {
+        log::warn!(
+            "could not note the renderer tried in {}: {e}",
+            path.display()
+        );
+    }
+}
+
+/// The window opened: the attempt worked.
+fn end_attempt() {
+    if let Some(path) = attempt_path() {
+        end_attempt_at(&path);
+    }
+}
+
+fn end_attempt_at(path: &std::path::Path) {
+    let _ = std::fs::remove_file(path);
+}
+
 /// What draws the window in this run, as Options shows it.
 pub fn in_use() -> Option<&'static str> {
     IN_USE.get().map(String::as_str)
@@ -166,6 +221,7 @@ pub fn in_use() -> Option<&'static str> {
 /// first choice is remembered, so the next start goes straight to it.
 pub fn note_renderer(cc: &eframe::CreationContext<'_>, mode: Mode) {
     OPENED.store(true, Ordering::SeqCst);
+    end_attempt();
     crate::startup_log::quiet_panics(false);
     let mut s = crate::settings::Settings::load();
     let first = Mode::first(&s);
@@ -544,15 +600,56 @@ mod tests {
         // The renderer that opened the window last time, unless it is the
         // first choice anyway; hardware acceleration off starts in software.
         let mut s = crate::settings::Settings::default();
-        assert_eq!(Mode::for_start(&args, &s), Mode::Hardware);
+        assert_eq!(Mode::for_start(&args, &s, None), Mode::Hardware);
         s.working_renderer = "gl".into();
-        assert_eq!(Mode::for_start(&args, &s), Mode::Gl);
+        assert_eq!(Mode::for_start(&args, &s, None), Mode::Gl);
         s.working_renderer.clear();
         s.hardware_acceleration = false;
-        assert_eq!(Mode::for_start(&args, &s), Mode::Software);
-        assert_eq!(Mode::for_start(&[Mode::Gl.arg()], &s), Mode::Gl);
+        assert_eq!(Mode::for_start(&args, &s, None), Mode::Software);
+        assert_eq!(Mode::for_start(&[Mode::Gl.arg()], &s, None), Mode::Gl);
         assert_eq!(options(Mode::Gl, "").0, eframe::Renderer::Glow);
         assert_eq!(options(Mode::Hardware, "").0, eframe::Renderer::Wgpu);
+    }
+
+    /// A start whose window never opened (the driver crashed or hung the
+    /// program, so it could not hand over) leaves its renderer noted; the
+    /// next start goes on with the renderer after it, and an opened window
+    /// clears the note (#570).
+    #[test]
+    fn a_start_that_never_opened_its_window_is_followed_by_the_next_renderer() {
+        let dir = std::env::temp_dir().join(format!(
+            "tracedraw-attempt-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let path = dir.join(ATTEMPT_FILE);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(failed_attempt_at(&path), None);
+        begin_attempt_at(&path, Mode::Hardware);
+        assert_eq!(failed_attempt_at(&path), Some(Mode::Hardware));
+        let s = crate::settings::Settings::default();
+        let args: Vec<String> = Vec::new();
+        let failed = failed_attempt_at(&path);
+        assert_eq!(Mode::for_start(&args, &s, failed), Mode::Gl);
+        // OpenGL dies the same way: the software adapter.
+        assert_eq!(Mode::for_start(&args, &s, Some(Mode::Gl)), Mode::Software);
+        // The last of the chain: back to the first choice.
+        assert_eq!(
+            Mode::for_start(&args, &s, Some(Mode::Software)),
+            Mode::Hardware
+        );
+        // A hand-over names its renderer, which wins over the note.
+        assert_eq!(
+            Mode::for_start(&[Mode::Software.arg()], &s, failed),
+            Mode::Software
+        );
+        // The window opened: nothing noted any more.
+        end_attempt_at(&path);
+        assert_eq!(failed_attempt_at(&path), None);
+        // A note that is not a renderer is ignored.
+        std::fs::write(&path, "nonsense").expect("write");
+        assert_eq!(failed_attempt_at(&path), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn adapter(name: &str, kind: eframe::wgpu::DeviceType, surface: bool) -> Candidate {
