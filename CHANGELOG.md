@@ -37,6 +37,7 @@ full, row-by-row status.
 - Print Preview: the box for each ink now stands under Print separations in the left panel, as asked, instead of in the top bar, where a drawing with many spot inks pushed Zoom and Close out of the window (#571).
 
 - The Welcome Screen tab can be closed while a drawing is open: it shrinks to its house, which shows the Welcome Screen again, and stays closed after a restart until the Welcome Screen is shown (#677).
+- Export: the Preset list now shows only the presets saved for the chosen format, and changing the format leaves a preset of another format unchosen. Each format has its own preset names, so saving a preset under a name another format's preset uses no longer replaces that one (#612).
 
 - `CONTRIBUTORS.md` lists the people who contributed code, with what each contributed, also those whose commits were recorded under another name; the README links it.
 - The page size list on the property bar ends with Custom..., which opens the Page Size dialog with the page's width and height to type any size; it is the entry ticked when the page matches no preset (#650).

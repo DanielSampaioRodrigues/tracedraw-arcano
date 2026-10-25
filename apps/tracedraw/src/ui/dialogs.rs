@@ -2720,17 +2720,26 @@ pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
         });
 }
 
-/// The Export dialog's presets (#547): a list of the saved ones (each
-/// with its format), "+" to save the choices under a name, rename and
+/// The Export dialog's presets (#547): a list of the saved ones of the
+/// chosen format (#612), "+" to save the choices under a name, rename and
 /// delete for the chosen one.
 fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
+    // A preset of another format no longer describes the choices.
+    if !st.preset.is_empty()
+        && !app
+            .settings
+            .formats
+            .export_presets
+            .iter()
+            .any(|p| p.name == st.preset && preset_fits(p, st))
+    {
+        st.preset.clear();
+    }
     ui.horizontal(|ui| {
         ui.label(tr("dialog.export_preset"));
-        let presets = app.settings.formats.export_presets.clone();
-        let label = |p: &crate::prefs::ExportPreset| {
-            let fmt = EXPORT_FORMATS.get(p.format).map(|f| f.0).unwrap_or("?");
-            format!("{} ({fmt})", p.name)
-        };
+        let presets = presets_for(&app.settings.formats.export_presets, st);
+        // Every preset listed is of the chosen format: its name says it.
+        let label = |p: &crate::prefs::ExportPreset| p.name.clone();
         let shown = presets
             .iter()
             .find(|p| p.name == st.preset)
@@ -2752,8 +2761,10 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
                     }
                 }
             });
+        // A script filter has no presets: "+" would save under the last
+        // built-in format, out of sight.
         if ui
-            .small_button("+")
+            .add_enabled(st.script.is_none(), egui::Button::new("+").small())
             .on_hover_text(tr("dialog.export_preset_add"))
             .clicked()
         {
@@ -2772,7 +2783,7 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
             .on_hover_text(tr("dialog.export_preset_delete"))
             .clicked()
         {
-            app.settings.formats.delete_preset(&st.preset);
+            app.settings.formats.delete_preset(&st.preset, st.format);
             st.preset.clear();
         }
     });
@@ -2796,11 +2807,18 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
             }
         });
     }
+    // A script filter chosen while a name was being typed: nothing to save.
+    if st.script.is_some() {
+        st.preset_name = None;
+        done = None;
+    }
     if let Some(ok) = done {
         if let (true, Some((name, renaming))) = (ok, st.preset_name.clone()) {
             let name = name.trim().to_string();
             let saved = if renaming {
-                app.settings.formats.rename_preset(&st.preset, &name)
+                app.settings
+                    .formats
+                    .rename_preset(&st.preset, &name, st.format)
             } else {
                 app.settings.formats.save_preset(&name, st)
             };
@@ -2810,6 +2828,20 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
         }
         st.preset_name = None;
     }
+}
+
+/// Whether the Export dialog lists `p`: it was saved for the format
+/// chosen (a script filter has none).
+fn preset_fits(p: &crate::prefs::ExportPreset, st: &ExportState) -> bool {
+    st.script.is_none() && p.fits(st.format)
+}
+
+/// The presets the Export dialog lists for its chosen format.
+pub(crate) fn presets_for(
+    all: &[crate::prefs::ExportPreset],
+    st: &ExportState,
+) -> Vec<crate::prefs::ExportPreset> {
+    all.iter().filter(|p| preset_fits(p, st)).cloned().collect()
 }
 
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {

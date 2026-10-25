@@ -7096,4 +7096,79 @@ fn the_dimension_options_stay_open_while_typed_in() {
         "{}",
         d.style.extension_overshoot
     );
+#[test]
+fn the_export_dialog_lists_only_the_presets_of_its_format() {
+    use crate::ui::dialogs::{presets_for, Dialog, ExportState};
+    let (ctx, mut app, _) = setup();
+    let f = &mut app.settings.formats;
+    for (name, format) in [("Web PNG", 2), ("Print JPG", 3), ("Big PNG", 2)] {
+        let st = ExportState {
+            format,
+            ..ExportState::default()
+        };
+        assert!(f.save_preset(name, &st));
+    }
+    let names = |st: &ExportState, app: &App| {
+        presets_for(&app.settings.formats.export_presets, st)
+            .into_iter()
+            .map(|p| p.name)
+            .collect::<Vec<_>>()
+    };
+    app.export();
+    // A PNG preset chosen, then the format changed to JPEG: the list holds
+    // only the JPEG preset and the PNG one is no longer chosen.
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    st.format = 2;
+    st.preset = "Web PNG".into();
+    let png = st.clone();
+    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG"]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert_eq!(st.preset, "Web PNG", "a preset of the format stays chosen");
+    st.format = 3;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert!(st.preset.is_empty(), "{:?}", st.preset);
+    let jpg = st.clone();
+    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
+    // Saving a PNG preset under the hidden JPEG preset's name keeps the
+    // JPEG one: each format has its own names.
+    assert!(app.settings.formats.save_preset("Print JPG", &png));
+    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
+    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG", "Print JPG"]);
+    assert_eq!(app.settings.formats.export_presets.len(), 4);
+    // An installed script filter chosen: no presets, and nothing typed
+    // for "+" is saved under the last built-in format, out of sight.
+    app.settings
+        .script_filters
+        .push(crate::scripting::ScriptFilter {
+            name: "Plotter".into(),
+            extensions: vec!["plt".into()],
+            import: false,
+            export: true,
+            source: String::new(),
+        });
+    let before = app.settings.formats.export_presets.clone();
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    st.format = 2;
+    st.script = Some("Plotter".into());
+    st.preset_name = Some(("Web PNG".into(), false));
+    let scripted = st.clone();
+    assert!(names(&scripted, &app).is_empty());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert_eq!(st.script.as_deref(), Some("Plotter"));
+    assert!(st.preset_name.is_none());
+    assert_eq!(app.settings.formats.export_presets, before);
 }
