@@ -6554,6 +6554,8 @@ fn the_autofit_popup_stays_open_when_its_box_is_clicked() {
         "closed by a click outside"
     );
     assert!(app.autofit_preview.is_none());
+}
+
 /// The canvas context menu offers Break Apart for an enveloped text, as
 /// the Object menu and Ctrl+K do; a real click on it bakes the envelope
 /// into one curve per letter (#647).
@@ -7086,6 +7088,83 @@ fn the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline() {
     }
 }
 
+#[test]
+fn the_export_dialog_lists_only_the_presets_of_its_format() {
+    use crate::ui::dialogs::{presets_for, Dialog, ExportState};
+    let (ctx, mut app, _) = setup();
+    let f = &mut app.settings.formats;
+    for (name, format) in [("Web PNG", 2), ("Print JPG", 3), ("Big PNG", 2)] {
+        let st = ExportState {
+            format,
+            ..ExportState::default()
+        };
+        assert!(f.save_preset(name, &st));
+    }
+    let names = |st: &ExportState, app: &App| {
+        presets_for(&app.settings.formats.export_presets, st)
+            .into_iter()
+            .map(|p| p.name)
+            .collect::<Vec<_>>()
+    };
+    app.export();
+    // A PNG preset chosen, then the format changed to JPEG: the list holds
+    // only the JPEG preset and the PNG one is no longer chosen.
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    st.format = 2;
+    st.preset = "Web PNG".into();
+    let png = st.clone();
+    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG"]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert_eq!(st.preset, "Web PNG", "a preset of the format stays chosen");
+    st.format = 3;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert!(st.preset.is_empty(), "{:?}", st.preset);
+    let jpg = st.clone();
+    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
+    // Saving a PNG preset under the hidden JPEG preset's name keeps the
+    // JPEG one: each format has its own names.
+    assert!(app.settings.formats.save_preset("Print JPG", &png));
+    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
+    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG", "Print JPG"]);
+    assert_eq!(app.settings.formats.export_presets.len(), 4);
+    // An installed script filter chosen: no presets, and nothing typed
+    // for "+" is saved under the last built-in format, out of sight.
+    app.settings
+        .script_filters
+        .push(crate::scripting::ScriptFilter {
+            name: "Plotter".into(),
+            extensions: vec!["plt".into()],
+            import: false,
+            export: true,
+            source: String::new(),
+        });
+    let before = app.settings.formats.export_presets.clone();
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    st.format = 2;
+    st.script = Some("Plotter".into());
+    st.preset_name = Some(("Web PNG".into(), false));
+    let scripted = st.clone();
+    assert!(names(&scripted, &app).is_empty());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert_eq!(st.script.as_deref(), Some("Plotter"));
+    assert!(st.preset_name.is_none());
+    assert_eq!(app.settings.formats.export_presets, before);
+}
+
 /// A double click on a dimension's label with the Pick tool edits it in
 /// place; what is typed stays, and the dimension stays a dimension with
 /// the typed text as its suffix (#644).
@@ -7173,117 +7252,12 @@ fn the_dimension_options_stay_open_while_typed_in() {
     let at = Pos2::new(area.max.x - 50.0, area.min.y + 34.0);
     click_at(&ctx, &mut app, at, Modifiers::NONE);
     assert!(egui::Popup::is_id_open(&ctx, menu), "open after the click");
-/// The property bar's wrap style list starts with None, as the reference
-/// program's does: it is marked while the selection does not wrap text,
-/// and a click on it stops the selection wrapping (#661).
-#[test]
-fn the_wrap_style_list_starts_with_none() {
-    let (ctx, mut app, id) = setup();
-    app.set_wrap_style(
-        tracedraw_core::WrapMode::Square,
-        tracedraw_core::WrapSide::Left,
-    );
-    assert!(app.wrap_state().0);
-    let texts = |app: &mut App| {
-/// File > Print reads the printers off the interface's thread (#614): the
-/// dialog opens at once and says it is looking; then the list comes in
-/// name order with the default chosen where it stands, and the General
-/// tab shows the chosen printer's status, location and comment, next to a
-/// Properties button.
-#[test]
-fn the_print_dialog_reads_the_printers_off_the_interface_thread() {
-    use crate::printers::{Printer, PrinterState};
-    use crate::ui::dialogs::Dialog;
-    fn slow_list() -> Vec<Printer> {
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        vec![
-            Printer {
-                name: "Oce TDS600".into(),
-                ..Default::default()
-            },
-            Printer {
-                name: "3-102. KONICA MINOLTA C220".into(),
-                default: true,
-                state: PrinterState::Ready,
-                location: "Room 3-102".into(),
-                comment: "Colour, A3".into(),
-            },
-            Printer {
-                name: "Generic PDF".into(),
-                ..Default::default()
-            },
-        ]
-    }
-    fn texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                Pos2::ZERO,
-                egui::vec2(1600.0, 1000.0),
-            )),
-            ..Default::default()
-        };
-        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
-        out.textures_delta.clear();
-        let mut all: Vec<(String, Pos2)> = Vec::new();
-        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
-            match s {
-                egui::Shape::Text(t) => all.push((
-                    t.galley.text().to_string(),
-                    t.pos + t.galley.rect.center().to_vec2(),
-                )),
-                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
-                _ => {}
-            }
-        }
-        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
-        all
-    };
-    // The small arrows of the property bar: the one that opens the wrap
-    // styles.
-    let arrows: Vec<Pos2> = texts(&mut app)
-        .into_iter()
-        .filter(|(t, p)| t == "\u{25BE}" && p.y < 140.0)
-        .map(|(_, p)| p)
-        .collect();
-    let mut opened = None;
-    for a in arrows {
-        click_at(&ctx, &mut app, a, Modifiers::NONE);
-        let now = texts(&mut app);
-        if now.iter().any(|(t, _)| t == "Text flows left") {
-            opened = now.into_iter().find(|(t, _)| t == "None").map(|(_, p)| p);
-            break;
-        }
-        frame(
-            &ctx,
-            &mut app,
-            vec![key(egui::Key::Escape, Modifiers::NONE)],
-            Modifiers::NONE,
-        );
-    }
-    let none = opened.expect("the wrap style list with None");
-    let shown: Vec<String> = texts(&mut app).into_iter().map(|(t, _)| t).collect();
-    for heading in ["Wrap style", "Contour", "Square", "Above/below"] {
-        assert!(shown.iter().any(|t| t == heading), "{heading}: {shown:?}");
-    }
-    click_at(&ctx, &mut app, none, Modifiers::NONE);
-    assert!(!app.wrap_state().0, "wrapping is off");
-    assert!(!app.doc().find_shape(id).expect("rect").wrap_text);
-    // The offset is greyed out under None: typing there does not turn
-    // wrapping back on.
-    let label = texts(&mut app)
-        .into_iter()
-        .find(|(t, _)| t == "Text wrap offset:")
-        .map(|(_, p)| p)
-        .expect("the offset field, still in the open list");
-    let field = label + egui::vec2(90.0, 0.0);
-    click_at(&ctx, &mut app, field, Modifiers::NONE);
     frame(
         &ctx,
         &mut app,
         vec![
             key(egui::Key::A, Modifiers::COMMAND),
             Event::Text("3".into()),
-            Event::Text("7".into()),
             key(egui::Key::Enter, Modifiers::NONE),
         ],
         Modifiers::NONE,
@@ -7297,81 +7271,8 @@ fn the_print_dialog_reads_the_printers_off_the_interface_thread() {
         "{}",
         d.style.extension_overshoot
     );
-#[test]
-fn the_export_dialog_lists_only_the_presets_of_its_format() {
-    use crate::ui::dialogs::{presets_for, Dialog, ExportState};
-    let (ctx, mut app, _) = setup();
-    let f = &mut app.settings.formats;
-    for (name, format) in [("Web PNG", 2), ("Print JPG", 3), ("Big PNG", 2)] {
-        let st = ExportState {
-            format,
-            ..ExportState::default()
-        };
-        assert!(f.save_preset(name, &st));
-    }
-    let names = |st: &ExportState, app: &App| {
-        presets_for(&app.settings.formats.export_presets, st)
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<Vec<_>>()
-    };
-    app.export();
-    // A PNG preset chosen, then the format changed to JPEG: the list holds
-    // only the JPEG preset and the PNG one is no longer chosen.
-    let Dialog::Export(st) = &mut app.dialog else {
-        panic!("no Export dialog");
-    };
-    st.format = 2;
-    st.preset = "Web PNG".into();
-    let png = st.clone();
-    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG"]);
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    let Dialog::Export(st) = &mut app.dialog else {
-        panic!("no Export dialog");
-    };
-    assert_eq!(st.preset, "Web PNG", "a preset of the format stays chosen");
-    st.format = 3;
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    let Dialog::Export(st) = &app.dialog else {
-        panic!("no Export dialog");
-    };
-    assert!(st.preset.is_empty(), "{:?}", st.preset);
-    let jpg = st.clone();
-    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
-    // Saving a PNG preset under the hidden JPEG preset's name keeps the
-    // JPEG one: each format has its own names.
-    assert!(app.settings.formats.save_preset("Print JPG", &png));
-    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
-    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG", "Print JPG"]);
-    assert_eq!(app.settings.formats.export_presets.len(), 4);
-    // An installed script filter chosen: no presets, and nothing typed
-    // for "+" is saved under the last built-in format, out of sight.
-    app.settings
-        .script_filters
-        .push(crate::scripting::ScriptFilter {
-            name: "Plotter".into(),
-            extensions: vec!["plt".into()],
-            import: false,
-            export: true,
-            source: String::new(),
-        });
-    let before = app.settings.formats.export_presets.clone();
-    let Dialog::Export(st) = &mut app.dialog else {
-        panic!("no Export dialog");
-    };
-    st.format = 2;
-    st.script = Some("Plotter".into());
-    st.preset_name = Some(("Web PNG".into(), false));
-    let scripted = st.clone();
-    assert!(names(&scripted, &app).is_empty());
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    let Dialog::Export(st) = &app.dialog else {
-        panic!("no Export dialog");
-    };
-    assert_eq!(st.script.as_deref(), Some("Plotter"));
-    assert!(st.preset_name.is_none());
-    assert_eq!(app.settings.formats.export_presets, before);
+}
+
 /// A curve whose second segment runs straight along the middle node's
 /// outgoing handle, so that handle lies on the segment, selected for the
 /// Shape tool.
@@ -7506,7 +7407,134 @@ fn a_chosen_segments_handles_drag() {
     assert!(near(at[0], Point::new(100.0, 150.0)), "{at:?}");
     assert!(near(at[1], Point::new(140.0, 170.0)), "{at:?}");
     assert!(near(at[2], Point::new(180.0, 170.0)), "{at:?}");
+}
+
+/// The property bar's wrap style list starts with None, as the reference
+/// program's does: it is marked while the selection does not wrap text,
+/// and a click on it stops the selection wrapping (#661).
+#[test]
+fn the_wrap_style_list_starts_with_none() {
+    let (ctx, mut app, id) = setup();
+    app.set_wrap_style(
+        tracedraw_core::WrapMode::Square,
+        tracedraw_core::WrapSide::Left,
+    );
+    assert!(app.wrap_state().0);
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    // The small arrows of the property bar: the one that opens the wrap
+    // styles.
+    let arrows: Vec<Pos2> = texts(&mut app)
+        .into_iter()
+        .filter(|(t, p)| t == "\u{25BE}" && p.y < 140.0)
+        .map(|(_, p)| p)
+        .collect();
+    let mut opened = None;
+    for a in arrows {
+        click_at(&ctx, &mut app, a, Modifiers::NONE);
+        let now = texts(&mut app);
+        if now.iter().any(|(t, _)| t == "Text flows left") {
+            opened = now.into_iter().find(|(t, _)| t == "None").map(|(_, p)| p);
+            break;
+        }
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(egui::Key::Escape, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+    }
+    let none = opened.expect("the wrap style list with None");
+    let shown: Vec<String> = texts(&mut app).into_iter().map(|(t, _)| t).collect();
+    for heading in ["Wrap style", "Contour", "Square", "Above/below"] {
+        assert!(shown.iter().any(|t| t == heading), "{heading}: {shown:?}");
+    }
+    click_at(&ctx, &mut app, none, Modifiers::NONE);
+    assert!(!app.wrap_state().0, "wrapping is off");
+    assert!(!app.doc().find_shape(id).expect("rect").wrap_text);
+    // The offset is greyed out under None: typing there does not turn
+    // wrapping back on.
+    let label = texts(&mut app)
+        .into_iter()
+        .find(|(t, _)| t == "Text wrap offset:")
+        .map(|(_, p)| p)
+        .expect("the offset field, still in the open list");
+    let field = label + egui::vec2(90.0, 0.0);
+    click_at(&ctx, &mut app, field, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            Event::Text("7".into()),
+            key(egui::Key::Enter, Modifiers::NONE),
+        ],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     assert!(!app.wrap_state().0, "still off");
+}
+
+/// File > Print reads the printers off the interface's thread (#614): the
+/// dialog opens at once and says it is looking; then the list comes in
+/// name order with the default chosen where it stands, and the General
+/// tab shows the chosen printer's status, location and comment, next to a
+/// Properties button.
+#[test]
+fn the_print_dialog_reads_the_printers_off_the_interface_thread() {
+    use crate::printers::{Printer, PrinterState};
+    use crate::ui::dialogs::Dialog;
+    fn slow_list() -> Vec<Printer> {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        vec![
+            Printer {
+                name: "Oce TDS600".into(),
+                ..Default::default()
+            },
+            Printer {
+                name: "3-102. KONICA MINOLTA C220".into(),
+                default: true,
+                state: PrinterState::Ready,
+                location: "Room 3-102".into(),
+                comment: "Colour, A3".into(),
+            },
+            Printer {
+                name: "Generic PDF".into(),
+                ..Default::default()
+            },
+        ]
+    }
+    fn texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
         fn walk(s: &egui::Shape, texts: &mut Vec<String>) {
             match s {
                 egui::Shape::Text(t) => texts.push(t.galley.text().to_string()),
@@ -7662,6 +7690,7 @@ fn a_destination_picked_while_the_printers_are_read_stays() {
     wait(&ctx, &mut app);
     assert_eq!(state(&app).printer.as_deref(), Some("Office"));
 }
+
 /// 204 wavy rings of `nodes` nodes each, combined into one curve and
 /// selected, as the ornamental frame of #764.
 fn combined_ornament(nodes: usize) -> (egui::Context, App, ShapeId) {
@@ -7779,6 +7808,8 @@ fn frame_times_over_a_combined_curve() {
         vec![button(p0, false, PointerButton::Primary, Modifiers::NONE)],
         Modifiers::NONE,
     );
+}
+
 /// With hardware acceleration off, the status bar says that this is why
 /// a software adapter draws the window, and a click on the note opens
 /// Options at its General page; with it on, the note names the missing
@@ -7814,6 +7845,8 @@ fn the_software_renderer_note_says_hardware_acceleration_is_off() {
     crate::ui::note_software_renderer(&mut app, "Microsoft Basic Render Driver");
     assert!(app.status_opens_options.is_none());
     assert_ne!(app.status, off);
+}
+
 /// The arrow keys nudge the selected guidelines when no object is
 /// selected: plain by the nudge distance, Shift by the super nudge, Ctrl
 /// by the micro nudge, one undo step per press; locked ones stay (#781).
@@ -7868,6 +7901,8 @@ fn arrow_keys_nudge_the_selected_guidelines() {
     assert!(close(y(&app), 150.0 + step - sup + micro));
     app.undo();
     assert!(close(y(&app), 150.0 + step - sup), "{}", y(&app));
+}
+
 /// A drawing of 30 pages (a merged document): the page tabs that fit are
 /// shown, a click on one goes to its page, Page Down and Page Up go to the
 /// next and previous page, and the tabs slide so the current page's tab
