@@ -1181,6 +1181,10 @@ pub struct App {
     /// The printer list being read off the interface's thread for the
     /// Print dialog, and the last list read (#614).
     pub printer_fetch: Option<std::sync::mpsc::Receiver<Vec<crate::printers::Printer>>>,
+    /// A print on its way to a printer, done off the interface's thread:
+    /// a printer's spooler can take minutes and the window stays usable
+    /// meanwhile (#810). The status it ends with.
+    pub print_job: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     pub printers_seen: Vec<crate::printers::Printer>,
     pub preview_selected_only: bool,
     pub page_sorter: bool,
@@ -2247,6 +2251,7 @@ impl App {
             fullscreen_preview: false,
             print_preview: None,
             printer_fetch: None,
+            print_job: None,
             printers_seen: Vec::new(),
             preview_selected_only: false,
             page_sorter: false,
@@ -6370,6 +6375,51 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         let _ = tx.send(list());
         self.printer_fetch = Some(rx);
+    }
+
+    /// Run `job` (a print to a printer) off the interface's thread; its
+    /// outcome goes to the status bar when it is done (#810).
+    pub fn start_print_job(
+        &mut self,
+        job: impl FnOnce() -> Result<String, String> + Send + 'static,
+    ) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let spawned = std::thread::Builder::new()
+                .name("print".into())
+                .spawn(move || {
+                    let _ = tx.send(job());
+                });
+            if let Err(e) = spawned {
+                self.status = format!("{}: {e}", crate::i18n::tr("dialog.print_failed"));
+                return;
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = tx.send(job());
+        self.print_job = Some(rx);
+    }
+
+    /// The outcome of the print on its way, once there is one, into the
+    /// status bar. Returns whether a print is still on its way.
+    pub fn poll_print_job(&mut self) -> bool {
+        let Some(rx) = &self.print_job else {
+            return false;
+        };
+        let done = match rx.try_recv() {
+            Ok(r) => r,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err(crate::i18n::tr("dialog.print_failed"))
+            }
+        };
+        self.status = match done {
+            Ok(msg) => msg,
+            Err(e) => format!("{}: {e}", crate::i18n::tr("dialog.print_failed")),
+        };
+        self.print_job = None;
+        false
     }
 
     /// The printer list once it has been read: into the Print dialog's

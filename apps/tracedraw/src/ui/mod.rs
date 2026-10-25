@@ -329,6 +329,10 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     }
     // VBA macros: their requests, dialogs, forms and editor.
     macros_ui::frame(app, &ctx);
+    // A print on its way to a printer (#810).
+    if app.poll_print_job() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    }
     // Help > Updates, once a day.
     app.update_tick(crate::recovery::now_secs(), Some(ctx.clone()));
     // Options > Save > Auto-backup.

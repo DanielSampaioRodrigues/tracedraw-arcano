@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Слишком много строк для э
 status.previous_page = "Предыдущая страница"
 status.print_sent = "Открыт PDF для печати: {path}"
 status.print_sent_printer = "Отправлено на принтер {name}" # mt
+status.printing_to = "Печать на {name}…" # mt
 status.proof_off = "Цветопроба выключена"
 status.proof_on = "Цветопроба включена"
 status.recording = "Запись макроса... выполните команды, затем остановите запись"

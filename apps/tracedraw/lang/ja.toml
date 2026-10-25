@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "この形状には行が多すぎます: 列�
 status.previous_page = "前のページ"
 status.print_sent = "印刷用PDFを開きました: {path}"
 status.print_sent_printer = "プリンター {name} に送信しました" # mt
+status.printing_to = "{name} で印刷中…" # mt
 status.proof_off = "色校正オフ"
 status.proof_on = "色校正オン"
 status.recording = "マクロを記録中... コマンドを実行してから記録を停止してください"

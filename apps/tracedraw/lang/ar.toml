@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "عدد كبير جدًا من الصفوف ل�
 status.previous_page = "الصفحة السابقة"
 status.print_sent = "تم فتح ملف PDF للطباعة: {path}"
 status.print_sent_printer = "أُرسل إلى الطابعة {name}" # mt
+status.printing_to = "جارٍ الطباعة على {name}…" # mt
 status.proof_off = "تجربة الألوان معطّلة"
 status.proof_on = "تجربة الألوان مفعّلة"
 status.recording = "جارٍ تسجيل الماكرو... نفّذ الأوامر ثم أوقف التسجيل"

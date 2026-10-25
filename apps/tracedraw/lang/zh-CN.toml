@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "此形状的行数过多：请减少列数"
 status.previous_page = "上一页"
 status.print_sent = "打印 PDF 已打开: {path}"
 status.print_sent_printer = "已发送到打印机 {name}" # mt
+status.printing_to = "正在打印到 {name}…" # mt
 status.proof_off = "校样颜色已关闭"
 status.proof_on = "校样颜色已打开"
 status.recording = "正在录制宏... 请执行命令,然后停止录制"

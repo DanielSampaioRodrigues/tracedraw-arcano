@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Zu viele Zeilen für diese Form: weniger Spalt
 status.previous_page = "Vorherige Seite"
 status.print_sent = "Druck-PDF geöffnet: {path}"
 status.print_sent_printer = "An Drucker {name} gesendet" # mt
+status.printing_to = "Druck auf {name}…" # mt
 status.proof_off = "Farbproof aus"
 status.proof_on = "Farbproof ein"
 status.recording = "Makro wird aufgezeichnet... führen Sie die Befehle aus und beenden Sie dann die Aufzeichnung"

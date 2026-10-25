@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Troppe righe per questa forma: usa meno colonn
 status.previous_page = "Pagina precedente"
 status.print_sent = "PDF di stampa aperto: {path}"
 status.print_sent_printer = "Inviato alla stampante {name}" # mt
+status.printing_to = "Stampa su {name}…" # mt
 status.proof_off = "Prova colori disattivata"
 status.proof_on = "Prova colori attivata"
 status.recording = "Registrazione della macro... esegui i comandi, poi interrompi la registrazione"

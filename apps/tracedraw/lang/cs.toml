@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Pro tento tvar je příliš mnoho řádků: po
 status.previous_page = "Předchozí stránka"
 status.print_sent = "Tiskové PDF otevřeno: {path}"
 status.print_sent_printer = "Odesláno na tiskárnu {name}" # mt
+status.printing_to = "Tisk na {name}…" # mt
 status.proof_off = "Nátisk barev vypnut"
 status.proof_on = "Nátisk barev zapnut"
 status.recording = "Nahrávání makra... proveďte příkazy a poté nahrávání zastavte"

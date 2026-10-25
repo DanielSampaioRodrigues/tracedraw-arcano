@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Terlalu banyak baris untuk bentuk ini: gunakan
 status.previous_page = "Halaman sebelumnya"
 status.print_sent = "PDF cetak dibuka: {path}"
 status.print_sent_printer = "Dikirim ke printer {name}" # mt
+status.printing_to = "Mencetak di {name}…" # mt
 status.proof_off = "Uji warna nonaktif"
 status.proof_on = "Uji warna aktif"
 status.recording = "Merekam makro... jalankan perintah, lalu hentikan perekaman"

@@ -3314,6 +3314,7 @@ status.picture_mosaic_too_tall = "Zbyt wiele wierszy dla tego kształtu: użyj m
 status.previous_page = "Poprzednia strona"
 status.print_sent = "Otwarto plik PDF do druku: {path}"
 status.print_sent_printer = "Wysłano do drukarki {name}" # mt
+status.printing_to = "Drukowanie na {name}…" # mt
 status.proof_off = "Próba kolorów wyłączona"
 status.proof_on = "Próba kolorów włączona"
 status.recording = "Nagrywanie makra... wykonaj polecenia, a następnie zatrzymaj nagrywanie"

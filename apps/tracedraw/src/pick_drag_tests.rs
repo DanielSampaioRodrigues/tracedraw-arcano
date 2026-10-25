@@ -7496,6 +7496,39 @@ fn the_wrap_style_list_starts_with_none() {
     assert!(!app.wrap_state().0, "still off");
 }
 
+/// A print to a slow printer goes on off the interface's thread: frames
+/// keep coming while it works, and the status bar says how it ended
+/// (#810).
+#[test]
+fn a_slow_printer_leaves_the_window_usable() {
+    let (ctx, mut app, _) = setup();
+    app.start_print_job(|| {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        Err("the spooler gave up".into())
+    });
+    app.status = "Printing on Oce TDS600…".into();
+    let t = std::time::Instant::now();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(
+        t.elapsed() < std::time::Duration::from_millis(300),
+        "{:?}",
+        t.elapsed()
+    );
+    assert!(app.print_job.is_some(), "still printing");
+    assert!(app.status.starts_with("Printing"), "{}", app.status);
+    let t = std::time::Instant::now();
+    while app.print_job.is_some() && t.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert!(app.print_job.is_none());
+    assert!(
+        app.status.ends_with("the spooler gave up"),
+        "{}",
+        app.status
+    );
+}
+
 /// File > Print reads the printers off the interface's thread (#614): the
 /// dialog opens at once and says it is looking; then the list comes in
 /// name order with the default chosen where it stands, and the General
