@@ -1028,6 +1028,9 @@ pub struct App {
     pub pointer_page: Option<Point>,
     /// The palette shown in the bottom strip (the first visible one).
     pub palette: Vec<(String, Color)>,
+    /// [`Self::palette`] as an RGB drawing shows it, worked out when the
+    /// palette changes (#620).
+    pub palette_rgb: Vec<(String, Color)>,
     /// First swatch shown in the bottom strip (its scroll position).
     pub palette_scroll: usize,
     /// The same for the document palette row.
@@ -2158,6 +2161,7 @@ impl App {
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
             palette: crate::palette::default_cmyk(),
+            palette_rgb: crate::ui::palette::as_rgb(&crate::palette::default_cmyk()),
             palette_scroll: 0,
             doc_palette_scroll: 0,
             doc_palette_current: None,

@@ -2674,6 +2674,7 @@ impl App {
         if let Some(i) = self.visible_palettes.first() {
             if let Some(p) = self.palettes.get(*i) {
                 self.palette = p.colors.clone();
+                self.palette_rgb = crate::ui::palette::as_rgb(&self.palette);
                 self.palette_scroll = 0;
             }
         }

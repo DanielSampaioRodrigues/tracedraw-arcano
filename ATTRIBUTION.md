@@ -18,6 +18,7 @@ libwebp (Copyright Google Inc., BSD 3-Clause licence, through the
 | Microsoft Store tiles | `packaging/windows/msix/Assets/` | Made for TraceDraw from the application icon | MIT OR Apache-2.0 |
 | Tool, toolbar and panel icons | painted in code, `apps/tracedraw/src/ui/icons.rs` | Made for TraceDraw | MIT OR Apache-2.0 |
 | Default colour palette (colour names and values) | `apps/tracedraw/src/palette.rs` | TraceDraw contributors; common process colour tints with descriptive names | MIT OR Apache-2.0 |
+| RGB default palette (`default_rgb`, the same names as RGB values: 10% greys and multiples of 51) | `apps/tracedraw/src/palette.rs` | TraceDraw contributors; plain RGB values read from a screenshot attached to issue #620 | MIT OR Apache-2.0 |
 | Spell-check core word list | `apps/tracedraw/lang/core-words.txt` | Made for TraceDraw | MIT OR Apache-2.0 |
 | Hyphenation patterns | `crates/text/src/hyphen.rs` | Made for TraceDraw (a small Liang-style set) | MIT OR Apache-2.0 |
 | Interface translations | `apps/tracedraw/lang/*.toml` | Made for TraceDraw | MIT OR Apache-2.0 |

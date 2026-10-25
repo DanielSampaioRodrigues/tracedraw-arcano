@@ -10,6 +10,7 @@ full, row-by-row status.
 - A Variable Length outline converted to an object (Ctrl+Shift+Q) is now a clean shape: a few real curves along each side and straight butt ends, instead of a whole row of anchors joined by straight lines. Along a curve, the band no longer has hairline cracks between its pieces, on screen or in exports (#627).
 - The Glyphs panel's recent glyphs are readable again in the dark themes: their box takes the theme's field colour instead of staying white behind light glyphs (#660).
 - Print Merge: with On every page, Create Merged Document leaves a picture frame whose cell is empty or whose picture does not load as it is instead of emptying it, says when nothing was left to fill (or when the pages hold no fields) instead of claiming it created pages, and Place Inside Frame on every page no longer stacks a second picture in a frame that already holds one (#618).
+- The default palette of an RGB drawing is now a palette of RGB values defined directly (10% greys and multiples of 51, such as Navy Blue 0 51 153 and Purple 153 0 204) instead of values converted from CMYK at run time, and other CMYK colours with black in them convert as 255 (1 - min(1, ink + K)) per channel (#620).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 
