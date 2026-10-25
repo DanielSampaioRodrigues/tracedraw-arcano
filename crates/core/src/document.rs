@@ -36,6 +36,22 @@ pub mod text_outline {
         OUTLINER.get().map(|f| f(req))
     }
 
+    type Bounder = fn(&TextRequest) -> Option<crate::geometry::Rect>;
+    static BOUNDER: OnceLock<Bounder> = OnceLock::new();
+
+    /// Register the text engine's box of an outline, kept with the
+    /// outline it caches, so the box of a text object costs no copy of
+    /// its outline (#802).
+    pub fn set_bounds(f: Bounder) {
+        let _ = BOUNDER.set(f);
+    }
+
+    /// The box of [`outline`]'s result, `None` without a text engine or
+    /// for an empty outline.
+    pub fn bounds(req: &TextRequest) -> Option<crate::geometry::Rect> {
+        BOUNDER.get().and_then(|f| f(req))
+    }
+
     /// One laid-out line: the characters it holds (indexes in the
     /// concatenated span text, the newline ending a paragraph left out)
     /// and where it starts (x and baseline, mm, frame top at y = 0, y up).
@@ -2920,6 +2936,49 @@ impl Shape {
     /// Axis-aligned bounds in page coordinates, ignoring outline width.
     /// Paragraph text counts its whole frame (empty or not), and a group
     /// the bounds of its objects.
+    /// The page box of a text object from the box the text engine keeps
+    /// with its outline, when the object is neither turned nor skewed
+    /// (the box then maps onto the page box exactly); `None` otherwise or
+    /// for other objects. Asking for the outline itself copies all of its
+    /// points, which in a drawing of long, large text took most of every
+    /// frame: the box is asked for many times a frame (#802).
+    fn text_bounds(&self) -> Option<Rect> {
+        let ShapeKind::Text {
+            spans,
+            origin,
+            frame,
+            align,
+            para,
+            on_path,
+        } = &self.kind
+        else {
+            return None;
+        };
+        let req = text_outline::TextRequest {
+            spans,
+            frame: *frame,
+            align: *align,
+            para,
+            on_path: on_path.as_ref(),
+        };
+        let local = if on_path.is_some() {
+            Affine::translate(origin.to_vec2())
+        } else {
+            text_layout_shift(*origin, *frame, false, para.vertical)
+        };
+        let m = self.transform * local;
+        let [a, b, c, d, _, _] = m.as_coeffs();
+        let scale = a.abs().max(d.abs()).max(1e-12);
+        if b.abs() > 1e-12 * scale || c.abs() > 1e-12 * scale {
+            return None;
+        }
+        let r = text_outline::bounds(&req)?;
+        let (p, q) = (m * Point::new(r.x0, r.y0), m * Point::new(r.x1, r.y1));
+        let out = Rect::from_points(p, q);
+        (out.x0.is_finite() && out.y0.is_finite() && out.x1.is_finite() && out.y1.is_finite())
+            .then_some(out)
+    }
+
     pub fn bounds(&self) -> Rect {
         match &self.kind {
             ShapeKind::Text {
@@ -2935,6 +2994,9 @@ impl Shape {
                     origin.y + f.height.max(0.0),
                 );
                 let fb = (self.transform * frame.to_path(0.01)).bounding_box();
+                if let Some(tb) = self.text_bounds() {
+                    return tb.union(fb);
+                }
                 let path = self.page_path();
                 if path.elements().is_empty() {
                     fb
@@ -2942,6 +3004,9 @@ impl Shape {
                     path.bounding_box().union(fb)
                 }
             }
+            ShapeKind::Text { .. } => self
+                .text_bounds()
+                .unwrap_or_else(|| self.page_path().bounding_box()),
             ShapeKind::Group { children } => children
                 .iter()
                 .map(|c| {

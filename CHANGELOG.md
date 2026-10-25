@@ -25,6 +25,7 @@ full, row-by-row status.
 - A gradient fill and a gradient transparency now turn, mirror and skew with their object (the Pick tool's handles, the angle and mirror buttons, the Transformations docker, a turned group); before, the gradient kept running the same way on the page (#775).
 - Print with Color: Separations now prints a plate for each spot ink, after the cyan, magenta, yellow and black ones, and the print preview offers its box again: the printed sheets had lost the drawing's list of spot inks, so only the four process plates came out (#779).
 - The page tabs under the drawing slide to show the current page's tab whenever the page changes (a tab, the page navigator, PgUp and PgDn, Go To Page), and the mouse wheel over them slides them. In a drawing of many pages, a merged document for example, the tabs past the end of the row never showed before, so those pages could only be reached with Go To Page (#794).
+- Drawings with much large text are smooth again: the box of a text object, asked for many times a frame by hovering, snapping and the Pen preview, copied the text's whole outline each time. It now comes from a box kept with the cached outline. On the reported drawing (45 lines of 257 pt text) a Pen preview frame went from 7.3 to 1.6 ms (#802).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 

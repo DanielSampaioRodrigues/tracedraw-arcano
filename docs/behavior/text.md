@@ -728,6 +728,11 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `tests::a_text_refitted_to_another_path_of_the_same_kind_is_laid_out_again`
   (text crate: the outline cache keys a fitted text on its whole path,
   not on the path's number of elements).
+- The text engine keeps each outline's box with the outline it caches;
+  the box of a text object that is not turned or skewed comes from it,
+  without copying the outline, which hovering, snapping and the Pen
+  preview ask for many times a frame (#802,
+  `tests::text_bounds_come_from_the_cached_box_and_match_the_outline`).
 - `tests::fonts_are_found_by_their_legacy_family_names`,
   `tests::family_names_ending_in_a_weight_split`,
   `tests::a_family_named_with_its_weight_draws_with_the_nearest_face`,

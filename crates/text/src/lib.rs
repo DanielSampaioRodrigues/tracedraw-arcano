@@ -41,7 +41,7 @@ pub struct FontSystem {
     /// The fonts documents brought that were loaded, with the families
     /// each added.
     carried: RwLock<Vec<(Vec<String>, DocumentFont)>>,
-    cache: Mutex<HashMap<String, Arc<BezPath>>>,
+    cache: Mutex<HashMap<String, CachedOutline>>,
     /// Families the application can fetch when text asks for them (the
     /// browser build's font folder), sorted; see
     /// [`FontSystem::offer_families`].
@@ -65,6 +65,7 @@ pub struct FontSystem {
 /// Register this engine as the core's text outliner (call once at startup).
 pub fn install() {
     tracedraw_core::document::text_outline::set(|req| fonts().outline_cached(req).as_ref().clone());
+    tracedraw_core::document::text_outline::set_bounds(|req| fonts().bounds_cached(req));
     tracedraw_core::document::text_outline::set_glyphs(|req| fonts().glyph_layout(req));
     tracedraw_core::document::text_outline::set_lines(|req| {
         let layout = fonts().layout(req);
@@ -86,6 +87,9 @@ pub fn install() {
             .collect()
     });
 }
+
+/// A cached text outline and its box (`None` for an empty outline).
+type CachedOutline = (Arc<BezPath>, Option<Rect>);
 
 static SYSTEM: OnceLock<FontSystem> = OnceLock::new();
 
@@ -1751,10 +1755,10 @@ impl FontSystem {
         Some((data, idx))
     }
 
-    /// Cached outline; shaping is expensive and the same text is asked for
-    /// every frame.
-    pub fn outline_cached(&self, req: &TextRequest) -> Arc<BezPath> {
-        let key = format!(
+    /// The key of a text object's outline in the cache: everything its
+    /// layout depends on.
+    fn cache_key(req: &TextRequest) -> String {
+        format!(
             "{:?}|{:?}|{:?}|{}|{}",
             req.frame,
             req.align,
@@ -1810,20 +1814,39 @@ impl FontSystem {
                 ))
                 .collect::<Vec<_>>()
                 .join("\u{1}")
-        );
+        )
+    }
+
+    /// Cached outline and its box; shaping is expensive and the same text
+    /// is asked for every frame.
+    fn cached(&self, req: &TextRequest) -> CachedOutline {
+        let key = Self::cache_key(req);
         if let Ok(c) = self.cache.lock() {
-            if let Some(p) = c.get(&key) {
-                return p.clone();
+            if let Some(hit) = c.get(&key) {
+                return hit.clone();
             }
         }
         let p = Arc::new(self.layout(req).path);
+        let b = (!p.elements().is_empty()).then(|| p.bounding_box());
         if let Ok(mut c) = self.cache.lock() {
             if c.len() > 2000 {
                 c.clear();
             }
-            c.insert(key, p.clone());
+            c.insert(key, (p.clone(), b));
         }
-        p
+        (p, b)
+    }
+
+    /// Cached outline; shaping is expensive and the same text is asked for
+    /// every frame.
+    pub fn outline_cached(&self, req: &TextRequest) -> Arc<BezPath> {
+        self.cached(req).0
+    }
+
+    /// The box of the cached outline, without copying the outline (#802);
+    /// `None` for an empty one.
+    pub fn bounds_cached(&self, req: &TextRequest) -> Option<Rect> {
+        self.cached(req).1
     }
 
     /// Simple entry point: artistic text, left aligned.
@@ -3416,6 +3439,63 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The box of a text object comes from the box kept with its cached
+    /// outline when the object is not turned or skewed, and is the same
+    /// as the outline's own; a turned one still measures its outline
+    /// (#802).
+    #[test]
+    fn text_bounds_come_from_the_cached_box_and_match_the_outline() {
+        install();
+        let Some(family) = fonts().families().into_iter().next() else {
+            return;
+        };
+        let mut s = tracedraw_core::Shape::new(
+            tracedraw_core::ShapeId(1),
+            tracedraw_core::ShapeKind::Text {
+                spans: vec![TextSpan::new("Long text, many letters", &family, 40.0)],
+                origin: Point::new(12.0, 30.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        let near = |a: Rect, b: Rect| {
+            (a.x0 - b.x0).abs() < 1e-6
+                && (a.y0 - b.y0).abs() < 1e-6
+                && (a.x1 - b.x1).abs() < 1e-6
+                && (a.y1 - b.y1).abs() < 1e-6
+        };
+        for t in [
+            Affine::IDENTITY,
+            Affine::translate((5.0, -7.0)) * Affine::scale_non_uniform(2.0, 0.5),
+            Affine::scale_non_uniform(-1.0, 1.0),
+            Affine::rotate(0.3),
+        ] {
+            s.transform = t;
+            let outline = s.page_path().bounding_box();
+            assert!(
+                near(s.bounds(), outline),
+                "{t:?}: {:?} {outline:?}",
+                s.bounds()
+            );
+        }
+        // The box is kept with the outline.
+        s.transform = Affine::IDENTITY;
+        let tracedraw_core::ShapeKind::Text { spans, para, .. } = &s.kind else {
+            unreachable!()
+        };
+        let req = TextRequest {
+            spans,
+            frame: None,
+            align: Default::default(),
+            para,
+            on_path: None,
+        };
+        let kept = fonts().bounds_cached(&req).expect("a box");
+        assert!(near(kept, fonts().outline_cached(&req).bounding_box()));
+    }
     use tracedraw_core::geometry::Size;
 
     /// Hindi after a Latin word is shaped as Hindi: the run is cut where
