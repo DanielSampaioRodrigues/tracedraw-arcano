@@ -7779,4 +7779,39 @@ fn frame_times_over_a_combined_curve() {
         vec![button(p0, false, PointerButton::Primary, Modifiers::NONE)],
         Modifiers::NONE,
     );
+/// With hardware acceleration off, the status bar says that this is why
+/// a software adapter draws the window, and a click on the note opens
+/// Options at its General page; with it on, the note names the missing
+/// card driver instead and opens nothing.
+#[test]
+fn the_software_renderer_note_says_hardware_acceleration_is_off() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.settings.hardware_acceleration = false;
+    crate::ui::note_software_renderer(&mut app, "Microsoft Basic Render Driver");
+    let off = crate::i18n::trf(
+        "status.software_renderer_off",
+        &[("name", "Microsoft Basic Render Driver")],
+    );
+    assert_eq!(app.status, off);
+    let (_, texts) = painted(&ctx, &mut app);
+    let at = texts
+        .iter()
+        .find(|(t, _)| t.starts_with(&off))
+        .map(|(_, p)| *p)
+        .expect("the note on the status bar");
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::Options));
+    assert!(matches!(
+        app.options_page,
+        crate::ui::dialogs::OptionsPage::General
+    ));
+    assert!(app.status.is_empty());
+    // Hardware acceleration on: the driver note, not a link.
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    app.settings.hardware_acceleration = true;
+    app.status_opens_options = None;
+    crate::ui::note_software_renderer(&mut app, "Microsoft Basic Render Driver");
+    assert!(app.status_opens_options.is_none());
+    assert_ne!(app.status, off);
 }

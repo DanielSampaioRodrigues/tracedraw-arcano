@@ -915,6 +915,9 @@ pub struct App {
     /// `.tdraw` files (faces whose licence allows it).
     pub tdraw_embed_fonts: bool,
     pub status: String,
+    /// The status message that opens Options > General when clicked, while
+    /// it is the one shown: the hint that hardware acceleration is off.
+    pub status_opens_options: Option<String>,
     pub fit_pending: bool,
     pub units: Units,
     pub nudge_mm: f64,
@@ -2101,6 +2104,7 @@ impl App {
             cdr_embed_fonts: true,
             tdraw_embed_fonts: true,
             status: String::new(),
+            status_opens_options: None,
             fit_pending: true,
             units: Units::Millimeters,
             nudge_mm: 2.54,
@@ -2518,6 +2522,12 @@ impl App {
         } else {
             self.settings.default_dpi.max(1.0)
         }
+    }
+
+    /// The Options dialog at its General page (hardware acceleration).
+    pub fn open_general_options(&mut self) {
+        self.options_page = crate::ui::dialogs::OptionsPage::General;
+        self.dialog = crate::ui::dialogs::Dialog::Options;
     }
 
     /// Layout > Page Setup and a double click on the page border or

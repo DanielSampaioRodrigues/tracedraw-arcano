@@ -175,7 +175,15 @@ and `--reset-settings` starts open windows of their own.
   shadows, and the drawn pointers (cross hair, I-beam, hands, magnifiers
   and the others) give way to the system's nearest, as a drawn one
   trails the real pointer by a slow frame. The status bar says it once,
-  naming the adapter, and the log says it at start. A graphics card is
+  naming the adapter, and the log says it at start. With Use hardware
+  acceleration off in Options that is the reason, so the note says so
+  ("Drawn on the CPU (...): hardware acceleration is off. Click to turn
+  it on in Options > General.") and a click on it opens Options at the
+  General page; with it on, the note says the card's own driver makes it
+  faster, and is not a link. Nothing is turned on by itself: some cards
+  draw wrongly with acceleration
+  (`pick_drag_tests::the_software_renderer_note_says_hardware_acceleration_is_off`).
+  A graphics card is
   never paced (`gpu::tests::frames_are_paced_to_the_cap`,
   `gpu::tests::software_renderers_are_recognised`,
   `ui::cursors::tests::a_software_adapter_shows_the_system_pointers`).

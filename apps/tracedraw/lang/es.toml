@@ -3331,6 +3331,7 @@ status.sent_to = "PDF escrito en {path}"
 status.settings_reset = "Todos los ajustes volvieron a sus valores predeterminados"
 status.settings_saved = "Configuración guardada como predeterminada"
 status.software_renderer = "Un adaptador de software dibuja la ventana ({name}): cada fotograma se dibuja en la CPU, así que TraceDraw se limita a 30 fotogramas por segundo y sin sombras. Instalar el controlador propio de la tarjeta gráfica lo acelera." # mt
+status.software_renderer_off = "Dibujo en la CPU ({name}): la aceleración por hardware está desactivada. Haga clic para activarla en Opciones > General." # mt
 status.shaping_empty = "El modelado produjo un resultado vacío"
 status.style_created = "Estilo creado y vinculado a la selección"
 status.swatch_fill = "Relleno"
