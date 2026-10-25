@@ -1085,6 +1085,139 @@ pub fn variable_band_within(
 /// page space and the object's scale (1 when the outline does not scale
 /// with the object). `None`: a plain stroke draws it.
 pub fn outline_band(path: &BezPath, stroke: &crate::style::Stroke, scale: f64) -> Option<BezPath> {
+    // Bands are kept: a page of brush strokes is drawn again on every
+    // zoom and scroll, and working one out takes milliseconds (#829).
+    let key = band_key(path, stroke, scale);
+    if let Some(b) = band_cache().lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return b.as_deref().cloned();
+    }
+    let band = outline_band_uncached(path, stroke, scale).map(|b| thin_polygons(&b, BAND_THIN));
+    if let Ok(mut c) = band_cache().lock() {
+        let size: usize = band.as_ref().map_or(1, |b| b.elements().len());
+        if c.size + size > BAND_CACHE_ELEMENTS {
+            c.map.clear();
+            c.size = 0;
+        }
+        c.size += size;
+        c.map.insert(key, band.clone().map(std::sync::Arc::new));
+    }
+    band
+}
+
+/// How far an outline band's points may move when it is thinned, mm:
+/// far below what shows or prints.
+const BAND_THIN: f64 = 0.0005;
+
+/// The straight-piece contours of `path` with the points that lie within
+/// `tol` of the line through their neighbours left out; curved pieces
+/// are kept as they are.
+fn thin_polygons(path: &BezPath, tol: f64) -> BezPath {
+    if path
+        .elements()
+        .iter()
+        .any(|e| matches!(e, PathEl::QuadTo(..) | PathEl::CurveTo(..)))
+    {
+        return path.clone();
+    }
+    let mut out = BezPath::new();
+    let mut ring: Vec<Point> = Vec::new();
+    let mut closed = false;
+    let flush = |ring: &mut Vec<Point>, closed: bool, out: &mut BezPath| {
+        if ring.is_empty() {
+            return;
+        }
+        let pts = if ring.len() > 3 {
+            let mut r = ring.clone();
+            if closed {
+                r.push(ring[0]);
+            }
+            let mut few = crate::geometry::simplify(&r, tol);
+            if closed {
+                few.pop();
+            }
+            if few.len() >= 3 || !closed {
+                few
+            } else {
+                ring.clone()
+            }
+        } else {
+            ring.clone()
+        };
+        if let Some((first, rest)) = pts.split_first() {
+            out.move_to(*first);
+            rest.iter().for_each(|p| out.line_to(*p));
+            if closed {
+                out.close_path();
+            }
+        }
+        ring.clear();
+    };
+    for el in path.elements() {
+        match *el {
+            PathEl::MoveTo(p) => {
+                flush(&mut ring, closed, &mut out);
+                closed = false;
+                ring.push(p);
+            }
+            PathEl::LineTo(p) => ring.push(p),
+            PathEl::ClosePath => closed = true,
+            _ => {}
+        }
+    }
+    flush(&mut ring, closed, &mut out);
+    out
+}
+
+/// Path elements the outline bands kept may hold, all told, before they
+/// are let go (a few tens of megabytes at most).
+const BAND_CACHE_ELEMENTS: usize = 500_000;
+
+/// The outline bands worked out, by [`band_key`].
+#[derive(Default)]
+struct BandCache {
+    map: std::collections::HashMap<u64, Option<std::sync::Arc<BezPath>>>,
+    size: usize,
+}
+
+impl BandCache {
+    fn get(&self, key: &u64) -> Option<&Option<std::sync::Arc<BezPath>>> {
+        self.map.get(key)
+    }
+}
+
+fn band_cache() -> &'static std::sync::Mutex<BandCache> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<BandCache>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// What an outline band depends on: the path, the outline and the scale.
+fn band_key(path: &BezPath, stroke: &crate::style::Stroke, scale: f64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for el in path.elements() {
+        let pts: &[Point] = match el {
+            PathEl::MoveTo(p) | PathEl::LineTo(p) => std::slice::from_ref(p),
+            PathEl::QuadTo(a, b) => &[*a, *b],
+            PathEl::CurveTo(a, b, c) => &[*a, *b, *c],
+            PathEl::ClosePath => &[],
+        };
+        std::mem::discriminant(el).hash(&mut h);
+        for p in pts {
+            p.x.to_bits().hash(&mut h);
+            p.y.to_bits().hash(&mut h);
+        }
+    }
+    format!("{stroke:?}").hash(&mut h);
+    scale.to_bits().hash(&mut h);
+    h.finish()
+}
+
+/// [`outline_band`], worked out.
+fn outline_band_uncached(
+    path: &BezPath,
+    stroke: &crate::style::Stroke,
+    scale: f64,
+) -> Option<BezPath> {
     use crate::style::{OutlinePosition, Stroke};
     if !stroke.widths.is_empty() {
         let nodes: Vec<crate::style::WidthNode> = stroke
