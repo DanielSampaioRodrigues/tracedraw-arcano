@@ -83,7 +83,11 @@ has one.
     given (36 to 1200 dpi).
 - Color: Composite or Separations (one grey page per ink and sheet: C, M,
   Y, K, then the spot inks; black = full ink); Convert spot colors to
-  CMYK prints spot inks as their CMYK mix at their tint.
+  CMYK prints spot inks as their CMYK mix at their tint. The printed
+  sheets keep the drawing's list of spot inks, so each spot ink gets its
+  plate and its box in the print preview; before, the sheets lost the
+  list and only the four process plates printed (#779,
+  `export::tests::separations_print_a_plate_for_each_spot_ink`).
 - Composite: Print text in black (fills, outlines and character colours
   of every text); Always overprint black (100 % black fills and outlines
   overprint).

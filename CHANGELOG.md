@@ -23,6 +23,7 @@ full, row-by-row status.
 - The arrow keys nudge the selected guidelines when no object is selected: by the nudge distance, Shift by the super nudge and Ctrl by the micro nudge, one undo step per press; locked guidelines stay (#781).
 - Windows: when the graphics driver crashes or hangs TraceDraw while the window is being opened, with nothing shown and the log ending at "Using wgpu", the next start now opens with OpenGL by itself (and the software adapter after that), and keeps using it; `--renderer=gl` no longer has to be typed (#570).
 - A gradient fill and a gradient transparency now turn, mirror and skew with their object (the Pick tool's handles, the angle and mirror buttons, the Transformations docker, a turned group); before, the gradient kept running the same way on the page (#775).
+- Print with Color: Separations now prints a plate for each spot ink, after the cyan, magenta, yellow and black ones, and the print preview offers its box again: the printed sheets had lost the drawing's list of spot inks, so only the four process plates came out (#779).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 
