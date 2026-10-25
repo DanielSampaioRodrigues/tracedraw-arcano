@@ -1169,6 +1169,10 @@ pub struct App {
     pub fullscreen_preview: bool,
     /// File > Print Preview, while it is open.
     pub print_preview: Option<crate::ui::print_preview::PrintPreview>,
+    /// The printer list being read off the interface's thread for the
+    /// Print dialog, and the last list read (#614).
+    pub printer_fetch: Option<std::sync::mpsc::Receiver<Vec<crate::printers::Printer>>>,
+    pub printers_seen: Vec<crate::printers::Printer>,
     pub preview_selected_only: bool,
     pub page_sorter: bool,
     /// View > Multipage View: every page laid out beside the current one.
@@ -2223,6 +2227,8 @@ impl App {
             welcome_tab: WelcomeTab::GetStarted,
             fullscreen_preview: false,
             print_preview: None,
+            printer_fetch: None,
+            printers_seen: Vec::new(),
             preview_selected_only: false,
             page_sorter: false,
             multipage: false,
@@ -6240,10 +6246,68 @@ impl App {
             st.bleed_limit = bleed;
         }
         // The system's printers, the dialog starting on the one printed
-        // to last, else the default one.
-        st.printers = crate::printers::system_printers();
-        st.printer = crate::printers::starting_printer(st.printer.as_deref(), &st.printers);
+        // to last, else the default one. Reading them can take seconds, so
+        // it happens off the interface's thread; the list read last shows
+        // meanwhile (#614).
+        st.printers = self.printers_seen.clone();
+        if !st.printers.is_empty() {
+            st.printer = crate::printers::starting_printer(st.printer.as_deref(), &st.printers);
+        }
+        st.looking_for_printers = true;
+        self.fetch_printers(crate::printers::system_printers);
         self.dialog = crate::ui::dialogs::Dialog::Print(st);
+    }
+
+    /// Read the printer list with `list` off the interface's thread (at
+    /// once in the browser, which has no threads and no printers).
+    pub fn fetch_printers(&mut self, list: fn() -> Vec<crate::printers::Printer>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let spawned = std::thread::Builder::new()
+                .name("printers".into())
+                .spawn(move || {
+                    let _ = tx.send(list());
+                });
+            if let Err(e) = spawned {
+                log::warn!("no printer list: {e}");
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = tx.send(list());
+        self.printer_fetch = Some(rx);
+    }
+
+    /// The printer list once it has been read: into the Print dialog's
+    /// state, keeping the printer chosen when the system has it, else the
+    /// default (a destination picked meanwhile stays). Returns whether the
+    /// list is still being read.
+    pub fn poll_printers(&mut self, st: &mut crate::ui::dialogs::PrintState) -> bool {
+        let Some(rx) = &self.printer_fetch else {
+            st.looking_for_printers = false;
+            return false;
+        };
+        match rx.try_recv() {
+            Ok(list) => {
+                let list = crate::printers::by_name(list);
+                // A destination the user chose meanwhile stays, unless it
+                // names a printer the system does not have.
+                let gone = st
+                    .printer
+                    .as_ref()
+                    .is_some_and(|p| !list.iter().any(|q| &q.name == p));
+                if !st.printer_picked || gone {
+                    st.printer = crate::printers::starting_printer(st.printer.as_deref(), &list);
+                }
+                self.printers_seen = list.clone();
+                st.printers = list;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => return true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+        }
+        self.printer_fetch = None;
+        st.looking_for_printers = false;
+        false
     }
 
     /// File > Print Preview: the sheets for the given print settings, or
