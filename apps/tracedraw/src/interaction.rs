@@ -1890,6 +1890,15 @@ impl App {
                 .as_ref()
                 .is_some_and(|c| c.nodes.len() >= 2 && c.nodes.last().is_some_and(|n| near(n.0)));
         if response.clicked_by(PointerButton::Primary) {
+            // A line going on from an end of the selected curve: a click
+            // on that curve's other end closes it (#631).
+            if let Some(end) = self.continuation_close_at(raw, reach) {
+                if let Some(c) = &mut self.curve {
+                    c.nodes.push((end, None));
+                }
+                self.finish_curve();
+                return;
+            }
             if start_close {
                 // A click on the first node closes the curve with the
                 // segment the preview showed: it leaves the last node
@@ -2052,6 +2061,8 @@ impl App {
         };
         if let Some(id) = self.new_curve_in_steps(
             prior,
+            c.nodes.first().copied(),
+            None,
             ShapeKind::Path {
                 path: path.clone(),
                 closed: true,
