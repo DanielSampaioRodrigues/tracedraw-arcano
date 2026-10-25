@@ -1060,7 +1060,7 @@ impl Default for ToolPrefs {
             table_cols: 4,
             graph_rows: 4,
             graph_cols: 3,
-            blend_steps: 5,
+            blend_steps: 20,
             contour: Default::default(),
             eraser_width: 6.35,
             eraser_square: false,

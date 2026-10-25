@@ -2133,7 +2133,7 @@ impl App {
             media_width: 3.0,
             media_angle: 45.0,
             dimension_points: Vec::new(),
-            blend_steps: 5,
+            blend_steps: 20,
             blend_options: Default::default(),
             blend_spacing_mm: 5.0,
             blend_link_accel: false,
