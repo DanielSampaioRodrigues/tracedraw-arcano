@@ -7963,6 +7963,8 @@ fn add_column_offers_a_number_range() {
             texts.iter().map(|(t, _)| t).collect::<Vec<_>>()
         );
     }
+}
+
 /// With the wheel zooming (the default), a notch zooms in one glide over
 /// a few frames, as a scroll moves, instead of one jump; the frames
 /// together still zoom 1.15 a notch, about the pointer (#766).
