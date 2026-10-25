@@ -48,7 +48,14 @@ From the left, after the ruler's width:
    buttons add a page of the current size next to the current page and
    make it current.
 2. The page tabs: one slanted tab per page, the current one white; a click
-   goes to the page, a double click renames it. A right click makes the
+   goes to the page, a double click renames it. The tabs that fit in the
+   row are shown; when the current page changes (a tab, the navigator,
+   PgUp and PgDn, Go To Page) they slide just enough for its tab to show
+   whole, and the mouse wheel over them slides them one tab a notch
+   without changing the page. Before, the tabs past the row's end never
+   showed, so in a long drawing (a merged document) their pages could be
+   reached only with Go To Page (#794,
+   `pick_drag_tests::page_tabs_slide_to_the_current_page_of_a_long_drawing`). A right click makes the
    page current and opens its menu, six rows with a picture each and no
    separators: Rename Page... (a page with a text cursor), Insert Page
    After and Insert Page Before (two pages side by side, the new one with

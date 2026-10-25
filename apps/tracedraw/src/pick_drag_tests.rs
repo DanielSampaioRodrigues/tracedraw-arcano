@@ -7868,4 +7868,94 @@ fn arrow_keys_nudge_the_selected_guidelines() {
     assert!(close(y(&app), 150.0 + step - sup + micro));
     app.undo();
     assert!(close(y(&app), 150.0 + step - sup), "{}", y(&app));
+/// A drawing of 30 pages (a merged document): the page tabs that fit are
+/// shown, a click on one goes to its page, Page Down and Page Up go to the
+/// next and previous page, and the tabs slide so the current page's tab
+/// shows; the mouse wheel over them slides them without changing the page.
+/// Before, the tabs past the row's end were never shown, so their pages
+/// could only be reached with Go To Page (#794).
+#[test]
+fn page_tabs_slide_to_the_current_page_of_a_long_drawing() {
+    let (ctx, mut app, _) = setup();
+    let rows: Vec<Vec<String>> = (1..=30).map(|i| vec![format!("N{i}")]).collect();
+    app.merge_state = Some(crate::ui::dialogs::PrintMergeState {
+        headers: vec!["Name".into()],
+        rows,
+        kinds: vec![crate::print_merge::FieldKind::Text],
+        ..Default::default()
+    });
+    app.create_merged_document(false);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(app.doc().pages.len(), 30);
+    let names: Vec<String> = app.doc().pages.iter().map(|p| p.name.clone()).collect();
+    let tabs = |ctx: &egui::Context, app: &mut App| -> Vec<(String, Pos2)> {
+        let (_, texts) = painted(ctx, app);
+        texts
+            .into_iter()
+            .filter(|(t, _)| names.contains(t))
+            .collect()
+    };
+    let shown = tabs(&ctx, &mut app);
+    assert!(shown.len() < 30, "the row holds only some: {}", shown.len());
+    // A click on the third tab.
+    let third = shown
+        .iter()
+        .find(|(t, _)| *t == names[2])
+        .map(|(_, p)| *p)
+        .expect("third tab");
+    click_at(&ctx, &mut app, third, Modifiers::NONE);
+    assert_eq!(app.page_index(), 2);
+    // Page Down twenty times: page 23, and its tab shows.
+    for _ in 0..20 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(egui::Key::PageDown, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+    }
+    assert_eq!(app.page_index(), 22);
+    let shown = tabs(&ctx, &mut app);
+    let at = shown
+        .iter()
+        .find(|(t, _)| *t == names[22])
+        .map(|(_, p)| *p)
+        .expect("the current page's tab shows");
+    // A click on a tab after it, now in view.
+    if let Some(p) = shown.iter().find(|(t, _)| *t == names[23]).map(|(_, p)| *p) {
+        click_at(&ctx, &mut app, p, Modifiers::NONE);
+        assert_eq!(app.page_index(), 23);
+    }
+    // Page Up: back one, still in view.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::PageUp, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let now = app.page_index();
+    assert!(tabs(&ctx, &mut app).iter().any(|(t, _)| *t == names[now]));
+    // The wheel over the tabs slides them back to the first, the page
+    // staying.
+    for _ in 0..40 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![
+                Event::PointerMoved(at),
+                Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, 1.0),
+                    modifiers: Modifiers::NONE,
+                    phase: egui::TouchPhase::Move,
+                },
+            ],
+            Modifiers::NONE,
+        );
+    }
+    assert_eq!(app.page_index(), now);
+    assert_eq!(app.page_tabs_first, 0);
+    assert!(tabs(&ctx, &mut app).iter().any(|(t, _)| *t == names[0]));
 }

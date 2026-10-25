@@ -1558,6 +1558,11 @@ pub struct App {
     /// Share of the drawing window's bottom row given to the page tabs
     /// (the rest is the horizontal scrollbar); set with the splitter.
     pub page_tabs_fraction: f32,
+    /// The first page tab shown in that row, and the page it last slid
+    /// to show: the tabs slide so the current page's tab shows, and the
+    /// mouse wheel over them slides them (#794).
+    pub page_tabs_first: usize,
+    pub page_tabs_followed: Option<tracedraw_core::PageId>,
     /// The Hints docker's page and history.
     pub hints: crate::ui::hints::HintsState,
 }
@@ -2445,6 +2450,8 @@ impl App {
             quit_after_closing: false,
             quit_now: false,
             page_tabs_fraction: 0.45,
+            page_tabs_first: 0,
+            page_tabs_followed: None,
             hints: Default::default(),
         };
         app.load_settings();
