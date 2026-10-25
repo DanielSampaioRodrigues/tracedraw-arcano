@@ -7941,3 +7941,26 @@ fn page_tabs_slide_to_the_current_page_of_a_long_drawing() {
     assert_eq!(app.page_tabs_first, 0);
     assert!(tabs(&ctx, &mut app).iter().any(|(t, _)| *t == names[0]));
 }
+
+/// The Print Merge dialog's Add Column form, for a number field, shows
+/// the counter's digits, start, "continually increment" with its step and
+/// the ending value (#791).
+#[test]
+fn add_column_offers_a_number_range() {
+    let (ctx, mut app, _) = setup();
+    let st = crate::ui::dialogs::PrintMergeState {
+        adding: Some(("Check Number".into(), 1)),
+        ..Default::default()
+    };
+    app.dialog = crate::ui::dialogs::Dialog::PrintMerge(st);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (_, texts) = painted(&ctx, &mut app);
+    for key in ["merge.increment", "merge.end_value"] {
+        let label = crate::i18n::tr(key);
+        assert!(
+            texts.iter().any(|(t, _)| t.trim() == label.trim()),
+            "{label:?} in {:?}",
+            texts.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+}

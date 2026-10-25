@@ -528,6 +528,10 @@ pub struct PrintMergeState {
     /// The Add Column form while it is open: name and kind (0 text,
     /// 1 number, 2 picture, 3 QR code).
     pub adding: Option<(String, usize)>,
+    /// The Add Column form's counter settings for a number field: start,
+    /// step (0 when "continually increment" is off), digits, and the end
+    /// value when one is set (#791).
+    pub adding_number: NumberForm,
     /// The Go to Record field.
     pub go_to: String,
     /// The folder picture cells are looked for in first (the Print Merge
@@ -537,6 +541,31 @@ pub struct PrintMergeState {
     pub cells: Option<crate::print_merge::CellRange>,
     /// A drag selecting in the grid: what it selects and where it began.
     pub grid_drag: Option<(crate::print_merge::GridDrag, (usize, usize))>,
+}
+
+/// The counter of a number field being added (see
+/// [`PrintMergeState::adding_number`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NumberForm {
+    pub start: i64,
+    pub increment: bool,
+    pub step: i64,
+    pub digits: u32,
+    pub use_end: bool,
+    pub end: i64,
+}
+
+impl Default for NumberForm {
+    fn default() -> Self {
+        NumberForm {
+            start: 1,
+            increment: true,
+            step: 1,
+            digits: 1,
+            use_end: false,
+            end: 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -3829,6 +3858,35 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                         ui.radio_value(kind, i, n.as_str());
                     }
                 });
+                // A number field: its counter, and an end value that makes
+                // the records from the start to it (#791).
+                if *kind == 1 {
+                    let f = &mut st.adding_number;
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut f.digits)
+                                .range(1..=12)
+                                .prefix(tr("merge.digits")),
+                        );
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut f.start).prefix(tr("merge.start")),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut f.increment, tr("merge.increment"));
+                        ui.add_enabled(
+                            f.increment,
+                            crate::ui::field::NumField::new(&mut f.step).prefix(tr("merge.step")),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut f.use_end, tr("merge.end_value"));
+                        ui.add_enabled(
+                            f.use_end && f.increment,
+                            crate::ui::field::NumField::new(&mut f.end),
+                        );
+                    });
+                }
                 ui.horizontal(|ui| {
                     let ok = !name.trim().is_empty();
                     if ui
@@ -3845,9 +3903,21 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         }
         if let Some(done) = add_done {
             if let Some((name, kind)) = done {
-                pm::add_field(st, &name);
-                if let Some(k) = st.kinds.last_mut() {
-                    *k = merge_kind_of(kind);
+                if kind == 1 {
+                    let f = st.adding_number;
+                    pm::add_number_field(
+                        st,
+                        &name,
+                        f.start,
+                        if f.increment { f.step } else { 0 },
+                        f.digits,
+                        (f.use_end && f.increment).then_some(f.end),
+                    );
+                } else {
+                    pm::add_field(st, &name);
+                    if let Some(k) = st.kinds.last_mut() {
+                        *k = merge_kind_of(kind);
+                    }
                 }
                 if st.rows.is_empty() {
                     pm::add_record(st);
