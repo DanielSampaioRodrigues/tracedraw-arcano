@@ -70,6 +70,7 @@ full, row-by-row status.
 - Outline Pen dialog: the selected objects now show each change (width, colour, style, corners, caps, arrowheads, calligraphy, variable widths, overprint) live while the dialog is open; OK keeps it as one undo step and Cancel or Esc puts the outline back (#741).
 - Shape tool: two or more neighbouring nodes deleted together leave one curve between the nodes either side, fitted to the old outline, so it keeps its general shape. Line nodes deleted together left a straight line (#675).
 - Ungroup keeps a group's perspective: each object takes a Perspective effect of its own, first in its stack (folded into a perspective it had), and stays drawn as it was in the group, its own contour or distortion included. The perspective disappeared when the group was ungrouped (#674).
+- Contour: the offset is now the distance on the page also for a scaled, stretched or rotated object, so an 80 mm inside step lies 80 mm from the edges instead of 47 mm (#754).
 
 - Convert Outline to Object (Ctrl+Shift+Q) on an outline with round ends or round corners: each round end is now two real curves meeting at its tip, with nodes where it meets the sides, and each round corner a curve, instead of many tiny straight segments. Curved sides also get fewer nodes (#623).
 

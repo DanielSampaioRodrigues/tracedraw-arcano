@@ -1120,8 +1120,19 @@ const MAX_CONTOUR_STEPS: u32 = 999;
 /// `n * offset * accelerate(i / n, accel_objects)` (to the centre: by
 /// `i * offset` until nothing is left), coloured `accelerate(i / n,
 /// accel_colors)` of the way to the end colours.
+///
+/// The offset is measured on the page: the outline is offset with the
+/// object's transformation applied and brought back to its local
+/// coordinates, so a scaled or stretched object keeps the distance the
+/// user typed (#754).
 fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
-    let base = shape.local_path();
+    let to_page = shape.transform;
+    let to_local = if to_page.determinant().abs() > 1e-12 {
+        to_page.inverse()
+    } else {
+        return Vec::new();
+    };
+    let base = to_page * shape.local_path();
     let from_fill = shape.fill.preview_color().unwrap_or(Color::WHITE);
     let from_outline = shape.stroke.as_ref().map(|s| s.color);
     let sign = if p.outside && !p.to_center { 1.0 } else { -1.0 };
@@ -1137,7 +1148,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
             if q.elements().is_empty() {
                 break;
             }
-            paths.push(q);
+            paths.push(to_local * q);
         }
     } else {
         let n = p.steps.clamp(1, MAX_CONTOUR_STEPS);
@@ -1148,7 +1159,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
             if q.elements().is_empty() {
                 break;
             }
-            paths.push(q);
+            paths.push(to_local * q);
         }
     }
     let n = paths.len().max(1) as f64;
@@ -1915,6 +1926,82 @@ mod tests {
             crate::shaping::Op::Intersect,
         );
         assert!(!inside.elements().is_empty());
+    }
+
+    /// The contour offset is the distance on the page, whatever the
+    /// object's scale (#754): an 80 mm inside step of a polygon scaled
+    /// down lay 47 mm from its edge.
+    #[test]
+    fn contour_offset_is_measured_on_the_page() {
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Polygon {
+                rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                points: 8,
+                sharpness: 0.0,
+                complex: None,
+                twist: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.transform = Affine::translate((30.0, 40.0))
+            * Affine::scale_non_uniform(1.7, 1.7)
+            * Affine::rotate(22.5f64.to_radians());
+        s.effects.push(Effect::Contour {
+            steps: 1,
+            offset: 20.0,
+            outside: false,
+            to_center: false,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: Some(crate::shaping::Join::Miter),
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        });
+        let page = |s: &Shape| (s.transform * s.local_path()).bounding_box();
+        let outer = page(&s);
+        let ev = evaluate(&s);
+        let inner = ev
+            .above
+            .iter()
+            .chain(&ev.below)
+            .map(page)
+            .next()
+            .expect("one step");
+        for gap in [
+            inner.x0 - outer.x0,
+            outer.x1 - inner.x1,
+            inner.y0 - outer.y0,
+            outer.y1 - inner.y1,
+        ] {
+            assert!((gap - 20.0).abs() < 0.2, "{gap} {outer:?} {inner:?}");
+        }
+        // Stretched: the same distance across and down.
+        let effects = s.effects.clone();
+        s = rect_shape();
+        s.effects = effects;
+        s.transform = Affine::scale_non_uniform(3.0, 1.0);
+        if let Some(Effect::Contour { offset, .. }) = s.effects.last_mut() {
+            *offset = 4.0;
+        }
+        let outer = page(&s);
+        let ev = evaluate(&s);
+        let inner = ev
+            .above
+            .iter()
+            .chain(&ev.below)
+            .map(page)
+            .next()
+            .expect("step");
+        assert!(
+            (inner.x0 - outer.x0 - 4.0).abs() < 0.05,
+            "{outer:?} {inner:?}"
+        );
+        assert!(
+            (inner.y0 - outer.y0 - 4.0).abs() < 0.05,
+            "{outer:?} {inner:?}"
+        );
     }
 
     #[test]
