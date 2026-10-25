@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dimensions hold to the object they measure: a dimension whose ends were placed on nodes of an object (its corners, say) follows it when the object is moved, resized or reshaped, and its value changes with it. Moving the dimension by itself lets it go (#838).
+
 ## 0.19.1 (2026-10-25)
 
 - Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
