@@ -345,6 +345,26 @@ pub fn background(app: &mut App, ui: &mut Ui, bar: Bar) {
     bar_menu(app, &resp, bar);
 }
 
+/// A right click anywhere on the bar drawn in `ui`, on its buttons and
+/// boxes too, opens the bar's menu (the one its background opens), as the
+/// toolbox does (#835). Call after drawing the bar's controls.
+pub fn menu_anywhere(app: &mut App, ui: &mut Ui, bar: Bar) {
+    let rect = ui.min_rect();
+    let hit = ui.input(|i| {
+        i.pointer.secondary_clicked() && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
+    });
+    if !hit {
+        return;
+    }
+    let background = egui::Id::new(("bar_background", bar as u8));
+    egui::Popup::menu(&ui.response())
+        .id(background.with("bar_menu"))
+        .open_memory(Some(egui::SetOpenCommand::Bool(true)))
+        .at_pointer_fixed()
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| crate::ui::menus::body(ui, |ui| menu_body(app, ui, bar)));
+}
+
 /// The bar's context menu on `resp`. Each place that opens it (a grip, the
 /// bar's background, a floating title) keeps its own popup, so one menu
 /// never shows twice in a frame.

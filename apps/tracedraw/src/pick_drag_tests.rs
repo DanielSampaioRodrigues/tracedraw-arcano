@@ -8114,3 +8114,41 @@ fn a_wheel_notch_zooms_in_a_glide() {
         "{now:?} {page_at:?}"
     );
 }
+
+/// A right click on a button of the Standard toolbar opens the bar's
+/// menu, as one on its empty part does (#835).
+#[test]
+fn a_right_click_on_a_toolbar_button_opens_the_bar_menu() {
+    let (ctx, mut app, _) = setup();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let slot = app
+        .shown_bar_slots
+        .iter()
+        .find(|s| s.bar == crate::ui::bar_items::ItemBar::Standard)
+        .cloned()
+        .expect("the Standard toolbar");
+    let at = slot.items[1].center();
+    let menu =
+        egui::Id::new(("bar_background", crate::ui::bars::Bar::Standard as u8)).with("bar_menu");
+    assert!(!egui::Popup::is_id_open(&ctx, menu));
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(at)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, menu), "the bar's menu");
+}

@@ -2038,6 +2038,9 @@ pub struct ShortcutEditor {
 pub const TOOLBOX: &str = "toolbox";
 /// The commands category of the loaded VBA macros.
 pub const MACROS: &str = "macros";
+/// The commands category of the Standard and Zoom toolbars' own buttons
+/// (#836).
+pub const BUTTONS: &str = "toolbar_buttons";
 
 /// The user's shortcut for `id` (a menu key or a tool id).
 fn user_shortcut(app: &App, id: &str) -> Option<String> {
@@ -2153,7 +2156,7 @@ struct CommandItem {
 /// The rows of `category`, filtered by `filter` (lower case).
 fn command_items(app: &App, category: Option<&str>, filter: &str) -> Vec<CommandItem> {
     let mut out = Vec::new();
-    if category.is_none_or(|c| c != TOOLBOX) {
+    if category.is_none_or(|c| c != TOOLBOX && c != BUTTONS) {
         for e in &app.shortcut_editor.entries {
             let top = e.path.first().map(String::as_str);
             let is_macro = e.key.starts_with("menu.macro.");
@@ -2187,6 +2190,19 @@ fn command_items(app: &App, category: Option<&str>, filter: &str) -> Vec<Command
             });
         }
     }
+    // The bars' own buttons, so one taken off a bar can be put back
+    // (#836).
+    if category.is_none_or(|c| c == BUTTONS) {
+        for id in crate::ui::bar_items::all_buttons() {
+            out.push(CommandItem {
+                id: id.to_string(),
+                name: crate::ui::toolbar::item_name(id).unwrap_or_else(|| id.to_string()),
+                place: tr("options.toolbar_buttons"),
+                built_in: String::new(),
+                tool: None,
+            });
+        }
+    }
     if !filter.is_empty() {
         out.retain(|c| {
             c.name.to_lowercase().contains(filter) || c.place.to_lowercase().contains(filter)
@@ -2217,6 +2233,7 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
         None => tr("options.all_commands"),
         Some(TOOLBOX) => tr("menu.window.toolbar_toolbox"),
         Some(MACROS) => tr("options.macros_category"),
+        Some(BUTTONS) => tr("options.toolbar_buttons"),
         Some(k) => tr(k),
     };
     ui.horizontal(|ui| {
@@ -2239,6 +2256,11 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
                     &mut pick,
                     Some(MACROS.to_string()),
                     category_name(Some(MACROS)),
+                );
+                ui.selectable_value(
+                    &mut pick,
+                    Some(BUTTONS.to_string()),
+                    category_name(Some(BUTTONS)),
                 );
                 app.shortcut_editor.category = pick;
             });
@@ -2288,10 +2310,19 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
                 .as_ref()
                 .and_then(|s| items.iter().find(|c| &c.id == s))
                 .cloned();
+            // A bar's own button runs no command a key could take.
+            let button = selected
+                .as_ref()
+                .is_some_and(|c| c.tool.is_none() && crate::ui::bar_items::is_button(&c.id));
+            if button {
+                app.shortcut_editor.keys_tab = false;
+            }
             ui.horizontal(|ui| {
                 let keys = &mut app.shortcut_editor.keys_tab;
                 ui.selectable_value(keys, false, tr("options.general"));
-                ui.selectable_value(keys, true, tr("options.shortcut_keys"));
+                if !button {
+                    ui.selectable_value(keys, true, tr("options.shortcut_keys"));
+                }
             });
             ui.separator();
             match selected {
@@ -2311,9 +2342,10 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
 fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     // A command or a tool dragged onto the Standard or Zoom toolbar
     // joins it (#563).
+    let button = c.tool.is_none() && crate::ui::bar_items::is_button(&c.id);
     let item = match c.tool {
         Some(t) => Some(format!("{}{}", crate::ui::bar_items::TOOL, t.id())),
-        None => c.id.starts_with("menu.").then(|| c.id.clone()),
+        None => (c.id.starts_with("menu.") || button).then(|| c.id.clone()),
     };
     let (row, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), ROW_H),
@@ -2340,6 +2372,7 @@ fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     );
     match c.tool {
         Some(t) => crate::ui::icons::draw(ui.painter(), icon, t, Tokens::icon()),
+        None if button => crate::ui::bar_items::picture(ui.painter(), icon, &c.id, Tokens::icon()),
         None => {
             crate::ui::menus::draw_menu_picture(ui.painter(), icon, &c.id, Tokens::icon());
         }
@@ -3287,7 +3320,11 @@ mod tests {
             .any(|c| c.id == "menu.file.open" && c.built_in == "Ctrl+O"));
         assert!(file.iter().all(|c| c.tool.is_none()));
         assert_eq!(tools.len(), crate::tools::Tool::ALL.len());
-        assert_eq!(all.len(), app.shortcut_editor.entries.len() + tools.len());
+        let buttons = command_items(&app, Some(BUTTONS), "");
+        assert_eq!(
+            all.len(),
+            app.shortcut_editor.entries.len() + tools.len() + buttons.len()
+        );
         let found = command_items(&app, None, "open");
         assert!(!found.is_empty() && found.len() < all.len());
         // A user's key shows beside the built-in one (#822).
@@ -3340,6 +3377,48 @@ mod tests {
         remove_shortcut(&mut app, &tool);
         assert!(current_keys(&app, &tool).is_empty());
         assert!(!app.settings.shortcuts.iter().any(|(k, _)| k == &tool.id));
+    }
+
+    /// A button taken off a bar is listed under Toolbar buttons and goes
+    /// back on when dragged there; every built-in button has a name
+    /// (#836).
+    #[test]
+    fn a_removed_toolbar_button_can_be_put_back() {
+        use crate::ui::bar_items::{apply_drop, items, ItemBar, ItemDrag};
+        let mut app = app_with_commands();
+        let zoom = items(&app, ItemBar::Zoom);
+        let i = zoom
+            .iter()
+            .position(|x| x == "zoom_page")
+            .expect("on the bar");
+        // Dragged off the bar.
+        apply_drop(
+            &mut app,
+            &ItemDrag {
+                item: "zoom_page".into(),
+                from: Some((ItemBar::Zoom, i)),
+            },
+            None,
+        );
+        assert!(!items(&app, ItemBar::Zoom).contains(&"zoom_page".to_string()));
+        let buttons = command_items(&app, Some(BUTTONS), "");
+        assert!(buttons.iter().all(|c| c.name != c.id), "every button named");
+        let page = buttons
+            .iter()
+            .find(|c| c.id == "zoom_page")
+            .expect("listed");
+        assert_eq!(page.name, tr("toolbar.zoom_to_page"));
+        assert!(!command_items(&app, None, &page.name.to_lowercase()).is_empty());
+        // Dragged from the list back onto the bar.
+        apply_drop(
+            &mut app,
+            &ItemDrag {
+                item: page.id.clone(),
+                from: None,
+            },
+            Some((ItemBar::Zoom, i)),
+        );
+        assert_eq!(items(&app, ItemBar::Zoom), zoom);
     }
 
     #[test]

@@ -18,6 +18,8 @@ full, row-by-row status.
 - Brush Strokes (Preset, Brush, Calligraphic, Expression): a stroke stays the path drawn, open and made of a few curves, with the brush as its live outline, so its nodes can be edited afterwards and the brush follows; it was a closed shape of many straight pieces. Apply to curve keeps the curve. The Sprayer still makes objects. Pages of such outlines draw as quickly as before (#829).
 - Trim, Intersect and Weld with a picture as the target crop the picture to the result: its frame takes the shape and the picture shows inside it, also for a picture already cropped. The result was an empty curve that showed only in Wireframe (#827).
 - Options > Customization > Commands: a tool or command can have several shortcuts. A new key joins the ones it has (a built-in key keeps working beside it) instead of replacing them, and each key has its own Delete (#822).
+- Options > Customization > Commands has a Toolbar buttons list: every button of the Standard and Zoom toolbars (Zoom to Page, Fullscreen, Snap To and the others, and the separator). A button dragged off a bar can be dragged back from there; before, only Reset brought it back (#836).
+- A right click anywhere on the Standard or Property bar, on its buttons and boxes too, opens the bar's menu, as on the toolbox (#835).
 
 ## 0.19.0 (2026-10-25)
 

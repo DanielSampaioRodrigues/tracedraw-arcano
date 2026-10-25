@@ -398,6 +398,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             bars::grip(app, ui, Bar::Standard, true);
             overflow::row(ui, "standard", |ui| toolbar::standard_toolbar(app, ui));
         });
+        bars::menu_anywhere(app, ui, Bar::Standard);
     };
     let property = |app: &mut App, ui: &mut Ui| {
         bars::background(app, ui, Bar::Property);
@@ -405,6 +406,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             bars::grip(app, ui, Bar::Property, true);
             overflow::row(ui, "property", |ui| toolbar::property_bar(app, ui));
         });
+        bars::menu_anywhere(app, ui, Bar::Property);
     };
     let status_dock = bars_layout.dock(Bar::Status);
     let status_panel = |app: &mut App, ui: &mut Ui, panel: Panel| {
