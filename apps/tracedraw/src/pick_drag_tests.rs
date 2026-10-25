@@ -7077,12 +7077,87 @@ fn the_dimension_options_stay_open_while_typed_in() {
     let at = Pos2::new(area.max.x - 50.0, area.min.y + 34.0);
     click_at(&ctx, &mut app, at, Modifiers::NONE);
     assert!(egui::Popup::is_id_open(&ctx, menu), "open after the click");
+/// The property bar's wrap style list starts with None, as the reference
+/// program's does: it is marked while the selection does not wrap text,
+/// and a click on it stops the selection wrapping (#661).
+#[test]
+fn the_wrap_style_list_starts_with_none() {
+    let (ctx, mut app, id) = setup();
+    app.set_wrap_style(
+        tracedraw_core::WrapMode::Square,
+        tracedraw_core::WrapSide::Left,
+    );
+    assert!(app.wrap_state().0);
+    let texts = |app: &mut App| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        let mut all: Vec<(String, Pos2)> = Vec::new();
+        fn walk(s: &egui::Shape, all: &mut Vec<(String, Pos2)>) {
+            match s {
+                egui::Shape::Text(t) => all.push((
+                    t.galley.text().to_string(),
+                    t.pos + t.galley.rect.center().to_vec2(),
+                )),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, all)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut all));
+        all
+    };
+    // The small arrows of the property bar: the one that opens the wrap
+    // styles.
+    let arrows: Vec<Pos2> = texts(&mut app)
+        .into_iter()
+        .filter(|(t, p)| t == "\u{25BE}" && p.y < 140.0)
+        .map(|(_, p)| p)
+        .collect();
+    let mut opened = None;
+    for a in arrows {
+        click_at(&ctx, &mut app, a, Modifiers::NONE);
+        let now = texts(&mut app);
+        if now.iter().any(|(t, _)| t == "Text flows left") {
+            opened = now.into_iter().find(|(t, _)| t == "None").map(|(_, p)| p);
+            break;
+        }
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(egui::Key::Escape, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+    }
+    let none = opened.expect("the wrap style list with None");
+    let shown: Vec<String> = texts(&mut app).into_iter().map(|(t, _)| t).collect();
+    for heading in ["Wrap style", "Contour", "Square", "Above/below"] {
+        assert!(shown.iter().any(|t| t == heading), "{heading}: {shown:?}");
+    }
+    click_at(&ctx, &mut app, none, Modifiers::NONE);
+    assert!(!app.wrap_state().0, "wrapping is off");
+    assert!(!app.doc().find_shape(id).expect("rect").wrap_text);
+    // The offset is greyed out under None: typing there does not turn
+    // wrapping back on.
+    let label = texts(&mut app)
+        .into_iter()
+        .find(|(t, _)| t == "Text wrap offset:")
+        .map(|(_, p)| p)
+        .expect("the offset field, still in the open list");
+    let field = label + egui::vec2(90.0, 0.0);
+    click_at(&ctx, &mut app, field, Modifiers::NONE);
     frame(
         &ctx,
         &mut app,
         vec![
             key(egui::Key::A, Modifiers::COMMAND),
             Event::Text("3".into()),
+            Event::Text("7".into()),
             key(egui::Key::Enter, Modifiers::NONE),
         ],
         Modifiers::NONE,
@@ -7305,4 +7380,5 @@ fn a_chosen_segments_handles_drag() {
     assert!(near(at[0], Point::new(100.0, 150.0)), "{at:?}");
     assert!(near(at[1], Point::new(140.0, 170.0)), "{at:?}");
     assert!(near(at[2], Point::new(180.0, 170.0)), "{at:?}");
+    assert!(!app.wrap_state().0, "still off");
 }

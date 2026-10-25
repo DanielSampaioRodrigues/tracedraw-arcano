@@ -3153,18 +3153,49 @@ fn wrap_style_list(app: &mut App, ui: &mut Ui) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .width(260.0)
         .show(|ui| {
-            for (mode, side) in tracedraw_core::TextWrap::STYLES {
-                let here = on && current.mode == mode && current.side == side;
-                if ui
-                    .selectable_label(here, tr(wrap_style_key(mode, side)))
-                    .clicked()
-                {
-                    app.set_wrap_style(mode, side);
+            // As the reference program lists them (#661): a title, None,
+            // the contour and the square styles under their headings, and
+            // the offset, greyed out while nothing wraps (typing one
+            // would turn wrapping back on).
+            ui.label(egui::RichText::new(tr("context.wrap_style")).strong());
+            if ui.selectable_label(!on, tr("context.wrap_none")).clicked() && on {
+                let shapes = app.selection.clone();
+                app.run(tracedraw_core::Command::SetWrapText {
+                    shapes,
+                    wrap: false,
+                });
+            }
+            use tracedraw_core::WrapMode;
+            for (heading, contour) in [
+                ("context.wrap_contour", true),
+                ("context.wrap_square", false),
+            ] {
+                ui.separator();
+                ui.label(egui::RichText::new(tr(heading)).strong());
+                for (mode, side) in tracedraw_core::TextWrap::STYLES {
+                    if (mode == WrapMode::Contour) != contour {
+                        continue;
+                    }
+                    let here = on && current.mode == mode && current.side == side;
+                    if ui.selectable_label(here, tr(wrap_side_key(side))).clicked() {
+                        app.set_wrap_style(mode, side);
+                    }
                 }
             }
             ui.separator();
-            wrap_offset_field(app, ui, current.offset);
+            ui.add_enabled_ui(on, |ui| wrap_offset_field(app, ui, current.offset));
         });
+}
+
+/// A wrap style's side under its Contour or Square heading.
+fn wrap_side_key(side: tracedraw_core::WrapSide) -> &'static str {
+    use tracedraw_core::WrapSide as S;
+    match side {
+        S::Left => "context.wrap_flows_left",
+        S::Right => "context.wrap_flows_right",
+        S::Straddle => "context.wrap_straddle",
+        S::AboveBelow => "context.wrap_above_below",
+    }
 }
 
 /// The text wrap offset field (property bar list and context menu).
