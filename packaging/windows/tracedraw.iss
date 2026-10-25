@@ -19,6 +19,9 @@ AppPublisher=Ighor Toth; Edicao Editora Arcano 3
 AppCopyright=Copyright (c) 2026 Ighor Toth and the TraceDraw contributors
 AppPublisherURL=https://github.com/igtoth/tracedraw
 CloseApplications=yes
+; Arcano edition: every install leaves a log (%TEMP%\Setup Log *.txt), so
+; an update that did not take can be looked into.
+SetupLogging=yes
 RestartApplications=no
 DefaultDirName={autopf}\TraceDraw
 DefaultGroupName=TraceDraw
