@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.19.0 (2026-10-25)
+
 - Opening `.cdr`: blends from versions 9 and X3 (and others storing them the same way) show their steps as a live blend between the two end objects; only the two ends were drawn before (#597).
 - Print Merge: Add Column for a Number asks for its digits, starting value, "Continually increment value" with its step and an ending value; with an ending value the records from the start to the end are made at once, for serial, ticket or roll numbers without a data file (#791).
 - Windows: printing to a printer from the Print dialog works. A print of one sheet, the usual case, failed before anything reached the printer, local or on the network, because the list of sheet sizes flattened in the PowerShell script; nothing came out and the spooler showed no job. The script also shows no "Printing page" box, gives up after five minutes instead of hanging, and writes what came of each print to `tracedraw.log` (#614).
