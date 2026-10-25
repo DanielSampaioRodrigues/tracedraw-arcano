@@ -5652,6 +5652,12 @@ impl App {
                 if cdr_version.is_some() {
                     self.apply_open_policy();
                 }
+                // A template starts a new drawing: it saves in the version
+                // Options sets, not the template's own (#613).
+                if is_template_path(&path) {
+                    self.cdr_version = None;
+                    self.cdr_unsaved_version = None;
+                }
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"
