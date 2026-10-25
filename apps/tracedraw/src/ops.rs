@@ -1590,7 +1590,7 @@ mod curves_and_target_tests {
     }
 
     /// An ellipse converts to one closed curve of four nodes, at its
-    /// right, bottom, left and top, each smooth (#625).
+    /// right, top, left and bottom, each smooth (#625).
     #[test]
     fn an_ellipse_becomes_a_closed_curve_of_four_nodes() {
         let mut app = App::headless();

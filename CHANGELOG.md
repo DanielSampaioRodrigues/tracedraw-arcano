@@ -16,6 +16,7 @@ full, row-by-row status.
 - Save As starts at a drawing's own `.cdr` version when it was opened from a `.cdr` file, and at the version of Options > Global > File Formats otherwise; the hint there now says what the version and the Save new drawings as .cdr box do, and Save As no longer shows a meaningless "Version: v0" for TraceDraw files (#613).
 - The wheel over the outline width box steps once per notch: a touchpad's small movements add up instead of running through the whole list, and a browser's notch (100 points or 3 lines) is one step, not two or three (#663).
 - Editing a symmetry ends when another drawing comes to the front or a new one opens; the mode and its "Editing the symmetry" message in the status bar stayed on over the next drawing (#442).
+- The Convert to Curves page says that a whole ellipse becomes four symmetrical nodes, as its checks and the test already did, and names the nodes in the drawing's Y-up order: right, top, left and bottom (#625).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 
@@ -95,7 +96,7 @@ full, row-by-row status.
 
 - Autofit Page: the popup has a Live preview check box. On (as before), the page shows the size it would get while the margin is typed; off, the page stays as it is until Autofit Page is clicked. The choice is kept (#659).
 
-- An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, bottom, left and top. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).
+- An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, top, left and bottom. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).
 
 - Save As now starts at the `.cdr` version chosen in Options > Global > File Formats instead of always offering version 27. A new option there, Save new drawings as .cdr files, makes Save As start at the CDR type for a drawing without a file (#613).
 
