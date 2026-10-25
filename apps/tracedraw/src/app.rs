@@ -886,8 +886,12 @@ pub struct App {
     /// The last vector object's picture without its bitmap effects, by its
     /// id and state (see `App::vector_base_cached`).
     #[allow(clippy::type_complexity)]
-    pub vector_fx_base:
-        std::cell::RefCell<Option<((ShapeId, u64), (Vec<u8>, u32, u32, tracedraw_core::Rect))>>,
+    pub vector_fx_base: std::cell::RefCell<
+        Option<(
+            (ShapeId, u64),
+            (tracedraw_core::SharedBytes, u32, u32, tracedraw_core::Rect),
+        )>,
+    >,
     /// File > GitHub's session: the token, the request out, the history.
     pub github: crate::github::GithubSession,
     /// The `.cdr` version the active drawing is saved in: the version of

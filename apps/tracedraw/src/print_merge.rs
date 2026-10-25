@@ -115,7 +115,7 @@ pub fn place(area: Rect, w: f64, h: f64, scale: Scale, anchor: u8) -> Rect {
 /// A picture field's picture: the PNG, its size in pixels and in mm.
 #[derive(Clone)]
 pub struct Picture {
-    pub png: Vec<u8>,
+    pub png: tracedraw_core::SharedBytes,
     pub px: (u32, u32),
     pub mm: (f64, f64),
 }
@@ -225,7 +225,7 @@ pub fn picture_in(value: &str, dirs: &[std::path::PathBuf]) -> Option<Picture> {
     let png = crate::bitmap_fx::encode(&img)?;
     let (w, h) = img.dimensions();
     Some(Picture {
-        png,
+        png: png.into(),
         px: (w, h),
         mm: (w as f64 * 25.4 / dx, h as f64 * 25.4 / dy),
     })

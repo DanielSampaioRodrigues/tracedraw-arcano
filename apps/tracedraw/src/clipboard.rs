@@ -281,7 +281,7 @@ impl App {
     }
 
     /// The selected bitmap's PNG, its effects included.
-    pub fn selected_bitmap_png(&self) -> Option<Vec<u8>> {
+    pub fn selected_bitmap_png(&self) -> Option<tracedraw_core::SharedBytes> {
         let id = self.selected_bitmap()?;
         match &self.doc().find_shape(id)?.kind {
             ShapeKind::Bitmap { png, .. } => Some(png.clone()),
@@ -393,7 +393,7 @@ impl App {
                 rect,
                 width_px: w,
                 height_px: h,
-                png,
+                png: png.into(),
                 fx: None,
             },
         });
@@ -626,7 +626,7 @@ mod linked_watch_tests {
                 rect: Rect::new(10.0, 10.0, 30.0, 30.0),
                 width_px: 2,
                 height_px: 2,
-                png: png(2, 2),
+                png: png(2, 2).into(),
                 fx: None,
             })
             .expect("bitmap");

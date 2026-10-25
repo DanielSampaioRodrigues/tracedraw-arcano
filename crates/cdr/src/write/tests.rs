@@ -223,7 +223,7 @@ fn groups_bitmaps_and_several_pages_round_trip() {
             rect: Rect::new(100.0, 50.0, 140.0, 90.0),
             width_px: 2,
             height_px: 2,
-            png,
+            png: png.into(),
             fx: None,
         },
     );
@@ -316,7 +316,7 @@ fn a_clipped_bitmap_round_trips_as_a_crop_path() {
             rect: Rect::new(0.0, 0.0, 100.0, 50.0),
             width_px: 4,
             height_px: 4,
-            png,
+            png: png.into(),
             fx: None,
         },
     );
@@ -2096,7 +2096,7 @@ fn fills_not_written_yet_go_out_as_their_mean_colour() {
         ),
         (
             Fill::Pattern(Pattern::Bitmap {
-                png: tile,
+                png: tile.into(),
                 width_px: 2,
                 height_px: 1,
                 size_mm: 5.0,
@@ -2221,7 +2221,7 @@ fn bitmap_objects_carry_their_pixel_size() {
             rect: Rect::new(0.0, 0.0, 30.0, 20.0),
             width_px: 3,
             height_px: 2,
-            png,
+            png: png.into(),
             fx: None,
         },
     );

@@ -643,8 +643,7 @@ pub enum ShapeKind {
         rect: Rect,
         width_px: u32,
         height_px: u32,
-        #[serde(with = "png_bytes")]
-        png: Vec<u8>,
+        png: crate::SharedBytes,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fx: Option<Box<BitmapFxStack>>,
     },
@@ -674,8 +673,7 @@ pub struct BitmapFxStack {
     pub rect: Rect,
     pub width_px: u32,
     pub height_px: u32,
-    #[serde(with = "png_bytes")]
-    pub png: Vec<u8>,
+    pub png: crate::SharedBytes,
     pub effects: Vec<BitmapEffect>,
 }
 
@@ -1906,8 +1904,7 @@ pub struct RasterFx {
     pub width_px: u32,
     pub height_px: u32,
     /// The object with its visible effects; empty until made.
-    #[serde(with = "png_bytes")]
-    pub png: Vec<u8>,
+    pub png: crate::SharedBytes,
     /// A fingerprint of what the picture was made from (see
     /// [`Shape::raster_source`]); another one means it is out of date.
     #[serde(default)]
@@ -2145,7 +2142,7 @@ impl Shape {
         let (sx, sy) = transform_scale(c.transform);
         c.transform = Affine::IDENTITY;
         if let Some(fx) = c.raster_fx.as_mut() {
-            fx.png.clear();
+            fx.png = Default::default();
             fx.source = 0;
             fx.rect = Rect::ZERO;
             fx.width_px = 0;
@@ -4936,7 +4933,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 20.0, 10.0),
             width_px: 4,
             height_px: 2,
-            png: vec![1, 2, 3, 4],
+            png: vec![1, 2, 3, 4].into(),
             fx,
         };
         let mut params = std::collections::BTreeMap::new();
@@ -4945,7 +4942,7 @@ mod tests {
             rect: Rect::new(1.0, 1.0, 19.0, 9.0),
             width_px: 3,
             height_px: 1,
-            png: vec![9, 8, 7],
+            png: vec![9, 8, 7].into(),
             effects: vec![
                 BitmapEffect {
                     id: "gaussian_blur".into(),

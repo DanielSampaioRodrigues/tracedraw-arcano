@@ -1384,7 +1384,9 @@ impl App {
 
     // ----- bitmaps -------------------------------------------------------------------
 
-    pub(crate) fn bitmap_shapes(&self) -> Vec<(ShapeId, Rect, u32, u32, Vec<u8>)> {
+    pub(crate) fn bitmap_shapes(
+        &self,
+    ) -> Vec<(ShapeId, Rect, u32, u32, tracedraw_core::SharedBytes)> {
         self.selected_shapes()
             .into_iter()
             .filter_map(|s| match s.kind {
@@ -1410,7 +1412,7 @@ impl App {
                 rect,
                 width_px: img.width(),
                 height_px: img.height(),
-                png,
+                png: png.into(),
                 fx: None,
             },
         });
@@ -1465,7 +1467,7 @@ impl App {
                     rect: Rect::new(x0, y0, x0 + nw as f64 * mx, y0 + nh as f64 * my),
                     width_px: nw,
                     height_px: nh,
-                    png,
+                    png: png.into(),
                     fx: None,
                 },
             });
@@ -1635,7 +1637,7 @@ impl App {
                 rect: bounds,
                 width_px: w,
                 height_px: h,
-                png,
+                png: png.into(),
                 fx: None,
             },
         );
@@ -1664,7 +1666,7 @@ impl App {
             return;
         };
         let fill = Fill::Pattern(tracedraw_core::style::Pattern::Bitmap {
-            png,
+            png: png.into(),
             width_px,
             height_px,
             size_mm: bounds.width().max(0.1),
@@ -3755,7 +3757,7 @@ mod tests {
                 rect: Rect::new(0.0, 0.0, 40.0, 20.0),
                 width_px: 40,
                 height_px: 20,
-                png,
+                png: png.into(),
                 fx: None,
             })
             .expect("bitmap");

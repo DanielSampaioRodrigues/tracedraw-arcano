@@ -1693,7 +1693,7 @@ mod bitmap_node_tests {
             rect: Rect::new(10.0, 10.0, 50.0, 40.0),
             width_px: 2,
             height_px: 2,
-            png,
+            png: png.into(),
             fx: None,
         })
         .expect("picture")

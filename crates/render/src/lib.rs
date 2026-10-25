@@ -4229,7 +4229,7 @@ mod band_tests {
                 rect: Rect::new(0.0, 0.0, 100.0, 100.0),
                 width_px: 37,
                 height_px: 23,
-                png: png.clone(),
+                png: png.clone().into(),
                 fx: None,
             },
         );

@@ -712,8 +712,7 @@ pub enum Pattern {
     },
     /// Tiled PNG, `size_mm` is the tile width; height follows the aspect ratio.
     Bitmap {
-        #[serde(with = "crate::document::png_bytes")]
-        png: Vec<u8>,
+        png: crate::SharedBytes,
         width_px: u32,
         height_px: u32,
         size_mm: f64,
