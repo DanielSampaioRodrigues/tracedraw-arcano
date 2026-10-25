@@ -1938,6 +1938,9 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Wheel movement in points that makes one notch (one line).
+const WHEEL_POINTS_PER_NOTCH: f32 = 50.0;
+
 /// Outline widths the list offers in millimetres.
 pub(crate) const OUTLINE_WIDTHS_MM: [f64; 10] =
     [0.1, 0.2, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
@@ -2140,23 +2143,68 @@ fn outline_width_box(
         resp.rect.union(arrow_rect)
     });
     let anchor = inner.inner;
-    // The wheel over the closed list: the next width up or down (#663).
+    // The wheel over the closed list: the next width up or down, one step
+    // per notch (#663). An event of a notch or more is one step whatever
+    // its size (browsers send a notch as 100 points or 3 lines); parts of
+    // a notch from a touchpad or a fine wheel add up until they make one,
+    // and start again when the wheel turns the other way or the pointer
+    // leaves the box.
+    let acc_id = id.with("wheel");
     if wheel && !egui::Popup::is_id_open(&ctx, popup_id) && ui.rect_contains_pointer(anchor) {
-        let step = ui.input(|i| {
-            i.raw.events.iter().rev().find_map(|e| match e {
-                egui::Event::MouseWheel { delta, .. } if delta.y != 0.0 => Some(delta.y),
-                _ => None,
-            })
+        let deltas: Vec<f32> = ui.input(|i| {
+            i.raw
+                .events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::MouseWheel { unit, delta, .. } if delta.y != 0.0 => {
+                        Some(match unit {
+                            egui::MouseWheelUnit::Line if delta.y.abs() >= 1.0 => delta.y.signum(),
+                            egui::MouseWheelUnit::Line => delta.y,
+                            egui::MouseWheelUnit::Point
+                                if delta.y.abs() >= WHEEL_POINTS_PER_NOTCH =>
+                            {
+                                delta.y.signum()
+                            }
+                            egui::MouseWheelUnit::Point => delta.y / WHEEL_POINTS_PER_NOTCH,
+                            egui::MouseWheelUnit::Page => delta.y.signum(),
+                        })
+                    }
+                    _ => None,
+                })
+                .collect()
         });
-        if let Some(dy) = step {
+        if !deltas.is_empty() {
             ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
-            // A width being typed goes; the step counts from the one held.
-            ui.data_mut(|d| d.remove::<String>(id));
-            ui.memory_mut(|m| m.surrender_focus(id));
-            if let Some(w) = outline_width_step(width, dy > 0.0, app.outline_units()) {
-                picked = Some(w);
+            let mut acc = ui.data(|d| d.get_temp::<f32>(acc_id)).unwrap_or(0.0);
+            let mut steps = 0i32;
+            for d in deltas {
+                if acc != 0.0 && acc.signum() != d.signum() {
+                    acc = 0.0;
+                }
+                acc += d;
+                let whole = acc.trunc();
+                steps += whole as i32;
+                acc -= whole;
+            }
+            ui.data_mut(|d| d.insert_temp(acc_id, acc));
+            if steps != 0 {
+                // A width being typed goes; the step counts from the one held.
+                ui.data_mut(|d| d.remove::<String>(id));
+                ui.memory_mut(|m| m.surrender_focus(id));
+                let mut w = width;
+                for _ in 0..steps.unsigned_abs().min(64) {
+                    match outline_width_step(w, steps > 0, app.outline_units()) {
+                        Some(next) => w = next,
+                        None => break,
+                    }
+                }
+                if w != width {
+                    picked = Some(w);
+                }
             }
         }
+    } else {
+        ui.data_mut(|d| d.remove::<f32>(acc_id));
     }
     egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
         .open_memory(None)
@@ -3562,11 +3610,40 @@ mod tests {
         wheel(&mut app, -1.0);
         assert_eq!(width(&app), Some(p[1]));
         assert_eq!(app.engine.history_labels().0.len(), depth + 3);
+        // Parts of a notch (a touchpad, a fine wheel) add up: a quarter
+        // does nothing, four of them make one step.
+        for _ in 0..3 {
+            wheel(&mut app, 0.25);
+            assert_eq!(width(&app), Some(p[1]));
+        }
+        wheel(&mut app, 0.25);
+        assert_eq!(width(&app), Some(p[2]));
+        // A notch of three lines (Firefox) or 100 points (Chrome) is one
+        // step.
+        wheel(&mut app, 3.0);
+        assert_eq!(width(&app), Some(p[3]));
+        run(&mut app, vec![egui::Event::PointerMoved(field.center())]);
+        run(
+            &mut app,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(width(&app), Some(p[4]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 6);
+        // Turning back drops the part of a notch gathered so far.
+        wheel(&mut app, 0.75);
+        wheel(&mut app, -0.5);
+        wheel(&mut app, 0.5);
+        assert_eq!(width(&app), Some(p[4]));
         // Nothing selected: nothing changes, nothing is asked.
         app.select(Vec::new());
         wheel(&mut app, 1.0);
-        assert_eq!(width(&app), Some(p[1]));
-        assert_eq!(app.engine.history_labels().0.len(), depth + 3);
+        assert_eq!(width(&app), Some(p[4]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 6);
         assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
     }
 

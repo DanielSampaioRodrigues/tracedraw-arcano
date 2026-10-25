@@ -14,6 +14,7 @@ full, row-by-row status.
 - The OpenGL renderer now opens on graphics cards with OpenGL 2.1 only, such as the Intel HD Graphics of 2010 PCs: after OpenGL 3.3 and OpenGL ES it asks for a compatibility context, so such a PC draws on its card instead of the CPU's software adapter. The font list on the property bar no longer copies every font name on each frame while it is closed, which cost about 0.1 to 0.25 ms a frame with 1300 font families (#616).
 - Tracing: neighbouring colour regions now overlap by 2 px under the lighter one, so no white hairlines of the page show between them; thin anti-aliased bands between two colours go to those colours instead of becoming slivers (#611).
 - Save As starts at a drawing's own `.cdr` version when it was opened from a `.cdr` file, and at the version of Options > Global > File Formats otherwise; the hint there now says what the version and the Save new drawings as .cdr box do, and Save As no longer shows a meaningless "Version: v0" for TraceDraw files (#613).
+- The wheel over the outline width box steps once per notch: a touchpad's small movements add up instead of running through the whole list, and a browser's notch (100 points or 3 lines) is one step, not two or three (#663).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 
