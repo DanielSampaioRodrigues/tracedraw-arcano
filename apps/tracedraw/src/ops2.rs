@@ -181,8 +181,9 @@ impl App {
     // ----- layout ----------------------------------------------------------------
 
     /// Layout > Insert Page Number: an artistic text "1", "2"... on the
-    /// chosen pages (bottom centre), updated through the symbol-like
-    /// name "page-number" so future renumbering can find it.
+    /// chosen pages (bottom centre), named "page-number". With a master
+    /// layer active it is one field on that layer that shows the number
+    /// of each page it is drawn on (#807).
     pub fn insert_page_number(&mut self, where_: PageNumberWhere) {
         let pages: Vec<(usize, tracedraw_core::PageId)> = self
             .doc()
@@ -192,8 +193,31 @@ impl App {
             .map(|(i, p)| (i, p.id))
             .collect();
         let active = self.page;
+        let master = self
+            .active_layer()
+            .and_then(|l| self.doc().master.iter().find(|m| m.id == l))
+            .map(|m| (m.id, m.scope));
         let mut cmds = Vec::new();
-        for (i, pid) in pages {
+        if let Some((layer, scope)) = master {
+            // The field lines up as on the page in view, or on the first
+            // page the layer shows on when that is not one of them.
+            let i = pages
+                .iter()
+                .position(|(_, p)| *p == active)
+                .filter(|i| scope.applies(*i))
+                .or_else(|| (0..pages.len()).find(|i| scope.applies(*i)))
+                .unwrap_or(0);
+            let size = pages
+                .get(i)
+                .and_then(|(_, p)| self.doc().page(*p).ok())
+                .map(|p| p.size);
+            if let Some(size) = size {
+                let mut s = self.page_number_text(i, size);
+                s.page_number = Some(self.page_numbers.field());
+                cmds.push(Command::AddShape { layer, shape: s });
+            }
+        }
+        for (i, pid) in pages.into_iter().filter(|_| master.is_none()) {
             let wanted = match where_ {
                 PageNumberWhere::Active => pid == active,
                 PageNumberWhere::All => true,
@@ -210,52 +234,7 @@ impl App {
                 continue;
             };
             let size = page.size;
-            let id = self.engine.new_shape_id();
-            let pn = &self.page_numbers;
-            let text = pn.label(i);
-            let em = pn.size_pt * 25.4 / 72.0;
-            let margin = 10.0;
-            // Outer corner: left on even (left-hand) pages, right on odd pages.
-            let left_page = i % 2 == 1;
-            let (origin, align) = match pn.position {
-                1 | 3 => {
-                    let y = if pn.position == 1 {
-                        margin
-                    } else {
-                        size.height - margin - em
-                    };
-                    if left_page {
-                        (Point::new(margin, y), tracedraw_core::TextAlign::Left)
-                    } else {
-                        (
-                            Point::new(size.width - margin, y),
-                            tracedraw_core::TextAlign::Right,
-                        )
-                    }
-                }
-                2 => (
-                    Point::new(size.width / 2.0, size.height - margin - em),
-                    tracedraw_core::TextAlign::Center,
-                ),
-                _ => (
-                    Point::new(size.width / 2.0, margin),
-                    tracedraw_core::TextAlign::Center,
-                ),
-            };
-            let mut s = Shape::new(
-                id,
-                ShapeKind::Text {
-                    spans: vec![TextSpan::new(text, self.text_font.clone(), pn.size_pt)],
-                    origin,
-                    frame: None,
-                    align,
-                    para: Default::default(),
-                    on_path: None,
-                },
-            );
-            s.name = Some("page-number".into());
-            s.fill = Fill::Solid(Color::BLACK);
-            s.stroke = None;
+            let s = self.page_number_text(i, size);
             cmds.push(Command::AddShape { layer, shape: s });
         }
         if !cmds.is_empty() {
@@ -263,6 +242,58 @@ impl App {
                 self.status = e.to_string();
             }
         }
+    }
+
+    /// The page number text for the page at `i` of `size`, placed as the
+    /// page number settings say.
+    fn page_number_text(&mut self, i: usize, size: tracedraw_core::geometry::Size) -> Shape {
+        let id = self.engine.new_shape_id();
+        let pn = &self.page_numbers;
+        let text = pn.label(i);
+        let em = pn.size_pt * 25.4 / 72.0;
+        let margin = 10.0;
+        // Outer corner: left on even (left-hand) pages, right on odd pages.
+        let left_page = i % 2 == 1;
+        let (origin, align) = match pn.position {
+            1 | 3 => {
+                let y = if pn.position == 1 {
+                    margin
+                } else {
+                    size.height - margin - em
+                };
+                if left_page {
+                    (Point::new(margin, y), tracedraw_core::TextAlign::Left)
+                } else {
+                    (
+                        Point::new(size.width - margin, y),
+                        tracedraw_core::TextAlign::Right,
+                    )
+                }
+            }
+            2 => (
+                Point::new(size.width / 2.0, size.height - margin - em),
+                tracedraw_core::TextAlign::Center,
+            ),
+            _ => (
+                Point::new(size.width / 2.0, margin),
+                tracedraw_core::TextAlign::Center,
+            ),
+        };
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![TextSpan::new(text, self.text_font.clone(), pn.size_pt)],
+                origin,
+                frame: None,
+                align,
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        s.name = Some("page-number".into());
+        s.fill = Fill::Solid(Color::BLACK);
+        s.stroke = None;
+        s
     }
 
     // ----- order -------------------------------------------------------------------
@@ -3222,6 +3253,45 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Insert Page Number with a master layer active puts one field on
+    /// that layer, which shows each page's own number where pages are
+    /// drawn (screen, print, export) and stays a field when saved (#807);
+    /// the pages get nothing of their own.
+    #[test]
+    fn a_page_number_on_the_master_layer_numbers_every_page() {
+        let mut app = App::headless();
+        app.add_page();
+        app.add_page();
+        crate::ui::objects_docker::new_master_layer(&mut app, tracedraw_core::MasterScope::All);
+        app.page_numbers.prefix = "p. ".into();
+        app.insert_page_number(PageNumberWhere::Active);
+        let doc = app.doc().clone();
+        assert_eq!(doc.master[0].shapes.len(), 1);
+        assert!(doc
+            .pages
+            .iter()
+            .all(|p| p.layers.iter().all(|l| l.shapes.is_empty())));
+        let shown: Vec<String> = doc
+            .pages
+            .iter()
+            .map(|p| {
+                let layers = doc.layers_drawn_for_page(p.id).expect("layers");
+                match &layers[0].shapes[0].kind {
+                    ShapeKind::Text { spans, .. } => tracedraw_core::document::spans_text(spans),
+                    k => panic!("{k:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(shown, ["p. 1", "p. 2", "p. 3"]);
+        // Saved and opened again, it is still a field.
+        let json = doc.to_json().expect("save");
+        let back = tracedraw_core::Document::from_json(&json).expect("open");
+        assert_eq!(
+            back.master[0].shapes[0].page_number,
+            Some(app.page_numbers.field())
+        );
+    }
 
     /// While Autofit Page's popup is open the page it would make is the
     /// drawing's bounds and the margin; a value left from frames before

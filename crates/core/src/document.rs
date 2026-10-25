@@ -1706,6 +1706,10 @@ pub struct Shape {
     /// Object data fields (name/value), like the Object Data docker.
     #[serde(default)]
     pub data: Vec<(String, String)>,
+    /// A text that shows the number of the page it is drawn on (Layout >
+    /// Insert Page Number on a master layer, #807).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_number: Option<PageNumberField>,
     /// Live effects, evaluated at render time (see `live.rs`).
     #[serde(default)]
     pub effects: Vec<crate::live::Effect>,
@@ -2045,6 +2049,7 @@ impl Shape {
             overprint_outline: false,
             link: None,
             data: Vec::new(),
+            page_number: None,
             effects: Vec::new(),
             wrap_text: false,
             wrap_style: crate::text_flow::TextWrap::default(),
@@ -3361,6 +3366,110 @@ impl PrimaryColorMode {
     }
 }
 
+/// How a page number field shows the number (Layout > Insert Page
+/// Number): the number of the first page, the style and the text around
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageNumberField {
+    pub start_at: i64,
+    /// 0 arabic, 1 upper roman, 2 lower roman, 3 upper alpha, 4 lower alpha.
+    pub style: u8,
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub suffix: String,
+}
+
+impl PageNumberField {
+    /// The text for the page at `index` (0-based).
+    pub fn label(&self, index: usize) -> String {
+        let n = self.start_at + index as i64;
+        let body = match self.style {
+            1 => roman(n),
+            2 => roman(n).to_lowercase(),
+            3 => alpha(n),
+            4 => alpha(n).to_lowercase(),
+            _ => n.to_string(),
+        };
+        format!("{}{}{}", self.prefix, body, self.suffix)
+    }
+}
+
+fn roman(mut n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    const T: [(i64, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (v, s) in T {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
+}
+
+fn alpha(n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    // A..Z, then AA, AB... like spreadsheet columns.
+    let mut n = n - 1;
+    let mut out = Vec::new();
+    loop {
+        out.push((b'A' + (n % 26) as u8) as char);
+        n /= 26;
+        if n == 0 {
+            break;
+        }
+        n -= 1;
+    }
+    out.iter().rev().collect()
+}
+
+impl Shape {
+    /// This object, or one inside it, is a page number field.
+    pub fn holds_page_number(&self) -> bool {
+        self.page_number.is_some()
+            || match &self.kind {
+                ShapeKind::Group { children } => children.iter().any(Shape::holds_page_number),
+                _ => false,
+            }
+    }
+
+    /// Page number fields in this object show the number of the page at
+    /// `index` (0-based).
+    pub fn show_page_number(&mut self, index: usize) {
+        if let (Some(f), ShapeKind::Text { spans, .. }) = (&self.page_number, &mut self.kind) {
+            let label = f.label(index);
+            spans.truncate(1);
+            if let Some(first) = spans.first_mut() {
+                first.text = label;
+            }
+        }
+        if let ShapeKind::Group { children } = &mut self.kind {
+            for c in children {
+                c.show_page_number(index);
+            }
+        }
+    }
+}
+
 impl Layer {
     pub fn master(id: LayerId, name: impl Into<String>, scope: MasterScope) -> Self {
         let mut l = Layer::new(id, name);
@@ -4077,13 +4186,10 @@ impl Document {
     }
 
     /// Layers drawn for a page, bottom to top: applicable master layers,
-    /// then the page's own layers.
+    /// then the page's own layers, as they are stored (what clicks and
+    /// selections take objects from).
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
-        let idx = self
-            .pages
-            .iter()
-            .position(|p| p.id == page)
-            .ok_or(Error::PageNotFound(page))?;
+        let idx = self.page_index(page)?;
         let mut out: Vec<&Layer> = self
             .master
             .iter()
@@ -4091,6 +4197,37 @@ impl Document {
             .collect();
         out.extend(self.pages[idx].layers.iter());
         Ok(out)
+    }
+
+    /// [`Document::layers_for_page`] as drawn, printed and exported: a
+    /// master layer holding a page number field comes as a copy showing
+    /// this page's number (#807).
+    pub fn layers_drawn_for_page(&self, page: PageId) -> Result<Vec<std::borrow::Cow<'_, Layer>>> {
+        use std::borrow::Cow;
+        let idx = self.page_index(page)?;
+        Ok(self
+            .layers_for_page(page)?
+            .into_iter()
+            .map(|l| {
+                let master = self.master.iter().any(|m| m.id == l.id);
+                if master && l.shapes.iter().any(Shape::holds_page_number) {
+                    let mut l = l.clone();
+                    for s in &mut l.shapes {
+                        s.show_page_number(idx);
+                    }
+                    Cow::Owned(l)
+                } else {
+                    Cow::Borrowed(l)
+                }
+            })
+            .collect())
+    }
+
+    fn page_index(&self, page: PageId) -> Result<usize> {
+        self.pages
+            .iter()
+            .position(|p| p.id == page)
+            .ok_or(Error::PageNotFound(page))
     }
 
     pub fn layer(&self, id: LayerId) -> Result<&Layer> {

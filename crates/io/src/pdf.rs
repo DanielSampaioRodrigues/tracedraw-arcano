@@ -1554,7 +1554,7 @@ fn needs_flattening(s: &Shape) -> bool {
 /// drawn up to and including it, cropped to its bounds, so the composite
 /// is kept without transparency in the file.
 fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64) -> Vec<Shape> {
-    let layers = doc.layers_for_page(page.id).unwrap_or_default();
+    let layers = doc.layers_drawn_for_page(page.id).unwrap_or_default();
     let ordered: Vec<Shape> = layers
         .iter()
         .filter(|l| l.visible && l.printable)
@@ -1729,7 +1729,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         if std_ == PdfStandard::None {
             let offset = Affine::translate((bleed, bleed));
             for layer in doc
-                .layers_for_page(page.id)
+                .layers_drawn_for_page(page.id)
                 .unwrap_or_default()
                 .iter()
                 .filter(|l| l.visible && l.printable)
@@ -1782,7 +1782,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
                 }
             }
             None => {
-                let layers = doc.layers_for_page(page.id).unwrap_or_default();
+                let layers = doc.layers_drawn_for_page(page.id).unwrap_or_default();
                 for layer in layers.iter().filter(|l| l.visible && l.printable) {
                     for s in &layer.shapes {
                         w.shape(s, offset);

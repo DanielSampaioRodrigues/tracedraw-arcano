@@ -14,6 +14,7 @@ full, row-by-row status.
 - Printing to a printer no longer freezes the window: the sheets are drawn and sent to the printer in the background, with "Printing on ..." in the status bar and the outcome there when it is done. On Windows a slow or stuck spooler left the window on "Processing" with a PowerShell window open until the program was closed (#810).
 - Print Preview > Print to the system's PDF viewer opens each print in a page of its own; with the last print still open in the viewer, the new one did not open (#809).
 - Edit Fill, the colour picker and the Color docker: a click near the black corner of the colour square in CMYK keeps its ring where it was put. All those points give K 100, which looks lighter on screen, so the ring jumped back up as if the click had not taken (#761).
+- Layout > Insert Page Number on a master layer: one page number field goes on the master layer and shows the number of each page it is drawn on, on screen, in print and in exports, so one number manages them all. Before, nothing went on the master page; the numbers went on the pages instead (#807).
 
 ## 0.19.0 (2026-10-25)
 

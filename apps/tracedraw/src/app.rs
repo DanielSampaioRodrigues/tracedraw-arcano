@@ -68,65 +68,20 @@ impl Default for PageNumberSettings {
 }
 
 impl PageNumberSettings {
+    /// The field these settings make: how the number is written.
+    pub fn field(&self) -> tracedraw_core::document::PageNumberField {
+        tracedraw_core::document::PageNumberField {
+            start_at: self.start_at,
+            style: self.style,
+            prefix: self.prefix.clone(),
+            suffix: self.suffix.clone(),
+        }
+    }
+
     /// Text for the page at `index` (0-based).
     pub fn label(&self, index: usize) -> String {
-        let n = self.start_at + index as i64;
-        let body = match self.style {
-            1 => roman(n),
-            2 => roman(n).to_lowercase(),
-            3 => alpha(n),
-            4 => alpha(n).to_lowercase(),
-            _ => n.to_string(),
-        };
-        format!("{}{}{}", self.prefix, body, self.suffix)
+        self.field().label(index)
     }
-}
-
-fn roman(mut n: i64) -> String {
-    if n <= 0 {
-        return n.to_string();
-    }
-    const T: [(i64, &str); 13] = [
-        (1000, "M"),
-        (900, "CM"),
-        (500, "D"),
-        (400, "CD"),
-        (100, "C"),
-        (90, "XC"),
-        (50, "L"),
-        (40, "XL"),
-        (10, "X"),
-        (9, "IX"),
-        (5, "V"),
-        (4, "IV"),
-        (1, "I"),
-    ];
-    let mut out = String::new();
-    for (v, s) in T {
-        while n >= v {
-            out.push_str(s);
-            n -= v;
-        }
-    }
-    out
-}
-
-fn alpha(n: i64) -> String {
-    if n <= 0 {
-        return n.to_string();
-    }
-    // A..Z, then AA, AB... like spreadsheet columns.
-    let mut n = n - 1;
-    let mut out = Vec::new();
-    loop {
-        out.push((b'A' + (n % 26) as u8) as char);
-        n /= 26;
-        if n == 0 {
-            break;
-        }
-        n -= 1;
-    }
-    out.iter().rev().collect()
 }
 
 thread_local! {

@@ -198,7 +198,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Objects panel: the page and the Master Page (master layers, guides, document grid) as a tree; layers with collapse arrow, eye, printer, padlock and layer icon; the active layer in bold, picked by a click (new objects go there; a click on an object makes its layer active); objects by name (or what they are) with a fill and outline swatch; groups open to their objects; double-click renames the page, a layer or an object; New Layer, New Master Layer (all, odd or even pages) and Delete at the bottom (see `behavior/objects-panel.md`) | works |
 | Document properties and metadata, rendering resolution, baseline grid | works |
 | Guidelines panel, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
-| Insert page number (active layer, all, odd, even) | works |
+| Insert page number (active layer, all, odd, even); on a master layer a field that shows the number of each page it is drawn on | works |
 | Templates: save as template, new from template (dialog with search, source and category lists, thumbnails, details pane; blank and designed built-in templates and the user's own, see [behavior](behavior/new-from-template.md)) | works |
 
 ## 10. Import and export

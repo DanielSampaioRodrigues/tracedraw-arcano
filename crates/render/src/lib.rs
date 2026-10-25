@@ -242,7 +242,7 @@ fn page_reach(doc: &Document, page: PageId) -> (bool, f64) {
         }
     }
     let (mut lens, mut blur) = (false, 0.0f64);
-    if let Ok(layers) = doc.layers_for_page(page) {
+    if let Ok(layers) = doc.layers_drawn_for_page(page) {
         for l in layers {
             for s in &l.shapes {
                 walk(s, &mut lens, &mut blur);
@@ -347,7 +347,7 @@ fn render_page_whole(doc: &Document, page: PageId, opts: &RenderOptions) -> Opti
         r.draw_shape(&bg_shape, Affine::IDENTITY);
     }
     let visible = visible_page_rect(opts);
-    let layers = doc.layers_for_page(page.id).ok()?;
+    let layers = doc.layers_drawn_for_page(page.id).ok()?;
     for layer in layers {
         if !layer.visible {
             continue;

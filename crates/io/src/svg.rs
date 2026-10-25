@@ -26,7 +26,7 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
     let mut gradient_defs = String::new();
     let mut body = String::new();
     let mut next_grad = 0usize;
-    let layers = doc.layers_for_page(page.id).unwrap_or_default();
+    let layers = doc.layers_drawn_for_page(page.id).unwrap_or_default();
     for layer in layers {
         if !layer.visible {
             continue;
