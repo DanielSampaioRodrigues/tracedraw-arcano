@@ -6622,6 +6622,37 @@ fn an_idle_window_asks_for_no_frame() {
     }
 }
 
+/// What a frame costs with the Text tool's font list on the property
+/// bar, closed, on a computer with many fonts (#616: 1332 families):
+/// `cargo test --release -p tracedraw -- --ignored frame_times_with_many_fonts --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_with_many_fonts() {
+    for count in [1332, 10, 1332, 10] {
+        let (ctx, mut app, _) = setup();
+        app.font_families = (0..count).map(|i| format!("Font Family {i:04}")).collect();
+        app.set_tool(Tool::Text);
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+        let n = 200;
+        let t = std::time::Instant::now();
+        for i in 0..n {
+            let p = Pos2::new(600.0 + (i % 50) as f32 * 4.0, 500.0);
+            frame(
+                &ctx,
+                &mut app,
+                vec![Event::PointerMoved(p)],
+                Modifiers::NONE,
+            );
+        }
+        eprintln!(
+            "{count} families, hover with the font list on the bar: {:?} per frame",
+            t.elapsed() / n
+        );
+    }
+}
+
 /// The Welcome Screen tab closes to its house while a drawing is open;
 /// the house shows the Welcome Screen again with its whole tab (#677).
 #[test]

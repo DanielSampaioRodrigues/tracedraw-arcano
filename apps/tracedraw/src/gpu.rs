@@ -490,9 +490,34 @@ pub fn restart_with(next: Mode, args: &[String]) -> bool {
     std::process::Command::new(exe).args(rest).status().is_ok()
 }
 
+/// The patched eframe's context fallback with its tests, run here: the
+/// copy in vendor/ is outside the workspace (vendor/README.md, #616).
+#[cfg(test)]
+#[path = "../../../vendor/eframe/src/native/first_context.rs"]
+mod eframe_context_fallback;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The OpenGL renderer asks for a compatibility context of any version
+    /// when OpenGL 3.3 core and OpenGL ES fail, so a card with OpenGL 2.1
+    /// only opens the window on its own driver (#616). That needs the
+    /// patched eframe (vendor/README.md) until egui 0.37.
+    #[test]
+    fn opengl_falls_back_to_a_compatibility_context() {
+        let manifest = include_str!("../../../Cargo.toml");
+        assert!(manifest.contains("eframe = { path = \"vendor/eframe\" }"));
+        let glow = include_str!("../../../vendor/eframe/src/native/glow_integration.rs");
+        let tried = glow
+            .split("fn context_attributes_to_try(")
+            .nth(1)
+            .expect("the attempts");
+        let compat = tried.find(".with_profile(GlProfile::Compatibility)");
+        let gles = tried.find("ContextApi::Gles(None)");
+        assert!(compat.is_some() && gles < compat, "compatibility last");
+        assert!(glow.contains("create_first_context("));
+    }
 
     #[test]
     fn a_renderer_that_fails_hands_over_to_the_next() {
