@@ -44,6 +44,11 @@ loses its outline. One undo step, and the new objects are selected.
   (`tools2::tests::an_ellipse_outline_becomes_a_few_curves`).
 - Given a straight line with butt ends, the result is a rectangle of
   four lines (`tools2::tests::a_straight_outline_becomes_a_rectangle`).
+- Given a curved open path with a thick butt-ended outline (an arc 87 mm
+  across with a 5.8 mm outline, as in #622), the result is four cusp
+  nodes at the butt corners, one curve along each long side and
+  straight ends
+  (`tools2::tests::a_thick_butt_ended_arc_becomes_four_nodes_and_two_curves`).
 - Given a line with a corner, round ends and round corners, the result
   is four straight sides, two curves per end and one for the corner,
   with nodes at the tips and where the ends meet the sides

@@ -823,6 +823,50 @@ mod tests {
         assert_eq!(segments(&out), (4, 0), "{:?}", out.elements());
     }
 
+    /// A curved open path with a thick butt-ended outline, as in the
+    /// report (an arc 87 mm across and 15 mm high, a 5.8 mm outline):
+    /// four cusp nodes at the butt corners, each long side one curve and
+    /// each end straight (#622).
+    #[test]
+    fn a_thick_butt_ended_arc_becomes_four_nodes_and_two_curves() {
+        let mut arc = BezPath::new();
+        arc.move_to((10.0, 30.0));
+        arc.curve_to((35.0, 10.0), (72.0, 10.0), (97.0, 30.0));
+        let arc = ShapeKind::Path {
+            path: arc,
+            closed: false,
+        };
+        let (_, out) = outline_object(arc, 5.8, |st| {
+            st.cap = tracedraw_core::LineCap::Butt;
+        });
+        let (lines, curves) = segments(&out);
+        assert_eq!(curves, 2, "{:?}", out.elements());
+        assert!(lines <= 2, "{:?}", out.elements());
+        let nodes = tracedraw_core::nodes::nodes(&out);
+        assert_eq!(nodes.len(), 4, "{nodes:?}");
+        for n in &nodes {
+            assert_eq!(
+                tracedraw_core::nodes::node_type_of_with(n, &Default::default()),
+                tracedraw_core::nodes::NodeType::Cusp,
+                "{n:?}"
+            );
+        }
+        // The butt corners: 2.9 mm either side of each end, across it.
+        for (p, t) in [
+            (Point::new(10.0, 30.0), Vec2::new(25.0, -20.0)),
+            (Point::new(97.0, 30.0), Vec2::new(25.0, 20.0)),
+        ] {
+            let t = t / t.hypot();
+            let n = Vec2::new(-t.y, t.x) * 2.9;
+            for q in [p + n, p - n] {
+                assert!(
+                    nodes.iter().any(|v| (v.pos - q).hypot() < 0.05),
+                    "no node at {q:?}: {nodes:?}"
+                );
+            }
+        }
+    }
+
     /// Round ends and a round corner become real curves: each end two
     /// curves with a node at its tip, the corner one curve, the sides
     /// straight lines, eleven segments in all (#623).
