@@ -6454,6 +6454,63 @@ fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
     assert!(!masked_at(&rects, left_of_page));
 }
 
+/// The Autofit Page popup stays open when its Live preview box or its
+/// margin field is clicked, so the preview can be switched and watched
+/// (#659): real clicks, the preview following the box; a click outside
+/// closes it.
+#[test]
+fn the_autofit_popup_stays_open_when_its_box_is_clicked() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    let popup = crate::ui::propbar::autofit_popup_id();
+    egui::Popup::open_id(&ctx, popup);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert!(egui::Popup::is_id_open(&ctx, popup));
+    assert!(app.settings.fit_page_preview && app.autofit_preview.is_some());
+    let text_at = |ctx: &egui::Context, app: &mut App, name: &str| {
+        let (_, texts) = painted(ctx, app);
+        texts
+            .into_iter()
+            .find(|(t, _)| t.trim() == name)
+            .map(|(_, p)| p)
+            .unwrap_or_else(|| panic!("{name} in the popup"))
+    };
+    let live = text_at(&ctx, &mut app, "Live preview");
+    let margin = text_at(&ctx, &mut app, "Margin:");
+    assert!((live.y - margin.y).abs() < 4.0, "on the margin's row");
+    click_at(&ctx, &mut app, live, Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, popup), "still open");
+    assert!(!app.settings.fit_page_preview, "the box turned off");
+    assert!(app.autofit_preview.is_none(), "no preview");
+    click_at(&ctx, &mut app, live, Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, popup), "still open");
+    assert!(app.settings.fit_page_preview && app.autofit_preview.is_some());
+    // The margin field, right of its label.
+    click_at(
+        &ctx,
+        &mut app,
+        margin + egui::vec2(60.0, 0.0),
+        Modifiers::NONE,
+    );
+    assert!(egui::Popup::is_id_open(&ctx, popup), "open after the field");
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // A click on the canvas closes it.
+    let page = app.view.rect_to_screen(app.page_rect());
+    click_at(&ctx, &mut app, page.center(), Modifiers::NONE);
+    assert!(
+        !egui::Popup::is_id_open(&ctx, popup),
+        "closed by a click outside"
+    );
+    assert!(app.autofit_preview.is_none());
+}
+
 /// The Shape tool's corner widgets (#635): with no node chosen, dragging
 /// one into its corner rounds every corner of the curve together, live,
 /// in one undo step; with a node chosen only its corner shows a widget

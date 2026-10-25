@@ -1584,10 +1584,14 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
     }
     let ctx = ui.ctx().clone();
     let mut fitted = false;
+    // Clicks inside (the margin field, the Live preview box) keep it
+    // open, so the preview can be switched and watched (#659).
     egui::Popup::new(popup_id, ctx.clone(), fit.rect, ui.layer_id())
         .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_min_width(190.0);
+            // The Live preview box on the margin's row, right of the field.
             ui.horizontal(|ui| {
                 ui.label(tr("toolbar.fit_margin"));
                 ui.add_space(8.0);
@@ -1595,11 +1599,12 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 if let Some(m) = paper_distance(ui, app, margin, 88.0, Some(1.0)) {
                     app.settings.fit_page_margin = m.max(0.0);
                 }
+                ui.add_space(6.0);
+                ui.checkbox(
+                    &mut app.settings.fit_page_preview,
+                    tr("toolbar.autofit_live_preview"),
+                );
             });
-            ui.checkbox(
-                &mut app.settings.fit_page_preview,
-                tr("toolbar.autofit_live_preview"),
-            );
             ui.add_space(4.0);
             if ui
                 .add_sized(

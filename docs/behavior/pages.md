@@ -62,10 +62,14 @@ While the popup is open the page itself shows at the size Autofit Page
 would give it, around the drawing, following the margin as it is typed;
 nothing else is drawn, and closing the popup without OK puts it back
 (#594, #604, `ops2::tests::the_autofit_preview_is_the_drawing_and_its_margin`).
-A Live preview check box in the popup (on at first, kept in the
-preferences, `settings.fit_page_preview`) turns that off: the page then
-keeps its size until Autofit Page is clicked (#659,
+A Live preview check box on the margin's row, right of the field (on at
+first, kept in the preferences, `settings.fit_page_preview`), turns that
+off: the page then keeps its size until Autofit Page is clicked (#659,
 `ui::propbar::tests::the_autofit_popup_previews_only_with_live_preview_on`).
+Clicks inside the popup (the box, the margin field and its arrows) keep
+it open, so the preview can be switched and watched; a click outside or
+Autofit Page closes it
+(`pick_drag_tests::the_autofit_popup_stays_open_when_its_box_is_clicked`).
 
 ## Delete Page
 
