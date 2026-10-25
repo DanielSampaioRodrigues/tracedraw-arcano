@@ -477,6 +477,75 @@ fn recover_curves(result: &BezPath, sources: &[&BezPath]) -> BezPath {
     out
 }
 
+/// What [`enclosed_area`] finds around a point.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Enclosed {
+    /// The area the outlines enclose, with the holes the outlines inside
+    /// it make, its sides the outlines' own curves.
+    Area(BezPath),
+    /// The point lies in an area the outlines leave open to the outside.
+    Open,
+    /// The point lies on an outline.
+    OnOutline,
+}
+
+/// The area around `p` that the outlines `paths` (page coordinates; open
+/// and closed subpaths alike, a subpath crossing itself enclosing the
+/// areas between its crossings) close off: the outlines, flattened, cut
+/// a box around them all into faces, the face holding `p` is the area,
+/// and the outlines' curves are put back into its sides
+/// ([`recover_curves`]), so the area meets them exactly and has nodes
+/// only where they cross.
+pub fn enclosed_area(paths: &[BezPath], p: Point) -> Enclosed {
+    use i_overlay::float::slice::FloatSlice as _;
+    use kurbo::Shape as _;
+    let lines: Vec<Vec<[f64; 2]>> = paths
+        .iter()
+        .flat_map(|path| polylines(path, TOL))
+        .map(|(pts, _)| pts.iter().map(|q| [q.x, q.y]).collect::<Vec<_>>())
+        .filter(|l: &Vec<[f64; 2]>| l.iter().all(|q| q[0].is_finite() && q[1].is_finite()))
+        .collect();
+    let Some(bounds) = lines
+        .iter()
+        .flatten()
+        .map(|q| kurbo::Rect::from_points((q[0], q[1]), (q[0], q[1])))
+        .reduce(|a, b| a.union(b))
+    else {
+        return Enclosed::Open;
+    };
+    // A margin all round: the faces reaching it are open.
+    let margin = 2.0;
+    let domain = bounds.inflate(margin, margin);
+    if !domain.contains(p) {
+        return Enclosed::Open;
+    }
+    let frame = vec![
+        [domain.x0, domain.y0],
+        [domain.x1, domain.y0],
+        [domain.x1, domain.y1],
+        [domain.x0, domain.y1],
+    ];
+    let faces = frame.slice_by(&lines, IFill::NonZero);
+    for face in faces {
+        let area = from_shapes(vec![face.clone()]);
+        if !area.contains(p) {
+            continue;
+        }
+        let open = face.iter().flatten().any(|q| {
+            (q[0] - domain.x0).abs() < margin / 2.0
+                || (q[0] - domain.x1).abs() < margin / 2.0
+                || (q[1] - domain.y0).abs() < margin / 2.0
+                || (q[1] - domain.y1).abs() < margin / 2.0
+        });
+        if open {
+            return Enclosed::Open;
+        }
+        let sources: Vec<&BezPath> = paths.iter().collect();
+        return Enclosed::Area(recover_curves(&area, &sources));
+    }
+    Enclosed::OnOutline
+}
+
 /// How an offset outline turns its corners.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1800,6 +1869,56 @@ mod tests {
         assert_eq!(q.elements(), p.elements());
         assert!(!even_odd_inside(&q, 5.0, 5.0));
     }
+
+    /// Area Fill finds the exact area (#734): inside a circle, the circle
+    /// itself, its four curves and no more nodes; where two squares
+    /// overlap, their overlap; outside them, an open area.
+    #[test]
+    fn enclosed_area_keeps_the_outlines_curves() {
+        use super::{enclosed_area, Enclosed};
+        use crate::geometry::{BezPath, Point, Rect};
+        let circle = crate::geometry::ellipse_path(Rect::new(0.0, 0.0, 40.0, 40.0));
+        let Enclosed::Area(area) =
+            enclosed_area(std::slice::from_ref(&circle), Point::new(20.0, 20.0))
+        else {
+            panic!("no area");
+        };
+        let curves = |p: &BezPath| p.segments().count();
+        assert_eq!(curves(&area), curves(&circle), "{area:?}");
+        use kurbo::Shape as _;
+        assert!((area.area().abs() - circle.area().abs()).abs() < 1e-6);
+        // Every point of the area's outline on the circle.
+        let mut far: f64 = 0.0;
+        kurbo::flatten(area.elements().iter().copied(), 0.01, |el| {
+            if let super::PathEl::LineTo(q) | super::PathEl::MoveTo(q) = el {
+                far = far.max(((q - Point::new(20.0, 20.0)).hypot() - 20.0).abs());
+            }
+        });
+        assert!(far < 0.02, "{far}");
+        // Two squares overlapping: the overlap, exactly.
+        let a = crate::geometry::rect_path(Rect::new(0.0, 0.0, 30.0, 30.0), 0.0);
+        let b = crate::geometry::rect_path(Rect::new(17.3, 11.1, 50.0, 50.0), 0.0);
+        let Enclosed::Area(area) = enclosed_area(&[a.clone(), b.clone()], Point::new(20.0, 20.0))
+        else {
+            panic!("no overlap");
+        };
+        let r = area.bounding_box();
+        for (got, want) in [(r.x0, 17.3), (r.y0, 11.1), (r.x1, 30.0), (r.y1, 30.0)] {
+            assert!((got - want).abs() < 1e-6, "{r:?}");
+        }
+        assert_eq!(curves(&area), 4, "{area:?}");
+        // Outside both, or nowhere near: open.
+        assert_eq!(
+            enclosed_area(&[a.clone(), b.clone()], Point::new(45.0, 5.0)),
+            Enclosed::Open
+        );
+        assert_eq!(
+            enclosed_area(&[a, b], Point::new(500.0, 5.0)),
+            Enclosed::Open
+        );
+        assert_eq!(enclosed_area(&[], Point::new(5.0, 5.0)), Enclosed::Open);
+    }
+
     #[test]
     /// The width eases between nodes along a smooth curve however short
     /// the span on a long path: half-way into the ease the reach is the
