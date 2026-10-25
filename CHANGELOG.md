@@ -6,10 +6,10 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
-- Convert to Curves and Break Apart of an enveloped, perspective or distorted object (text too) give smooth curves with their corners kept: a square in perspective is its four corners, a letter a few curves, where each was a row of short lines that Reduce Nodes then spoiled. Break Apart is in the canvas context menu for warped objects and artistic text. Letters an envelope pushes together stay filled where they overlap (#647, #840).
+## 0.19.1 (2026-10-25)
 
 - Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
+- Convert to Curves and Break Apart of an enveloped, perspective or distorted object (text too) give smooth curves with their corners kept: a square in perspective is its four corners, a letter a few curves, where each was a row of short lines that Reduce Nodes then spoiled. Break Apart is in the canvas context menu for warped objects and artistic text. Letters an envelope pushes together stay filled where they overlap (#647, #840).
 - Convert to Curves of a text keeps every letter filled: the strokes of a glyph that cross each other, as in many Chinese fonts, left hollow holes where they met once the text was curves; Break Apart of a warped text does the same (#800).
 - Printing to a printer no longer freezes the window: the sheets are drawn and sent to the printer in the background, with "Printing on ..." in the status bar and the outcome there when it is done. On Windows a slow or stuck spooler left the window on "Processing" with a PowerShell window open until the program was closed (#810).
 - Print Preview > Print to the system's PDF viewer opens each print in a page of its own; with the last print still open in the viewer, the new one did not open (#809).
