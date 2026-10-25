@@ -459,11 +459,13 @@ fn corners_one_radius_cannot_hold_are_written_as_curves_and_stretched_fixed_ones
             let b = read[2].bounds();
             assert!((b.width() - 80.0).abs() < 0.01 && (b.height() - 20.0).abs() < 0.01);
             // A fixed radius on an evenly scaled rectangle is still a
-            // rectangle.
+            // rectangle, its corners 3 mm on the page and kept so.
             assert!(
-                matches!(read[3].kind, ShapeKind::Rect { radius, .. } if (radius - 1.5).abs() < 0.01),
+                matches!(read[3].kind, ShapeKind::Rect { corners: Some(c), .. } if c.fixed),
                 "{v}"
             );
+            let page = read[3].page_corners().expect("corners");
+            assert!(page.radii.iter().all(|r| (r - 3.0).abs() < 0.01), "{v}");
         } else {
             assert!(matches!(read[2].kind, ShapeKind::Path { closed: true, .. }));
         }

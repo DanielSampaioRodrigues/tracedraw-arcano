@@ -2860,6 +2860,10 @@ impl<'a> Ctx<'a> {
         shape.visible = !hidden;
         shape.fill = fill;
         shape.stroke = stroke;
+        // Rounded corners keep their size when the rectangle is resized,
+        // as new rectangles do, rather than stretch with it (#619); after
+        // the outline, which decides whether the stretch may move.
+        shape.keep_corner_size();
         shape.name = name;
         shape.opacity = opacity;
         if let Some((mask, target)) = mask {
@@ -5710,7 +5714,8 @@ mod tests {
         // Drawn leftwards: the first corner is on the left.
         let c = read(-254000);
         assert!(near(c.radii, [2.0, 3.0, 1.0, 4.0]), "{c:?}");
-        // One radius for every corner stays the plain form.
+        // One radius for every corner: the same on every corner, keeping
+        // its size when the rectangle is resized (#619).
         let c = i32s(&[254000, 127000, 5000, 5000, 5000, 5000]);
         let obj = list(
             b"obj ",
@@ -5724,7 +5729,61 @@ mod tests {
         let (doc, _) = parse(&riff(b"CDR9", &body), 9);
         assert!(matches!(
             first_shape(&doc).kind,
-            ShapeKind::Rect { corners: None, radius, .. } if (radius - 0.5).abs() < 1e-9
+            ShapeKind::Rect { corners: Some(c), radius, .. }
+                if (radius - 0.5).abs() < 1e-9 && c.fixed && c.is_uniform()
+        ));
+    }
+
+    /// Rounded rectangles open with corners that keep their size when
+    /// resized, at the size they measure on the page; a rectangle the
+    /// file stretches gets round corners, not oval ones (#619).
+    #[test]
+    fn rounded_rectangles_keep_their_corner_size() {
+        // 25.4 x 12.7 mm with 1 mm corners, scaled 2 x 1 by its transform.
+        let c = i32s(&[254000, 127000, 10000, 10000, 10000, 10000]);
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, c)])),
+                chunk(b"trfd", &trfd(9, [2.0, 0.0, 0.0, 0.0, 1.0, 0.0])),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, _) = parse(&riff(b"CDR9", &body), 9);
+        let mut s = first_shape(&doc).clone();
+        let page = s.page_corners().expect("a rectangle");
+        assert!(page.fixed, "{page:?}");
+        assert!(
+            page.radii.iter().all(|r| (r - 1.0).abs() < 1e-9),
+            "{page:?}"
+        );
+        // Resized, the corners stay 1 mm.
+        s.transform = s.transform * Affine::scale_non_uniform(1.0, 3.0);
+        let page = s.page_corners().expect("a rectangle");
+        assert!(
+            page.radii.iter().all(|r| (r - 1.0).abs() < 1e-9),
+            "{page:?}"
+        );
+        // Square corners stay square and plain.
+        let c = i32s(&[254000, 127000, 0, 0, 0, 0]);
+        let obj = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, c)])),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, _) = parse(&riff(b"CDR9", &body), 9);
+        assert!(matches!(
+            first_shape(&doc).kind,
+            ShapeKind::Rect { corners: None, radius, .. } if radius == 0.0
         ));
     }
 
