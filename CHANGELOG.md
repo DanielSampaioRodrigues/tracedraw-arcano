@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.18.0 (2026-10-25)
+
 - Large drawings with pictures use far less memory while editing: every undo step, background render and copied object now shares the picture data instead of copying it, so moving one curve in a drawing with 244 MB of pictures no longer adds 244 MB per step. Edit Fill and the font list preview no longer copy every step that can be redone. Saved files do not change.
 - A Variable Length outline converted to an object (Ctrl+Shift+Q) is now a clean shape: a few real curves along each side and straight butt ends, instead of a whole row of anchors joined by straight lines. Along a curve, the band no longer has hairline cracks between its pieces, on screen or in exports (#627).
 - The Glyphs panel's recent glyphs are readable again in the dark themes: their box takes the theme's field colour instead of staying white behind light glyphs (#660).
