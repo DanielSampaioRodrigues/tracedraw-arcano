@@ -78,6 +78,11 @@ ou
   "Desenhe um circulo vermelho ao lado do meu retangulo no TraceDraw."
 O circulo deve aparecer na sua tela.
 
+DEPOIS DE CADA ATUALIZACAO DO TRACEDRAW
+A atualizacao desliga a ligacao com as IAs para poder trocar o programa.
+Feche e abra o aplicativo de IA (Claude, ChatGPT...) para ligar de novo.
+Se instalar a mao (pelo -setup.exe), feche antes o aplicativo de IA.
+
 SE NAO FUNCIONAR
 - Deixe so UMA janela do TraceDraw aberta. Com mais de uma, a IA usa a
   janela em que voce mexeu por ultimo (clique nela antes de pedir).

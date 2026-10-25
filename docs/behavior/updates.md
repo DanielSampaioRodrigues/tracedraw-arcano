@@ -12,7 +12,10 @@ unsaved drawings first) and runs the installer quietly (`/SILENT /SP-
 /CLOSEAPPLICATIONS /NORESTART`) from a hidden PowerShell that waits for
 it and, when it succeeds, starts the new version as the user (an
 elevated installer started quietly cannot start a program as the user:
-it stopped with "CallSpawnServer: Unexpected response"). On the
+it stopped with "CallSpawnServer: Unexpected response"). First that
+PowerShell stops the windowless TraceDraw processes AI apps keep running
+(`--mcp-window` bridges, `--mcp` servers): they hold the program file,
+and a quiet install could not replace it and gave up without a word. On the
 machine that builds the edition (`settings.fork_source`, or the source
 folder of a program run from its `target` folder, holding
 `arcano/update.ps1`), "This is the latest version" also offers "Bring in

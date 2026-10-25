@@ -188,14 +188,22 @@ pub fn run_installer(setup: &std::path::Path) -> Result<(), String> {
 /// restarting Windows.
 const INSTALLER_FLAGS: [&str; 4] = ["/SILENT", "/SP-", "/CLOSEAPPLICATIONS", "/NORESTART"];
 
-/// The PowerShell that runs the installer, waits for it and, when it
-/// succeeded, starts `exe` again.
+/// What stops the windowless TraceDraw processes AI apps keep running
+/// (`--mcp-window` bridges and `--mcp` servers): they hold the program
+/// file, so a quiet install could not replace it and gave up without a
+/// word. Windows with drawings are left to the installer, which closes
+/// them asking about unsaved work. No double quotes: the whole script is
+/// one argument of the command line.
+const STOP_AGENT_BRIDGES: &str = "Get-CimInstance Win32_Process -Filter 'Name=''tracedraw.exe''' | Where-Object { $_.CommandLine -match '--mcp' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500";
+
+/// The PowerShell that stops the agents' bridges, runs the installer,
+/// waits for it and, when it succeeded, starts `exe` again.
 fn relaunch_script(setup: &std::path::Path, exe: &std::path::Path) -> String {
     // A PowerShell string in single quotes: a quote is written twice.
     let quote = |p: &std::path::Path| format!("'{}'", p.display().to_string().replace('\'', "''"));
     let flags: Vec<String> = INSTALLER_FLAGS.iter().map(|f| format!("'{f}'")).collect();
     format!(
-        "$p = Start-Process -FilePath {} -ArgumentList {} -Wait -PassThru; if ($p.ExitCode -eq 0) {{ Start-Process -FilePath {} }}",
+        "{STOP_AGENT_BRIDGES}; $p = Start-Process -FilePath {} -ArgumentList {} -Wait -PassThru; if ($p.ExitCode -eq 0) {{ Start-Process -FilePath {} }}",
         quote(setup),
         flags.join(","),
         quote(exe)
@@ -212,6 +220,10 @@ mod tests {
             std::path::Path::new(r"C:\Temp\it's-setup.exe"),
             std::path::Path::new(r"C:\Program Files\TraceDraw\tracedraw.exe"),
         );
+        assert!(s.starts_with(STOP_AGENT_BRIDGES), "{s}");
+        assert!(STOP_AGENT_BRIDGES.contains("--mcp") && STOP_AGENT_BRIDGES.contains("tracedraw.exe"));
+        assert!(!s.contains('"'), "{s}");
+        let s = s.trim_start_matches(STOP_AGENT_BRIDGES).trim_start_matches("; ");
         assert!(s.starts_with(r"$p = Start-Process -FilePath 'C:\Temp\it''s-setup.exe' -ArgumentList '/SILENT','/SP-','/CLOSEAPPLICATIONS','/NORESTART' -Wait -PassThru"), "{s}");
         assert!(s.ends_with(r"if ($p.ExitCode -eq 0) { Start-Process -FilePath 'C:\Program Files\TraceDraw\tracedraw.exe' }"), "{s}");
     }
