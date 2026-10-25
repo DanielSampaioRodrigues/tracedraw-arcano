@@ -256,11 +256,12 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     let colors = colors_of(app, which);
     let no_color = app.settings.palette.show_no_color;
     let count = colors.len() + usize::from(no_color);
-    // Several rows fill column by column and scroll a column at a time.
+    // Several rows fill line by line: each line holds the next run of the
+    // palette, and the strip scrolls a swatch at a time (#610).
     let cols = visible_slots(len);
     let slots = cols * lines;
-    let max_scroll = count.div_ceil(lines).saturating_sub(cols) * lines;
-    let scroll = (*scroll_of(app, which)).min(max_scroll) / lines * lines;
+    let max_scroll = count.saturating_sub(slots);
+    let scroll = (*scroll_of(app, which)).min(max_scroll);
     *scroll_of(app, which) = scroll;
 
     // The palette menu button.
@@ -340,11 +341,11 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     // Scroll arrows.
     let left = ax.rect(58.0, EDGE, 16.0, 22.0);
     if chevron(app, ui, left, -1, scroll > 0, which, vertical) {
-        *scroll_of(app, which) = scroll.saturating_sub(lines);
+        *scroll_of(app, which) = scroll.saturating_sub(1);
     }
     let right = ax.rect(len - 49.0, EDGE, 16.0, 22.0);
     if chevron(app, ui, right, 1, scroll < max_scroll, which, vertical) {
-        *scroll_of(app, which) = (scroll + lines).min(max_scroll);
+        *scroll_of(app, which) = (scroll + 1).min(max_scroll);
     }
     let expand = ax.rect(len - 29.0, EDGE, 18.0, 22.0);
     let expand_resp = ui
@@ -397,15 +398,15 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         return;
     }
     let mut px = Pixels::default();
-    // One frame per column, as long as the swatches it holds.
-    for col in 0..shown.div_ceil(lines) {
-        let n = lines.min(shown - col * lines);
+    // One frame per line, as long as the swatches it holds.
+    for line in 0..shown.div_ceil(cols) {
+        let n = cols.min(shown - line * cols);
         px.rect(
             ax.rect(
-                LEAD + col as f32 * STRIDE,
-                EDGE,
-                STRIDE + 1.0,
+                LEAD,
+                EDGE + line as f32 * STRIDE,
                 n as f32 * STRIDE + 1.0,
+                STRIDE + 1.0,
             ),
             FRAME,
         );
@@ -432,15 +433,15 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         0.0
     };
     if notch < -0.5 {
-        *scroll_of(app, which) = (scroll + lines).min(max_scroll);
+        *scroll_of(app, which) = (scroll + 1).min(max_scroll);
     } else if notch > 0.5 {
-        *scroll_of(app, which) = scroll.saturating_sub(lines);
+        *scroll_of(app, which) = scroll.saturating_sub(1);
     }
     for slot in 0..shown {
         let index = scroll + slot;
         let cell = ax.rect(
-            LEAD + 1.0 + (slot / lines) as f32 * STRIDE,
-            EDGE + 1.0 + (slot % lines) as f32 * STRIDE,
+            LEAD + 1.0 + (slot % cols) as f32 * STRIDE,
+            EDGE + 1.0 + (slot / cols) as f32 * STRIDE,
             SWATCH,
             SWATCH,
         );
@@ -751,7 +752,7 @@ fn double_chevron(painter: &egui::Painter, c: Pos2, color: Color32, vertical: bo
 
 /// The palette menu (the arrow button, or a right click on the row).
 fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
-    use crate::ui::menus::{check, item, sep, sub};
+    use crate::ui::menus::{check, item, radio, sep, sub};
     ui.set_min_width(220.0);
     match which {
         Row::Main => {
@@ -775,6 +776,21 @@ fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
                 app.settings.palette.show_document = !app.settings.palette.show_document;
                 app.settings.save();
             }
+            // Rows of swatches, as in Options > Customization > Color
+            // Palette (#610).
+            sub(ui, "palette.rows", |ui| {
+                let rows = app.settings.palette.rows();
+                for (n, key) in [
+                    (1, "palette.rows_1"),
+                    (2, "palette.rows_2"),
+                    (3, "palette.rows_3"),
+                ] {
+                    if radio(ui, key, "", rows == n) {
+                        app.settings.palette.rows = n as u8;
+                        app.settings.save();
+                    }
+                }
+            });
         }
         Row::Document => {
             let doc = app.has_document();
@@ -1234,9 +1250,10 @@ mod tests {
         assert_ne!(fill(&app), before);
     }
 
-    /// With two rows the default palette is twice as thick and fills
-    /// column by column: under the No Color well sits Black, then the next
-    /// column starts with 90% Black; scrolling moves a column (#610).
+    /// With two rows the default palette is twice as thick and fills line
+    /// by line: Black sits beside the No Color well with 90% Black next to
+    /// it, and the second line goes on where the first ends; scrolling
+    /// moves one swatch (#610).
     #[test]
     fn the_default_palette_can_show_several_rows() {
         use tracedraw_core::{geometry::Rect as R, ShapeKind};
@@ -1300,16 +1317,117 @@ mod tests {
             Fill::Solid(c) => c,
             other => panic!("{other:?}"),
         };
-        assert_eq!(solid(&app), Color::cmyk_pct(0.0, 0.0, 0.0, 100.0));
+        // The second line starts with the swatch after the first line's
+        // last (the No Color well takes the first slot).
+        let cols = visible_slots(800.0);
+        assert_eq!(solid(&app), app.palette[cols - 1].1);
         assert!(height.get() >= ROW_H + STRIDE, "{}", height.get());
         click(&mut app, egui::pos2(x + STRIDE, 3.0 + SWATCH / 2.0));
+        assert_eq!(solid(&app), Color::cmyk_pct(0.0, 0.0, 0.0, 100.0));
+        click(&mut app, egui::pos2(x + 2.0 * STRIDE, 3.0 + SWATCH / 2.0));
         assert_eq!(solid(&app), Color::cmyk_pct(0.0, 0.0, 0.0, 90.0));
-        // The scroll arrow moves a whole column.
+        // The scroll arrow moves one swatch: Black comes under the pointer
+        // of the first swatch.
         click(&mut app, egui::pos2(800.0 - 49.0 + 8.0, 12.0));
-        assert_eq!(app.palette_scroll, 2);
+        assert_eq!(app.palette_scroll, 1);
+        click(&mut app, egui::pos2(x, 3.0 + SWATCH / 2.0));
+        assert_eq!(solid(&app), Color::cmyk_pct(0.0, 0.0, 0.0, 100.0));
         // More than three rows is not kept.
         app.settings.palette.rows = 9;
         assert_eq!(thickness(&app, Row::Main), ROW_H + 2.0 * STRIDE);
+    }
+
+    /// The palette's own menu has Rows > 1 Row, 2 Rows, 3 Rows: picking
+    /// one changes the strip's rows and keeps it in the preferences
+    /// (#610).
+    #[test]
+    fn the_palette_menu_picks_the_rows() {
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        App::setup_context(&ctx);
+        let clock = std::cell::Cell::new(0.0);
+        // One frame with `events`; the place of each text drawn.
+        let mut frame = |app: &mut App, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
+            clock.set(clock.get() + 0.1);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events,
+                time: Some(clock.get()),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                ui.add_space(400.0);
+                palette_row(app, ui)
+            });
+            out.textures_delta.clear();
+            fn walk(s: &egui::Shape, texts: &mut Vec<(String, egui::Rect)>) {
+                match s {
+                    egui::Shape::Text(t) => texts.push((
+                        t.galley.text().to_string(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, texts)),
+                    _ => {}
+                }
+            }
+            let mut texts = Vec::new();
+            out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+            texts
+        };
+        let press = |p: egui::Pos2| {
+            vec![
+                egui::Event::PointerMoved(p),
+                egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        };
+        let release = |p: egui::Pos2| {
+            vec![egui::Event::PointerButton {
+                pos: p,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }]
+        };
+        let texts = frame(&mut app, Vec::new());
+        assert!(texts.iter().all(|(t, _)| t != &tr("palette.rows")));
+        // The menu button at the start of the strip.
+        let button = egui::pos2(13.0 + 7.5, 400.0 + 2.0 + 11.0);
+        frame(&mut app, press(button));
+        frame(&mut app, release(button));
+        let mut texts = frame(&mut app, Vec::new());
+        let at = |texts: &[(String, egui::Rect)], key: &str| {
+            texts
+                .iter()
+                .find(|(t, _)| t == &tr(key))
+                .map(|(_, r)| r.center())
+        };
+        let rows = at(&texts, "palette.rows").expect("Rows in the palette menu");
+        // Hovering Rows opens its submenu.
+        for _ in 0..4 {
+            texts = frame(&mut app, vec![egui::Event::PointerMoved(rows)]);
+        }
+        let two = at(&texts, "palette.rows_2").expect("2 Rows in the submenu");
+        assert!(at(&texts, "palette.rows_1").is_some());
+        assert!(at(&texts, "palette.rows_3").is_some());
+        assert_eq!(app.settings.palette.rows(), 1);
+        frame(
+            &mut app,
+            vec![egui::Event::PointerMoved(egui::pos2(two.x, rows.y))],
+        );
+        frame(&mut app, vec![egui::Event::PointerMoved(two)]);
+        frame(&mut app, press(two));
+        frame(&mut app, release(two));
+        frame(&mut app, Vec::new());
+        assert_eq!(app.settings.palette.rows(), 2);
+        assert_eq!(thickness(&app, Row::Main), ROW_H + STRIDE);
     }
 
     /// An RGB drawing's palette holds the palette's colours as RGB (named
