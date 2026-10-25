@@ -4727,11 +4727,7 @@ mod tests {
         };
         assert!(contents[0].effects.is_empty());
         assert!(matches!(contents[0].kind, ShapeKind::Path { .. }));
-        assert!(crate::live::same_outline(
-            &contents[0].local_path(),
-            &want,
-            0.02
-        ));
+        assert_eq!(contents[0].local_path().elements(), want.elements());
         assert_eq!(frame.effects.len(), 1, "the frame keeps its envelope");
         assert_eq!(
             frame.local_path().elements(),

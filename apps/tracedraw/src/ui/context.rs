@@ -284,12 +284,7 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     }
     // Break Apart, or the drop shadow's or effect group's version of it.
     let label = app.break_apart_label();
-    // Also a warped object (its warp is baked into curves) and artistic
-    // text, as the Object menu and Ctrl+K do (#647).
-    let can = is_curve
-        || is_group
-        || label != "menu.object.break_apart"
-        || shapes.iter().any(App::breaks_apart);
+    let can = is_curve || is_group || label != "menu.object.break_apart";
     if ci(ui, close, label, "Ctrl+K", can) {
         app.break_apart();
     }
