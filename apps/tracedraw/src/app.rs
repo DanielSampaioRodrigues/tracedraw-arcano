@@ -1053,6 +1053,12 @@ pub struct App {
     /// and the selection they were gathered for (see
     /// [`App::selected_rc`]).
     pub selected_cache: std::cell::RefCell<Option<SelectedCache>>,
+    /// The selection's outlines flattened for Mask Outside Page, with the
+    /// gathered selection and the zoom they were made for (see
+    /// [`App::selected_outlines`]).
+    #[allow(clippy::type_complexity)]
+    pub outline_cache:
+        std::cell::RefCell<Option<(std::rc::Rc<Vec<Shape>>, u32, std::rc::Rc<Vec<Vec<Point>>>)>>,
     /// Where the canvas began on screen when it was last drawn, so the
     /// drawing stays put in its window when the window moves (see
     /// `App::anchor_view`).
@@ -1198,7 +1204,7 @@ pub struct App {
     pub rasterize_complex_effects: bool,
     pub show_bleed: bool,
     pub show_printable_area: bool,
-    /// View > Page > Mask Outside Page: the desktop is drawn over what
+    /// View > Mask Outside Page: an opaque colour is drawn over what
     /// lies outside the page, with the page border over the objects, so
     /// the page shows as it will print while every object stays editable
     /// (#615).
@@ -1875,6 +1881,9 @@ impl DockerTab {
     }
 }
 
+/// The most outline points Mask Outside Page draws for the selection.
+pub const SELECTED_OUTLINE_POINTS: usize = 200_000;
+
 /// The selected objects as [`App::selected_rc`] gathered them: the
 /// drawing's engine, its revision and the page, and the selection.
 #[derive(Debug, Clone)]
@@ -2175,6 +2184,7 @@ impl App {
             visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
             fill_preview: false,
             selected_cache: std::cell::RefCell::new(None),
+            outline_cache: std::cell::RefCell::new(None),
             view_anchor: None,
             window_layout: Default::default(),
             window_layout_seen: None,
@@ -3964,6 +3974,67 @@ impl App {
             }
         }
         b
+    }
+
+    /// The outlines of the selected objects in page space, flattened
+    /// finely enough for the current zoom: what Mask Outside Page draws
+    /// over the mask (#615). Kept with the gathered selection and the
+    /// zoom, so a frame only maps the points to the screen; at most
+    /// [`SELECTED_OUTLINE_POINTS`] points.
+    pub fn selected_outlines(&self) -> std::rc::Rc<Vec<Vec<Point>>> {
+        let shapes = self.selected_rc();
+        let zoom = self.view.zoom.to_bits();
+        if let Ok(cache) = self.outline_cache.try_borrow() {
+            if let Some((s, z, lines)) = cache.as_ref() {
+                if *z == zoom && std::rc::Rc::ptr_eq(s, &shapes) {
+                    return lines.clone();
+                }
+            }
+        }
+        // A quarter of a screen pixel.
+        let tolerance = 0.25 / f64::from(self.view.zoom.max(1e-6));
+        let mut lines: Vec<Vec<Point>> = Vec::new();
+        let mut count = 0usize;
+        'shapes: for s in shapes.iter() {
+            let mut line: Vec<Point> = Vec::new();
+            let mut start = None;
+            let mut done = Vec::new();
+            tracedraw_core::geometry::flatten(&s.page_path(), tolerance, &mut |el| {
+                use tracedraw_core::geometry::PathEl;
+                match el {
+                    PathEl::MoveTo(p) => {
+                        if line.len() > 1 {
+                            done.push(std::mem::take(&mut line));
+                        }
+                        line.clear();
+                        line.push(p);
+                        start = Some(p);
+                    }
+                    PathEl::LineTo(p) => line.push(p),
+                    PathEl::ClosePath => {
+                        if let Some(p) = start {
+                            line.push(p);
+                        }
+                    }
+                    _ => {}
+                }
+            });
+            if line.len() > 1 {
+                done.push(line);
+            }
+            for l in done {
+                count += l.len();
+                lines.push(l);
+                if count >= SELECTED_OUTLINE_POINTS {
+                    break 'shapes;
+                }
+            }
+        }
+        let lines = std::rc::Rc::new(lines);
+        if let Ok(mut cache) = self.outline_cache.try_borrow_mut() {
+            *cache = Some((shapes, zoom, lines.clone()));
+        }
+        lines
     }
 
     /// The bounds of what `s` (in page space) draws, its live effects

@@ -9,13 +9,19 @@
   drawn behind the page, so a 6 px band shows on the right and a 4 px
   band at the bottom. The page rectangle is snapped to whole pixels.
   View > Page > Page Border hides the border and the shadow.
-- View > Page > Mask Outside Page (off by default, kept with the other
-  view settings): the desktop colour, at 85 % over the objects, covers
-  everything outside the page (outside every page in Multipage View),
-  and the page border is drawn over the objects, so the page shows as it
-  will print or export. Objects outside still show faintly, and every
-  tool works as usual; the selection handles, guidelines and previews
-  stay on top (#615,
+- View > Mask Outside Page, right after the view modes (Pixels), as in
+  the reference program (off by default, kept with the other view
+  settings): an opaque colour covers everything outside the page
+  (outside every page in Multipage View) over the objects, and the page
+  border is drawn over the objects, so the page shows as it will print
+  or export. The colour is the desktop colour, or a near-black `#222222`
+  when the desktop is as light as the paper (every channel at least
+  `#E0`, as the default white desktop), so the page stands out. The
+  selected objects' outlines are drawn over the mask as a 1 px line in
+  the selection blue, so a part off the page can still be found and
+  picked (flattened once per change of the selection or the zoom, at
+  most 200,000 points); every tool works as usual, and the selection
+  handles, guidelines and previews stay on top (#615,
   `pick_drag_tests::mask_outside_page_covers_the_desktop_and_keeps_objects_editable`,
   `canvas::tests::the_mask_covers_everything_outside_the_pages`).
 - Double-clicking the page border (within 3 px) or its shadow with the

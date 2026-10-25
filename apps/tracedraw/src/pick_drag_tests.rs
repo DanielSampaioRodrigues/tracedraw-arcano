@@ -6390,20 +6390,25 @@ fn painted(
     (rects, texts)
 }
 
-/// View > Page > Mask Outside Page covers what lies outside the page
-/// with the desktop colour, over the objects, and leaves the page clear;
-/// the objects stay editable, and the menu turns it off again (#615).
+/// View > Mask Outside Page (#615), as the reference program shows it:
+/// an opaque near-black over everything outside the page when the
+/// desktop is white (the desktop colour otherwise), the page clear, the
+/// selected object's outline drawn in blue over the mask so its part off
+/// the page can still be found, the objects editable; the item sits
+/// right after Pixels in the View menu and turns the mask off again.
 #[test]
 fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
     let (ctx, mut app, id) = setup();
     // The rectangle reaches past the page's left edge.
     app.select(vec![id]);
     app.nudge(Vec2::new(-30.0, 0.0));
-    let mask = app
-        .desktop_color()
-        .gamma_multiply(crate::canvas::OUTSIDE_PAGE_MASK);
+    let mask = crate::canvas::OUTSIDE_PAGE_DARK;
+    assert_eq!(crate::canvas::outside_page_mask_color(&app), mask);
+    assert_eq!(mask.a(), 255, "opaque: nothing outside shows through");
     let page = app.view.rect_to_screen(app.page_rect());
-    let left_of_page = Pos2::new(page.left() - 5.0, page.center().y);
+    let shape = app.view.rect_to_screen(bounds(&app, id));
+    let left_of_page = Pos2::new(page.left() - 5.0, shape.center().y);
+    assert!(shape.contains(left_of_page), "the object lies there");
     let masked_at = |rects: &[(egui::Rect, egui::Color32)], p: Pos2| {
         rects.iter().any(|(r, c)| *c == mask && r.contains(p))
     };
@@ -6419,22 +6424,53 @@ fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
     };
     let view = menu_item(&ctx, &mut app, "View");
     click_at(&ctx, &mut app, view, Modifiers::NONE);
-    let page_menu = menu_item(&ctx, &mut app, "Page");
-    frame(
-        &ctx,
-        &mut app,
-        vec![Event::PointerMoved(page_menu)],
-        Modifiers::NONE,
-    );
-    for _ in 0..10 {
-        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    }
+    // Right below Pixels, before Full-Screen Preview.
+    let pixels = menu_item(&ctx, &mut app, "Pixels");
     let item = menu_item(&ctx, &mut app, "Mask Outside Page");
+    let full = menu_item(&ctx, &mut app, "Full-screen Preview");
+    assert!(
+        item.y > pixels.y && item.y < full.y && item.y - pixels.y < 40.0,
+        "{pixels:?} {item:?} {full:?}"
+    );
     click_at(&ctx, &mut app, item, Modifiers::NONE);
     assert!(app.mask_outside_page);
     let (rects, _) = painted(&ctx, &mut app);
     assert!(masked_at(&rects, left_of_page), "the desktop is covered");
     assert!(!masked_at(&rects, page.center()), "the page is not");
+    // The selected object's outline over the mask: its top edge off the
+    // page in the selection blue.
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+    let mut outline = false;
+    let mut after_mask = false;
+    let mut seen_mask = false;
+    fn flat(s: &egui::Shape, f: &mut dyn FnMut(&egui::Shape)) {
+        match s {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| flat(s, f)),
+            s => f(s),
+        }
+    }
+    for c in &out.shapes {
+        flat(&c.shape, &mut |s| match s {
+            egui::Shape::Rect(r) if r.fill == mask => seen_mask = true,
+            egui::Shape::LineSegment { points, stroke }
+                if stroke.color == crate::theme::Tokens::SELECTION
+                    && points.iter().all(|p| (p.y - shape.top()).abs() < 1.5)
+                    && points.iter().any(|p| p.x < page.left() - 1.0) =>
+            {
+                outline = true;
+                after_mask |= seen_mask;
+            }
+            _ => {}
+        });
+    }
+    assert!(outline && after_mask, "the outline over the mask");
     // Still a live drawing: the rectangle moves with a drag.
     let x0 = bounds(&app, id).x0;
     let c = app.view.to_screen(bounds(&app, id).center());
@@ -6449,6 +6485,15 @@ fn mask_outside_page_covers_the_desktop_and_keeps_objects_editable() {
     assert!(bounds(&app, id).x0 > x0 + 1.0, "moved");
     // The preference keeps it.
     assert!(app.view_prefs().mask_outside_page);
+    // A desktop colour of the user's own is the mask's colour.
+    app.settings.desktop_custom = true;
+    app.settings.desktop_rgb = [90, 100, 110];
+    let own = egui::Color32::from_rgb(90, 100, 110);
+    assert_eq!(crate::canvas::outside_page_mask_color(&app), own);
+    let (rects, _) = painted(&ctx, &mut app);
+    assert!(rects
+        .iter()
+        .any(|(r, c)| *c == own && r.contains(left_of_page)));
     app.mask_outside_page = false;
     let (rects, _) = painted(&ctx, &mut app);
     assert!(!masked_at(&rects, left_of_page));

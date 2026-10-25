@@ -31,6 +31,7 @@ full, row-by-row status.
 - A Variable Length outline, or any wide outline, inside a group or a clip frame is no longer cut flat at the edges of the strips the page is drawn in: a group is left out of a strip only when every object in it is (#626).
 - A test now checks that Convert Outline to Object of a curved line with a thick butt-ended outline gives four cusp nodes and one curve per side (#622).
 - .cdr files: rounded rectangles now open with Relative Corner Scaling off, like rectangles drawn in TraceDraw, so resizing one no longer stretches its corners and there is no need to switch the setting off rectangle by rectangle. A rectangle the file stores stretched shows round corners instead of oval ones (#619).
+- Mask Outside Page is opaque, as in the reference program: nothing outside the page shows through, the mask is a near-black when the desktop is white, the selected objects' outlines are drawn over it in blue so their parts off the page can still be found, and the item sits in the View menu right after Pixels (#615).
 
 - Convert Outline to Object (Ctrl+Shift+Q) on an outline with round ends or round corners: each round end is now two real curves meeting at its tip, with nodes where it meets the sides, and each round corner a curve, instead of many tiny straight segments. Curved sides also get fewer nodes (#623).
 

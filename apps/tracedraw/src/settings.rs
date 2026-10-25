@@ -1102,7 +1102,7 @@ pub struct ViewPrefs {
     pub page_border: bool,
     pub bleed: bool,
     pub printable_area: bool,
-    /// View > Page > Mask Outside Page (#615).
+    /// View > Mask Outside Page (#615).
     pub mask_outside_page: bool,
     pub pixel_grid: bool,
     pub baseline_grid: bool,
