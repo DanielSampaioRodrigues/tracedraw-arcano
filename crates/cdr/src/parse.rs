@@ -2641,6 +2641,24 @@ impl<'a> Ctx<'a> {
         })
     }
 
+    /// The step count of a blend's linked group (`LIST lnkg` whose own
+    /// `lgob` holds a `loda` of object type 7): the first u32 of its
+    /// argument of type 3000, kept to 1..=999. `None` for other linked
+    /// groups (a contour's is of type 15). Read from two files saved by
+    /// versions 9 and 13 with the default 20 steps (see CLEANROOM.md).
+    fn blend_steps(&mut self, group: &Chunk) -> Option<u32> {
+        let lgob = group.children.iter().find(|k| k.is(b"lgob"))?;
+        let loda = lgob.children.iter().find(|k| k.is(b"loda"))?;
+        let d = self.data(loda);
+        let l = self.read_loda(d)?;
+        if l.kind != 7 {
+            return None;
+        }
+        let arg = l.args.iter().find(|a| a.ty == 3000)?;
+        let steps = self.reader_at(d, arg.off).uint()?;
+        Some(steps.clamp(1, 999))
+    }
+
     /// `obj `: one object, built from its `loda` (attributes) and `trfd`.
     fn read_object(
         &mut self,
@@ -2980,6 +2998,10 @@ impl<'a> Ctx<'a> {
                 .warn("group nesting deeper than 64; inner objects skipped");
             return;
         }
+        // Blends found in this list: where their linked group stood among
+        // the objects read, and their step count (see `blend_steps`).
+        let first = out.len();
+        let mut blends: Vec<(usize, u32)> = Vec::new();
         for c in &list.children {
             if c.is(b"obj ") {
                 let id = ids.shape();
@@ -3048,8 +3070,17 @@ impl<'a> Ctx<'a> {
                     .unwrap_or(Affine::IDENTITY);
                 let saved = self.outer_transform;
                 self.outer_transform = saved * own;
+                let before = out.len();
                 self.collect_objects(c, ids, page_size, depth + 1, out);
                 self.outer_transform = saved;
+                // A blend keeps no steps of its own: an empty linked group
+                // between its two end objects, its `loda` of object type 7
+                // holding the step count (#597).
+                if out.len() == before {
+                    if let Some(steps) = self.blend_steps(c) {
+                        blends.push((before, steps));
+                    }
+                }
             } else if c.list_type.is_some() {
                 // Other lists (`lgob`, `spnd`, ...) are not objects, but
                 // older files nest the object lists one level down.
@@ -3065,6 +3096,29 @@ impl<'a> Ctx<'a> {
                     );
                 }
             }
+        }
+        for (at, steps) in blends {
+            // The objects on either side of the group are its ends.
+            if at <= first || at >= out.len() {
+                self.report
+                    .warn("a blend without both end objects; left out");
+                continue;
+            }
+            let end = out[at].clone();
+            let end_id = end.id;
+            out[at - 1]
+                .effects
+                .push(tracedraw_core::live::Effect::Blend {
+                    end: Box::new(end),
+                    steps,
+                    accel_objects: 0.0,
+                    accel_colors: 0.0,
+                    rotation: 0.0,
+                    path: None,
+                    rotate_on_path: false,
+                    end_id: Some(end_id),
+                    options: Default::default(),
+                });
         }
     }
 
@@ -6682,6 +6736,99 @@ mod tests {
         t.push(1); // path data per letter
         t.extend_from_slice(&vec![0; 24 * text.len()]);
         t
+    }
+
+    /// A blend as versions 9 and 13 store it: the two end objects with an
+    /// empty linked group between them, whose `loda` of object type 7
+    /// holds the step count in its argument of type 3000. The first end
+    /// gets a live blend to the second, which stays an object of its own;
+    /// a linked group of another type (a contour's, 15) makes none (#597).
+    #[test]
+    fn an_empty_blend_group_links_its_two_end_objects() {
+        let v = 13u16;
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let ellipse = |x: i32| {
+            let mut c = i32s(&[x, -100_000, x + 200_000, 100_000]);
+            c.extend_from_slice(&u32s(&[0]));
+            list(
+                b"obj ",
+                &[
+                    chunk(b"loda", &loda(OBJ_ELLIPSE, &[(ARG_COORDS, c)])),
+                    chunk(b"trfd", &trfd(v, identity)),
+                ]
+                .concat(),
+            )
+        };
+        let group = |kind: u32, steps: u32| {
+            let mut a = u32s(&[steps, 254_000]);
+            a.extend_from_slice(&[0; 80]);
+            list(
+                b"lnkg",
+                &list(
+                    b"lgob",
+                    &chunk(
+                        b"loda",
+                        &loda(kind, &[(12020, u32s(&[2, 0, 0])), (3000, a)]),
+                    ),
+                ),
+            )
+        };
+        let read = |kind: u32| {
+            let body = [
+                chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+                list(
+                    b"page",
+                    &list(
+                        b"layr",
+                        &[ellipse(0), group(kind, 12), ellipse(600_000)].concat(),
+                    ),
+                ),
+            ]
+            .concat();
+            parse(&riff(b"CDRD", &body), v)
+        };
+        let (doc, rep) = read(7);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        let blends: Vec<(u32, Option<tracedraw_core::ShapeId>)> = shapes
+            .iter()
+            .flat_map(|s| &s.effects)
+            .filter_map(|e| match e {
+                tracedraw_core::live::Effect::Blend { steps, end_id, .. } => {
+                    Some((*steps, *end_id))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(blends.len(), 1, "{shapes:?}");
+        assert_eq!(blends[0].0, 12);
+        let other = shapes
+            .iter()
+            .find(|s| s.effects.is_empty())
+            .expect("the other end");
+        assert_eq!(blends[0].1, Some(other.id));
+        // A blend group with no object before it: a warning, no blend.
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            list(
+                b"page",
+                &list(b"layr", &[group(7, 12), ellipse(600_000)].concat()),
+            ),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), v);
+        assert!(doc.pages[0].layers[0].shapes[0].effects.is_empty());
+        assert!(
+            rep.warnings.iter().any(|w| w.contains("blend")),
+            "{:?}",
+            rep.warnings
+        );
+        // A contour's linked group (type 15): no blend.
+        let (doc, _) = read(15);
+        assert!(doc.pages[0].layers[0]
+            .shapes
+            .iter()
+            .all(|s| s.effects.is_empty()));
     }
 
     /// Version 21 texts fitted to a circle they are not grouped with (as

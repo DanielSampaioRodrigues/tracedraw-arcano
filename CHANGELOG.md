@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr`: blends from versions 9 and X3 (and others storing them the same way) show their steps as a live blend between the two end objects; only the two ends were drawn before (#597).
+
 ## 0.18.0 (2026-10-25)
 
 - Large drawings with pictures use far less memory while editing: every undo step, background render and copied object now shares the picture data instead of copying it, so moving one curve in a drawing with 244 MB of pictures no longer adds 244 MB per step. Edit Fill and the font list preview no longer copy every step that can be redone. Saved files do not change.
