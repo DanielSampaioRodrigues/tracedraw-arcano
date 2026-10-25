@@ -7171,4 +7171,138 @@ fn the_export_dialog_lists_only_the_presets_of_its_format() {
     assert_eq!(st.script.as_deref(), Some("Plotter"));
     assert!(st.preset_name.is_none());
     assert_eq!(app.settings.formats.export_presets, before);
+/// A curve whose second segment runs straight along the middle node's
+/// outgoing handle, so that handle lies on the segment, selected for the
+/// Shape tool.
+fn curve_with_handle_on_segment() -> (egui::Context, App, ShapeId) {
+    use tracedraw_core::geometry::BezPath;
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let mut path = BezPath::new();
+    path.move_to((100.0, 150.0));
+    path.curve_to((110.0, 150.0), (130.0, 170.0), (140.0, 170.0));
+    path.curve_to((150.0, 170.0), (170.0, 170.0), (180.0, 170.0));
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    (ctx, app, id)
+}
+
+/// Each node of curve `id` with its handles.
+fn node_spots(app: &App, id: ShapeId) -> Vec<(Point, Option<Point>, Option<Point>)> {
+    let ShapeKind::Path { path, .. } = &app.doc().find_shape(id).expect("curve").kind else {
+        panic!("a curve");
+    };
+    tracedraw_core::nodes::nodes(path)
+        .iter()
+        .map(|n| (n.pos, n.ctrl_in, n.ctrl_out))
+        .collect()
+}
+
+/// Shape tool: a click on a chosen node's handle keeps the node chosen
+/// (it chose the segment under the handle), and dragging the handle then
+/// changes the handle, the node staying where it is (#639).
+#[test]
+fn a_handle_clicked_then_dragged_leaves_its_node_in_place() {
+    let (ctx, mut app, id) = curve_with_handle_on_segment();
+    click_page(&ctx, &mut app, Point::new(140.0, 170.0));
+    assert_eq!(app.node_selection, vec![(id, 1)]);
+    let handle = Point::new(150.0, 170.0);
+    click_page(&ctx, &mut app, handle);
+    assert_eq!(app.node_selection, vec![(id, 1)], "the node stays chosen");
+    pull(&ctx, &mut app, handle, Point::new(154.0, 180.0));
+    let n = node_spots(&app, id);
+    assert!(
+        near(n[1].0, Point::new(140.0, 170.0)),
+        "the node stays: {n:?}"
+    );
+    assert!(near(n[2].0, Point::new(180.0, 170.0)), "{n:?}");
+    assert!(
+        near(n[1].2.expect("out"), Point::new(154.0, 180.0)),
+        "{n:?}"
+    );
+    // A smooth node's other handle follows, on the far side.
+    let back = n[1].1.expect("in") - n[1].0;
+    assert!(back.x < 0.0 && back.y < 0.0, "{n:?}");
+}
+
+/// Shape tool: a node whose handle is retracted onto it still takes
+/// clicks once chosen: Ctrl+click drops it from the chosen nodes and a
+/// plain click chooses it alone; the handle never swallows them (#639).
+#[test]
+fn a_click_on_a_chosen_node_with_a_retracted_handle_takes_the_node() {
+    use tracedraw_core::geometry::BezPath;
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let mut path = BezPath::new();
+    path.move_to((100.0, 150.0));
+    path.curve_to((110.0, 150.0), (130.0, 170.0), (140.0, 170.0));
+    path.curve_to((140.0, 170.0), (170.0, 160.0), (180.0, 150.0));
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    app.node_selection = vec![(id, 0), (id, 1), (id, 2)];
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let at = app.view.to_screen(Point::new(140.0, 170.0));
+    click_at(&ctx, &mut app, at, Modifiers::COMMAND | Modifiers::CTRL);
+    assert_eq!(app.node_selection, vec![(id, 0), (id, 2)], "dropped");
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.node_selection, vec![(id, 1)], "chosen alone");
+}
+
+/// Shape tool: the two handles a chosen segment shows can be dragged;
+/// they change the segment's curve and no node moves (#639).
+#[test]
+fn a_chosen_segments_handles_drag() {
+    let (ctx, mut app, id) = curve_with_handle_on_segment();
+    // The first segment, chosen by a click on it.
+    let on = tracedraw_core::geometry::CubicBez::new(
+        (100.0, 150.0),
+        (110.0, 150.0),
+        (130.0, 170.0),
+        (140.0, 170.0),
+    );
+    use tracedraw_core::geometry::ParamCurve;
+    click_page(&ctx, &mut app, on.eval(0.5));
+    assert_eq!(app.chosen_segment(), Some((id, 1)));
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(110.0, 150.0),
+        Point::new(112.0, 140.0),
+    );
+    let n = node_spots(&app, id);
+    assert!(
+        near(n[0].2.expect("out"), Point::new(112.0, 140.0)),
+        "{n:?}"
+    );
+    pull(
+        &ctx,
+        &mut app,
+        Point::new(130.0, 170.0),
+        Point::new(128.0, 180.0),
+    );
+    let n = node_spots(&app, id);
+    assert!(near(n[1].1.expect("in"), Point::new(128.0, 180.0)), "{n:?}");
+    let at: Vec<Point> = n.iter().map(|s| s.0).collect();
+    assert!(near(at[0], Point::new(100.0, 150.0)), "{at:?}");
+    assert!(near(at[1], Point::new(140.0, 170.0)), "{at:?}");
+    assert!(near(at[2], Point::new(180.0, 170.0)), "{at:?}");
 }
