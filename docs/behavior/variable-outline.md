@@ -51,7 +51,10 @@ length with width nodes.
   that span (so the ease is a smooth curve, not a few straight pieces;
   #492, `shaping::tests::variable_band_eases_smoothly_between_close_nodes`),
   split at
-  the nodes; corners get round joins, ends are butt.
+  the nodes; corners get round joins, ends are butt. The pieces of one
+  segment share its direction and every piece has its ends on the path
+  as corners, so the pieces and joins meet without cracks
+  (#627, `shaping::tests::a_variable_band_along_a_curve_has_no_cracks`).
 - With "Scale with object", the reach scales with the object like the
   width.
 - On screen the page is drawn in strips on several threads, each
@@ -62,5 +65,7 @@ length with width nodes.
   `tracedraw_render::culling_tests::objects_out_of_sight_are_skipped`).
 - The outline's colour, or its gradient, pattern or texture fill, paints
   the band. Convert Outline to Object (Ctrl+Shift+Q) gives the band as an
-  object. SVG and PDF exports write the band as a filled path; `.cdr`
+  object: built from the path flattened to 0.005 mm and fitted to a few
+  curves, its butt ends straight lines (#627,
+  `tools2::tests::a_variable_outline_becomes_a_band_of_few_curves`). SVG and PDF exports write the band as a filled path; `.cdr`
   files are written with the plain width.

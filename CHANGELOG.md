@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Large drawings with pictures use far less memory while editing: every undo step, background render and copied object now shares the picture data instead of copying it, so moving one curve in a drawing with 244 MB of pictures no longer adds 244 MB per step. Edit Fill and the font list preview no longer copy every step that can be redone. Saved files do not change.
+- A Variable Length outline converted to an object (Ctrl+Shift+Q) is now a clean shape: a few real curves along each side and straight butt ends, instead of a whole row of anchors joined by straight lines. Along a curve, the band no longer has hairline cracks between its pieces, on screen or in exports (#627).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 

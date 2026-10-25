@@ -361,8 +361,16 @@ impl App {
             };
             let pp = s.page_path();
             let mut out = BezPath::new();
-            // A variable-width or calligraphic outline becomes its band.
-            let band = tracedraw_core::shaping::outline_band(&pp, st, 1.0);
+            // A variable-width or calligraphic outline becomes its band;
+            // a variable one from a finer flattening, as it is fitted to
+            // curves below (#627).
+            let band = if st.widths.is_empty() {
+                tracedraw_core::shaping::outline_band(&pp, st, 1.0)
+            } else {
+                Some(tracedraw_core::shaping::variable_band_within(
+                    &pp, st.width, &st.widths, 0.005,
+                ))
+            };
             if let Some(b) = &band {
                 out = b.clone();
             }
@@ -422,7 +430,9 @@ impl App {
             // The stroke comes back as many short lines: fit it to lines
             // and curves with as few nodes as keep its shape (#622), with
             // nodes where round ends and corners meet the sides (#623).
-            if band.is_none() {
+            if band.is_some() {
+                out = tracedraw_core::fit::fit_path(&out, OUTLINE_FIT_TOLERANCE);
+            } else {
                 let round_cap = st.cap == tracedraw_core::LineCap::Round;
                 let round_join = st.join == tracedraw_core::LineJoin::Round;
                 let corners = if round_join {
@@ -883,6 +893,120 @@ mod tests {
                 "no node at {q:?}: {nodes:?}"
             );
         }
+    }
+
+    /// Area of a closed path, by its flattened polygon.
+    fn area(path: &BezPath) -> f64 {
+        let mut pts = Vec::new();
+        let mut sum = 0.0;
+        let mut close = |pts: &mut Vec<Point>| {
+            for (a, b) in pts.iter().zip(pts.iter().cycle().skip(1)) {
+                sum += a.x * b.y - b.x * a.y;
+            }
+            pts.clear();
+        };
+        tracedraw_core::geometry::flatten(path, 0.001, &mut |el| match el {
+            kurbo::PathEl::MoveTo(p) => {
+                close(&mut pts);
+                pts.push(p);
+            }
+            kurbo::PathEl::LineTo(p) => pts.push(p),
+            _ => {}
+        });
+        close(&mut pts);
+        sum.abs() / 2.0
+    }
+
+    /// A thin outline (a hairline counts as 0.25 mm) with round ends and
+    /// a round corner keeps its whole area and reach: the fine fans of
+    /// its round parts are not merged away.
+    #[test]
+    fn a_thin_round_outline_keeps_its_shape() {
+        let mut line = BezPath::new();
+        line.move_to((10.0, 10.0));
+        line.line_to((40.0, 10.0));
+        line.line_to((60.0, 30.0));
+        let line = ShapeKind::Path {
+            path: line,
+            closed: false,
+        };
+        let (_, out) = outline_object(line, 0.25, |st| {
+            st.cap = tracedraw_core::LineCap::Round;
+            st.join = tracedraw_core::LineJoin::Round;
+        });
+        let r = 0.125;
+        let b = out.bounding_box();
+        let want = Rect::new(10.0 - r, 10.0 - r, 60.0 + r, 30.0 + r);
+        for (got, want) in [
+            (b.x0, want.x0),
+            (b.y0, want.y0),
+            (b.x1, want.x1),
+            (b.y1, want.y1),
+        ] {
+            assert!((got - want).abs() < 0.01, "{b:?} vs {want:?}");
+        }
+        // Two strokes meeting at 45 degrees: the rectangles, less their
+        // overlap inside the corner, the round corner and the two ends.
+        let turn = std::f64::consts::FRAC_PI_4;
+        let len = 30.0 + 20.0 * 2f64.sqrt();
+        let stroke = 2.0 * r * len - r * r * (turn / 2.0).tan()
+            + r * r * turn / 2.0
+            + std::f64::consts::PI * r * r;
+        let a = area(&out);
+        assert!((a - stroke).abs() < stroke * 0.005, "{a} vs {stroke}");
+        // A straight hairline with round ends: not a flat sliver.
+        let mut line = BezPath::new();
+        line.move_to((10.0, 10.0));
+        line.line_to((40.0, 10.0));
+        let line = ShapeKind::Path {
+            path: line,
+            closed: false,
+        };
+        let (_, out) = outline_object(line, 0.0, |st| {
+            st.cap = tracedraw_core::LineCap::Round;
+        });
+        let stroke = 2.0 * r * 30.0 + std::f64::consts::PI * r * r;
+        let a = area(&out);
+        assert!((a - stroke).abs() < stroke * 0.005, "{a} vs {stroke}");
+    }
+
+    /// A Variable Length outline converted to an object is a clean band:
+    /// the eased width runs in a few curves, the butt ends are lines, not
+    /// hundreds of short lines (#627).
+    #[test]
+    fn a_variable_outline_becomes_a_band_of_few_curves() {
+        let width = |st: &mut Stroke| {
+            st.widths = vec![tracedraw_core::WidthNode::symmetric(0.5, 10.0)];
+        };
+        let mut line = BezPath::new();
+        line.move_to((10.0, 10.0));
+        line.line_to((110.0, 10.0));
+        let line = ShapeKind::Path {
+            path: line,
+            closed: false,
+        };
+        let (_, out) = outline_object(line, 2.0, width);
+        // Each side two curves, eased from 1 mm to 5 mm and back; the
+        // ends straight.
+        assert_eq!(segments(&out), (2, 4), "{:?}", out.elements());
+        let b = out.bounding_box();
+        assert!((b.height() - 10.0).abs() < 0.01, "{b:?}");
+        // Along an arch too, the same area as the band drawn.
+        let mut arch = BezPath::new();
+        arch.move_to((10.0, 10.0));
+        arch.curve_to((30.0, 60.0), (80.0, 60.0), (110.0, 10.0));
+        let mut st = Stroke::new(tracedraw_core::Color::BLACK, 2.0);
+        width(&mut st);
+        let drawn = tracedraw_core::shaping::outline_band(&arch, &st, 1.0).expect("band");
+        let arch = ShapeKind::Path {
+            path: arch,
+            closed: false,
+        };
+        let (_, out) = outline_object(arch, 2.0, width);
+        let (lines, curves) = segments(&out);
+        assert!(lines == 2 && curves <= 16, "{lines} lines, {curves} curves");
+        let (a, d) = (area(&out), area(&drawn));
+        assert!((a - d).abs() < d * 0.002, "{a} vs {d}");
     }
 
     /// Every shape tool previews the object it is about to create, sized
