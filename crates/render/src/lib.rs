@@ -120,6 +120,9 @@ struct Flags {
     fill_open_curves: bool,
     anti_alias: bool,
     draft: bool,
+    /// Drawing the warped outline of a text: filled with the nonzero rule
+    /// as the text is, so letters that overlap leave no hole (#647).
+    text_outline: bool,
 }
 
 impl Flags {
@@ -131,6 +134,7 @@ impl Flags {
             fill_open_curves: false,
             anti_alias: opts.anti_alias,
             draft: opts.draft,
+            text_outline: false,
         }
     }
 }
@@ -144,7 +148,19 @@ impl Default for Flags {
             fill_open_curves: false,
             anti_alias: true,
             draft: false,
+            text_outline: false,
         }
+    }
+}
+
+/// How `kind` is filled: text, and the warped outline of a text
+/// (`text_outline`), with the nonzero rule, so overlapping strokes and
+/// letters stay filled (#647, #800); other curves with even-odd.
+fn fill_rule(kind: &ShapeKind, text_outline: bool) -> FillRule {
+    match kind {
+        ShapeKind::Text { .. } => FillRule::Winding,
+        _ if text_outline => FillRule::Winding,
+        _ => FillRule::EvenOdd,
     }
 }
 
@@ -530,6 +546,8 @@ impl Renderer<'_> {
             });
             let mut main = ev.main.clone();
             main.effects.clear();
+            let was_text = self.flags.text_outline;
+            self.flags.text_outline |= matches!(shape.kind, ShapeKind::Text { .. });
             if !self.flags.complex_effects || self.flags.wireframe {
                 // Complex effects off: the object is drawn as it is, with
                 // no pixel work for lenses or transparency masks.
@@ -541,6 +559,7 @@ impl Renderer<'_> {
             } else {
                 self.draw_shape(&main, parent);
             }
+            self.flags.text_outline = was_text;
             for a in &ev.above {
                 let mut a = a.clone();
                 a.effects.clear();
@@ -836,10 +855,7 @@ impl Renderer<'_> {
         }
 
         if !self.flags.wireframe {
-            let rule = match &shape.kind {
-                ShapeKind::Text { .. } => FillRule::Winding,
-                _ => FillRule::EvenOdd,
-            };
+            let rule = fill_rule(&shape.kind, self.flags.text_outline);
             let blend = self.blend_for(shape.overprint_fill);
             if let Fill::Mesh(m) = &shape.fill {
                 // Mesh nodes are local: bring them to page space first.
@@ -2437,6 +2453,20 @@ pub fn render_page_image_with(
 
 #[cfg(test)]
 mod tests {
+    /// A text and the warped outline of one fill with the nonzero rule,
+    /// so letters an envelope pushes together stay filled where they
+    /// overlap (#647); other curves fill even-odd.
+    #[test]
+    fn warped_text_fills_like_text() {
+        use super::fill_rule;
+        let path = ShapeKind::Path {
+            path: BezPath::new(),
+            closed: true,
+        };
+        assert!(matches!(fill_rule(&path, false), FillRule::EvenOdd));
+        assert!(matches!(fill_rule(&path, true), FillRule::Winding));
+    }
+
     use super::*;
     use tracedraw_core::document::{Shape, ShapeKind};
     use tracedraw_core::{

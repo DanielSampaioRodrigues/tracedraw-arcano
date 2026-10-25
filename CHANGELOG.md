@@ -7,6 +7,10 @@ full, row-by-row status.
 ## Unreleased
 
 - Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
+- Convert to Curves and Break Apart of an enveloped, perspective or distorted object (text too) give smooth curves with their corners kept: a square in perspective is its four corners, a letter a few curves, where each was a row of short lines that Reduce Nodes then spoiled. Break Apart is in the canvas context menu for warped objects and artistic text. Letters an envelope pushes together stay filled where they overlap (#647, #840).
+
+- Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
+- Convert to Curves of a text keeps every letter filled: the strokes of a glyph that cross each other, as in many Chinese fonts, left hollow holes where they met once the text was curves; Break Apart of a warped text does the same (#800).
 
 ## 0.19.0 (2026-10-25)
 

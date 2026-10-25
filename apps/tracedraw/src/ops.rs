@@ -529,6 +529,24 @@ impl App {
     /// a text object of its own with the same look, placed where its
     /// letters were. The first piece keeps the object (its id, place in
     /// the stacking order and properties); the others go right above it.
+    /// Whether Break Apart does something to `shape` beyond a curve's
+    /// subpaths: an outline warp to bake into curves (#647), or artistic
+    /// text of more than one line, word or character.
+    pub(crate) fn breaks_apart(shape: &Shape) -> bool {
+        if shape.has_outline_warp() {
+            return true;
+        }
+        match &shape.kind {
+            ShapeKind::Text {
+                spans,
+                frame: None,
+                on_path: None,
+                ..
+            } => text_pieces(&tracedraw_core::document::spans_text(spans)).len() > 1,
+            _ => false,
+        }
+    }
+
     pub(crate) fn text_break_commands(
         &mut self,
         id: tracedraw_core::ShapeId,

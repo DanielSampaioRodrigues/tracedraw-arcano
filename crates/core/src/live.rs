@@ -462,7 +462,8 @@ pub fn bake_outline_warps(shape: &Shape) -> Option<Shape> {
         .collect();
     let (effects, parked) = Shape::split_stack(rest);
     let mut out = shape.clone();
-    out.kind = main.kind;
+    let tolerance = refit_tolerance(&main.page_path());
+    out.kind = refit_kind(main.kind, tolerance);
     out.effects = effects;
     out.parked_effects = parked;
     out.node_types.clear();
@@ -594,8 +595,107 @@ pub fn warped_letters(shape: &Shape) -> Option<Vec<BezPath>> {
     if !layout.rest.elements().is_empty() {
         letters.push(layout.rest.clone());
     }
-    letters.retain(|p| !p.elements().is_empty());
-    Some(warp.apply_parts(&letters))
+    // Curves fill with the even-odd rule, text with nonzero (#800).
+    let letters: Vec<BezPath> = letters
+        .iter()
+        .filter(|p| !p.elements().is_empty())
+        .map(crate::shaping::nonzero_as_even_odd)
+        .collect();
+    let warped = warp.apply_parts(&letters);
+    let mut all = BezPath::new();
+    warped
+        .iter()
+        .for_each(|p| all.extend(p.elements().iter().copied()));
+    let tolerance = refit_tolerance(&all);
+    Some(warped.iter().map(|p| refit_path(p, tolerance)).collect())
+}
+
+/// How closely a baked warp's outline is fitted with curves: a ten
+/// thousandth of the outline's size, between 0.005 and 0.05 mm. The warp
+/// is drawn as short lines; fitting them gives smooth curves with about
+/// as many nodes as the outline had before (#647).
+fn refit_tolerance(path: &BezPath) -> f64 {
+    let b = path.bounding_box();
+    let size = b.width().hypot(b.height());
+    if size.is_finite() {
+        (size * 1e-4).clamp(0.005, 0.05)
+    } else {
+        0.01
+    }
+}
+
+/// A baked warp's outline (short lines, and curves flattened first) as
+/// curves within `tolerance`, its corners kept sharp (#647, #840).
+fn refit_path(path: &BezPath, tolerance: f64) -> BezPath {
+    let mut lines = BezPath::new();
+    crate::geometry::flatten(path, tolerance * 0.25, &mut |el| lines.push(el));
+    crate::shaping::fit_polygon_curves(&lines, tolerance)
+}
+
+/// Whether outlines `a` and `b` run within `tol` of each other: every
+/// point of either flattened lies that near the other (for tests of a
+/// baked warp, which is fitted with curves).
+#[cfg(test)]
+pub(crate) fn same_outline(a: &BezPath, b: &BezPath, tol: f64) -> bool {
+    fn segments(p: &BezPath) -> Vec<(Point, Point)> {
+        let mut out = Vec::new();
+        let (mut at, mut start) = (Point::ZERO, Point::ZERO);
+        crate::geometry::flatten(p, 0.001, &mut |el| match el {
+            PathEl::MoveTo(q) => {
+                at = q;
+                start = q;
+            }
+            PathEl::LineTo(q) => {
+                out.push((at, q));
+                at = q;
+            }
+            PathEl::ClosePath => {
+                out.push((at, start));
+                at = start;
+            }
+            _ => {}
+        });
+        out
+    }
+    fn dist(p: Point, (a, b): (Point, Point)) -> f64 {
+        let d = b - a;
+        let len = d.hypot2();
+        let t = if len > 0.0 {
+            ((p - a).dot(d) / len).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (p - (a + d * t)).hypot()
+    }
+    let (sa, sb) = (segments(a), segments(b));
+    let near = |from: &[(Point, Point)], to: &[(Point, Point)]| {
+        from.iter().all(|s| {
+            [s.0, s.1]
+                .iter()
+                .all(|p| to.iter().map(|t| dist(*p, *t)).fold(f64::MAX, f64::min) <= tol)
+        })
+    };
+    !sa.is_empty() && near(&sa, &sb) && near(&sb, &sa)
+}
+
+/// `kind` with its curves (a group's too) fitted within `tolerance`.
+fn refit_kind(kind: ShapeKind, tolerance: f64) -> ShapeKind {
+    match kind {
+        ShapeKind::Path { path, closed } => ShapeKind::Path {
+            path: refit_path(&path, tolerance),
+            closed,
+        },
+        ShapeKind::Group { children } => ShapeKind::Group {
+            children: children
+                .into_iter()
+                .map(|mut c| {
+                    c.kind = refit_kind(c.kind, tolerance);
+                    c
+                })
+                .collect(),
+        },
+        other => other,
+    }
 }
 
 impl Shape {
@@ -1975,11 +2075,12 @@ mod tests {
         assert_eq!(baked.fill, s.fill);
         assert!(!baked.has_outline_warp());
         assert!(bake_outline_warps(&baked).is_none());
-        // Drawn as before.
-        assert_eq!(
-            baked.local_path().elements(),
-            evaluate(&s).main.local_path().elements()
-        );
+        // Drawn as before, fitted with curves.
+        assert!(same_outline(
+            &baked.local_path(),
+            &evaluate(&s).main.local_path(),
+            0.02
+        ));
         assert!(
             (baked.bounds().y1 - 30.0).abs() < 0.5,
             "{:?}",
@@ -2005,10 +2106,11 @@ mod tests {
         let baked = bake_outline_warps(&s).expect("baked");
         assert_eq!(baked.effects, vec![contour(), twist]);
         // The contour is drawn around the same arch.
-        assert_eq!(
-            evaluate(&baked).below[0].local_path().elements(),
-            evaluate(&s).below[0].local_path().elements()
-        );
+        assert!(same_outline(
+            &evaluate(&baked).below[0].local_path(),
+            &evaluate(&s).below[0].local_path(),
+            0.05
+        ));
         // A transparency does not draw from the outline.
         s.effects = vec![see_through(), arch()];
         let baked = bake_outline_warps(&s).expect("baked");
@@ -2035,10 +2137,11 @@ mod tests {
         ];
         let baked = bake_outline_warps(&s).expect("baked");
         assert!(baked.effects.is_empty() && baked.parked_effects.is_empty());
-        assert_eq!(
-            baked.local_path().elements(),
-            evaluate(&s).main.local_path().elements()
-        );
+        assert!(same_outline(
+            &baked.local_path(),
+            &evaluate(&s).main.local_path(),
+            0.02
+        ));
     }
 
     /// An envelope on a group bakes into each object, which keeps its own
@@ -2266,6 +2369,47 @@ mod tests {
         let b = p.bounding_box();
         assert!((b.x0 - 0.0).abs() < 1e-6 && (b.x1 - 20.0).abs() < 1e-6);
         assert!((b.y1 - 20.0).abs() < 1e-6);
+    }
+
+    /// Convert to Curves of a square in perspective gives its four
+    /// corners joined by straight sides, and of a circle a few curves, not
+    /// a row of points (#840, #647).
+    #[test]
+    fn a_baked_perspective_is_a_few_nodes() {
+        let corners = [
+            Point::new(0.0, 0.0),
+            Point::new(20.0, 0.0),
+            Point::new(15.0, 20.0),
+            Point::new(5.0, 20.0),
+        ];
+        let pieces = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| !matches!(e, PathEl::MoveTo(_) | PathEl::ClosePath))
+                .count()
+        };
+        let mut square = rect_shape();
+        square.effects = vec![Effect::Perspective { corners }];
+        let baked = bake_outline_warps(&square).expect("baked");
+        let p = baked.local_path();
+        assert!(pieces(&p) <= 4, "{:?}", p.elements());
+        assert!(p
+            .elements()
+            .iter()
+            .all(|e| !matches!(e, PathEl::CurveTo(..))));
+        assert!(same_outline(&p, &evaluate(&square).main.local_path(), 0.02));
+        let mut circle = Shape::new(
+            crate::ShapeId(2),
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                arc: None,
+            },
+        );
+        circle.effects = vec![Effect::Perspective { corners }];
+        let baked = bake_outline_warps(&circle).expect("baked");
+        let p = baked.local_path();
+        assert!(pieces(&p) <= 12, "{} pieces", pieces(&p));
+        assert!(same_outline(&p, &evaluate(&circle).main.local_path(), 0.05));
     }
 
     #[test]

@@ -1460,6 +1460,79 @@ pub fn simplify(path: &BezPath) -> BezPath {
     recover_curves(&from_shapes(result), &[path])
 }
 
+/// The area a path covers under the nonzero rule (how text is filled), as
+/// a path that covers the same under the even-odd rule (how curves are
+/// filled). Only contours whose boxes overlap one turning the same way
+/// (strokes of a glyph drawn as separate pieces, as many Chinese fonts do)
+/// are joined; the rest are kept as they are, so a long text stays quick
+/// and keeps its curves (#800).
+pub fn nonzero_as_even_odd(path: &BezPath) -> BezPath {
+    use kurbo::Shape as _;
+    let mut subs: Vec<BezPath> = Vec::new();
+    for el in path.elements() {
+        if matches!(el, PathEl::MoveTo(_)) || subs.is_empty() {
+            subs.push(BezPath::new());
+        }
+        if let Some(last) = subs.last_mut() {
+            last.push(*el);
+        }
+    }
+    let boxes: Vec<kurbo::Rect> = subs.iter().map(|s| s.bounding_box()).collect();
+    let turns: Vec<bool> = subs.iter().map(|s| s.area() > 0.0).collect();
+    // Union-find over contours whose boxes overlap.
+    let mut parent: Vec<usize> = (0..subs.len()).collect();
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut order: Vec<usize> = (0..subs.len()).collect();
+    order.sort_by(|a, b| boxes[*a].x0.total_cmp(&boxes[*b].x0));
+    let mut same_turn = vec![false; subs.len()];
+    let mut active: Vec<usize> = Vec::new();
+    for &i in &order {
+        active.retain(|&j| boxes[j].x1 > boxes[i].x0);
+        for &j in &active {
+            let (a, b) = (boxes[i], boxes[j]);
+            if a.y0 < b.y1 && b.y0 < a.y1 {
+                let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+                let joined = same_turn[ri] || same_turn[rj] || turns[i] == turns[j];
+                parent[ri] = rj;
+                same_turn[rj] = joined;
+            }
+        }
+        active.push(i);
+    }
+    let mut clusters: Vec<Vec<usize>> = vec![Vec::new(); subs.len()];
+    for i in 0..subs.len() {
+        let r = root(&mut parent, i);
+        clusters[r].push(i);
+    }
+    let mut out = BezPath::new();
+    for (r, members) in clusters.iter().enumerate() {
+        if members.is_empty() {
+            continue;
+        }
+        let mut piece = BezPath::new();
+        for &i in members {
+            for el in subs[i].elements() {
+                piece.push(*el);
+            }
+        }
+        let piece = if same_turn[r] {
+            simplify(&piece)
+        } else {
+            piece
+        };
+        for el in piece.elements() {
+            out.push(*el);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1541,6 +1614,58 @@ mod tests {
             "{:?}",
             q.elements()
         );
+    }
+
+    fn glyph_square(path: &mut crate::geometry::BezPath, x: f64, y: f64, w: f64, clockwise: bool) {
+        use crate::geometry::Point;
+        let pts = [(x, y), (x + w, y), (x + w, y + w), (x, y + w)];
+        path.move_to(Point::new(pts[0].0, pts[0].1));
+        if clockwise {
+            for p in &pts[1..] {
+                path.line_to(Point::new(p.0, p.1));
+            }
+        } else {
+            for p in pts[1..].iter().rev() {
+                path.line_to(Point::new(p.0, p.1));
+            }
+        }
+        path.close_path();
+    }
+
+    /// Even-odd: inside where the winding number is odd.
+    fn even_odd_inside(path: &crate::geometry::BezPath, x: f64, y: f64) -> bool {
+        use crate::geometry::Shape as _;
+        path.winding(crate::geometry::Point::new(x, y)) % 2 != 0
+    }
+
+    #[test]
+    /// Two strokes of a glyph that cross, turning the same way, stay
+    /// filled where they cross once the text is curves (#800).
+    fn overlapping_strokes_stay_filled_as_curves() {
+        use super::nonzero_as_even_odd;
+        let mut p = crate::geometry::BezPath::new();
+        glyph_square(&mut p, 0.0, 0.0, 10.0, true);
+        glyph_square(&mut p, 5.0, 5.0, 10.0, true);
+        assert!(!even_odd_inside(&p, 7.0, 7.0), "the hole the report shows");
+        let q = nonzero_as_even_odd(&p);
+        assert!(even_odd_inside(&q, 7.0, 7.0));
+        assert!(even_odd_inside(&q, 2.0, 2.0));
+        assert!(even_odd_inside(&q, 13.0, 13.0));
+        assert!(!even_odd_inside(&q, 13.0, 2.0));
+    }
+
+    #[test]
+    /// A counter (the hole of an o) and glyphs apart from each other are
+    /// kept as they are.
+    fn counters_and_separate_glyphs_are_kept() {
+        use super::nonzero_as_even_odd;
+        let mut p = crate::geometry::BezPath::new();
+        glyph_square(&mut p, 0.0, 0.0, 10.0, true);
+        glyph_square(&mut p, 3.0, 3.0, 4.0, false);
+        glyph_square(&mut p, 20.0, 0.0, 10.0, true);
+        let q = nonzero_as_even_odd(&p);
+        assert_eq!(q.elements(), p.elements());
+        assert!(!even_odd_inside(&q, 5.0, 5.0));
     }
     #[test]
     /// The width eases between nodes along a smooth curve however short
