@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "कर्व की चिकनाई"
 toolbar.cusp_tip = "कस्प नोड: हैंडल स्वतंत्र रूप से चलते हैं"
 toolbar.guides_selected = "{n} मार्गदर्शक रेखाएँ चयनित" # mt
 toolbar.custom = "कस्टम"
+toolbar.custom_page = "कस्टम..." # mt
 toolbar.cut = "काटें (Ctrl+X)"
 toolbar.cut_desc = "चयन काटकर क्लिपबोर्ड पर रखता है।"
 toolbar.delete_node = "- नोड"

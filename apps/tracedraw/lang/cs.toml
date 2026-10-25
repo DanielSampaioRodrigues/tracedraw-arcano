@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Hladkost křivky"
 toolbar.cusp_tip = "Hrotový uzel: úchyty se pohybují nezávisle"
 toolbar.guides_selected = "Vybráno vodítek: {n}" # mt
 toolbar.custom = "Vlastní"
+toolbar.custom_page = "Vlastní..." # mt
 toolbar.cut = "Vyjmout (Ctrl+X)"
 toolbar.cut_desc = "Vyjme výběr a vloží ho do schránky."
 toolbar.delete_node = "- Uzel"

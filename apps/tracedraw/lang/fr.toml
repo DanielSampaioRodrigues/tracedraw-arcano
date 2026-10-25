@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Lissage de la courbe"
 toolbar.cusp_tip = "Nœud angulaire : les poignées bougent indépendamment"
 toolbar.guides_selected = "{n} repères sélectionnés" # mt
 toolbar.custom = "Personnalisé"
+toolbar.custom_page = "Personnalisé..." # mt
 toolbar.cut = "Couper (Ctrl+X)"
 toolbar.cut_desc = "Coupe la sélection et la place dans le presse-papiers."
 toolbar.delete_node = "- Nœud"

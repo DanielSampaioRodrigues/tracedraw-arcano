@@ -192,7 +192,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Capability | Status |
 |---|---|
 | Multiple pages, insert/duplicate (before or after, layers only or with their contents)/rename/delete/move, go to page, page sorter | works (see `behavior/pages.md`) |
-| Page size presets and orientation, custom sizes, bleed, printable area; View > Page > Mask Outside Page (the desktop drawn over what lies outside the page while editing, see `behavior/drawing-window.md`) | works |
+| Page size presets and orientation, custom sizes (Custom... in the property bar list opens the Page Size dialog), bleed, printable area; View > Page > Mask Outside Page (the desktop drawn over what lies outside the page while editing, see `behavior/drawing-window.md`) | works |
 | Page background: solid or bitmap | works |
 | Master layers (all, odd, even pages; their objects selectable on the pages they show on), layer visibility, lock, printable | works |
 | Objects panel: the page and the Master Page (master layers, guides, document grid) as a tree; layers with collapse arrow, eye, printer, padlock and layer icon; the active layer in bold, picked by a click (new objects go there; a click on an object makes its layer active); objects by name (or what they are) with a fill and outline swatch; groups open to their objects; double-click renames the page, a layer or an object; New Layer, New Master Layer (all, odd or even pages) and Delete at the bottom (see `behavior/objects-panel.md`) | works |

@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Gładkość krzywej"
 toolbar.cusp_tip = "Węzeł ostry: uchwyty poruszają się niezależnie"
 toolbar.guides_selected = "Zaznaczono prowadnic: {n}" # mt
 toolbar.custom = "Własne"
+toolbar.custom_page = "Własne..." # mt
 toolbar.cut = "Wytnij (Ctrl+X)"
 toolbar.cut_desc = "Wycina zaznaczenie i umieszcza je w schowku."
 toolbar.delete_node = "- Węzeł"

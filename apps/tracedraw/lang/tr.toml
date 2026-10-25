@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Eğri düzgünlüğü"
 toolbar.cusp_tip = "Sivri düğüm: tutamaçlar bağımsız hareket eder"
 toolbar.guides_selected = "{n} kılavuz çizgisi seçildi" # mt
 toolbar.custom = "Özel"
+toolbar.custom_page = "Özel..." # mt
 toolbar.cut = "Kes (Ctrl+X)"
 toolbar.cut_desc = "Seçimi keser ve panoya koyar."
 toolbar.delete_node = "- Düğüm"

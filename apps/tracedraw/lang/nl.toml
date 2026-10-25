@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Gladheid van curve"
 toolbar.cusp_tip = "Scherp knooppunt: grepen bewegen onafhankelijk"
 toolbar.guides_selected = "{n} hulplijnen geselecteerd" # mt
 toolbar.custom = "Aangepast"
+toolbar.custom_page = "Aangepast..." # mt
 toolbar.cut = "Knippen (Ctrl+X)"
 toolbar.cut_desc = "Knipt de selectie en zet die op het klembord."
 toolbar.delete_node = "- Knooppunt"

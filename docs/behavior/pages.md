@@ -26,6 +26,19 @@ Tests: `command::tests::duplicate_page_goes_before_or_after_with_or_without_cont
 `ui::window_bars::tests::the_duplicate_page_dialog_puts_the_copy_where_asked_and_undoes`,
 `ui::window_bars::tests::layout_duplicate_page_opens_the_dialog`.
 
+## Page size on the property bar
+
+With nothing selected the property bar starts with the page size list:
+the presets (A4, A3, A5, Letter, Legal, Tabloid, Business card, the web
+sizes and Square 1080), a line, then Custom.... The list shows the
+preset the page matches (either way round) or Custom when it matches
+none, and Custom... is then the entry ticked. A preset keeps the page's
+orientation. Custom... opens the Page Size dialog with the page's width
+and height, to type any size (#650); the page width and height fields
+next to the list also take any size at once. Both resize the current
+page or every page as the All Pages / Current Page buttons say.
+Checked by `ui::propbar::tests::the_page_size_list_offers_a_custom_size`.
+
 ## Fit Page to Selection, Fit Page to Drawing
 
 Layout > Fit Page to Selection (pale with nothing selected) and Fit

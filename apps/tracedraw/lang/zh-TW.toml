@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "曲線平滑度"
 toolbar.cusp_tip = "尖角節點：控點各自獨立移動"
 toolbar.guides_selected = "已選取 {n} 條輔助線" # mt
 toolbar.custom = "自訂"
+toolbar.custom_page = "自訂..." # mt
 toolbar.cut = "剪下 (Ctrl+X)"
 toolbar.cut_desc = "剪下選取範圍並放到剪貼簿。"
 toolbar.delete_node = "- 節點"

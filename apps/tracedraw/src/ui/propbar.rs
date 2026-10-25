@@ -1479,6 +1479,42 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The page bar's list of sizes: the presets, then Custom (#650), which
+/// is the one ticked when the page matches no preset and opens the Page
+/// Size dialog with the page's width and height to type any size.
+fn page_size_list(
+    app: &mut App,
+    ui: &mut Ui,
+    presets: &[(&'static str, Size)],
+    current: &str,
+    size: Size,
+) {
+    for (n, s) in presets {
+        if ui.selectable_label(current == *n, *n).clicked() {
+            let landscape = size.width > size.height;
+            let s = if landscape {
+                Size::new(s.height.max(s.width), s.height.min(s.width))
+            } else {
+                Size::new(s.width.min(s.height), s.width.max(s.height))
+            };
+            resize_pages(app, s);
+            app.fit_pending = true;
+        }
+    }
+    ui.separator();
+    let custom = !presets.iter().any(|(n, _)| current == *n);
+    if ui
+        .selectable_label(custom, tr("toolbar.custom_page"))
+        .clicked()
+    {
+        app.dialog = crate::ui::dialogs::Dialog::PageSize {
+            width: size.width,
+            height: size.height,
+            all_pages: app.page_size_all,
+        };
+    }
+}
+
 /// Autofit Page's popup (there is one property bar).
 pub(crate) fn autofit_popup_id() -> egui::Id {
     egui::Id::new("autofit_page_popup")
@@ -1503,20 +1539,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 .selected_text(current.clone())
                 .width(192.0)
                 .height(400.0)
-                .show_ui(ui, |ui| {
-                    for (n, s) in &presets {
-                        if ui.selectable_label(current == *n, *n).clicked() {
-                            let landscape = size.width > size.height;
-                            let s = if landscape {
-                                Size::new(s.height.max(s.width), s.height.min(s.width))
-                            } else {
-                                Size::new(s.width.min(s.height), s.width.max(s.height))
-                            };
-                            resize_pages(app, s);
-                            app.fit_pending = true;
-                        }
-                    }
-                });
+                .show_ui(ui, |ui| page_size_list(app, ui, &presets, &current, size));
         },
     );
     let mut new_size = None;
@@ -3320,6 +3343,53 @@ mod tests {
             draw_pic(ui.painter(), rect, Pic::FitPage, Tokens::text());
         });
         out.textures_delta.clear();
+    }
+
+    /// The page bar's list of sizes ends with Custom..., ticked when the
+    /// page matches no preset; clicking it opens the Page Size dialog with
+    /// the page's own width and height (#650).
+    #[test]
+    fn the_page_size_list_offers_a_custom_size() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let size = Size::new(123.0, 45.0);
+        let presets = crate::ui::dialogs::paper_presets();
+        let custom = tr("toolbar.custom_page");
+        let run = |app: &mut App, events: Vec<egui::Event>| -> Option<egui::Rect> {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| page_size_list(app, ui, &presets, "Custom", size),
+            );
+            out.textures_delta.clear();
+            out.shapes.iter().find_map(|c| match &c.shape {
+                epaint::Shape::Text(t) if t.galley.text() == custom => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            })
+        };
+        let at = run(&mut app, Vec::new()).expect("a Custom entry").center();
+        run(&mut app, vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            run(
+                &mut app,
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        match app.dialog {
+            crate::ui::dialogs::Dialog::PageSize { width, height, .. } => {
+                assert!((width - 123.0).abs() < 1e-9 && (height - 45.0).abs() < 1e-9);
+            }
+            _ => panic!("the Page Size dialog"),
+        }
     }
 
     /// With Live preview on the open popup shows the page Autofit Page

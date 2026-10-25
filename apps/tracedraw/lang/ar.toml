@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "نعومة المنحنى"
 toolbar.cusp_tip = "عقدة حادة: المقابض تتحرك باستقلال"
 toolbar.guides_selected = "{n} خطوط إرشادية محددة" # mt
 toolbar.custom = "مخصص"
+toolbar.custom_page = "مخصص..." # mt
 toolbar.cut = "قص (Ctrl+X)"
 toolbar.cut_desc = "يقص التحديد ويضعه في الحافظة."
 toolbar.delete_node = "- عقدة"

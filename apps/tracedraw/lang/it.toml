@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Uniformità della curva"
 toolbar.cusp_tip = "Nodo cuspide: le maniglie si spostano in modo indipendente"
 toolbar.guides_selected = "{n} linee guida selezionate" # mt
 toolbar.custom = "Personalizzato"
+toolbar.custom_page = "Personalizzato..." # mt
 toolbar.cut = "Taglia (Ctrl+X)"
 toolbar.cut_desc = "Taglia la selezione e la mette negli appunti."
 toolbar.delete_node = "- Nodo"

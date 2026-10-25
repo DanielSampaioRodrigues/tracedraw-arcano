@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Suavidad de curva"
 toolbar.cusp_tip = "Nodo asimétrico: los tiradores se mueven de forma independiente"
 toolbar.guides_selected = "{n} guías seleccionadas" # mt
 toolbar.custom = "Personalizado"
+toolbar.custom_page = "Personalizado..." # mt
 toolbar.cut = "Cortar (Ctrl+X)"
 toolbar.cut_desc = "Corta la selección y la coloca en el portapapeles."
 toolbar.delete_node = "- Nodo"

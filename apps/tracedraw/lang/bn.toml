@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "বক্ররেখার মসৃণতা"
 toolbar.cusp_tip = "কাস্প নোড: হ্যান্ডল স্বাধীনভাবে চলে"
 toolbar.guides_selected = "{n}টি গাইডলাইন নির্বাচিত" # mt
 toolbar.custom = "কাস্টম"
+toolbar.custom_page = "কাস্টম..." # mt
 toolbar.cut = "কাট (Ctrl+X)"
 toolbar.cut_desc = "নির্বাচন কেটে ক্লিপবোর্ডে রাখে।"
 toolbar.delete_node = "- নোড"

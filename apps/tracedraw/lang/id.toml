@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "Kehalusan kurva"
 toolbar.cusp_tip = "Simpul runcing: pegangan bergerak independen"
 toolbar.guides_selected = "{n} garis bantu dipilih" # mt
 toolbar.custom = "Kustom"
+toolbar.custom_page = "Kustom..." # mt
 toolbar.cut = "Potong (Ctrl+X)"
 toolbar.cut_desc = "Memotong pilihan dan menaruhnya di papan klip."
 toolbar.delete_node = "- Simpul"

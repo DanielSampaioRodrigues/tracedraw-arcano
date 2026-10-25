@@ -3582,6 +3582,7 @@ toolbar.curve_smoothness = "カーブの滑らかさ"
 toolbar.cusp_tip = "カスプノード：ハンドルは独立して動く"
 toolbar.guides_selected = "{n} 本のガイドラインを選択" # mt
 toolbar.custom = "カスタム"
+toolbar.custom_page = "カスタム..." # mt
 toolbar.cut = "切り取り (Ctrl+X)"
 toolbar.cut_desc = "選択範囲を切り取ってクリップボードに置きます。"
 toolbar.delete_node = "- ノード"
