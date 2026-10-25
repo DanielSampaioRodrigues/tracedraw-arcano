@@ -68,6 +68,7 @@ full, row-by-row status.
 - .cdr files: rounded rectangles now open with Relative Corner Scaling off, like rectangles drawn in TraceDraw, so resizing one no longer stretches its corners and there is no need to switch the setting off rectangle by rectangle. A rectangle the file stores stretched shows round corners instead of oval ones (#619).
 - Mask Outside Page is opaque, as in the reference program: nothing outside the page shows through, the mask is a near-black when the desktop is white, the selected objects' outlines are drawn over it in blue so their parts off the page can still be found, and the item sits in the View menu right after Pixels (#615).
 - Outline Pen dialog: the selected objects now show each change (width, colour, style, corners, caps, arrowheads, calligraphy, variable widths, overprint) live while the dialog is open; OK keeps it as one undo step and Cancel or Esc puts the outline back (#741).
+- Shape tool: two or more neighbouring nodes deleted together leave one curve between the nodes either side, fitted to the old outline, so it keeps its general shape. Line nodes deleted together left a straight line (#675).
 
 - Convert Outline to Object (Ctrl+Shift+Q) on an outline with round ends or round corners: each round end is now two real curves meeting at its tip, with nodes where it meets the sides, and each round corner a curve, instead of many tiny straight segments. Curved sides also get fewer nodes (#623).
 

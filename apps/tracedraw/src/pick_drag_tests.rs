@@ -1478,6 +1478,47 @@ fn dropping_an_end_node_on_another_end_node_joins_them() {
     );
 }
 
+/// Two neighbouring line nodes deleted together leave a curve keeping
+/// the outline's general shape, not a straight line (#675).
+#[test]
+fn deleting_two_neighbouring_line_nodes_leaves_a_curve() {
+    use tracedraw_core::geometry::{PathEl, Shape as _};
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let a = app.node_at(Point::new(60.0, 10.0)).expect("node");
+    let b = app.node_at(Point::new(60.0, 40.0)).expect("node");
+    app.node_selection = vec![(a.shape, a.index), (b.shape, b.index)];
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Delete, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let p = match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 2, "{p:?}");
+    assert!(
+        p.elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::CurveTo(..))),
+        "{p:?}"
+    );
+    // The curve bulges out towards where the right side was.
+    let b = p.bounding_box();
+    assert!(b.x1 > 35.0 && b.x1 < 65.0, "{b:?}");
+    // One undo step brings the nodes back.
+    app.undo();
+    let p = match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 4);
+}
+
 #[test]
 fn delete_removes_a_clicked_segment_and_keeps_its_nodes() {
     let (ctx, mut app, id) = setup();

@@ -1155,7 +1155,28 @@ impl App {
             self.selection
                 .retain(|id| self.engine.document().find_shape(*id).is_some());
         }
-        self.for_each_selected_node("Delete Nodes", nodes::delete_node);
+        // The chosen nodes of a curve go together: neighbouring ones
+        // become one curve keeping the outline's shape (#675).
+        let mut by_shape: std::collections::BTreeMap<ShapeId, Vec<usize>> = Default::default();
+        for &(id, i) in &self.node_selection {
+            by_shape.entry(id).or_default().push(i);
+        }
+        let mut cmds = Vec::new();
+        for (id, idxs) in by_shape {
+            let Some((path, closed, _)) = self.path_of(id) else {
+                continue;
+            };
+            cmds.push(Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path {
+                    path: nodes::delete_nodes(&path, &idxs),
+                    closed,
+                },
+            });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Delete Nodes", &cmds);
+        }
         self.node_selection.clear();
     }
 
