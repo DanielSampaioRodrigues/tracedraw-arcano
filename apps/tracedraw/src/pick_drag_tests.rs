@@ -6554,6 +6554,57 @@ fn the_autofit_popup_stays_open_when_its_box_is_clicked() {
         "closed by a click outside"
     );
     assert!(app.autofit_preview.is_none());
+/// The canvas context menu offers Break Apart for an enveloped text, as
+/// the Object menu and Ctrl+K do; a real click on it bakes the envelope
+/// into one curve per letter (#647).
+#[test]
+fn the_context_menu_breaks_an_enveloped_text_apart() {
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    tracedraw_text::install();
+    app.start_text(Point::new(40.0, 120.0), None);
+    app.text_insert("ABC");
+    let id = app.text_edit.as_ref().expect("editing").shape;
+    app.finish_text();
+    app.set_tool(Tool::Pick);
+    app.select(vec![id]);
+    app.apply_envelope_preset(crate::envelope_edit::Preset::Arch);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let at = app.view.to_screen(bounds(&app, id).center());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(at)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.context_menu.is_some());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (_, texts) = painted(&ctx, &mut app);
+    let item = texts
+        .into_iter()
+        .find(|(t, _)| t.trim() == "Break Apart")
+        .map(|(_, p)| p)
+        .expect("Break Apart in the context menu");
+    click_at(&ctx, &mut app, item, Modifiers::NONE);
+    assert_eq!(app.selection.len(), 3, "a curve per letter");
+    for p in &app.selection {
+        let s = app.doc().shape_on_page(*p).expect("piece");
+        assert!(matches!(s.kind, ShapeKind::Path { .. }), "{:?}", s.kind);
+        assert!(s.effects.is_empty());
+    }
 }
 
 /// The Shape tool's corner widgets (#635): with no node chosen, dragging

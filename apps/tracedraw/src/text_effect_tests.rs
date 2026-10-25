@@ -348,6 +348,60 @@ fn break_apart_bakes_the_envelope_into_letter_curves() {
     assert!(app.doc().find_shape(pieces[2]).is_none() || pieces[2] == id);
 }
 
+/// The node count of `ids`' curves.
+fn node_count(app: &App, ids: &[ShapeId]) -> usize {
+    ids.iter()
+        .filter_map(|id| app.doc().shape_on_page(*id))
+        .map(|s| match &s.kind {
+            ShapeKind::Path { path, .. } => tracedraw_core::nodes::nodes(path).len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Convert to Curves and Break Apart of an enveloped text give smooth
+/// curves with about as many nodes as the text's own outline, not the
+/// warp's dense lines, still drawn where the text was (#647).
+#[test]
+fn baked_envelopes_are_fitted_with_few_curves() {
+    let mut app = App::headless();
+    let plain = text(&mut app, Point::new(20.0, 100.0), "ABC");
+    app.select(vec![plain]);
+    app.convert_to_curves();
+    let own = node_count(&app, &[plain]);
+    assert!(own > 10, "{own}");
+    for break_apart in [false, true] {
+        let id = text(&mut app, Point::new(20.0, 160.0), "ABC");
+        app.select(vec![id]);
+        app.apply_envelope_preset(crate::envelope_edit::Preset::Arch);
+        let drawn = drawn_bounds(&app, &[id]);
+        if break_apart {
+            app.break_apart();
+        } else {
+            app.convert_to_curves();
+        }
+        let pieces = app.selection.clone();
+        let n = node_count(&app, &pieces);
+        assert!(
+            n <= own * 3,
+            "break apart {break_apart}: {n} nodes for {own} unwarped"
+        );
+        let curves = pieces
+            .iter()
+            .filter_map(|id| app.doc().shape_on_page(*id))
+            .flat_map(|s| match &s.kind {
+                ShapeKind::Path { path, .. } => path.elements().to_vec(),
+                _ => Vec::new(),
+            })
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::CurveTo(..)))
+            .count();
+        assert!(curves > 0, "curves, not only lines");
+        let got = drawn_bounds(&app, &pieces);
+        assert!(near_rect(got, drawn, 0.05), "{got:?} {drawn:?}");
+        app.delete_selection();
+    }
+}
+
 /// Break Apart of one enveloped letter makes it one warped curve with its
 /// hole kept; it used to split it into filled parts (#647).
 #[test]
