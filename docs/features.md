@@ -126,7 +126,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Interactive Fill tool: property bar with fill type and gradient fields, start, end and skew nodes placed freely on the canvas (the fill keeps them through moves and scales; SVG and PDF export them); colour nodes added on the line with a double click, moved and removed; midpoint sliders; a node bar with the node's colour and transparency; node colour, transparency and position on the property bar; palette colours to the picked node | works |
 | Outline: width (shown in points, mm, cm, inches or pixels), colour, caps, joins, mitre limit (angle), position (outside, centred, inside), dashes with Align dashes and custom line styles (Edit Line Style), nib, behind fill, scale with object, arrowheads (presets and custom from the selection) (see `behavior/outline-pen.md`) | works |
 | Outline paint: every fill kind (none, uniform, gradient, pattern, texture, mesh) with the fill editors, on screen, in SVG (gradient and pattern strokes) and PDF (the outline's area shaded or rasterised) | works (see `behavior/outline-pen.md`, Outline paint; other exports use the outline colour) |
-| Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
+| Outline Pen and Outline Color (hidden flyout, Options toggle); the Outline Pen dialog's changes show live on the selection until OK or Cancel; calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
 
 ## 6. Interactive effects

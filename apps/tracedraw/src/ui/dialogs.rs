@@ -1127,6 +1127,11 @@ pub fn show(app: &mut App, ctx: &Context) {
     if app.fill_preview && !matches!(app.dialog, Dialog::EditFill(_)) {
         app.end_edit_fill_preview();
     }
+    // The same for the Outline Pen dialog's (#741); Edit Line Style opened
+    // from it takes the preview back, which comes again on the return.
+    if app.outline_preview && !matches!(app.dialog, Dialog::OutlinePen(_)) {
+        app.end_outline_pen_preview();
+    }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
     if !matches!(dialog, Dialog::None) {
@@ -2223,6 +2228,7 @@ pub fn show(app: &mut App, ctx: &Context) {
     }
     if close {
         app.end_edit_fill_preview();
+        app.end_outline_pen_preview();
     }
     // A closing dialog may have opened the next one (the next unsaved
     // drawing's question); keep that.

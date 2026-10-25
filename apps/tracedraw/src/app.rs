@@ -1007,6 +1007,9 @@ pub struct App {
     /// The Edit Fill dialog's fill is shown on the selection as an engine
     /// preview (#436).
     pub fill_preview: bool,
+    /// The Outline Pen dialog's outline is shown on the selection as an
+    /// engine preview (#741).
+    pub outline_preview: bool,
     /// The selected objects in page space, for the drawing, its revision
     /// and the selection they were gathered for (see
     /// [`App::selected_rc`]).
@@ -2151,6 +2154,7 @@ impl App {
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
             fill_preview: false,
+            outline_preview: false,
             selected_cache: std::cell::RefCell::new(None),
             outline_cache: std::cell::RefCell::new(None),
             view_anchor: None,
