@@ -83,6 +83,7 @@ full, row-by-row status.
 - `CONTRIBUTORS.md` lists the people who contributed code, with what each contributed, also those whose commits were recorded under another name; the README links it.
 - The page size list on the property bar ends with Custom..., which opens the Page Size dialog with the page's width and height to type any size; it is the entry ticked when the page matches no preset (#650).
 - Alt codes while editing text: the keypad digits typed under Alt are no longer typed too (with Num Lock on they also came as text, so Alt+0193 could give "0193" before the character), and a character the system composes as well is typed once. Fonts made for the symbol encoding (legacy script and dingbat fonts) now list their glyphs in the Glyphs panel with the keystroke that types them, and text typed in them draws their glyphs instead of another font's (#469).
+- Colour picker and Edit Fill: the Model list offers the registration colour (it prints on every separation) after the models, as the reference program's list does; it could not be chosen anywhere (#286).
 
 - The log now names the processor, its threads and the Windows build, says at the first frame how long the start took and how large the window is in pixels, and with `RUST_LOG=debug` sums up the frames every 10 s (count, input, build times, gaps and why they were asked for), so a report of a slow window shows where the time goes (#616).
 

@@ -112,6 +112,62 @@ pub fn edit_model(c: Color) -> &'static str {
     }
 }
 
+/// The Model list's entry that makes the colour the registration colour
+/// (it prints on every separation), after the models.
+pub const REGISTRATION: &str = "Registration";
+
+/// The entry the Model list shows as chosen for `c`.
+pub fn list_model(c: Color) -> &'static str {
+    match c {
+        Color::Registration => REGISTRATION,
+        other => edit_model(other),
+    }
+}
+
+/// `c` after `choice` is picked in the Model list: the colour converted
+/// to that model, or the registration colour.
+pub fn choose_model(c: Color, choice: &str) -> Color {
+    if choice == REGISTRATION {
+        Color::Registration
+    } else {
+        c.convert_to(choice)
+    }
+}
+
+/// The Model list (the docker's models, then the registration colour).
+/// True when a choice changed the colour.
+pub fn model_list(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
+    let shown = list_model(*c);
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(if shown == REGISTRATION {
+            tr("docker.registration")
+        } else {
+            shown.to_string()
+        })
+        .width(96.0)
+        .show_ui(ui, |ui| {
+            for m in crate::ui::color_docker::MODELS {
+                if ui.selectable_label(shown == m, m).clicked() && shown != m {
+                    *c = choose_model(*c, m);
+                    changed = true;
+                }
+            }
+            ui.separator();
+            let reg = shown == REGISTRATION;
+            if ui
+                .selectable_label(reg, tr("docker.registration"))
+                .on_hover_text(tr("docker.registration_tip"))
+                .clicked()
+                && !reg
+            {
+                *c = choose_model(*c, REGISTRATION);
+                changed = true;
+            }
+        });
+    changed
+}
+
 /// A colour chosen in the viewer (hue, saturation, brightness) as a
 /// colour of `model`.
 pub fn from_viewer(h: f32, s: f32, b: f32, model: &str) -> Color {
@@ -183,17 +239,7 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
                                 .color(Tokens::text_dim())
                                 .size(11.0),
                         );
-                        egui::ComboBox::from_id_salt(id.with("model"))
-                            .selected_text(model)
-                            .width(96.0)
-                            .show_ui(ui, |ui| {
-                                for m in crate::ui::color_docker::MODELS {
-                                    if ui.selectable_label(model == m, m).clicked() && model != m {
-                                        *c = c.convert_to(m);
-                                        changed = true;
-                                    }
-                                }
-                            });
+                        changed |= model_list(ui, id.with("model"), c);
                     });
                     let model = edit_model(*c);
                     let mut m = c.convert_to(model);
@@ -312,6 +358,23 @@ mod tests {
             Color::Rgb { .. }
         ));
         assert_eq!(edit_model(Color::Registration), "CMYK");
+    }
+
+    /// The Model list offers the registration colour after the models, as
+    /// the reference program's list does; it shows as chosen for that
+    /// colour, and a model chosen from it converts it like any colour
+    /// (#286).
+    #[test]
+    fn the_model_list_offers_the_registration_colour() {
+        let red = Color::rgb8(220, 30, 30);
+        let reg = choose_model(red, REGISTRATION);
+        assert_eq!(reg, Color::Registration);
+        assert_eq!(list_model(reg), REGISTRATION);
+        assert_eq!(list_model(red), "RGB");
+        let back = choose_model(reg, "CMYK");
+        assert!(matches!(back, Color::Cmyk { .. }), "{back:?}");
+        assert_eq!(list_model(back), "CMYK");
+        assert!(!crate::ui::color_docker::MODELS.contains(&REGISTRATION));
     }
 
     /// A press below the popup closes it, unless the Model list is open
