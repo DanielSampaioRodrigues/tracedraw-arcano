@@ -427,6 +427,18 @@ impl Renderer<'_> {
         {
             return false;
         }
+        // A group or a clip frame: its own outline reaches nowhere, its
+        // objects' outlines do. Out of sight when every object is (a clip
+        // frame draws nothing past its frame): the group's bounds count
+        // no outline, so its strips used to cut a wide or variable
+        // outline inside it flat (#626).
+        match &shape.kind {
+            ShapeKind::Group { children } => {
+                return children.iter().all(|c| self.out_of_sight(c, visible));
+            }
+            ShapeKind::ClipFrame { frame, .. } => return self.out_of_sight(frame, visible),
+            _ => {}
+        }
         let b = shape.bounds();
         if !b.x0.is_finite() || !b.y0.is_finite() || !b.x1.is_finite() || !b.y1.is_finite() {
             return false;
@@ -4115,6 +4127,76 @@ mod band_tests {
             assert!(dark(100.0, y), "{y} mm");
         }
         assert!(!dark(100.0, 66.0) && !dark(100.0, 24.0));
+    }
+
+    /// The same inside a group, nested twice, and an ordinary 16 mm
+    /// outline inside a group: the strips no longer cut the band flat at
+    /// the group's bounds, which count no outline (#626).
+    #[test]
+    fn outlines_inside_groups_are_drawn_whole_across_the_strips() {
+        let line = |id: u64, y: f64, stroke: tracedraw_core::Stroke| {
+            let mut path = BezPath::new();
+            path.move_to((20.0, y));
+            path.line_to((180.0, y));
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(id),
+                ShapeKind::Path {
+                    path,
+                    closed: false,
+                },
+            );
+            s.stroke = Some(stroke);
+            s
+        };
+        let mut st = tracedraw_core::Stroke::new(tracedraw_core::Color::BLACK, 0.2);
+        st.widths = vec![tracedraw_core::WidthNode::symmetric(0.5, 40.0)];
+        // Each crosses into the strip below its group's bounds.
+        let variable = line(1, 40.0, st);
+        let wide = line(
+            2,
+            95.0,
+            tracedraw_core::Stroke::new(tracedraw_core::Color::BLACK, 16.0),
+        );
+        let group = |id: u64, children: Vec<Shape>| {
+            let mut g = Shape::new(tracedraw_core::ShapeId(id), ShapeKind::Group { children });
+            g.stroke = None;
+            g
+        };
+        let nested = group(11, vec![group(10, vec![variable])]);
+        let plain = group(12, vec![wide]);
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(200.0, 120.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        if let Ok(l) = doc.layer_mut(layer) {
+            l.shapes.push(nested);
+            l.shapes.push(plain);
+        }
+        let opts = RenderOptions {
+            width: 1000,
+            height: 600,
+            view: ViewTransform {
+                zoom: 5.0,
+                origin_x: 0.0,
+                origin_y: 600.0,
+            },
+            ..RenderOptions::default()
+        };
+        let px = render_page(&doc, page, &opts).expect("render");
+        let dark = |x: f64, y: f64| {
+            let (col, row) = ((x * 5.0) as u32, (600.0 - y * 5.0) as u32);
+            px.pixel(col, row).is_some_and(|p| p.alpha() > 200)
+        };
+        for k in 0..=38 {
+            let y = 21.0 + k as f64;
+            assert!(dark(100.0, y), "variable band at {y} mm");
+        }
+        assert!(!dark(100.0, 61.0) && !dark(100.0, 19.0));
+        // The 16 mm outline: 8 mm either side of its path.
+        for k in 0..=14 {
+            let y = 88.0 + k as f64;
+            assert!(dark(100.0, y), "wide outline at {y} mm");
+        }
+        assert!(!dark(100.0, 104.0) && !dark(100.0, 86.0));
     }
 
     /// A heavy page: `n` filled and stroked curves spread over A4.

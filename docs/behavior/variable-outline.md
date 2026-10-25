@@ -61,7 +61,13 @@ length with width nodes.
   leaving out the objects that cannot reach it. A band counts as
   reaching as far as its widest node, however thin the outline's own
   width, so no strip leaves part of it out (#626,
-  `tracedraw_render::band_tests::a_variable_outline_is_drawn_whole_across_the_strips`,
+  `tracedraw_render::band_tests::a_variable_outline_is_drawn_whole_across_the_strips`).
+  Inside a group or a clip frame the same holds: a group is left out of
+  a strip only when every object in it is (groups inside groups too),
+  and a clip frame when its frame is, since the group's own bounds count
+  no outline and used to cut a variable or wide outline inside it flat
+  at the strip's edge
+  (`tracedraw_render::band_tests::outlines_inside_groups_are_drawn_whole_across_the_strips`,
   `tracedraw_render::culling_tests::objects_out_of_sight_are_skipped`).
 - The outline's colour, or its gradient, pattern or texture fill, paints
   the band. Convert Outline to Object (Ctrl+Shift+Q) gives the band as an
