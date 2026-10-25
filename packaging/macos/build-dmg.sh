@@ -25,6 +25,17 @@ DMG="$ROOT/dist/tracedraw-$VERSION-macos-$ARCH.dmg"
 rm -f "$DMG"
 STAGE="$ROOT/dist/dmg-stage"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "TraceDraw" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+# hdiutil on the build machines now and then fails with "Resource busy"
+# while the system still scans the staged files: try again a few times.
+for attempt in 1 2 3 4 5; do
+  if hdiutil create -volname "TraceDraw" -srcfolder "$STAGE" -ov -format UDZO "$DMG"; then
+    break
+  fi
+  if [ "$attempt" = 5 ]; then
+    echo "hdiutil failed $attempt times" >&2
+    exit 1
+  fi
+  sleep $((attempt * 10))
+done
 rm -rf "$STAGE" "$ICONSET"
 echo "built $DMG"
