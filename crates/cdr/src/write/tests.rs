@@ -2748,3 +2748,41 @@ fn a_version_8_style_table_with_set11_is_read() {
     assert!(notes.is_empty(), "{notes:?}");
     assert_eq!(eight.len(), nine.len());
 }
+
+/// A face named by its family and weight is written under that name
+/// and reads back as it was in every version (#624).
+#[test]
+fn faces_named_with_their_weight_round_trip() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let semi = TextSpan::new("Semi", "Titillium Web SemiBold", 18.0);
+    let black = TextSpan::new("Black", "Lato Black", 18.0);
+    let shapes = vec![
+        text_shape(&mut ids, vec![semi], TextAlign::Left),
+        text_shape(&mut ids, vec![black], TextAlign::Left),
+    ];
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    // Written as named, regular, as before: the reader brings the face
+    // back from its name.
+    let json = character_json(&TextSpan::new("x", "Titillium Web SemiBold", 1.0), None);
+    assert!(
+        json.contains(r#""font":"Titillium Web SemiBold""#) && json.contains(r#""weight":"64""#),
+        "{json}"
+    );
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 2, "{v}: {:?}", rep.warnings);
+        for (s, family) in read.iter().zip(["Titillium Web SemiBold", "Lato Black"]) {
+            match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    assert_eq!(spans[0].font_family, family, "{v}");
+                    assert!(!spans[0].bold, "{v}");
+                }
+                k => panic!("{v}: {k:?}"),
+            }
+        }
+    }
+}
