@@ -877,6 +877,32 @@ fn group_leaves(s: &Shape) -> Vec<Shape> {
     out
 }
 
+/// What a picture target shows, for a shaping result to hold: the picture
+/// itself, or what a cropped picture (a clip frame holding one) holds,
+/// placed on the page. `None` for other objects.
+fn picture_contents(s: &Shape) -> Option<Vec<Shape>> {
+    match &s.kind {
+        ShapeKind::Bitmap { .. } => Some(vec![s.clone()]),
+        ShapeKind::ClipFrame { contents, .. }
+            if contents
+                .iter()
+                .any(|c| matches!(c.kind, ShapeKind::Bitmap { .. })) =>
+        {
+            Some(
+                contents
+                    .iter()
+                    .map(|c| {
+                        let mut c = c.clone();
+                        c.transform = s.transform * c.transform;
+                        c
+                    })
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
+}
+
 impl App {
     /// The operation as the menus and the property bar do it (see
     /// `Shaping::default_leave`).
@@ -1011,7 +1037,40 @@ impl App {
         };
         let id = self.engine.new_shape_id();
         let leaves = group_leaves(&attrs);
-        let shape = if leaves.is_empty() {
+        let pictures = picture_contents(&attrs);
+        let shape = if let Some(contents) = pictures {
+            // A picture keeps showing inside the result: its frame takes
+            // the result's shape, as a crop with the Shape tool does
+            // (#827).
+            let mut frame = Shape::new(
+                self.engine.new_shape_id(),
+                ShapeKind::Path {
+                    path: result,
+                    closed: true,
+                },
+            );
+            frame.fill = tracedraw_core::Fill::None;
+            frame.stroke = attrs
+                .stroke
+                .clone()
+                .filter(|_| matches!(attrs.kind, ShapeKind::ClipFrame { .. }));
+            let contents = contents
+                .into_iter()
+                .map(|c| {
+                    let nid = self.engine.new_shape_id();
+                    crate::app::reid_pub(c, nid, &mut self.engine)
+                })
+                .collect();
+            let mut shape = Shape::new(
+                id,
+                ShapeKind::ClipFrame {
+                    frame: Box::new(frame),
+                    contents,
+                },
+            );
+            shape.opacity = attrs.opacity;
+            shape
+        } else if leaves.is_empty() {
             let mut shape = Shape::new(
                 id,
                 ShapeKind::Path {

@@ -16,6 +16,7 @@ full, row-by-row status.
 - Edit Fill, the colour picker and the Color docker: a click near the black corner of the colour square in CMYK keeps its ring where it was put. All those points give K 100, which looks lighter on screen, so the ring jumped back up as if the click had not taken (#761).
 - Layout > Insert Page Number on a master layer: one page number field goes on the master layer and shows the number of each page it is drawn on, on screen, in print and in exports, so one number manages them all. Before, nothing went on the master page; the numbers went on the pages instead (#807).
 - Brush Strokes (Preset, Brush, Calligraphic, Expression): a stroke stays the path drawn, open and made of a few curves, with the brush as its live outline, so its nodes can be edited afterwards and the brush follows; it was a closed shape of many straight pieces. Apply to curve keeps the curve. The Sprayer still makes objects. Pages of such outlines draw as quickly as before (#829).
+- Trim, Intersect and Weld with a picture as the target crop the picture to the result: its frame takes the shape and the picture shows inside it, also for a picture already cropped. The result was an empty curve that showed only in Wireframe (#827).
 
 ## 0.19.0 (2026-10-25)
 

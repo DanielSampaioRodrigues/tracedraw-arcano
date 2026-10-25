@@ -1721,6 +1721,78 @@ mod bitmap_node_tests {
         .expect("picture")
     }
 
+    /// Trim, Intersect and Weld with a picture as the target keep the
+    /// picture showing inside the result: its frame takes the result's
+    /// shape (#827). A cropped picture works the same way.
+    #[test]
+    fn shaping_a_picture_crops_it_to_the_result() {
+        use crate::ops::Shaping;
+        for op in [Shaping::Trim, Shaping::Intersect, Shaping::Weld] {
+            let mut app = App::headless();
+            let pic = picture(&mut app);
+            let ellipse = app
+                .new_shape(ShapeKind::Ellipse {
+                    rect: Rect::new(40.0, 30.0, 60.0, 50.0),
+                    arc: None,
+                })
+                .expect("ellipse");
+            // The picture last: the target, keeping its looks.
+            app.select(vec![ellipse, pic]);
+            app.shaping_with(op, false, false);
+            let id = app.selection[0];
+            let s = app.doc().find_shape(id).expect("result").clone();
+            let ShapeKind::ClipFrame { frame, contents } = &s.kind else {
+                panic!("{op:?}: {:?}", s.kind);
+            };
+            assert!(
+                matches!(contents[0].kind, ShapeKind::Bitmap { .. }),
+                "{op:?}"
+            );
+            let b = tracedraw_core::geometry::Shape::bounding_box(&frame.page_path());
+            match op {
+                Shaping::Intersect => {
+                    assert!(
+                        (b.x0 - 40.0).abs() < 0.1 && (b.y1 - 40.0).abs() < 0.1,
+                        "{b:?}"
+                    )
+                }
+                Shaping::Weld => {
+                    assert!(
+                        (b.x1 - 60.0).abs() < 0.1 && (b.y1 - 50.0).abs() < 0.1,
+                        "{b:?}"
+                    )
+                }
+                _ => assert!(
+                    (b.x1 - 50.0).abs() < 0.1 && (b.y1 - 40.0).abs() < 0.1,
+                    "{b:?}"
+                ),
+            }
+            assert!(app.doc().find_shape(pic).is_none(), "{op:?}: replaced");
+            let left = b.x0.max(30.0);
+            // A second cut on the cropped picture keeps it a picture.
+            let cutter = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(0.0, 0.0, 30.0, 100.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            app.select(vec![cutter, id]);
+            app.shaping_with(Shaping::Trim, false, false);
+            let s = app
+                .doc()
+                .find_shape(app.selection[0])
+                .expect("result")
+                .clone();
+            let ShapeKind::ClipFrame { frame, contents } = &s.kind else {
+                panic!("{op:?} then Trim: {:?}", s.kind);
+            };
+            assert!(matches!(contents[0].kind, ShapeKind::Bitmap { .. }));
+            let b = tracedraw_core::geometry::Shape::bounding_box(&frame.page_path());
+            assert!((b.x0 - left).abs() < 0.1, "{op:?}: {b:?}");
+        }
+    }
+
     #[test]
     fn a_pictures_corner_crops_it_and_double_click_keeps_it_a_picture() {
         let mut app = App::headless();
