@@ -820,6 +820,9 @@ pub struct App {
     /// The digits typed with Alt held while editing text, for a character
     /// by its number (#447; the system does it on Windows).
     pub alt_code: String,
+    /// The character the last Alt code typed, so the same character
+    /// coming from the system as text right after is not typed twice.
+    pub alt_composed: Option<char>,
     /// The last colours picked for a fill and for an outline (the
     /// palette's left and right clicks): the "current colours" the first
     /// built-in gradient runs between.
@@ -2056,6 +2059,7 @@ impl App {
             ime_preedit: String::new(),
             last_trace: None,
             alt_code: String::new(),
+            alt_composed: None,
             current_colors: (Color::BLACK, Color::WHITE),
             live_fill: None,
             live_stroke: None,

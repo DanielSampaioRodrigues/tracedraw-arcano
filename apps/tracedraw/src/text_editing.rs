@@ -258,6 +258,7 @@ impl App {
             let code = std::mem::take(&mut self.alt_code);
             if let Some(ch) = alt_code_char(&code) {
                 self.text_insert(&ch.to_string());
+                self.alt_composed = Some(ch);
             }
         }
         for ev in &events {
@@ -273,7 +274,19 @@ impl App {
                         self.text_insert(&commit);
                     }
                 }
-                Event::Text(t) => self.text_insert(t),
+                // The digits of an Alt code also come as text (the keypad
+                // with Num Lock on): the code names the character. The
+                // character the system composes of the same code, should
+                // it come too, is the one typed already (#469).
+                Event::Text(t)
+                    if !self.alt_code.is_empty() && t.chars().all(|c| c.is_ascii_digit()) => {}
+                Event::Text(t) if self.alt_composed.is_some_and(|c| t.chars().eq([c])) => {
+                    self.alt_composed = None;
+                }
+                Event::Text(t) => {
+                    self.alt_composed = None;
+                    self.text_insert(t);
+                }
                 Event::Paste(t) => self.text_insert(t),
                 Event::Copy => {
                     let sel = self.text_selected();
@@ -295,6 +308,7 @@ impl App {
                     modifiers,
                     ..
                 } => {
+                    self.alt_composed = None;
                     let shift = modifiers.shift;
                     let ctrl = modifiers.command;
                     // Alt and digits: a character by its number, typed when

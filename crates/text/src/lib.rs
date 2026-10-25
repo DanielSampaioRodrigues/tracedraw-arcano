@@ -560,6 +560,26 @@ fn symbol_encoded(family: &str) -> bool {
     matches!(key.as_str(), "symbol" | "symbolmt")
 }
 
+/// The glyph `face` draws for `c`: through its Unicode character map, or
+/// for a font made for the symbol encoding (a Windows symbol map only)
+/// the glyph of the code 0x20 to 0xFF typed, found at U+F020 to U+F0FF as
+/// the system finds it (#469).
+pub(crate) fn face_glyph(face: &ttf_parser::Face, c: char) -> Option<ttf_parser::GlyphId> {
+    face.glyph_index(c).or_else(|| {
+        let cp = c as u32;
+        if !(0x20..=0xFF).contains(&cp) {
+            return None;
+        }
+        face.tables()
+            .cmap?
+            .subtables
+            .into_iter()
+            .filter(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+            .find_map(|s| s.glyph_index(0xF000 + cp).or_else(|| s.glyph_index(cp)))
+            .filter(|g| g.0 != 0)
+    })
+}
+
 /// A letter of a symbol-encoded family as the character it draws; others
 /// unchanged.
 pub fn symbol_to_unicode(c: char) -> char {
@@ -1487,11 +1507,21 @@ impl FontSystem {
         let mut out: Vec<char> = Vec::new();
         if let Some(cmap) = face.tables().cmap {
             for sub in cmap.subtables {
-                if !sub.is_unicode() {
+                // A symbol map lists its codes as the letters typed for
+                // them (U+F041 is "A", Alt+0065).
+                let symbol =
+                    sub.platform_id == ttf_parser::PlatformId::Windows && sub.encoding_id == 0;
+                if !sub.is_unicode() && !symbol {
                     continue;
                 }
                 sub.codepoints(|cp| {
-                    if let Some(c) = char::from_u32(cp) {
+                    let typed = match cp {
+                        _ if !symbol => cp,
+                        0xF020..=0xF0FF => cp - 0xF000,
+                        0x20..=0xFF => cp,
+                        _ => return,
+                    };
+                    if let Some(c) = char::from_u32(typed) {
                         if !c.is_control() && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
                             out.push(c);
                         }
@@ -1996,7 +2026,7 @@ impl FontSystem {
         };
         if text
             .chars()
-            .all(|c| inherits_face(c) || face.glyph_index(c).is_some())
+            .all(|c| inherits_face(c) || face_glyph(&face, c).is_some())
         {
             return whole;
         }
@@ -2004,7 +2034,7 @@ impl FontSystem {
         for (i, c) in text.char_indices() {
             let id = if inherits_face(c) {
                 runs.last().map(|r| r.1).unwrap_or(primary)
-            } else if face.glyph_index(c).is_some() {
+            } else if face_glyph(&face, c).is_some() {
                 primary
             } else {
                 self.fallback_face(c, bold, italic).unwrap_or(primary)
@@ -4799,6 +4829,28 @@ mod tests {
         // span's face, no panic.
         assert!(!one("Quicksand", "A\u{336}").path.elements().is_empty());
         let _ = one("Selawik", "\u{10FFFD}x");
+    }
+
+    /// A font made for the symbol encoding (only a Windows symbol
+    /// character map, its glyphs at U+F020 to U+F0FF) draws the letters
+    /// typed as their codes 0x20 to 0xFF, as legacy script fonts do, and
+    /// lists them as those letters: they went to another font (#447,
+    /// #469).
+    #[test]
+    fn a_symbol_font_draws_the_codes_typed() {
+        // Selawik's "A", "B", "C" and space at U+F041.. only.
+        const TEST_SYMBOL: &[u8] = include_bytes!("../testdata/TestSymbol.ttf");
+        let f = system_with(&[TEST_SYMBOL, QUICKSAND]);
+        assert_eq!(f.char_coverage("TestSymbol"), [' ', 'A', 'B', 'C']);
+        let got = f.outline(&[TextSpan::new("AB", "TestSymbol", 100.0)]);
+        let want = system_with(&[SELAWIK]).outline(&[TextSpan::new("AB", "Selawik", 100.0)]);
+        assert_eq!(got.glyphs, 2);
+        assert_eq!(got.path.elements().len(), want.path.elements().len());
+        let (a, b) = (got.path.bounding_box(), want.path.bounding_box());
+        assert!(
+            (a.x0 - b.x0).abs() < 1e-6 && (a.x1 - b.x1).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
     }
 
     #[test]

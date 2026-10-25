@@ -451,8 +451,21 @@ Window > Panels > Glyphs. From the top:
   (`text_editing::alt_code_char`), on every system: on Windows the
   windowing layer drops the character the system makes of them (#469).
   The keypad digits count with Num Lock off too (the physical key).
+  The digits typed under Alt are not typed themselves (the windowing
+  layer also sends each keypad digit as text with Num Lock on), and the
+  character, should the system send it too when Alt is let go, is typed
+  once (#447, #469;
+  `pick_drag_tests::alt_codes_type_their_character_once_and_not_the_digits`).
+  The digits of the top row count as well, which Windows itself does
+  not do: there only the keypad types Alt codes.
 - A grid of large cells with the glyphs the font draws in that range
-  (from its character map), scrolled row by row. The tip names the
+  (from its character map), scrolled row by row. A font made for the
+  symbol encoding (legacy script and dingbat fonts: a Windows symbol
+  character map only, its glyphs at U+F020 to U+F0FF) lists its glyphs
+  as the codes typed for them ("A" with Alt+0065 for U+F041), and text
+  typed in it draws those glyphs instead of falling to another font
+  (#469; `tests::a_symbol_font_draws_the_codes_typed` in the text
+  crate). The tip names the
   character and its code point. A small arrow under a glyph means the
   font has alternates for it (stylistic alternate, swash, small
   capitals, capitals to small capitals, stylistic sets 1 to 5: the

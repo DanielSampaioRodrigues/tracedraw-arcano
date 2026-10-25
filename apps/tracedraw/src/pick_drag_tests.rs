@@ -4803,6 +4803,59 @@ fn alt_codes_typed_on_the_keypad_give_their_character() {
     );
 }
 
+/// With Num Lock on the windowing layer sends each keypad digit typed
+/// under Alt as a key and as the digit's text: only the character the
+/// code names is typed, not the digits too. When the system gives the
+/// composed character itself as text (Alt still held), it is typed once
+/// (#447, #469).
+#[test]
+fn alt_codes_type_their_character_once_and_not_the_digits() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.start_text(Point::new(50.0, 50.0), None);
+    let text = |app: &App| {
+        app.edit_spans()
+            .map(|s| tracedraw_core::document::spans_text(&s))
+            .unwrap_or_default()
+    };
+    let mut events = Vec::new();
+    for (k, d) in [
+        (egui::Key::Num0, "0"),
+        (egui::Key::Num1, "1"),
+        (egui::Key::Num9, "9"),
+        (egui::Key::Num3, "3"),
+    ] {
+        events.push(Event::Key {
+            key: k,
+            physical_key: Some(k),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::ALT,
+        });
+        events.push(Event::Text(d.into()));
+    }
+    frame(&ctx, &mut app, events, Modifiers::ALT);
+    assert_eq!(text(&app), "", "no digits typed");
+    // Alt let go, the system's own character arriving with it.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("\u{c1}".into())],
+        Modifiers::NONE,
+    );
+    assert_eq!(text(&app), "\u{c1}");
+    // The character the system composes, typed as text while Alt is
+    // still down (no digit keys seen): typed.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("\u{a9}".into())],
+        Modifiers::ALT,
+    );
+    frame(&ctx, &mut app, vec![], Modifiers::NONE);
+    assert_eq!(text(&app), "\u{c1}\u{a9}");
+}
+
 /// Artistic text converted to a paragraph frame (Text > Convert) grows
 /// down with its bottom handle: the flow tab sat under that handle and
 /// took the press, so the next click linked the text to another object
