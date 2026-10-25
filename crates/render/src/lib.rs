@@ -2458,6 +2458,50 @@ mod tests {
         (doc, page)
     }
 
+    /// A white-to-black gradient on a wide rectangle, turned half a turn,
+    /// mirrored or turned a quarter turn through the engine, is drawn
+    /// turned, mirrored and turned with it (#775).
+    #[test]
+    fn a_gradient_is_drawn_turned_and_mirrored_with_its_object() {
+        use tracedraw_core::{Command, Engine};
+        let mut s = rect(1, Rect::new(10.0, 40.0, 90.0, 60.0), Color::WHITE);
+        s.fill = Fill::Fountain(Fountain::two(
+            FountainKind::Linear,
+            Color::WHITE,
+            Color::BLACK,
+            0.0,
+        ));
+        let (doc, page) = doc_with(vec![s]);
+        let mut eng = Engine::new(doc);
+        let about =
+            |a: Affine| Affine::translate((50.0, 50.0)) * a * Affine::translate((-50.0, -50.0));
+        let mut turn = |eng: &mut Engine, t: Affine| {
+            eng.run(&Command::TransformShapes {
+                shapes: vec![tracedraw_core::ShapeId(1)],
+                transform: about(t),
+            })
+            .expect("turned");
+            let pm = render_page_image(eng.document(), page, 25.4).expect("render");
+            if let Ok(dir) = std::env::var("TRACEDRAW_TEST_PNG") {
+                let n = eng.history_labels().0.len();
+                let _ = pm.save_png(format!("{dir}/gradient-{n}.png"));
+            }
+            pm
+        };
+        let pm = render_page_image(eng.document(), page, 25.4).expect("render");
+        // Light on the left, dark on the right.
+        assert!(px(&pm, 15, 50).0 > 200 && px(&pm, 85, 50).0 < 55);
+        let pm = turn(&mut eng, Affine::rotate(std::f64::consts::PI));
+        assert!(px(&pm, 15, 50).0 < 55 && px(&pm, 85, 50).0 > 200);
+        let pm = turn(&mut eng, Affine::scale_non_uniform(-1.0, 1.0));
+        assert!(px(&pm, 15, 50).0 > 200 && px(&pm, 85, 50).0 < 55);
+        // A quarter turn: light at the bottom, dark at the top of the
+        // upright rectangle (the page's y grows upwards, the picture's
+        // downwards).
+        let pm = turn(&mut eng, Affine::rotate(std::f64::consts::FRAC_PI_2));
+        assert!(px(&pm, 50, 85).0 > 200 && px(&pm, 50, 15).0 < 55);
+    }
+
     fn rect(id: u64, r: Rect, fill: Color) -> Shape {
         let mut s = Shape::new(
             tracedraw_core::ShapeId(id),

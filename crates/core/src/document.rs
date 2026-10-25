@@ -2849,6 +2849,44 @@ impl Shape {
         self.carry_effects(t);
     }
 
+    /// The fountain fills and gradient transparencies of the object and of
+    /// the objects inside it carried along with `t`, a page-space
+    /// transformation about to be applied to it; `parent` maps its space
+    /// to the page. The fills are placed on the page box of each object,
+    /// so without this a turned or mirrored object kept its gradient
+    /// running the old way (#775).
+    pub fn carry_fills(&mut self, t: Affine, parent: Affine) {
+        let to_page = parent * self.transform;
+        match &mut self.kind {
+            ShapeKind::Group { children } => {
+                for c in children {
+                    c.carry_fills(t, to_page);
+                }
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                frame.carry_fills(t, to_page);
+                for c in contents {
+                    c.carry_fills(t, to_page);
+                }
+            }
+            _ => {}
+        }
+        let gradient = |f: &Fill| matches!(f, Fill::Fountain(_));
+        let masks = |e: &crate::live::Effect| matches!(e, crate::live::Effect::Transparency { mask, .. } if gradient(mask));
+        if !gradient(&self.fill) && !self.effects.iter().any(masks) {
+            return;
+        }
+        let path = to_page * self.local_path();
+        let before = path.bounding_box();
+        let after = (t * path).bounding_box();
+        self.fill.carry(t, before, after);
+        for e in &mut self.effects {
+            if let crate::live::Effect::Transparency { mask, .. } = e {
+                mask.carry(t, before, after);
+            }
+        }
+    }
+
     /// The places the object's live effects hold, those switched off too,
     /// moved by `t` (see [`crate::live::carry_effects`]).
     pub fn carry_effects(&mut self, t: Affine) {
