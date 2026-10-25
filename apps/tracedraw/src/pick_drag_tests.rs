@@ -6876,7 +6876,7 @@ fn an_idle_window_asks_for_no_frame() {
             let mut out = ctx.run_ui(input, |ui| {
                 crate::ui::root(&mut app, ui);
                 app.autosave_settings(Some(ui.ctx()));
-                app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
+                app.watch_linked_bitmaps(Some(ui.ctx()), std::time::Instant::now());
             });
             out.textures_delta.clear();
             let delay = out
@@ -7661,4 +7661,122 @@ fn a_destination_picked_while_the_printers_are_read_stays() {
     click_at(&ctx, &mut app, item, Modifiers::NONE);
     wait(&ctx, &mut app);
     assert_eq!(state(&app).printer.as_deref(), Some("Office"));
+}
+/// 204 wavy rings of `nodes` nodes each, combined into one curve and
+/// selected, as the ornamental frame of #764.
+fn combined_ornament(nodes: usize) -> (egui::Context, App, ShapeId) {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    let mut ids = Vec::new();
+    for i in 0..204 {
+        let a = i as f64 / 204.0 * std::f64::consts::TAU;
+        let c = Point::new(100.0 + 60.0 * a.cos(), 150.0 + 60.0 * a.sin());
+        let mut path = tracedraw_core::geometry::BezPath::new();
+        for k in 0..nodes {
+            let b = k as f64 / nodes as f64 * std::f64::consts::TAU;
+            let r = 12.0 + 2.0 * (b * 12.0).sin();
+            let q = Point::new(c.x + r * b.cos(), c.y + r * b.sin());
+            if k == 0 {
+                path.move_to(q);
+            } else {
+                path.line_to(q);
+            }
+        }
+        path.close_path();
+        ids.push(
+            app.new_shape(ShapeKind::Path { path, closed: true })
+                .expect("ring"),
+        );
+    }
+    app.select(ids);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        40, 40, 40,
+    )));
+    app.combine();
+    assert_eq!(app.selection.len(), 1);
+    let c = app.selection[0];
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    (ctx, app, c)
+}
+
+/// A combined curve of thousands of nodes moves with a drag, and the
+/// node under the pointer is still marked for snapping: the snap points
+/// near the pointer no longer compare every node with every other, which
+/// took seconds a frame and looked as if the curve would not move (#764).
+#[test]
+fn a_combined_curve_of_many_nodes_moves_and_snaps_to_its_nodes() {
+    let (ctx, mut app, c) = combined_ornament(60);
+    let before = app.doc().find_shape(c).map(|s| s.bounds()).expect("curve");
+    // The first ring's rightmost node, at (100 + 60 + 12, 150).
+    let node = Point::new(172.0, 150.0);
+    let hover = app.selection_hover_target(node).expect("a snap point");
+    assert_eq!(hover.mode, crate::snap_points::SnapMode::Node);
+    assert!((hover.point - node).hypot() < 1e-9, "{:?}", hover.point);
+    let from = app.view.to_screen(node);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(40.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let after = app.doc().find_shape(c).map(|s| s.bounds()).expect("curve");
+    let moved = after.x0 - before.x0;
+    let want = 40.0 / app.view.zoom as f64;
+    assert!((moved - want).abs() < want * 0.2, "{moved} {want}");
+}
+
+/// Frame times over a combined curve of about 40,000 nodes (#764):
+/// hovering it and dragging it.
+/// `cargo test --release -- --ignored frame_times_over_a_combined_curve --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_over_a_combined_curve() {
+    let (ctx, mut app, _) = combined_ornament(200);
+    let p0 = app.view.to_screen(Point::new(160.0, 150.0));
+    let n = 20;
+    let t = std::time::Instant::now();
+    for k in 0..n {
+        let p = p0 + egui::vec2((k % 5) as f32, 0.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+    }
+    println!(
+        "combined curve, hover: {:?} per frame",
+        t.elapsed() / n as u32
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(p0, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let t = std::time::Instant::now();
+    for k in 1..=n {
+        let p = p0 + egui::vec2(2.0 * k as f32, 0.0);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+    }
+    println!(
+        "combined curve, drag: {:?} per frame",
+        t.elapsed() / n as u32
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(p0, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
 }

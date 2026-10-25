@@ -18,6 +18,7 @@ full, row-by-row status.
 - Editing a symmetry ends when another drawing comes to the front or a new one opens; the mode and its "Editing the symmetry" message in the status bar stayed on over the next drawing (#442).
 - The Convert to Curves page says that a whole ellipse becomes four symmetrical nodes, as its checks and the test already did, and names the nodes in the drawing's Y-up order: right, top, left and bottom (#625).
 - Print: the printer list is read off the interface's thread, so a slow print server no longer holds the window when the dialog opens; the printers are in name order with the default chosen where it stands, and the General tab shows the chosen printer's Status, Location and Comment, with a Properties button that opens the printer's own settings (#614).
+- A combined curve with tens of thousands of nodes (a combined ornament) can be moved again: with snapping on, every frame over it compared each node with every other to find the snap points near the pointer, about 1.8 s a frame for 40,000 nodes, so a drag seemed to do nothing. Now a frame over it takes about 9 ms and a drag frame about 5 ms (#764).
 
 - Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
 
