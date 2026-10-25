@@ -3744,6 +3744,16 @@ fn removed_and_alt_shortcuts_act_on_the_keyboard() {
         Modifiers::ALT | Modifiers::SHIFT,
     );
     assert_eq!(app.tool, Tool::Ellipse);
+    // A second key of the tool's picks it too; the first still does
+    // (#822).
+    app.settings
+        .shortcuts
+        .push(("ellipse".into(), "Alt+Shift+J".into()));
+    for k in [egui::Key::J, egui::Key::K] {
+        app.set_tool(Tool::Pick);
+        press(&ctx, &mut app, k, Modifiers::ALT | Modifiers::SHIFT);
+        assert_eq!(app.tool, Tool::Ellipse, "{k:?}");
+    }
 }
 
 #[test]

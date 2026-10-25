@@ -954,12 +954,12 @@ pub(crate) mod invoke {
 
     /// The shortcut a row shows: the user's for `key`, else `default`.
     pub fn shown_shortcut(key: &str, default: &str) -> String {
+        // The first of its keys (a command may have several, #822).
         BINDINGS.with(|b| {
-            b.borrow()
-                .iter()
-                .find(|(k, _)| k == key)
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| default.to_string())
+            crate::shortcuts::keys_for(&b.borrow(), key, Some(default))
+                .into_iter()
+                .next()
+                .unwrap_or_default()
         })
     }
 }

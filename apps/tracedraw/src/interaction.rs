@@ -3243,33 +3243,30 @@ impl App {
         // Tool shortcuts: user overrides from Options, then the defaults.
         for group in crate::tools::GROUPS {
             for t in group.tools {
-                let label = self
-                    .settings
-                    .shortcuts
-                    .iter()
-                    .find(|(id, _)| id == t.id())
-                    .map(|(_, v)| v.clone())
-                    .or_else(|| t.shortcut().map(|s| s.to_string()));
-                let Some(label) = label else { continue };
-                // Any of Ctrl, Alt and Shift with a key, as menu commands.
-                let keys = crate::shortcuts::parse(&label).or_else(|| {
-                    Tool::parse_shortcut(&label).map(|(k, shift)| {
-                        let mods = if shift {
-                            Modifiers::SHIFT
-                        } else {
-                            Modifiers::NONE
-                        };
-                        (mods, k)
-                    })
-                });
-                if let Some((mods, k)) = keys {
-                    // W and K during a move say what a drop on a clip
-                    // frame does; they pick no tool then.
-                    let drop_key = matches!(self.drag, Drag::Move { .. })
-                        && mods.is_none()
-                        && matches!(k, Key::W | Key::K);
-                    if pressed(k, mods) && !drop_key {
-                        self.set_tool(*t);
+                // Every key the tool has (#822).
+                let labels =
+                    crate::shortcuts::keys_for(&self.settings.shortcuts, t.id(), t.shortcut());
+                for label in labels {
+                    // Any of Ctrl, Alt and Shift with a key, as menu commands.
+                    let keys = crate::shortcuts::parse(&label).or_else(|| {
+                        Tool::parse_shortcut(&label).map(|(k, shift)| {
+                            let mods = if shift {
+                                Modifiers::SHIFT
+                            } else {
+                                Modifiers::NONE
+                            };
+                            (mods, k)
+                        })
+                    });
+                    if let Some((mods, k)) = keys {
+                        // W and K during a move say what a drop on a clip
+                        // frame does; they pick no tool then.
+                        let drop_key = matches!(self.drag, Drag::Move { .. })
+                            && mods.is_none()
+                            && matches!(k, Key::W | Key::K);
+                        if pressed(k, mods) && !drop_key {
+                            self.set_tool(*t);
+                        }
                     }
                 }
             }
