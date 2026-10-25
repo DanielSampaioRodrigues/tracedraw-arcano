@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
+
 ## 0.19.0 (2026-10-25)
 
 - Opening `.cdr`: blends from versions 9 and X3 (and others storing them the same way) show their steps as a live blend between the two end objects; only the two ends were drawn before (#597).

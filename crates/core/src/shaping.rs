@@ -517,7 +517,151 @@ pub fn offset_with(path: &BezPath, d: f64, join: Join) -> BezPath {
         Join::Bevel => LineJoin::Bevel,
     });
     let out = clean.outline(&style);
-    from_shapes(out)
+    fit_polygon_curves(&from_shapes(out), FIT_TOL)
+}
+
+/// How far the curves an offset is fitted with may stray from it, mm:
+/// well under what shows or prints.
+const FIT_TOL: f64 = 0.05;
+
+/// A piece this many times as long as the one next to it is a straight
+/// side, not part of a curve.
+const STRAIGHT_RATIO: f64 = 4.0;
+
+/// How sharply a polygon must turn at a point, in degrees, for the point
+/// to be a corner [`fit_polygon_curves`] keeps.
+const CORNER_DEG: f64 = 35.0;
+
+/// A path of straight pieces (an offset, as the overlay library gives it)
+/// as curves: each contour split at its corners, and every smooth stretch
+/// between them fitted with as few curves as keep within `accuracy` mm
+/// (#821). A contour of fewer than four points stays as it is.
+pub fn fit_polygon_curves(path: &BezPath, accuracy: f64) -> BezPath {
+    let mut out = BezPath::new();
+    for mut pts in polygons(path) {
+        while pts.len() > 1 && (pts[0] - pts[pts.len() - 1]).hypot() < 1e-9 {
+            pts.pop();
+        }
+        // The points that matter within the tolerance: the overlay's
+        // tiny joins between pieces would read as corners and sides.
+        if pts.len() > 4 {
+            let mut ring = pts.clone();
+            ring.push(pts[0]);
+            let mut few = crate::geometry::simplify(&ring, accuracy * 0.5);
+            few.pop();
+            if few.len() >= 3 {
+                pts = few;
+            }
+        }
+        let n = pts.len();
+        if n < 4 {
+            if let Some((first, rest)) = pts.split_first() {
+                out.move_to(*first);
+                rest.iter().for_each(|p| out.line_to(*p));
+                out.close_path();
+            }
+            continue;
+        }
+        let limit = CORNER_DEG.to_radians();
+        let corner = |i: usize| {
+            let a = pts[i] - pts[(i + n - 1) % n];
+            let b = pts[(i + 1) % n] - pts[i];
+            let (la, lb) = (a.hypot(), b.hypot());
+            // Where a long straight side meets short pieces (a curve), the
+            // side stays a line.
+            let side = la > STRAIGHT_RATIO * lb || lb > STRAIGHT_RATIO * la;
+            la < 1e-12
+                || lb < 1e-12
+                || side
+                || (a.dot(b) / (la * lb)).clamp(-1.0, 1.0).acos() > limit
+        };
+        let corners: Vec<usize> = (0..n).filter(|i| corner(*i)).collect();
+        if corners.is_empty() {
+            let fitted = fit_run(&pts, true, accuracy);
+            out.extend(
+                fitted
+                    .elements()
+                    .iter()
+                    .copied()
+                    .filter(|e| !matches!(e, PathEl::ClosePath)),
+            );
+            out.close_path();
+            continue;
+        }
+        // From corner to corner, all the way round.
+        let start = corners[0];
+        out.move_to(pts[start]);
+        for (k, &c) in corners.iter().enumerate() {
+            let next = corners[(k + 1) % corners.len()];
+            let mut run = vec![pts[c]];
+            let mut i = (c + 1) % n;
+            loop {
+                run.push(pts[i]);
+                if i == next {
+                    break;
+                }
+                i = (i + 1) % n;
+            }
+            if run.len() <= 2 {
+                out.line_to(run[run.len() - 1]);
+                continue;
+            }
+            let fitted = fit_run(&run, false, accuracy);
+            out.extend(
+                fitted
+                    .elements()
+                    .iter()
+                    .copied()
+                    .filter(|e| !matches!(e, PathEl::MoveTo(_))),
+            );
+        }
+        out.close_path();
+    }
+    out
+}
+
+/// The points of each subpath of a path of straight pieces.
+fn polygons(path: &BezPath) -> Vec<Vec<Point>> {
+    let mut out: Vec<Vec<Point>> = Vec::new();
+    for el in path.elements() {
+        match *el {
+            PathEl::MoveTo(p) => out.push(vec![p]),
+            PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => {
+                if let Some(last) = out.last_mut() {
+                    last.push(p);
+                }
+            }
+            PathEl::ClosePath => {}
+        }
+    }
+    out
+}
+
+/// A run of points (a whole ring when `closed`) as a smooth curve
+/// through them, fitted with as few curves as keep within `accuracy`
+/// (kurbo's fitter merges curves, not lines); straight pieces when the
+/// fit fails.
+fn fit_run(pts: &[Point], closed: bool, accuracy: f64) -> BezPath {
+    use kurbo::simplify::{simplify_bezpath, SimplifyOptions};
+    let smooth = crate::geometry::smooth_path(pts, closed);
+    let options = SimplifyOptions::default();
+    let fitted = simplify_bezpath(smooth.elements().iter().copied(), accuracy, &options);
+    let sane = fitted.elements().len() > 1
+        && fitted.elements().iter().all(|e| match *e {
+            PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
+            PathEl::QuadTo(a, p) => a.is_finite() && p.is_finite(),
+            PathEl::CurveTo(a, b, p) => a.is_finite() && b.is_finite() && p.is_finite(),
+            PathEl::ClosePath => true,
+        });
+    if sane {
+        return fitted;
+    }
+    let mut line = BezPath::new();
+    if let Some((first, rest)) = pts.split_first() {
+        line.move_to(*first);
+        rest.iter().for_each(|p| line.line_to(*p));
+    }
+    line
 }
 
 /// The area swept by a round or square nib of width `width` along a
@@ -1318,6 +1462,86 @@ pub fn simplify(path: &BezPath) -> BezPath {
 
 #[cfg(test)]
 mod tests {
+
+    /// A contour of a circle is a circle made of a few curves, not a
+    /// row of short straight pieces (#821), and stays at its distance.
+    #[test]
+    fn an_offset_circle_is_a_few_curves() {
+        use super::{offset_with, Join};
+        use crate::geometry::{BezPath, PathEl, Point, Shape as _};
+        let circle = kurbo::Circle::new(Point::new(50.0, 50.0), 20.0).to_path(0.001);
+        for d in [5.0, -5.0] {
+            let q: BezPath = offset_with(&circle, d, Join::Round);
+            let pieces = q
+                .elements()
+                .iter()
+                .filter(|e| !matches!(e, PathEl::MoveTo(_) | PathEl::ClosePath))
+                .count();
+            assert!(pieces <= 8, "{d}: {pieces} pieces");
+            assert!(q
+                .elements()
+                .iter()
+                .any(|e| matches!(e, PathEl::CurveTo(..))));
+            for t in 0..100 {
+                let a = t as f64 / 100.0 * std::f64::consts::TAU;
+                let r = 20.0 + d;
+                let on = Point::new(50.0 + r * a.cos(), 50.0 + r * a.sin());
+                let near = q
+                    .segments()
+                    .map(|s| {
+                        kurbo::ParamCurveNearest::nearest(&s, on, 1e-4)
+                            .distance_sq
+                            .sqrt()
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                assert!(near < 0.1, "{d}: {near} off at {a}");
+            }
+        }
+    }
+
+    /// Sharp corners stay sharp: a mitred square's contour is four
+    /// straight sides.
+    #[test]
+    fn an_offset_square_keeps_its_corners() {
+        use super::{offset_with, Join};
+        use crate::geometry::{BezPath, PathEl, Point};
+        let mut sq = BezPath::new();
+        sq.move_to(Point::new(0.0, 0.0));
+        sq.line_to(Point::new(10.0, 0.0));
+        sq.line_to(Point::new(10.0, 10.0));
+        sq.line_to(Point::new(0.0, 10.0));
+        sq.close_path();
+        let q = offset_with(&sq, 2.0, Join::Miter);
+        let lines = q
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::LineTo(_)))
+            .count();
+        let curves = q
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..) | PathEl::QuadTo(..)))
+            .count();
+        assert_eq!((lines, curves), (4, 0), "{:?}", q.elements());
+        // Round corners: the four sides stay straight lines, the corners
+        // are curves.
+        let q = offset_with(&sq, 2.0, Join::Round);
+        let lines = q
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::LineTo(_)))
+            .count();
+        let curves = q
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..) | PathEl::QuadTo(..)))
+            .count();
+        assert!(
+            lines >= 4 && (4..=12).contains(&curves),
+            "{:?}",
+            q.elements()
+        );
+    }
     #[test]
     /// The width eases between nodes along a smooth curve however short
     /// the span on a long path: half-way into the ease the reach is the
@@ -1839,5 +2063,33 @@ mod tests {
         let t = overlay(&square(0.0), &square(5.0), Op::Trim);
         assert!((t.area().abs() - 50.0).abs() < 1e-3);
         assert!((t.bounding_box().x1 - 5.0).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod contour_timing {
+    /// How long contours take on many curves (#821): `cargo test
+    /// --release -p tracedraw-core -- --ignored frame_times_of_contours
+    /// --nocapture`.
+    #[test]
+    #[ignore]
+    fn frame_times_of_contours() {
+        use crate::geometry::{BezPath, Point, Shape as _};
+        let mut p = BezPath::new();
+        for k in 0..40 {
+            let c = kurbo::Circle::new(
+                Point::new((k % 8) as f64 * 30.0, (k / 8) as f64 * 30.0),
+                12.0,
+            );
+            p.extend(c.to_path(0.01).elements().iter().copied());
+        }
+        let t = std::time::Instant::now();
+        let mut n = 0;
+        for i in 1..=20 {
+            n += super::offset_with(&p, i as f64 * 0.8, super::Join::Round)
+                .elements()
+                .len();
+        }
+        eprintln!("20 steps over 40 circles: {:?}, {n} elements", t.elapsed());
     }
 }
