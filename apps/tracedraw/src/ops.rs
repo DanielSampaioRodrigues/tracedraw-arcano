@@ -418,6 +418,11 @@ impl App {
         let mut order = ids.clone();
         order.sort_by_key(|id| std::cmp::Reverse(self.doc().locate(*id).map_or(0, |(_, i)| i)));
         for id in &order {
+            // A dimension frees its lines, arrowheads and label (#644).
+            if let Some(mut c) = self.dimension_break_commands(*id) {
+                cmds.append(&mut c);
+                continue;
+            }
             // An envelope, perspective or distortion first becomes part of
             // the curves (#647).
             if let Some(mut c) = self.warp_break_commands(*id) {

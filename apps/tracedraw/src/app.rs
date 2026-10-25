@@ -1442,6 +1442,10 @@ pub struct App {
     /// The document revision dimensions were last checked at for moves
     /// to bake (see [`App::bake_dimensions`]).
     pub dimensions_checked: u64,
+    /// How the labels of dimensions saved before labels were noted read
+    /// when an edit of them in place began (see
+    /// [`crate::dimensions::Dimension::read_back`]).
+    pub dimension_labels_seen: std::collections::HashMap<ShapeId, crate::dimensions::DrawnLabel>,
     /// A linear dimension's first point was given by pressing to drag.
     pub dimension_dragging: bool,
     /// The style new 3-point callouts take (the callout tool's bar).
@@ -2367,6 +2371,7 @@ impl App {
             brush_stepped: false,
             dimension_style: Default::default(),
             dimensions_checked: u64::MAX,
+            dimension_labels_seen: Default::default(),
             dimension_dragging: false,
             callout_style: Default::default(),
             callouts_checked: 0,
@@ -4511,6 +4516,11 @@ impl App {
                 // with a defined word.
                 crate::ui::writing_tools::apply_custom_hyphens(self, &[te.shape]);
             }
+            // A dimension's label read back in this step (deleted, the
+            // measured one comes back, #644); then what was noted for its
+            // edit goes.
+            self.bake_dimensions();
+            self.dimension_labels_seen.clear();
         }
     }
 

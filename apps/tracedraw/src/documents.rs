@@ -237,6 +237,7 @@ impl App {
         self.curve = None;
         self.curve_steps.clear();
         self.text_edit = None;
+        self.dimension_labels_seen.clear();
         self.table_edit = None;
         self.three_point_base = None;
         self.dimension_points.clear();

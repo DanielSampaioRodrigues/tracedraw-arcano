@@ -6781,3 +6781,111 @@ fn the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline() {
         frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     }
 }
+
+/// A double click on a dimension's label with the Pick tool edits it in
+/// place; what is typed stays, and the dimension stays a dimension with
+/// the typed text as its suffix (#644).
+#[test]
+fn a_double_click_edits_a_dimension_label_in_place() {
+    let (ctx, mut app, rect) = setup();
+    app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+    app.create_dimension(
+        Point::new(20.0, 60.0),
+        Point::new(80.0, 60.0),
+        Point::new(50.0, 80.0),
+    );
+    let g = app.selection[0];
+    let label = match &app.doc().find_shape(g).expect("dimension").kind {
+        ShapeKind::Group { children } => children[2].clone(),
+        other => panic!("{other:?}"),
+    };
+    app.set_tool(Tool::Pick);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let at = app.view.to_screen(label.bounds().center());
+    double_click_at(&ctx, &mut app, at);
+    assert_eq!(app.tool, Tool::Text);
+    assert_eq!(app.text_edit.as_ref().map(|te| te.shape), Some(label.id));
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::End, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text(" max".into())],
+        Modifiers::NONE,
+    );
+    app.bake_dimensions();
+    let d = crate::dimensions::Dimension::of(app.doc().find_shape(g).expect("dimension"))
+        .expect("still a dimension");
+    assert_eq!(d.style.suffix, " max");
+    assert_eq!(d.text, None);
+    match &app.doc().find_shape(label.id).expect("label").kind {
+        ShapeKind::Text { spans, .. } => {
+            assert_eq!(tracedraw_core::document::spans_text(spans), "60.00 mm max")
+        }
+        other => panic!("{other:?}"),
+    }
+    // A Text tool click on the label edits it too, no new text made.
+    app.finish_text();
+    let count = shape_count(&app);
+    let at = app.view.to_screen(
+        app.doc()
+            .find_shape(label.id)
+            .expect("label")
+            .bounds()
+            .center(),
+    );
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.text_edit.as_ref().map(|te| te.shape), Some(label.id));
+    assert_eq!(shape_count(&app), count);
+}
+
+/// The dimension bar's Options menu stays open while a field in it is
+/// clicked, typed in and confirmed with Enter, and the value applies to
+/// the selected dimension (#644).
+#[test]
+fn the_dimension_options_stay_open_while_typed_in() {
+    let (ctx, mut app, rect) = setup();
+    app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+    app.create_dimension(
+        Point::new(20.0, 60.0),
+        Point::new(80.0, 60.0),
+        Point::new(50.0, 80.0),
+    );
+    let g = app.selection[0];
+    app.set_tool(Tool::Pick);
+    let menu = egui::Id::new("dimension_options_menu");
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    egui::Popup::open_id(&ctx, menu);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let area = ctx
+        .memory(|m| m.area_rect(menu))
+        .expect("the menu is shown");
+    // The second row's field, Extension past the line, the widest row:
+    // its text, left of the spin arrows.
+    let at = Pos2::new(area.max.x - 50.0, area.min.y + 34.0);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, menu), "open after the click");
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            key(egui::Key::A, Modifiers::COMMAND),
+            Event::Text("3".into()),
+            key(egui::Key::Enter, Modifiers::NONE),
+        ],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, menu), "open after typing");
+    let d = crate::dimensions::Dimension::of(app.doc().find_shape(g).expect("dimension"))
+        .expect("dimension");
+    assert!(
+        (d.style.extension_overshoot - 3.0).abs() < 1e-9,
+        "{}",
+        d.style.extension_overshoot
+    );
+}
