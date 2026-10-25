@@ -839,11 +839,11 @@ fn text_baselines(s: &Shape, parent: Affine) -> Vec<(Point, Point)> {
         .lines
         .iter()
         .filter_map(|l| {
-            let (a, b) = (l.edges.first()?, l.edges.last()?);
+            let (a, b) = l.x_range();
             (b > a).then(|| {
                 (
-                    to_page * Point::new(*a, l.baseline),
-                    to_page * Point::new(*b, l.baseline),
+                    to_page * Point::new(a, l.baseline),
+                    to_page * Point::new(b, l.baseline),
                 )
             })
         })

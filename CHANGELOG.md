@@ -148,6 +148,9 @@ full, row-by-row status.
 - An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, top, left and bottom. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).
 
 - Save As now starts at the `.cdr` version chosen in Options > Global > File Formats instead of always offering version 27. A new option there, Save new drawings as .cdr files, makes Save As start at the CDR type for a drawing without a file (#613).
+- Text: right-to-left words in left-to-right text (Arabic after an English word, or English inside Arabic) are now shaped and laid out right to left, joined, in the order the Unicode bidirectional rules give, instead of being laid out left to right like the English part. Digits inside right-to-left text read left to right, and paragraph text breaks such lines in reading order (#628).
+
+- Text tool: in right-to-left text (Arabic, Hebrew) Ctrl+A and other selections now shade every selected letter, not only the first one at the right end, and the caret sits at the right of the letter it stands before, as it is read (#629).
 
 ## 0.17.0 (2026-10-24)
 

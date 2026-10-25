@@ -67,6 +67,48 @@ pub mod text_outline {
         /// Pen x before each character from `start_char` to `end_char`,
         /// then after the last one.
         pub edges: Vec<f64>,
+        /// The left and right x of each character's own glyph,
+        /// `end_char - start_char` entries each (right-to-left text runs
+        /// its edges the other way, #629).
+        pub starts: Vec<f64>,
+        pub ends: Vec<f64>,
+    }
+
+    impl Line {
+        /// The stretches the characters `a..b` (text indexes) of this line
+        /// cover, from left to right, those touching merged: one for text
+        /// in one direction, more where directions mix. `out` is cleared
+        /// first.
+        pub fn stretches(&self, a: usize, b: usize, out: &mut Vec<(f64, f64)>) {
+            out.clear();
+            let from = a.max(self.start_char) - self.start_char;
+            let to = b.min(self.end_char).saturating_sub(self.start_char);
+            for i in from..to {
+                if let (Some(&x0), Some(&x1)) = (self.starts.get(i), self.ends.get(i)) {
+                    merge_stretch(out, x0.min(x1), x0.max(x1));
+                }
+            }
+        }
+    }
+
+    /// Add the stretch `x0..x1` to `out`, merged with those it touches,
+    /// `out` kept in order of x.
+    pub fn merge_stretch(out: &mut Vec<(f64, f64)>, x0: f64, x1: f64) {
+        let eps = 1e-6;
+        let (mut x0, mut x1) = (x0, x1);
+        let mut i = 0;
+        while i < out.len() {
+            let (a, b) = out[i];
+            if a <= x1 + eps && x0 <= b + eps {
+                x0 = x0.min(a);
+                x1 = x1.max(b);
+                out.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        let at = out.partition_point(|s| s.0 < x0);
+        out.insert(at, (x0, x1));
     }
 
     type Liner = fn(&TextRequest) -> Vec<Line>;
@@ -251,6 +293,7 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
             Affine::IDENTITY
         };
     let mut out: Vec<(Rect, Fill)> = frame_bg.into_iter().collect();
+    let mut stretches = Vec::new();
     let mut span_start = 0usize;
     for sp in spans {
         let n = sp.char_count();
@@ -265,18 +308,18 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
             if b <= a {
                 continue;
             }
-            let x0 = line.edges.get(a - line.start_char).copied();
-            let x1 = line.edges.get(b - line.start_char).copied();
-            let (Some(x0), Some(x1)) = (x0, x1) else {
-                continue;
-            };
-            let r = Rect::new(
-                x0.min(x1),
-                line.baseline - line.descent,
-                x0.max(x1),
-                line.baseline + line.ascent,
-            );
-            out.push(((to_local * r.to_path(0.01)).bounding_box(), fill.clone()));
+            // The stretches its characters cover: right-to-left text and
+            // mixed directions too (#629).
+            line.stretches(a, b, &mut stretches);
+            for &(x0, x1) in &stretches {
+                let r = Rect::new(
+                    x0,
+                    line.baseline - line.descent,
+                    x1,
+                    line.baseline + line.ascent,
+                );
+                out.push(((to_local * r.to_path(0.01)).bounding_box(), fill.clone()));
+            }
         }
     }
     out

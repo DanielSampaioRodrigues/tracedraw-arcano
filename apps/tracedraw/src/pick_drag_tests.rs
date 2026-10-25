@@ -8402,3 +8402,95 @@ fn undo_goes_back_to_the_end_drawing_went_on_from() {
     assert!(*closed, "{path:?}");
     assert_eq!(tracedraw_core::nodes::nodes(path).len(), 3, "{path:?}");
 }
+
+/// Ctrl+A in right-to-left text highlights all of it, not only the first
+/// letter at its right end (#629).
+#[test]
+fn select_all_in_right_to_left_text_highlights_all_of_it() {
+    use tracedraw_core::geometry::Shape as _;
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.settings.autocorrect.enabled = false;
+    app.start_text(Point::new(30.0, 50.0), None);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::Text("\u{645}\u{631}\u{62D}\u{628}\u{627}".into())],
+        Modifiers::NONE,
+    );
+    let Some((layout, to_page)) = app
+        .text_edit
+        .as_ref()
+        .and_then(|te| app.text_layout_of(te.shape))
+    else {
+        panic!("a layout");
+    };
+    if layout.glyphs == 0 {
+        return;
+    }
+    let ink = to_page.transform_rect_bbox(layout.path.bounding_box());
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::A, Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    assert_eq!(app.text_selected().chars().count(), 5);
+    let (_, _, quads) = app.text_caret_geometry().expect("caret");
+    assert_eq!(quads.len(), 1, "{quads:?}");
+    let xs = quads[0].iter().map(|p| p.x);
+    let (x0, x1) = (
+        xs.clone().fold(f64::MAX, f64::min),
+        xs.fold(f64::MIN, f64::max),
+    );
+    assert!(
+        x0 <= ink.x0 + 0.5 && x1 >= ink.x1 - 0.5,
+        "{x0} {x1} {ink:?}"
+    );
+}
+
+/// Arabic typed after an English word in the same line runs right to
+/// left to the right of it, its first letter at its right end, and
+/// selecting all shades both words (#628).
+#[test]
+fn right_to_left_typed_after_english_runs_right_to_left() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.settings.autocorrect.enabled = false;
+    app.start_text(Point::new(30.0, 50.0), None);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for typed in ["Asasa ", "\u{645}\u{631}\u{62D}\u{628}\u{627}"] {
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::Text(typed.into())],
+            Modifiers::NONE,
+        );
+    }
+    let Some((layout, _)) = app
+        .text_edit
+        .as_ref()
+        .and_then(|te| app.text_layout_of(te.shape))
+    else {
+        panic!("a layout");
+    };
+    if layout.glyphs == 0 {
+        return;
+    }
+    let line = &layout.lines[0];
+    // The Arabic letters from the right, all right of "Asasa ".
+    assert!(line.starts[6..].windows(2).all(|w| w[1] < w[0]), "{line:?}");
+    assert!(
+        line.starts[6..].iter().all(|x| *x >= line.ends[5] - 1e-6),
+        "{line:?}"
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::A, Modifiers::COMMAND)],
+        Modifiers::COMMAND,
+    );
+    let (_, _, quads) = app.text_caret_geometry().expect("caret");
+    assert_eq!(quads.len(), 1, "{quads:?}");
+}
