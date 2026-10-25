@@ -20,6 +20,7 @@ full, row-by-row status.
 - Options > Customization > Commands: a tool or command can have several shortcuts. A new key joins the ones it has (a built-in key keeps working beside it) instead of replacing them, and each key has its own Delete (#822).
 - Options > Customization > Commands has a Toolbar buttons list: every button of the Standard and Zoom toolbars (Zoom to Page, Fullscreen, Snap To and the others, and the separator). A button dragged off a bar can be dragged back from there; before, only Reset brought it back (#836).
 - A right click anywhere on the Standard or Property bar, on its buttons and boxes too, opens the bar's menu, as on the toolbox (#835).
+- Objects panel: every object's row has its own eye and padlock, to hide or show and lock or unlock it from the list, a locked object too (#832).
 
 ## 0.19.0 (2026-10-25)
 
