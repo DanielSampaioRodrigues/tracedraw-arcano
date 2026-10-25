@@ -781,8 +781,8 @@ pub struct Clipboard {
     /// objects keep their links only to the same styles.
     pub styles: Vec<tracedraw_core::ObjectStyle>,
     /// What the system clipboard held right after this copy (see
-    /// `ClipboardContent::fingerprint`).
-    pub system: u64,
+    /// `clipboard::Mark`).
+    pub system: crate::clipboard::Mark,
     /// Guidelines copied with no objects selected: pasted where they were
     /// (#376).
     pub guides: Vec<tracedraw_core::document::Guide>,
@@ -4559,7 +4559,7 @@ impl App {
             self.clipboard = Some(Clipboard {
                 shapes,
                 styles: self.doc().object_styles.clone(),
-                system: 0,
+                system: Default::default(),
                 guides: Vec::new(),
             });
             self.status = crate::i18n::trf(
