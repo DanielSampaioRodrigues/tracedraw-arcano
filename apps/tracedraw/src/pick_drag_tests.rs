@@ -7814,4 +7814,58 @@ fn the_software_renderer_note_says_hardware_acceleration_is_off() {
     crate::ui::note_software_renderer(&mut app, "Microsoft Basic Render Driver");
     assert!(app.status_opens_options.is_none());
     assert_ne!(app.status, off);
+/// The arrow keys nudge the selected guidelines when no object is
+/// selected: plain by the nudge distance, Shift by the super nudge, Ctrl
+/// by the micro nudge, one undo step per press; locked ones stay (#781).
+#[test]
+fn arrow_keys_nudge_the_selected_guidelines() {
+    use tracedraw_core::document::{Guide, GuideLine};
+    let (ctx, mut app, _id) = setup();
+    app.add_guide(Guide::horizontal(150.0));
+    app.add_guide(Guide::vertical(120.0));
+    app.add_guide(Guide::vertical(140.0));
+    app.set_guides_locked(&[2], true);
+    // A click on the horizontal guideline, away from the rectangle.
+    let on_h = app.view.to_screen(Point::new(100.0, 150.0));
+    click_at(&ctx, &mut app, on_h, Modifiers::NONE);
+    assert!(app.selection.is_empty());
+    assert_eq!(app.selected_guides, vec![0]);
+    let y = |app: &App| match app.page_guides()[0].line {
+        GuideLine::Horizontal { y } => y,
+        other => panic!("{other:?}"),
+    };
+    let press = |app: &mut App, k: egui::Key, mods: Modifiers| {
+        frame(&ctx, app, vec![key(k, mods)], mods);
+        frame(&ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    let (step, sup, micro) = (
+        app.nudge_mm,
+        app.settings.super_nudge_mm,
+        app.settings.micro_nudge_mm,
+    );
+    press(&mut app, egui::Key::ArrowUp, Modifiers::NONE);
+    assert!(close(y(&app), 150.0 + step), "{}", y(&app));
+    press(&mut app, egui::Key::ArrowDown, Modifiers::SHIFT);
+    assert!(close(y(&app), 150.0 + step - sup), "{}", y(&app));
+    press(&mut app, egui::Key::ArrowUp, Modifiers::COMMAND);
+    assert!(close(y(&app), 150.0 + step - sup + micro), "{}", y(&app));
+    // A sideways nudge leaves a horizontal guideline where it is.
+    press(&mut app, egui::Key::ArrowRight, Modifiers::NONE);
+    assert!(close(y(&app), 150.0 + step - sup + micro), "{}", y(&app));
+    // All of them: the unlocked vertical one moves, the locked one stays.
+    app.select_all_guides();
+    press(&mut app, egui::Key::ArrowLeft, Modifiers::NONE);
+    let g = app.page_guides();
+    assert_eq!(g[1].line, GuideLine::Vertical { x: 120.0 - step });
+    assert_eq!(g[2].line, GuideLine::Vertical { x: 140.0 });
+    // Each press is one undo step; the sideways one made none.
+    let steps = app.engine.history_labels().0;
+    assert_eq!(steps.last(), Some(&"Nudge Guidelines"));
+    let n = steps.iter().filter(|l| **l == "Nudge Guidelines").count();
+    assert_eq!(n, 4, "{steps:?}");
+    app.undo();
+    assert_eq!(app.page_guides()[1].line, GuideLine::Vertical { x: 120.0 });
+    assert!(close(y(&app), 150.0 + step - sup + micro));
+    app.undo();
+    assert!(close(y(&app), 150.0 + step - sup), "{}", y(&app));
 }
