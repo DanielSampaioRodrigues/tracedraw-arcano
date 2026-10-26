@@ -1063,12 +1063,16 @@ impl PageWriter<'_> {
         bounds: Rect,
     ) {
         use tracedraw_core::geometry::Shape as _;
-        self.stroke_state(s);
+        let (drawn, scale) = crate::svg::drawn_stroke(s, transform);
+        self.stroke_state(&drawn);
         if let Some(brush) = &s.painterly {
             // Painterly brush: the marks, one filled path per opacity.
-            for (alpha, marks) in
-                tracedraw_core::painterly::marks_by_opacity(&shape.page_path(), s.width, brush, 12)
-            {
+            for (alpha, marks) in tracedraw_core::painterly::marks_by_opacity(
+                &shape.page_path(),
+                drawn.width,
+                brush,
+                12,
+            ) {
                 self.content.push_str("q\n");
                 if self.pdf.allow_alpha {
                     let name = format!("GS{}", self.gstates.len());
@@ -1085,7 +1089,8 @@ impl PageWriter<'_> {
                 self.path_ops(&(parent * marks));
                 self.content.push_str("f\nQ\n");
             }
-        } else if let Some(band) = tracedraw_core::shaping::outline_band(&shape.page_path(), s, 1.0)
+        } else if let Some(band) =
+            tracedraw_core::shaping::outline_band(&shape.page_path(), s, scale)
         {
             // Calligraphic nib or variable width: the band, filled.
             let band = parent * band;
@@ -1099,12 +1104,12 @@ impl PageWriter<'_> {
                 self.content.push_str("f\n");
             }
         } else if let Some((paint, area)) = outline_paint(s, transform)
-            .map(|p| (p, tracedraw_core::shaping::stroke_area(path, s)))
+            .map(|p| (p, tracedraw_core::shaping::stroke_area(path, &drawn)))
             .filter(|(_, a)| !a.elements().is_empty())
         {
             // The outline's own paint: the area it covers, painted
             // like a fill spread over the outline's bounds.
-            let half = s.width / 2.0;
+            let half = drawn.width / 2.0;
             self.paint_area(&paint, &area, bounds.inflate(half, half), true);
         } else {
             self.path_ops(path);
@@ -1208,7 +1213,7 @@ impl PageWriter<'_> {
             let _ = writeln!(self.content, "{op}");
         }
         if let Some(s) = plain_stroke {
-            self.stroke_state(s);
+            self.stroke_state(&crate::svg::drawn_stroke(s, transform).0);
         }
         self.show_text(&visible, render);
         self.show_text(&hidden, 3);
@@ -2682,6 +2687,39 @@ mod tests {
         assert!(s < f, "behind: the outline first ({s} {f})");
         let (s, f) = order(false);
         assert!(f < s, "in front: the fill first ({s} {f})");
+    }
+
+    /// An outline that scales with its object is as wide in the PDF as in
+    /// the drawing window: its width times the object's scale factor.
+    #[test]
+    fn an_outline_that_scales_with_its_object_takes_the_object_scale() {
+        let width = |scale_with_object: bool| -> String {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let mut sq = Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Rect {
+                    rect: tracedraw_core::Rect::new(0.0, 0.0, 200.0, 100.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            sq.transform = Affine::translate((20.0, 20.0)) * Affine::scale(0.25);
+            sq.stroke = Some(tracedraw_core::Stroke {
+                scale_with_object,
+                ..tracedraw_core::Stroke::new(Color::rgb8(0, 0, 0), 10.0)
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(sq);
+            let content = page_content(&document_to_pdf(&doc));
+            let line = content
+                .lines()
+                .find(|l| l.contains(" w "))
+                .expect("a line width");
+            let (before, _) = line.split_once(" w ").expect("the width");
+            before.rsplit(' ').next().unwrap_or_default().to_string()
+        };
+        assert_eq!(width(true), f(2.5 * MM_PT));
+        assert_eq!(width(false), f(10.0 * MM_PT));
     }
 
     #[test]
