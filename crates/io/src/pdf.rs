@@ -165,10 +165,12 @@ fn jpeg_bytes(data: &[u8], channels: u8, w: u32, h: u32, quality: u8) -> Option<
 pub struct PdfOptions {
     pub standard: PdfStandard,
     /// ICC profile embedded as the output intent's destination profile
-    /// (a CMYK press profile for X-1a). Without one, a registered
+    /// (a CMYK press profile for X-1a). Without one, the CMYK profile the
+    /// drawing carries is embedded; without either, a registered
     /// characterisation name is used instead.
     pub output_profile: Option<Vec<u8>>,
     /// Output condition identifier, e.g. "FOGRA39" or "CGATS TR 001".
+    /// Empty: the embedded profile's description, else "CGATS TR 001".
     pub output_condition: String,
     /// Bleed added around every page (TrimBox = page, MediaBox = page + bleed).
     pub bleed_mm: f64,
@@ -2047,21 +2049,26 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         catalog.push_str(" /Extensions << /ADBE << /BaseVersion /1.7 /ExtensionLevel 8 >> >>");
     }
     if std_ != PdfStandard::None {
-        let condition = if opts.output_condition.trim().is_empty() {
-            "CGATS TR 001".to_string()
-        } else {
+        let profile = output_profile(opts, doc);
+        let condition = if !opts.output_condition.trim().is_empty() {
             opts.output_condition.trim().to_string()
+        } else if let Some(icc) = profile {
+            // The embedded profile is the condition: a registered name
+            // would describe another press.
+            profile_condition(icc)
+        } else {
+            "CGATS TR 001".to_string()
         };
-        let profile_ref = opts.output_profile.as_ref().map(|icc| {
+        let profile_ref = profile.map(|icc| {
             let n = icc_channels(icc);
             let id = pdf.stream(&format!("/N {n}"), icc);
             format!(" /DestOutputProfile {id} 0 R")
         });
         let intent = pdf.add_str(format!(
             "<< /Type /OutputIntent /S /GTS_PDFX /OutputConditionIdentifier {} /OutputCondition {} /RegistryName (http://www.color.org) /Info {}{} >>",
-            pdf_text(&condition),
-            pdf_text(&condition),
-            pdf_text(&condition),
+            pdf_text_any(&condition),
+            pdf_text_any(&condition),
+            pdf_text_any(&condition),
             profile_ref.unwrap_or_default()
         ));
         let _ = write!(catalog, " /OutputIntents [{intent} 0 R]");
@@ -2112,6 +2119,27 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         None => pdf.finish_with(std_.version(), Some(info_id)),
     };
     (bytes, report)
+}
+
+/// The output intent's profile: the one given, else the CMYK profile the
+/// drawing carries, the profile its CMYK values are in.
+fn output_profile<'a>(opts: &'a PdfOptions, doc: &'a Document) -> Option<&'a [u8]> {
+    opts.output_profile.as_deref().or_else(|| {
+        doc.cmyk_profile
+            .as_ref()
+            .map(|p| p.data.as_slice())
+            .filter(|icc| icc_channels(icc) == 4)
+    })
+}
+
+/// The output condition an embedded profile stands for: its description,
+/// else "Custom".
+fn profile_condition(icc: &[u8]) -> String {
+    tracedraw_core::icc::Profile::parse(icc)
+        .ok()
+        .and_then(|p| p.description().map(|d| d.trim().to_string()))
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| "Custom".to_string())
 }
 
 /// Channel count of an ICC profile from its colour space signature.
@@ -2860,6 +2888,110 @@ mod pdfx_tests {
         let text = String::from_utf8_lossy(&document_to_pdf_with(&doc, &opts)).into_owned();
         assert!(text.contains("/DestOutputProfile"));
         assert!(text.contains("/N 4"));
+    }
+
+    fn doc_carrying(icc: Vec<u8>) -> Document {
+        let mut doc = doc_with_transparent_rect();
+        doc.cmyk_profile = Some(tracedraw_core::DocumentProfile::new("carried", icc));
+        doc
+    }
+
+    fn pdfx(doc: &Document, opts: PdfOptions) -> String {
+        String::from_utf8_lossy(&document_to_pdf_with(doc, &opts)).into_owned()
+    }
+
+    #[test]
+    fn pdfx_output_intent_embeds_the_profile_the_drawing_carries() {
+        use tracedraw_core::icc::test_profiles as tp;
+        let doc = doc_carrying(tp::lut16_cmyk_profile());
+        for standard in [PdfStandard::X1a, PdfStandard::X3, PdfStandard::X4] {
+            let text = pdfx(
+                &doc,
+                PdfOptions {
+                    standard,
+                    ..Default::default()
+                },
+            );
+            assert!(text.contains("/DestOutputProfile"), "{standard:?}");
+            assert!(text.contains("/N 4"), "{standard:?}");
+            // The identifier names the embedded profile, not another press.
+            assert!(
+                text.contains("/OutputConditionIdentifier (Synthetic CMYK)"),
+                "{standard:?}"
+            );
+            assert!(!text.contains("CGATS TR 001"), "{standard:?}");
+        }
+        // A plain PDF still has no output intent.
+        let text = pdfx(&doc, PdfOptions::default());
+        assert!(!text.contains("/OutputIntents"));
+    }
+
+    #[test]
+    fn pdfx_given_profile_and_condition_win_over_the_carried_profile() {
+        use tracedraw_core::icc::test_profiles as tp;
+        let doc = doc_carrying(tp::lut16_cmyk_profile());
+        let given = tp::mba_cmyk_profile();
+        let text = pdfx(
+            &doc,
+            PdfOptions {
+                standard: PdfStandard::X1a,
+                output_profile: Some(given.clone()),
+                ..Default::default()
+            },
+        );
+        // The given profile has no description: the condition is custom.
+        assert!(text.contains("/OutputConditionIdentifier (Custom)"));
+        assert!(text.contains(&format!("<< /N 4 /Length {} >>", given.len())));
+        assert!(!text.contains("(Synthetic CMYK)"));
+        let text = pdfx(
+            &doc,
+            PdfOptions {
+                standard: PdfStandard::X4,
+                output_condition: "FOGRA39".into(),
+                ..Default::default()
+            },
+        );
+        assert!(text.contains("/OutputConditionIdentifier (FOGRA39)"));
+        assert!(text.contains("/DestOutputProfile"));
+    }
+
+    #[test]
+    fn pdfx_skips_a_carried_profile_that_is_not_cmyk_or_not_readable() {
+        // An RGB profile in the CMYK slot is not an output intent for CMYK
+        // values: the registered name stays.
+        let mut rgb = vec![0u8; 128];
+        rgb[16..20].copy_from_slice(b"RGB ");
+        let text = pdfx(
+            &doc_carrying(rgb),
+            PdfOptions {
+                standard: PdfStandard::X1a,
+                ..Default::default()
+            },
+        );
+        assert!(!text.contains("/DestOutputProfile"));
+        assert!(text.contains("/OutputConditionIdentifier (CGATS TR 001)"));
+        // A CMYK signature on a profile that does not parse: embedded as
+        // carried, named "Custom", no panic.
+        let mut broken = vec![0xFFu8; 64];
+        broken[16..20].copy_from_slice(b"CMYK");
+        let text = pdfx(
+            &doc_carrying(broken),
+            PdfOptions {
+                standard: PdfStandard::X4,
+                ..Default::default()
+            },
+        );
+        assert!(text.contains("/DestOutputProfile"));
+        assert!(text.contains("/OutputConditionIdentifier (Custom)"));
+        // Truncated before the signature: not used.
+        let text = pdfx(
+            &doc_carrying(vec![0u8; 10]),
+            PdfOptions {
+                standard: PdfStandard::X4,
+                ..Default::default()
+            },
+        );
+        assert!(!text.contains("/DestOutputProfile"));
     }
 
     fn two_pages() -> Document {
