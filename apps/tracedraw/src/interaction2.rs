@@ -450,16 +450,28 @@ impl App {
             }
         }
         if response.double_clicked() {
-            // Double-click inside a mesh adds a grid line there.
+            // Double-click inside a mesh: a node there, on new grid lines
+            // through the point (#804).
             for s in self.selected_shapes() {
                 if let Fill::Mesh(m) = &s.fill {
-                    let lp = s.transform.inverse() * p;
+                    let inv = s.transform.inverse();
+                    let lp = inv * p;
+                    // Four pixels on screen, in the mesh's own space.
+                    let tol = ((inv * Point::new(4.0 / self.view.zoom as f64, 0.0))
+                        - (inv * Point::ZERO))
+                        .hypot();
                     let mut m2 = m.clone();
-                    m2.add_line(lp);
-                    self.run(Command::SetFill {
-                        shapes: vec![s.id],
-                        fill: Fill::Mesh(m2),
-                    });
+                    if m2.add_lines_at(lp, tol) {
+                        let node = mesh_node_near(&m2, lp, tol);
+                        self.run(Command::SetFill {
+                            shapes: vec![s.id],
+                            fill: Fill::Mesh(m2),
+                        });
+                        if let Some(i) = node {
+                            self.selected_effect_node =
+                                Some((s.id, crate::mesh_tool::MESH_NODE_BASE + i));
+                        }
+                    }
                     return true;
                 }
             }
@@ -554,6 +566,15 @@ impl App {
         }
         self.context_menu = Some((screen, p));
     }
+}
+
+/// The node of `m` within `tol` of `p` (both in the mesh's space).
+fn mesh_node_near(m: &tracedraw_core::Mesh, p: Point, tol: f64) -> Option<usize> {
+    m.nearest(p).filter(|i| {
+        m.nodes
+            .get(*i)
+            .is_some_and(|n| (n.pos - p).hypot() <= tol.max(1e-6))
+    })
 }
 
 /// Page-space positions of the editable nodes of a shape's perspective

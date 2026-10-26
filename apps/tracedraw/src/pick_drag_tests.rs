@@ -8945,3 +8945,49 @@ fn frame_times_of_a_node_drag_on_a_long_curve() {
         total * 1000.0 / n as f64
     );
 }
+
+/// #804, Mesh Fill: a double-click inside the mesh puts a node exactly
+/// where it was (the new line went halfway between the nearest nodes),
+/// selected, and that node dragged lands under the pointer.
+#[test]
+fn mesh_nodes_land_where_they_are_clicked_and_dragged() {
+    let (ctx, mut app, id) = setup();
+    app.mesh_rows = 2;
+    app.mesh_cols = 2;
+    app.set_tool(Tool::MeshFill);
+    // The rectangle (10..60 x 10..40): a click inside gives it a mesh.
+    click_page(&ctx, &mut app, Point::new(30.0, 20.0));
+    let mesh = |app: &App| match &app.doc().find_shape(id).expect("shape").fill {
+        tracedraw_core::Fill::Mesh(m) => m.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!((mesh(&app).rows, mesh(&app).cols), (2, 2));
+    let at = Point::new(19.0, 31.0);
+    let at_screen = app.view.to_screen(at);
+    double_click_at(&ctx, &mut app, at_screen);
+    let m = mesh(&app);
+    assert_eq!((m.rows, m.cols), (3, 3));
+    let tol = 1.0 / app.view.zoom as f64;
+    let i = m.nearest(at).expect("node");
+    assert!((m.nodes[i].pos - at).hypot() <= tol, "{:?}", m.nodes[i].pos);
+    assert_eq!(
+        app.selected_effect_node,
+        Some((id, crate::mesh_tool::MESH_NODE_BASE + i))
+    );
+    // Drag that node 15 mm right: it ends under the pointer.
+    let to = Point::new(34.0, 31.0);
+    let to_screen = app.view.to_screen(to);
+    drag(
+        &ctx,
+        &mut app,
+        at_screen,
+        to_screen,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let moved = mesh(&app).nodes[i].pos;
+    assert!((moved - to).hypot() <= tol, "{moved:?}");
+    // One undo step puts it back.
+    app.undo();
+    assert!((mesh(&app).nodes[i].pos - at).hypot() <= tol);
+}
