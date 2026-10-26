@@ -479,6 +479,15 @@ impl Renderer<'_> {
     /// bounds (effects, shadows, symbols, the drag preview) are always
     /// drawn.
     fn out_of_sight(&self, shape: &Shape, visible: &Rect) -> bool {
+        self.out_of_sight_in(shape, Affine::IDENTITY, visible)
+    }
+
+    /// [`Self::out_of_sight`] for `shape` inside a group or clip frame
+    /// whose transform to the page is `parent`: the objects of a group
+    /// and the frame of a clip frame lie in its space, so a moved clip
+    /// frame (the pages placed on a printed sheet) is tested where it
+    /// draws (#848).
+    fn out_of_sight_in(&self, shape: &Shape, parent: Affine, visible: &Rect) -> bool {
         if !shape.visible {
             return true;
         }
@@ -496,17 +505,24 @@ impl Renderer<'_> {
         // outline inside it flat (#626).
         match &shape.kind {
             ShapeKind::Group { children } => {
-                return children.iter().all(|c| self.out_of_sight(c, visible));
+                let t = parent * shape.transform;
+                return children.iter().all(|c| self.out_of_sight_in(c, t, visible));
             }
-            ShapeKind::ClipFrame { frame, .. } => return self.out_of_sight(frame, visible),
+            ShapeKind::ClipFrame { frame, .. } => {
+                return self.out_of_sight_in(frame, parent * shape.transform, visible)
+            }
             _ => {}
         }
-        let b = shape.bounds();
+        let b = if parent == Affine::IDENTITY {
+            shape.bounds()
+        } else {
+            parent.transform_rect_bbox(shape.bounds())
+        };
         if !b.x0.is_finite() || !b.y0.is_finite() || !b.x1.is_finite() || !b.y1.is_finite() {
             return false;
         }
         let scale = {
-            let c = shape.transform.as_coeffs();
+            let c = (parent * shape.transform).as_coeffs();
             (c[0] * c[0] + c[1] * c[1])
                 .sqrt()
                 .max((c[2] * c[2] + c[3] * c[3]).sqrt())
@@ -4287,6 +4303,94 @@ mod band_tests {
             assert!(dark(100.0, y), "{y} mm");
         }
         assert!(!dark(100.0, 66.0) && !dark(100.0, 24.0));
+    }
+
+    /// Clip frames and groups moved by their own transform (the pages a
+    /// printed sheet repeats, each a clip frame placed on the sheet) are
+    /// drawn in every strip they reach: only the strip holding their
+    /// untransformed frame drew them, so Print Preview showed one row of
+    /// a repeated page and white above it (#848).
+    #[test]
+    fn moved_clip_frames_and_groups_are_drawn_in_every_strip() {
+        let rect = |id: u64, r: Rect| {
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(id),
+                ShapeKind::Rect {
+                    rect: r,
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK);
+            s.stroke = None;
+            s
+        };
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 200.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        let mut shapes = Vec::new();
+        // A 40 x 20 mm card repeated four times up the sheet, left.
+        for row in 0..4u64 {
+            let mut frame = rect(100 + row, Rect::new(0.0, 0.0, 40.0, 20.0));
+            frame.fill = tracedraw_core::Fill::None;
+            let mut clip = Shape::new(
+                tracedraw_core::ShapeId(10 + row),
+                ShapeKind::ClipFrame {
+                    frame: Box::new(frame),
+                    contents: vec![rect(200 + row, Rect::new(0.0, 0.0, 40.0, 20.0))],
+                },
+            );
+            clip.transform = Affine::translate((5.0, 10.0 + 45.0 * row as f64));
+            shapes.push(clip);
+        }
+        // A group moved up the sheet, right.
+        let mut group = Shape::new(
+            tracedraw_core::ShapeId(50),
+            ShapeKind::Group {
+                children: vec![rect(51, Rect::new(0.0, 0.0, 40.0, 20.0))],
+            },
+        );
+        group.transform = Affine::translate((55.0, 160.0));
+        shapes.push(group);
+        if let Ok(l) = doc.layer_mut(layer) {
+            l.shapes.extend(shapes);
+        }
+        // 5 px per mm: 500 x 1000 px, enough to be drawn in strips.
+        let opts = RenderOptions {
+            width: 500,
+            height: 1000,
+            view: ViewTransform {
+                zoom: 5.0,
+                origin_x: 0.0,
+                origin_y: 1000.0,
+            },
+            ..RenderOptions::default()
+        };
+        let visible = Rect::new(0.0, 100.0, 100.0, 200.0);
+        let r_px = &mut Pixmap::new(1, 1).expect("pixmap");
+        let r = Renderer {
+            pixmap: r_px,
+            screen: opts.view.affine(),
+            zoom: opts.view.zoom,
+            flags: Flags::from_options(&opts),
+            symbols: &doc.symbols,
+            preview: None,
+        };
+        let drawn = &doc.pages[0].layers[0].shapes;
+        assert!(r.out_of_sight(&drawn[0], &visible), "the bottom card");
+        assert!(!r.out_of_sight(&drawn[3], &visible), "the top card");
+        assert!(!r.out_of_sight(&drawn[4], &visible), "the group");
+        let px = render_page(&doc, page, &opts).expect("render");
+        let dark = |x: f64, y: f64| {
+            let (col, row) = ((x * 5.0) as u32, (1000.0 - y * 5.0) as u32);
+            px.pixel(col, row).is_some_and(|p| p.alpha() > 200)
+        };
+        for row in 0..4 {
+            let y = 20.0 + 45.0 * row as f64;
+            assert!(dark(25.0, y), "card {row} at {y} mm");
+            assert!(!dark(25.0, y + 20.0), "gap above card {row}");
+        }
+        assert!(dark(75.0, 170.0), "the group");
     }
 
     /// The same inside a group, nested twice, and an ordinary 16 mm
