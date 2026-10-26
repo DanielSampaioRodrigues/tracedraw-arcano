@@ -597,8 +597,6 @@ pub fn symbol_to_unicode(c: char) -> char {
     }
 }
 
-/// Characters drawn with the face of the letter before them: spaces,
-/// controls, joiners, variation selectors and combining marks.
 /// The script a letter is written in, for cutting text into runs one
 /// shaper takes: `None` for what every script shares (spaces, digits,
 /// punctuation, marks), which stays with the letters around it. Only the
@@ -732,6 +730,51 @@ fn script_runs(text: &str) -> Vec<Range<usize>> {
     runs.into_iter().map(|r| r.0).collect()
 }
 
+/// A conjunct linker: the virama of the scripts whose consonants it
+/// joins into conjuncts and half forms (Devanagari, Bengali, Gujarati,
+/// Oriya, Telugu, Malayalam: the Unicode property Indic_Conjunct_Break
+/// = Linker).
+fn linker(c: char) -> bool {
+    matches!(
+        c,
+        '\u{094D}' | '\u{09CD}' | '\u{0ACD}' | '\u{0B4D}' | '\u{0C4D}' | '\u{0D4D}'
+    )
+}
+
+/// A letter of the Indian scripts' blocks (U+0900 to U+0DFF).
+fn indic_letter(c: char) -> bool {
+    matches!(c as u32, 0x0900..=0x0DFF) && c.is_alphabetic()
+}
+
+/// `c` after `prev` belongs to the syllable `prev` is in: a combining
+/// mark (vowel sign, virama, nukta, anusvara, accent), a joiner, a
+/// consonant of the same script after a linker, or a letter of the
+/// Indian scripts after a zero width joiner. Text is never cut for
+/// shaping, and lines never break, before such a character: a syllable
+/// shaped in pieces loses its half forms and conjuncts and shows its
+/// virama (#599). Plain ASCII text has none (see [`complex_text`]).
+fn continues_syllable(prev: char, c: char) -> bool {
+    use unicode_general_category::{get_general_category, GeneralCategory as G};
+    if c.is_ascii() {
+        return false;
+    }
+    matches!(
+        get_general_category(c),
+        G::NonspacingMark | G::SpacingMark | G::EnclosingMark
+    ) || matches!(c, '\u{200C}' | '\u{200D}')
+        || (linker(prev) && indic_letter(c) && (prev as u32 >> 7) == (c as u32 >> 7))
+        || (prev == '\u{200D}' && indic_letter(c))
+}
+
+/// Text in which a character may continue the syllable before it: any
+/// text but plain ASCII, the only text the syllable checks are skipped
+/// for (every frame of editing lays text out, #599).
+fn complex_text(text: &str) -> bool {
+    !text.is_ascii()
+}
+
+/// Characters drawn with the face of the letter before them: spaces,
+/// controls, joiners, variation selectors and combining marks.
 fn inherits_face(c: char) -> bool {
     c.is_whitespace()
         || c.is_control()
@@ -865,6 +908,10 @@ struct Glyph {
     /// they are seen when placed (#628).
     level: u8,
     span: usize,
+    /// No line breaks before this glyph: it is a further glyph of the
+    /// cluster before it or continues its syllable (see
+    /// [`continues_syllable`]).
+    joins: bool,
     /// Width of a trailing hyphen if the line breaks after this glyph.
     hyphen_after: Option<Arc<HyphenGlyph>>,
     /// The font glyph behind the outline, for writers that keep text as
@@ -2144,16 +2191,30 @@ impl FontSystem {
         {
             return whole;
         }
+        // One face for each syllable: the span's when it has all of its
+        // letters, else the face that has the first one it lacks (#599).
         let mut runs: Vec<(Range<usize>, fontdb::ID)> = Vec::new();
-        for (i, c) in text.char_indices() {
-            let id = if inherits_face(c) {
-                runs.last().map(|r| r.1).unwrap_or(primary)
-            } else if face_glyph(&face, c).is_some() {
-                primary
-            } else {
-                self.fallback_face(c, bold, italic).unwrap_or(primary)
+        let mut chars = text.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            let mut end = i + c.len_utf8();
+            let mut lacks = (!inherits_face(c) && face_glyph(&face, c).is_none()).then_some(c);
+            let mut last = c;
+            while let Some(&(j, n)) = chars.peek() {
+                if !continues_syllable(last, n) {
+                    break;
+                }
+                if lacks.is_none() && !inherits_face(n) && face_glyph(&face, n).is_none() {
+                    lacks = Some(n);
+                }
+                end = j + n.len_utf8();
+                last = n;
+                chars.next();
+            }
+            let id = match lacks {
+                Some(l) => self.fallback_face(l, bold, italic).unwrap_or(primary),
+                None if inherits_face(c) => runs.last().map(|r| r.1).unwrap_or(primary),
+                None => primary,
             };
-            let end = i + c.len_utf8();
             match runs.last_mut() {
                 Some(last) if last.1 == id => last.0.end = end,
                 _ => runs.push((i..end, id)),
@@ -2336,6 +2397,7 @@ impl FontSystem {
         let infos = glyphs.glyph_infos();
         let positions = glyphs.glyph_positions();
         let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let complex = complex_text(text);
         // The characters each glyph stands for: from its cluster to the
         // next cluster (in text order); the first glyph of a cluster
         // carries them.
@@ -2387,7 +2449,18 @@ impl FontSystem {
                 .copied()
                 .find(|c| *c > start)
                 .unwrap_or(text.len());
-            let cluster_text = if claimed.contains(&start) {
+            let further = claimed.contains(&start);
+            let joins = further
+                || complex
+                    && text
+                        .get(..start)
+                        .and_then(|t| t.chars().next_back())
+                        .is_some_and(|p| {
+                            text.get(start..)
+                                .and_then(|t| t.chars().next())
+                                .is_some_and(|c| continues_syllable(p, c))
+                        });
+            let cluster_text = if further {
                 String::new()
             } else {
                 claimed.push(start);
@@ -2427,6 +2500,7 @@ impl FontSystem {
                 rtl,
                 level,
                 span: span_idx,
+                joins,
                 hyphen_after: hyphen_glyph.clone(),
                 src: Some(src),
             });
@@ -2523,9 +2597,19 @@ impl FontSystem {
         let mut paragraphs: Vec<Vec<Glyph>> = vec![Vec::new()];
         let mut para_starts: Vec<usize> = vec![0];
         let mut char_idx = 0usize;
+        // A syllable a span boundary cuts (a vowel sign or the second half
+        // of a conjunct in another colour) is shaped whole, in the style
+        // of the span it starts in (#599): `taken[j]` bytes at the start
+        // of span `j` went with the spans before it. Spans of plain ASCII
+        // text take nothing.
+        let mut taken: Vec<usize> = Vec::new();
         for (si, span) in spans.iter().enumerate() {
             let mut first = true;
-            for piece in span.text.split('\n') {
+            let skip = taken.get(si).copied().unwrap_or(0);
+            let text = span.text.get(skip..).unwrap_or(&span.text);
+            let mut pieces = text.split('\n').peekable();
+            while let Some(piece) = pieces.next() {
+                let last_piece = pieces.peek().is_none();
                 if !first {
                     // The newline itself.
                     char_idx += 1;
@@ -2535,7 +2619,8 @@ impl FontSystem {
                 first = false;
                 // Tabs are kept as glyph-less markers so the line breaker can
                 // expand them to the next tab stop.
-                for (ti, part) in piece.split('\t').enumerate() {
+                let mut parts = piece.split('\t').enumerate().peekable();
+                while let Some((ti, part)) = parts.next() {
                     if ti > 0 {
                         if let Some(p) = paragraphs.last_mut() {
                             p.push(Glyph {
@@ -2549,15 +2634,45 @@ impl FontSystem {
                                 rtl: false,
                                 level: 0,
                                 span: si,
+                                joins: false,
                                 hyphen_after: None,
                                 src: None,
                             })
                         }
                         char_idx += 1;
                     }
+                    let mut shaped = std::borrow::Cow::Borrowed(part);
+                    if let (true, Some(mut prev)) = (
+                        last_piece && parts.peek().is_none(),
+                        part.chars().next_back(),
+                    ) {
+                        for (sj, next) in spans.iter().enumerate().skip(si + 1) {
+                            let mut n = 0;
+                            for c in next.text.chars() {
+                                if !continues_syllable(prev, c) {
+                                    break;
+                                }
+                                prev = c;
+                                n += c.len_utf8();
+                            }
+                            if let Some(more) = next.text.get(..n).filter(|m| !m.is_empty()) {
+                                shaped.to_mut().push_str(more);
+                                if taken.len() <= sj {
+                                    taken.resize(sj + 1, 0);
+                                }
+                                if let Some(t) = taken.get_mut(sj) {
+                                    *t = n;
+                                }
+                            }
+                            if n < next.text.len() {
+                                break;
+                            }
+                        }
+                    }
                     let pi = paragraphs.len().saturating_sub(1);
-                    let run = self.shape_run(span, si, part, size_scale, char_idx, &style_of(pi).1);
-                    char_idx += part.chars().count();
+                    let run =
+                        self.shape_run(span, si, &shaped, size_scale, char_idx, &style_of(pi).1);
+                    char_idx += shaped.chars().count();
                     if let Some(p) = paragraphs.last_mut() {
                         p.extend(run);
                     }
@@ -3460,7 +3575,7 @@ impl<'a> Breaker<'a> {
                 };
                 let mut best: Option<usize> = None;
                 for p in points {
-                    if p == 0 || p >= word.len() {
+                    if p == 0 || word.get(p).is_none_or(|g| g.joins) {
                         continue;
                     }
                     let head = &word[..p];
@@ -3655,6 +3770,9 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
         self.path.close_path();
     }
 }
+
+#[cfg(test)]
+mod devanagari_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3887,6 +4005,7 @@ mod tests {
             span: 0,
             hyphen_after: None,
             src: None,
+            joins: false,
         };
         let order = |v: &[(u8, char)]| {
             let glyphs: Vec<Glyph> = v.iter().map(|(l, c)| g(*l, *c)).collect();

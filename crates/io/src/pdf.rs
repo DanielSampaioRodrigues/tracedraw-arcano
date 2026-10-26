@@ -1259,6 +1259,24 @@ impl PageWriter<'_> {
             return;
         }
         let _ = writeln!(self.content, "BT\n{render} Tr");
+        // Clusters whose glyphs do not each stand for their own
+        // characters (a vowel sign drawn before its consonant, a reph
+        // after its syllable, a glyph used for other characters
+        // elsewhere): their text in typed order as marked content, so
+        // readers take the characters from it (#599). (first, last).
+        let mut clusters: Vec<(usize, usize)> = Vec::new();
+        for (i, (_, sh)) in glyphs.iter().enumerate() {
+            match clusters.last_mut() {
+                Some(c) if sh.text.is_empty() => c.1 = i,
+                _ => clusters.push((i, i)),
+            }
+        }
+        clusters.retain(|&(a, b)| {
+            b > a
+                || glyphs
+                    .get(a)
+                    .is_some_and(|(_, sh)| !sh.mapped && !sh.text.is_empty())
+        });
         let mut font: Option<usize> = None;
         // The run: its matrix (points) and the pen along it, ems.
         let mut run: Option<(Affine, f64)> = None;
@@ -1269,71 +1287,106 @@ impl PageWriter<'_> {
                 pending.clear();
             }
         };
-        for (m, sh) in glyphs {
-            let m = Affine::scale(MM_PT) * *m;
-            let c = m.as_coeffs();
-            let det = c[0] * c[3] - c[1] * c[2];
-            if !det.is_finite() || det.abs() < 1e-12 || c.iter().any(|v| !v.is_finite()) {
-                continue;
-            }
-            if font != Some(sh.slot) {
+        let mut marked = clusters.into_iter().peekable();
+        let mut open: Option<usize> = None;
+        for (i, (m, sh)) in glyphs.iter().enumerate() {
+            if let Some((_, last)) = marked.next_if(|c| c.0 == i) {
                 flush(&mut self.content, &mut pending);
-                let Some(slot) = self.pdf.fonts.get(sh.slot) else {
-                    continue;
-                };
-                let (name, id) = (slot.name.clone(), slot.id);
-                if !self.fonts.iter().any(|(n, _)| *n == name) {
-                    self.fonts.push((name.clone(), id));
-                }
-                let _ = writeln!(self.content, "/{name} 1 Tf");
-                font = Some(sh.slot);
-                run = None;
+                let _ = writeln!(
+                    self.content,
+                    "/Span << /ActualText {} >> BDC",
+                    pdf_text_any(&sh.text)
+                );
+                open = Some(last);
             }
-            // Along the run: the glyph's origin in the run's space.
-            let along = run.and_then(|(r, pen)| {
-                let rc = r.as_coeffs();
-                let same = (0..4).all(|i| (rc[i] - c[i]).abs() <= 1e-6 * (1.0 + rc[i].abs()));
-                if !same {
-                    return None;
-                }
-                let p = r.inverse() * tracedraw_core::geometry::Point::new(c[4], c[5]);
-                (p.y.abs() < 1e-3).then_some((p.x, pen))
-            });
-            let x = match along {
-                Some((x, pen)) => {
-                    let adj = (pen - x) * 1000.0;
-                    if adj.abs() > 0.01 {
-                        let _ = write!(pending, "{} ", f(adj));
-                    }
-                    x
-                }
-                None => {
-                    flush(&mut self.content, &mut pending);
-                    let _ = writeln!(
-                        self.content,
-                        "{} {} {} {} {} {} Tm",
-                        f6(c[0]),
-                        f6(c[1]),
-                        f6(c[2]),
-                        f6(c[3]),
-                        f(c[4]),
-                        f(c[5])
-                    );
-                    run = Some((m, 0.0));
-                    0.0
-                }
-            };
-            pending.push('<');
-            for b in &sh.code {
-                let _ = write!(pending, "{b:02X}");
-            }
-            pending.push_str("> ");
-            if let Some((_, pen)) = run.as_mut() {
-                *pen = x + sh.width_em;
+            self.show_one(m, sh, &mut font, &mut run, &mut pending);
+            if open == Some(i) {
+                flush(&mut self.content, &mut pending);
+                self.content.push_str("EMC\n");
+                open = None;
             }
         }
         flush(&mut self.content, &mut pending);
         self.content.push_str("ET\n");
+    }
+
+    /// Show one glyph of [`Self::show_text`]: added to the pending
+    /// adjustments of the current run, or a new run.
+    fn show_one(
+        &mut self,
+        m: &Affine,
+        sh: &fonts::Shown,
+        font: &mut Option<usize>,
+        run: &mut Option<(Affine, f64)>,
+        pending: &mut String,
+    ) {
+        let flush = |content: &mut String, pending: &mut String| {
+            if !pending.is_empty() {
+                let _ = writeln!(content, "[{}] TJ", pending.trim_end());
+                pending.clear();
+            }
+        };
+        let m = Affine::scale(MM_PT) * *m;
+        let c = m.as_coeffs();
+        let det = c[0] * c[3] - c[1] * c[2];
+        if !det.is_finite() || det.abs() < 1e-12 || c.iter().any(|v| !v.is_finite()) {
+            return;
+        }
+        if *font != Some(sh.slot) {
+            flush(&mut self.content, pending);
+            let Some(slot) = self.pdf.fonts.get(sh.slot) else {
+                return;
+            };
+            let (name, id) = (slot.name.clone(), slot.id);
+            if !self.fonts.iter().any(|(n, _)| *n == name) {
+                self.fonts.push((name.clone(), id));
+            }
+            let _ = writeln!(self.content, "/{name} 1 Tf");
+            *font = Some(sh.slot);
+            *run = None;
+        }
+        // Along the run: the glyph's origin in the run's space.
+        let along = run.and_then(|(r, pen)| {
+            let rc = r.as_coeffs();
+            let same = (0..4).all(|i| (rc[i] - c[i]).abs() <= 1e-6 * (1.0 + rc[i].abs()));
+            if !same {
+                return None;
+            }
+            let p = r.inverse() * tracedraw_core::geometry::Point::new(c[4], c[5]);
+            (p.y.abs() < 1e-3).then_some((p.x, pen))
+        });
+        let x = match along {
+            Some((x, pen)) => {
+                let adj = (pen - x) * 1000.0;
+                if adj.abs() > 0.01 {
+                    let _ = write!(pending, "{} ", f(adj));
+                }
+                x
+            }
+            None => {
+                flush(&mut self.content, pending);
+                let _ = writeln!(
+                    self.content,
+                    "{} {} {} {} {} {} Tm",
+                    f6(c[0]),
+                    f6(c[1]),
+                    f6(c[2]),
+                    f6(c[3]),
+                    f(c[4]),
+                    f(c[5])
+                );
+                *run = Some((m, 0.0));
+                0.0
+            }
+        };
+        pending.push('<');
+        for b in &sh.code {
+            let _ = write!(pending, "{b:02X}");
+        }
+        pending.push_str("> ");
+        if let Some((_, pen)) = run.as_mut() {
+            *pen = x + sh.width_em;
+        }
     }
 }
 

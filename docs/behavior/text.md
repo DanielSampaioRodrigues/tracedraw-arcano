@@ -302,7 +302,11 @@ where it was and the line spacing is the usual distance between the
 baselines, in points. The lines must be turned and sized alike, in the
 same group, else the status bar says so and nothing changes. One undo
 step; the first line's object keeps its fill and outline (#599,
-`ops2::tests::lines_of_text_join_into_a_paragraph_that_flows`).
+`ops2::tests::lines_of_text_join_into_a_paragraph_that_flows`). Hindi
+lines joined this way flow the same way, breaking only between syllables
+(`devanagari_join_tests::joined_hindi_lines_flow_and_break_between_syllables`).
+Lines kept as separate objects do not flow into each other: each grows
+on its own line, which is why the lines are joined first.
 
 ## Linked frames
 
@@ -633,6 +637,31 @@ Hebrew, Thai, Devanagari and Bengali; DejaVu Sans and Noto Sans for the
 rest), then any installed face that has the letter, upright faces of the
 run's weight first. Spaces, controls and combining marks stay with the
 letter before them. A letter no face has is drawn with the run's face.
+The face is chosen for each syllable, not each letter: a syllable goes to
+the span's face only when it has all of its letters, else to the face
+that has the first one it lacks, so a conjunct is never drawn half in one
+face and half in another.
+
+A syllable is a letter with the characters that continue it: combining
+marks (vowel signs, virama, nukta, anusvara, accents), joiners, and a
+consonant after a virama or a zero width joiner. Text is never cut inside
+one for shaping (by face, by script or by span) and lines never break
+inside one. A syllable that a span boundary cuts (a vowel sign or the
+second half of a conjunct in another colour or style) is shaped whole
+in the style of the span it starts in: the font draws a syllable as one
+cluster, so the whole syllable takes that span's font, size and colour.
+After a linker (the virama of Devanagari, Bengali, Gujarati, Oriya,
+Telugu and Malayalam) only a consonant of the same script continues the
+syllable. Plain ASCII text skips these checks.
+Shaped in pieces, a half form showed with a visible halant, a vowel sign
+with a dotted circle, and a line broken inside a word could start with a
+vowel sign or the rest of a conjunct (#599). The corpus in
+`crates/text/testdata/devanagari-corpus.txt` (half forms, conjuncts,
+reph, rakar, nukta, vowel signs on conjuncts) checks it against Noto
+Sans Devanagari: every word laid out in one span, after Latin text, in
+a Latin face with the Devanagari face as fallback, split between two
+spans at every character, and broken across lines, gives the glyphs of
+the word shaped in one piece (`devanagari_tests`).
 
 Each script is shaped on its own: a run is cut where its letters change
 from one script to another (Latin, Greek, Cyrillic, Devanagari, Bengali
