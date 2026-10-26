@@ -8,6 +8,7 @@ full, row-by-row status.
 
 - Print Preview with Print separations: the inks unticked under it no longer print; every plate printed before (#846).
 - Number fields keep the mouse wheel: turning it over a field on the property bar (the angle, the outline width, any spin box) or in a docker or dialog steps the value notch after notch. The bar or panel around the field slid on with the wheel after the first notch and carried the field away from under the pointer, so the wheel stopped working on it. Parts of a notch from a touchpad now add up to one step instead of a step each (#783).
+- Pick: an object chosen inside a group with Ctrl+click is dragged on its own from anywhere on it. Only a press on its centre mark kept it; anywhere else the drag took the whole group (#849).
 - Shape tool: a node being dragged snaps to the other nodes and segments of its own curve too, not only to other objects (#673).
 
 ## 0.19.3 (2026-10-26)

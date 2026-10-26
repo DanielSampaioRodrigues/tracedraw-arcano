@@ -479,19 +479,47 @@ impl App {
     /// there (the first level inside the topmost group when nothing of it
     /// is), down to the innermost object.
     pub fn hit_test_step(&self, p: Point) -> Option<ShapeId> {
-        let top = self.hit_test(p)?;
-        let tol = 3.0 / self.view.zoom as f64;
-        let mut chain = vec![top];
-        let mut current = self.doc().shape(top).ok()?.1.clone();
-        while let Some(c) = self.children_hit(&current, p, tol).into_iter().next() {
-            chain.push(c.id);
-            current = c;
-        }
+        let chain = self.hit_chain(p);
         let next = match chain.iter().rposition(|id| self.selection.contains(id)) {
             Some(k) => k + 1,
             None => 1,
         };
-        chain.get(next.min(chain.len() - 1)).copied()
+        chain.get(next.min(chain.len().saturating_sub(1))).copied()
+    }
+
+    /// The topmost object at `p` and the objects inside it under `p`, one
+    /// group level further in each, down to the innermost one.
+    fn hit_chain(&self, p: Point) -> Vec<ShapeId> {
+        let Some(top) = self.hit_test(p) else {
+            return Vec::new();
+        };
+        let tol = 3.0 / self.view.zoom as f64;
+        let mut chain = vec![top];
+        let Ok((_, s)) = self.doc().shape(top) else {
+            return chain;
+        };
+        let mut current = s.clone();
+        while let Some(c) = self.children_hit(&current, p, tol).into_iter().next() {
+            chain.push(c.id);
+            current = c;
+        }
+        chain
+    }
+
+    /// What a Pick press at `p` takes: a selected object under `p` (an
+    /// object chosen inside a group stays chosen, so a drag moves it alone,
+    /// #849), else with `ctrl` the object one group level in, else the
+    /// topmost object.
+    pub fn press_target(&self, p: Point, ctrl: bool) -> Option<ShapeId> {
+        let chain = self.hit_chain(p);
+        if let Some(id) = chain.iter().rev().find(|id| self.selection.contains(id)) {
+            return Some(*id);
+        }
+        if ctrl {
+            self.hit_test_step(p)
+        } else {
+            chain.first().copied()
+        }
     }
 
     /// Every object at `p`, top first: the objects on the layers, or with
@@ -1319,11 +1347,9 @@ impl App {
                 return;
             }
             // Ctrl takes the object inside a group, unless the press is on
-            // what is selected already (Ctrl then keeps the move straight).
-            let hit = match self.hit_test(p) {
-                Some(top) if mods.ctrl && !self.selection.contains(&top) => self.hit_test_step(p),
-                other => other,
-            };
+            // what is selected already (Ctrl then keeps the move straight);
+            // an object chosen inside a group moves alone (#849).
+            let hit = self.press_target(p, mods.ctrl);
             match hit {
                 Some(id) => {
                     if mods.shift {

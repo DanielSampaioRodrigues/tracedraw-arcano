@@ -2144,6 +2144,61 @@ fn ctrl_click_goes_one_group_level_in_at_a_time() {
     assert_eq!(app.selection, vec![a]);
 }
 
+/// #849: an object chosen inside a group with Ctrl+click is dragged on
+/// its own, grabbed anywhere on it (not only at its centre mark), also
+/// two group levels in; a press on the group elsewhere still takes the
+/// whole group.
+#[test]
+fn object_chosen_in_a_group_drags_alone_from_anywhere_on_it() {
+    let (ctx, mut app, [a, b, c], inner) = grouped();
+    app.select(vec![inner, c]);
+    app.group_selection();
+    let outer = app.selection[0];
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Off the centre of square a (105..125 x 100..120 on the page).
+    let on_a = app.view.to_screen(Point::new(108.0, 103.0));
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![a]);
+    let (before_a, before_b, before_c) = (
+        page_bounds(&app, a),
+        page_bounds(&app, b),
+        page_bounds(&app, c),
+    );
+    let grab = app.view.to_screen(Point::new(121.0, 117.0));
+    let to = app.view.to_screen(Point::new(121.0, 137.0));
+    drag(&ctx, &mut app, grab, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection, vec![a]);
+    let after = page_bounds(&app, a);
+    assert!(
+        close(after.y0 - before_a.y0, 20.0),
+        "{before_a:?} {after:?}"
+    );
+    assert_eq!(page_bounds(&app, b), before_b);
+    assert_eq!(page_bounds(&app, c), before_c);
+    assert_eq!(app.doc().top_level_of(a), Some(outer));
+    // A Ctrl+drag straight on a square of an unselected group moves that
+    // square alone too.
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let on_c = app.view.to_screen(Point::new(103.0, 153.0));
+    let to_c = app.view.to_screen(Point::new(123.0, 153.0));
+    drag(&ctx, &mut app, on_c, to_c, Modifiers::CTRL, Vec::new());
+    assert_eq!(app.selection, vec![c]);
+    assert!(close(page_bounds(&app, c).x0 - before_c.x0, 20.0));
+    assert_eq!(page_bounds(&app, b), before_b);
+    // A press on another part of the group takes the whole group.
+    let on_b = app.view.to_screen(Point::new(148.0, 103.0));
+    let to_b = app.view.to_screen(Point::new(148.0, 113.0));
+    let (a0, b0) = (page_bounds(&app, a), page_bounds(&app, b));
+    drag(&ctx, &mut app, on_b, to_b, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection, vec![outer]);
+    let moved_b = page_bounds(&app, b).y0 - b0.y0;
+    assert!(moved_b > 5.0, "{moved_b}");
+    assert!(close(page_bounds(&app, a).y0 - a0.y0, moved_b));
+}
+
 #[test]
 fn ctrl_keeps_the_marquee_square_and_space_copies_while_turning() {
     let (ctx, mut app, id) = setup();
