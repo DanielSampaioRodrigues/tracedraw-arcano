@@ -2149,10 +2149,16 @@ impl<'a> Ctx<'a> {
 
     /// The object's `bbox` chunk: its box on the page (file coordinates,
     /// origin at the page centre).
-    /// Object type 0x26 (a version 22 file): a connector line. Its
-    /// `LIST npps` holds a `ppdt` record: u32 0, u32 1, then the start and
-    /// the end point (coordinates), then what the ends attach to. The
-    /// file's preview draws each as a straight line between the two points.
+    /// Object type 0x26 (version 22 files) keeps its points in the `ppdt`
+    /// record of its `LIST npps`, in one of two layouts:
+    /// - a connector line: u32 0, u32 1, then the start and the end point
+    ///   (coordinates), then what the ends attach to. The file's preview
+    ///   draws each as a straight line between the two points;
+    /// - a list of points: u16 count, u32 1, the points (coordinates), then
+    ///   a u32 for each point (0 or 1), 6 + 12 bytes a point in all. Seen
+    ///   as the frames of PowerClips, closed outlines of some hundred
+    ///   points whose last point lies a step from the first; the preview
+    ///   clips the contents to the outline through the points.
     fn read_connector(&mut self, oc: &Chunk) -> Option<ShapeKind> {
         let mut found = None;
         oc.walk(&mut |c, _| {
@@ -2161,6 +2167,24 @@ impl<'a> Ctx<'a> {
             }
         });
         let d = self.data(found?);
+        let n = u16::from_le_bytes([*d.first()?, *d.get(1)?]) as usize;
+        if n >= 2 && d.len() == 6 + 12 * n && d.get(2..6) == Some(&[1, 0, 0, 0][..]) {
+            let mut r = self.reader_at(d, 6);
+            let mut path = BezPath::new();
+            for i in 0..n {
+                let p = Point::new(r.coord()?, r.coord()?);
+                if !(p.x.is_finite() && p.y.is_finite()) {
+                    return None;
+                }
+                if i == 0 {
+                    path.move_to(p);
+                } else {
+                    path.line_to(p);
+                }
+            }
+            path.close_path();
+            return Some(ShapeKind::Path { path, closed: true });
+        }
         let mut r = self.reader_at(d, 8);
         let a = Point::new(r.coord()?, r.coord()?);
         let b = Point::new(r.coord()?, r.coord()?);
@@ -8761,6 +8785,47 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(rep.warnings.iter().any(|w| w.contains("0x26")));
+    }
+
+    #[test]
+    fn point_lists_are_closed_outlines_through_their_points() {
+        // ppdt: u16 count, u32 1, the points, then a u32 for each point.
+        let mut ppdt = 4u16.to_le_bytes().to_vec();
+        ppdt.extend_from_slice(&u32s(&[1]));
+        ppdt.extend_from_slice(&i32s(&[0, 0, 254_000, 0, 254_000, 127_000, 0, 127_000]));
+        ppdt.extend_from_slice(&u32s(&[1, 0, 1, 0]));
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"loda", &loda(OBJ_CONNECTOR, &[])),
+                list(
+                    b"npps",
+                    &[chunk(b"ppid", &[0; 16]), chunk(b"ppdt", &ppdt)].concat(),
+                ),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDR9", &body), 9);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Path { path, closed } => {
+                use tracedraw_core::geometry::Shape as _;
+                assert!(closed);
+                // A move, three lines and the close.
+                assert_eq!(path.elements().len(), 5);
+                let b = path.bounding_box();
+                assert!(
+                    (b.width() - 25.4).abs() < 1e-9 && (b.height() - 12.7).abs() < 1e-9,
+                    "{b:?}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
