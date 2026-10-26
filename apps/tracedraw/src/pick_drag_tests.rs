@@ -8991,3 +8991,70 @@ fn mesh_nodes_land_where_they_are_clicked_and_dragged() {
     app.undo();
     assert!((mesh(&app).nodes[i].pos - at).hypot() <= tol);
 }
+
+/// The property bar's grip dragged onto the standard toolbar's row puts
+/// the two side by side in one row, the drawing window taking the band
+/// the property bar left; dragged to the line under that row it gets a
+/// row of its own again (#837, #855).
+#[test]
+fn a_toolbar_dragged_onto_another_row_shares_it() {
+    use crate::ui::bars::{Bar, Dock};
+    let (ctx, mut app, _) = setup();
+    let rows = |app: &App| -> Vec<Vec<Bar>> {
+        app.bar_rows
+            .iter()
+            .filter(|r| r.dock == Dock::Top)
+            .map(|r| r.slots.iter().map(|(b, _)| *b).collect())
+            .collect()
+    };
+    assert_eq!(rows(&app), vec![vec![Bar::Standard], vec![Bar::Property]]);
+    let canvas_top = app.canvas_rect.top();
+    let slot = |app: &App, bar: Bar| {
+        app.bar_rows
+            .iter()
+            .flat_map(|r| r.slots.iter())
+            .find(|(b, _)| *b == bar)
+            .map(|(_, r)| *r)
+            .expect("slot")
+    };
+    let grip = slot(&app, Bar::Property);
+    let standard_row = app.bar_rows[0].rect;
+    drag(
+        &ctx,
+        &mut app,
+        Pos2::new(grip.left() + 6.0, grip.center().y),
+        Pos2::new(standard_row.right() - 200.0, standard_row.center().y),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(rows(&app), vec![vec![Bar::Standard, Bar::Property]]);
+    assert_eq!(
+        app.settings.bars.rows_at(Dock::Top)[0],
+        vec![Bar::Standard, Bar::Property]
+    );
+    // One band now, as high as the property bar: the window grows.
+    let row = app.bar_rows[0].rect;
+    assert!((row.height() - 53.0).abs() <= 1.5, "{row:?}");
+    assert!(app.canvas_rect.top() < canvas_top - 30.0);
+    // Side by side: the standard toolbar first, whole, the property bar
+    // after it.
+    let (s, p) = (slot(&app, Bar::Standard), slot(&app, Bar::Property));
+    assert!(s.right() <= p.left() + 0.5 && (s.top() - p.top()).abs() < 0.5);
+    // Down to the line under the row: a row of its own again.
+    let grip = slot(&app, Bar::Property);
+    drag(
+        &ctx,
+        &mut app,
+        Pos2::new(grip.left() + 6.0, grip.center().y),
+        Pos2::new(600.0, row.bottom() - 2.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(rows(&app), vec![vec![Bar::Standard], vec![Bar::Property]]);
+}

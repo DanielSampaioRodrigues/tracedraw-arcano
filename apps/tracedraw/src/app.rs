@@ -1274,6 +1274,9 @@ pub struct App {
     pub right_drag: Option<crate::drop_menu::RightDrag>,
     /// A bar being moved (see ui/bars.rs).
     pub bar_drag: Option<crate::ui::bars::BarDrag>,
+    /// The rows of toolbars drawn this frame, for the drops of a dragged
+    /// toolbar (see ui/bars.rs).
+    pub bar_rows: Vec<crate::ui::bars::RowSpot>,
     /// A toolbar button being moved, and where the bars that take them
     /// were drawn this frame (see ui/bar_items.rs).
     pub bar_item_drag: Option<crate::ui::bar_items::ItemDrag>,
@@ -2303,6 +2306,7 @@ impl App {
             navigator_open: false,
             right_drag: None,
             bar_drag: None,
+            bar_rows: Vec::new(),
             bar_item_drag: None,
             bar_slots: Vec::new(),
             shown_bar_slots: Vec::new(),
