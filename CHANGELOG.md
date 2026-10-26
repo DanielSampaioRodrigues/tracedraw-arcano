@@ -11,6 +11,7 @@ full, row-by-row status.
 
 ## 0.19.5 (2026-10-26)
 
+- Outlines: new outlines start with a mitre limit of 45 degrees instead of 5, so a thick outline on text or on shapes with narrow turns bevels those corners instead of growing long spikes. Outlines already in drawings keep their limit (#894).
 - Drop Shadow on a clip frame or a group: the shadow now shows, beneath the frame and everything placed inside it. The tool gave the frame a shadow but it was never drawn, so only an object inside the frame could have one. The shadow follows what the frame shows: its fill and the contents within it, not the parts of the contents outside the frame; groups cast the shadow of each of their objects, and Break Drop Shadow Apart makes the same picture (#873).
 - Text in a semibold face (or a light, medium or black one) shows that face everywhere: picking SemiBold under a family in the font list sets "Titillium Web SemiBold" instead of the family with Bold on, so the property bar and the Character docker no longer show Bold for it, and the docker's style list names the family's own faces (Regular, SemiBold, Bold ...). Such a face is no longer reported as a missing font substituted when its family is installed (#892, #624).
 - Save Drawing: New folder stays in the folder shown and starts renaming the new folder; any folder or file in the list can be renamed with F2 or a right click; typing letters in the list jumps to the entries starting with them, and Enter opens the folder picked (#913).
