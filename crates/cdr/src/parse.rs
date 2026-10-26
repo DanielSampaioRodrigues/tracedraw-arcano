@@ -1292,7 +1292,7 @@ impl<'a> Ctx<'a> {
             ));
         }
         Some(Fill::Pattern(Pattern::Bitmap {
-            png: bm.png.clone().into(),
+            png: bm.png.clone(),
             width_px: bm.width_px,
             height_px: bm.height_px,
             size_mm,
@@ -3461,7 +3461,7 @@ impl<'a> Ctx<'a> {
                     rect,
                     width_px: bm.width_px,
                     height_px: bm.height_px,
-                    png: bm.png.clone().into(),
+                    png: bm.png.clone(),
                     fx: None,
                 })
             }
@@ -3513,7 +3513,7 @@ impl<'a> Ctx<'a> {
                     rect,
                     width_px: bm.width_px,
                     height_px: bm.height_px,
-                    png: bm.png.clone().into(),
+                    png: bm.png.clone(),
                     fx: None,
                 })
             }

@@ -1300,7 +1300,7 @@ fn image_shape(
             rect: p.rect,
             width_px: w,
             height_px: h,
-            png: png.into(),
+            png,
             fx: None,
         },
     );
