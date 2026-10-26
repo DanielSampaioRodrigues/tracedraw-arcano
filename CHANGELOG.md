@@ -11,6 +11,7 @@ full, row-by-row status.
 - Print: the Layout tab has the paper margins (left, right, top, bottom), as Print Preview does (#909).
 - Text panel, Paragraph: the icons beside the indent and spacing fields are drawn, so they show on every system; on Windows they were empty boxes, the interface fonts there lacking those arrows (#863).
 - Color Management Settings and Document Properties read in the dark themes: the page under their tabs is drawn in the theme's field colour instead of white, under the light labels (#904).
+- Envelope on text: letters given their own colour (or outline) keep it when the text is wrapped in an envelope, and the same holds for perspective and distortion. The warped text was drawn as one curve in the object's colour; it is now drawn as one curve for each colour, warped together as the whole text is (#912).
 
 ## 0.19.5 (2026-10-26)
 
