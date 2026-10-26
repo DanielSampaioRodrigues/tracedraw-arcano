@@ -3438,6 +3438,110 @@ fn next_tab(x: f64, tabs: &[f64]) -> f64 {
         .unwrap_or(x + 12.7)
 }
 
+/// Characters that never start a line in Chinese and Japanese text:
+/// closing brackets and quotes, sentence and clause punctuation, the
+/// iteration marks, the prolonged sound mark and small kana.
+fn no_line_start(c: char) -> bool {
+    matches!(
+        c,
+        '!' | ')' | ',' | '.' | ':' | ';' | '?' | ']' | '}' | '%'
+            | '\u{00B0}' | '\u{00B7}' | '\u{00BB}'
+            | '\u{2019}' | '\u{201D}' | '\u{2025}' | '\u{2026}' | '\u{2030}'
+            | '\u{2032}' | '\u{2033}' | '\u{203A}' | '\u{203C}' | '\u{2047}'..='\u{2049}'
+            | '\u{2103}'
+            | '\u{3001}' | '\u{3002}' | '\u{3005}' | '\u{3009}' | '\u{300B}' | '\u{300D}'
+            | '\u{300F}' | '\u{3011}' | '\u{3015}' | '\u{3017}' | '\u{3019}' | '\u{301B}'
+            | '\u{301C}' | '\u{301E}' | '\u{301F}' | '\u{303B}'
+            | '\u{3041}' | '\u{3043}' | '\u{3045}' | '\u{3047}' | '\u{3049}' | '\u{3063}'
+            | '\u{3083}' | '\u{3085}' | '\u{3087}' | '\u{308E}' | '\u{3095}' | '\u{3096}'
+            | '\u{309B}'..='\u{309E}'
+            | '\u{30A0}' | '\u{30A1}' | '\u{30A3}' | '\u{30A5}' | '\u{30A7}' | '\u{30A9}'
+            | '\u{30C3}' | '\u{30E3}' | '\u{30E5}' | '\u{30E7}' | '\u{30EE}' | '\u{30F5}'
+            | '\u{30F6}' | '\u{30FB}'..='\u{30FE}' | '\u{31F0}'..='\u{31FF}'
+            | '\u{FE10}'..='\u{FE19}' | '\u{FE30}' | '\u{FE31}' | '\u{FE36}' | '\u{FE38}'
+            | '\u{FE3A}' | '\u{FE3C}' | '\u{FE3E}' | '\u{FE40}' | '\u{FE42}' | '\u{FE44}'
+            | '\u{FE50}'..='\u{FE57}' | '\u{FE5A}' | '\u{FE5C}' | '\u{FE5E}'
+            | '\u{FF01}' | '\u{FF05}' | '\u{FF09}' | '\u{FF0C}' | '\u{FF0E}' | '\u{FF1A}'
+            | '\u{FF1B}' | '\u{FF1F}' | '\u{FF3D}' | '\u{FF5D}' | '\u{FF60}' | '\u{FF61}'
+            | '\u{FF63}' | '\u{FF64}' | '\u{FF65}' | '\u{FF67}'..='\u{FF70}' | '\u{FF9E}'
+            | '\u{FF9F}' | '\u{FFE0}'
+    )
+}
+
+/// Characters that never end a line in Chinese and Japanese text:
+/// opening brackets and quotes and the currency signs put before a sum.
+fn no_line_end(c: char) -> bool {
+    matches!(
+        c,
+        '(' | '['
+            | '{'
+            | '$'
+            | '\u{00A3}'
+            | '\u{00A5}'
+            | '\u{00AB}'
+            | '\u{2018}'
+            | '\u{201C}'
+            | '\u{2039}'
+            | '\u{3008}'
+            | '\u{300A}'
+            | '\u{300C}'
+            | '\u{300E}'
+            | '\u{3010}'
+            | '\u{3014}'
+            | '\u{3016}'
+            | '\u{3018}'
+            | '\u{301A}'
+            | '\u{301D}'
+            | '\u{FE35}'
+            | '\u{FE37}'
+            | '\u{FE39}'
+            | '\u{FE3B}'
+            | '\u{FE3D}'
+            | '\u{FE3F}'
+            | '\u{FE41}'
+            | '\u{FE43}'
+            | '\u{FE59}'
+            | '\u{FE5B}'
+            | '\u{FE5D}'
+            | '\u{FF04}'
+            | '\u{FF08}'
+            | '\u{FF3B}'
+            | '\u{FF5B}'
+            | '\u{FF5F}'
+            | '\u{FF62}'
+            | '\u{FFE1}'
+            | '\u{FFE5}'
+            | '\u{FFE6}'
+    )
+}
+
+/// Chinese and Japanese characters and their punctuation: text written
+/// without spaces, which lines may break between.
+fn cjk_char(c: char) -> bool {
+    matches!(c as u32,
+        0x2E80..=0x2FDF // radicals
+            | 0x2FF0..=0x30FF // CJK symbols and punctuation, kana
+            | 0x3100..=0x312F // bopomofo
+            | 0x3190..=0x31FF // kanbun, CJK strokes, kana extensions
+            | 0x3200..=0x4DBF // enclosed CJK, compatibility, extension A
+            | 0x4E00..=0x9FFF // unified ideographs
+            | 0xF900..=0xFAFF // compatibility ideographs
+            | 0xFE10..=0xFE1F // vertical forms
+            | 0xFE30..=0xFE4F // compatibility forms
+            | 0xFE50..=0xFE6F // small form variants
+            | 0xFF00..=0xFFEF // half-width and full-width forms
+            | 0x20000..=0x3FFFF // extensions B and on
+    )
+}
+
+/// A line may break between `a` and `b` (neighbours with no space between
+/// them) because one of them is Chinese or Japanese, unless `b` may not
+/// start a line or `a` may not end one (#847). Other text breaks only at
+/// spaces and hyphenation points.
+fn cjk_break(a: char, b: char) -> bool {
+    (cjk_char(a) || cjk_char(b)) && !no_line_start(b) && !no_line_end(a)
+}
+
 /// Greedy line breaking at spaces, with optional hyphenation and a
 /// fallback to breaking inside words that do not fit alone, one line at a
 /// time for the room each line has.
@@ -3467,10 +3571,15 @@ impl<'a> Breaker<'a> {
     ) -> Self {
         let mut words: Vec<Vec<Glyph>> = Vec::new();
         let mut cur: Vec<Glyph> = Vec::new();
-        for g in glyphs {
+        for (k, g) in glyphs.iter().enumerate() {
             let is_sep = g.ch == ' ' || g.ch == '\t';
             cur.push(g.clone());
-            if is_sep {
+            // Text without spaces (Chinese, Japanese) breaks between its
+            // characters, where the line-start and line-end rules allow.
+            let cjk_break = glyphs
+                .get(k + 1)
+                .is_some_and(|n| !n.joins && n.ch != ' ' && n.ch != '\t' && cjk_break(g.ch, n.ch));
+            if is_sep || cjk_break {
                 words.push(std::mem::take(&mut cur));
             }
         }
@@ -3777,6 +3886,85 @@ mod devanagari_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lines of `text` broken to `chars` full-width cells (every glyph is
+    /// 1 mm wide), as strings.
+    fn cjk_lines(text: &str, chars: usize) -> Vec<String> {
+        let glyphs: Vec<Glyph> = text
+            .chars()
+            .enumerate()
+            .map(|(i, ch)| Glyph {
+                path: Arc::new(BezPath::new()),
+                advance: 1.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                ch,
+                char_idx: i,
+                char_end: i + 1,
+                rtl: false,
+                level: 0,
+                span: 0,
+                joins: false,
+                hyphen_after: None,
+                src: None,
+            })
+            .collect();
+        let metrics = [Metrics::default()];
+        let mut br = Breaker::new(&glyphs, false, &metrics, 0, 0);
+        let mut out = Vec::new();
+        while !br.done() {
+            out.push(
+                br.next(chars as f64 + 0.01)
+                    .glyphs
+                    .iter()
+                    .map(|g| g.ch)
+                    .collect(),
+            );
+        }
+        out
+    }
+
+    /// Chinese text breaks between its characters, but a comma, a full
+    /// stop or a closing quote never starts a line and an opening quote
+    /// never ends one: the character before goes down with it (#847).
+    #[test]
+    fn cjk_punctuation_never_starts_a_line() {
+        // Free breaking: five per line.
+        assert_eq!(
+            cjk_lines("相师得此奇遇潜心修习", 5),
+            vec!["相师得此奇", "遇潜心修习"]
+        );
+        // The comma would start the second line: 成 goes down with it.
+        assert_eq!(
+            cjk_lines("小有所成，乃出。几番", 4),
+            vec!["小有所", "成，乃", "出。几番"]
+        );
+        for text in [
+            "我半生说学尽在相术尤精于风水之相。这青云山乃是人间罕有灵地",
+            "名曰“青云”。因无名古卷所载近于道家，他便做道人打扮，自号“青云子”",
+            "日本語の文章です。「かぎ括弧」も、ちゃんと処理されます。ー",
+        ] {
+            for width in 3..9 {
+                let lines = cjk_lines(text, width);
+                assert_eq!(lines.concat(), text);
+                for l in &lines {
+                    assert!(l.chars().count() <= width, "{l} wider than {width}");
+                }
+                for pair in lines.windows(2) {
+                    let first = pair[1].chars().next().unwrap_or(' ');
+                    let last = pair[0].chars().next_back().unwrap_or(' ');
+                    assert!(
+                        !no_line_start(first),
+                        "{:?} starts a line at {width}",
+                        pair[1]
+                    );
+                    assert!(!no_line_end(last), "{:?} ends a line at {width}", pair[0]);
+                }
+            }
+        }
+        // Latin text keeps breaking at spaces only.
+        assert_eq!(cjk_lines("ab cd", 3), vec!["ab", "cd"]);
+    }
 
     /// The box of a text object comes from the box kept with its cached
     /// outline when the object is not turned or skewed, and is the same

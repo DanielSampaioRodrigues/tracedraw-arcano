@@ -20,6 +20,7 @@ full, row-by-row status.
 - PDF/X: with no CMYK profile set in Colour Management (or `TRACEDRAW_ICC` for `tracedraw-cli convert`), the output intent now embeds the CMYK profile the drawing carries, the profile its CMYK values are in, and an empty output condition takes that profile's name. It used to say "CGATS TR 001" with no profile, the name of another press (#643).
 - PDF and SVG export: an outline set to scale with its object is written as wide as the drawing window draws it, its width times the object's scale. It was written at its own width, so a 10 mm outline on an object scaled to a quarter came out 10 mm wide instead of 2.5 mm, in .cdr files and in drawings scaled here alike.
 - Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of PowerClips) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
+- Paragraph text in Chinese and Japanese breaks lines between characters by the line-start and line-end rules: punctuation such as ，。、；：？！ and closing brackets and quotes no longer start a line, and opening brackets and quotes no longer end one; the character before goes to the next line with it (#847).
 
 ## 0.19.3 (2026-10-26)
 
