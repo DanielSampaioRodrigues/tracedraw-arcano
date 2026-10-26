@@ -8743,6 +8743,56 @@ fn shift_f3_opens_change_case_for_selected_text() {
         vec![key(egui::Key::F3, Modifiers::SHIFT)],
         Modifiers::SHIFT,
     );
-    assert!(matches!(app.dialog, Dialog::ChangeCase(_)), "{:?}", app.dialog);
+    assert!(
+        matches!(app.dialog, Dialog::ChangeCase(_)),
+        "{:?}",
+        app.dialog
+    );
+}
+
+/// Edit Fill's eyedropper: a click on the drawing gives the dialog the
+/// colour there, though the dialog is open, and no tool takes the click
+/// (#814).
+#[test]
+fn the_edit_fill_eyedropper_picks_a_colour_from_the_drawing() {
+    use crate::ui::dialogs::Dialog;
+    use tracedraw_core::{Color, Fill};
+    let (ctx, mut app, rect) = setup();
+    let red = Color::rgb8(220, 20, 20);
+    app.select(vec![rect]);
+    app.apply_fill(Fill::Solid(red));
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 10.0, 150.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![other]);
+    app.apply_fill(Fill::Solid(Color::WHITE));
+    app.open_edit_fill();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("edit_fill_pick"));
+    let revision = app.engine.revision();
+    let at = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!crate::ui::color_picker::picking(&ctx));
+    let Dialog::EditFill(st) = &app.dialog else {
+        panic!("the dialog stays open: {:?}", app.dialog);
+    };
+    assert_eq!(st.fill, Fill::Solid(red));
+    assert_eq!(app.selection, vec![other], "no tool took the click");
+    let _ = revision;
+    // Esc stops a pick and leaves the dialog open.
+    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("edit_fill_pick"));
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(!crate::ui::color_picker::picking(&ctx));
+    assert!(matches!(app.dialog, Dialog::EditFill(_)));
 }
 >>>>>>> c08b994a (Shift+F3 opens Text > Change Case (#801))

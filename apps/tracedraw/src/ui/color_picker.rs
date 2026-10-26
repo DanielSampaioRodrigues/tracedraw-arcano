@@ -182,6 +182,85 @@ fn closes(pressed_at: Option<Pos2>, esc: bool, popup: Rect, swatch: Rect, list_o
     esc || (!list_open && pressed_at.is_some_and(|p| !popup.contains(p) && !swatch.contains(p)))
 }
 
+/// The picker waiting for a click on the drawing to give it a colour
+/// (its eyedropper was pressed, #814).
+fn pick_request_id() -> Id {
+    Id::new("color_pick_request")
+}
+
+/// The colour a click on the drawing gave, with the picker that asked.
+fn pick_result_id() -> Id {
+    Id::new("color_pick_result")
+}
+
+/// A picker's eyedropper is waiting for a click on the drawing.
+pub fn picking(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<Id>(pick_request_id()).is_some())
+}
+
+/// Picker `id` waits for a click on the drawing to give it a colour.
+pub fn start_pick(ctx: &egui::Context, id: Id) {
+    ctx.data_mut(|d| d.insert_temp(pick_request_id(), id));
+}
+
+/// The click on the drawing gave `c` (none: the pick was cancelled); the
+/// picker that asked takes it when it is next drawn.
+pub fn finish_pick(ctx: &egui::Context, c: Option<Color>) {
+    ctx.data_mut(|d| {
+        let asked = d.get_temp::<Id>(pick_request_id());
+        d.remove::<Id>(pick_request_id());
+        if let (Some(id), Some(c)) = (asked, c) {
+            d.insert_temp(pick_result_id(), (id, c));
+        }
+    });
+}
+
+/// The colour picked from the drawing for the picker `id`, once.
+fn take_pick(ui: &Ui, id: Id) -> Option<Color> {
+    ui.data_mut(|d| match d.get_temp::<(Id, Color)>(pick_result_id()) {
+        Some((asked, c)) if asked == id => {
+            d.remove::<(Id, Color)>(pick_result_id());
+            Some(c)
+        }
+        _ => None,
+    })
+}
+
+/// The eyedropper of picker `id`: pressed, the next click on the drawing
+/// gives `c` the colour there (Esc cancels); pressed again, it stops
+/// waiting (#814). True when `c` changed.
+pub fn eyedropper(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
+    let mut changed = false;
+    if let Some(p) = take_pick(ui, id) {
+        *c = p;
+        changed = true;
+    }
+    let waiting = ui.data(|d| d.get_temp::<Id>(pick_request_id())) == Some(id);
+    let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    if waiting {
+        ui.painter().rect_filled(r, 2.0, Tokens::tool_active());
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 2.0, Tokens::tool_hover());
+    }
+    crate::ui::icons::draw(
+        ui.painter(),
+        r.shrink(3.0),
+        crate::tools::Tool::ColorEyedropper,
+        Tokens::icon(),
+    );
+    if resp
+        .on_hover_text(crate::tools::Tool::ColorEyedropper.name())
+        .clicked()
+    {
+        if waiting {
+            ui.data_mut(|d| d.remove::<Id>(pick_request_id()));
+        } else {
+            start_pick(ui.ctx(), id);
+        }
+    }
+    changed
+}
+
 /// A colour swatch that opens the picker. True when the colour changed.
 pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
     let (swatch, resp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::click());
@@ -196,6 +275,13 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
         egui::StrokeKind::Inside,
     );
     let mut open = ui.data(|d| d.get_temp::<Open>(id));
+    // A colour its eyedropper asked for, picked from the drawing.
+    let mut changed = false;
+    if let Some(p) = take_pick(ui, id) {
+        *c = p;
+        changed = true;
+    }
+    let was_picking = picking(ui.ctx());
     if resp.clicked() {
         open = match open {
             Some(_) => None,
@@ -206,7 +292,6 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
             }),
         };
     }
-    let mut changed = false;
     if let Some(mut st) = open {
         let screen = ui.ctx().content_rect();
         let placed = place(swatch, st.size, screen);
@@ -240,6 +325,7 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
                                 .size(11.0),
                         );
                         changed |= model_list(ui, id.with("model"), c);
+                        changed |= eyedropper(ui, id, c);
                     });
                     let model = edit_model(*c);
                     let mut m = c.convert_to(model);
@@ -267,7 +353,9 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
             )
         });
         let list_open = egui::Popup::is_any_open(ui.ctx());
-        open = (!closes(pressed_at, esc, popup, swatch, list_open)).then_some(st);
+        // The click that picks a colour from the drawing keeps it open.
+        let pressed_at = pressed_at.filter(|_| !was_picking);
+        open = (!closes(pressed_at, esc && !was_picking, popup, swatch, list_open)).then_some(st);
         ui.data_mut(|d| {
             d.insert_temp(last_id(), Shown { swatch, popup });
         });

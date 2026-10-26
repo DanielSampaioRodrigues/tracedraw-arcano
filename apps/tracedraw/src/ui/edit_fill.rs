@@ -331,6 +331,8 @@ fn uniform(ui: &mut Ui, st: &mut EditFillState) {
             ui.horizontal(|ui| {
                 ui.label(tr("edit_fill.color"));
                 crate::ui::color_picker::color_button(ui, c);
+                // A colour picked from the drawing (#814).
+                crate::ui::color_picker::eyedropper(ui, egui::Id::new("edit_fill_pick"), c);
             });
             ui.horizontal(|ui| {
                 ui.label(tr("docker.model"));

@@ -849,6 +849,21 @@ impl App {
         });
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
+        // A colour picker's eyedropper waits for a click: the colour there
+        // goes to it, and no tool sees the click (#814). Esc stops it.
+        if crate::ui::color_picker::picking(&response.ctx) {
+            response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+            if response.ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                crate::ui::color_picker::finish_pick(&response.ctx, None);
+            } else if let (true, Some(p)) = (response.clicked(), pointer) {
+                let c = self
+                    .sample_color_at(p, false)
+                    .or_else(|| self.sample_color_at(p, true))
+                    .unwrap_or(tracedraw_core::Color::WHITE);
+                crate::ui::color_picker::finish_pick(&response.ctx, Some(c));
+            }
+            return;
+        }
         let Some(p) = pointer else {
             let released = self.transforming() && !response.ctx.input(|i| i.pointer.primary_down());
             if response.drag_stopped() || released {
@@ -2641,6 +2656,14 @@ impl App {
         }
         // A modal dialog owns the keyboard: Esc closes it, the rest is
         // not interpreted as shortcuts.
+        // A colour picker's eyedropper waiting for a click: Esc stops
+        // it, and no dialog closes (#814).
+        if crate::ui::color_picker::picking(ctx)
+            && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+        {
+            crate::ui::color_picker::finish_pick(ctx, None);
+            return;
+        }
         if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
             // A command waiting for its shortcut (Options > Customization >
             // Commands): Esc stops waiting, other keys are the shortcut.

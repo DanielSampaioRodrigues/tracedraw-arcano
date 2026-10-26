@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour pickers have an eyedropper: in the picker of every colour swatch (Outline Pen, the Interactive Fill colours, the dockers) and in Edit Fill, press it and click the drawing to take the colour there; Esc stops it. It works while a dialog is open (#814, #817, #819).
+
 - Shift+F3 opens Text > Change Case for the selected text, and the menu row shows it (#801).
 
 ## 0.19.2 (2026-10-26)
