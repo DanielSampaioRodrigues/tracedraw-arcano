@@ -1329,13 +1329,19 @@ fn seg_end(el: &PathEl) -> Point {
 /// The segments whose two end nodes are both among `indices`, as open
 /// subpaths: what the Shape tool copies.
 pub fn selected_segments(path: &BezPath, indices: &[usize]) -> BezPath {
+    segments_where(path, |i| indices.contains(&i))
+}
+
+/// The segments whose two end nodes `keep` takes, as open subpaths (see
+/// [`selected_segments`]); one pass, for callers with many nodes.
+pub fn segments_where(path: &BezPath, keep: impl Fn(usize) -> bool) -> BezPath {
     let mut out = BezPath::new();
     for sub in split_segments(path) {
         let mut at = sub.start;
         let mut open = false;
         let mut prev_end = usize::MAX;
         for (el, from, to, _) in &sub.segs {
-            let picked = indices.contains(from) && indices.contains(to);
+            let picked = keep(*from) && keep(*to);
             if picked {
                 if !open || prev_end != *from {
                     out.move_to(at);

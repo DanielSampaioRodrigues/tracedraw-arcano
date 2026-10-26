@@ -47,7 +47,9 @@ further out on empty canvas deselects.
 
 A dragged node snaps like a point placed by a drawing tool: to the
 document grid, guidelines, the page and other objects (View > Snap To,
-Options > Snapping), never to the curves being edited. When several
+Options > Snapping), and to what stays put of the curves being edited:
+their other nodes and the segments between two of them (the nodes being
+dragged and the segments they bend are left out, #673). When several
 nodes move, the one under the pointer snaps and the move follows it;
 Ctrl keeps the move horizontal or vertical before and after
 snapping. A dragged control point, and a node of a rectangle, ellipse or

@@ -438,6 +438,9 @@ pub enum Drag {
         from: Point,
         grab: Point,
         begun: bool,
+        /// What stays put of the curves being edited, which the node snaps
+        /// to (#673): found at the first move, once a drag.
+        still: Option<std::rc::Rc<crate::snap::StillGeometry>>,
     },
     /// Bending a segment (Shape tool): the curve as it was when the drag
     /// began (local path, closed flag), the segment (the element ending
