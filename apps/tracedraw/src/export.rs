@@ -1033,18 +1033,17 @@ fn invert_colors(s: &mut tracedraw_core::Shape) {
     });
 }
 
-/// Colour separations: one grayscale page per ink (C, M, Y, K, then each
-/// spot ink of the drawing) per page, where the ink coverage of every
-/// colour is drawn as a gray value. A spot colour prints on its own plate
-/// only, at its tint.
-/// One page per sheet and plate: the four process inks, then the spot
-/// inks, each as the grey of its coverage.
+/// Colour separations with every plate.
+#[cfg(test)]
 fn separations_doc(doc: &Document) -> Document {
     separations_doc_without(doc, &[])
 }
 
-/// [`separations_doc`] without the plates at the indices `off` (in
-/// [`plates`] order): those unticked in Print Preview (#846).
+/// Colour separations: one grey page per sheet and plate (the four
+/// process inks, then each spot ink), each the grey of that ink's
+/// coverage; a spot colour prints on its own plate only, at its tint.
+/// The plates at the indices `off` (in [`plates`] order), those unticked
+/// in Print Preview, are left out (#846).
 fn separations_doc_without(doc: &Document, off: &[usize]) -> Document {
     let size = doc
         .pages
