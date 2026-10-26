@@ -3338,6 +3338,7 @@ status.settings_saved = "Zapisano ustawienia jako domyślne"
 status.software_renderer = "Okno rysuje adapter programowy ({name}): każda klatka jest rysowana przez procesor, więc TraceDraw ogranicza się do 30 klatek na sekundę bez cieni. Zainstalowanie własnego sterownika karty graficznej przyspieszy działanie." # mt
 status.software_renderer_off = "Rysowanie na procesorze ({name}): akceleracja sprzętowa jest wyłączona. Kliknij, aby ją włączyć w Opcje > Ogólne." # mt
 status.shaping_empty = "Kształtowanie dało pusty wynik"
+status.shaping_open_cutter = "Otwarta krzywa nie przecina zamkniętego obiektu: do cięcia użyj narzędzia Nóż"
 status.style_created = "Utworzono styl i połączono go z zaznaczeniem"
 status.swatch_fill = "Wypełnienie"
 status.swatch_outline = "Kontur"
