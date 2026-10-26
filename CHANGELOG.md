@@ -11,6 +11,7 @@ full, row-by-row status.
 - Pick: an object chosen inside a group with Ctrl+click is dragged on its own from anywhere on it. Only a press on its centre mark kept it; anywhere else the drag took the whole group (#849).
 - Clip frames, Edit Contents: the faded objects outside the frame can no longer be picked (click, marquee, Select All, Tab) while the contents are edited. Undo stops at the start of the edit: undoing past it leaves the edit with the frame as it was, instead of undoing the drawing behind it while the edit still showed; redo enters the edit again, and undoing Finish goes back into it (#851).
 - Pictures look right at every zoom: pictures laid side by side (a map in tiles) no longer show pale lines where they meet, and a picture zoomed far out is drawn from a smaller copy of itself, so it shows its colours evenly instead of scattered, broken-up pixels. Pages of pictures zoomed out also draw faster (200 tiles at 21 %: 9 ms instead of 19 ms), so the new picture replaces the one shown while zooming sooner (#853).
+- Variable Outline: a wide node at a corner no longer leaves a round bulge and a notch on the inside of the corner where the width falls away; the inside follows the width smoothly. Round corners and quick changes of width are drawn in finer steps, so the band's edges look smooth even when it is very wide (#776).
 - Shape tool: a node being dragged snaps to the other nodes and segments of its own curve too, not only to other objects (#673).
 
 ## 0.19.3 (2026-10-26)

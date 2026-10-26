@@ -1004,11 +1004,19 @@ pub fn variable_band_within(
     let mut eased = Vec::new();
     for w in ends.windows(2) {
         let (a, b) = (w[0], w[1]);
-        if b - a <= 1e-9 || reach(a) == reach(b) {
+        let ((la, ra), (lb, rb)) = (reach(a), reach(b));
+        if b - a <= 1e-9 || (la, ra) == (lb, rb) {
             continue;
         }
-        const EASE_STEPS: usize = 48;
-        eased.extend((1..EASE_STEPS).map(|i| a + (b - a) * i as f64 / EASE_STEPS as f64));
+        // Enough samples that the straight pieces stay within
+        // `EASE_TOL` of the eased edge however far the reach changes: a
+        // smoothstep from `0` to `dw` over a span bends at most
+        // `6 dw / span^2`, and a piece `h` long strays `h^2 / 8` of that
+        // (#776).
+        const EASE_TOL: f64 = 0.005;
+        let dw = (la - lb).abs().max((ra - rb).abs());
+        let steps = ((6.0 * dw / (8.0 * EASE_TOL)).sqrt().ceil() as usize).clamp(48, 512);
+        eased.extend((1..steps).map(|i| a + (b - a) * i as f64 / steps as f64));
     }
     marks.extend(eased);
     marks.sort_by(|a, b| a.total_cmp(b));
@@ -1076,8 +1084,11 @@ pub fn variable_band_within(
             polys.push(poly);
         }
         // Round joins between consecutive pieces (and around the seam of
-        // a closed subpath): a fan from one normal to the next on each
-        // side.
+        // a closed subpath): a fan from one normal to the next on the
+        // outer side of the turn. The inner side is covered by the two
+        // pieces themselves; a fan there, as wide as the reach at the
+        // corner, stood out past a reach that falls away after the
+        // corner and left a notch where it met the band (#776).
         let valid: Vec<(usize, [f64; 2])> = normals
             .iter()
             .enumerate()
@@ -1103,27 +1114,31 @@ pub fn variable_band_within(
             }
             let (l, r) = reach(sc);
             let a0 = a[1].atan2(a[0]);
-            let steps = ((turn.abs() / 0.2).ceil() as usize).clamp(1, 32);
-            for (sign, len) in [(1.0, l), (-1.0, r)] {
-                if len <= 0.0 {
-                    continue;
-                }
-                // The first and last points exactly the corners of the
-                // pieces, so no crack opens between them and the fan.
-                let mut fan = vec![[c.x, c.y]];
-                for j in 0..=steps {
-                    let (cos, sin) = if j == 0 {
-                        (a[0], a[1])
-                    } else if j == steps {
-                        (b[0], b[1])
-                    } else {
-                        let ang = a0 + turn * j as f64 / steps as f64;
-                        (ang.cos(), ang.sin())
-                    };
-                    fan.push([c.x + sign * cos * len, c.y + sign * sin * len]);
-                }
-                polys.push(fan);
+            // A left turn has its outer side on the right.
+            let (sign, len) = if turn > 0.0 { (-1.0, r) } else { (1.0, l) };
+            if len <= 0.0 {
+                continue;
             }
+            // Fine enough that the fan's chords stay within `FAN_TOL` of
+            // its arc, however wide the reach (#776).
+            const FAN_TOL: f64 = 0.005;
+            let per = 2.0 * (1.0 - (FAN_TOL / len).min(1.0)).acos();
+            let steps = ((turn.abs() / per.max(1e-3)).ceil() as usize).clamp(1, 256);
+            // The first and last points exactly the corners of the
+            // pieces, so no crack opens between them and the fan.
+            let mut fan = vec![[c.x, c.y]];
+            for j in 0..=steps {
+                let (cos, sin) = if j == 0 {
+                    (a[0], a[1])
+                } else if j == steps {
+                    (b[0], b[1])
+                } else {
+                    let ang = a0 + turn * j as f64 / steps as f64;
+                    (ang.cos(), ang.sin())
+                };
+                fan.push([c.x + sign * cos * len, c.y + sign * sin * len]);
+            }
+            polys.push(fan);
         }
     }
     for poly in polys.iter_mut() {
@@ -2033,6 +2048,89 @@ mod tests {
         assert!(band.contains(Point::new(51.2, 51.2)));
         assert!(!band.contains(Point::new(-1.6, -1.6)));
         assert!(!band.contains(Point::new(25.0, 25.0)));
+    }
+
+    /// #776: a wide node at a rectangle's corner, its reach falling away
+    /// down the next side. The inside of the corner follows that fall
+    /// with no round bulge as wide as the corner's reach standing out
+    /// and a notch where it met the band; the outside of the corner
+    /// stays round, and its arc is drawn within a hundredth of a
+    /// millimetre.
+    #[test]
+    fn a_wide_corner_node_leaves_no_notch_inside_and_a_smooth_arc_outside() {
+        use super::variable_band;
+        use crate::geometry::{Point, Rect, Shape as _};
+        use crate::style::WidthNode;
+        // From the bottom-left corner: bottom, right side, top (leftwards)
+        // and the left side down; the top-left corner 317 mm along.
+        let path = Rect::new(0.0, 0.0, 113.0, 91.0).to_path(0.01);
+        let total = 2.0 * (113.0 + 91.0);
+        let c = (113.0 + 91.0 + 113.0) / total;
+        let nodes = [
+            WidthNode::symmetric(c - 9.0 / total, 0.2),
+            WidthNode::symmetric(c - 0.3 / total, 118.0),
+        ];
+        let band = variable_band(&path, 0.2, &nodes);
+        // 20 mm down the left side the reach has fallen to about 51.6 mm
+        // inside; the old bulge reached 55.5 mm there.
+        assert!(band.contains(Point::new(49.0, 71.0)));
+        assert!(!band.contains(Point::new(53.5, 71.0)), "a bulge inside");
+        // Outside, round about the corner with the corner's reach.
+        let r = 59.0 - 0.01;
+        for deg in [100.0f64, 135.0, 170.0] {
+            let (sin, cos) = deg.to_radians().sin_cos();
+            assert!(band.contains(Point::new(r * 0.98 * cos, 91.0 + r * 0.98 * sin)));
+            assert!(!band.contains(Point::new(r * 1.01 * cos, 91.0 + r * 1.01 * sin)));
+        }
+        // The arc's chords stay close to it: no corner of the outline
+        // between its points lies far inside the circle.
+        let corner = Point::new(0.0, 91.0);
+        let mut worst: f64 = 0.0;
+        let mut last: Option<Point> = None;
+        for el in band.elements() {
+            let p = match el {
+                crate::geometry::PathEl::MoveTo(p) | crate::geometry::PathEl::LineTo(p) => *p,
+                crate::geometry::PathEl::CurveTo(_, _, p)
+                | crate::geometry::PathEl::QuadTo(_, p) => *p,
+                crate::geometry::PathEl::ClosePath => continue,
+            };
+            if let Some(q) = last {
+                let on_arc = |p: Point| {
+                    let d = p - corner;
+                    (d.hypot() - 59.0).abs() < 0.05 && d.x < -5.0 && d.y > 5.0
+                };
+                if on_arc(p) && on_arc(q) {
+                    let mid = Point::new((p.x + q.x) / 2.0, (p.y + q.y) / 2.0);
+                    worst = worst.max(59.0 - (mid - corner).hypot());
+                }
+            }
+            last = Some(p);
+        }
+        assert!(worst < 0.01, "chords {worst} mm inside the arc");
+    }
+
+    /// A reach wider than a curve's radius fills the curve's inside
+    /// whole, with the joins on the outside only (#776).
+    #[test]
+    fn a_reach_wider_than_the_curve_fills_its_inside() {
+        use super::variable_band;
+        use crate::geometry::{Circle, Point, Shape as _};
+        use crate::style::WidthNode;
+        let circle = Circle::new((0.0, 0.0), 2.0).to_path(0.01);
+        let band = variable_band(&circle, 10.0, &[WidthNode::symmetric(0.5, 10.0)]);
+        for (x, y) in [
+            (0.0, 0.0),
+            (0.5, -0.3),
+            (-1.0, 1.0),
+            (6.5, 0.0),
+            (0.0, -6.5),
+        ] {
+            assert!(band.contains(Point::new(x, y)), "({x}, {y})");
+        }
+        assert!(!band.contains(Point::new(7.3, 0.0)));
+        let area = band.area().abs();
+        let want = std::f64::consts::PI * 49.0;
+        assert!((area - want).abs() < want * 0.02, "{area} against {want}");
     }
 
     #[test]
