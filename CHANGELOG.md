@@ -14,6 +14,9 @@ full, row-by-row status.
 - Variable Outline: a wide node at a corner no longer leaves a round bulge and a notch on the inside of the corner where the width falls away; the inside follows the width smoothly. Round corners and quick changes of width are drawn in finer steps, so the band's edges look smooth even when it is very wide (#776).
 - Mesh Fill: a double-click inside the mesh puts a new node exactly where it was, on a new row and column through that point, and selects it; the new line went halfway between the nearest nodes instead, away from the click (#804).
 - Shape tool: a node being dragged snaps to the other nodes and segments of its own curve too, not only to other objects (#673).
+- PDF/X: with no CMYK profile set in Colour Management (or `TRACEDRAW_ICC` for `tracedraw-cli convert`), the output intent now embeds the CMYK profile the drawing carries, the profile its CMYK values are in, and an empty output condition takes that profile's name. It used to say "CGATS TR 001" with no profile, the name of another press (#643).
+- PDF and SVG export: an outline set to scale with its object is written as wide as the drawing window draws it, its width times the object's scale. It was written at its own width, so a 10 mm outline on an object scaled to a quarter came out 10 mm wide instead of 2.5 mm, in .cdr files and in drawings scaled here alike.
+- Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of PowerClips) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
 
 ## 0.19.3 (2026-10-26)
 
@@ -186,9 +189,6 @@ full, row-by-row status.
 - Opening a file that is already open (Welcome Screen, File > Open, Open Recent, a dropped file, the command line) now shows its tab instead of opening it again in a new one, unsaved changes kept. A .cdr or other drawing counts as that file until it is saved under another name; templates still open as new drawings (#645).
 
 - Symmetry: after Finish, a symmetry moves, scales, rotates and mirrors as one object, with its copies and mirror lines. The lines used to stay where they were, so the copies mirrored the move and a handle rearranged them, as if the symmetry were still being edited. The drag outline shows the copies too. Duplicate, Step and Repeat and copies made during a drag take the lines along, and a symmetry inside a group follows the group. While editing, moving the object still leaves the lines in place.
-- PDF/X: with no CMYK profile set in Colour Management (or `TRACEDRAW_ICC` for `tracedraw-cli convert`), the output intent now embeds the CMYK profile the drawing carries, the profile its CMYK values are in, and an empty output condition takes that profile's name. It used to say "CGATS TR 001" with no profile, the name of another press (#643).
-- PDF and SVG export: an outline set to scale with its object is written as wide as the drawing window draws it, its width times the object's scale. It was written at its own width, so a 10 mm outline on an object scaled to a quarter came out 10 mm wide instead of 2.5 mm, in .cdr files and in drawings scaled here alike.
-- Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of PowerClips) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
 
 - Property bars: the up and down arrows (and the mouse wheel) of the rotation angle, scale %, arc angles, dimension text size and line width, corner radius and Transform toolbar fields now apply at every click. After clicking into the box, only the first arrow click worked.
 
