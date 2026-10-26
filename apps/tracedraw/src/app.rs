@@ -1130,7 +1130,11 @@ pub struct App {
     pub text_link_drag: Option<Point>,
     /// Clip frame being edited in place: (frame id, the page's other
     /// objects when editing began; see `clip_edit_contents`).
-    pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
+    pub clip_frame_edit: Option<(ShapeId, std::collections::HashSet<ShapeId>)>,
+    /// The undo steps that began and finished editing a clip frame's
+    /// contents, so undo and redo across them leave or enter the edit
+    /// (#851).
+    pub clip_edit_marks: Vec<crate::ops2::ClipEditMark>,
     /// Object > Symmetry > Edit Symmetry: the object whose symmetry is
     /// being edited.
     pub symmetry_edit: Option<ShapeId>,
@@ -2224,6 +2228,7 @@ impl App {
             pdf_text_chosen: false,
             text_link_drag: None,
             clip_frame_edit: None,
+            clip_edit_marks: Vec::new(),
             symmetry_edit: None,
             symmetry_step: None,
             symmetry_turning: false,
@@ -4709,6 +4714,7 @@ impl App {
             .filter(|l| !l.locked)
             .flat_map(|l| &l.shapes)
             .map(|s| s.id)
+            .filter(|id| !self.outside_clip_edit(*id))
             .collect();
         self.select(ids);
     }
@@ -5331,6 +5337,7 @@ impl App {
         self.selection
             .retain(|id| self.engine.document().find_shape(*id).is_some());
         if undone {
+            self.clip_edit_across(step, true);
             // A curve taken up by an earlier undo goes; undoing a Pen or
             // Bezier step takes its curve up again (#631). A curve being
             // drawn otherwise stays.
@@ -5367,6 +5374,7 @@ impl App {
         self.selection
             .retain(|id| self.engine.document().find_shape(*id).is_some());
         if redone {
+            self.clip_edit_across(self.engine.last_step_id(), false);
             if self.curve.as_ref().is_some_and(|c| c.resumed) {
                 self.curve = None;
             }

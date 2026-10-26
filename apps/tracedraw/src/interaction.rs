@@ -232,7 +232,7 @@ impl App {
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
-            .find(|s| s.visible && self.shape_hit(s, p, tol))
+            .find(|s| s.visible && !self.outside_clip_edit(s.id) && self.shape_hit(s, p, tol))
             .filter(|s| s.locked)
             .map(|s| s.id)
     }
@@ -316,7 +316,7 @@ impl App {
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
-            .filter(|s| !s.locked && s.visible)
+            .filter(|s| !s.locked && s.visible && !self.outside_clip_edit(s.id))
         {
             if let Some((g, inside)) = &members {
                 if s.id == *g {
@@ -550,7 +550,9 @@ impl App {
             .rev()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| l.shapes.iter().rev())
-            .filter(|s| !s.locked && s.visible && self.shape_hit(s, p, tol))
+            .filter(|s| {
+                !s.locked && s.visible && !self.outside_clip_edit(s.id) && self.shape_hit(s, p, tol)
+            })
         {
             if deep {
                 leaves(self, s, p, tol, &mut out);
@@ -589,7 +591,7 @@ impl App {
             .into_iter()
             .filter(|l| l.visible && !l.locked)
             .flat_map(|l| &l.shapes)
-            .filter(|s| s.visible && !s.locked)
+            .filter(|s| s.visible && !s.locked && !self.outside_clip_edit(s.id))
         {
             match &members {
                 Some((g, inside)) if s.id == *g => candidates.extend(inside.iter().cloned()),

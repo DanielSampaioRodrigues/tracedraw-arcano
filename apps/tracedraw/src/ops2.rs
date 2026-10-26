@@ -30,6 +30,19 @@ pub enum CaseMode {
 }
 
 /// Step and Repeat docker state.
+/// An undo step that began (`begins`) or finished editing the contents
+/// of the clip frame `frame`, with the objects that were on the page
+/// besides the frame (see [`App::clip_edit_contents`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipEditMark {
+    /// The drawing's engine (step ids are its own).
+    pub engine: u64,
+    pub step: u64,
+    pub frame: ShapeId,
+    pub outside: std::collections::HashSet<ShapeId>,
+    pub begins: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepRepeat {
     pub copies: u32,
@@ -950,24 +963,95 @@ impl App {
         // What is on the page besides: everything else that comes along
         // while editing (the members of a content ungrouped, objects
         // drawn or pasted) is contents too (#537).
-        let outside: Vec<ShapeId> = self
+        let outside: std::collections::HashSet<ShapeId> = self
             .page_layers()
             .iter()
             .flat_map(|l| &l.shapes)
             .map(|s| s.id)
             .filter(|id| *id != clip.id)
             .collect();
+        let before = self.engine.last_step_id();
         self.run(Command::ExtractContents { clip: clip.id });
+        self.mark_clip_edit_step(before, clip.id, &outside, true);
         self.clip_frame_edit = Some((clip.id, outside));
         self.select(ids);
         self.status = tr("status.editing_clip_frame");
+    }
+
+    /// Note the step just run (when one was) as the one that began
+    /// (`begins`) or finished editing `frame`'s contents.
+    fn mark_clip_edit_step(
+        &mut self,
+        before: Option<u64>,
+        frame: ShapeId,
+        outside: &std::collections::HashSet<ShapeId>,
+        begins: bool,
+    ) {
+        let Some(step) = self.engine.last_step_id().filter(|s| Some(*s) != before) else {
+            return;
+        };
+        // Marks of steps gone from the history (undone and replaced, or
+        // too old) are of no more use.
+        let engine = &self.engine;
+        self.clip_edit_marks
+            .retain(|m| m.engine != engine.instance() || engine.step_in_effect(m.step));
+        self.clip_edit_marks.push(ClipEditMark {
+            engine: engine.instance(),
+            step,
+            frame,
+            outside: outside.clone(),
+            begins,
+        });
+    }
+
+    /// After undo (`undone`) or redo of `step`: undoing the step that
+    /// began editing a clip frame's contents leaves the edit, with the
+    /// frame as it was; redoing it enters the edit again. Undoing the
+    /// step that finished the edit goes back into it, redoing it leaves.
+    /// So undo inside the edit never reaches the drawing behind it while
+    /// the edit still shows (#851).
+    pub fn clip_edit_across(&mut self, step: Option<u64>, undone: bool) {
+        let Some(step) = step else {
+            return;
+        };
+        let engine = self.engine.instance();
+        let Some(mark) = self
+            .clip_edit_marks
+            .iter()
+            .find(|m| m.engine == engine && m.step == step)
+            .cloned()
+        else {
+            return;
+        };
+        if self.doc().find_shape(mark.frame).is_none() {
+            return;
+        }
+        if mark.begins != undone {
+            self.clip_frame_edit = Some((mark.frame, mark.outside));
+            let contents = self.clip_edit_contents();
+            self.select(contents);
+            self.status = tr("status.editing_clip_frame");
+        } else {
+            self.clip_frame_edit = None;
+            self.select(vec![mark.frame]);
+        }
+    }
+
+    /// The object is out of reach while a clip frame's contents are
+    /// edited: the frame itself and everything that was on the page
+    /// besides it (#851).
+    pub fn outside_clip_edit(&self, id: ShapeId) -> bool {
+        match &self.clip_frame_edit {
+            Some((frame, outside)) => id == *frame || outside.contains(&id),
+            None => false,
+        }
     }
 
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
     /// back inside the frame.
     pub fn finish_clip_frame_edit(&mut self) {
         let contents = self.clip_edit_contents();
-        let Some((frame, _)) = self.clip_frame_edit.take() else {
+        let Some((frame, outside)) = self.clip_frame_edit.take() else {
             return;
         };
         if self.doc().find_shape(frame).is_none() {
@@ -976,7 +1060,9 @@ impl App {
         if contents.is_empty() {
             return;
         }
+        let before = self.engine.last_step_id();
         self.place_inside(contents, frame);
+        self.mark_clip_edit_step(before, frame, &outside, false);
         self.select(vec![frame]);
     }
 
@@ -988,7 +1074,6 @@ impl App {
         let Some((frame, outside)) = &self.clip_frame_edit else {
             return Vec::new();
         };
-        let outside: std::collections::HashSet<&ShapeId> = outside.iter().collect();
         self.page_layers()
             .iter()
             .flat_map(|l| &l.shapes)

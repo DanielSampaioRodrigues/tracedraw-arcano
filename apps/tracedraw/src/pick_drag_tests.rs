@@ -5158,6 +5158,103 @@ fn a_group_inside_a_clip_frame_being_edited_drags_and_ungroups() {
     assert!(app.doc().find_shape(outside).is_some());
 }
 
+/// #851: while a clip frame's contents are edited, the objects outside
+/// it (and the frame) cannot be picked by a click, a marquee, Select All
+/// or Tab; undo inside the edit stops at the edit's start, where it
+/// leaves the edit with the frame as it was, and never undoes what was
+/// done outside before; redo enters the edit again, and undoing Finish
+/// goes back into it.
+#[test]
+fn clip_frame_edit_keeps_to_its_contents_and_its_own_undo() {
+    let (ctx, mut app, frame_id) = setup();
+    let mk = |app: &mut App, r: Rect| {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            0, 0, 200,
+        )));
+        id
+    };
+    let a = mk(&mut app, Rect::new(15.0, 15.0, 30.0, 30.0));
+    let other = mk(&mut app, Rect::new(100.0, 100.0, 120.0, 120.0));
+    app.place_inside(vec![a], frame_id);
+    // Something done outside before the edit.
+    app.select(vec![other]);
+    app.run(tracedraw_core::Command::TransformShapes {
+        shapes: vec![other],
+        transform: Affine::translate((10.0, 0.0)),
+    });
+    let other_x = bounds(&app, other).x0;
+    app.select(vec![frame_id]);
+    app.edit_clip_frame();
+    assert_eq!(app.selection, vec![a]);
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    // A click on the object outside takes nothing, a click on the
+    // contents takes them.
+    let on_other = app.view.to_screen(Point::new(115.0, 110.0));
+    click_at(&ctx, &mut app, on_other, Modifiers::NONE);
+    assert!(app.selection.is_empty(), "{:?}", app.selection);
+    assert!(app.hits_at(Point::new(115.0, 110.0), true).is_empty());
+    let on_a = app.view.to_screen(Point::new(18.0, 18.0));
+    click_at(&ctx, &mut app, on_a, Modifiers::NONE);
+    assert_eq!(app.selection, vec![a]);
+    // A marquee over everything, Select All and Tab: the contents only.
+    app.select(Vec::new());
+    let from = app.view.to_screen(Point::new(0.0, 0.0));
+    let to = app.view.to_screen(Point::new(140.0, 140.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection, vec![a]);
+    app.select_all();
+    assert_eq!(app.selection, vec![a]);
+    app.select(Vec::new());
+    app.cycle_selection(true);
+    assert_eq!(app.selection, vec![a]);
+    // A move inside the edit, then undo: the move goes, the edit stays.
+    let a_x = bounds(&app, a).x0;
+    app.run(tracedraw_core::Command::TransformShapes {
+        shapes: vec![a],
+        transform: Affine::translate((5.0, 0.0)),
+    });
+    app.undo();
+    assert!(app.clip_frame_edit.is_some());
+    assert!(close(bounds(&app, a).x0, a_x));
+    // Its own history done: the next undo leaves the edit, the frame
+    // holding its contents again, and the outside move stays.
+    app.undo();
+    assert!(app.clip_frame_edit.is_none());
+    assert_eq!(app.selection, vec![frame_id]);
+    match &app.doc().find_shape(frame_id).expect("frame").kind {
+        ShapeKind::ClipFrame { contents, .. } => {
+            assert_eq!(contents.iter().map(|c| c.id).collect::<Vec<_>>(), vec![a]);
+        }
+        other => panic!("not a clip frame: {other:?}"),
+    }
+    assert!(close(bounds(&app, other).x0, other_x));
+    // Redo enters the edit again, with the contents out and selected.
+    app.redo();
+    assert!(app.clip_frame_edit.is_some());
+    assert_eq!(app.selection, vec![a]);
+    app.redo();
+    assert!(close(bounds(&app, a).x0, a_x + 5.0));
+    // Undoing Finish goes back into the edit; redoing it leaves.
+    app.finish_clip_frame_edit();
+    assert!(app.clip_frame_edit.is_none());
+    app.undo();
+    assert!(app.clip_frame_edit.is_some());
+    assert_eq!(app.selection, vec![a]);
+    app.redo();
+    assert!(app.clip_frame_edit.is_none());
+    assert_eq!(app.selection, vec![frame_id]);
+}
+
 /// Finish on the symmetry bar ends the editing: the bar and the mirror
 /// lines go, the symmetry stays selected whole, a click takes it whole
 /// and a drag moves it whole.

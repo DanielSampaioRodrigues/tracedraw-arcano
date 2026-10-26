@@ -1192,7 +1192,7 @@ impl App {
             .into_iter()
             .filter(|l| !l.locked)
             .flat_map(|l| &l.shapes)
-            .filter(|s| !s.locked)
+            .filter(|s| !s.locked && !self.outside_clip_edit(s.id))
             .map(|s| s.id)
             .collect();
         if ids.is_empty() {
