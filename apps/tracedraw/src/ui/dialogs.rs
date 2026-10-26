@@ -194,6 +194,9 @@ pub fn export_keeps_properties(ext: &str) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintState {
+    /// With Print separations: the plates (in `export::plates` order)
+    /// unticked in Print Preview, which do not print (#846).
+    pub plates_off: Vec<usize>,
     pub copies: u32,
     pub all_pages: bool,
     pub scale: f64,
@@ -458,6 +461,7 @@ pub fn parse_page_list(text: &str, count: usize) -> Vec<usize> {
 impl Default for PrintState {
     fn default() -> Self {
         PrintState {
+            plates_off: Vec::new(),
             copies: 1,
             all_pages: true,
             scale: 100.0,

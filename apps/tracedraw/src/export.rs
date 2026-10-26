@@ -377,7 +377,7 @@ fn encode_raster_with(
 pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     let mut doc = print_sheets(app, st);
     if st.separations {
-        doc = separations_doc(&doc);
+        doc = separations_doc_without(&doc, &st.plates_off);
     }
     let stem = app.document_title().trim_end_matches('*').to_string();
     // Files get their copies inside; the printer (lp) or the system
@@ -1040,6 +1040,12 @@ fn invert_colors(s: &mut tracedraw_core::Shape) {
 /// One page per sheet and plate: the four process inks, then the spot
 /// inks, each as the grey of its coverage.
 fn separations_doc(doc: &Document) -> Document {
+    separations_doc_without(doc, &[])
+}
+
+/// [`separations_doc`] without the plates at the indices `off` (in
+/// [`plates`] order): those unticked in Print Preview (#846).
+fn separations_doc_without(doc: &Document, off: &[usize]) -> Document {
     let size = doc
         .pages
         .first()
@@ -1048,7 +1054,12 @@ fn separations_doc(doc: &Document) -> Document {
     let mut sep = Document::new(format!("{} (separations)", doc.title), size);
     sep.pages.clear();
     sep.symbols = doc.symbols.clone();
-    let plates = plates(doc);
+    let plates: Vec<(Plate, String)> = plates(doc)
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !off.contains(i))
+        .map(|(_, p)| p)
+        .collect();
     for page in &doc.pages {
         for (plate, name) in &plates {
             let mut p = plate_page(page, *plate);
@@ -1526,6 +1537,14 @@ mod tests {
         assert_eq!(names, ["Cyan", "Magenta", "Yellow", "Black", "Spot Red"]);
         let seps = separations_doc(&sheets);
         assert_eq!(seps.pages.len(), 5);
+        // Plates unticked in Print Preview do not print (#846).
+        let some = separations_doc_without(&sheets, &[0, 2]);
+        let kept: Vec<&str> = some.pages.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(kept.len(), 3, "{kept:?}");
+        assert!(
+            kept[0].ends_with("Magenta") && kept[2].ends_with("Spot Red"),
+            "{kept:?}"
+        );
         let spot = &seps.pages[4];
         assert!(spot.name.ends_with("Spot Red"), "{}", spot.name);
         // The rectangle is full ink on its plate and absent on cyan.

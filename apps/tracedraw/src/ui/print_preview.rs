@@ -639,6 +639,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         close = true;
     }
     if print {
+        // The inks unticked here do not print (#846).
+        pv.st.plates_off = pv
+            .inks
+            .iter()
+            .enumerate()
+            .filter(|(_, on)| !**on)
+            .map(|(i, _)| i)
+            .collect();
         match crate::export::print(app, &pv.st) {
             Ok(msg) => app.status = msg,
             Err(e) => app.status = format!("{}: {e}", tr("dialog.print_failed")),
