@@ -212,6 +212,52 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
     render_page_whole(doc, page, opts)
 }
 
+/// The reduced level of a picture to draw it from, given `m` from its
+/// pixels to the screen: each level halves its sides, and the one
+/// chosen is drawn at between half and the whole of its pixels' size
+/// (level 0 when the picture is drawn at half its size or more).
+fn bitmap_level(m: Affine) -> u32 {
+    let c = m.as_coeffs();
+    let scale = c[0].hypot(c[1]).max(c[2].hypot(c[3]));
+    if !scale.is_finite() || scale <= 0.0 || scale >= 0.5 {
+        return 0;
+    }
+    ((1.0 / scale).log2().floor().max(0.0) as u32).min(image_cache::MAX_LEVEL)
+}
+
+/// A picture's pixels-to-screen map `m` (a `w` x `h` picture) made to
+/// cover whole screen pixels when it is upright (not turned or
+/// slanted): its edges rounded to the nearest pixel boundary, so two
+/// pictures that meet on the page meet on the same pixel boundary. The
+/// area to fill comes with it, `None` when the picture is narrower than
+/// a pixel after rounding. `None` for a turned or slanted picture.
+fn snap_upright(m: [f64; 6], w: u32, h: u32) -> Option<([f64; 6], Option<tiny_skia::Rect>)> {
+    let upright = m[1].abs() < 1e-9 && m[2].abs() < 1e-9;
+    if !upright || !m.iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let (w, h) = (w.max(1) as f64, h.max(1) as f64);
+    let (xa, xb) = (m[4], m[4] + m[0] * w);
+    let (ya, yb) = (m[5], m[5] + m[3] * h);
+    let (x0, x1) = (xa.min(xb).round(), xa.max(xb).round());
+    let (y0, y1) = (ya.min(yb).round(), ya.max(yb).round());
+    // Each side goes to the rounded edge it came from (a mirrored
+    // picture keeps its mirroring).
+    let (a, e) = if m[0] >= 0.0 {
+        ((x1 - x0) / w, x0)
+    } else {
+        (-(x1 - x0) / w, x1)
+    };
+    let (d, f) = if m[3] >= 0.0 {
+        ((y1 - y0) / h, y0)
+    } else {
+        (-(y1 - y0) / h, y1)
+    };
+    let area = tiny_skia::Rect::from_ltrb(x0 as f32, y0 as f32, x1 as f32, y1 as f32)
+        .filter(|_| x1 > x0 && y1 > y0);
+    Some(([a, 0.0, 0.0, d, e, f], area))
+}
+
 /// What on the page reaches past its own pixels: a lens (it samples what
 /// lies around it) and the widest drop shadow blur, mm.
 #[cfg(not(target_arch = "wasm32"))]
@@ -784,12 +830,47 @@ impl Renderer<'_> {
         } = &shape.kind
         {
             if !self.flags.wireframe {
-                if let Some(img) = image_cache::decode(png) {
-                    // Image pixel space (y down) to local rect (y up) to screen.
-                    let sx = rect.width() / (*width_px).max(1) as f64;
-                    let sy = rect.height() / (*height_px).max(1) as f64;
-                    let img_to_local = Affine::new([sx, 0.0, 0.0, -sy, rect.x0, rect.y1]);
-                    let m = (self.screen * transform * img_to_local).as_coeffs();
+                // Image pixel space (y down) to local rect (y up) to screen.
+                let (w0, h0) = ((*width_px).max(1) as f64, (*height_px).max(1) as f64);
+                let full = self.screen
+                    * transform
+                    * Affine::new([
+                        rect.width() / w0,
+                        0.0,
+                        0.0,
+                        -rect.height() / h0,
+                        rect.x0,
+                        rect.y1,
+                    ]);
+                // Drawn much smaller than its pixels: from a reduced level
+                // of the picture near the size drawn (#853).
+                let level = bitmap_level(full);
+                if let Some(img) = image_cache::decode_level(png, level) {
+                    let m = if level == 0 {
+                        full.as_coeffs()
+                    } else {
+                        let (lw, lh) = (img.width().max(1) as f64, img.height().max(1) as f64);
+                        let img_to_local = Affine::new([
+                            rect.width() / lw,
+                            0.0,
+                            0.0,
+                            -rect.height() / lh,
+                            rect.x0,
+                            rect.y1,
+                        ]);
+                        (self.screen * transform * img_to_local).as_coeffs()
+                    };
+                    let mut paint = Paint::default();
+                    paint.anti_alias = self.flags.anti_alias;
+                    paint.blend_mode = self.blend_for(shape.overprint_fill);
+                    // Upright: on whole pixels, so pictures laid side by
+                    // side meet without a pale seam where both edges were
+                    // half covered (#853).
+                    let snapped = snap_upright(m, img.width(), img.height());
+                    let (m, area) = match snapped {
+                        Some((m, r)) => (m, Some(r)),
+                        None => (m, None),
+                    };
                     let t = Transform::from_row(
                         m[0] as f32,
                         m[1] as f32,
@@ -798,9 +879,6 @@ impl Renderer<'_> {
                         m[4] as f32,
                         m[5] as f32,
                     );
-                    let mut paint = Paint::default();
-                    paint.anti_alias = self.flags.anti_alias;
-                    paint.blend_mode = self.blend_for(shape.overprint_fill);
                     paint.shader = tiny_skia::Pattern::new(
                         Pixmap::as_ref(&img),
                         SpreadMode::Pad,
@@ -808,13 +886,21 @@ impl Renderer<'_> {
                         1.0,
                         t,
                     );
-                    self.pixmap.fill_path(
-                        &sk,
-                        &paint,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+                    match area {
+                        Some(None) => {}
+                        Some(Some(r)) => {
+                            paint.anti_alias = false;
+                            self.pixmap
+                                .fill_rect(r, &paint, Transform::identity(), None);
+                        }
+                        None => self.pixmap.fill_path(
+                            &sk,
+                            &paint,
+                            FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        ),
+                    }
                 }
             }
             if let Some(stroke) = &shape.stroke {
@@ -4371,6 +4457,106 @@ mod band_tests {
         );
     }
 
+    /// A picture shape of `w` x `h` pixels from `pm` over `rect`.
+    fn picture(id: u64, pm: &Pixmap, rect: Rect) -> Shape {
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(id),
+            ShapeKind::Bitmap {
+                rect,
+                width_px: pm.width(),
+                height_px: pm.height(),
+                png: pm.encode_png().unwrap().into(),
+                fx: None,
+            },
+        );
+        s.fill = Fill::None;
+        s.stroke = None;
+        s
+    }
+
+    /// #853: pictures laid side by side meet without a pale seam, at any
+    /// zoom (their shared edge falls between pixels here).
+    #[test]
+    fn pictures_side_by_side_meet_without_a_seam() {
+        let mut pm = Pixmap::new(16, 16).unwrap();
+        pm.fill(tiny_skia::Color::from_rgba8(200, 0, 0, 255));
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let page = doc.pages[0].id;
+        for (i, x) in [10.0, 30.3].into_iter().enumerate() {
+            doc.pages[0].layers[0].shapes.push(picture(
+                i as u64 + 1,
+                &pm,
+                Rect::new(x, 10.0, x + 20.3, 30.3),
+            ));
+        }
+        for zoom in [1.0, 1.37, 2.9, 0.41] {
+            let opts = RenderOptions {
+                width: 300,
+                height: 300,
+                view: ViewTransform {
+                    zoom,
+                    origin_x: 0.3,
+                    origin_y: 299.6,
+                },
+                anti_alias: true,
+                ..RenderOptions::default()
+            };
+            let out = render_page_whole(&doc, page, &opts).unwrap();
+            let y = (299.6 - 20.0 * zoom) as u32;
+            let x0 = (12.0 * zoom) as u32;
+            let x1 = (48.0 * zoom) as u32;
+            for x in x0..=x1 {
+                let p = out.pixel(x, y).unwrap();
+                assert_eq!(
+                    (p.red(), p.green(), p.alpha()),
+                    (200, 0, 255),
+                    "zoom {zoom}, x {x}"
+                );
+            }
+        }
+    }
+
+    /// #853: a picture drawn far smaller than its pixels shows their
+    /// average, not a few scattered pixels: a one-pixel checkerboard at
+    /// about a tenth of its size is an even grey.
+    #[test]
+    fn a_picture_drawn_small_shows_the_average_of_its_pixels() {
+        let mut pm = Pixmap::new(400, 400).unwrap();
+        for (i, px) in pm.data_mut().chunks_mut(4).enumerate() {
+            let (x, y) = (i % 400, i / 400);
+            let v = if (x + y) % 2 == 0 { 255 } else { 0 };
+            px.copy_from_slice(&[v, v, v, 255]);
+        }
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let page = doc.pages[0].id;
+        doc.pages[0].layers[0]
+            .shapes
+            .push(picture(1, &pm, Rect::new(0.0, 0.0, 100.0, 100.0)));
+        // 400 pixels over 37: about a tenth of their size.
+        let opts = RenderOptions {
+            width: 37,
+            height: 37,
+            view: ViewTransform {
+                zoom: 0.37,
+                origin_x: 0.0,
+                origin_y: 37.0,
+            },
+            anti_alias: true,
+            ..RenderOptions::default()
+        };
+        let out = render_page_whole(&doc, page, &opts).unwrap();
+        for y in 2..35 {
+            for x in 2..35 {
+                let r = out.pixel(x, y).unwrap().red();
+                assert!((110..=145).contains(&r), "({x}, {y}): {r}");
+            }
+        }
+        assert_eq!(bitmap_level(Affine::scale(0.1)), 3);
+        assert_eq!(bitmap_level(Affine::scale(0.5)), 0);
+        assert_eq!(bitmap_level(Affine::scale(0.49)), 1);
+        assert_eq!(bitmap_level(Affine::scale(2.0)), 0);
+    }
+
     /// One picture cache serves every band: a picture across all bands of
     /// a render is decoded once, and the next render decodes nothing.
     #[cfg(not(target_arch = "wasm32"))]
@@ -4458,6 +4644,56 @@ mod band_tests {
         }
         assert!(worst <= 48, "bands differ by {worst}");
         assert!(off * 2000 < a.data().len(), "{off} values differ");
+    }
+
+    /// Render times of a page of 200 photo tiles (6000 x 4000 pixels in
+    /// all) at screen zooms from 2 % to 100 %, the second render of each
+    /// with the pictures decoded (#853).
+    #[test]
+    #[ignore]
+    fn picture_render_times() {
+        let (tw, th) = (300u32, 400u32);
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(210.0, 297.0));
+        let page = doc.pages[0].id;
+        for j in 0..10u32 {
+            for i in 0..20u32 {
+                let mut pm = Pixmap::new(tw, th).unwrap();
+                for (k, px) in pm.data_mut().chunks_mut(4).enumerate() {
+                    let v = ((k as u32 * 7 + i * 13 + j * 29) % 251) as u8;
+                    px.copy_from_slice(&[v, v / 2, 255 - v, 255]);
+                }
+                let (w_mm, h_mm) = (33.33, 44.44);
+                let x = -150.0 + i as f64 * w_mm;
+                let y = 100.0 - (j + 1) as f64 * h_mm;
+                doc.pages[0].layers[0].shapes.push(picture(
+                    (j * 20 + i + 1) as u64,
+                    &pm,
+                    Rect::new(x, y, x + w_mm, y + h_mm),
+                ));
+            }
+        }
+        for pct in [2.0, 10.0, 21.0, 100.0] {
+            // 96 pixels per inch on screen.
+            let zoom = pct / 100.0 * 96.0 / 25.4;
+            let opts = RenderOptions {
+                width: 1360,
+                height: 768,
+                view: ViewTransform {
+                    zoom,
+                    origin_x: 680.0 + 100.0 * zoom,
+                    origin_y: 384.0 + 100.0 * zoom,
+                },
+                anti_alias: true,
+                draft: true,
+                ..RenderOptions::default()
+            };
+            let t = std::time::Instant::now();
+            let _ = render_page(&doc, page, &opts);
+            let first = t.elapsed();
+            let t = std::time::Instant::now();
+            let _ = render_page(&doc, page, &opts);
+            eprintln!("{pct} %: first {first:?}, again {:?}", t.elapsed());
+        }
     }
 
     #[test]
