@@ -19,6 +19,7 @@ full, row-by-row status.
 - The main window starts as it was left: maximized when it was left maximized (a maximize the window system dropped while the window opened is asked for again, and the first frames no longer overwrite the kept state), and a kept size that comes back the same with a larger interface or system text size, where it shrank at every start. A kept size larger than the monitor starts maximized (#787).
 - Print Preview shows the printer choice at the top of its options, with the gear button that opens the chosen printer's Properties, its status and the number of copies with Collate, so the printer can be changed without going back to the Print dialog (#792).
 - Print Merge docker: On every page is offered for Text and QR code fields too, not only pictures. Insert Field then puts the field in the same place on every page of the open drawing, and Create Merged Document fills those pages, one record each, instead of making a new drawing (#793).
+- Fonts embedded in an opened `.cdr` file (or carried by a `.tdraw` file) that are not installed say "Embedded" at the end of their row in the font lists and after the name in the font box, so it is clear the text is drawn with the copy that came with the drawing (#518).
 
 ## 0.19.4 (2026-10-26)
 
