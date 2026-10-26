@@ -29,6 +29,19 @@ pub enum CaseMode {
     Toggle,
 }
 
+/// An undo step that began (`begins`) or finished editing the contents
+/// of the clip frame `frame`, with the objects that were on the page
+/// besides the frame (see [`App::clip_edit_contents`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipEditMark {
+    /// The drawing's engine (step ids are its own).
+    pub engine: u64,
+    pub step: u64,
+    pub frame: ShapeId,
+    pub outside: std::collections::HashSet<ShapeId>,
+    pub begins: bool,
+}
+
 /// Step and Repeat docker state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepRepeat {
@@ -181,8 +194,9 @@ impl App {
     // ----- layout ----------------------------------------------------------------
 
     /// Layout > Insert Page Number: an artistic text "1", "2"... on the
-    /// chosen pages (bottom centre), updated through the symbol-like
-    /// name "page-number" so future renumbering can find it.
+    /// chosen pages (bottom centre), named "page-number". With a master
+    /// layer active it is one field on that layer that shows the number
+    /// of each page it is drawn on (#807).
     pub fn insert_page_number(&mut self, where_: PageNumberWhere) {
         let pages: Vec<(usize, tracedraw_core::PageId)> = self
             .doc()
@@ -192,8 +206,31 @@ impl App {
             .map(|(i, p)| (i, p.id))
             .collect();
         let active = self.page;
+        let master = self
+            .active_layer()
+            .and_then(|l| self.doc().master.iter().find(|m| m.id == l))
+            .map(|m| (m.id, m.scope));
         let mut cmds = Vec::new();
-        for (i, pid) in pages {
+        if let Some((layer, scope)) = master {
+            // The field lines up as on the page in view, or on the first
+            // page the layer shows on when that is not one of them.
+            let i = pages
+                .iter()
+                .position(|(_, p)| *p == active)
+                .filter(|i| scope.applies(*i))
+                .or_else(|| (0..pages.len()).find(|i| scope.applies(*i)))
+                .unwrap_or(0);
+            let size = pages
+                .get(i)
+                .and_then(|(_, p)| self.doc().page(*p).ok())
+                .map(|p| p.size);
+            if let Some(size) = size {
+                let mut s = self.page_number_text(i, size);
+                s.page_number = Some(self.page_numbers.field());
+                cmds.push(Command::AddShape { layer, shape: s });
+            }
+        }
+        for (i, pid) in pages.into_iter().filter(|_| master.is_none()) {
             let wanted = match where_ {
                 PageNumberWhere::Active => pid == active,
                 PageNumberWhere::All => true,
@@ -210,52 +247,7 @@ impl App {
                 continue;
             };
             let size = page.size;
-            let id = self.engine.new_shape_id();
-            let pn = &self.page_numbers;
-            let text = pn.label(i);
-            let em = pn.size_pt * 25.4 / 72.0;
-            let margin = 10.0;
-            // Outer corner: left on even (left-hand) pages, right on odd pages.
-            let left_page = i % 2 == 1;
-            let (origin, align) = match pn.position {
-                1 | 3 => {
-                    let y = if pn.position == 1 {
-                        margin
-                    } else {
-                        size.height - margin - em
-                    };
-                    if left_page {
-                        (Point::new(margin, y), tracedraw_core::TextAlign::Left)
-                    } else {
-                        (
-                            Point::new(size.width - margin, y),
-                            tracedraw_core::TextAlign::Right,
-                        )
-                    }
-                }
-                2 => (
-                    Point::new(size.width / 2.0, size.height - margin - em),
-                    tracedraw_core::TextAlign::Center,
-                ),
-                _ => (
-                    Point::new(size.width / 2.0, margin),
-                    tracedraw_core::TextAlign::Center,
-                ),
-            };
-            let mut s = Shape::new(
-                id,
-                ShapeKind::Text {
-                    spans: vec![TextSpan::new(text, self.text_font.clone(), pn.size_pt)],
-                    origin,
-                    frame: None,
-                    align,
-                    para: Default::default(),
-                    on_path: None,
-                },
-            );
-            s.name = Some("page-number".into());
-            s.fill = Fill::Solid(Color::BLACK);
-            s.stroke = None;
+            let s = self.page_number_text(i, size);
             cmds.push(Command::AddShape { layer, shape: s });
         }
         if !cmds.is_empty() {
@@ -263,6 +255,58 @@ impl App {
                 self.status = e.to_string();
             }
         }
+    }
+
+    /// The page number text for the page at `i` of `size`, placed as the
+    /// page number settings say.
+    fn page_number_text(&mut self, i: usize, size: tracedraw_core::geometry::Size) -> Shape {
+        let id = self.engine.new_shape_id();
+        let pn = &self.page_numbers;
+        let text = pn.label(i);
+        let em = pn.size_pt * 25.4 / 72.0;
+        let margin = 10.0;
+        // Outer corner: left on even (left-hand) pages, right on odd pages.
+        let left_page = i % 2 == 1;
+        let (origin, align) = match pn.position {
+            1 | 3 => {
+                let y = if pn.position == 1 {
+                    margin
+                } else {
+                    size.height - margin - em
+                };
+                if left_page {
+                    (Point::new(margin, y), tracedraw_core::TextAlign::Left)
+                } else {
+                    (
+                        Point::new(size.width - margin, y),
+                        tracedraw_core::TextAlign::Right,
+                    )
+                }
+            }
+            2 => (
+                Point::new(size.width / 2.0, size.height - margin - em),
+                tracedraw_core::TextAlign::Center,
+            ),
+            _ => (
+                Point::new(size.width / 2.0, margin),
+                tracedraw_core::TextAlign::Center,
+            ),
+        };
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![TextSpan::new(text, self.text_font.clone(), pn.size_pt)],
+                origin,
+                frame: None,
+                align,
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        s.name = Some("page-number".into());
+        s.fill = Fill::Solid(Color::BLACK);
+        s.stroke = None;
+        s
     }
 
     // ----- order -------------------------------------------------------------------
@@ -692,6 +736,26 @@ impl App {
                 });
             }
         }
+        // A copy of the lone object came with a symmetry of its own: it
+        // goes, the group's mirrors the copy (two would mirror it twice).
+        for id in &ids {
+            if let Some(n) = self.doc().find_shape(*id) {
+                if n.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Symmetry { .. }))
+                {
+                    cmds.push(Command::SetEffects {
+                        shape: *id,
+                        effects: n
+                            .effects
+                            .iter()
+                            .filter(|e| !matches!(e, Effect::Symmetry { .. }))
+                            .cloned()
+                            .collect(),
+                    });
+                }
+            }
+        }
         members.extend(ids.iter().copied());
         cmds.push(Command::Group { shapes: members });
         for cmd in &cmds {
@@ -721,6 +785,8 @@ impl App {
     pub fn edit_symmetry(&mut self) {
         if let Some((id, ..)) = self.selected_symmetry() {
             self.symmetry_edit = Some(id);
+            // Measured from now on without the copies (as picked).
+            self.visual_cache.borrow_mut().1.clear();
             self.select(vec![id]);
             self.status = tr("status.editing_symmetry");
         }
@@ -737,6 +803,21 @@ impl App {
         if let Some(id) = self.symmetry_edit.take() {
             self.status.clear();
             self.raster.borrow_mut().invalidate();
+            // Nothing of the editing stays. The boxes measured while it was
+            // edited are the object's own (without the copies): measured
+            // again. A group of the symmetry entered by a double click on a
+            // member, or the Shape tool that switched to, would still pick
+            // a member instead of the whole.
+            self.visual_cache.borrow_mut().1.clear();
+            let inside = self
+                .focus_target()
+                .is_some_and(|f| f == id || self.doc().ancestors(f).contains(&id));
+            if inside {
+                self.exit_focus();
+            }
+            if self.tool == crate::tools::Tool::Shape {
+                self.set_tool(crate::tools::Tool::Pick);
+            }
             if self.doc().find_shape(id).is_some() {
                 self.select(vec![id]);
             }
@@ -882,24 +963,95 @@ impl App {
         // What is on the page besides: everything else that comes along
         // while editing (the members of a content ungrouped, objects
         // drawn or pasted) is contents too (#537).
-        let outside: Vec<ShapeId> = self
+        let outside: std::collections::HashSet<ShapeId> = self
             .page_layers()
             .iter()
             .flat_map(|l| &l.shapes)
             .map(|s| s.id)
             .filter(|id| *id != clip.id)
             .collect();
+        let before = self.engine.last_step_id();
         self.run(Command::ExtractContents { clip: clip.id });
+        self.mark_clip_edit_step(before, clip.id, &outside, true);
         self.clip_frame_edit = Some((clip.id, outside));
         self.select(ids);
         self.status = tr("status.editing_clip_frame");
+    }
+
+    /// Note the step just run (when one was) as the one that began
+    /// (`begins`) or finished editing `frame`'s contents.
+    fn mark_clip_edit_step(
+        &mut self,
+        before: Option<u64>,
+        frame: ShapeId,
+        outside: &std::collections::HashSet<ShapeId>,
+        begins: bool,
+    ) {
+        let Some(step) = self.engine.last_step_id().filter(|s| Some(*s) != before) else {
+            return;
+        };
+        // Marks of steps gone from the history (undone and replaced, or
+        // too old) are of no more use.
+        let engine = &self.engine;
+        self.clip_edit_marks
+            .retain(|m| m.engine != engine.instance() || engine.step_in_effect(m.step));
+        self.clip_edit_marks.push(ClipEditMark {
+            engine: engine.instance(),
+            step,
+            frame,
+            outside: outside.clone(),
+            begins,
+        });
+    }
+
+    /// After undo (`undone`) or redo of `step`: undoing the step that
+    /// began editing a clip frame's contents leaves the edit, with the
+    /// frame as it was; redoing it enters the edit again. Undoing the
+    /// step that finished the edit goes back into it, redoing it leaves.
+    /// So undo inside the edit never reaches the drawing behind it while
+    /// the edit still shows (#851).
+    pub fn clip_edit_across(&mut self, step: Option<u64>, undone: bool) {
+        let Some(step) = step else {
+            return;
+        };
+        let engine = self.engine.instance();
+        let Some(mark) = self
+            .clip_edit_marks
+            .iter()
+            .find(|m| m.engine == engine && m.step == step)
+            .cloned()
+        else {
+            return;
+        };
+        if self.doc().find_shape(mark.frame).is_none() {
+            return;
+        }
+        if mark.begins != undone {
+            self.clip_frame_edit = Some((mark.frame, mark.outside));
+            let contents = self.clip_edit_contents();
+            self.select(contents);
+            self.status = tr("status.editing_clip_frame");
+        } else {
+            self.clip_frame_edit = None;
+            self.select(vec![mark.frame]);
+        }
+    }
+
+    /// The object is out of reach while a clip frame's contents are
+    /// edited: the frame itself and everything that was on the page
+    /// besides it (#851).
+    pub fn outside_clip_edit(&self, id: ShapeId) -> bool {
+        match &self.clip_frame_edit {
+            Some((frame, outside)) => id == *frame || outside.contains(&id),
+            None => false,
+        }
     }
 
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
     /// back inside the frame.
     pub fn finish_clip_frame_edit(&mut self) {
         let contents = self.clip_edit_contents();
-        let Some((frame, _)) = self.clip_frame_edit.take() else {
+        let Some((frame, outside)) = self.clip_frame_edit.take() else {
             return;
         };
         if self.doc().find_shape(frame).is_none() {
@@ -908,7 +1060,9 @@ impl App {
         if contents.is_empty() {
             return;
         }
+        let before = self.engine.last_step_id();
         self.place_inside(contents, frame);
+        self.mark_clip_edit_step(before, frame, &outside, false);
         self.select(vec![frame]);
     }
 
@@ -920,7 +1074,6 @@ impl App {
         let Some((frame, outside)) = &self.clip_frame_edit else {
             return Vec::new();
         };
-        let outside: std::collections::HashSet<&ShapeId> = outside.iter().collect();
         self.page_layers()
             .iter()
             .flat_map(|l| &l.shapes)
@@ -1301,7 +1454,7 @@ impl App {
             .filter(|id| *id != keep)
             .collect();
         // The joined outline is in page space: the kept curve's transform
-        // goes back to none.
+        // goes back to none (its effects stay where they are).
         let mut cmds = vec![
             Command::TransformShapes {
                 shapes: vec![keep],
@@ -1315,6 +1468,7 @@ impl App {
                 },
             },
         ];
+        cmds.extend(self.effects_as_now(keep));
         if !others.is_empty() {
             cmds.push(Command::DeleteShapes { shapes: others });
         }
@@ -1346,7 +1500,9 @@ impl App {
 
     // ----- bitmaps -------------------------------------------------------------------
 
-    pub(crate) fn bitmap_shapes(&self) -> Vec<(ShapeId, Rect, u32, u32, Vec<u8>)> {
+    pub(crate) fn bitmap_shapes(
+        &self,
+    ) -> Vec<(ShapeId, Rect, u32, u32, tracedraw_core::SharedBytes)> {
         self.selected_shapes()
             .into_iter()
             .filter_map(|s| match s.kind {
@@ -1372,7 +1528,7 @@ impl App {
                 rect,
                 width_px: img.width(),
                 height_px: img.height(),
-                png,
+                png: png.into(),
                 fx: None,
             },
         });
@@ -1427,7 +1583,7 @@ impl App {
                     rect: Rect::new(x0, y0, x0 + nw as f64 * mx, y0 + nh as f64 * my),
                     width_px: nw,
                     height_px: nh,
-                    png,
+                    png: png.into(),
                     fx: None,
                 },
             });
@@ -1508,7 +1664,7 @@ impl App {
         let l = tmp.pages[0].layers[0].id;
         for s in &shapes {
             let mut c = s.clone();
-            c.transform = Affine::translate((-bounds.x0, -bounds.y0)) * c.transform;
+            c.transform_by(Affine::translate((-bounds.x0, -bounds.y0)));
             if let Ok(layer) = tmp.layer_mut(l) {
                 layer.shapes.push(c);
             }
@@ -1597,7 +1753,7 @@ impl App {
                 rect: bounds,
                 width_px: w,
                 height_px: h,
-                png,
+                png: png.into(),
                 fx: None,
             },
         );
@@ -1626,7 +1782,7 @@ impl App {
             return;
         };
         let fill = Fill::Pattern(tracedraw_core::style::Pattern::Bitmap {
-            png,
+            png: png.into(),
             width_px,
             height_px,
             size_mm: bounds.width().max(0.1),
@@ -2413,7 +2569,7 @@ impl App {
             else {
                 continue;
             };
-            let cmds = vec![
+            let mut cmds = vec![
                 Command::SetShapeKind {
                     shape: s.id,
                     kind: ShapeKind::Text {
@@ -2431,6 +2587,7 @@ impl App {
                         * s.transform.inverse(),
                 },
             ];
+            cmds.extend(self.effects_as_now(s.id));
             if let Err(e) = self.engine.run_batch("Straighten Text", &cmds) {
                 self.status = e.to_string();
             }
@@ -2633,6 +2790,7 @@ impl App {
         if let Some(i) = self.visible_palettes.first() {
             if let Some(p) = self.palettes.get(*i) {
                 self.palette = p.colors.clone();
+                self.palette_rgb = crate::ui::palette::as_rgb(&self.palette);
                 self.palette_scroll = 0;
             }
         }
@@ -2785,7 +2943,7 @@ impl App {
             for s in &shapes {
                 let mut c = s.clone();
                 c.id = self.engine.new_shape_id();
-                c.transform = Affine::translate((dx * k as f64, dy * k as f64)) * c.transform;
+                c.transform_by(Affine::translate((dx * k as f64, dy * k as f64)));
                 new_sel.push(c.id);
                 cmds.push(Command::AddShape { layer, shape: c });
             }
@@ -3079,7 +3237,7 @@ impl App {
             g
         };
         // Symbol definition is placed at the origin.
-        def.transform = Affine::translate((-b.x0, -b.y0)) * def.transform;
+        def.transform_by(Affine::translate((-b.x0, -b.y0)));
         def.id = ShapeId(0);
         let index = self.doc().symbols.len();
         let name = format!("Symbol {}", index + 1);
@@ -3180,6 +3338,45 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Insert Page Number with a master layer active puts one field on
+    /// that layer, which shows each page's own number where pages are
+    /// drawn (screen, print, export) and stays a field when saved (#807);
+    /// the pages get nothing of their own.
+    #[test]
+    fn a_page_number_on_the_master_layer_numbers_every_page() {
+        let mut app = App::headless();
+        app.add_page();
+        app.add_page();
+        crate::ui::objects_docker::new_master_layer(&mut app, tracedraw_core::MasterScope::All);
+        app.page_numbers.prefix = "p. ".into();
+        app.insert_page_number(PageNumberWhere::Active);
+        let doc = app.doc().clone();
+        assert_eq!(doc.master[0].shapes.len(), 1);
+        assert!(doc
+            .pages
+            .iter()
+            .all(|p| p.layers.iter().all(|l| l.shapes.is_empty())));
+        let shown: Vec<String> = doc
+            .pages
+            .iter()
+            .map(|p| {
+                let layers = doc.layers_drawn_for_page(p.id).expect("layers");
+                match &layers[0].shapes[0].kind {
+                    ShapeKind::Text { spans, .. } => tracedraw_core::document::spans_text(spans),
+                    k => panic!("{k:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(shown, ["p. 1", "p. 2", "p. 3"]);
+        // Saved and opened again, it is still a field.
+        let json = doc.to_json().expect("save");
+        let back = tracedraw_core::Document::from_json(&json).expect("open");
+        assert_eq!(
+            back.master[0].shapes[0].page_number,
+            Some(app.page_numbers.field())
+        );
+    }
 
     /// While Autofit Page's popup is open the page it would make is the
     /// drawing's bounds and the margin; a value left from frames before
@@ -3716,7 +3913,7 @@ mod tests {
                 rect: Rect::new(0.0, 0.0, 40.0, 20.0),
                 width_px: 40,
                 height_px: 20,
-                png,
+                png: png.into(),
                 fx: None,
             })
             .expect("bitmap");

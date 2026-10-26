@@ -202,7 +202,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
                             rect,
                             width_px: w,
                             height_px: h,
-                            png,
+                            png: png.into(),
                             fx: None,
                         },
                     );
@@ -248,7 +248,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
                         rect: Rect::new(0.0, 0.0, size.width, size.height),
                         width_px: width,
                         height_px: height,
-                        png,
+                        png: png.into(),
                         fx: None,
                     },
                 );
@@ -961,7 +961,7 @@ pub fn page_to_psd(doc: &Document, page_index: usize, dpi: f64) -> Option<Vec<u8
 
     // One render per visible layer, with every other layer hidden.
     let layer_ids: Vec<(tracedraw_core::id::LayerId, String)> = doc
-        .layers_for_page(page_id)
+        .layers_drawn_for_page(page_id)
         .ok()?
         .iter()
         .filter(|l| l.visible)

@@ -51,6 +51,14 @@ looked at. An intersection is found on chords an eighth of the radius
 long, cut from the segments near the pointer, and then refined onto both
 curves, so it is exact while a page of thousands of curves still snaps
 at the screen's rate (#345, `curves_snap_to_their_exact_crossing`).
+Within one outline, only the nodes within the radius are gathered and
+told apart, and a segment is measured only when the box of its control
+points comes within the radius, so a single curve of tens of thousands
+of nodes (a combined ornament) costs a few milliseconds a frame, not the
+seconds it took when every node was compared with every other (#764,
+`snap_points::tests::nodes_near_the_pointer_are_offered_once`,
+`pick_drag_tests::a_combined_curve_of_many_nodes_moves_and_snaps_to_its_nodes`;
+`frame_times_over_a_combined_curve` measures it).
 
 Drawing tools snap the pointer. A move with the Pick tool that starts on
 one of the selection's points (a node, a midpoint, a quadrant or the
@@ -59,6 +67,16 @@ or edge; otherwise the selection's box edges and centre snap to
 guidelines, the grids, the page and the other objects' boxes. A scale
 handle being dragged snaps like the pointer of a drawing tool, leaving
 out the selection's own points.
+
+A node dragged with the Shape tool (or by node tracking with the Pick
+tool) snaps to other objects and also to what stays put of its own
+curve: its other nodes and the segments between two of them, with every
+mode (the nodes being dragged, where they started and the segments they
+bend are left out; with Ctrl the point kept on its axis snaps, #673).
+That geometry is found once a drag, in pieces of at most 16 segments
+each with its bounds, and a move looks only at the pieces near the
+pointer, so a curve of thousands of nodes drags as fast as without it
+(`frame_times_of_a_node_drag_on_a_long_curve`).
 
 A guideline being dragged (or dragged out of a ruler) and the ruler origin
 snap to everything except guidelines.
@@ -71,6 +89,17 @@ snap to everything except guidelines.
 - `snap::tests::drawing_tools_snap_to_object_points_and_show_the_mark`
 - `snap::tests::snapping_to_objects_turns_off_but_the_page_stays`
 - `snap::tests::a_move_carries_its_snap_point_onto_another_object`
+- Given a rectangle converted to curves, when its top right node is
+  dragged with the Shape tool to 3 px off its bottom left node, then it
+  lands on that node
+  (`pick_drag_tests::a_dragged_node_snaps_to_another_node_of_its_own_curve`).
+- Given an open curve through (20, 60), (60, 60) and (100, 60), when the
+  middle node is dragged right with Ctrl, the pointer 15 px below the
+  line 1 mm short of the end, then it lands on the end node
+  (`pick_drag_tests::a_ctrl_dragged_node_snaps_to_its_own_curve_on_its_axis`).
+- A node dragged 6 px off where it started, or off the middle of a side
+  it bends, stays where the pointer puts it
+  (`pick_drag_tests::a_dragged_node_does_not_snap_to_itself_or_its_moving_segments`).
 - `snap::tests::lines_snap_to_tangent_and_perpendicular_points_from_their_start`
 - `snap_points::tests` (each mode, the page, priorities)
 

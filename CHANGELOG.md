@@ -6,6 +6,197 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.19.4 (2026-10-26)
+
+- Print Preview: a page smaller than the paper repeated on it (step and repeat, several pages per sheet) shows every copy. Only the copies in one band of the preview were drawn and white covered the rest; any group or clip frame moved by its own transform was left out the same way in large renders (#848).
+- PDF import: Hindi written by office suites (the size set with the font, each glyph placed with a plain text matrix) comes in as whole words. A vowel sign placed a fraction of a point off the line, or the next syllable starting just before a sign's end, began a new text in the middle of a word, so क्षेत्र, शुद्धि or प्रार्थना came in as two texts and broke apart when edited; all 59 words of the test corpus and whole sentences now come back as typed (#771).
+- Toolbars move into rows: the standard toolbar, the property bar, the Text, Zoom and Transform toolbars and the time tracker, docked at the top or the bottom, can share a row. Drag a toolbar's grip onto another toolbar's row to put it beside that one, or onto the line between two rows to give it a row of its own; the Text, Zoom and Transform toolbars and the time tracker now have grips and float or dock like the others. The rows are kept with the preferences (#837, #855).
+
+- Print Preview with Print separations: the inks unticked under it no longer print; every plate printed before (#846).
+- Number fields keep the mouse wheel: turning it over a field on the property bar (the angle, the outline width, any spin box) or in a docker or dialog steps the value notch after notch. The bar or panel around the field slid on with the wheel after the first notch and carried the field away from under the pointer, so the wheel stopped working on it. Parts of a notch from a touchpad now add up to one step instead of a step each (#783).
+- Pick: an object chosen inside a group with Ctrl+click is dragged on its own from anywhere on it. Only a press on its centre mark kept it; anywhere else the drag took the whole group (#849).
+- Clip frames, Edit Contents: the faded objects outside the frame can no longer be picked (click, marquee, Select All, Tab) while the contents are edited. Undo stops at the start of the edit: undoing past it leaves the edit with the frame as it was, instead of undoing the drawing behind it while the edit still showed; redo enters the edit again, and undoing Finish goes back into it (#851).
+- Pictures look right at every zoom: pictures laid side by side (a map in tiles) no longer show pale lines where they meet, and a picture zoomed far out is drawn from a smaller copy of itself, so it shows its colours evenly instead of scattered, broken-up pixels. Pages of pictures zoomed out also draw faster (200 tiles at 21 %: 9 ms instead of 19 ms), so the new picture replaces the one shown while zooming sooner (#853).
+- Variable Outline: a wide node at a corner no longer leaves a round bulge and a notch on the inside of the corner where the width falls away; the inside follows the width smoothly. Round corners and quick changes of width are drawn in finer steps, so the band's edges look smooth even when it is very wide (#776).
+- Mesh Fill: a double-click inside the mesh puts a new node exactly where it was, on a new row and column through that point, and selects it; the new line went halfway between the nearest nodes instead, away from the click (#804).
+- Shape tool: a node being dragged snaps to the other nodes and segments of its own curve too, not only to other objects (#673).
+- PDF/X: with no CMYK profile set in Colour Management (or `TRACEDRAW_ICC` for `tracedraw-cli convert`), the output intent now embeds the CMYK profile the drawing carries, the profile its CMYK values are in, and an empty output condition takes that profile's name. It used to say "CGATS TR 001" with no profile, the name of another press (#643).
+- PDF and SVG export: an outline set to scale with its object is written as wide as the drawing window draws it, its width times the object's scale. It was written at its own width, so a 10 mm outline on an object scaled to a quarter came out 10 mm wide instead of 2.5 mm, in .cdr files and in drawings scaled here alike.
+- Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of PowerClips) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
+- Paragraph text in Chinese and Japanese breaks lines between characters by the line-start and line-end rules: punctuation such as ，。、；：？！ and closing brackets and quotes no longer start a line, and opening brackets and quotes no longer end one; the character before goes to the next line with it (#847).
+
+## 0.19.3 (2026-10-26)
+
+- Blend panel: the Color Blend choices (Direct, Clockwise, Counterclockwise) show again; the Reset button's row took the rest of the panel and pushed them out of sight. An Apply button blends the two selected objects with the panel's settings (#815).
+- Colour pickers have an eyedropper: in the picker of every colour swatch (Outline Pen, the Interactive Fill colours, the dockers) and in Edit Fill, press it and click the drawing to take the colour there; Esc stops it. It works while a dialog is open (#814, #817, #819).
+- Shift+F3 opens Text > Change Case for the selected text, and the menu row shows it (#801).
+
+## 0.19.2 (2026-10-26)
+
+- Dimensions hold to the object they measure: a dimension whose ends were placed on nodes of an object (its corners, say) follows it when the object is moved, resized or reshaped, and its value changes with it. Moving the dimension by itself lets it go (#838).
+- Opening a .cdr file with photos takes far less memory: the pictures are kept packed about half as small (22 MB instead of 40 MB for a 4000 x 3000 photo), and a picture placed many times is kept once instead of once per object (also in .cmx files). Saving a .cdr no longer takes several times a bitmap pattern fill's size in memory while the file is written.
+- Outline Pen dialog: the selected objects now show each change (width, colour, style, corners, caps, arrowheads, calligraphy, variable widths, overprint) live while the dialog is open; OK keeps it as one undo step and Cancel or Esc puts the outline back (#741).
+- Shape tool: two or more neighbouring nodes deleted together leave one curve between the nodes either side, fitted to the old outline, so it keeps its general shape. Line nodes deleted together left a straight line (#675).
+- Ungroup keeps a group's perspective: each object takes a Perspective effect of its own, first in its stack (folded into a perspective it had), and stays drawn as it was in the group, its own contour or distortion included. The perspective disappeared when the group was ungrouped (#674).
+- Contour: the offset is now the distance on the page also for a scaled, stretched or rotated object, so an 80 mm inside step lies 80 mm from the edges instead of 47 mm (#754).
+- Area Fill: the new object now follows the outlines around the clicked area exactly, with their own curves and nodes only where they cross, instead of a jagged outline with many extra nodes traced from pixels; an overlap of two objects is filled exactly (#734).
+- Hindi half letters and conjuncts with vowel signs: a syllable is never cut when text is shaped or broken into lines. A vowel sign or the second half of a conjunct in another colour or style, a syllable whose letters the font only partly has, and a word broken at the end of a line no longer show a halant under a half letter, a dotted circle or a sign on its own. PDF import reads Hindi as the typed words when the file places vowel signs apart (moved down or back), draws a vowel as two glyphs (ा + े for ो), draws a reph glyph at the end of a word, or gives the text as `ActualText`; Publish to PDF writes `ActualText` for such clusters, so its Hindi comes back exactly (all 59 words of the test corpus, 35 came back wrong before) (#599).
+- Pen and Bezier: Ctrl+Z through the steps of a curve drawn with them goes back to drawing it. The tool comes back, and the line goes on from the last node left with a curved preview along the mirror of its previous handle, wherever the pointer is. This also works after closing: undoing the close reconnects to the last node. You can undo anchor by anchor and go on drawing at once (#631).
+- Alt codes while editing text: the keypad digits typed under Alt are no longer typed too (with Num Lock on they also came as text, so Alt+0193 could give "0193" before the character), and a character the system composes as well is typed once. Fonts made for the symbol encoding (legacy script and dingbat fonts) now list their glyphs in the Glyphs panel with the keystroke that types them, and text typed in them draws their glyphs instead of another font's (#469).
+- Colour picker and Edit Fill: the Model list offers the registration colour (it prints on every separation) after the models, as the reference program's list does; it could not be chosen anywhere (#286).
+- Text: right-to-left words in left-to-right text (Arabic after an English word, or English inside Arabic) are now shaped and laid out right to left, joined, in the order the Unicode bidirectional rules give, instead of being laid out left to right like the English part. Digits inside right-to-left text read left to right, and paragraph text breaks such lines in reading order (#628).
+- Text tool: in right-to-left text (Arabic, Hebrew) Ctrl+A and other selections now shade every selected letter, not only the first one at the right end, and the caret sits at the right of the letter it stands before, as it is read (#629).
+
+## 0.19.1 (2026-10-25)
+
+- Contour (outward, inward, to center) and the other offsets give clean curves: a circle's contour is a circle of four curves instead of hundreds of short straight pieces, sharp and bevelled corners stay sharp, and contours are drawn a little faster (#821).
+- Convert to Curves and Break Apart of an enveloped, perspective or distorted object (text too) give smooth curves with their corners kept: a square in perspective is its four corners, a letter a few curves, where each was a row of short lines that Reduce Nodes then spoiled. Break Apart is in the canvas context menu for warped objects and artistic text. Letters an envelope pushes together stay filled where they overlap (#647, #840).
+- Convert to Curves of a text keeps every letter filled: the strokes of a glyph that cross each other, as in many Chinese fonts, left hollow holes where they met once the text was curves; Break Apart of a warped text does the same (#800).
+- Printing to a printer no longer freezes the window: the sheets are drawn and sent to the printer in the background, with "Printing on ..." in the status bar and the outcome there when it is done. On Windows a slow or stuck spooler left the window on "Processing" with a PowerShell window open until the program was closed (#810).
+- Print Preview > Print to the system's PDF viewer opens each print in a page of its own; with the last print still open in the viewer, the new one did not open (#809).
+- Edit Fill, the colour picker and the Color docker: a click near the black corner of the colour square in CMYK keeps its ring where it was put. All those points give K 100, which looks lighter on screen, so the ring jumped back up as if the click had not taken (#761).
+- Layout > Insert Page Number on a master layer: one page number field goes on the master layer and shows the number of each page it is drawn on, on screen, in print and in exports, so one number manages them all. Before, nothing went on the master page; the numbers went on the pages instead (#807).
+- Brush Strokes (Preset, Brush, Calligraphic, Expression): a stroke stays the path drawn, open and made of a few curves, with the brush as its live outline, so its nodes can be edited afterwards and the brush follows; it was a closed shape of many straight pieces. Apply to curve keeps the curve. The Sprayer still makes objects. Pages of such outlines draw as quickly as before (#829).
+- Trim, Intersect and Weld with a picture as the target crop the picture to the result: its frame takes the shape and the picture shows inside it, also for a picture already cropped. The result was an empty curve that showed only in Wireframe (#827).
+- Options > Customization > Commands: a tool or command can have several shortcuts. A new key joins the ones it has (a built-in key keeps working beside it) instead of replacing them, and each key has its own Delete (#822).
+- Options > Customization > Commands has a Toolbar buttons list: every button of the Standard and Zoom toolbars (Zoom to Page, Fullscreen, Snap To and the others, and the separator). A button dragged off a bar can be dragged back from there; before, only Reset brought it back (#836).
+- A right click anywhere on the Standard or Property bar, on its buttons and boxes too, opens the bar's menu, as on the toolbox (#835).
+- Objects panel: every object's row has its own eye and padlock, to hide or show and lock or unlock it from the list, a locked object too (#832).
+
+## 0.19.0 (2026-10-25)
+
+- Opening `.cdr`: blends from versions 9 and X3 (and others storing them the same way) show their steps as a live blend between the two end objects; only the two ends were drawn before (#597).
+- Print Merge: Add Column for a Number asks for its digits, starting value, "Continually increment value" with its step and an ending value; with an ending value the records from the start to the end are made at once, for serial, ticket or roll numbers without a data file (#791).
+- Windows: printing to a printer from the Print dialog works. A print of one sheet, the usual case, failed before anything reached the printer, local or on the network, because the list of sheet sizes flattened in the PowerShell script; nothing came out and the spooler showed no job. The script also shows no "Printing page" box, gives up after five minutes instead of hanging, and writes what came of each print to `tracedraw.log` (#614).
+- The mouse wheel zooms smoothly: each notch zooms in a glide over a few frames, as a scroll moves, instead of one jump of 15 %; a notch still zooms 15 % about the pointer (#766).
+
+## 0.18.0 (2026-10-25)
+
+- Large drawings with pictures use far less memory while editing: every undo step, background render and copied object now shares the picture data instead of copying it, so moving one curve in a drawing with 244 MB of pictures no longer adds 244 MB per step. Edit Fill and the font list preview no longer copy every step that can be redone. Saved files do not change.
+- A Variable Length outline converted to an object (Ctrl+Shift+Q) is now a clean shape: a few real curves along each side and straight butt ends, instead of a whole row of anchors joined by straight lines. Along a curve, the band no longer has hairline cracks between its pieces, on screen or in exports (#627).
+- The Glyphs panel's recent glyphs are readable again in the dark themes: their box takes the theme's field colour instead of staying white behind light glyphs (#660).
+- Print Merge: with On every page, Create Merged Document leaves a picture frame whose cell is empty or whose picture does not load as it is instead of emptying it, says when nothing was left to fill (or when the pages hold no fields) instead of claiming it created pages, and Place Inside Frame on every page no longer stacks a second picture in a frame that already holds one (#618).
+- The default palette of an RGB drawing is now a palette of RGB values defined directly (10% greys and multiples of 51, such as Navy Blue 0 51 153 and Purple 153 0 204) instead of values converted from CMYK at run time, and other CMYK colours with black in them convert as 255 (1 - min(1, ink + K)) per channel (#620).
+- The OpenGL renderer now opens on graphics cards with OpenGL 2.1 only, such as the Intel HD Graphics of 2010 PCs: after OpenGL 3.3 and OpenGL ES it asks for a compatibility context, so such a PC draws on its card instead of the CPU's software adapter. The font list on the property bar no longer copies every font name on each frame while it is closed, which cost about 0.1 to 0.25 ms a frame with 1300 font families (#616).
+- Tracing: neighbouring colour regions now overlap by 2 px under the lighter one, so no white hairlines of the page show between them; thin anti-aliased bands between two colours go to those colours instead of becoming slivers (#611).
+- Save As starts at a drawing's own `.cdr` version when it was opened from a `.cdr` file, and at the version of Options > Global > File Formats otherwise; the hint there now says what the version and the Save new drawings as .cdr box do, and Save As no longer shows a meaningless "Version: v0" for TraceDraw files (#613).
+- The wheel over the outline width box steps once per notch: a touchpad's small movements add up instead of running through the whole list, and a browser's notch (100 points or 3 lines) is one step, not two or three (#663).
+- Editing a symmetry ends when another drawing comes to the front or a new one opens; the mode and its "Editing the symmetry" message in the status bar stayed on over the next drawing (#442).
+- The Convert to Curves page says that a whole ellipse becomes four symmetrical nodes, as its checks and the test already did, and names the nodes in the drawing's Y-up order: right, top, left and bottom (#625).
+- Print: the printer list is read off the interface's thread, so a slow print server no longer holds the window when the dialog opens; the printers are in name order with the default chosen where it stands, and the General tab shows the chosen printer's Status, Location and Comment, with a Properties button that opens the printer's own settings (#614).
+- A combined curve with tens of thousands of nodes (a combined ornament) can be moved again: with snapping on, every frame over it compared each node with every other to find the snap points near the pointer, about 1.8 s a frame for 40,000 nodes, so a drag seemed to do nothing. Now a frame over it takes about 9 ms and a drag frame about 5 ms (#764).
+- When the window is drawn on the CPU because Use hardware acceleration is off in Options, the status bar now says so, and a click on the note opens Options > General to turn it on; before, it only suggested installing the graphics card's driver (#616).
+- The arrow keys nudge the selected guidelines when no object is selected: by the nudge distance, Shift by the super nudge and Ctrl by the micro nudge, one undo step per press; locked guidelines stay (#781).
+- Windows: when the graphics driver crashes or hangs TraceDraw while the window is being opened, with nothing shown and the log ending at "Using wgpu", the next start now opens with OpenGL by itself (and the software adapter after that), and keeps using it; `--renderer=gl` no longer has to be typed (#570).
+- A gradient fill and a gradient transparency now turn, mirror and skew with their object (the Pick tool's handles, the angle and mirror buttons, the Transformations docker, a turned group); before, the gradient kept running the same way on the page (#775).
+- Print with Color: Separations now prints a plate for each spot ink, after the cyan, magenta, yellow and black ones, and the print preview offers its box again: the printed sheets had lost the drawing's list of spot inks, so only the four process plates came out (#779).
+- The page tabs under the drawing slide to show the current page's tab whenever the page changes (a tab, the page navigator, PgUp and PgDn, Go To Page), and the mouse wheel over them slides them. In a drawing of many pages, a merged document for example, the tabs past the end of the row never showed before, so those pages could only be reached with Go To Page (#794).
+- Drawings with much large text are smooth again: the box of a text object, asked for many times a frame by hovering, snapping and the Pen preview, copied the text's whole outline each time. It now comes from a box kept with the cached outline. On the reported drawing (45 lines of 257 pt text) a Pen preview frame went from 7.3 to 1.6 ms (#802).
+
+- Browser version: the module is optimised for size with binaryen's wasm-opt and loses its name, debug and producer sections, 36.9 MB down to 31.6 MB (13.3 to 12.7 MB compressed). Nothing changes in what it does, and frame and script times stay the same.
+
+- The default palette's menu has Rows > 1 Row, 2 Rows, 3 Rows, and with more than one row the swatches fill line by line (the second line goes on where the first ends) and scroll one swatch at a time (#610).
+- .cdr files: text set in a semibold face (or a light, medium, extra bold or black one) now opens in that face instead of the bold or regular one, so it keeps its width on the page and in exported PDFs. The family is shown with its weight, "Titillium Web SemiBold", and draws with the installed face of that weight (#624).
+- Dimensions: the label can be edited in place, with a double click on it (Pick tool) or a click with the Text tool. Text typed around the measured value becomes the prefix and suffix and the number keeps following the size; text without the value stays as typed, and deleting the label's text brings the measured value back; the label's font, size and colour are kept. Before, whatever was typed was lost at the next change. Break Apart now frees the lines, arrowheads and label as separate objects instead of doing nothing, and a new Options menu on the bar sets the extension lines' gap from the object and how far they run past the dimension line and a horizontal label; it stays open while its fields are typed in (#644).
+- Blend: a new blend takes 20 steps instead of 5, so a front object blended to a copy just behind it gives a smooth side for 3D lettering instead of visible bands. A steps value already kept in the preferences stays as it is (#232).
+- The Autofit Page popup no longer closes when its Live preview box or its margin field is clicked, so the preview can be switched on and off and watched; the box now sits on the margin's row (#659).
+- Copy and paste no longer stall with a large picture on the system clipboard: Ctrl+C notes the text it wrote instead of reading the clipboard back, Windows tells by its clipboard change count whether anything was copied elsewhere, and elsewhere the picture is decoded only when there is no text or file to go by, or when it is what gets pasted, and sampled instead of hashed whole. With a 4000 x 3000 picture, pasting the copy here went from 177 ms to 118 ms on Linux and needs no read at all on Windows (#183).
+- Properties docker: with nothing selected, the default outline and fill now sit under the same Outline and Fill header bars as with an object selected, so the two rows of paint kinds are named and the layout no longer changes on selecting; Add Outline and Add Fill show only once the object has an outline or a fill (the Outline box and the fill kinds give the first one); the Rectangle section's corner names wrap instead of being cut to "Top le..." (#487).
+- A Variable Length outline, or any wide outline, inside a group or a clip frame is no longer cut flat at the edges of the strips the page is drawn in: a group is left out of a strip only when every object in it is (#626).
+- A test now checks that Convert Outline to Object of a curved line with a thick butt-ended outline gives four cusp nodes and one curve per side (#622).
+- .cdr files: rounded rectangles now open with Relative Corner Scaling off, like rectangles drawn in TraceDraw, so resizing one no longer stretches its corners and there is no need to switch the setting off rectangle by rectangle. A rectangle the file stores stretched shows round corners instead of oval ones (#619).
+- Mask Outside Page is opaque, as in the reference program: nothing outside the page shows through, the mask is a near-black when the desktop is white, the selected objects' outlines are drawn over it in blue so their parts off the page can still be found, and the item sits in the View menu right after Pixels (#615).
+
+- Convert Outline to Object (Ctrl+Shift+Q) on an outline with round ends or round corners: each round end is now two real curves meeting at its tip, with nodes where it meets the sides, and each round corner a curve, instead of many tiny straight segments. Curved sides also get fewer nodes (#623).
+
+- File > Export now starts with the choices of the last export of the session (format, resolution, quality, transparency, pages and PDF settings; Selected only starts off again) instead of resetting them each time. To keep them for the next session too, turn on Options > Global > File Formats > Remember the settings of the last export, which new preferences now have on and which now keeps WebP lossless as well (#617).
+
+- Print Preview: the box for each ink now stands under Print separations in the left panel, as asked, instead of in the top bar, where a drawing with many spot inks pushed Zoom and Close out of the window (#571).
+
+- The Welcome Screen tab can be closed while a drawing is open: it shrinks to its house, which shows the Welcome Screen again, and stays closed after a restart until the Welcome Screen is shown (#677).
+- Export: the Preset list now shows only the presets saved for the chosen format, and changing the format leaves a preset of another format unchosen. Each format has its own preset names, so saving a preset under a name another format's preset uses no longer replaces that one (#612).
+- Shape tool: a click on a control handle keeps its node chosen, so the handle can be dragged next and the node stays where it is. The click used to choose the segment the handle lay on, and the drag that followed bent that segment, pulling the node's side along. The two handles a chosen segment shows can be dragged too (#639).
+- Wrap Paragraph Text: the wrap style list beside the property bar button is now laid out as in the reference program: a Wrap style title, None (which stops the selected objects pushing paragraph text), the Contour and Square styles under their own headings, and the text wrap offset, greyed out while nothing wraps. Text already flows around shapes and pictures marked to wrap it (#661).
+
+- `CONTRIBUTORS.md` lists the people who contributed code, with what each contributed, also those whose commits were recorded under another name; the README links it.
+- The page size list on the property bar ends with Custom..., which opens the Page Size dialog with the page's width and height to type any size; it is the entry ticked when the page matches no preset (#650).
+
+- The log now names the processor, its threads and the Windows build, says at the first frame how long the start took and how large the window is in pixels, and with `RUST_LOG=debug` sums up the frames every 10 s (count, input, build times, gaps and why they were asked for), so a report of a slow window shows where the time goes (#616).
+
+- The preferences are no longer serialized on every frame to see whether they changed: only on frames with a key, text, a click or a dropped file, and at most once a second otherwise. A pointer move now costs about 0.1 µs there instead of about 20 µs, more on an older PC (#616).
+
+- Pictures are decoded once and kept for every thread that draws the page. The canvas draws in bands on one thread per core, and each band decoded every picture it crossed again on every redraw: six large photos took about 1.1 s and 540 MB extra per redraw on four cores (more with more cores). Now a redraw after the first takes about 20 ms, thumbnails and the navigator reuse the same pictures, and the decoded pictures kept are capped at 512 MB.
+
+- Tracing (Quick Trace and Outline Trace): outlines come out as smooth Bezier curves fitted to the shapes instead of stair-stepped polylines, with far fewer nodes; corners stay sharp (Corner smoothness rounds more of them), and stray specks and the fringes of soft edges no longer become curves of their own (fewer the lower the detail). Smoothing 0 still follows the pixel edges (#611).
+
+- Saving a `.tdraw` and auto-backup now write the file as it is made instead of building the whole file in memory first: saving a drawing of 183 MB peaked at 2.4 GB and left about 2 GB held afterwards; now it stays near the drawing's own size. Auto-backup also runs on a thread of its own, so the window no longer stops every 20 minutes while a large drawing is backed up, and a backup cut short never replaces a whole one.
+
+- Variable Length tool: a stroke made much wider than its own outline width is now drawn whole on screen. Parts of it reaching far from the path could be left out of the picture, so the stroke looked cut off with a flat edge on one side (#626).
+
+- Canvas overlays show on any colour: a shape being drawn has a black hairline on a white line over its outline, so it no longer disappears into a black outline; the selection handles are black with a white edge; and the Shape tool's and curve tools' control handles are dashed on a white line, with white-edged arrow heads (#670).
+
+- Shape tool: corner widgets. A curve being edited shows a small circle inside each corner; dragging one into its corner rounds the corners on the canvas as you drag, every corner of the curve together, or only the chosen nodes' corners when nodes are chosen. Works on open curves too; the status bar shows the radius, and the drag is one undo step (#635).
+
+- View > Page > Mask Outside Page: an optional mode that covers everything outside the page with the desktop colour, with the page border drawn over the objects, so the page shows as it will print while you keep drawing and editing. Objects outside the page still show faintly and stay editable; the setting is kept with the other view settings (#615).
+
+- `tracedraw-cli convert`: what the .cdr reader skipped or guessed (a fill it cannot read yet, a page size it does not take, objects left out) now goes to stderr as warnings, as for the other formats it reads. Only `info` showed it, so a converted file could miss part of the drawing without a word.
+
+- Opening .cdr files: pages longer than 10 m on a side, such as a 22 m banner, keep their size up to 100 m, the bound the CMX reader already had. They opened as A4, with the warning that the page size looked wrong.
+
+- Publish to PDF: a picture wholly outside the page and its bleed stays out of the file. It could not show, but its pixels were written: a photo left beside the page could make up most of the file's size (#642).
+
+- When a software adapter draws the window (no usable graphics card driver), TraceDraw keeps to 30 frames a second, draws no shadows and uses the system's pointers instead of the drawn cross hair and I-beam, and says so once in the status bar. On an older PC every pointer move redrew the whole window on the CPU, which took every core (#616).
+
+- With hardware acceleration on, TraceDraw no longer draws the window on the CPU's software adapter when no graphics card is usable: it tries OpenGL next and the software adapter only last, keeps going when the OpenGL set-up panics, says in a message box when no renderer can open the window, and logs every graphics adapter with why it was taken or left. An older PC sat at full CPU with the window crawling, with hardware acceleration on or off, and `--renderer=gl` showed nothing (#616).
+
+- Print on Windows: the Printer list now shows the printers Windows has, network printers included, the default one first, and prints straight to the one chosen with the copies asked for. Before, Windows offered only the PDF viewer and PDF or PostScript files (#614).
+
+- Property bar: the mouse wheel over the outline width box now changes the selected objects' outline to the next width of the list up or down, one undo step a notch (#663).
+
+- Convert Outline to Object (Ctrl+Shift+Q) now gives clean shapes: curves stay real curves with handles, straight parts stay straight, and the result has as few nodes as keep its shape, instead of hundreds of tiny straight segments. The outline of an ellipse also no longer has a notch where the ellipse starts (#622).
+
+- Print Merge, On every page: Create Merged Document and Print Merged Document now fill the pages of the open drawing, one record per page, instead of making a new drawing. With no placeholder picture but a pictures folder chosen, Place Inside Frame gives each page of the drawing its own picture from the folder, in name order, in the same frame (#618).
+
+- Pen and Bezier: a click on an end node of an open curve, selected or not, now goes on drawing that curve as if you had never stopped. The next segment leaves along the mirror of the end's handle, so the preview is curved and the join is smooth. The curve had to be selected first, and the new segment always started straight (#630).
+
+- Font lists: the mouse wheel over the font name box (with the list closed) now steps to the next or previous font, changing the selected or edited text at each notch (#665).
+
+- Shape tool on rectangles: corner nodes can be chosen several at a time, with Shift+click or Ctrl+click (which also takes a chosen corner out) or with a marquee or freehand marquee over them, and dragging a chosen corner then rounds just the chosen corners, so the two top corners or any three can be rounded together. Only all four corners or a single one could be rounded before (#671).
+
+- Tools > Options is now one window with a tab for each set of options along the top (TraceDraw, Customization, Tools, Global, Workspaces, AI and Document Options while a drawing is open), so every option can be reached without closing the dialog and opening another menu item. Each tab comes back to the page it showed last, and OK or Cancel covers the changes made on every tab (#633).
+
+- The default colour palette can show two or three rows of swatches (columns when docked on a side), set in Options > Customization > Color Palette > Rows, so more colours are in reach without scrolling; the arrows and the wheel then scroll a column at a time (#610).
+
+- Convert to Curves (Ctrl+Q) now works on dimensions: the dimension becomes a group of plain curves (its lines, its filled arrowheads and its label as curves) that no longer measures, each editable with the Shape tool. It used to do nothing. An angular dimension's arc is now a few smooth curves instead of dozens of short lines (#640).
+
+- Text editing on the canvas: the caret is now a black bar with a white edge instead of the interface's text colour, which in the dark themes was a light grey lost on the white page, and selected characters get a clearly darker shade. Table cells being edited show the same caret and shade (#632).
+
+- Font lists now follow the dark themes: the font names are drawn in the theme's text colour instead of near black on the dark list, and so are the characters of the Glyphs docker. The preview under the list and the font sampler keep dark text on their white card (#660).
+
+- The default palette of an RGB drawing now holds clean RGB values instead of the CMYK colours as the press would print them: black is 0 0 0, white 255 255 255, red 255 0 0, and the tints are the matching RGB tints. CMYK drawings keep the CMYK palette (#620).
+
+- Autofit Page: the popup has a Live preview check box. On (as before), the page shows the size it would get while the margin is typed; off, the page stays as it is until Autofit Page is clicked. The choice is kept (#659).
+
+- An ellipse converted to curves is now one closed curve of four smooth nodes with equal handles, at its right, top, left and bottom. It was an open curve with a fifth node on top of the first, and large ellipses got more nodes still, so it had to be closed by hand (#625).
+
+- Save As now starts at the `.cdr` version chosen in Options > Global > File Formats instead of always offering version 27. A new option there, Save new drawings as .cdr files, makes Save As start at the CDR type for a drawing without a file (#613).
+
+## 0.17.0 (2026-10-24)
+
+- Convert to Curves (Ctrl+Q) and Break Apart (Ctrl+K) now make an envelope, perspective or distortion part of the curves. Convert to Curves did nothing on an enveloped curve, and Break Apart lost the warp. Enveloped text breaks into one curve per letter, each warped as the whole text was, holes kept; a group with an envelope stays a group of warped curves. A warp after a contour, blend or extrusion stays live, and bitmaps keep theirs (#647).
+
+- Outline Pen: the Variable Outline width nodes can be dragged along their bar, staying between their neighbours, with the fields following (a drag there moved the whole dialog). A drag on empty bar adds a node and slides it, and a typed position keeps the nodes in order (#652).
+
+- Edit Fill: the dialog keeps its size and place, and OK and Cancel stay put, when switching between no fill, uniform, gradient, pattern, texture and mesh (#654).
+
+- The drawing tools' cross hair and the text I-beam are now drawn black with a white edge, so they show on a page of any colour; on Windows the system ones could appear white on a white page. A shape being drawn now follows the pointer from the first frame of the drag, and the window keeps one frame queued instead of two, so what is drawn under the pointer trails it less (#655).
+
+- Opening a file from the file manager or the command line while TraceDraw is running now opens it in a new tab of the running window, which comes to the front, instead of starting the whole program again. `--new-instance` still opens a separate window. On Linux, selecting several files opens them all in one window (#646).
+
+- Opening a file that is already open (Welcome Screen, File > Open, Open Recent, a dropped file, the command line) now shows its tab instead of opening it again in a new one, unsaved changes kept. A .cdr or other drawing counts as that file until it is saved under another name; templates still open as new drawings (#645).
+
+- Symmetry: after Finish, a symmetry moves, scales, rotates and mirrors as one object, with its copies and mirror lines. The lines used to stay where they were, so the copies mirrored the move and a handle rearranged them, as if the symmetry were still being edited. The drag outline shows the copies too. Duplicate, Step and Repeat and copies made during a drag take the lines along, and a symmetry inside a group follows the group. While editing, moving the object still leaves the lines in place.
+
 - Property bars: the up and down arrows (and the mouse wheel) of the rotation angle, scale %, arc angles, dimension text size and line width, corner radius and Transform toolbar fields now apply at every click. After clicking into the box, only the first arrow click worked.
 
 - A right click while dragging (move, scale, rotate, skew, and mirroring with Ctrl and a side handle) now leaves the original and makes the copy whichever button you release first. Releasing the left button first, or both at once, used to count as a click: on empty canvas it emptied the selection and nothing was copied. The scale, rotate and skew pointers now also show the copy's plus (#528).

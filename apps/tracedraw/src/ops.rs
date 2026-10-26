@@ -149,7 +149,7 @@ impl App {
             }
         }
         if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Align", &cmds);
+            let _ = self.run_batch_keeping_lines("Align", &cmds);
         }
     }
 
@@ -255,7 +255,7 @@ impl App {
             }
         }
         if !cmds.is_empty() {
-            let _ = self.engine.run_batch("Distribute", &cmds);
+            let _ = self.run_batch_keeping_lines("Distribute", &cmds);
         }
     }
 
@@ -413,7 +413,22 @@ impl App {
         // words, a single word into its characters; curves into their
         // subpaths. One undo step for the whole selection.
         let mut cmds = Vec::new();
-        for id in &ids {
+        // Top of the stack first: an object's pieces go right above it, so
+        // the places read for the objects below it stay true.
+        let mut order = ids.clone();
+        order.sort_by_key(|id| std::cmp::Reverse(self.doc().locate(*id).map_or(0, |(_, i)| i)));
+        for id in &order {
+            // A dimension frees its lines, arrowheads and label (#644).
+            if let Some(mut c) = self.dimension_break_commands(*id) {
+                cmds.append(&mut c);
+                continue;
+            }
+            // An envelope, perspective or distortion first becomes part of
+            // the curves (#647).
+            if let Some(mut c) = self.warp_break_commands(*id) {
+                cmds.append(&mut c);
+                continue;
+            }
             match self.text_break_commands(*id) {
                 Some(mut c) => cmds.append(&mut c),
                 None => cmds.push(Command::BreakApart { shape: *id }),
@@ -435,11 +450,103 @@ impl App {
         self.select(pieces);
     }
 
+    /// The commands that break apart `id` when it has an outline warp a bake
+    /// takes (`None` otherwise): the warp made part of its curves (#647),
+    /// then a text in one curve per letter (each warped as the whole text
+    /// is, holes kept), a curve in its parts. The first piece keeps the
+    /// object; the others go right above it with its look and other
+    /// effects. Groups, clip frames, tables and symbols have nothing to
+    /// break and keep their warps (Convert to Curves bakes them), and so
+    /// does a text inside a group.
+    pub(crate) fn warp_break_commands(
+        &mut self,
+        id: tracedraw_core::ShapeId,
+    ) -> Option<Vec<Command>> {
+        let doc = self.doc();
+        let shape = doc.find_shape(id)?.clone();
+        if matches!(
+            shape.kind,
+            ShapeKind::Group { .. }
+                | ShapeKind::ClipFrame { .. }
+                | ShapeKind::Table(_)
+                | ShapeKind::SymbolInstance { .. }
+        ) {
+            return None;
+        }
+        let place = doc.locate(id).ok();
+        let letters = tracedraw_core::live::warped_letters(&shape);
+        if letters.is_some() && place.is_none() {
+            return None;
+        }
+        let baked = tracedraw_core::live::bake_outline_warps(&shape)?;
+        let closed = |p: &tracedraw_core::geometry::BezPath| {
+            p.elements()
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
+        };
+        let mut cmds = vec![Command::SetEffectStack {
+            shape: id,
+            effects: baked.effects.clone(),
+            parked: baked.parked_effects.clone(),
+        }];
+        match (place, letters) {
+            (Some((layer, index)), Some(letters)) if !letters.is_empty() => {
+                for (k, path) in letters.into_iter().enumerate() {
+                    let kind = ShapeKind::Path {
+                        closed: closed(&path),
+                        path,
+                    };
+                    if k == 0 {
+                        cmds.push(Command::SetShapeKind { shape: id, kind });
+                    } else {
+                        let mut s = baked.clone();
+                        s.id = self.engine.new_shape_id();
+                        s.uid = None;
+                        s.kind = kind;
+                        let new_id = s.id;
+                        cmds.push(Command::AddShape { layer, shape: s });
+                        cmds.push(Command::Reorder {
+                            shape: new_id,
+                            layer,
+                            index: index + k,
+                        });
+                    }
+                }
+            }
+            _ => {
+                cmds.push(Command::SetShapeKind {
+                    shape: id,
+                    kind: baked.kind,
+                });
+                cmds.push(Command::BreakApart { shape: id });
+            }
+        }
+        Some(cmds)
+    }
+
     /// The commands that break the artistic text `id` apart (`None` when
     /// it is not artistic text, or holds a single character): each piece
     /// a text object of its own with the same look, placed where its
     /// letters were. The first piece keeps the object (its id, place in
     /// the stacking order and properties); the others go right above it.
+    /// Whether Break Apart does something to `shape` beyond a curve's
+    /// subpaths: an outline warp to bake into curves (#647), or artistic
+    /// text of more than one line, word or character.
+    pub(crate) fn breaks_apart(shape: &Shape) -> bool {
+        if shape.has_outline_warp() {
+            return true;
+        }
+        match &shape.kind {
+            ShapeKind::Text {
+                spans,
+                frame: None,
+                on_path: None,
+                ..
+            } => text_pieces(&tracedraw_core::document::spans_text(spans)).len() > 1,
+            _ => false,
+        }
+    }
+
     pub(crate) fn text_break_commands(
         &mut self,
         id: tracedraw_core::ShapeId,
@@ -600,7 +707,7 @@ impl App {
             page,
             background: Some(tracedraw_core::Fill::Pattern(
                 tracedraw_core::Pattern::Bitmap {
-                    png,
+                    png: png.into(),
                     width_px: img.width(),
                     height_px: img.height(),
                     size_mm: size.width.max(size.height),
@@ -655,7 +762,7 @@ impl App {
                 rect,
                 width_px: w,
                 height_px: h,
-                png,
+                png: png.into(),
                 fx: None,
             },
         );
@@ -768,6 +875,32 @@ fn group_leaves(s: &Shape) -> Vec<Shape> {
         children.iter().for_each(|c| walk(c, s.transform, &mut out));
     }
     out
+}
+
+/// What a picture target shows, for a shaping result to hold: the picture
+/// itself, or what a cropped picture (a clip frame holding one) holds,
+/// placed on the page. `None` for other objects.
+fn picture_contents(s: &Shape) -> Option<Vec<Shape>> {
+    match &s.kind {
+        ShapeKind::Bitmap { .. } => Some(vec![s.clone()]),
+        ShapeKind::ClipFrame { contents, .. }
+            if contents
+                .iter()
+                .any(|c| matches!(c.kind, ShapeKind::Bitmap { .. })) =>
+        {
+            Some(
+                contents
+                    .iter()
+                    .map(|c| {
+                        let mut c = c.clone();
+                        c.transform = s.transform * c.transform;
+                        c
+                    })
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
 }
 
 impl App {
@@ -904,7 +1037,40 @@ impl App {
         };
         let id = self.engine.new_shape_id();
         let leaves = group_leaves(&attrs);
-        let shape = if leaves.is_empty() {
+        let pictures = picture_contents(&attrs);
+        let shape = if let Some(contents) = pictures {
+            // A picture keeps showing inside the result: its frame takes
+            // the result's shape, as a crop with the Shape tool does
+            // (#827).
+            let mut frame = Shape::new(
+                self.engine.new_shape_id(),
+                ShapeKind::Path {
+                    path: result,
+                    closed: true,
+                },
+            );
+            frame.fill = tracedraw_core::Fill::None;
+            frame.stroke = attrs
+                .stroke
+                .clone()
+                .filter(|_| matches!(attrs.kind, ShapeKind::ClipFrame { .. }));
+            let contents = contents
+                .into_iter()
+                .map(|c| {
+                    let nid = self.engine.new_shape_id();
+                    crate::app::reid_pub(c, nid, &mut self.engine)
+                })
+                .collect();
+            let mut shape = Shape::new(
+                id,
+                ShapeKind::ClipFrame {
+                    frame: Box::new(frame),
+                    contents,
+                },
+            );
+            shape.opacity = attrs.opacity;
+            shape
+        } else if leaves.is_empty() {
             let mut shape = Shape::new(
                 id,
                 ShapeKind::Path {
@@ -1026,7 +1192,7 @@ impl App {
             .into_iter()
             .filter(|l| !l.locked)
             .flat_map(|l| &l.shapes)
-            .filter(|s| !s.locked)
+            .filter(|s| !s.locked && !self.outside_clip_edit(s.id))
             .map(|s| s.id)
             .collect();
         if ids.is_empty() {
@@ -1213,12 +1379,12 @@ mod smoke_tests {
                 rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
                 width_px: 1,
                 height_px: 1,
-                png: png.clone(),
+                png: png.clone().into(),
                 fx: None,
             })
             .expect("bitmap");
         app.select(vec![id]);
-        assert_eq!(app.selected_bitmap_png(), Some(png));
+        assert_eq!(app.selected_bitmap_png().as_deref(), Some(&png[..]));
         let other = app
             .new_shape(tracedraw_core::ShapeKind::Ellipse {
                 rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 5.0, 5.0),
@@ -1468,7 +1634,7 @@ mod curves_and_target_tests {
                 rect: Rect::new(20.0, 20.0, 40.0, 30.0),
                 width_px: 1,
                 height_px: 1,
-                png: Vec::new(),
+                png: Vec::new().into(),
                 fx: None,
             },
         );
@@ -1498,6 +1664,40 @@ mod curves_and_target_tests {
         let rev = app.engine.revision();
         app.convert_to_curves();
         assert_eq!(app.engine.revision(), rev);
+    }
+
+    /// An ellipse converts to one closed curve of four nodes, at its
+    /// right, top, left and bottom, each smooth (#625).
+    #[test]
+    fn an_ellipse_becomes_a_closed_curve_of_four_nodes() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 70.0, 50.0),
+                arc: None,
+            })
+            .expect("an ellipse");
+        app.select(vec![id]);
+        app.convert_to_curves();
+        let Some(ShapeKind::Path { path, closed }) = app.doc().find_shape(id).map(|s| &s.kind)
+        else {
+            panic!("a curve");
+        };
+        assert!(*closed, "closed");
+        let nodes = tracedraw_core::nodes::nodes(path);
+        assert_eq!(nodes.len(), 4, "{path:?}");
+        let at: Vec<_> = nodes.iter().map(|n| (n.pos.x, n.pos.y)).collect();
+        assert_eq!(
+            at,
+            vec![(70.0, 30.0), (40.0, 50.0), (10.0, 30.0), (40.0, 10.0)]
+        );
+        for i in 0..4 {
+            assert_eq!(
+                tracedraw_core::nodes::node_type(path, nodes[i].index),
+                tracedraw_core::nodes::NodeType::Symmetrical,
+                "{path:?}"
+            );
+        }
     }
 
     #[test]

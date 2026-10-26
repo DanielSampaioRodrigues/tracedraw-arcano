@@ -1479,6 +1479,47 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The page bar's list of sizes: the presets, then Custom (#650), which
+/// is the one ticked when the page matches no preset and opens the Page
+/// Size dialog with the page's width and height to type any size.
+fn page_size_list(
+    app: &mut App,
+    ui: &mut Ui,
+    presets: &[(&'static str, Size)],
+    current: &str,
+    size: Size,
+) {
+    for (n, s) in presets {
+        if ui.selectable_label(current == *n, *n).clicked() {
+            let landscape = size.width > size.height;
+            let s = if landscape {
+                Size::new(s.height.max(s.width), s.height.min(s.width))
+            } else {
+                Size::new(s.width.min(s.height), s.width.max(s.height))
+            };
+            resize_pages(app, s);
+            app.fit_pending = true;
+        }
+    }
+    ui.separator();
+    let custom = !presets.iter().any(|(n, _)| current == *n);
+    if ui
+        .selectable_label(custom, tr("toolbar.custom_page"))
+        .clicked()
+    {
+        app.dialog = crate::ui::dialogs::Dialog::PageSize {
+            width: size.width,
+            height: size.height,
+            all_pages: app.page_size_all,
+        };
+    }
+}
+
+/// Autofit Page's popup (there is one property bar).
+pub(crate) fn autofit_popup_id() -> egui::Id {
+    egui::Id::new("autofit_page_popup")
+}
+
 pub fn page_bar(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
     let presets = crate::ui::dialogs::paper_presets();
@@ -1498,20 +1539,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 .selected_text(current.clone())
                 .width(192.0)
                 .height(400.0)
-                .show_ui(ui, |ui| {
-                    for (n, s) in &presets {
-                        if ui.selectable_label(current == *n, *n).clicked() {
-                            let landscape = size.width > size.height;
-                            let s = if landscape {
-                                Size::new(s.height.max(s.width), s.height.min(s.width))
-                            } else {
-                                Size::new(s.width.min(s.height), s.width.max(s.height))
-                            };
-                            resize_pages(app, s);
-                            app.fit_pending = true;
-                        }
-                    }
-                });
+                .show_ui(ui, |ui| page_size_list(app, ui, &presets, &current, size));
         },
     );
     let mut new_size = None;
@@ -1550,16 +1578,20 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         has_objects,
         false,
     );
-    let popup_id = ui.make_persistent_id("autofit_page_popup");
+    let popup_id = autofit_popup_id();
     if fit.clicked() {
         egui::Popup::toggle_id(ui.ctx(), popup_id);
     }
     let ctx = ui.ctx().clone();
     let mut fitted = false;
+    // Clicks inside (the margin field, the Live preview box) keep it
+    // open, so the preview can be switched and watched (#659).
     egui::Popup::new(popup_id, ctx.clone(), fit.rect, ui.layer_id())
         .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_min_width(190.0);
+            // The Live preview box on the margin's row, right of the field.
             ui.horizontal(|ui| {
                 ui.label(tr("toolbar.fit_margin"));
                 ui.add_space(8.0);
@@ -1567,6 +1599,11 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 if let Some(m) = paper_distance(ui, app, margin, 88.0, Some(1.0)) {
                     app.settings.fit_page_margin = m.max(0.0);
                 }
+                ui.add_space(6.0);
+                ui.checkbox(
+                    &mut app.settings.fit_page_preview,
+                    tr("toolbar.autofit_live_preview"),
+                );
             });
             ui.add_space(4.0);
             if ui
@@ -1580,8 +1617,10 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
             }
         });
     // While the popup is open the page it would make shows on the canvas,
-    // following the margin as it is typed (#594).
-    app.autofit_preview = egui::Popup::is_id_open(&ctx, popup_id).then(|| {
+    // following the margin as it is typed (#594), unless Live preview is
+    // off (#659).
+    let preview = app.settings.fit_page_preview && egui::Popup::is_id_open(&ctx, popup_id);
+    app.autofit_preview = preview.then(|| {
         (
             app.settings.fit_page_margin.max(0.0),
             ctx.cumulative_frame_nr(),
@@ -2004,6 +2043,26 @@ pub(crate) fn parse_outline_width(text: &str, units: Units) -> Option<Option<f64
     })
 }
 
+/// The width the wheel steps to from `width` in the outline width list
+/// (no outline, hairline, then the widths of unit `u`): the next one up
+/// (wheel up) or down. `None` at the end of the list (#663).
+pub(crate) fn outline_width_step(width: Option<f64>, up: bool, u: Units) -> Option<Option<f64>> {
+    let hair = tracedraw_core::Stroke::HAIRLINE;
+    let list: Vec<Option<f64>> = [None, Some(hair)]
+        .into_iter()
+        .chain(outline_width_presets(u).into_iter().map(Some))
+        .collect();
+    // Where `width` falls among the list's widths (no outline below all).
+    let key = |w: Option<f64>| w.map_or(-1.0, |w| w.max(hair));
+    let at = key(width);
+    let eps = 1e-9;
+    if up {
+        list.into_iter().find(|w| key(*w) > at + eps)
+    } else {
+        list.into_iter().rev().find(|w| key(*w) < at - eps)
+    }
+}
+
 /// Take the outline off the selection, or off new objects when nothing is
 /// selected.
 fn set_no_outline(app: &mut App) {
@@ -2019,13 +2078,15 @@ fn set_no_outline(app: &mut App) {
 }
 
 /// The outline width: a box typed into (Enter or leaving it applies, Esc
-/// puts it back) and an arrow dropping the usual widths. Returns the
-/// width picked or typed.
+/// puts it back) and an arrow dropping the usual widths; with `wheel`,
+/// the mouse wheel over it steps through those widths. Returns the width
+/// picked, typed or stepped to.
 fn outline_width_box(
     app: &mut App,
     ui: &mut Ui,
     width: Option<f64>,
     mixed: bool,
+    wheel: bool,
 ) -> Option<Option<f64>> {
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("outline_width_list");
@@ -2084,6 +2145,34 @@ fn outline_width_box(
         resp.rect.union(arrow_rect)
     });
     let anchor = inner.inner;
+    // The wheel over the closed list: the next width up or down, one step
+    // per notch (#663). An event of a notch or more is one step whatever
+    // its size (browsers send a notch as 100 points or 3 lines); parts of
+    // a notch from a touchpad or a fine wheel add up until they make one,
+    // and start again when the wheel turns the other way or the pointer
+    // leaves the box.
+    let acc_id = id.with("wheel");
+    if wheel && !egui::Popup::is_id_open(&ctx, popup_id) && ui.rect_contains_pointer(anchor) {
+        if let Some(steps) = crate::ui::field::wheel_steps(ui, acc_id) {
+            if steps != 0 {
+                // A width being typed goes; the step counts from the one held.
+                ui.data_mut(|d| d.remove::<String>(id));
+                ui.memory_mut(|m| m.surrender_focus(id));
+                let mut w = width;
+                for _ in 0..steps.unsigned_abs().min(64) {
+                    match outline_width_step(w, steps > 0, app.outline_units()) {
+                        Some(next) => w = next,
+                        None => break,
+                    }
+                }
+                if w != width {
+                    picked = Some(w);
+                }
+            }
+        }
+    } else {
+        ui.data_mut(|d| d.remove::<f32>(acc_id));
+    }
     egui::Popup::new(popup_id, ctx.clone(), anchor, ui.layer_id())
         .open_memory(None)
         .width(anchor.width())
@@ -2127,7 +2216,16 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
     let mix = app.selection_stroke_mix();
     label_pic(ui, Pic::Pen, &tr("toolbar.outline_width"));
     let width = stroke.as_ref().map(|s| s.width);
-    match outline_width_box(app, ui, width, mix.presence || mix.has(StrokeField::Width)) {
+    // The wheel changes the selection's outline only, never asks about
+    // the outline of new objects at each notch.
+    let wheel = !app.selection.is_empty();
+    match outline_width_box(
+        app,
+        ui,
+        width,
+        mix.presence || mix.has(StrokeField::Width),
+        wheel,
+    ) {
         Some(None) => set_no_outline(app),
         Some(Some(w)) => app.apply_outline_width(w),
         None => {}
@@ -3017,18 +3115,49 @@ fn wrap_style_list(app: &mut App, ui: &mut Ui) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .width(260.0)
         .show(|ui| {
-            for (mode, side) in tracedraw_core::TextWrap::STYLES {
-                let here = on && current.mode == mode && current.side == side;
-                if ui
-                    .selectable_label(here, tr(wrap_style_key(mode, side)))
-                    .clicked()
-                {
-                    app.set_wrap_style(mode, side);
+            // As the reference program lists them (#661): a title, None,
+            // the contour and the square styles under their headings, and
+            // the offset, greyed out while nothing wraps (typing one
+            // would turn wrapping back on).
+            ui.label(egui::RichText::new(tr("context.wrap_style")).strong());
+            if ui.selectable_label(!on, tr("context.wrap_none")).clicked() && on {
+                let shapes = app.selection.clone();
+                app.run(tracedraw_core::Command::SetWrapText {
+                    shapes,
+                    wrap: false,
+                });
+            }
+            use tracedraw_core::WrapMode;
+            for (heading, contour) in [
+                ("context.wrap_contour", true),
+                ("context.wrap_square", false),
+            ] {
+                ui.separator();
+                ui.label(egui::RichText::new(tr(heading)).strong());
+                for (mode, side) in tracedraw_core::TextWrap::STYLES {
+                    if (mode == WrapMode::Contour) != contour {
+                        continue;
+                    }
+                    let here = on && current.mode == mode && current.side == side;
+                    if ui.selectable_label(here, tr(wrap_side_key(side))).clicked() {
+                        app.set_wrap_style(mode, side);
+                    }
                 }
             }
             ui.separator();
-            wrap_offset_field(app, ui, current.offset);
+            ui.add_enabled_ui(on, |ui| wrap_offset_field(app, ui, current.offset));
         });
+}
+
+/// A wrap style's side under its Contour or Square heading.
+fn wrap_side_key(side: tracedraw_core::WrapSide) -> &'static str {
+    use tracedraw_core::WrapSide as S;
+    match side {
+        S::Left => "context.wrap_flows_left",
+        S::Right => "context.wrap_flows_right",
+        S::Straddle => "context.wrap_straddle",
+        S::AboveBelow => "context.wrap_above_below",
+    }
 }
 
 /// The text wrap offset field (property bar list and context menu).
@@ -3262,6 +3391,89 @@ mod tests {
         out.textures_delta.clear();
     }
 
+    /// The page bar's list of sizes ends with Custom..., ticked when the
+    /// page matches no preset; clicking it opens the Page Size dialog with
+    /// the page's own width and height (#650).
+    #[test]
+    fn the_page_size_list_offers_a_custom_size() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let size = Size::new(123.0, 45.0);
+        let presets = crate::ui::dialogs::paper_presets();
+        let custom = tr("toolbar.custom_page");
+        let run = |app: &mut App, events: Vec<egui::Event>| -> Option<egui::Rect> {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| page_size_list(app, ui, &presets, "Custom", size),
+            );
+            out.textures_delta.clear();
+            out.shapes.iter().find_map(|c| match &c.shape {
+                epaint::Shape::Text(t) if t.galley.text() == custom => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            })
+        };
+        let at = run(&mut app, Vec::new()).expect("a Custom entry").center();
+        run(&mut app, vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            run(
+                &mut app,
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        match app.dialog {
+            crate::ui::dialogs::Dialog::PageSize { width, height, .. } => {
+                assert!((width - 123.0).abs() < 1e-9 && (height - 45.0).abs() < 1e-9);
+            }
+            _ => panic!("the Page Size dialog"),
+        }
+    }
+
+    /// With Live preview on the open popup shows the page Autofit Page
+    /// would make; off, the page stays as it is (#659).
+    #[test]
+    fn the_autofit_popup_previews_only_with_live_preview_on() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: R::new(10.0, 10.0, 60.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a layer");
+        let run = |app: &mut App| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.horizontal(|ui| page_bar(app, ui));
+            });
+            out.textures_delta.clear();
+        };
+        run(&mut app);
+        assert!(app.autofit_preview.is_none(), "closed");
+        egui::Popup::open_id(&ctx, autofit_popup_id());
+        assert!(app.settings.fit_page_preview, "on at first");
+        run(&mut app);
+        assert!(app.autofit_preview.is_some());
+        assert!(app
+            .autofit_preview_rect(ctx.cumulative_frame_nr())
+            .is_some());
+        app.settings.fit_page_preview = false;
+        run(&mut app);
+        assert!(egui::Popup::is_id_open(&ctx, autofit_popup_id()));
+        assert!(app.autofit_preview.is_none());
+        assert!(app
+            .autofit_preview_rect(ctx.cumulative_frame_nr())
+            .is_none());
+    }
+
     #[test]
     fn page_size_changes_one_page_or_all_in_one_step() {
         let mut app = App::headless();
@@ -3285,6 +3497,233 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    /// The wheel steps through the outline width list: no outline,
+    /// hairline, then the widths of the unit, from wherever the width is
+    /// (#663).
+    #[test]
+    fn the_wheel_steps_through_the_outline_widths() {
+        let hair = tracedraw_core::Stroke::HAIRLINE;
+        for u in OUTLINE_UNITS {
+            let p = outline_width_presets(u);
+            assert_eq!(outline_width_step(None, true, u), Some(Some(hair)));
+            assert_eq!(outline_width_step(None, false, u), None);
+            assert_eq!(outline_width_step(Some(hair), false, u), Some(None));
+            // The first width above the hairline (in inches the first is
+            // the hairline itself).
+            let above = p.iter().copied().find(|w| *w > hair + 1e-9);
+            assert_eq!(outline_width_step(Some(hair), true, u), above.map(Some));
+            assert_eq!(outline_width_step(Some(p[2]), true, u), Some(Some(p[3])));
+            assert_eq!(outline_width_step(Some(p[2]), false, u), Some(Some(p[1])));
+            if p[0] > hair {
+                assert_eq!(outline_width_step(Some(p[0]), false, u), Some(Some(hair)));
+            }
+            // Between two widths: the one above or below.
+            let mid = (p[1] + p[2]) / 2.0;
+            assert_eq!(outline_width_step(Some(mid), true, u), Some(Some(p[2])));
+            assert_eq!(outline_width_step(Some(mid), false, u), Some(Some(p[1])));
+            // At the widest it stays.
+            let last = *p.last().expect("widths");
+            assert_eq!(outline_width_step(Some(last), true, u), None);
+            assert_eq!(
+                outline_width_step(Some(last * 3.0), false, u),
+                Some(Some(last))
+            );
+        }
+    }
+
+    /// The outline width box in a property bar longer than the window:
+    /// notch after notch the width steps and the bar stays where it is,
+    /// on the frames between the notches too, where the smoothed scroll
+    /// of a notch slid the bar and took the box away from under the
+    /// pointer (#783).
+    #[test]
+    fn the_wheel_over_the_outline_width_in_a_long_bar_keeps_the_bar_still() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: R::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        let p = outline_width_presets(app.outline_units());
+        app.apply_outline_width(p[6]);
+        let width = |app: &App| {
+            app.doc()
+                .find_shape(id)
+                .and_then(|s| s.stroke.as_ref().map(|s| s.width))
+        };
+        let clock = std::cell::Cell::new(0.0f64);
+        let run = |app: &mut App, events: Vec<egui::Event>| -> egui::Rect {
+            let mut box_id = egui::Id::NULL;
+            clock.set(clock.get() + 1.0 / 60.0);
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(500.0, 300.0),
+                    )),
+                    events,
+                    time: Some(clock.get()),
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::ui::field::hold_taken_wheel(ui.ctx());
+                    crate::ui::overflow::row(ui, "property_test", |ui| {
+                        ui.add_space(200.0);
+                        box_id = ui.make_persistent_id("outline_width_box");
+                        outline_part(app, ui);
+                        ui.add_space(900.0);
+                    });
+                },
+            );
+            out.textures_delta.clear();
+            ctx.read_response(box_id)
+                .map(|r| r.rect)
+                .unwrap_or(egui::Rect::NOTHING)
+        };
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let start = run(&mut app, Vec::new());
+        assert!(start.is_positive(), "{start:?}");
+        run(&mut app, vec![egui::Event::PointerMoved(start.center())]);
+        for k in 1..=5 {
+            run(
+                &mut app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    // Down: the bar slides forward with it.
+                    delta: egui::vec2(0.0, -1.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            for f in 0..5 {
+                let now = run(&mut app, Vec::new());
+                assert!(
+                    (now.left() - start.left()).abs() < 0.5,
+                    "notch {k}, frame {f}: {now:?} from {start:?}"
+                );
+            }
+            assert_eq!(width(&app), Some(p[6 - k]), "notch {k}");
+        }
+    }
+
+    /// The wheel over the property bar's outline width box changes the
+    /// selection's outline to the next width up or down, one undo step a
+    /// notch; with nothing selected it does nothing (#663).
+    #[test]
+    fn the_wheel_over_the_outline_width_changes_it() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: R::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        let p = outline_width_presets(app.outline_units());
+        app.apply_outline_width(p[2]);
+        let width = |app: &App| {
+            app.doc()
+                .find_shape(id)
+                .and_then(|s| s.stroke.as_ref().map(|s| s.width))
+        };
+        assert_eq!(width(&app), Some(p[2]));
+        let origin = egui::pos2(100.0, 100.0);
+        let run = |app: &mut App, events: Vec<egui::Event>| -> egui::Rect {
+            let mut box_id = egui::Id::NULL;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 400.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Area::new(egui::Id::new("outline_bar"))
+                        .fixed_pos(origin)
+                        .show(ui.ctx(), |ui| {
+                            ui.horizontal(|ui| {
+                                box_id = ui.make_persistent_id("outline_width_box");
+                                outline_part(app, ui);
+                            });
+                        });
+                },
+            );
+            out.textures_delta.clear();
+            ctx.read_response(box_id)
+                .map(|r| r.rect)
+                .unwrap_or(egui::Rect::NOTHING)
+        };
+        // The bar settles over the first frames.
+        run(&mut app, Vec::new());
+        run(&mut app, Vec::new());
+        let field = run(&mut app, Vec::new());
+        assert!(field.is_positive() && field.top() >= origin.y, "{field:?}");
+        let wheel = |app: &mut App, dy: f32| {
+            run(app, vec![egui::Event::PointerMoved(field.center())]);
+            run(
+                app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, dy),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        };
+        let depth = app.engine.history_labels().0.len();
+        wheel(&mut app, 1.0);
+        assert_eq!(width(&app), Some(p[3]));
+        wheel(&mut app, -1.0);
+        wheel(&mut app, -1.0);
+        assert_eq!(width(&app), Some(p[1]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 3);
+        // Parts of a notch (a touchpad, a fine wheel) add up: a quarter
+        // does nothing, four of them make one step.
+        for _ in 0..3 {
+            wheel(&mut app, 0.25);
+            assert_eq!(width(&app), Some(p[1]));
+        }
+        wheel(&mut app, 0.25);
+        assert_eq!(width(&app), Some(p[2]));
+        // A notch of three lines (Firefox) or 100 points (Chrome) is one
+        // step.
+        wheel(&mut app, 3.0);
+        assert_eq!(width(&app), Some(p[3]));
+        run(&mut app, vec![egui::Event::PointerMoved(field.center())]);
+        run(
+            &mut app,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(width(&app), Some(p[4]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 6);
+        // Turning back drops the part of a notch gathered so far.
+        wheel(&mut app, 0.75);
+        wheel(&mut app, -0.5);
+        wheel(&mut app, 0.5);
+        assert_eq!(width(&app), Some(p[4]));
+        // Nothing selected: nothing changes, nothing is asked.
+        app.select(Vec::new());
+        wheel(&mut app, 1.0);
+        assert_eq!(width(&app), Some(p[4]));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 6);
+        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
     }
 
     #[test]

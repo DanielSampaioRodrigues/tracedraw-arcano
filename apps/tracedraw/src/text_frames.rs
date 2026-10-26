@@ -120,16 +120,29 @@ impl App {
             });
         }
         for id in &frames {
-            let kind = self
-                .doc()
-                .shape(*id)
-                .ok()
-                .and_then(|(_, s)| resized_kind(s, t));
-            if let Some(kind) = kind {
+            let Ok((_, s)) = self.doc().shape(*id) else {
+                continue;
+            };
+            if let Some(kind) = resized_kind(s, t) {
                 cmds.push(Command::SetShapeKind { shape: *id, kind });
             }
+            // A frame's symmetry goes with it, as an object's does in a
+            // transform (not the one being edited).
+            if self.symmetry_edit != Some(*id)
+                && s.effect_stack()
+                    .iter()
+                    .any(|(e, _)| matches!(e, tracedraw_core::live::Effect::Symmetry { .. }))
+            {
+                let mut moved = s.clone();
+                moved.carry_effects(t);
+                cmds.push(Command::SetEffectStack {
+                    shape: *id,
+                    effects: moved.effects,
+                    parked: moved.parked_effects,
+                });
+            }
         }
-        if let Err(e) = self.engine.run_batch("Transform", &cmds) {
+        if let Err(e) = self.run_batch_keeping_lines("Transform", &cmds) {
             self.status = e.to_string();
         }
         true
@@ -327,6 +340,9 @@ mod tests {
         // The selected characters' shade is a see-through grey.
         let [r, g, b, a] = crate::canvas::TEXT_SELECTION.to_array();
         assert!(r == g && g == b && a > 0 && a < 255);
+        // Plain to see on the white page: a mid grey there (#632).
+        let on_white = 255.0 * (1.0 - a as f32 / 255.0) + r as f32;
+        assert!(on_white < 170.0, "{on_white}");
     }
 
     #[test]

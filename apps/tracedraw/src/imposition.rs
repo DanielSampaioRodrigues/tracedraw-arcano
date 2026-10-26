@@ -572,6 +572,9 @@ pub fn impose(doc: &Document, o: &Options) -> Document {
     out.metadata = doc.metadata.clone();
     out.metadata.bleed = 0.0;
     out.symbols = doc.symbols.clone();
+    // The spot inks: separations make a plate for each, and the print
+    // preview a box (#779).
+    out.inks = doc.inks.clone();
     out.pages.clear();
     out.master.clear();
     let bleed = o.bleed.max(0.0);
@@ -602,7 +605,7 @@ pub fn impose(doc: &Document, o: &Options) -> Document {
                     None,
                 ));
             }
-            for l in doc.layers_for_page(page.id).unwrap_or_default() {
+            for l in doc.layers_drawn_for_page(page.id).unwrap_or_default() {
                 if l.visible && l.printable {
                     contents.extend(l.shapes.iter().filter(|s| s.visible).cloned());
                 }

@@ -4,7 +4,7 @@
 |---|---|
 | Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds); an object with live effects counts where it is drawn: its warped outline and the objects its effects add, and its selection box encloses them |
 | Shift+click | add or remove from the selection |
-| Ctrl+click | the object inside a group or a clip frame, one level further in at each click (the first level inside the topmost group, then the group or object inside that, down to the innermost object; a clip frame's contents count only inside the frame, where they show); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
+| Ctrl+click | the object inside a group or a clip frame, one level further in at each click (the first level inside the topmost group, then the group or object inside that, down to the innermost object; a clip frame's contents count only inside the frame, where they show); its handles are round, and moving, scaling, colouring or deleting it changes that object only (a group left empty goes); once chosen it is dragged on its own from anywhere on it without Ctrl, while a press on another part of the group takes the whole group (#849, `pick_drag_tests::object_chosen_in_a_group_drags_alone_from_anywhere_on_it`); Ctrl+Shift+click adds one more; a group and an object inside it are never selected together |
 | Alt+click | the object beneath the selected one under the pointer, round to the top again after the bottom one (dig); with nothing there selected, the topmost; Ctrl+Alt digs through the objects inside groups and clip frames (a clip frame comes after its contents); Shift+Alt adds it |
 | Click on a selected object (any of a selection), or on the centre mark | toggle the rotate/skew handles: curved arrows at the corners, straight double arrows at the sides, the centre of rotation in the middle |
 | Drag on empty | marquee (a dashed blue frame); objects wholly inside are selected; with Alt held when the drag ends, every object the frame touches: its outline crosses or lies in the frame, or the frame lies in its fill (text, bitmaps, tables and clip frames anywhere in their box; a group when one of its objects counts); Shift keeps the selection and turns over the objects the frame takes (selected ones are deselected, the others added; the Freehand Pick lasso too, #401); Ctrl keeps the marquee square; with Options > Tools > Pick, Marquee selects touched objects, Alt works the other way round |
@@ -18,7 +18,7 @@
 | Centre of rotation (rotate mode, a ring with a dot) | drag it to turn about another point; it is kept with the object: rotate mode going off and on, clicking elsewhere and selecting the object again find it where it was put, and it travels with the object when that is moved, scaled or turned (kept in the object's own space; several objects selected together keep theirs as a place within their bounds; each drawing has its own; not saved in the file); double-click puts it back in the middle; a click on it keeps rotate mode |
 | Right click during a move, scale, rotation or skew | the original stays and a copy takes the change (the copy becomes the selection); a second right click takes it back; the status bar says which, and the pointer carries a plus in a square (beside the box of a move, at the lower right of the scale, turn and slant pointers). The transform runs until the left button goes up, whichever button is released first or both in one frame, and wherever it is dropped (bare canvas, another object): the release is never taken for a click there, a held second right press does not start it again, and a palette swatch under the pointer does not take the right click as an outline colour (#528, `pick_drag_tests::a_right_click_copy_survives_any_release_order`, `a_right_click_copy_dropped_on_another_object_copies_the_dragged_one`, `a_right_click_during_a_ctrl_mirror_leaves_a_mirrored_copy` (Ctrl and a side handle dragged across: a mirrored copy), `a_right_click_during_a_turn_or_a_slant_leaves_the_original`, `a_held_second_right_press_takes_the_copy_back_and_the_move_goes_on`) |
 | Esc during a move, scale, rotation or skew | cancels it; nothing changes |
-| Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |
+| Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers; with guidelines selected and no object, the guidelines move |
 | Tab / Shift+Tab | cycle selection in stacking order |
 | + (also on the numeric keypad) | duplicate the selection in place (no offset), the copies selected, one undo step |
 | Double-click | Shape tool on a curve; on text, the Text tool editing that text with the caret at the end |
@@ -56,7 +56,8 @@ Ctrl or Alt during the drag changes the result at once.
 ## The handles
 
 The selection box has no frame of its own, so the objects' outlines
-stay in view. Eight solid black square handles, 10 interface points
+stay in view. Eight solid black square handles with a one-pixel white
+edge (so they show on a dark drawing, #670), 10 interface points
 across, stand just outside it: their centres 6.5 points out from the box
 (a gap of 1.5 points). A corner or side handle scales from where it was
 grabbed, so the box follows the pointer without a jump. Objects chosen
@@ -213,6 +214,7 @@ break instead.
 
 ## Checks
 
+- `pick_drag_tests::overlays_are_drawn_on_a_white_line`
 - `envelope_edit::tests::enveloped_objects_are_hit_and_boxed_as_drawn`
 
 - `ui::propbar::tests::shaping_and_grouping_show_for_several_objects_groups_and_parts`

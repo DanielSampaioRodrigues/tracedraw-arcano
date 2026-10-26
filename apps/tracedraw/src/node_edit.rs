@@ -498,6 +498,8 @@ impl App {
         }
         sel.extend(self.spline_points_where(|q| in_polygon(poly, q)));
         self.node_selection = sel;
+        self.rect_corners_selected =
+            crate::kind_nodes::corners_where(&self.shape_tool_shapes(), |q| in_polygon(poly, q));
         self.choose_chars_in(|q| in_polygon(poly, q));
     }
 
@@ -536,7 +538,7 @@ impl App {
         self.clipboard = Some(crate::app::Clipboard {
             shapes,
             styles: self.doc().object_styles.clone(),
-            system: 0,
+            system: Default::default(),
             guides: Vec::new(),
         });
         self.mark_system_clipboard(None);
@@ -587,7 +589,7 @@ impl App {
         for mut s in shapes {
             let id = self.engine.new_shape_id();
             s.id = id;
-            s.transform = Affine::translate(self.duplicate_offset) * s.transform;
+            s.transform_by(Affine::translate(self.duplicate_offset));
             ids.push(id);
             cmds.push(Command::AddShape { layer, shape: s });
         }

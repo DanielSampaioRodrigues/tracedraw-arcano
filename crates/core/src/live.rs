@@ -379,6 +379,346 @@ impl Lens {
     }
 }
 
+impl Effect {
+    /// Only reshapes the outline (Distort, Envelope, Perspective): Convert
+    /// to Curves and Break Apart make it part of the curves (#647).
+    pub fn warps_outline(&self) -> bool {
+        matches!(
+            self,
+            Effect::Envelope { .. } | Effect::Perspective { .. } | Effect::Distort(_)
+        )
+    }
+
+    /// Draws objects made from the outline as it is at its place in the
+    /// stack (contours, blends, extrusions, shadows, symmetry...): a warp
+    /// after it changes nothing of what it drew, so it stays live.
+    fn draws_from_outline(&self) -> bool {
+        !self.warps_outline() && !matches!(self, Effect::Lens(_) | Effect::Transparency { .. })
+    }
+}
+
+/// Which entries of an effect stack a bake takes: the warps switched on
+/// with nothing before them drawing from the outline.
+fn baked_entries(stack: &[(Effect, bool)]) -> Vec<bool> {
+    let mut drawn_from = false;
+    stack
+        .iter()
+        .map(|(e, on)| {
+            if !*on {
+                return false;
+            }
+            if e.draws_from_outline() {
+                drawn_from = true;
+            }
+            !drawn_from && e.warps_outline()
+        })
+        .collect()
+}
+
+/// A picture anywhere in `shape` (it cannot become a curve).
+fn holds_bitmap(shape: &Shape, depth: usize) -> bool {
+    if depth > 64 {
+        return true;
+    }
+    match &shape.kind {
+        ShapeKind::Bitmap { .. } => true,
+        ShapeKind::Group { children } => children.iter().any(|c| holds_bitmap(c, depth + 1)),
+        ShapeKind::ClipFrame { frame, contents } => {
+            holds_bitmap(frame, depth + 1) || contents.iter().any(|c| holds_bitmap(c, depth + 1))
+        }
+        _ => false,
+    }
+}
+
+/// `shape` with its outline warps (envelope, perspective, distortion; those
+/// no contour, blend or other drawn effect comes before) made part of its
+/// outline, as Convert to Curves does (#647): a curve, or a group whose
+/// objects are curves, drawn as before; the other effects stay, those
+/// switched off too. `None` when there is nothing to bake, or a picture
+/// inside would be lost.
+pub fn bake_outline_warps(shape: &Shape) -> Option<Shape> {
+    if !shape.has_outline_warp() || holds_bitmap(shape, 0) {
+        return None;
+    }
+    let stack = shape.effect_stack();
+    let mask = baked_entries(&stack);
+    if !mask.contains(&true) {
+        return None;
+    }
+    let mut probe = shape.clone();
+    probe.effects = stack
+        .iter()
+        .zip(&mask)
+        .filter(|(_, m)| **m)
+        .map(|((e, _), _)| e.clone())
+        .collect();
+    probe.parked_effects.clear();
+    let main = evaluate(&probe).main;
+    let rest: Vec<(Effect, bool)> = stack
+        .into_iter()
+        .zip(mask)
+        .filter(|(_, m)| !m)
+        .map(|(e, _)| e)
+        .collect();
+    let (effects, parked) = Shape::split_stack(rest);
+    let mut out = shape.clone();
+    let tolerance = refit_tolerance(&main.page_path());
+    out.kind = refit_kind(main.kind, tolerance);
+    out.effects = effects;
+    out.parked_effects = parked;
+    out.node_types.clear();
+    out.spline = None;
+    Some(out)
+}
+
+/// The outline warps a bake would take, each with the box it maps (for
+/// the letters of a text broken apart). Not for groups and clip frames.
+pub struct OutlineWarp(Vec<(Effect, Rect)>);
+
+impl OutlineWarp {
+    /// `path` (the object's own space) warped with the boxes of the whole
+    /// outline. A distortion also measures its reach on the path it is
+    /// given, so parts go through [`OutlineWarp::apply_parts`].
+    pub fn apply(&self, path: &BezPath) -> BezPath {
+        self.0.iter().fold(path.clone(), |p, (e, b)| {
+            warp_outline(e, &p, *b).unwrap_or(p)
+        })
+    }
+
+    /// `parts`, which together make the whole outline, warped as the whole
+    /// is drawn: warped together, then split back by their subpaths (a
+    /// twister turns each part by its distance across the whole, not
+    /// across the part alone). Each part on its own if the warp changed
+    /// the number of subpaths.
+    pub fn apply_parts(&self, parts: &[BezPath]) -> Vec<BezPath> {
+        let starts = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count()
+        };
+        let mut whole = BezPath::new();
+        for p in parts {
+            whole.extend(p.elements().iter().copied());
+        }
+        let warped = self.apply(&whole);
+        let counts: Vec<usize> = parts.iter().map(starts).collect();
+        if counts.iter().sum::<usize>() != starts(&warped) {
+            return parts.iter().map(|p| self.apply(p)).collect();
+        }
+        let mut out = Vec::with_capacity(parts.len());
+        let mut els = warped.elements().iter().copied().peekable();
+        for n in counts {
+            let mut part = BezPath::new();
+            let mut seen = 0;
+            while let Some(e) = els.peek() {
+                if matches!(e, PathEl::MoveTo(_)) {
+                    if seen == n {
+                        break;
+                    }
+                    seen += 1;
+                }
+                part.push(*e);
+                els.next();
+            }
+            out.push(part);
+        }
+        out
+    }
+}
+
+/// The outline warps of `shape` a bake would take (see [`OutlineWarp`]).
+pub fn outline_warp(shape: &Shape) -> Option<OutlineWarp> {
+    if matches!(
+        shape.kind,
+        ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. } | ShapeKind::Bitmap { .. }
+    ) {
+        return None;
+    }
+    let stack = shape.effect_stack();
+    let mask = baked_entries(&stack);
+    let mut p = shape.local_path();
+    let mut steps = Vec::new();
+    for ((e, _), m) in stack.iter().zip(mask) {
+        if !m {
+            continue;
+        }
+        let b = p.bounding_box();
+        steps.push((e.clone(), b));
+        p = warp_outline(e, &p, b).unwrap_or(p);
+    }
+    (!steps.is_empty()).then_some(OutlineWarp(steps))
+}
+
+/// One outline warp of `p` with the box `b` (as [`evaluate`] does).
+fn warp_outline(e: &Effect, p: &BezPath, b: Rect) -> Option<BezPath> {
+    match e {
+        Effect::Distort(how) => Some(crate::effects::distort_in(p, b, *how)),
+        Effect::Envelope {
+            nodes,
+            keep_lines,
+            handles,
+            corners,
+            mapping,
+        } => {
+            let frame = crate::envelope::Frame::from_parts(nodes, handles, corners)?;
+            Some(crate::envelope::apply_in(
+                p,
+                b,
+                &frame,
+                *keep_lines,
+                *mapping,
+            ))
+        }
+        Effect::Perspective { corners } => Some(perspective_in(p, b, corners)),
+        _ => None,
+    }
+}
+
+/// The letters of a warped text, each its own curve warped as the whole
+/// text is (Break Apart, #647): one per character (a mark stays with its
+/// letter), the underlines and other marks as one more. `None` for other
+/// shapes, without a text engine or without a warp to bake.
+pub fn warped_letters(shape: &Shape) -> Option<Vec<BezPath>> {
+    if !matches!(shape.kind, ShapeKind::Text { .. }) {
+        return None;
+    }
+    let warp = outline_warp(shape)?;
+    let layout = crate::document::text_glyph_layout(&shape.kind)?;
+    let mut letters: Vec<BezPath> = Vec::new();
+    for g in &layout.glyphs {
+        match letters.last_mut() {
+            Some(last) if g.text.is_empty() => last.extend(g.path.elements().iter().copied()),
+            _ => letters.push(g.path.clone()),
+        }
+    }
+    if !layout.rest.elements().is_empty() {
+        letters.push(layout.rest.clone());
+    }
+    // Curves fill with the even-odd rule, text with nonzero (#800).
+    let letters: Vec<BezPath> = letters
+        .iter()
+        .filter(|p| !p.elements().is_empty())
+        .map(crate::shaping::nonzero_as_even_odd)
+        .collect();
+    let warped = warp.apply_parts(&letters);
+    let mut all = BezPath::new();
+    warped
+        .iter()
+        .for_each(|p| all.extend(p.elements().iter().copied()));
+    let tolerance = refit_tolerance(&all);
+    Some(warped.iter().map(|p| refit_path(p, tolerance)).collect())
+}
+
+/// How closely a baked warp's outline is fitted with curves: a ten
+/// thousandth of the outline's size, between 0.005 and 0.05 mm. The warp
+/// is drawn as short lines; fitting them gives smooth curves with about
+/// as many nodes as the outline had before (#647).
+fn refit_tolerance(path: &BezPath) -> f64 {
+    let b = path.bounding_box();
+    let size = b.width().hypot(b.height());
+    if size.is_finite() {
+        (size * 1e-4).clamp(0.005, 0.05)
+    } else {
+        0.01
+    }
+}
+
+/// A baked warp's outline (short lines, and curves flattened first) as
+/// curves within `tolerance`, its corners kept sharp (#647, #840).
+fn refit_path(path: &BezPath, tolerance: f64) -> BezPath {
+    let mut lines = BezPath::new();
+    crate::geometry::flatten(path, tolerance * 0.25, &mut |el| lines.push(el));
+    crate::shaping::fit_polygon_curves(&lines, tolerance)
+}
+
+/// Whether outlines `a` and `b` run within `tol` of each other: every
+/// point of either flattened lies that near the other (for tests of a
+/// baked warp, which is fitted with curves).
+#[cfg(test)]
+pub(crate) fn same_outline(a: &BezPath, b: &BezPath, tol: f64) -> bool {
+    fn segments(p: &BezPath) -> Vec<(Point, Point)> {
+        let mut out = Vec::new();
+        let (mut at, mut start) = (Point::ZERO, Point::ZERO);
+        crate::geometry::flatten(p, 0.001, &mut |el| match el {
+            PathEl::MoveTo(q) => {
+                at = q;
+                start = q;
+            }
+            PathEl::LineTo(q) => {
+                out.push((at, q));
+                at = q;
+            }
+            PathEl::ClosePath => {
+                out.push((at, start));
+                at = start;
+            }
+            _ => {}
+        });
+        out
+    }
+    fn dist(p: Point, (a, b): (Point, Point)) -> f64 {
+        let d = b - a;
+        let len = d.hypot2();
+        let t = if len > 0.0 {
+            ((p - a).dot(d) / len).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (p - (a + d * t)).hypot()
+    }
+    let (sa, sb) = (segments(a), segments(b));
+    let near = |from: &[(Point, Point)], to: &[(Point, Point)]| {
+        from.iter().all(|s| {
+            [s.0, s.1]
+                .iter()
+                .all(|p| to.iter().map(|t| dist(*p, *t)).fold(f64::MAX, f64::min) <= tol)
+        })
+    };
+    !sa.is_empty() && near(&sa, &sb) && near(&sb, &sa)
+}
+
+/// `kind` with its curves (a group's too) fitted within `tolerance`.
+fn refit_kind(kind: ShapeKind, tolerance: f64) -> ShapeKind {
+    match kind {
+        ShapeKind::Path { path, closed } => ShapeKind::Path {
+            path: refit_path(&path, tolerance),
+            closed,
+        },
+        ShapeKind::Group { children } => ShapeKind::Group {
+            children: children
+                .into_iter()
+                .map(|mut c| {
+                    c.kind = refit_kind(c.kind, tolerance);
+                    c
+                })
+                .collect(),
+        },
+        other => other,
+    }
+}
+
+impl Shape {
+    /// An outline warp a bake would take (no evaluation: menus ask every
+    /// frame). Pictures keep their warps.
+    pub fn has_outline_warp(&self) -> bool {
+        self.effects
+            .iter()
+            .take_while(|e| !e.draws_from_outline())
+            .any(Effect::warps_outline)
+            && !holds_bitmap(self, 0)
+    }
+
+    /// Effects of this object that stay live and read its outline after a
+    /// bake (a contour, shadow, blend..., or a warp kept for a picture
+    /// inside): the warps of the objects inside it then stay live too,
+    /// or what those effects draw would change.
+    pub fn outline_stays_live(&self) -> bool {
+        self.effects.iter().any(Effect::draws_from_outline)
+            || (self.effects.iter().any(Effect::warps_outline) && holds_bitmap(self, 0))
+    }
+}
+
 impl Shape {
     /// The object, or an object in its groups, has live effects.
     pub fn has_live_effects(&self) -> bool {
@@ -399,7 +739,7 @@ impl Shape {
                     .iter()
                     .map(|c| {
                         let mut c = c.clone();
-                        c.transform = self.transform * c.transform;
+                        c.transform_by(self.transform);
                         c.visual_bounds()
                     })
                     .reduce(|a, b| a.union(b))
@@ -696,6 +1036,10 @@ fn set_path(shape: &mut Shape, path: BezPath) {
         .iter()
         .any(|e| matches!(e, PathEl::ClosePath));
     shape.kind = ShapeKind::Path { path, closed };
+    // A warped outline is no longer the B-spline of its control points,
+    // and its nodes are new (#647).
+    shape.spline = None;
+    shape.node_types.clear();
 }
 
 /// Break the effect stack into ordinary shapes (below, main, above), with
@@ -776,8 +1120,19 @@ const MAX_CONTOUR_STEPS: u32 = 999;
 /// `n * offset * accelerate(i / n, accel_objects)` (to the centre: by
 /// `i * offset` until nothing is left), coloured `accelerate(i / n,
 /// accel_colors)` of the way to the end colours.
+///
+/// The offset is measured on the page: the outline is offset with the
+/// object's transformation applied and brought back to its local
+/// coordinates, so a scaled or stretched object keeps the distance the
+/// user typed (#754).
 fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
-    let base = shape.local_path();
+    let to_page = shape.transform;
+    let to_local = if to_page.determinant().abs() > 1e-12 {
+        to_page.inverse()
+    } else {
+        return Vec::new();
+    };
+    let base = to_page * shape.local_path();
     let from_fill = shape.fill.preview_color().unwrap_or(Color::WHITE);
     let from_outline = shape.stroke.as_ref().map(|s| s.color);
     let sign = if p.outside && !p.to_center { 1.0 } else { -1.0 };
@@ -793,7 +1148,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
             if q.elements().is_empty() {
                 break;
             }
-            paths.push(q);
+            paths.push(to_local * q);
         }
     } else {
         let n = p.steps.clamp(1, MAX_CONTOUR_STEPS);
@@ -804,7 +1159,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
             if q.elements().is_empty() {
                 break;
             }
-            paths.push(q);
+            paths.push(to_local * q);
         }
     }
     let n = paths.len().max(1) as f64;
@@ -1124,6 +1479,45 @@ fn bevel(
     out
 }
 
+/// Carry the places an object's live effects hold with the object when
+/// `t` is applied to it (in the space its transform maps to): a
+/// symmetry's centre and the angle of its first mirror line, so its
+/// copies go with it. Left behind, the copies mirrored a move about the
+/// old centre and a scale or a turn rearranged them, as if the symmetry
+/// were still being edited. A move, a turn, a uniform scale and a mirror
+/// carry it exactly. A stretch or a slant cannot keep the copies mirror
+/// images of the changed whole; the centre goes with it and the lines
+/// keep their angle (mirrored when `t` mirrors), so the copies stay mirror
+/// images of the changed object.
+pub fn carry_effects<'a>(effects: impl IntoIterator<Item = &'a mut Effect>, t: Affine) {
+    let [a, b, c, d, _, _] = t.as_coeffs();
+    let scale = a.hypot(b).max(c.hypot(d)).max(1e-12);
+    let near = |x: f64, y: f64| (x - y).abs() <= 1e-9 * scale;
+    // A turn and an even scale, or that and a mirror.
+    let similar = (near(a, d) && near(b, -c)) || (near(a, -d) && near(b, c));
+    let mirrors = a * d - b * c < 0.0;
+    for e in effects {
+        if let Effect::Symmetry { center, angle, .. } = e {
+            let p = t * *center;
+            if !(p.x.is_finite() && p.y.is_finite()) {
+                continue;
+            }
+            if similar {
+                let r = angle.to_radians();
+                let dir = t * (*center + Vec2::new(r.cos(), r.sin())) - p;
+                if dir.hypot() > 1e-12 && dir.hypot().is_finite() {
+                    *angle = dir.y.atan2(dir.x).to_degrees();
+                }
+            } else if mirrors {
+                *angle = -*angle;
+            }
+            // A line is the same turned half a turn.
+            *angle = angle.rem_euclid(180.0);
+            *center = p;
+        }
+    }
+}
+
 /// Mirror copies for the Symmetry effect. With `n` lines through `center`
 /// the result is the dihedral orbit of the shape: reflections across each
 /// line and the rotations they generate (2n - 1 copies).
@@ -1276,6 +1670,76 @@ pub fn perspective_in(path: &BezPath, b: Rect, corners: &[Point; 4]) -> BezPath 
     warp(path, b, map)
 }
 
+/// Give a group's `member` the group's perspectives as it is ungrouped
+/// (#674): the group (outline `group_path`, effects `group`) warps the
+/// member's outline before the member's own effects run, so the member
+/// takes one Perspective at the front of its stack, the group's
+/// projections seen in its own space (a homography restricted to the
+/// member is still one). A Perspective the member had first already is
+/// folded into it, so it keeps one set of corners. Drawn as it was in the
+/// group; other group effects are not carried.
+pub fn take_group_perspectives(member: &mut Shape, group_path: &BezPath, group: &[Effect]) {
+    let t = member.transform;
+    if t.determinant().abs() < 1e-12 {
+        return;
+    }
+    let inv = t.inverse();
+    let raw = member.local_path();
+    let mb = raw.bounding_box();
+    if mb.width() < 1e-9 || mb.height() < 1e-9 {
+        return;
+    }
+    let rect = |b: Rect| {
+        [
+            Point::new(b.x0, b.y0),
+            Point::new(b.x1, b.y0),
+            Point::new(b.x1, b.y1),
+            Point::new(b.x0, b.y1),
+        ]
+    };
+    // The member's box corners through each group perspective in turn,
+    // each on the box of the group's outline as the one before left it.
+    let mut corners = rect(mb);
+    let mut path = group_path.clone();
+    let mut any = false;
+    for e in group {
+        let Effect::Perspective { corners: to } = e else {
+            continue;
+        };
+        let b = path.bounding_box();
+        if b.width() < 1e-9 || b.height() < 1e-9 {
+            continue;
+        }
+        let Some(h) = homography(&rect(b), to) else {
+            continue;
+        };
+        corners = corners.map(|q| inv * map_homography(&h, t * q));
+        path = perspective_in(&path, b, to);
+        any = true;
+    }
+    if !any || !corners.iter().all(|p| p.x.is_finite() && p.y.is_finite()) {
+        return;
+    }
+    let mut stack = member.effect_stack();
+    // The member's own first perspective ran on the warped outline's box.
+    let folded = match stack.first() {
+        Some((Effect::Perspective { corners: own }, true)) => {
+            let b = perspective_in(&raw, mb, &corners).bounding_box();
+            homography(&rect(b), own).map(|h| corners.map(|g| map_homography(&h, g)))
+        }
+        _ => None,
+    };
+    match folded {
+        Some(c) if c.iter().all(|p| p.x.is_finite() && p.y.is_finite()) => {
+            stack[0].0 = Effect::Perspective { corners: c };
+        }
+        _ => stack.insert(0, (Effect::Perspective { corners }, true)),
+    }
+    let (effects, parked) = Shape::split_stack(stack);
+    member.effects = effects;
+    member.parked_effects = parked;
+}
+
 /// Solve the 8 parameters of a homography from 4 point pairs.
 pub fn homography(src: &[Point; 4], dst: &[Point; 4]) -> Option<[f64; 8]> {
     let mut m = [[0.0f64; 9]; 8];
@@ -1321,6 +1785,98 @@ pub fn homography(src: &[Point; 4], dst: &[Point; 4]) -> Option<[f64; 8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A symmetry goes with its object: the centre and the first line are
+    /// carried by a move, a turn and a mirror, so the copies the object
+    /// makes are those of the transformed whole.
+    #[test]
+    fn a_symmetry_is_carried_with_its_object() {
+        let sym = |center: Point, angle: f64| Effect::Symmetry {
+            center,
+            angle,
+            lines: 2,
+        };
+        let angle_of = |e: &Effect| match e {
+            Effect::Symmetry { center, angle, .. } => (*center, *angle),
+            _ => unreachable!(),
+        };
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        // A move: the centre moves, the line keeps its angle.
+        let mut fx = vec![sym(Point::new(10.0, 5.0), 30.0)];
+        carry_effects(&mut fx, Affine::translate((4.0, -2.0)));
+        let (c, a) = angle_of(&fx[0]);
+        assert!(
+            near(c.x, 14.0) && near(c.y, 3.0) && near(a, 30.0),
+            "{c:?} {a}"
+        );
+        // A quarter turn about the origin: the line turns with it.
+        carry_effects(&mut fx, Affine::rotate(std::f64::consts::FRAC_PI_2));
+        let (c, a) = angle_of(&fx[0]);
+        assert!(
+            near(c.x, -3.0) && near(c.y, 14.0) && near(a, 120.0),
+            "{c:?} {a}"
+        );
+        // A mirror across the upright axis: 120 degrees becomes 60.
+        carry_effects(&mut fx, Affine::scale_non_uniform(-1.0, 1.0));
+        let (c, a) = angle_of(&fx[0]);
+        assert!(
+            near(c.x, 3.0) && near(c.y, 14.0) && near(a, 60.0),
+            "{c:?} {a}"
+        );
+        // The copies of the carried symmetry are the transformed copies.
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 4.0, 2.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.effects = vec![Effect::Symmetry {
+            center: Point::new(4.0, 1.0),
+            angle: 90.0,
+            lines: 1,
+        }];
+        let t = Affine::translate((10.0, 3.0)) * Affine::rotate(0.7);
+        let before: Vec<Rect> = evaluate(&s)
+            .above
+            .iter()
+            .map(|c| (t * c.page_path()).bounding_box())
+            .collect();
+        let mut moved = s.clone();
+        moved.transform_by(t);
+        let after: Vec<Rect> = evaluate(&moved)
+            .above
+            .iter()
+            .map(|c| c.page_path().bounding_box())
+            .collect();
+        assert_eq!(before.len(), after.len());
+        for (b, a) in before.iter().zip(&after) {
+            assert!(
+                near(b.x0, a.x0) && near(b.y0, a.y0) && near(b.x1, a.x1) && near(b.y1, a.y1),
+                "{b:?} {a:?}"
+            );
+        }
+        // Switched off, a symmetry still goes with the object, and an
+        // object taken out of a group takes the group's transform with
+        // its symmetry.
+        let mut off = s.clone();
+        off.parked_effects = vec![crate::document::ParkedEffect {
+            index: 0,
+            effect: off.effects.remove(0),
+        }];
+        off.transform_by(Affine::translate((7.0, 0.0)));
+        let Effect::Symmetry { center, .. } = off.parked_effects[0].effect else {
+            unreachable!()
+        };
+        assert!(near(center.x, 11.0), "{center:?}");
+        let mut out = s.clone();
+        out.absorb(Affine::translate((0.0, 5.0)));
+        let Effect::Symmetry { center, .. } = out.effects[0] else {
+            unreachable!()
+        };
+        assert!(near(center.y, 6.0), "{center:?}");
+    }
     use crate::geometry::Rect;
 
     fn rect_shape() -> Shape {
@@ -1370,6 +1926,82 @@ mod tests {
             crate::shaping::Op::Intersect,
         );
         assert!(!inside.elements().is_empty());
+    }
+
+    /// The contour offset is the distance on the page, whatever the
+    /// object's scale (#754): an 80 mm inside step of a polygon scaled
+    /// down lay 47 mm from its edge.
+    #[test]
+    fn contour_offset_is_measured_on_the_page() {
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Polygon {
+                rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                points: 8,
+                sharpness: 0.0,
+                complex: None,
+                twist: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.transform = Affine::translate((30.0, 40.0))
+            * Affine::scale_non_uniform(1.7, 1.7)
+            * Affine::rotate(22.5f64.to_radians());
+        s.effects.push(Effect::Contour {
+            steps: 1,
+            offset: 20.0,
+            outside: false,
+            to_center: false,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: Some(crate::shaping::Join::Miter),
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        });
+        let page = |s: &Shape| (s.transform * s.local_path()).bounding_box();
+        let outer = page(&s);
+        let ev = evaluate(&s);
+        let inner = ev
+            .above
+            .iter()
+            .chain(&ev.below)
+            .map(page)
+            .next()
+            .expect("one step");
+        for gap in [
+            inner.x0 - outer.x0,
+            outer.x1 - inner.x1,
+            inner.y0 - outer.y0,
+            outer.y1 - inner.y1,
+        ] {
+            assert!((gap - 20.0).abs() < 0.2, "{gap} {outer:?} {inner:?}");
+        }
+        // Stretched: the same distance across and down.
+        let effects = s.effects.clone();
+        s = rect_shape();
+        s.effects = effects;
+        s.transform = Affine::scale_non_uniform(3.0, 1.0);
+        if let Some(Effect::Contour { offset, .. }) = s.effects.last_mut() {
+            *offset = 4.0;
+        }
+        let outer = page(&s);
+        let ev = evaluate(&s);
+        let inner = ev
+            .above
+            .iter()
+            .chain(&ev.below)
+            .map(page)
+            .next()
+            .expect("step");
+        assert!(
+            (inner.x0 - outer.x0 - 4.0).abs() < 0.05,
+            "{outer:?} {inner:?}"
+        );
+        assert!(
+            (inner.y0 - outer.y0 - 4.0).abs() < 0.05,
+            "{outer:?} {inner:?}"
+        );
     }
 
     #[test]
@@ -1540,6 +2172,306 @@ mod tests {
         assert_eq!(children[1].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
     }
 
+    /// The arch on [`rect_shape`]: its top middle raised 10 mm.
+    fn arch() -> Effect {
+        let mut nodes = crate::envelope::default_nodes(rect_shape().bounds());
+        nodes[5].y += 10.0;
+        let frame = crate::envelope::Frame::from_parts(&nodes, &[], &[]).expect("frame");
+        Effect::from_envelope(&frame, false, crate::envelope::Mapping::Putty)
+    }
+
+    fn see_through() -> Effect {
+        Effect::Transparency {
+            mask: Fill::Solid(Color::WHITE),
+            merge: MergeMode::Normal,
+            target: 2,
+        }
+    }
+
+    fn shadow() -> Effect {
+        Effect::BlockShadow {
+            offset: Vec2::new(2.0, -2.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        }
+    }
+
+    fn contour() -> Effect {
+        Effect::Contour {
+            steps: 1,
+            offset: 2.0,
+            outside: true,
+            to_center: false,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: None,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        }
+    }
+
+    /// Convert to Curves makes an envelope part of the curve (#647): a
+    /// path drawn as the enveloped object was, the other effects kept in
+    /// their order, a switched-off one switched off still.
+    #[test]
+    fn bake_outline_warps_makes_the_envelope_the_outline() {
+        let mut s = rect_shape();
+        s.effects = vec![arch(), see_through()];
+        s.parked_effects = vec![crate::document::ParkedEffect {
+            index: 2,
+            effect: shadow(),
+        }];
+        assert!(s.has_outline_warp());
+        let baked = bake_outline_warps(&s).expect("baked");
+        assert!(matches!(baked.kind, ShapeKind::Path { closed: true, .. }));
+        assert_eq!(baked.effects, vec![see_through()]);
+        assert_eq!(baked.parked_effects.len(), 1);
+        assert_eq!(baked.parked_effects[0].index, 1);
+        assert_eq!(baked.parked_effects[0].effect, shadow());
+        assert_eq!(baked.fill, s.fill);
+        assert!(!baked.has_outline_warp());
+        assert!(bake_outline_warps(&baked).is_none());
+        // Drawn as before, fitted with curves.
+        assert!(same_outline(
+            &baked.local_path(),
+            &evaluate(&s).main.local_path(),
+            0.02
+        ));
+        assert!(
+            (baked.bounds().y1 - 30.0).abs() < 0.5,
+            "{:?}",
+            baked.bounds()
+        );
+        // Nothing to bake on a plain object.
+        assert!(bake_outline_warps(&rect_shape()).is_none());
+    }
+
+    /// A warp after a contour, blend or other object drawn from the outline
+    /// stays live: baking it would change what that effect draws.
+    #[test]
+    fn only_warps_before_a_contour_are_baked() {
+        let mut s = rect_shape();
+        s.effects = vec![contour(), arch()];
+        assert!(!s.has_outline_warp());
+        assert!(bake_outline_warps(&s).is_none());
+        let twist = Effect::Distort(crate::effects::Distort::Twister {
+            angle_deg: 30.0,
+            center: None,
+        });
+        s.effects = vec![arch(), contour(), twist.clone()];
+        let baked = bake_outline_warps(&s).expect("baked");
+        assert_eq!(baked.effects, vec![contour(), twist]);
+        // The contour is drawn around the same arch.
+        assert!(same_outline(
+            &evaluate(&baked).below[0].local_path(),
+            &evaluate(&s).below[0].local_path(),
+            0.05
+        ));
+        // A transparency does not draw from the outline.
+        s.effects = vec![see_through(), arch()];
+        let baked = bake_outline_warps(&s).expect("baked");
+        assert_eq!(baked.effects, vec![see_through()]);
+    }
+
+    /// Perspective and distortion bake too, one after the other.
+    #[test]
+    fn perspective_and_distortion_bake_too() {
+        let mut s = rect_shape();
+        s.effects = vec![
+            Effect::Perspective {
+                corners: [
+                    Point::new(0.0, 0.0),
+                    Point::new(20.0, 0.0),
+                    Point::new(15.0, 20.0),
+                    Point::new(5.0, 20.0),
+                ],
+            },
+            Effect::Distort(crate::effects::Distort::PushPull {
+                amount: 30.0,
+                center: None,
+            }),
+        ];
+        let baked = bake_outline_warps(&s).expect("baked");
+        assert!(baked.effects.is_empty() && baked.parked_effects.is_empty());
+        assert!(same_outline(
+            &baked.local_path(),
+            &evaluate(&s).main.local_path(),
+            0.02
+        ));
+    }
+
+    /// An envelope on a group bakes into each object, which keeps its own
+    /// look: the group stays a group of the same objects.
+    #[test]
+    fn an_envelope_on_a_group_bakes_into_each_object() {
+        let mut left = rect_shape();
+        left.id = crate::ShapeId(2);
+        let mut right = rect_shape();
+        right.id = crate::ShapeId(3);
+        right.transform = Affine::translate((30.0, 0.0));
+        right.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        let mut g = Shape::new(
+            crate::ShapeId(4),
+            ShapeKind::Group {
+                children: vec![left, right],
+            },
+        );
+        let mut frame = crate::envelope::Frame::around(Rect::new(0.0, 0.0, 50.0, 20.0));
+        frame.move_node(5, Vec2::new(0.0, 10.0), crate::envelope::Mode::SingleArc);
+        g.effects
+            .push(Effect::from_envelope(&frame, false, Default::default()));
+        assert!(g.has_outline_warp());
+        let baked = bake_outline_warps(&g).expect("baked");
+        assert!(baked.effects.is_empty());
+        let ShapeKind::Group { children } = &baked.kind else {
+            panic!("still a group: {:?}", baked.kind);
+        };
+        let ids: Vec<_> = children.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![crate::ShapeId(2), crate::ShapeId(3)]);
+        assert!(children
+            .iter()
+            .all(|c| matches!(c.kind, ShapeKind::Path { .. })));
+        assert_eq!(children[1].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
+        assert!(
+            baked.visual_bounds().y1 > 25.0,
+            "{:?}",
+            baked.visual_bounds()
+        );
+    }
+
+    /// A picture cannot become a curve: it keeps its envelope, on its own
+    /// or in a group.
+    #[test]
+    fn a_bitmap_keeps_its_envelope() {
+        let mut b = Shape::new(
+            crate::ShapeId(7),
+            ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                width_px: 1,
+                height_px: 1,
+                png: Default::default(),
+                fx: None,
+            },
+        );
+        b.effects = vec![arch()];
+        assert!(!b.has_outline_warp());
+        assert!(bake_outline_warps(&b).is_none());
+        let mut g = Shape::new(
+            crate::ShapeId(8),
+            ShapeKind::Group {
+                children: vec![rect_shape(), {
+                    b.effects.clear();
+                    b
+                }],
+            },
+        );
+        g.effects = vec![arch()];
+        assert!(!g.has_outline_warp());
+        assert!(bake_outline_warps(&g).is_none());
+    }
+
+    /// The warp of the whole applied to each part gives the parts of the
+    /// warped whole (the letters of a text broken apart).
+    #[test]
+    fn outline_warp_warps_parts_as_the_whole() {
+        let square = |x: f64| {
+            let mut p = BezPath::new();
+            p.move_to((x, 0.0));
+            p.line_to((x + 8.0, 0.0));
+            p.line_to((x + 8.0, 20.0));
+            p.line_to((x, 20.0));
+            p.close_path();
+            p
+        };
+        let (a, b) = (square(0.0), square(12.0));
+        let mut whole = a.clone();
+        whole.extend(b.elements().iter().copied());
+        let mut s = Shape::new(
+            crate::ShapeId(9),
+            ShapeKind::Path {
+                path: whole,
+                closed: true,
+            },
+        );
+        s.effects = vec![arch()];
+        let warp = outline_warp(&s).expect("warp");
+        let mut parts = warp.apply(&a);
+        parts.extend(warp.apply(&b).elements().iter().copied());
+        assert_eq!(parts.elements(), evaluate(&s).main.local_path().elements());
+        // Nothing for a group, or with no warp to bake.
+        s.effects = vec![contour(), arch()];
+        assert!(outline_warp(&s).is_none());
+        // A twister and a local zipper measure their reach on the whole:
+        // three parts warped together give the parts of the warped whole
+        // (each part on its own turned far more).
+        let parts = [square(0.0), square(12.0), square(24.0)];
+        let mut whole = BezPath::new();
+        for p in &parts {
+            whole.extend(p.elements().iter().copied());
+        }
+        s.kind = ShapeKind::Path {
+            path: whole,
+            closed: true,
+        };
+        for how in [
+            crate::effects::Distort::Twister {
+                angle_deg: 90.0,
+                center: None,
+            },
+            crate::effects::Distort::Zipper {
+                amplitude: 2.0,
+                frequency: 4,
+                center: None,
+                random: false,
+                smooth: false,
+                local: true,
+            },
+        ] {
+            s.effects = vec![Effect::Distort(how)];
+            let warp = outline_warp(&s).expect("warp");
+            let got = warp.apply_parts(&parts);
+            assert_eq!(got.len(), 3);
+            let mut joined = BezPath::new();
+            for p in &got {
+                joined.extend(p.elements().iter().copied());
+            }
+            assert_eq!(
+                joined.elements(),
+                evaluate(&s).main.local_path().elements(),
+                "{how:?}"
+            );
+        }
+    }
+
+    /// A warp baked into a group's objects drops their B-spline control
+    /// points and node types: the Shape tool would rebuild the old outline
+    /// from them.
+    #[test]
+    fn a_baked_group_object_loses_its_spline() {
+        let mut child = rect_shape();
+        child.id = crate::ShapeId(2);
+        child.kind = ShapeKind::Path {
+            path: child.local_path(),
+            closed: true,
+        };
+        child.spline = Some(vec![Point::new(0.0, 0.0), Point::new(20.0, 20.0)]);
+        child.node_types.insert(1, crate::nodes::NodeType::Smooth);
+        let mut g = Shape::new(
+            crate::ShapeId(4),
+            ShapeKind::Group {
+                children: vec![child],
+            },
+        );
+        g.effects = vec![arch()];
+        let baked = bake_outline_warps(&g).expect("baked");
+        let ShapeKind::Group { children } = &baked.kind else {
+            panic!("a group");
+        };
+        assert!(children[0].spline.is_none());
+        assert!(children[0].node_types.is_empty());
+    }
+
     /// A curve whose own space is small and scaled up by its transform
     /// (letters are) stays smooth under an envelope: it was flattened
     /// with a fixed tolerance and came out in facets (#455).
@@ -1594,6 +2526,47 @@ mod tests {
         let b = p.bounding_box();
         assert!((b.x0 - 0.0).abs() < 1e-6 && (b.x1 - 20.0).abs() < 1e-6);
         assert!((b.y1 - 20.0).abs() < 1e-6);
+    }
+
+    /// Convert to Curves of a square in perspective gives its four
+    /// corners joined by straight sides, and of a circle a few curves, not
+    /// a row of points (#840, #647).
+    #[test]
+    fn a_baked_perspective_is_a_few_nodes() {
+        let corners = [
+            Point::new(0.0, 0.0),
+            Point::new(20.0, 0.0),
+            Point::new(15.0, 20.0),
+            Point::new(5.0, 20.0),
+        ];
+        let pieces = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| !matches!(e, PathEl::MoveTo(_) | PathEl::ClosePath))
+                .count()
+        };
+        let mut square = rect_shape();
+        square.effects = vec![Effect::Perspective { corners }];
+        let baked = bake_outline_warps(&square).expect("baked");
+        let p = baked.local_path();
+        assert!(pieces(&p) <= 4, "{:?}", p.elements());
+        assert!(p
+            .elements()
+            .iter()
+            .all(|e| !matches!(e, PathEl::CurveTo(..))));
+        assert!(same_outline(&p, &evaluate(&square).main.local_path(), 0.02));
+        let mut circle = Shape::new(
+            crate::ShapeId(2),
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                arc: None,
+            },
+        );
+        circle.effects = vec![Effect::Perspective { corners }];
+        let baked = bake_outline_warps(&circle).expect("baked");
+        let p = baked.local_path();
+        assert!(pieces(&p) <= 12, "{} pieces", pieces(&p));
+        assert!(same_outline(&p, &evaluate(&circle).main.local_path(), 0.05));
     }
 
     #[test]

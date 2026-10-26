@@ -36,6 +36,22 @@ pub mod text_outline {
         OUTLINER.get().map(|f| f(req))
     }
 
+    type Bounder = fn(&TextRequest) -> Option<crate::geometry::Rect>;
+    static BOUNDER: OnceLock<Bounder> = OnceLock::new();
+
+    /// Register the text engine's box of an outline, kept with the
+    /// outline it caches, so the box of a text object costs no copy of
+    /// its outline (#802).
+    pub fn set_bounds(f: Bounder) {
+        let _ = BOUNDER.set(f);
+    }
+
+    /// The box of [`outline`]'s result, `None` without a text engine or
+    /// for an empty outline.
+    pub fn bounds(req: &TextRequest) -> Option<crate::geometry::Rect> {
+        BOUNDER.get().and_then(|f| f(req))
+    }
+
     /// One laid-out line: the characters it holds (indexes in the
     /// concatenated span text, the newline ending a paragraph left out)
     /// and where it starts (x and baseline, mm, frame top at y = 0, y up).
@@ -51,6 +67,48 @@ pub mod text_outline {
         /// Pen x before each character from `start_char` to `end_char`,
         /// then after the last one.
         pub edges: Vec<f64>,
+        /// The left and right x of each character's own glyph,
+        /// `end_char - start_char` entries each (right-to-left text runs
+        /// its edges the other way, #629).
+        pub starts: Vec<f64>,
+        pub ends: Vec<f64>,
+    }
+
+    impl Line {
+        /// The stretches the characters `a..b` (text indexes) of this line
+        /// cover, from left to right, those touching merged: one for text
+        /// in one direction, more where directions mix. `out` is cleared
+        /// first.
+        pub fn stretches(&self, a: usize, b: usize, out: &mut Vec<(f64, f64)>) {
+            out.clear();
+            let from = a.max(self.start_char) - self.start_char;
+            let to = b.min(self.end_char).saturating_sub(self.start_char);
+            for i in from..to {
+                if let (Some(&x0), Some(&x1)) = (self.starts.get(i), self.ends.get(i)) {
+                    merge_stretch(out, x0.min(x1), x0.max(x1));
+                }
+            }
+        }
+    }
+
+    /// Add the stretch `x0..x1` to `out`, merged with those it touches,
+    /// `out` kept in order of x.
+    pub fn merge_stretch(out: &mut Vec<(f64, f64)>, x0: f64, x1: f64) {
+        let eps = 1e-6;
+        let (mut x0, mut x1) = (x0, x1);
+        let mut i = 0;
+        while i < out.len() {
+            let (a, b) = out[i];
+            if a <= x1 + eps && x0 <= b + eps {
+                x0 = x0.min(a);
+                x1 = x1.max(b);
+                out.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        let at = out.partition_point(|s| s.0 < x0);
+        out.insert(at, (x0, x1));
     }
 
     type Liner = fn(&TextRequest) -> Vec<Line>;
@@ -235,6 +293,7 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
             Affine::IDENTITY
         };
     let mut out: Vec<(Rect, Fill)> = frame_bg.into_iter().collect();
+    let mut stretches = Vec::new();
     let mut span_start = 0usize;
     for sp in spans {
         let n = sp.char_count();
@@ -249,18 +308,18 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
             if b <= a {
                 continue;
             }
-            let x0 = line.edges.get(a - line.start_char).copied();
-            let x1 = line.edges.get(b - line.start_char).copied();
-            let (Some(x0), Some(x1)) = (x0, x1) else {
-                continue;
-            };
-            let r = Rect::new(
-                x0.min(x1),
-                line.baseline - line.descent,
-                x0.max(x1),
-                line.baseline + line.ascent,
-            );
-            out.push(((to_local * r.to_path(0.01)).bounding_box(), fill.clone()));
+            // The stretches its characters cover: right-to-left text and
+            // mixed directions too (#629).
+            line.stretches(a, b, &mut stretches);
+            for &(x0, x1) in &stretches {
+                let r = Rect::new(
+                    x0,
+                    line.baseline - line.descent,
+                    x1,
+                    line.baseline + line.ascent,
+                );
+                out.push(((to_local * r.to_path(0.01)).bounding_box(), fill.clone()));
+            }
         }
     }
     out
@@ -643,8 +702,7 @@ pub enum ShapeKind {
         rect: Rect,
         width_px: u32,
         height_px: u32,
-        #[serde(with = "png_bytes")]
-        png: Vec<u8>,
+        png: crate::SharedBytes,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fx: Option<Box<BitmapFxStack>>,
     },
@@ -674,8 +732,7 @@ pub struct BitmapFxStack {
     pub rect: Rect,
     pub width_px: u32,
     pub height_px: u32,
-    #[serde(with = "png_bytes")]
-    pub png: Vec<u8>,
+    pub png: crate::SharedBytes,
     pub effects: Vec<BitmapEffect>,
 }
 
@@ -1692,6 +1749,10 @@ pub struct Shape {
     /// Object data fields (name/value), like the Object Data docker.
     #[serde(default)]
     pub data: Vec<(String, String)>,
+    /// A text that shows the number of the page it is drawn on (Layout >
+    /// Insert Page Number on a master layer, #807).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_number: Option<PageNumberField>,
     /// Live effects, evaluated at render time (see `live.rs`).
     #[serde(default)]
     pub effects: Vec<crate::live::Effect>,
@@ -1906,8 +1967,7 @@ pub struct RasterFx {
     pub width_px: u32,
     pub height_px: u32,
     /// The object with its visible effects; empty until made.
-    #[serde(with = "png_bytes")]
-    pub png: Vec<u8>,
+    pub png: crate::SharedBytes,
     /// A fingerprint of what the picture was made from (see
     /// [`Shape::raster_source`]); another one means it is out of date.
     #[serde(default)]
@@ -2032,6 +2092,7 @@ impl Shape {
             overprint_outline: false,
             link: None,
             data: Vec::new(),
+            page_number: None,
             effects: Vec::new(),
             wrap_text: false,
             wrap_style: crate::text_flow::TextWrap::default(),
@@ -2145,7 +2206,7 @@ impl Shape {
         let (sx, sy) = transform_scale(c.transform);
         c.transform = Affine::IDENTITY;
         if let Some(fx) = c.raster_fx.as_mut() {
-            fx.png.clear();
+            fx.png = Default::default();
             fx.source = 0;
             fx.rect = Rect::ZERO;
             fx.width_px = 0;
@@ -2268,6 +2329,51 @@ impl Shape {
         })
     }
 
+    /// Make a rectangle's rounded corners keep their size when it is
+    /// resized (Relative corner scaling off), at the size they measure on
+    /// the page now; a rectangle whose axes scale differently gets round
+    /// corners of the smaller scale, and when its axes stay square the
+    /// stretch goes into its size, so its transform scales evenly and
+    /// later stretches keep it a rectangle (not when its outline scales
+    /// with it, and a skewed rectangle is left as it is). Corners keep their size even
+    /// past half the shorter side (one corner may take a whole side; the
+    /// drawing fits corners too big for it). Other shapes, square corners
+    /// and corners that already keep their size are left as they are.
+    pub fn keep_corner_size(&mut self) {
+        let Some(page) = self.page_corners() else {
+            return;
+        };
+        if page.fixed || page.max() <= 0.0 {
+            return;
+        }
+        let Some((mut rect, _)) = self.kind.rect_corners() else {
+            return;
+        };
+        let [a, b, c, d, _, _] = self.transform.as_coeffs();
+        let (sx, sy) = axis_scale(self.transform);
+        // A skewed rectangle keeps corners that follow it: fixed ones
+        // could not be written to the files that keep rectangles plain.
+        let square = (a * c + b * d).abs() <= 1e-9 * sx * sy;
+        if !square {
+            return;
+        }
+        // An outline that scales with the object would thin out if the
+        // stretch left the transform; fixed corners draw round under the
+        // stretch anyway.
+        let widens_outline = self.stroke.as_ref().is_some_and(|s| s.scale_with_object);
+        if sx > 1e-12 && sy > 1e-12 && !widens_outline && (sx - sy).abs() > 1e-9 * sx.max(sy) {
+            rect = Rect::new(rect.x0 * sx, rect.y0 * sy, rect.x1 * sx, rect.y1 * sy);
+            self.transform *= Affine::scale_non_uniform(1.0 / sx, 1.0 / sy);
+        }
+        self.kind = ShapeKind::rect_with_corners(
+            rect,
+            Corners {
+                fixed: true,
+                ..page
+            },
+        );
+    }
+
     /// This rectangle with corners measured on the page (as
     /// `page_corners` gives them), each at most half the shorter side.
     /// `None` for other kinds.
@@ -2342,6 +2448,8 @@ impl Shape {
             }
         }
         self.transform = next;
+        // A symmetry's mirror lines go with the object.
+        self.carry_effects(parent);
     }
 
     /// A rectangle that one round radius describes (what formats with a
@@ -2555,23 +2663,69 @@ impl Shape {
             ShapeKind::Path { .. } => self.spline.is_some(),
             ShapeKind::Group { .. } | ShapeKind::Bitmap { .. } => false,
             // A clip frame changes only when its frame or something it
-            // holds (inside groups too) is not a curve yet.
+            // holds (inside groups too) is not a curve yet, or something it
+            // holds has a warp to bake. The frame's own warp stays: the
+            // contents are clipped to its outline without it.
             ShapeKind::ClipFrame { frame, contents } => {
-                frame.converts_to_curves_deep(0)
-                    || contents.iter().any(|c| c.converts_to_curves_deep(0))
+                let warps = !self.outline_stays_live();
+                frame.converts_to_curves_deep(0, false)
+                    || contents.iter().any(|c| c.converts_to_curves_deep(0, warps))
             }
             _ => true,
         }
     }
 
-    /// [`Shape::converts_to_curves`], looking inside groups.
-    fn converts_to_curves_deep(&self, depth: usize) -> bool {
+    /// [`Shape::converts_to_curves`], looking inside groups; `warps` when
+    /// an outline warp would be baked too.
+    fn converts_to_curves_deep(&self, depth: usize, warps: bool) -> bool {
+        let warp = warps && self.has_outline_warp();
         match &self.kind {
-            ShapeKind::Group { children } if depth < 16 => children
-                .iter()
-                .any(|c| c.converts_to_curves_deep(depth + 1)),
-            _ => self.converts_to_curves(),
+            ShapeKind::Group { children } if depth < 16 => {
+                let inner = warps && !self.outline_stays_live();
+                warp || children
+                    .iter()
+                    .any(|c| c.converts_to_curves_deep(depth + 1, inner))
+            }
+            _ => warp || self.converts_to_curves(),
         }
+    }
+
+    /// The object converted to curves (Convert to Curves): its kind as
+    /// [`Shape::curves_kind`] makes it, then its envelope, perspective and
+    /// distortion made part of the curves, the other effects kept (#647).
+    /// `None` when it stays as it is.
+    pub fn converted_to_curves(
+        &self,
+        symbols: &[Symbol],
+        next_id: &mut dyn FnMut() -> ShapeId,
+    ) -> Option<Shape> {
+        let mut out = self.clone();
+        let mut changed = false;
+        // A group's or clip frame's warps go first, then those of what it
+        // holds, as they are drawn; an object's own after its conversion.
+        let container = matches!(
+            self.kind,
+            ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. }
+        );
+        if container {
+            if let Some(baked) = crate::live::bake_outline_warps(&out) {
+                out = baked;
+                changed = true;
+            }
+        }
+        if let Some(kind) = out.curves_kind_depth(symbols, next_id, 0, true) {
+            out.kind = kind;
+            out.node_types.clear();
+            out.spline = None;
+            changed = true;
+        }
+        if !container {
+            if let Some(baked) = crate::live::bake_outline_warps(&out) {
+                out = baked;
+                changed = true;
+            }
+        }
+        changed.then_some(out)
     }
 
     /// The kind this object takes when converted to curves, or `None` when
@@ -2584,14 +2738,18 @@ impl Shape {
         symbols: &[Symbol],
         next_id: &mut dyn FnMut() -> ShapeId,
     ) -> Option<ShapeKind> {
-        self.curves_kind_depth(symbols, next_id, 0)
+        self.curves_kind_depth(symbols, next_id, 0, false)
     }
 
+    /// [`Shape::curves_kind`]; `bake` makes the outline warps of the
+    /// objects inside part of their curves too (see
+    /// [`Shape::converted_to_curves`]).
     fn curves_kind_depth(
         &self,
         symbols: &[Symbol],
         next_id: &mut dyn FnMut() -> ShapeId,
         depth: usize,
+        bake: bool,
     ) -> Option<ShapeKind> {
         // A symbol that holds itself would never end.
         const MAX_DEPTH: usize = 16;
@@ -2605,24 +2763,33 @@ impl Shape {
                     return None;
                 }
                 for c in &mut children {
-                    c.curves_deep(symbols, next_id, depth + 1);
+                    c.curves_deep(symbols, next_id, depth + 1, bake);
                 }
                 Some(ShapeKind::Group { children })
             }
             // A clip frame stays a clip frame: its frame and what it holds
-            // become curves (keeping their ids) and stay clipped.
+            // become curves (keeping their ids) and stay clipped. The
+            // frame keeps its own warps: the contents are clipped to its
+            // outline without them.
             ShapeKind::ClipFrame { frame, contents } => {
                 let mut frame = frame.clone();
                 let mut contents = contents.clone();
-                frame.curves_in_place(symbols, next_id, depth + 1);
+                let inner = bake && !self.outline_stays_live();
+                frame.curves_in_place(symbols, next_id, depth + 1, false);
                 for c in &mut contents {
-                    c.curves_in_place(symbols, next_id, depth + 1);
+                    c.curves_in_place(symbols, next_id, depth + 1, inner);
                 }
                 let kind = ShapeKind::ClipFrame { frame, contents };
                 (kind != self.kind).then_some(kind)
             }
             // A B-spline keeps its outline; the control points go.
             ShapeKind::Path { .. } => Some(self.kind.clone()),
+            // Text fills with the nonzero rule, curves with even-odd: the
+            // overlapping strokes of a glyph would leave holes (#800).
+            ShapeKind::Text { .. } => Some(ShapeKind::Path {
+                path: crate::shaping::nonzero_as_even_odd(&self.local_path()),
+                closed: true,
+            }),
             _ => Some(ShapeKind::Path {
                 path: self.local_path(),
                 closed: true,
@@ -2632,30 +2799,55 @@ impl Shape {
 
     /// Turn this object, and everything inside a group or clip frame, into
     /// curves, keeping the ids of the objects that were there (new pieces
-    /// of tables and symbols get new ones).
+    /// of tables and symbols get new ones); `bake` makes their outline
+    /// warps part of the curves too.
     fn curves_in_place(
         &mut self,
         symbols: &[Symbol],
         next_id: &mut dyn FnMut() -> ShapeId,
         depth: usize,
+        bake: bool,
     ) {
         if depth > 16 {
             return;
         }
+        let container = self.bake_container_warps(bake);
+        let inner = bake && !self.outline_stays_live();
         match &mut self.kind {
             ShapeKind::Group { children } => {
                 for c in children {
-                    c.curves_in_place(symbols, next_id, depth + 1);
+                    c.curves_in_place(symbols, next_id, depth + 1, inner);
                 }
             }
             _ => {
-                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth) {
+                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth, bake) {
                     self.kind = kind;
                     self.node_types.clear();
                     self.spline = None;
                 }
+                if bake && !container {
+                    if let Some(b) = crate::live::bake_outline_warps(self) {
+                        *self = b;
+                    }
+                }
             }
         }
+    }
+
+    /// With `bake`, a group's or clip frame's outline warps made part of
+    /// what it holds, before the warps of those objects, as they are
+    /// drawn. Whether this is such a container.
+    fn bake_container_warps(&mut self, bake: bool) -> bool {
+        let container = matches!(
+            self.kind,
+            ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. }
+        );
+        if bake && container {
+            if let Some(b) = crate::live::bake_outline_warps(self) {
+                *self = b;
+            }
+        }
+        container
     }
 
     /// Give this object and everything inside it new ids, and turn every
@@ -2665,27 +2857,36 @@ impl Shape {
         symbols: &[Symbol],
         next_id: &mut dyn FnMut() -> ShapeId,
         depth: usize,
+        bake: bool,
     ) {
         self.id = next_id();
+        let container = self.bake_container_warps(bake);
+        let inner = bake && !self.outline_stays_live();
         match &mut self.kind {
             ShapeKind::Group { children } => {
                 for c in children {
-                    c.curves_deep(symbols, next_id, depth + 1);
+                    c.curves_deep(symbols, next_id, depth + 1, inner);
                 }
             }
-            // A frame keeps what it holds; both become curves.
+            // A frame keeps what it holds; both become curves, the frame
+            // keeping its own warps (the contents are clipped without).
             ShapeKind::ClipFrame { frame, contents } => {
-                frame.curves_deep(symbols, next_id, depth + 1);
+                frame.curves_deep(symbols, next_id, depth + 1, false);
                 for c in contents {
-                    c.curves_deep(symbols, next_id, depth + 1);
+                    c.curves_deep(symbols, next_id, depth + 1, inner);
                 }
             }
             _ => {
                 // The pieces of a converted table or symbol get their ids there.
-                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth) {
+                if let Some(kind) = self.curves_kind_depth(symbols, next_id, depth, bake) {
                     self.kind = kind;
                     self.node_types.clear();
                     self.spline = None;
+                }
+                if bake && !container {
+                    if let Some(b) = crate::live::bake_outline_warps(self) {
+                        *self = b;
+                    }
                 }
             }
         }
@@ -2707,6 +2908,60 @@ impl Shape {
             }
             _ => self.local_path(),
         }
+    }
+
+    /// Apply `t` to the object (in the space its transform maps to): its
+    /// transform, and the places its live effects hold (those switched
+    /// off too), such as a symmetry's mirror lines, which go with it (see
+    /// [`crate::live::carry_effects`]).
+    pub fn transform_by(&mut self, t: Affine) {
+        self.transform = t * self.transform;
+        self.carry_effects(t);
+    }
+
+    /// The fountain fills and gradient transparencies of the object and of
+    /// the objects inside it carried along with `t`, a page-space
+    /// transformation about to be applied to it; `parent` maps its space
+    /// to the page. The fills are placed on the page box of each object,
+    /// so without this a turned or mirrored object kept its gradient
+    /// running the old way (#775).
+    pub fn carry_fills(&mut self, t: Affine, parent: Affine) {
+        let to_page = parent * self.transform;
+        match &mut self.kind {
+            ShapeKind::Group { children } => {
+                for c in children {
+                    c.carry_fills(t, to_page);
+                }
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                frame.carry_fills(t, to_page);
+                for c in contents {
+                    c.carry_fills(t, to_page);
+                }
+            }
+            _ => {}
+        }
+        let gradient = |f: &Fill| matches!(f, Fill::Fountain(_));
+        let masks = |e: &crate::live::Effect| matches!(e, crate::live::Effect::Transparency { mask, .. } if gradient(mask));
+        if !gradient(&self.fill) && !self.effects.iter().any(masks) {
+            return;
+        }
+        let path = to_page * self.local_path();
+        let before = path.bounding_box();
+        let after = (t * path).bounding_box();
+        self.fill.carry(t, before, after);
+        for e in &mut self.effects {
+            if let crate::live::Effect::Transparency { mask, .. } = e {
+                mask.carry(t, before, after);
+            }
+        }
+    }
+
+    /// The places the object's live effects hold, those switched off too,
+    /// moved by `t` (see [`crate::live::carry_effects`]).
+    pub fn carry_effects(&mut self, t: Affine) {
+        crate::live::carry_effects(&mut self.effects, t);
+        crate::live::carry_effects(self.parked_effects.iter_mut().map(|p| &mut p.effect), t);
     }
 
     /// Outline in page coordinates (transform applied).
@@ -2735,6 +2990,49 @@ impl Shape {
     /// Axis-aligned bounds in page coordinates, ignoring outline width.
     /// Paragraph text counts its whole frame (empty or not), and a group
     /// the bounds of its objects.
+    /// The page box of a text object from the box the text engine keeps
+    /// with its outline, when the object is neither turned nor skewed
+    /// (the box then maps onto the page box exactly); `None` otherwise or
+    /// for other objects. Asking for the outline itself copies all of its
+    /// points, which in a drawing of long, large text took most of every
+    /// frame: the box is asked for many times a frame (#802).
+    fn text_bounds(&self) -> Option<Rect> {
+        let ShapeKind::Text {
+            spans,
+            origin,
+            frame,
+            align,
+            para,
+            on_path,
+        } = &self.kind
+        else {
+            return None;
+        };
+        let req = text_outline::TextRequest {
+            spans,
+            frame: *frame,
+            align: *align,
+            para,
+            on_path: on_path.as_ref(),
+        };
+        let local = if on_path.is_some() {
+            Affine::translate(origin.to_vec2())
+        } else {
+            text_layout_shift(*origin, *frame, false, para.vertical)
+        };
+        let m = self.transform * local;
+        let [a, b, c, d, _, _] = m.as_coeffs();
+        let scale = a.abs().max(d.abs()).max(1e-12);
+        if b.abs() > 1e-12 * scale || c.abs() > 1e-12 * scale {
+            return None;
+        }
+        let r = text_outline::bounds(&req)?;
+        let (p, q) = (m * Point::new(r.x0, r.y0), m * Point::new(r.x1, r.y1));
+        let out = Rect::from_points(p, q);
+        (out.x0.is_finite() && out.y0.is_finite() && out.x1.is_finite() && out.y1.is_finite())
+            .then_some(out)
+    }
+
     pub fn bounds(&self) -> Rect {
         match &self.kind {
             ShapeKind::Text {
@@ -2750,6 +3048,9 @@ impl Shape {
                     origin.y + f.height.max(0.0),
                 );
                 let fb = (self.transform * frame.to_path(0.01)).bounding_box();
+                if let Some(tb) = self.text_bounds() {
+                    return tb.union(fb);
+                }
                 let path = self.page_path();
                 if path.elements().is_empty() {
                     fb
@@ -2757,6 +3058,9 @@ impl Shape {
                     path.bounding_box().union(fb)
                 }
             }
+            ShapeKind::Text { .. } => self
+                .text_bounds()
+                .unwrap_or_else(|| self.page_path().bounding_box()),
             ShapeKind::Group { children } => children
                 .iter()
                 .map(|c| {
@@ -3101,6 +3405,110 @@ impl PrimaryColorMode {
         match self {
             PrimaryColorMode::Cmyk => crate::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
             PrimaryColorMode::Rgb => crate::Color::BLACK,
+        }
+    }
+}
+
+/// How a page number field shows the number (Layout > Insert Page
+/// Number): the number of the first page, the style and the text around
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageNumberField {
+    pub start_at: i64,
+    /// 0 arabic, 1 upper roman, 2 lower roman, 3 upper alpha, 4 lower alpha.
+    pub style: u8,
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub suffix: String,
+}
+
+impl PageNumberField {
+    /// The text for the page at `index` (0-based).
+    pub fn label(&self, index: usize) -> String {
+        let n = self.start_at + index as i64;
+        let body = match self.style {
+            1 => roman(n),
+            2 => roman(n).to_lowercase(),
+            3 => alpha(n),
+            4 => alpha(n).to_lowercase(),
+            _ => n.to_string(),
+        };
+        format!("{}{}{}", self.prefix, body, self.suffix)
+    }
+}
+
+fn roman(mut n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    const T: [(i64, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (v, s) in T {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
+}
+
+fn alpha(n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    // A..Z, then AA, AB... like spreadsheet columns.
+    let mut n = n - 1;
+    let mut out = Vec::new();
+    loop {
+        out.push((b'A' + (n % 26) as u8) as char);
+        n /= 26;
+        if n == 0 {
+            break;
+        }
+        n -= 1;
+    }
+    out.iter().rev().collect()
+}
+
+impl Shape {
+    /// This object, or one inside it, is a page number field.
+    pub fn holds_page_number(&self) -> bool {
+        self.page_number.is_some()
+            || match &self.kind {
+                ShapeKind::Group { children } => children.iter().any(Shape::holds_page_number),
+                _ => false,
+            }
+    }
+
+    /// Page number fields in this object show the number of the page at
+    /// `index` (0-based).
+    pub fn show_page_number(&mut self, index: usize) {
+        if let (Some(f), ShapeKind::Text { spans, .. }) = (&self.page_number, &mut self.kind) {
+            let label = f.label(index);
+            spans.truncate(1);
+            if let Some(first) = spans.first_mut() {
+                first.text = label;
+            }
+        }
+        if let ShapeKind::Group { children } = &mut self.kind {
+            for c in children {
+                c.show_page_number(index);
+            }
         }
     }
 }
@@ -3821,13 +4229,10 @@ impl Document {
     }
 
     /// Layers drawn for a page, bottom to top: applicable master layers,
-    /// then the page's own layers.
+    /// then the page's own layers, as they are stored (what clicks and
+    /// selections take objects from).
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
-        let idx = self
-            .pages
-            .iter()
-            .position(|p| p.id == page)
-            .ok_or(Error::PageNotFound(page))?;
+        let idx = self.page_index(page)?;
         let mut out: Vec<&Layer> = self
             .master
             .iter()
@@ -3835,6 +4240,37 @@ impl Document {
             .collect();
         out.extend(self.pages[idx].layers.iter());
         Ok(out)
+    }
+
+    /// [`Document::layers_for_page`] as drawn, printed and exported: a
+    /// master layer holding a page number field comes as a copy showing
+    /// this page's number (#807).
+    pub fn layers_drawn_for_page(&self, page: PageId) -> Result<Vec<std::borrow::Cow<'_, Layer>>> {
+        use std::borrow::Cow;
+        let idx = self.page_index(page)?;
+        Ok(self
+            .layers_for_page(page)?
+            .into_iter()
+            .map(|l| {
+                let master = self.master.iter().any(|m| m.id == l.id);
+                if master && l.shapes.iter().any(Shape::holds_page_number) {
+                    let mut l = l.clone();
+                    for s in &mut l.shapes {
+                        s.show_page_number(idx);
+                    }
+                    Cow::Owned(l)
+                } else {
+                    Cow::Borrowed(l)
+                }
+            })
+            .collect())
+    }
+
+    fn page_index(&self, page: PageId) -> Result<usize> {
+        self.pages
+            .iter()
+            .position(|p| p.id == page)
+            .ok_or(Error::PageNotFound(page))
     }
 
     pub fn layer(&self, id: LayerId) -> Result<&Layer> {
@@ -3947,6 +4383,8 @@ impl Document {
         }
         let parent = self.parent_transform(id)?;
         let mut s = self.find_shape(id)?.clone();
+        // The effects stay as stored (in the parent's space): what reads
+        // them here writes them back to the object.
         s.transform = parent * s.transform;
         Some(s)
     }
@@ -4121,6 +4559,34 @@ impl Document {
     /// for a newer number), for an older TraceDraw: the current layout is
     /// taken down one step at a time ([`DOWN_STEPS`]).
     pub fn to_json_version(&self, version: u32) -> Result<String> {
+        let mut out = Vec::new();
+        self.write_json_version(&mut out, version)?;
+        // serde_json writes UTF-8 only.
+        Ok(String::from_utf8(out)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+    }
+
+    /// Write the `.tdraw` JSON of format `version` to `w` as it is made.
+    /// The current format goes straight to the writer; only an older one
+    /// builds the whole tree in memory first (many times the drawing's
+    /// size), to take it down.
+    pub fn write_json_version<W: std::io::Write>(&self, w: W, version: u32) -> Result<()> {
+        if (version as usize) >= DOWN_STEPS.len() {
+            #[derive(Serialize)]
+            struct Versioned<'a> {
+                #[serde(flatten)]
+                doc: &'a Document,
+                format_version: u32,
+            }
+            serde_json::to_writer_pretty(
+                w,
+                &Versioned {
+                    doc: self,
+                    format_version: TDRAW_FORMAT_VERSION,
+                },
+            )?;
+            return Ok(());
+        }
         let mut v = serde_json::to_value(self)?;
         if let serde_json::Value::Object(m) = &mut v {
             m.insert(
@@ -4131,7 +4597,8 @@ impl Document {
         for step in DOWN_STEPS.iter().skip(version as usize).rev() {
             step(&mut v);
         }
-        Ok(serde_json::to_string_pretty(&v)?)
+        serde_json::to_writer_pretty(w, &v)?;
+        Ok(())
     }
 
     /// Read a `.tdraw` file of any version: older ones are brought up to
@@ -4304,6 +4771,226 @@ mod tests {
 
     use super::*;
 
+    /// Imported rounded corners keep their size (#619): a corner larger
+    /// than the shorter side stays as it was, and a stretched rectangle
+    /// takes the stretch into its size, its corners round at the smaller
+    /// scale.
+    #[test]
+    fn keep_corner_size_leaves_the_outline_and_takes_the_stretch() {
+        let mut ids = IdSource::default();
+        let corners = Corners {
+            radii: [30.0, 30.0, 0.0, 0.0],
+            kind: CornerKind::Round,
+            fixed: false,
+        };
+        let mut s = Shape::new(
+            ids.shape(),
+            ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 100.0, 40.0), corners),
+        );
+        s.transform = Affine::translate((5.0, 5.0));
+        let before = s.page_path().area();
+        s.keep_corner_size();
+        let page = s.page_corners().expect("corners");
+        assert!(page.fixed);
+        assert_eq!(page.radii, [30.0, 30.0, 0.0, 0.0]);
+        assert!((s.page_path().area() - before).abs() < 1e-6);
+        // Stretched 2 x 1: the size takes it, the corners 2 mm round.
+        let mut t = Shape::new(
+            ids.shape(),
+            ShapeKind::rect_with_corners(
+                Rect::new(0.0, 0.0, 20.0, 10.0),
+                Corners::uniform(2.0, CornerKind::Round),
+            ),
+        );
+        t.transform = Affine::translate((5.0, 5.0)) * Affine::scale_non_uniform(2.0, 1.0);
+        let bounds = t.bounds();
+        t.keep_corner_size();
+        let (sx, sy) = axis_scale(t.transform);
+        assert!((sx - 1.0).abs() < 1e-9 && (sy - 1.0).abs() < 1e-9);
+        assert!(
+            matches!(t.kind, ShapeKind::Rect { rect, .. } if (rect.width() - 40.0).abs() < 1e-9)
+        );
+        let b = t.bounds();
+        assert!((b.x0 - bounds.x0).abs() < 1e-9 && (b.x1 - bounds.x1).abs() < 1e-9);
+        assert_eq!(t.page_corners().expect("corners").radii, [2.0; 4]);
+        // An outline that scales with the object keeps its width: the
+        // stretch stays in the transform.
+        let mut u = Shape::new(
+            ids.shape(),
+            ShapeKind::rect_with_corners(
+                Rect::new(0.0, 0.0, 20.0, 10.0),
+                Corners::uniform(2.0, CornerKind::Round),
+            ),
+        );
+        u.transform = Affine::scale_non_uniform(2.0, 1.0);
+        let mut stroke = Stroke::default();
+        stroke.scale_with_object = true;
+        u.stroke = Some(stroke);
+        let before = u.transform;
+        u.keep_corner_size();
+        assert_eq!(u.transform, before);
+        assert!(u.page_corners().expect("corners").fixed);
+        assert_eq!(u.page_corners().expect("corners").radii, [2.0; 4]);
+        // A skewed one is left as it was.
+        let mut k = Shape::new(
+            ids.shape(),
+            ShapeKind::rect_with_corners(
+                Rect::new(0.0, 0.0, 20.0, 10.0),
+                Corners::uniform(2.0, CornerKind::Round),
+            ),
+        );
+        k.transform = Affine::new([1.0, 0.0, 0.5, 1.0, 0.0, 0.0]);
+        let kind = k.kind.clone();
+        k.keep_corner_size();
+        assert_eq!(k.kind, kind);
+    }
+
+    /// A clip frame's warp is baked before the warps of what it holds, as
+    /// they are drawn, and its frame keeps its own envelope: the contents
+    /// are clipped to the frame's outline without it (#647).
+    #[test]
+    fn a_clip_frame_bakes_its_warp_before_the_warps_inside() {
+        use crate::live::{evaluate, Effect};
+        let b = Rect::new(0.0, 0.0, 40.0, 20.0);
+        let arch = |b: Rect| {
+            let mut nodes = crate::envelope::default_nodes(b);
+            nodes[5].y += 10.0;
+            let f = crate::envelope::Frame::from_parts(&nodes, &[], &[]).expect("frame");
+            Effect::from_envelope(&f, false, crate::envelope::Mapping::Putty)
+        };
+        let mut inner = Shape::new(
+            ShapeId(2),
+            ShapeKind::Rect {
+                rect: b,
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        inner.effects = vec![arch(b)];
+        let mut content = Shape::new(
+            ShapeId(3),
+            ShapeKind::Rect {
+                rect: Rect::new(5.0, 2.0, 35.0, 18.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        content.effects = vec![Effect::Perspective {
+            corners: [
+                Point::new(5.0, 2.0),
+                Point::new(35.0, 2.0),
+                Point::new(28.0, 18.0),
+                Point::new(12.0, 18.0),
+            ],
+        }];
+        let mut clip = Shape::new(
+            ShapeId(1),
+            ShapeKind::ClipFrame {
+                frame: Box::new(inner),
+                contents: vec![content],
+            },
+        );
+        clip.effects = vec![arch(b)];
+        let drawn = evaluate(&clip).main;
+        let ShapeKind::ClipFrame {
+            frame: drawn_frame,
+            contents: drawn_contents,
+        } = &drawn.kind
+        else {
+            panic!("a clip frame");
+        };
+        let want = evaluate(&drawn_contents[0]).main.local_path();
+        let mut n = 10;
+        let got = clip
+            .converted_to_curves(&[], &mut || {
+                n += 1;
+                ShapeId(n)
+            })
+            .expect("converted");
+        assert!(got.effects.is_empty());
+        let ShapeKind::ClipFrame { frame, contents } = &got.kind else {
+            panic!("still a clip frame: {:?}", got.kind);
+        };
+        assert!(contents[0].effects.is_empty());
+        assert!(matches!(contents[0].kind, ShapeKind::Path { .. }));
+        assert!(crate::live::same_outline(
+            &contents[0].local_path(),
+            &want,
+            0.02
+        ));
+        assert_eq!(frame.effects.len(), 1, "the frame keeps its envelope");
+        assert_eq!(
+            frame.local_path().elements(),
+            drawn_frame.local_path().elements()
+        );
+        // A clip frame whose only warp is its frame's has nothing to convert.
+        let mut only_frame = got.clone();
+        if let ShapeKind::ClipFrame { contents, .. } = &mut only_frame.kind {
+            contents[0].effects.clear();
+        }
+        assert!(!only_frame.converts_to_curves());
+        assert!(!only_frame.has_outline_warp());
+    }
+
+    /// The objects in a group whose contour stays live keep their warps:
+    /// baking them would change the contour drawn around them.
+    #[test]
+    fn warps_under_a_live_contour_stay() {
+        use crate::live::Effect;
+        let mut child = Shape::new(
+            ShapeId(2),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        child.effects = vec![Effect::Distort(crate::effects::Distort::Twister {
+            angle_deg: 40.0,
+            center: None,
+        })];
+        let mut g = Shape::new(
+            ShapeId(1),
+            ShapeKind::Group {
+                children: vec![child],
+            },
+        );
+        g.effects = vec![Effect::BlockShadow {
+            offset: crate::geometry::Vec2::new(2.0, -2.0),
+            color: crate::Color::BLACK,
+            gap: 0.0,
+        }];
+        let clip = Shape::new(
+            ShapeId(5),
+            ShapeKind::ClipFrame {
+                frame: Box::new(Shape::new(
+                    ShapeId(6),
+                    ShapeKind::Rect {
+                        rect: Rect::new(0.0, 0.0, 30.0, 30.0),
+                        radius: 0.0,
+                        corners: None,
+                    },
+                )),
+                contents: vec![g],
+            },
+        );
+        let mut n = 10;
+        let got = clip
+            .converted_to_curves(&[], &mut || {
+                n += 1;
+                ShapeId(n)
+            })
+            .expect("the frame becomes a curve");
+        let ShapeKind::ClipFrame { contents, .. } = &got.kind else {
+            panic!("a clip frame");
+        };
+        let ShapeKind::Group { children } = &contents[0].kind else {
+            panic!("a group");
+        };
+        assert_eq!(children[0].effects.len(), 1, "the twister stays live");
+        assert!(matches!(children[0].kind, ShapeKind::Path { .. }));
+    }
+
     #[test]
     fn further_fills_and_outlines_draw_in_layers() {
         use crate::{Color, Stroke};
@@ -4394,6 +5081,64 @@ mod tests {
         }
         p.close_path();
         p
+    }
+
+    /// The file is written as it is made, and reads as the same JSON the
+    /// tree built in memory gave.
+    #[test]
+    fn tdraw_json_streams_to_the_writer() {
+        let mut doc = Document::new("Streamed", crate::geometry::Size::new(100.0, 50.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 5.0),
+                radius: 1.0,
+                corners: None,
+            },
+        );
+        s.fill = crate::Fill::Solid(crate::Color::rgb8(10, 20, 30));
+        doc.layer_mut(layer).expect("layer").shapes.push(s);
+        // A writer that sees the text in pieces, never all at once.
+        struct Pieces {
+            text: Vec<u8>,
+            writes: usize,
+        }
+        impl std::io::Write for Pieces {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.writes += 1;
+                self.text.extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut w = Pieces {
+            text: Vec::new(),
+            writes: 0,
+        };
+        doc.write_json_version(&mut w, TDRAW_FORMAT_VERSION)
+            .expect("written");
+        assert!(w.writes > 10, "{} writes", w.writes);
+        // The tree printed f32 values through f64 (0.6000000238418579
+        // for 0.6); both read back as the same drawing.
+        let mut tree = serde_json::to_value(&doc).expect("value");
+        tree.as_object_mut().expect("object").insert(
+            FORMAT_VERSION_KEY.into(),
+            serde_json::Value::from(TDRAW_FORMAT_VERSION),
+        );
+        let streamed = std::str::from_utf8(&w.text).expect("utf-8");
+        let a = Document::from_json(streamed).expect("streamed");
+        let b = Document::from_json(&tree.to_string()).expect("tree");
+        assert_eq!(
+            serde_json::to_value(&a).expect("a"),
+            serde_json::to_value(&b).expect("b")
+        );
+        assert_eq!(doc.to_json().expect("json").as_bytes(), &w.text[..]);
+        let back = a;
+        assert_eq!(back.pages, doc.pages);
     }
 
     #[test]
@@ -4600,7 +5345,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 20.0, 10.0),
             width_px: 4,
             height_px: 2,
-            png: vec![1, 2, 3, 4],
+            png: vec![1, 2, 3, 4].into(),
             fx,
         };
         let mut params = std::collections::BTreeMap::new();
@@ -4609,7 +5354,7 @@ mod tests {
             rect: Rect::new(1.0, 1.0, 19.0, 9.0),
             width_px: 3,
             height_px: 1,
-            png: vec![9, 8, 7],
+            png: vec![9, 8, 7].into(),
             effects: vec![
                 BitmapEffect {
                     id: "gaussian_blur".into(),

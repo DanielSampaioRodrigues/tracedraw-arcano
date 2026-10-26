@@ -136,10 +136,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         painter.line_segment([view.to_screen(a), view.to_screen(b)], stroke);
         let preview = three_point_preview(app.tool, a, b, c);
         for (pts, closed) in flatten(&preview, view) {
-            if closed {
-                painter.add(epaint::PathShape::closed_line(pts, stroke));
-            } else {
-                painter.add(epaint::PathShape::line(pts, stroke));
+            if pts.len() > 1 {
+                haloed_polyline(painter, &pts, closed, Color32::BLACK);
             }
         }
     }
@@ -376,12 +374,18 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                     EStroke::NONE,
                 ));
             }
-            painter.line_segment(
-                [view.to_screen(top), view.to_screen(bottom)],
-                EStroke::new(1.5, Tokens::text()),
-            );
+            draw_text_caret(painter, view.to_screen(top), view.to_screen(bottom));
             ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
         }
+    }
+}
+
+/// The caret of text being edited: black on a white edge, so it shows on
+/// the white page and on dark fills alike (the interface's text colour
+/// is light in the dark themes, #632).
+pub(crate) fn draw_text_caret(painter: &Painter, top: Pos2, bottom: Pos2) {
+    for stroke in TEXT_CARET {
+        painter.line_segment([top, bottom], stroke);
     }
 }
 
@@ -550,8 +554,117 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         );
     }
 
+    if app.mask_outside_page {
+        mask_outside_pages(app, painter, rect, paper);
+    }
     draw_pixel_grid(app, painter, rect);
     draw_empty_clip_frames(app, painter);
+}
+
+/// The colour Mask Outside Page paints when the desktop is white or
+/// nearly (the default in the light theme): a near-black that makes the
+/// page stand out, as the reference program shows it (#615).
+pub(crate) const OUTSIDE_PAGE_DARK: Color32 = Color32::from_gray(0x22);
+
+/// The colour of Mask Outside Page: the desktop colour, or
+/// [`OUTSIDE_PAGE_DARK`] when the desktop is as light as the paper, so
+/// the page never melts into what surrounds it.
+pub(crate) fn outside_page_mask_color(app: &App) -> Color32 {
+    let d = app.desktop_color();
+    if d.r() >= 0xE0 && d.g() >= 0xE0 && d.b() >= 0xE0 {
+        OUTSIDE_PAGE_DARK
+    } else {
+        d.to_opaque()
+    }
+}
+
+/// Mask Outside Page (#615): an opaque colour over the window outside
+/// the page (every page in Multipage View), the page border over the
+/// objects, and the selected objects' outlines in the selection blue over
+/// the mask, so parts off the page can still be found and picked. A few
+/// rectangles a frame and the outlines flattened once per change.
+fn mask_outside_pages(app: &App, painter: &Painter, rect: ERect, paper: ERect) {
+    let mut pages = vec![paper];
+    if app.multipage {
+        pages.extend(
+            app.multipage_layout()
+                .iter()
+                .filter(|(id, _)| *id != app.page)
+                .map(|(_, r)| {
+                    let r = app.view.rect_to_screen(*r);
+                    ERect::from_min_max(r.min.round(), r.max.round())
+                })
+                .filter(|r| r.intersects(rect)),
+        );
+    }
+    let mask = outside_page_mask_color(app);
+    for r in outside(rect, &pages) {
+        painter.rect_filled(r, 0.0, mask);
+    }
+    for p in &pages {
+        painter.rect_stroke(
+            *p,
+            0.0,
+            EStroke::new(1.0, Tokens::page_border()),
+            epaint::StrokeKind::Outside,
+        );
+    }
+    let stroke = EStroke::new(1.0, Tokens::SELECTION);
+    let view = &app.view;
+    let seen = rect.expand(2.0);
+    for line in app.selected_outlines().iter() {
+        let pts: Vec<Pos2> = line.iter().map(|p| view.to_screen(*p)).collect();
+        for w in pts.windows(2) {
+            if seen.contains(w[0]) || seen.contains(w[1]) {
+                painter.line_segment([w[0], w[1]], stroke);
+            }
+        }
+    }
+}
+
+/// The parts of `area` no rectangle of `holes` covers, as rectangles:
+/// bands between the holes' top and bottom edges, each cut at the holes
+/// crossing it.
+pub(crate) fn outside(area: ERect, holes: &[ERect]) -> Vec<ERect> {
+    let holes: Vec<ERect> = holes
+        .iter()
+        .map(|h| h.intersect(area))
+        .filter(|h| h.width() > 0.0 && h.height() > 0.0)
+        .collect();
+    let mut ys: Vec<f32> = vec![area.top(), area.bottom()];
+    for h in &holes {
+        ys.push(h.top());
+        ys.push(h.bottom());
+    }
+    ys.sort_by(f32::total_cmp);
+    ys.dedup();
+    let mut out = Vec::new();
+    for band in ys.windows(2) {
+        let (y0, y1) = (band[0], band[1]);
+        if y1 <= y0 {
+            continue;
+        }
+        let mut cuts: Vec<(f32, f32)> = holes
+            .iter()
+            .filter(|h| h.top() < y1 && h.bottom() > y0)
+            .map(|h| (h.left(), h.right()))
+            .collect();
+        cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut x = area.left();
+        for (l, r) in cuts {
+            if l > x {
+                out.push(ERect::from_min_max(Pos2::new(x, y0), Pos2::new(l, y1)));
+            }
+            x = x.max(r);
+        }
+        if x < area.right() {
+            out.push(ERect::from_min_max(
+                Pos2::new(x, y0),
+                Pos2::new(area.right(), y1),
+            ));
+        }
+    }
+    out
 }
 
 /// The drawing of a window that is not the active one (Window > Cascade
@@ -618,6 +731,8 @@ fn dashed_selection_line(painter: &Painter, pts: &[Pos2]) {
 /// The outline of the object being drawn, in the colour and width of the
 /// default outline (at least one pixel wide; the selection colour when new
 /// objects get no outline), so the preview looks like the result.
+/// Over it, a black line on a white one, so the shape's edge shows on
+/// any outline and any colour under it (#670).
 fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
     let view = &app.view;
     let stroke = match &app.default_stroke() {
@@ -629,10 +744,36 @@ fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
             continue;
         }
         if closed {
-            painter.add(epaint::PathShape::closed_line(pts, stroke));
+            painter.add(epaint::PathShape::closed_line(pts.clone(), stroke));
         } else {
-            painter.add(epaint::PathShape::line(pts, stroke));
+            painter.add(epaint::PathShape::line(pts.clone(), stroke));
         }
+        haloed_polyline(painter, &pts, closed, Color32::BLACK);
+    }
+}
+
+/// The width of the white line under an overlay's coloured one, and of
+/// the coloured one: half of it, as the reference program draws its
+/// overlays (#670).
+pub(crate) const HALO_WIDTH: f32 = 2.0;
+pub(crate) const HALO_INNER: f32 = 1.0;
+
+/// An overlay line that shows on any colour: `inner` on a white line
+/// twice as wide. Plain segments, which cost less than a path shape in
+/// an overlay redrawn every frame.
+pub(crate) fn haloed_polyline(painter: &Painter, pts: &[Pos2], closed: bool, inner: Color32) {
+    let segs = || {
+        pts.windows(2).map(|w| [w[0], w[1]]).chain(
+            closed
+                .then(|| [pts[pts.len() - 1], pts[0]])
+                .filter(|_| pts.len() > 2),
+        )
+    };
+    for seg in segs() {
+        painter.line_segment(seg, EStroke::new(HALO_WIDTH, Color32::WHITE));
+    }
+    for seg in segs() {
+        painter.line_segment(seg, EStroke::new(HALO_INNER, inner));
     }
 }
 
@@ -1080,34 +1221,70 @@ fn draw_table_cells(app: &App, painter: &Painter) {
             let pts: Vec<Pos2> = q.iter().map(|p| view.to_screen(*p)).collect();
             painter.add(egui::Shape::convex_polygon(
                 pts,
-                Color32::from_rgba_unmultiplied(0x00, 0x78, 0xD7, 70),
+                TEXT_SELECTION,
                 EStroke::NONE,
             ));
         }
-        painter.line_segment(
-            [view.to_screen(top), view.to_screen(bottom)],
-            EStroke::new(1.5, Tokens::text()),
-        );
+        draw_text_caret(painter, view.to_screen(top), view.to_screen(bottom));
         ime_at_caret(app, painter, view.to_screen(top), view.to_screen(bottom));
     }
 }
 
 /// The selection's outline moved by `t`: a blue line on a white halo, so it
 /// reads on any background (two light lines on a dark one).
+/// The outlines of the mirrored copies `s` (in page space) and the
+/// objects inside it draw with their symmetries, but the one `edited`.
+fn symmetry_copy_paths(
+    s: &tracedraw_core::Shape,
+    edited: Option<tracedraw_core::ShapeId>,
+    out: &mut Vec<BezPath>,
+) {
+    use tracedraw_core::live::Effect;
+    if edited != Some(s.id)
+        && s.effects
+            .iter()
+            .any(|e| matches!(e, Effect::Symmetry { .. }))
+    {
+        let mut only = s.clone();
+        only.effects
+            .retain(|e| matches!(e, Effect::Symmetry { .. }));
+        out.extend(
+            tracedraw_core::live::evaluate(&only)
+                .above
+                .iter()
+                .map(|c| c.page_path()),
+        );
+    }
+    if let ShapeKind::Group { children } = &s.kind {
+        for c in children {
+            let mut c = c.clone();
+            c.transform_by(s.transform);
+            symmetry_copy_paths(&c, edited, out);
+        }
+    }
+}
+
 pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
     let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
     let line = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
     for s in app.selected_rc().iter() {
         // What the release will make: rounded corners keep their size.
-        let path = s.page_path_after(t);
-        for (mut pts, closed) in flatten(&path, &app.view) {
-            if closed {
-                if let Some(first) = pts.first().copied() {
-                    pts.push(first);
+        let mut paths = vec![s.page_path_after(t)];
+        // A symmetry out of edit mode goes whole: its copies too, also
+        // those of one inside a group.
+        let mut moved = s.clone();
+        moved.transform_by(t);
+        symmetry_copy_paths(&moved, app.symmetry_edit, &mut paths);
+        for path in &paths {
+            for (mut pts, closed) in flatten(path, &app.view) {
+                if closed {
+                    if let Some(first) = pts.first().copied() {
+                        pts.push(first);
+                    }
                 }
+                painter.add(egui::Shape::line(pts.clone(), halo));
+                painter.add(egui::Shape::line(pts, line));
             }
-            painter.add(egui::Shape::line(pts.clone(), halo));
-            painter.add(egui::Shape::line(pts, line));
         }
     }
 }
@@ -1274,14 +1451,18 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         // Objects chosen inside a group show round handles.
         let nested = app.selection_nested();
         let size = crate::interaction::HANDLE_SIZE;
+        // Black with a white edge, so they show on a dark drawing (#670).
+        let edge = EStroke::new(1.0, Color32::WHITE);
         for (_, p) in app.handle_positions(bounds) {
             if nested {
-                painter.circle_filled(p, size / 2.0 + 0.5, Color32::BLACK);
+                painter.circle(p, size / 2.0 + 0.5, Color32::BLACK, edge);
             } else {
-                painter.rect_filled(
+                painter.rect(
                     ERect::from_center_size(p, egui::vec2(size, size)),
                     0.0,
                     Color32::BLACK,
+                    edge,
+                    epaint::StrokeKind::Outside,
                 );
             }
         }
@@ -1361,8 +1542,21 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
 }
 
 /// The shade over selected characters of a text being edited: a
-/// see-through grey, so coloured letters keep their colour under it.
-pub(crate) const TEXT_SELECTION: Color32 = Color32::from_rgba_premultiplied(64, 64, 64, 80);
+/// see-through grey, so coloured letters keep their colour under it, dark
+/// enough to stand out on the white page (#632).
+pub(crate) const TEXT_SELECTION: Color32 = Color32::from_rgba_premultiplied(40, 40, 40, 150);
+
+/// The caret's strokes, drawn in order: a white edge, then the black bar.
+pub(crate) const TEXT_CARET: [EStroke; 2] = [
+    EStroke {
+        width: 3.5,
+        color: Color32::WHITE,
+    },
+    EStroke {
+        width: 1.5,
+        color: Color32::BLACK,
+    },
+];
 
 /// A text that does not fit: its frame is red.
 const OVERFLOW_RED: Color32 = Color32::from_rgb(220, 30, 30);
@@ -1639,12 +1833,21 @@ fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32
     let head = 7.0_f32.min(len);
     let base = ctrl - u * head;
     if len > head {
-        dashed_polyline(painter, &[node, base], EStroke::new(1.0, color), 4.0, 3.0);
+        // Dashes on a white line and a head with a white edge, so the
+        // handle shows on any colour (#670).
+        painter.line_segment([node, base], EStroke::new(HALO_WIDTH, Color32::WHITE));
+        dashed_polyline(
+            painter,
+            &[node, base],
+            EStroke::new(HALO_INNER, color),
+            4.0,
+            3.0,
+        );
     }
     painter.add(epaint::PathShape::convex_polygon(
         vec![ctrl, base + n * 3.5, base - n * 3.5],
         color,
-        EStroke::NONE,
+        EStroke::new(1.0, Color32::WHITE),
     ));
 }
 
@@ -1867,7 +2070,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
                 let chosen = matches!(
                     node,
                     crate::kind_nodes::KindNode::Corner { corner, .. }
-                        if app.rect_corner_selected == Some((s.id, corner))
+                        if app.rect_corners_selected.contains(&(s.id, corner))
                 );
                 let fill = if chosen {
                     Some(main)
@@ -2014,6 +2217,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
             epaint::StrokeKind::Outside,
         );
     }
+    crate::corner_widgets::draw(app, painter, main);
 }
 
 /// A line of `pattern` (on and off lengths in pixels; empty for solid).
@@ -2628,6 +2832,31 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The parts of the window outside the pages: bands around one page,
+    /// and around two side by side, with nothing left over or covered.
+    #[test]
+    fn the_mask_covers_everything_outside_the_pages() {
+        let area = ERect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 80.0));
+        let page = ERect::from_min_max(Pos2::new(20.0, 10.0), Pos2::new(60.0, 70.0));
+        let parts = outside(area, &[page]);
+        let covered: f32 = parts.iter().map(|r| r.area()).sum();
+        assert!(
+            (covered - (area.area() - page.area())).abs() < 1e-3,
+            "{parts:?}"
+        );
+        assert!(parts.iter().all(|r| !r.intersects(page.shrink(0.01))));
+        let second = ERect::from_min_max(Pos2::new(70.0, 30.0), Pos2::new(120.0, 50.0));
+        let parts = outside(area, &[page, second]);
+        let covered: f32 = parts.iter().map(|r| r.area()).sum();
+        let inside = page.area() + second.intersect(area).area();
+        assert!((covered - (area.area() - inside)).abs() < 1e-3, "{parts:?}");
+        assert!(parts
+            .iter()
+            .all(|r| !r.intersects(page.shrink(0.01)) && !r.intersects(second.shrink(0.01))));
+        // No page in view: the whole window.
+        assert_eq!(outside(area, &[]), vec![area]);
+    }
 
     #[test]
     fn grid_lines_thin_out_and_follow_the_origin() {

@@ -564,7 +564,7 @@ impl HostInner {
                         continue;
                     };
                     let mut copy = self.fresh_ids(s);
-                    copy.transform = Affine::translate((dx, dy)) * copy.transform;
+                    copy.transform_by(Affine::translate((dx, dy)));
                     out.push(copy.id.raw());
                     self.run(Command::AddShape { layer, shape: copy })?;
                 }
@@ -1078,7 +1078,7 @@ impl HostInner {
                         rect: *rect,
                         width_px: out.width(),
                         height_px: out.height(),
-                        png: encoded,
+                        png: encoded.into(),
                         fx: None,
                     },
                 })?;
@@ -1111,7 +1111,7 @@ impl HostInner {
                 let l = tmp.pages[0].layers[0].id;
                 for s in &shapes {
                     let mut c = s.clone();
-                    c.transform = Affine::translate((-bounds.x0, -bounds.y0)) * c.transform;
+                    c.transform_by(Affine::translate((-bounds.x0, -bounds.y0)));
                     if let Ok(layer) = tmp.layer_mut(l) {
                         layer.shapes.push(c);
                     }
@@ -1185,7 +1185,7 @@ impl HostInner {
                         rect: bounds,
                         width_px: w,
                         height_px: h,
-                        png,
+                        png: png.into(),
                         fx: None,
                     },
                 );

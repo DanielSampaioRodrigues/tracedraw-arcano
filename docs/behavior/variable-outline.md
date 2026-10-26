@@ -46,15 +46,41 @@ length with width nodes.
   a node sits on them. Between neighbouring nodes `a` and `b` the reach
   eases with `s = u^2 (3 - 2u)`, `u = (t - t_a) / (t_b - t_a)`.
 - The band is built from the path flattened to 0.05 mm and cut into
-  pieces no longer than 1/256 of its length (at least 0.05 mm), with 48
-  pieces between neighbouring nodes whose reach differs, however short
-  that span (so the ease is a smooth curve, not a few straight pieces;
-  #492, `shaping::tests::variable_band_eases_smoothly_between_close_nodes`),
+  pieces no longer than 1/256 of its length (at least 0.05 mm), with
+  `n = sqrt(6 dw / (8 * 0.005))` pieces (48 to 512) between
+  neighbouring nodes whose reach differs by `dw` mm, however short that
+  span, so the pieces stay within 0.005 mm of the eased edge (the ease is
+  a smooth curve, not a few straight pieces; #492, #776,
+  `shaping::tests::variable_band_eases_smoothly_between_close_nodes`),
   split at
-  the nodes; corners get round joins, ends are butt.
+  the nodes; corners get round joins on their outer side, the arc in
+  steps of `2 acos(1 - 0.005 / r)` for a reach `r` (at most 256), so it
+  stays within 0.005 mm of the circle; ends are butt. The inner side of
+  a corner is covered by the pieces either side: a round join there, as
+  wide as the reach at the corner, stood out where the reach falls away
+  after the corner and left a notch where it met the band (#776,
+  `shaping::tests::a_wide_corner_node_leaves_no_notch_inside_and_a_smooth_arc_outside`,
+  `a_reach_wider_than_the_curve_fills_its_inside`). The pieces of one
+  segment share its direction and every piece has its ends on the path
+  as corners, so the pieces and joins meet without cracks
+  (#627, `shaping::tests::a_variable_band_along_a_curve_has_no_cracks`).
 - With "Scale with object", the reach scales with the object like the
   width.
+- On screen the page is drawn in strips on several threads, each
+  leaving out the objects that cannot reach it. A band counts as
+  reaching as far as its widest node, however thin the outline's own
+  width, so no strip leaves part of it out (#626,
+  `tracedraw_render::band_tests::a_variable_outline_is_drawn_whole_across_the_strips`).
+  Inside a group or a clip frame the same holds: a group is left out of
+  a strip only when every object in it is (groups inside groups too),
+  and a clip frame when its frame is, since the group's own bounds count
+  no outline and used to cut a variable or wide outline inside it flat
+  at the strip's edge
+  (`tracedraw_render::band_tests::outlines_inside_groups_are_drawn_whole_across_the_strips`,
+  `tracedraw_render::culling_tests::objects_out_of_sight_are_skipped`).
 - The outline's colour, or its gradient, pattern or texture fill, paints
   the band. Convert Outline to Object (Ctrl+Shift+Q) gives the band as an
-  object. SVG and PDF exports write the band as a filled path; `.cdr`
+  object: built from the path flattened to 0.005 mm and fitted to a few
+  curves, its butt ends straight lines (#627,
+  `tools2::tests::a_variable_outline_becomes_a_band_of_few_curves`). SVG and PDF exports write the band as a filled path; `.cdr`
   files are written with the plain width.

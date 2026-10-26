@@ -138,6 +138,17 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         };
         labels[y as usize * w + x as usize] = idx;
     }
+    // Specks: patches of one colour smaller than the detail allows take
+    // the colour around them, so stray dots and the fringes of soft edges
+    // do not become curves of their own (#611).
+    despeckle(&mut labels, w, h, speck_area(s.detail));
+    // Thin bands of an in-between colour along the edge of two others
+    // (the anti-aliasing of a black and yellow edge) go to the colours on
+    // either side, so they do not become slivers of their own (#611).
+    // Like the specks, kept at the highest detail.
+    if speck_area(s.detail) > 1 {
+        despeckle_bands(&mut labels, w, h, &palette);
+    }
     // 2. Background: the most common colour touching the border.
     let mut border_counts = vec![0usize; palette.len()];
     for x in 0..w {
@@ -173,28 +184,72 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         (c[0] as u32 * 299 + c[1] as u32 * 587 + c[2] as u32 * 114) / 1000
     });
     let tolerance = 0.3 + (100.0 - s.detail) / 100.0 * 2.5;
+    let mut rank = vec![0usize; palette.len()];
+    for (k, ci) in order.iter().enumerate() {
+        rank[*ci] = k;
+    }
+    // The box of each colour's pixels, in one pass.
+    let mut boxes = vec![(w, h, 0usize, 0usize); palette.len()];
+    for (i, l) in labels.iter().enumerate() {
+        if let Some(b) = boxes.get_mut(*l) {
+            let (x, y) = (i % w, i / w);
+            *b = (b.0.min(x), b.1.min(y), b.2.max(x), b.3.max(y));
+        }
+    }
+    let present: Vec<bool> = boxes.iter().map(|b| b.0 <= b.2).collect();
     let mut out = Vec::new();
     for ci in order {
-        if Some(ci) == background {
+        if Some(ci) == background || !present[ci] {
             continue;
         }
-        let mask: Vec<bool> = labels.iter().map(|l| *l == ci).collect();
-        let contours = contours(&mask, w, h);
+        // Each region reaches a little under the regions drawn above it,
+        // so their curves, fitted each on its own, leave no page showing
+        // between neighbours (#611). Only the box of its pixels, grown by
+        // that much, is looked at, and nothing grows with no lighter
+        // region drawn above it.
+        let above =
+            (0..palette.len()).any(|l| present[l] && Some(l) != background && rank[l] > rank[ci]);
+        let grow = if above { UNDERLAP } else { 0 };
+        let (bx0, by0, bx1, by1) = boxes[ci];
+        let (x0, y0) = (bx0.saturating_sub(grow), by0.saturating_sub(grow));
+        let (x1, y1) = ((bx1 + grow).min(w - 1), (by1 + grow).min(h - 1));
+        let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+        let label_at = |i: usize| labels[(y0 + i / cw) * w + x0 + i % cw];
+        let own: Vec<bool> = (0..cw * ch).map(|i| label_at(i) == ci).collect();
+        let mask: Vec<bool> = if above {
+            let near = dilate(&own, cw, ch, UNDERLAP);
+            (0..cw * ch)
+                .map(|i| {
+                    let l = label_at(i);
+                    own[i]
+                        || (near[i]
+                            && l != usize::MAX
+                            && Some(l) != background
+                            && rank[l] > rank[ci])
+                })
+                .collect()
+        } else {
+            own
+        };
+        let offset = tracedraw_core::geometry::Vec2::new(x0 as f64, y0 as f64);
+        let contours: Vec<Vec<Point>> = contours(&mask, cw, ch)
+            .into_iter()
+            .map(|ring| ring.into_iter().map(|p| p + offset).collect())
+            .collect();
         let mut path = BezPath::new();
         for ring in contours {
             if ring.len() < 3 {
                 continue;
             }
-            let simplified = tracedraw_core::geometry::simplify(&ring, tolerance);
-            if simplified.len() < 3 {
+            // Without smoothing the pixels' own edges, steps and all.
+            if s.smoothing <= 0.0 {
+                let simplified = tracedraw_core::geometry::simplify(&ring, tolerance);
+                if simplified.len() >= 3 {
+                    path.extend(polyline_closed(&simplified));
+                }
                 continue;
             }
-            let sub = if s.smoothing > 0.0 {
-                tracedraw_core::geometry::smooth_path(&simplified, true)
-            } else {
-                polyline_closed(&simplified)
-            };
-            path.extend(sub);
+            path.extend(fit_ring(&ring, s));
         }
         if path.elements().is_empty() {
             continue;
@@ -207,6 +262,535 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         });
     }
     out
+}
+
+/// How far, in pixels, a region reaches under its neighbours drawn above
+/// it: more than the fitting tolerance, so curves of two neighbours never
+/// part.
+const UNDERLAP: usize = 2;
+
+/// `mask` grown by `r` pixels in every direction (a square of side
+/// 2r + 1): running maxima along the rows, then down and up the columns
+/// a row at a time.
+fn dilate(mask: &[bool], w: usize, h: usize, r: usize) -> Vec<bool> {
+    let mut out = vec![false; w * h];
+    if mask.len() != w * h {
+        return out;
+    }
+    let mut rows = vec![false; w * h];
+    for y in 0..h {
+        let line = &mask[y * w..(y + 1) * w];
+        let row = &mut rows[y * w..(y + 1) * w];
+        let mut last: Option<usize> = None;
+        for x in 0..w {
+            if line[x] {
+                last = Some(x);
+            }
+            row[x] = last.is_some_and(|l| x - l <= r);
+        }
+        last = None;
+        for x in (0..w).rev() {
+            if line[x] {
+                last = Some(x);
+            }
+            row[x] |= last.is_some_and(|l| l - x <= r);
+        }
+    }
+    // The last set row seen in each column, going down, then going up.
+    let mut last: Vec<Option<usize>> = vec![None; w];
+    for y in 0..h {
+        for x in 0..w {
+            if rows[y * w + x] {
+                last[x] = Some(y);
+            }
+            out[y * w + x] = last[x].is_some_and(|l| y - l <= r);
+        }
+    }
+    last.fill(None);
+    for y in (0..h).rev() {
+        for x in 0..w {
+            if rows[y * w + x] {
+                last[x] = Some(y);
+            }
+            out[y * w + x] |= last[x].is_some_and(|l| l - y <= r);
+        }
+    }
+    out
+}
+
+/// How far apart (RGB distance) two colours must be for a thin band
+/// between them to count as their edge's anti-aliasing.
+const EDGE_CONTRAST: u32 = 64;
+
+fn distance2(a: [u8; 3], b: [u8; 3]) -> u32 {
+    (0..3)
+        .map(|k| (a[k] as i32 - b[k] as i32).pow(2) as u32)
+        .sum()
+}
+
+/// Whether `c` lies between `a` and `b`: near the segment joining them in
+/// RGB, as the anti-aliased pixels of their edge do.
+fn between(c: [u8; 3], a: [u8; 3], b: [u8; 3]) -> bool {
+    let f = |v: [u8; 3]| [v[0] as f64, v[1] as f64, v[2] as f64];
+    let (c, a, b) = (f(c), f(a), f(b));
+    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let len2 = ab.iter().map(|v| v * v).sum::<f64>();
+    if len2 < 1.0 {
+        return false;
+    }
+    let t = (ab.iter().zip(&ac).map(|(p, q)| p * q).sum::<f64>() / len2).clamp(0.0, 1.0);
+    let d2 = (0..3).map(|k| (ac[k] - t * ab[k]).powi(2)).sum::<f64>();
+    let slack = (0.08 * len2.sqrt()).max(12.0);
+    d2 <= slack * slack
+}
+
+/// Give the pixels of thin patches (at most about 2 px thick: almost none
+/// of their pixels has all four neighbours in the patch) whose colour lies
+/// between the two colours they touch most to those colours: each pixel
+/// takes the colour most of its neighbours outside the patch have, else
+/// the nearer of the two. Patches touching one colour only, such as a
+/// hairline drawn on a fill, stay.
+fn despeckle_bands(labels: &mut [usize], w: usize, h: usize, palette: &[[u8; 3]]) {
+    if labels.len() != w * h {
+        return;
+    }
+    let mut seen = vec![false; w * h];
+    let mut patch: Vec<usize> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut changes: Vec<(usize, usize)> = Vec::new();
+    let neighbours = |i: usize| {
+        let (x, y) = (i % w, i / w);
+        let mut near = [usize::MAX; 4];
+        if x > 0 {
+            near[0] = i - 1;
+        }
+        if x + 1 < w {
+            near[1] = i + 1;
+        }
+        if y > 0 {
+            near[2] = i - w;
+        }
+        if y + 1 < h {
+            near[3] = i + w;
+        }
+        near
+    };
+    for start in 0..w * h {
+        if seen[start] || labels[start] == usize::MAX {
+            continue;
+        }
+        let l = labels[start];
+        patch.clear();
+        counts.clear();
+        stack.push(start);
+        seen[start] = true;
+        let mut interior = 0usize;
+        while let Some(i) = stack.pop() {
+            patch.push(i);
+            let mut inside = 0;
+            for j in neighbours(i).into_iter().filter(|j| *j != usize::MAX) {
+                if labels[j] == l {
+                    inside += 1;
+                    if !seen[j] {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                } else if labels[j] != usize::MAX {
+                    *counts.entry(labels[j]).or_default() += 1;
+                }
+            }
+            if inside == 4 {
+                interior += 1;
+            }
+        }
+        if interior * 10 > patch.len() || counts.len() < 2 {
+            continue;
+        }
+        let mut by_count: Vec<(usize, usize)> = counts.iter().map(|(k, c)| (*k, *c)).collect();
+        by_count.sort_by_key(|(k, c)| (usize::MAX - *c, *k));
+        let (a, b) = (by_count[0].0, by_count[1].0);
+        let (Some(&ca), Some(&cb), Some(&cl)) = (palette.get(a), palette.get(b), palette.get(l))
+        else {
+            continue;
+        };
+        // Between two clearly different colours only: the steps of a
+        // gradient lie between their neighbours too, and stay.
+        if distance2(ca, cb) < EDGE_CONTRAST * EDGE_CONTRAST || !between(cl, ca, cb) {
+            continue;
+        }
+        let nearer = if distance2(cl, ca) <= distance2(cl, cb) {
+            a
+        } else {
+            b
+        };
+        for &i in &patch {
+            let (x, y) = ((i % w) as i64, (i / w) as i64);
+            let (mut na, mut nb) = (0, 0);
+            for dy in -1..=1i64 {
+                for dx in -1..=1i64 {
+                    let (px, py) = (x + dx, y + dy);
+                    if px < 0 || py < 0 || px >= w as i64 || py >= h as i64 {
+                        continue;
+                    }
+                    match labels[py as usize * w + px as usize] {
+                        v if v == a => na += 1,
+                        v if v == b => nb += 1,
+                        _ => {}
+                    }
+                }
+            }
+            let to = match na.cmp(&nb) {
+                std::cmp::Ordering::Greater => a,
+                std::cmp::Ordering::Less => b,
+                std::cmp::Ordering::Equal => nearer,
+            };
+            changes.push((i, to));
+        }
+    }
+    for (i, to) in changes {
+        labels[i] = to;
+    }
+}
+
+/// The smallest patch of one colour that is kept, in pixels: none
+/// below detail 100, a few pixels at 80, about 40 at 35.
+fn speck_area(detail: f64) -> usize {
+    let k = (100.0 - detail.clamp(0.0, 100.0)) / 100.0 * 10.0;
+    (k * k).round().max(1.0) as usize
+}
+
+/// Give every 4-connected patch of one label smaller than `min_area`
+/// pixels the label most of its neighbours outside it have (transparent
+/// pixels are left alone and never spread).
+fn despeckle(labels: &mut [usize], w: usize, h: usize, min_area: usize) {
+    if min_area <= 1 || labels.len() != w * h {
+        return;
+    }
+    let mut seen = vec![false; w * h];
+    let mut patch: Vec<usize> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for start in 0..w * h {
+        if seen[start] || labels[start] == usize::MAX {
+            continue;
+        }
+        let l = labels[start];
+        patch.clear();
+        counts.clear();
+        stack.push(start);
+        seen[start] = true;
+        while let Some(i) = stack.pop() {
+            patch.push(i);
+            let (x, y) = (i % w, i / w);
+            let mut near = [usize::MAX; 4];
+            if x > 0 {
+                near[0] = i - 1;
+            }
+            if x + 1 < w {
+                near[1] = i + 1;
+            }
+            if y > 0 {
+                near[2] = i - w;
+            }
+            if y + 1 < h {
+                near[3] = i + w;
+            }
+            for j in near.into_iter().filter(|j| *j != usize::MAX) {
+                if labels[j] == l {
+                    if !seen[j] {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                } else if labels[j] != usize::MAX && patch.len() < min_area {
+                    *counts.entry(labels[j]).or_default() += 1;
+                }
+            }
+        }
+        if patch.len() < min_area {
+            if let Some((&to, _)) = counts.iter().max_by_key(|(k, c)| (**c, usize::MAX - **k)) {
+                for &i in &patch {
+                    labels[i] = to;
+                }
+            }
+        }
+    }
+}
+
+/// A pixel-edge ring as smooth curves (#611): the ring through the
+/// middles of the pixel edges, so stair steps become slopes; its corners
+/// found where it turns sharply (fewer with more corner smoothness);
+/// the stretches between them smoothed (more with more smoothing) and
+/// fitted with as few cubic Beziers as stay within the detail's
+/// tolerance of them. Corners stay sharp, a ring without corners closes
+/// smoothly.
+fn fit_ring(ring: &[Point], s: &Settings) -> BezPath {
+    // One point per pixel edge: the middle of each unit step, with the
+    // pixel corner the step starts at.
+    let mut pts: Vec<Point> = Vec::new();
+    let mut starts: Vec<Point> = Vec::new();
+    let n = ring.len();
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let steps = (b - a).hypot().round().max(1.0) as usize;
+        for k in 0..steps {
+            starts.push(a.lerp(b, k as f64 / steps as f64));
+            pts.push(a.lerp(b, (k as f64 + 0.5) / steps as f64));
+        }
+    }
+    let n = pts.len();
+    if n < 4 {
+        return polyline_closed(&pts);
+    }
+    // Corners: where the ring turns by more than the threshold over a
+    // few pixels, the sharpest of each run.
+    let reach = 3usize.min(n / 4).max(1);
+    let threshold = (60.0 + s.corner_smoothness.clamp(0.0, 100.0) * 0.8).to_radians();
+    let at = |i: isize| pts[i.rem_euclid(n as isize) as usize];
+    let turn: Vec<f64> = (0..n as isize)
+        .map(|i| {
+            let (a, b, c) = (at(i - reach as isize), at(i), at(i + reach as isize));
+            let (u, v) = (b - a, c - b);
+            u.cross(v).atan2(u.dot(v)).abs()
+        })
+        .collect();
+    let mut corners: Vec<usize> = (0..n)
+        .filter(|&i| {
+            turn[i] > threshold
+                && (1..=reach as isize).all(|d| {
+                    let before = turn[(i as isize - d).rem_euclid(n as isize) as usize];
+                    let after = turn[(i as isize + d).rem_euclid(n as isize) as usize];
+                    turn[i] >= before && turn[i] > after
+                })
+        })
+        .collect();
+    // A corner sits on the pixel corner at one end of its edge: the one
+    // standing further out from its neighbours, so a square stays square.
+    let mut is_corner = vec![false; n];
+    for &c in &corners {
+        is_corner[c] = true;
+        let mid = pts[(c + n - 1) % n].midpoint(pts[(c + 1) % n]);
+        let (a, b) = (starts[c], starts[(c + 1) % n]);
+        pts[c] = if (a - mid).hypot() > (b - mid).hypot() {
+            a
+        } else {
+            b
+        };
+    }
+    // Smooth the stretches between corners.
+    let passes = (1.0 + s.smoothing.clamp(0.0, 100.0) / 100.0 * 12.0).round() as usize;
+    for _ in 0..passes {
+        let prev = pts.clone();
+        for i in 0..n {
+            if is_corner[i] {
+                continue;
+            }
+            let a = prev[(i + n - 1) % n];
+            let c = prev[(i + 1) % n];
+            pts[i] = Point::new(
+                (a.x + 2.0 * prev[i].x + c.x) / 4.0,
+                (a.y + 2.0 * prev[i].y + c.y) / 4.0,
+            );
+        }
+    }
+    let tolerance = 0.2 + (100.0 - s.detail.clamp(0.0, 100.0)) / 100.0;
+    let mut out = BezPath::new();
+    if corners.is_empty() {
+        // No corner: quarters meeting smoothly (a cubic bends through a
+        // quarter turn well, a half turn only roughly).
+        let tangent = |i: usize| unit(pts[(i + reach) % n] - pts[(i + n - reach) % n]);
+        let cuts: Vec<usize> = (0..4).map(|k| k * n / 4).collect();
+        out.move_to(pts[0]);
+        for k in 0..4 {
+            let (a, b) = (cuts[k], cuts[(k + 1) % 4]);
+            let mut piece: Vec<Point> = if b > a {
+                pts[a..=b].to_vec()
+            } else {
+                pts[a..].to_vec()
+            };
+            if b <= a {
+                piece.push(pts[0]);
+            }
+            fit_cubics(&piece, tangent(a), -tangent(b), tolerance, &mut out);
+        }
+        out.close_path();
+        return out;
+    }
+    corners.sort_unstable();
+    out.move_to(pts[corners[0]]);
+    for k in 0..corners.len() {
+        let a = corners[k];
+        let b = corners[(k + 1) % corners.len()];
+        let mut piece: Vec<Point> = Vec::new();
+        let mut i = a;
+        loop {
+            piece.push(pts[i]);
+            if i == b && piece.len() > 1 {
+                break;
+            }
+            i = (i + 1) % n;
+            if piece.len() > n + 1 {
+                break;
+            }
+        }
+        if piece.len() < 2 {
+            continue;
+        }
+        // The directions the sides leave and reach the corners in, over a
+        // few pixels so a stair step does not tilt them.
+        let m = piece.len();
+        let far = TANGENT_REACH.min(m - 1);
+        let t1 = unit(piece[far] - piece[0]);
+        let t2 = unit(piece[m - 1 - far] - piece[m - 1]);
+        fit_cubics(&piece, t1, t2, tolerance, &mut out);
+    }
+    out.close_path();
+    out
+}
+
+/// How many points away a fitted curve's end direction is taken from.
+const TANGENT_REACH: usize = 4;
+
+fn unit(v: tracedraw_core::geometry::Vec2) -> tracedraw_core::geometry::Vec2 {
+    let l = v.hypot();
+    if l > 1e-12 && l.is_finite() {
+        v / l
+    } else {
+        tracedraw_core::geometry::Vec2::ZERO
+    }
+}
+
+/// Fit cubic Beziers to `pts` (from the first point to the last), the
+/// first leaving along `t1` and the last arriving back along `t2` (unit
+/// vectors pointing into the curve from its ends), no point further than
+/// `tolerance` from them, and append them to `out`: least squares on the
+/// chord-length parameters, improved by Newton steps, split at the worst
+/// point when it still does not fit (P. J. Schneider, "An Algorithm for
+/// Automatically Fitting Digitized Curves", Graphics Gems, 1990).
+fn fit_cubics(
+    pts: &[Point],
+    t1: tracedraw_core::geometry::Vec2,
+    t2: tracedraw_core::geometry::Vec2,
+    tolerance: f64,
+    out: &mut BezPath,
+) {
+    fit_cubics_depth(pts, t1, t2, tolerance, out, 0);
+}
+
+fn fit_cubics_depth(
+    pts: &[Point],
+    t1: tracedraw_core::geometry::Vec2,
+    t2: tracedraw_core::geometry::Vec2,
+    tolerance: f64,
+    out: &mut BezPath,
+    depth: usize,
+) {
+    use tracedraw_core::geometry::{CubicBez, ParamCurve, ParamCurveDeriv};
+    let n = pts.len();
+    if n < 2 {
+        return;
+    }
+    let (p0, p3) = (pts[0], pts[n - 1]);
+    let dist = (p3 - p0).hypot();
+    if n == 2 || depth > 24 {
+        let h = dist / 3.0;
+        out.curve_to(p0 + t1 * h, p3 + t2 * h, p3);
+        return;
+    }
+    // Chord-length parameters.
+    let mut u = vec![0.0; n];
+    for i in 1..n {
+        u[i] = u[i - 1] + (pts[i] - pts[i - 1]).hypot();
+    }
+    let total = u[n - 1];
+    if total < 1e-12 {
+        return;
+    }
+    for v in u.iter_mut() {
+        *v /= total;
+    }
+    let generate = |u: &[f64]| -> CubicBez {
+        // The handle lengths minimising the squared distances.
+        let (mut c00, mut c01, mut c11, mut x0, mut x1) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (p, &t) in pts.iter().zip(u) {
+            let mt = 1.0 - t;
+            let b0 = mt * mt * mt;
+            let b1 = 3.0 * t * mt * mt;
+            let b2 = 3.0 * t * t * mt;
+            let b3 = t * t * t;
+            let a1 = t1 * b1;
+            let a2 = t2 * b2;
+            c00 += a1.dot(a1);
+            c01 += a1.dot(a2);
+            c11 += a2.dot(a2);
+            let tmp = p.to_vec2() - (p0.to_vec2() * (b0 + b1) + p3.to_vec2() * (b2 + b3));
+            x0 += a1.dot(tmp);
+            x1 += a2.dot(tmp);
+        }
+        let det = c00 * c11 - c01 * c01;
+        let (mut l1, mut l2) = if det.abs() > 1e-12 {
+            ((x0 * c11 - x1 * c01) / det, (c00 * x1 - c01 * x0) / det)
+        } else {
+            (0.0, 0.0)
+        };
+        let eps = 1e-6 * dist;
+        if !(l1.is_finite() && l2.is_finite()) || l1 < eps || l2 < eps {
+            l1 = dist / 3.0;
+            l2 = dist / 3.0;
+        }
+        CubicBez::new(p0, p0 + t1 * l1, p3 + t2 * l2, p3)
+    };
+    let worst = |c: &CubicBez, u: &[f64]| -> (f64, usize) {
+        let mut best = (0.0, n / 2);
+        for i in 1..n - 1 {
+            let d = (c.eval(u[i]) - pts[i]).hypot2();
+            if d > best.0 {
+                best = (d, i);
+            }
+        }
+        best
+    };
+    let mut curve = generate(&u);
+    let (mut err, mut split) = worst(&curve, &u);
+    let tol2 = tolerance * tolerance;
+    if err <= tol2 {
+        out.curve_to(curve.p1, curve.p2, curve.p3);
+        return;
+    }
+    if err < tol2 * 4.0 {
+        for _ in 0..4 {
+            // Newton steps towards each point's nearest parameter.
+            let d1 = curve.deriv();
+            let d2 = d1.deriv();
+            for i in 0..n {
+                let t = u[i];
+                let diff = curve.eval(t) - pts[i];
+                let q1 = d1.eval(t).to_vec2();
+                let q2 = d2.eval(t).to_vec2();
+                let den = q1.dot(q1) + diff.dot(q2);
+                if den.abs() > 1e-12 {
+                    u[i] = (t - diff.dot(q1) / den).clamp(0.0, 1.0);
+                }
+            }
+            curve = generate(&u);
+            (err, split) = worst(&curve, &u);
+            if err <= tol2 {
+                out.curve_to(curve.p1, curve.p2, curve.p3);
+                return;
+            }
+        }
+    }
+    let split = split.clamp(1, n - 2);
+    let reach = TANGENT_REACH.min(split).min(n - 1 - split).max(1);
+    let centre = unit(pts[split - reach] - pts[split + reach]);
+    let centre = if centre == tracedraw_core::geometry::Vec2::ZERO {
+        unit(pts[split - 1] - pts[split])
+    } else {
+        centre
+    };
+    fit_cubics_depth(&pts[..=split], t1, centre, tolerance, out, depth + 1);
+    fit_cubics_depth(&pts[split..], -centre, t2, tolerance, out, depth + 1);
 }
 
 fn polyline_closed(pts: &[Point]) -> BezPath {
@@ -744,6 +1328,258 @@ mod tests {
         let b = t[0].path.bounding_box();
         assert!(b.width() > 80.0 && b.height() < 3.0, "{b:?}");
         assert!((last_stroke_width_px() - 5.0).abs() < 1.5);
+    }
+
+    /// Smooth outlines from pixels (#611): a circle becomes a few curves,
+    /// no stair steps, at the right size; a square keeps four sharp
+    /// corners on its pixel corners; stray specks make no curves.
+    #[test]
+    fn traces_are_smooth_curves_with_sharp_corners_and_no_specks() {
+        use tracedraw_core::geometry::PathEl;
+        let s = Preset::LineArt.settings();
+        let t = trace(&circle_image(), &s);
+        assert_eq!(t.len(), 1);
+        let els = t[0].path.elements();
+        let curves = els
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..)))
+            .count();
+        assert!(
+            els.iter().all(|e| !matches!(e, PathEl::LineTo(..))),
+            "no steps"
+        );
+        assert!((2..=12).contains(&curves), "{curves} curves");
+        let area = t[0].path.area().abs();
+        let expect = std::f64::consts::PI * 30.0 * 30.0;
+        assert!((area - expect).abs() / expect < 0.02, "{area} vs {expect}");
+        // No point of the curves strays from the circle by more than the
+        // fitting tolerance (1.2 px at detail 40).
+        for (p, _) in t[0].path.segments().flat_map(|seg| {
+            (0..=8).map(move |k| {
+                (
+                    tracedraw_core::geometry::ParamCurve::eval(&seg, k as f64 / 8.0),
+                    (),
+                )
+            })
+        }) {
+            let r = (p - Point::new(50.5, 50.5)).hypot();
+            assert!((r - 30.0).abs() < 1.25, "{r}");
+        }
+
+        // A square with specks around it.
+        let img: RgbaImage = ImageBuffer::from_fn(100, 100, |x, y| {
+            let square = (20..80).contains(&x) && (20..80).contains(&y);
+            let speck = (x % 13 == 3 && y % 17 == 5) && !square;
+            if square || speck {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 1, "the specks are gone");
+        let path = &t[0].path;
+        let subpaths = path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(subpaths, 1, "the square alone");
+        let b = path.bounding_box();
+        assert!(
+            (b.x0 - 20.0).abs() < 0.01 && (b.x1 - 80.0).abs() < 0.01,
+            "sharp corners on the pixel corners: {b:?}"
+        );
+        assert!((path.area().abs() - 3600.0).abs() < 1.0, "{}", path.area());
+        // With all the detail, a speck of one pixel stays.
+        let mut keep = s.clone();
+        keep.detail = 100.0;
+        assert!(
+            trace(&img, &keep)[0]
+                .path
+                .elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count()
+                > 1
+        );
+    }
+
+    /// Flat art with anti-aliased edges (#611): a yellow disc crossed by a
+    /// black band on white, traced with the Clipart preset. Neighbouring
+    /// regions meet with no page showing between them, the in-between
+    /// shades of the edges make no regions of their own, and the trace
+    /// holds about as many regions as the art has colours.
+    #[test]
+    fn neighbouring_regions_leave_no_gaps_and_edges_make_no_slivers() {
+        const N: u32 = 120;
+        // Coverage of a pixel by the art, 4 x 4 samples: yellow, black.
+        let cover = |x: u32, y: u32| {
+            let (mut yellow, mut black) = (0.0f32, 0.0f32);
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let (px, py) = (
+                        x as f32 + (sx as f32 + 0.5) / 4.0,
+                        y as f32 + (sy as f32 + 0.5) / 4.0,
+                    );
+                    let disc = (px - 60.0).powi(2) + (py - 60.0).powi(2) < 42.0f32.powi(2);
+                    // A slanted band, so its edges are anti-aliased too.
+                    let band = (py - 0.3 * px - 34.0).abs() < 8.0;
+                    if disc && band {
+                        black += 1.0 / 16.0;
+                    } else if disc {
+                        yellow += 1.0 / 16.0;
+                    }
+                }
+            }
+            (yellow, black)
+        };
+        let img: RgbaImage = ImageBuffer::from_fn(N, N, |x, y| {
+            let (yl, bl) = cover(x, y);
+            let wh = 1.0 - yl - bl;
+            let mix = |y: f32, b: f32, w: f32| (y * yl + b * bl + w * wh).round() as u8;
+            Rgba([
+                mix(250.0, 10.0, 255.0),
+                mix(205.0, 10.0, 255.0),
+                mix(40.0, 10.0, 255.0),
+                255,
+            ])
+        });
+        let s = Preset::Clipart.settings();
+        let t = trace(&img, &s);
+        assert!((2..=3).contains(&t.len()), "{} regions", t.len());
+        let out = render_traced(&t, N, N, 1.0);
+        for y in 0..N {
+            for x in 0..N {
+                // Pixels well inside the art (it covers every pixel within
+                // two of them, so the outline's own fitting at the art's
+                // edge is left out): no white and no transparency, along
+                // the edges between the colours too.
+                let inside = x > 1
+                    && y > 1
+                    && x + 2 < N
+                    && y + 2 < N
+                    && (y - 2..=y + 2).all(|v| {
+                        (x - 2..=x + 2).all(|u| {
+                            let (a, b) = cover(u, v);
+                            a + b >= 1.0
+                        })
+                    });
+                if !inside {
+                    continue;
+                }
+                let p = out.get_pixel(x, y);
+                assert_eq!(p[3], 255, "page shows at {x},{y}: {p:?}");
+                assert!(
+                    !(p[0] > 230 && p[1] > 230 && p[2] > 230),
+                    "white at {x},{y}: {p:?}"
+                );
+            }
+        }
+    }
+
+    /// A pale logo close to its white ground keeps its colour, at the
+    /// Logo preset and with two colours; a grey gradient keeps the colour
+    /// count it was asked for (#611).
+    #[test]
+    fn close_colours_and_colour_counts_are_kept() {
+        let img: RgbaImage = ImageBuffer::from_fn(80, 80, |x, y| {
+            if (20..60).contains(&x) && (20..60).contains(&y) {
+                Rgba([246, 246, 246, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let mut s = Preset::Logo.settings();
+        assert_eq!(trace(&img, &s).len(), 1, "the logo");
+        s.colors = 2;
+        assert_eq!(trace(&img, &s).len(), 1, "with two colours");
+        let ramp: RgbaImage =
+            ImageBuffer::from_fn(256, 8, |x, _| Rgba([x as u8, x as u8, x as u8, 255]));
+        let mut s = Preset::HighQualityImage.settings();
+        s.colors = 96;
+        s.remove_background = false;
+        let n = trace(&ramp, &s).len();
+        assert!(n > 24, "{n} colours of 96");
+    }
+
+    /// At the highest detail an orange line of one pixel between red and
+    /// yellow stays, as the specks do.
+    #[test]
+    fn the_highest_detail_keeps_thin_lines() {
+        let img: RgbaImage = ImageBuffer::from_fn(40, 40, |_, y| match y {
+            0..=19 => Rgba([230, 20, 20, 255]),
+            20 => Rgba([240, 120, 20, 255]),
+            _ => Rgba([250, 220, 20, 255]),
+        });
+        let mut s = Preset::Logo.settings();
+        s.detail = 100.0;
+        s.remove_background = false;
+        let colours: Vec<[u8; 3]> = trace(&img, &s).iter().map(|t| t.color.to_rgb8()).collect();
+        assert!(
+            colours.iter().any(|c| c[1] > 90 && c[1] < 160),
+            "the orange line: {colours:?}"
+        );
+    }
+
+    #[test]
+    fn dilation_grows_a_mask_by_a_square() {
+        let (w, h) = (7, 6);
+        let mut mask = vec![false; w * h];
+        mask[2 * w + 3] = true;
+        let d = dilate(&mask, w, h, 2);
+        for y in 0..h {
+            for x in 0..w {
+                let want = (1..=5).contains(&x) && y <= 4;
+                assert_eq!(d[y * w + x], want, "{x},{y}");
+            }
+        }
+        assert!(dilate(&vec![false; w * h], w, h, 2).iter().all(|v| !v));
+    }
+
+    /// Thin in-between bands go to their neighbours; a hairline on one
+    /// colour, or of a colour that is not between them, stays.
+    #[test]
+    fn thin_edge_bands_go_to_their_neighbours() {
+        assert!(between([130, 108, 25], [0, 0, 0], [250, 205, 40]));
+        assert!(!between([250, 205, 40], [0, 0, 0], [255, 255, 255]));
+        // A pale blue line between black and white is a colour of its own.
+        assert!(!between([170, 200, 230], [0, 0, 0], [255, 255, 255]));
+        assert!(between([128, 128, 128], [0, 0, 0], [255, 255, 255]));
+        let palette = [[0, 0, 0], [250, 205, 40], [125, 102, 20]];
+        let (w, h) = (8, 6);
+        // Black above, yellow below, an olive band of 1 px between.
+        let mut labels: Vec<usize> = (0..w * h)
+            .map(|i| match i / w {
+                0..=1 => 0,
+                2 => 2,
+                _ => 1,
+            })
+            .collect();
+        despeckle_bands(&mut labels, w, h, &palette);
+        assert!(labels.iter().all(|l| *l != 2), "{labels:?}");
+        // An olive hairline on yellow alone stays.
+        let mut labels: Vec<usize> = (0..w * h).map(|i| if i / w == 2 { 2 } else { 1 }).collect();
+        despeckle_bands(&mut labels, w, h, &palette);
+        assert_eq!(labels.iter().filter(|l| **l == 2).count(), w);
+    }
+
+    /// Patches smaller than the detail allows take the colour around them.
+    #[test]
+    fn despeckle_fills_small_patches_with_their_surroundings() {
+        let (w, h) = (6, 5);
+        let mut labels = vec![0usize; w * h];
+        labels[2 * w + 2] = 1; // a one-pixel speck
+        for x in 0..w {
+            labels[4 * w + x] = 2; // a row of six
+        }
+        labels[0] = usize::MAX; // transparent stays
+        despeckle(&mut labels, w, h, 3);
+        assert_eq!(labels[2 * w + 2], 0);
+        assert!(labels[4 * w..].iter().all(|l| *l == 2));
+        assert_eq!(labels[0], usize::MAX);
+        assert_eq!(speck_area(100.0), 1);
+        assert!(speck_area(35.0) > speck_area(80.0));
     }
 
     #[test]

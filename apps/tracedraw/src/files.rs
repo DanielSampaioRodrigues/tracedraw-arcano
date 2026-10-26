@@ -35,6 +35,32 @@ thread_local! {
 /// True in the browser build: no file system, downloads instead of saves.
 pub const WEB: bool = cfg!(target_arch = "wasm32");
 
+/// The path naming the same file however it was reached (links, `.`
+/// and `..`); the absolute path when that fails (the file is gone);
+/// `path` as it is in a browser.
+pub fn canonical(path: &Path) -> PathBuf {
+    if WEB {
+        return path.to_path_buf();
+    }
+    std::fs::canonicalize(path)
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Two canonical paths name one file: on Windows without regard to the
+/// letter case and to the `\\?\` prefix.
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) {
+        let key = |p: &Path| {
+            let s = p.to_string_lossy().to_lowercase();
+            s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s)
+        };
+        key(a) == key(b)
+    } else {
+        a == b
+    }
+}
+
 /// Read a whole file (or an uploaded one in a browser).
 pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let path = path.as_ref();
@@ -69,6 +95,55 @@ pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result
         return download(&name, bytes.as_ref());
     }
     std::fs::write(path, bytes)
+}
+
+/// Write a file as `fill` makes it, without holding the whole file in
+/// memory; in a browser, the bytes are gathered and downloaded.
+pub fn write_with(
+    path: impl AsRef<Path>,
+    fill: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if WEB {
+        let mut bytes = Vec::new();
+        fill(&mut bytes)?;
+        return write(path, bytes);
+    }
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    fill(&mut w)?;
+    std::io::Write::flush(&mut w)
+}
+
+/// Write a file as `fill` makes it, creating its folder first
+/// (auto-backups). It is written under a `.part` name and renamed when
+/// complete, so a write cut short never leaves half a file under the
+/// real name. Nothing happens in a browser.
+pub fn write_creating_with(
+    path: impl AsRef<Path>,
+    fill: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    let path = path.as_ref();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut part = path.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let written = std::fs::File::create(&part).and_then(|f| {
+        let mut w = std::io::BufWriter::new(f);
+        fill(&mut w)?;
+        std::io::Write::flush(&mut w)
+    });
+    match written.and_then(|()| std::fs::rename(&part, path)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&part);
+            Err(e)
+        }
+    }
 }
 
 /// Copy a file, creating the target folder (backups). Nothing happens in

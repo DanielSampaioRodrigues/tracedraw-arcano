@@ -795,7 +795,6 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracedraw_core::geometry::Shape as _;
 
     fn line(app: &mut App, a: (f64, f64), b: (f64, f64)) -> ShapeId {
         let mut p = BezPath::new();

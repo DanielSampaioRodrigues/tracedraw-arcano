@@ -1140,7 +1140,7 @@ impl App {
     }
 
     /// The one bitmap selected, for Remix and Remove Background.
-    pub fn ai_source_bitmap(&self) -> Option<(ShapeId, Vec<u8>)> {
+    pub fn ai_source_bitmap(&self) -> Option<(ShapeId, tracedraw_core::SharedBytes)> {
         let sel = self.selected_shapes();
         let [s] = sel.as_slice() else {
             return None;
@@ -1215,7 +1215,7 @@ impl App {
         if let Some((id, png)) = self.ai_source_bitmap() {
             if let Some(img) = crate::bitmap_fx::decode(&png) {
                 self.ai_image.source = Some(SourceImage {
-                    png,
+                    png: png.to_vec(),
                     width: img.width(),
                     height: img.height(),
                     shape: Some(id),
@@ -1708,7 +1708,7 @@ impl App {
                 rect,
                 width_px: img.width,
                 height_px: img.height,
-                png: img.png.clone(),
+                png: img.png.as_slice().into(),
                 fx: None,
             },
         );
@@ -1773,7 +1773,7 @@ impl App {
                 rect: *rect,
                 width_px: out.width(),
                 height_px: out.height(),
-                png,
+                png: png.into(),
                 fx: None,
             },
         };
@@ -2170,7 +2170,7 @@ mod tests {
                 rect: Rect::new(10.0, 10.0, 50.0, 50.0),
                 width_px: 8,
                 height_px: 8,
-                png: src,
+                png: src.into(),
                 fx: None,
             })
             .expect("bitmap");
@@ -2235,7 +2235,7 @@ mod tests {
                 rect: Rect::new(10.0, 10.0, 50.0, 50.0),
                 width_px: 8,
                 height_px: 8,
-                png: pic,
+                png: pic.into(),
                 fx: Default::default(),
             },
         );

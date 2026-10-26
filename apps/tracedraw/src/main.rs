@@ -37,11 +37,14 @@ mod connectors;
 mod contour_tool;
 mod coords;
 mod copy_effect;
+mod corner_widgets;
 mod corners;
 mod crop_tool;
 mod curve_join;
 mod defaults;
 mod describe;
+#[cfg(test)]
+mod devanagari_join_tests;
 mod dimensions;
 mod distort_tool;
 mod doc_stats;
@@ -62,6 +65,8 @@ mod fill_tool;
 mod focus;
 #[cfg(any(target_arch = "wasm32", test))]
 mod font_folder;
+#[cfg(not(target_arch = "wasm32"))]
+mod frame_stats;
 mod frame_type;
 mod fx;
 mod github;
@@ -77,6 +82,8 @@ mod hunspell;
 mod i18n;
 mod image_dpi;
 mod imposition;
+#[cfg(not(target_arch = "wasm32"))]
+mod instance;
 mod interaction;
 mod interaction2;
 mod kind_nodes;
@@ -171,11 +178,24 @@ mod workspace_file;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    // One window for every start (#646): files given to a start while
+    // TraceDraw runs go to its window, in tabs of their own, and this
+    // start ends (before its log would replace the running one's).
+    let files = instance::file_args(&args);
+    let (inbox, handed_over) = std::sync::mpsc::channel();
+    let mut primary = None;
+    if instance::hands_over(&args) {
+        match instance::claim(settings::config_dir().as_deref(), &files, inbox.clone()) {
+            instance::Claim::HandedOver => return Ok(()),
+            instance::Claim::Primary(p) => primary = Some(p),
+            instance::Claim::Alone => {}
+        }
+    }
     // The log in a file too and panics reported: the Windows build has no
     // console to show them (#570).
     startup_log::init();
     tracedraw_text::install();
-    let args: Vec<String> = std::env::args().skip(1).collect();
     // `tracedraw --mcp`: no window, a Model Context Protocol server on
     // stdin/stdout (see mcp.rs and docs/behavior/mcp.md).
     if args.iter().any(|a| a == "--mcp") {
@@ -192,10 +212,14 @@ fn main() -> eframe::Result<()> {
     // checks): straight into a plain window at the default size.
     let plain = args.iter().any(|a| a == "--no-splash")
         || std::env::var("TRACEDRAW_NO_SPLASH").is_ok_and(|v| !v.is_empty() && v != "0");
-    let open_path = args
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .map(std::path::PathBuf::from);
+    // The first file opens as the window starts, the others after it.
+    let mut files = files.into_iter();
+    let open_path = files.next();
+    let rest: Vec<std::path::PathBuf> = files.collect();
+    if !rest.is_empty() {
+        let _ = inbox.send(rest);
+    }
+    let wake = primary.as_ref().map(|p| p.wake.clone());
     let mut settings = settings::Settings::load();
     // `--reset-settings`: every preference back to how TraceDraw comes
     // (the recent drawings and the window's size are kept).
@@ -231,7 +255,20 @@ fn main() -> eframe::Result<()> {
     // The graphics card, or its software adapter with hardware
     // acceleration off; `--renderer=` when a start before could not open
     // the window (#445, #439).
-    let mode = gpu::Mode::for_start(&args, &settings);
+    // A start before that never got its window (the driver crashed or
+    // hung it) goes on with the next renderer (#570).
+    let failed = gpu::Mode::from_args(&args)
+        .is_none()
+        .then(gpu::failed_attempt)
+        .flatten();
+    if let Some(f) = failed {
+        log::warn!("the last start did not open the window with {f:?}");
+    }
+    let mode = gpu::Mode::for_start(&args, &settings, failed);
+    let first = gpu::Mode::first(&settings);
+    let next = mode.next(first);
+    log::info!("opening the window with {mode:?} (Options asks for {first:?})");
+    gpu::begin_attempt(mode);
     let (renderer, wgpu_options) = gpu::options(mode, &settings.gpu_adapter);
     let options = eframe::NativeOptions {
         viewport,
@@ -240,27 +277,62 @@ fn main() -> eframe::Result<()> {
         wgpu_options,
         ..Default::default()
     };
-    let result = eframe::run_native(
-        "TraceDraw",
-        options,
-        Box::new(move |cc| {
-            gpu::note_renderer(cc, mode);
-            Ok(Box::new(if splash {
-                Shell::with_splash(cc, open_path)
-            } else {
-                Shell::new(cc, open_path)
-            }))
-        }),
-    );
-    match result {
-        // The window could not be opened this way: the next renderer, in a
-        // new start (a window system cannot be set up twice in one).
-        Err(e) if gpu::restart_with_next(mode, &args) => {
-            log::warn!("the window did not open with {mode:?} ({e}); trying the next renderer");
-            Ok(())
+    // A panic before the window opens is this renderer failing (eframe's
+    // OpenGL set-up panics when the driver offers no matching format):
+    // caught, so the next renderer is still tried (#616).
+    startup_log::quiet_panics(next.is_some());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eframe::run_native(
+            "TraceDraw",
+            options,
+            Box::new(move |cc| {
+                gpu::note_renderer(cc, mode);
+                if let Some(w) = &wake {
+                    let _ = w.set(cc.egui_ctx.clone());
+                }
+                let mut shell = if splash {
+                    Shell::with_splash(cc, open_path)
+                } else {
+                    Shell::new(cc, open_path)
+                };
+                shell.handed_over = Some(handed_over);
+                Ok(Box::new(shell))
+            }),
+        )
+    }));
+    startup_log::quiet_panics(false);
+    // A panic of the last renderer was reported as a crash already.
+    let reported = result.is_err() && next.is_none();
+    let result = match result {
+        Ok(r) => r,
+        Err(panic) if gpu::window_opened() => std::panic::resume_unwind(panic),
+        Err(panic) => {
+            let what = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "a panic".into());
+            Err(eframe::Error::AppCreation(what.into()))
         }
-        r => r,
+    };
+    // A start with the next renderer must be able to take the place.
+    drop(primary);
+    let Err(e) = result else {
+        return Ok(());
+    };
+    // The window could not be opened this way: the next renderer, in a
+    // new start (a window system cannot be set up twice in one).
+    if let Some(next) = next {
+        log::warn!("the window did not open with {mode:?} ({e}); trying {next:?}");
+        if gpu::restart_with(next, &args) {
+            return Ok(());
+        }
     }
+    log::error!("the window could not be opened with {mode:?}: {e}");
+    if !reported {
+        startup_log::no_window(&e.to_string());
+    }
+    Err(e)
 }
 
 /// The browser build starts from `web::start` (the page loads the module,
@@ -278,6 +350,12 @@ struct Shell {
     /// The file to open once the splash is done.
     #[cfg(not(target_arch = "wasm32"))]
     open: Option<std::path::PathBuf>,
+    /// Files later starts handed over (see instance.rs).
+    #[cfg(not(target_arch = "wasm32"))]
+    handed_over: Option<std::sync::mpsc::Receiver<Vec<std::path::PathBuf>>>,
+    /// Frames paced on a software adapter (#616).
+    #[cfg(not(target_arch = "wasm32"))]
+    pacer: gpu::Pacer,
 }
 
 impl Shell {
@@ -290,6 +368,10 @@ impl Shell {
             splash: None,
             #[cfg(not(target_arch = "wasm32"))]
             open: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            handed_over: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            pacer: gpu::Pacer::new(cc),
         }
     }
 
@@ -300,12 +382,16 @@ impl Shell {
             app: None,
             splash: Some(splash::Splash::start(&cc.egui_ctx, open.as_deref())),
             open,
+            handed_over: None,
+            pacer: gpu::Pacer::new(cc),
         }
     }
 }
 
 impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.pacer.pace();
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(splash) = self.splash.as_mut() {
             if splash.update(ui) == splash::Step::Wait {
@@ -326,6 +412,10 @@ impl eframe::App for Shell {
         let Some(app) = self.app.as_mut() else {
             return;
         };
+        // The first frame's window size, and frame statistics at debug
+        // level (#616).
+        #[cfg(not(target_arch = "wasm32"))]
+        let began = frame_stats::begin(ui.ctx());
         // Fonts text asked for (browser build), and fonts that arrived.
         #[cfg(target_arch = "wasm32")]
         web::sync_ui_fonts(ui.ctx());
@@ -335,6 +425,13 @@ impl eframe::App for Shell {
         app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
+        // Files a later start handed over (one try_recv when none came).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(rx) = &self.handed_over {
+            if instance::open_handed_over(app, ui.ctx(), rx) {
+                ui.ctx().request_repaint();
+            }
+        }
         // Requests of AI agents for the open drawing (MCP).
         #[cfg(not(target_arch = "wasm32"))]
         if app.sync_mcp_link(ui.ctx()) {
@@ -378,6 +475,8 @@ impl eframe::App for Shell {
         app.autosave_settings(Some(ui.ctx()));
         // Bitmaps edited outside follow their files.
         app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
+        #[cfg(not(target_arch = "wasm32"))]
+        frame_stats::end(ui.ctx(), began);
     }
 
     /// Keep the toolbox, dockers and other preferences for the next session.

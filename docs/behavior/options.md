@@ -1,15 +1,23 @@
 # Options dialogs
 
 Tools > Options is a submenu: TraceDraw
-(Ctrl+J), Customization, Tools, Global and Workspaces each open their own
-dialog. Layout > Document Options opens the document's dialog (also a
-double-click on a ruler, the page border or its shadow).
+(Ctrl+J), Customization, Tools, Global, Workspaces and AI each open the
+Options window on their pages. Layout > Document Options opens it on the
+document's pages (also a double-click on a ruler, the page border or its
+shadow). The window has a tab for each of them along the top, so every
+option is a click away: TraceDraw, Customization, Tools, Global,
+Workspaces, AI and, while a drawing is open, Document Options. A tab
+shows its set's page list and the page of that set shown last (else its
+first page); the title follows the tab, and OK and Cancel cover what
+was changed on every tab (#633).
 
 ## Layout
 
-- 887 x 663 px, centred, framed like every dialog: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
+- 887 x 695 px, centred, framed like every dialog: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
   (13 px) at the left and a close button at the right (red under the
   pointer), and a white 5 px frame round the `#F4F4F4` body.
+- The tabs in a row at the top of the body, over a light line, the
+  current one selected.
 - A white page list on the left (225 px; rows 23 px apart; the current
   page `#CCE8FF` with a `#99D1FF` frame) and the white page frame on the
   right (622 px), both 566 px high with a 1 px `#D9D9D9` border.
@@ -92,20 +100,31 @@ What File > Export (Ctrl+E) starts with (`formats`): the format (SVG),
 the resolution of bitmap formats (300 dpi, 1 to 2400), the JPEG and
 WebP quality (90, 1 to 100), Transparent background (on), the PDF
 standard (PDF 1.4), the PDF/X output condition (FOGRA39, at most 64
-characters) and the PDF bleed (0 mm, 0 to 50). Remember the settings of
-the last export (off): exporting keeps the dialog's choices for the next
-time. Export for Web and Export for Office keep their own presets and
-never change these.
+characters) and the PDF bleed (0 mm, 0 to 50). Within a session File >
+Export always starts with the choices of the last export (format,
+resolution, quality, transparency, WebP lossless, all pages, PDF choices
+and preset; not Selected only, which starts off again, nor the file's
+title and tags), which then take the place of the ones set here until
+the program is closed. Remember the
+settings of the last export (on in new preferences; preferences saved
+before keep their own value): exporting also keeps the format,
+resolution, quality, transparency, WebP lossless and PDF choices here
+for the next session (#617). Export for Web and Export for Office keep
+their own presets and never change these
+(`pick_drag_tests::the_export_dialog_starts_with_the_last_exports_choices`).
 
 Imported objects go (File > Import, Ctrl+I): where the file has them
 (the default), or centred in the middle of the view; the move is part of
 the import's undo step.
 
-Saving .cdr files: the Version new drawings are saved in (`cdr_version`,
-27 by default, 14 to 27; a value out of range from a file is brought
-into it). Saving a `.cdr` file sets it to the version chosen there; a
-drawing opened from a `.cdr` file keeps its own when TraceDraw saves
-that version (`files.md`).
+Saving .cdr files: the Version Save As starts at and new drawings are
+saved in (`cdr_version`, 27 by default, 14 to 27; a value out of range
+from a file is brought into it); a drawing opened from (or saved to) a
+`.cdr` file keeps its own version for Save and Save As when TraceDraw
+saves that version, and a drawing started from a template takes this one
+(`files.md`, #613).
+Save new drawings as .cdr files (`save_new_as_cdr`, off): Save As
+starts at the CDR type for a drawing without a file (#613).
 
 ### Bitmap Tracing
 
@@ -187,6 +206,8 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 
 ## Checks
 
+- `pick_drag_tests::save_as_starts_at_the_cdr_type_and_version_the_options_set`
+- `pick_drag_tests::the_options_dialogs_are_tabs_of_one_window`
 - `ui::options::tests::every_page_belongs_to_one_dialog`
 - `ui::options::tests::cancel_puts_settings_and_document_back`
 - `ui::options::tests::every_page_draws`

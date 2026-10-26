@@ -53,6 +53,11 @@ presets; `pdf::tests::pictures_are_downsampled_and_compressed_as_asked`):
 | Compression | ZIP (lossless) | JPEG (DCTDecode) for colour and gray pictures at the Quality (1 to 100, 85 at first); black-and-white pictures, transparency masks and PDF/X-1a pictures (CMYK) stay ZIP. Pictures made while exporting (flattened transparency, bitmap effects) take JPEG too. |
 | Compress text and line art | on | The pages' content streams are compressed (Flate); off, they are written as they are. |
 
+A picture wholly outside the media box (the page and its bleed) cannot
+show, so it stays out of the file; one that reaches the page or the
+bleed goes in whole (#642;
+`pdf::tests::pictures_wholly_outside_the_media_box_stay_out_of_the_file`).
+
 ### Text and fonts
 
 Text goes into the file as text: it can be searched, selected and
@@ -77,7 +82,12 @@ the choices. The writer:
   name carries a six-letter tag (`ABCDEF+Name`). The `W` array gives
   each glyph's advance, and a `ToUnicode` CMap maps each glyph to the
   characters it stands for (a ligature to all of them), so copying and
-  searching give back the text.
+  searching give back the text. A cluster whose glyphs do not each stand
+  for their own characters (several glyphs for one syllable, such as a
+  vowel sign drawn before its consonant or a reph after it, or a glyph
+  the map already gives other characters) is wrapped in marked content
+  `/Span << /ActualText ... >> BDC ... EMC` with its characters in typed
+  order (#599).
 - Places glyphs as the text engine lays them out: one text matrix per
   run of glyphs of one font on one line (size, position, slant, turn,
   the object's transform), with `TJ` adjustments for kerning, tracking
@@ -198,6 +208,7 @@ file.
   the information and the content, and the `/UE` and `/Perms` values
   unwrap and decrypt as the standard says.
 - `pdf::pdfx_tests::document_properties_fill_the_information_and_the_xmp`
+- `pdf::tests::pictures_wholly_outside_the_media_box_stay_out_of_the_file`
 - `pdf_crypt::tests::permissions_make_the_p_value`
 - `pdf_crypt::tests::objects_get_their_strings_and_streams_encrypted`
 - `tests::pdf_protection_comes_from_the_environment_values` (command line)

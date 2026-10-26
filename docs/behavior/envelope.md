@@ -99,6 +99,24 @@ nothing selected, how to start.
   its last envelope, stretched from its box to theirs, with its mapping
   and Keep Lines. A right click cancels.
 - Clear Envelope removes each selected object's last envelope.
+- Convert to Curves (Ctrl+Q) and Break Apart (Ctrl+K) make the envelope
+  permanent: the object becomes curves drawn as the envelope drew it, and
+  the envelope is gone. Break Apart then breaks the warped curve into its
+  parts, and enveloped artistic text into one curve per letter, each
+  warped as the whole text was, with its holes kept (O, B, A). The
+  warped outline is fitted with curves (`tracedraw_core::fit::fit_path`,
+  corners kept, within a ten-thousandth of the outline's size, 0.005 to
+  0.05 mm), so the result is smooth curves with about as many nodes as
+  the outline had before, not the warp's dense lines ("ABC": 52 nodes
+  for 56 unwarped, 826 before, #647,
+  `text_effect_tests::baked_envelopes_are_fitted_with_few_curves`).
+  Break Apart is offered by the canvas context menu for a warped object
+  and for artistic text as well as by the Object menu and Ctrl+K
+  (`pick_drag_tests::the_context_menu_breaks_an_enveloped_text_apart`). An
+  envelope after a contour, blend or extrusion stays live, and a bitmap
+  keeps its envelope. Break Apart leaves a group, clip frame, table or
+  symbol instance with its envelope (there is nothing to break; Convert to
+  Curves bakes it). See `convert-to-curves.md`.
 
 ## Panel
 
@@ -134,4 +152,13 @@ rectangle selects it, and the selection box reaches the top of the arch.
 - `envelope_edit::tests::handles_and_nodes_in_the_unconstrained_mode`
 - `envelope_edit::tests::enveloped_objects_are_hit_and_boxed_as_drawn`
 - `envelope_edit::tests::presets_settings_clear_and_copy`
+- `envelope_edit::tests::convert_to_curves_bakes_the_envelope`
+- `envelope_edit::tests::break_apart_bakes_an_enveloped_curve`
+- `envelope_edit::tests::an_enveloped_group_converts_object_by_object`
+- `text_effect_tests::break_apart_bakes_the_envelope_into_letter_curves`
+- `text_effect_tests::break_apart_keeps_the_hole_of_a_single_warped_letter`
+- `text_effect_tests::breaking_several_warped_texts_keeps_the_stacking_order`
+- `envelope_edit::tests::break_apart_leaves_an_enveloped_group`
+- `tracedraw_core::live::tests::a_baked_group_object_loses_its_spline`
+- `tracedraw_core::live::tests::outline_warp_warps_parts_as_the_whole`
 - `ui::envelope_ui::tests::the_bar_and_the_docker_draw`

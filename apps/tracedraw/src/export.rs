@@ -24,7 +24,7 @@ pub(crate) fn export_document(app: &App, st: &ExportState) -> (Document, Rect) {
         let l = tmp.pages[0].layers[0].id;
         for s in app.selected_shapes() {
             let mut c = s.clone();
-            c.transform = Affine::translate((-bounds.x0, -bounds.y0)) * c.transform;
+            c.transform_by(Affine::translate((-bounds.x0, -bounds.y0)));
             if let Ok(layer) = tmp.layer_mut(l) {
                 layer.shapes.push(c);
             }
@@ -377,7 +377,7 @@ fn encode_raster_with(
 pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     let mut doc = print_sheets(app, st);
     if st.separations {
-        doc = separations_doc(&doc);
+        doc = separations_doc_without(&doc, &st.plates_off);
     }
     let stem = app.document_title().trim_end_matches('*').to_string();
     // Files get their copies inside; the printer (lp) or the system
@@ -410,32 +410,42 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
             Ok(String::new())
         }
         _ => {
-            let pdf = tracedraw_io::pdf::document_to_pdf(&doc);
             let name = format!("{stem}.pdf");
+            if let (Some(printer), false) = (&st.printer, crate::files::WEB) {
+                // The sheets are drawn and spooled off the interface's
+                // thread: a slow or stuck printer leaves the window usable
+                // (#810).
+                let (printer, copies, collate) = (printer.clone(), st.copies, st.collate);
+                let msg = trf("status.printing_to", &[("name", &printer)]);
+                app.start_print_job(move || {
+                    print_on(&printer, &name, &doc, copies, collate, &stem)
+                });
+                return Ok(msg);
+            }
+            let pdf = tracedraw_io::pdf::document_to_pdf(&doc);
             if crate::files::WEB {
                 // In a browser the PDF is downloaded; its viewer prints it.
                 let path = std::path::PathBuf::from("/download").join(&name);
                 crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
                 return Ok(trf("status.print_sent", &[("path", &name)]));
             }
-            match &st.printer {
-                Some(printer) => print_on(printer, &name, pdf, st.copies, st.collate, &stem),
-                None => print_through_viewer(&name, pdf),
-            }
+            print_through_viewer(&name, pdf)
         }
     }
 }
 
 /// The print PDF sent to the system printer `printer` (`lp`), with the
 /// copies the dialog asked for.
+#[cfg(not(target_os = "windows"))]
 fn print_on(
     printer: &str,
     name: &str,
-    pdf: Vec<u8>,
+    doc: &Document,
     copies: u32,
     collate: bool,
     title: &str,
 ) -> Result<String, String> {
+    let pdf = tracedraw_io::pdf::document_to_pdf(doc);
     let dir = std::env::temp_dir().join("tracedraw-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
@@ -444,11 +454,68 @@ fn print_on(
     Ok(trf("status.print_sent_printer", &[("name", printer)]))
 }
 
+/// The resolution sheets are drawn at for a Windows printer.
+#[cfg(target_os = "windows")]
+const WINDOWS_PRINT_DPI: f64 = 300.0;
+
+/// The sheets drawn as pictures and sent to the Windows printer
+/// `printer`, local or on the network (#614), with the copies the dialog
+/// asked for.
+#[cfg(target_os = "windows")]
+fn print_on(
+    printer: &str,
+    _name: &str,
+    doc: &Document,
+    copies: u32,
+    collate: bool,
+    title: &str,
+) -> Result<String, String> {
+    let sheets: Vec<(Vec<u8>, f64, f64)> = doc
+        .pages
+        .iter()
+        .filter_map(|p| {
+            sheet_png(doc, p.id, WINDOWS_PRINT_DPI).map(|png| (png, p.size.width, p.size.height))
+        })
+        .collect();
+    crate::printers::print_sheets_windows(printer, &sheets, copies, collate, title)?;
+    Ok(trf("status.print_sent_printer", &[("name", printer)]))
+}
+
+/// Prints sent to the system viewer in this session.
+#[cfg(not(target_arch = "wasm32"))]
+static VIEWER_PRINTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Where the `count`th print of `name` to the viewer goes in `dir`: the
+/// first takes the name itself, later ones "name (2).pdf" and on, so a
+/// viewer still showing (and holding) an earlier print opens the new one
+/// in a page of its own (#809). Prints of the name before the last one
+/// are removed once no viewer holds them.
+#[cfg(not(target_arch = "wasm32"))]
+fn viewer_print_path(dir: &Path, name: &str, count: u32) -> std::path::PathBuf {
+    let p = Path::new(name);
+    let stem = p.file_stem().map_or(name.into(), |s| s.to_string_lossy());
+    let ext = p.extension().map_or("pdf".into(), |s| s.to_string_lossy());
+    let nth = |n: u32| match n {
+        0 | 1 => dir.join(name),
+        n => dir.join(format!("{stem} ({n}).{ext}")),
+    };
+    for n in 1..count.saturating_sub(1) {
+        let _ = std::fs::remove_file(nth(n));
+    }
+    // A file of that name left by another session and still held.
+    let mut n = count.max(1);
+    while n < count.max(1) + 100 && nth(n).exists() && std::fs::remove_file(nth(n)).is_err() {
+        n += 1;
+    }
+    nth(n)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn print_through_viewer(name: &str, pdf: Vec<u8>) -> Result<String, String> {
     let dir = std::env::temp_dir().join("tracedraw-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(name);
+    let count = VIEWER_PRINTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let path = viewer_print_path(&dir, name, count);
     crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
     open_with_system(&path)?;
     Ok(trf(
@@ -537,7 +604,7 @@ fn fit_contents_to_page(page: &mut tracedraw_core::document::Page, all: bool) {
     for layer in page.layers.iter_mut() {
         for s in layer.shapes.iter_mut() {
             if shows(&s.bounds()) {
-                s.transform = t * s.transform;
+                s.transform_by(t);
             }
         }
     }
@@ -703,27 +770,38 @@ fn overprint_black(s: &mut tracedraw_core::Shape) {
     }
 }
 
+/// A sheet drawn on white at `dpi`: its PNG and size in pixels.
+fn sheet_pixels(
+    doc: &Document,
+    id: tracedraw_core::PageId,
+    dpi: f64,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let pm = tracedraw_render::render_page_image(doc, id, dpi)?;
+    let mut white = tiny_skia::Pixmap::new(pm.width(), pm.height())?;
+    white.fill(tiny_skia::Color::WHITE);
+    white.draw_pixmap(
+        0,
+        0,
+        pm.as_ref(),
+        &Default::default(),
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    let png = white.encode_png().ok()?;
+    Some((png, white.width(), white.height()))
+}
+
+/// [`sheet_pixels`]'s PNG.
+#[cfg(target_os = "windows")]
+fn sheet_png(doc: &Document, id: tracedraw_core::PageId, dpi: f64) -> Option<Vec<u8>> {
+    sheet_pixels(doc, id, dpi).map(|(png, _, _)| png)
+}
+
 /// General > Print as bitmap: each sheet becomes one picture of itself.
 fn sheets_as_bitmaps(doc: &mut Document, dpi: f64) {
     let pages: Vec<_> = doc.pages.iter().map(|p| (p.id, p.size)).collect();
     for (id, size) in pages {
-        let Some(pm) = tracedraw_render::render_page_image(doc, id, dpi) else {
-            continue;
-        };
-        let mut white = match tiny_skia::Pixmap::new(pm.width(), pm.height()) {
-            Some(w) => w,
-            None => continue,
-        };
-        white.fill(tiny_skia::Color::WHITE);
-        white.draw_pixmap(
-            0,
-            0,
-            pm.as_ref(),
-            &Default::default(),
-            tiny_skia::Transform::identity(),
-            None,
-        );
-        let Ok(png) = white.encode_png() else {
+        let Some((png, w, h)) = sheet_pixels(doc, id, dpi) else {
             continue;
         };
         let shape_id = doc.ids_mut().shape();
@@ -731,9 +809,9 @@ fn sheets_as_bitmaps(doc: &mut Document, dpi: f64) {
             shape_id,
             ShapeKind::Bitmap {
                 rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, size.width, size.height),
-                width_px: white.width(),
-                height_px: white.height(),
-                png,
+                width_px: w,
+                height_px: h,
+                png: png.into(),
                 fx: None,
             },
         );
@@ -955,13 +1033,18 @@ fn invert_colors(s: &mut tracedraw_core::Shape) {
     });
 }
 
-/// Colour separations: one grayscale page per ink (C, M, Y, K, then each
-/// spot ink of the drawing) per page, where the ink coverage of every
-/// colour is drawn as a gray value. A spot colour prints on its own plate
-/// only, at its tint.
-/// One page per sheet and plate: the four process inks, then the spot
-/// inks, each as the grey of its coverage.
+/// Colour separations with every plate.
+#[cfg(test)]
 fn separations_doc(doc: &Document) -> Document {
+    separations_doc_without(doc, &[])
+}
+
+/// Colour separations: one grey page per sheet and plate (the four
+/// process inks, then each spot ink), each the grey of that ink's
+/// coverage; a spot colour prints on its own plate only, at its tint.
+/// The plates at the indices `off` (in [`plates`] order), those unticked
+/// in Print Preview, are left out (#846).
+fn separations_doc_without(doc: &Document, off: &[usize]) -> Document {
     let size = doc
         .pages
         .first()
@@ -970,7 +1053,12 @@ fn separations_doc(doc: &Document) -> Document {
     let mut sep = Document::new(format!("{} (separations)", doc.title), size);
     sep.pages.clear();
     sep.symbols = doc.symbols.clone();
-    let plates = plates(doc);
+    let plates: Vec<(Plate, String)> = plates(doc)
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !off.contains(i))
+        .map(|(_, p)| p)
+        .collect();
     for page in &doc.pages {
         for (plate, name) in &plates {
             let mut p = plate_page(page, *plate);
@@ -1382,7 +1470,103 @@ fn replace_in(
 
 #[cfg(test)]
 mod tests {
+    /// Each print to the viewer gets a name of its own, so the viewer
+    /// opens it in a new page while the last one is still shown; older
+    /// ones are cleared away (#809).
+    #[test]
+    fn each_print_to_the_viewer_gets_its_own_file() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-viewer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths = Vec::new();
+        for count in 1..=3 {
+            let p = super::viewer_print_path(&dir, "Poster.pdf", count);
+            std::fs::write(&p, b"%PDF").unwrap();
+            paths.push(p);
+        }
+        let names: Vec<_> = paths
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["Poster.pdf", "Poster (2).pdf", "Poster (3).pdf"]);
+        assert!(!paths[0].exists(), "the oldest is cleared away");
+        assert!(paths[1].exists() && paths[2].exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
+
+    /// A spot colour on a rectangle: printed with separations, the sheets
+    /// give the four process plates and one for the spot ink, where the
+    /// rectangle is full ink; the print preview offers its box (#779).
+    #[test]
+    fn separations_print_a_plate_for_each_spot_ink() {
+        use tracedraw_core::Fill;
+        let mut app = App::headless();
+        app.run(tracedraw_core::Command::SetInks {
+            inks: vec![tracedraw_core::document::Ink {
+                id: 7,
+                name: "Spot Red".into(),
+                cmyk: [0.0, 1.0, 0.8, 0.0],
+            }],
+        });
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(20.0, 20.0, 80.0, 60.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.run(tracedraw_core::Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(tracedraw_core::Color::Spot {
+                ink: 7,
+                tint: 1.0,
+                c: 0.0,
+                m: 1.0,
+                y: 0.8,
+                k: 0.0,
+            }),
+        });
+        let st = PrintState {
+            separations: true,
+            ..PrintState::default()
+        };
+        let sheets = print_sheets(&app, &st);
+        let names: Vec<String> = plates(&sheets).into_iter().map(|(_, n)| n).collect();
+        assert_eq!(names, ["Cyan", "Magenta", "Yellow", "Black", "Spot Red"]);
+        let seps = separations_doc(&sheets);
+        assert_eq!(seps.pages.len(), 5);
+        // Plates unticked in Print Preview do not print (#846).
+        let some = separations_doc_without(&sheets, &[0, 2]);
+        let kept: Vec<&str> = some.pages.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(kept.len(), 3, "{kept:?}");
+        assert!(
+            kept[0].ends_with("Magenta") && kept[2].ends_with("Spot Red"),
+            "{kept:?}"
+        );
+        let spot = &seps.pages[4];
+        assert!(spot.name.ends_with("Spot Red"), "{}", spot.name);
+        // The rectangle is full ink on its plate and absent on cyan.
+        let fills = |page: &tracedraw_core::document::Page| -> Vec<Fill> {
+            let mut out = Vec::new();
+            fn walk(s: &tracedraw_core::Shape, out: &mut Vec<Fill>) {
+                if let ShapeKind::Group { children } = &s.kind {
+                    children.iter().for_each(|c| walk(c, out));
+                } else if let ShapeKind::ClipFrame { contents, .. } = &s.kind {
+                    contents.iter().for_each(|c| walk(c, out));
+                } else {
+                    out.push(s.fill.clone());
+                }
+            }
+            for l in &page.layers {
+                l.shapes.iter().for_each(|s| walk(s, &mut out));
+            }
+            out
+        };
+        let full = Fill::Solid(tracedraw_core::Color::Gray { v: 0.0 });
+        assert!(fills(spot).contains(&full), "{:?}", fills(spot));
+        assert!(!fills(&seps.pages[0]).contains(&full));
+    }
 
     #[test]
     fn spot_inks_get_plates_of_their_own() {

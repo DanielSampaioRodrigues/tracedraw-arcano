@@ -436,7 +436,7 @@ impl App {
             model: String::new(),
             variant: variant.map(|v| v.id).unwrap_or_default(),
             prompt: self.studio.prompt.trim().to_string(),
-            image: Some(png),
+            image: Some(png.into()),
             image_size: size,
             count: 1,
             params,
@@ -647,7 +647,7 @@ impl App {
                 rect,
                 width_px: img.width,
                 height_px: img.height,
-                png: img.png.clone(),
+                png: img.png.clone().into(),
                 fx: None,
             },
         };
@@ -789,7 +789,7 @@ mod tests {
                 rect: Rect::new(10.0, 10.0, 42.0, 34.0),
                 width_px: 320,
                 height_px: 240,
-                png: super::super::test_png(320, 240),
+                png: super::super::test_png(320, 240).into(),
                 fx: None,
             })
             .expect("bitmap");

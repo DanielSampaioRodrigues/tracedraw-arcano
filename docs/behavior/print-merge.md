@@ -27,7 +27,16 @@ Record); Save Data Source, Finish and Cancel.
   (`field_types_are_guessed_from_the_data`). Save Data Source
   writes the records back as CSV, counters written out.
 - Add Column asks for a name and a type and adds the field to every
-  record (and a first record when there is none).
+  record (and a first record when there is none). For a Number it also
+  asks for the counter: digits (zeros in front), the starting value,
+  "Continually increment value" with its step (off: every record the
+  same number) and, when ticked, an ending value. With an ending value
+  the records from the start to it are made at once (15 to 25 in three
+  digits: eleven records, 015 to 025), counting down when the step is
+  negative; records already there are kept, and at most 100,000 are
+  made. An end the counter never reaches makes none (#791,
+  `print_merge::tests::a_number_column_with_an_end_value_makes_its_records`,
+  `pick_drag_tests::add_column_offers_a_number_range`).
 - Configure Columns shows each field's name (edited in place), type,
   counter settings and the x that removes it.
 - View Single Record shows the current record as a form; View All
@@ -118,12 +127,35 @@ at once (#437). From top to bottom:
   that page's first unlocked layer. Only frames on the page itself (not
   inside a group) are repeated (#598,
   `print_merge_docker::tests::the_placeholder_goes_in_the_same_place_on_every_page`).
+  Without a placeholder picture and with a pictures folder, each page
+  takes its own picture of the folder instead: the folder's pictures in
+  name order (ignoring case, numbers by value: 2 before 10), the first
+  on the drawing's first page; pages past the last picture are left as
+  they are (#618,
+  `print_merge_docker::tests::on_every_page_takes_the_pictures_folder_page_by_page`).
+  With it on, Create Merged Document and Print Merged Document fill the
+  open drawing's own pages instead of making a new drawing: record 1 on
+  the first page, record 2 on the second, and so on, as one undo step
+  "Print Merge"; pages past the last record keep their fields, records
+  past the last page are left out, and a picture frame whose cell is
+  empty or whose picture does not load keeps the picture it holds (#618,
+  `print_merge_docker::tests::on_every_page_merges_onto_the_drawings_own_pages`).
+  So a drawing already merged, whose pictures folder is gone, is left as
+  it is. The status bar says "Print merge filled {n} page(s) of this
+  drawing" (and how many records had no page left), "Pages already
+  filled; no new drawing made" when nothing was left to fill, or "These
+  pages hold no merge fields; nothing to fill" when they have none, with
+  no undo step (#618,
+  `print_merge_docker::tests::on_every_page_a_merge_keeps_the_pictures_already_placed`).
+  Place Inside Frame with On every page leaves a frame on another page
+  that already holds something as it is, as on the page itself.
 - Update Field (when a placeholder is selected: a text holding only
   `<Field>`, or an object named `<Field>`): the selected placeholders
   take the chosen column, and with Image the Align and scale shown.
 - Create Merged Document: the current page merged into a new drawing
   (one page per record, named as below); the drawing it came from stays
-  as it was. Print Merged Document... does the same, then opens Print.
+  as it was. With On every page on, the drawing's own pages are filled
+  instead (above). Print Merged Document... does the same, then opens Print.
 
 Clip frames keep the object data of the object they were made from, as
 they keep its name.
@@ -138,7 +170,11 @@ copies, then the fills).
 An object named `<Field>` of a picture field takes the record's picture
 inside it as a clip frame, placed by its Align and scale (placeholders
 without it fill it from the centre, as before); a clip frame's old
-contents, such as the placeholder picture, give way. On the page the
+contents, such as the placeholder picture, give way. An empty cell or a
+picture that does not load leaves the frame empty, so a record without a
+picture never shows the stand-in; only a merge onto the drawing's own
+pages (On every page) keeps the frame's current contents then (#618,
+`print_merge_docker::tests::a_record_without_a_picture_gets_no_stand_in`). On the page the
 picture is placed inside the object; inside a group the object becomes,
 in place, a clip frame of its own outline holding the picture (#460). An object named `<Field>` of a QR field becomes the code, as
 large as its box allows.
@@ -153,3 +189,5 @@ large as its box allows.
 - `ui::print_merge_docker::tests::the_docker_inserts_fields_and_makes_a_merged_document`
 - `ui::print_merge_docker::tests::update_field_changes_the_column_and_the_placement`
 - `ui::print_merge_docker::tests::the_docker_draws_with_and_without_data`
+- `ui::print_merge_docker::tests::on_every_page_takes_the_pictures_folder_page_by_page`
+- `ui::print_merge_docker::tests::on_every_page_merges_onto_the_drawings_own_pages`
