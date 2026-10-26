@@ -29,7 +29,6 @@ pub enum CaseMode {
     Toggle,
 }
 
-/// Step and Repeat docker state.
 /// An undo step that began (`begins`) or finished editing the contents
 /// of the clip frame `frame`, with the objects that were on the page
 /// besides the frame (see [`App::clip_edit_contents`]).
@@ -43,6 +42,7 @@ pub struct ClipEditMark {
     pub begins: bool,
 }
 
+/// Step and Repeat docker state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepRepeat {
     pub copies: u32,
