@@ -2720,7 +2720,7 @@ impl<'a> Importer<'a> {
                 std::rc::Rc::ptr_eq(&r.font, &font)
                     && (r.size_pt - size_pt).abs() < 1e-6
                     && r.fill == gs.fill
-                    && (same_line(&r.matrix, &trm, r.end_x)
+                    && (same_line(&r.matrix, &trm, r.end_x, gs.font_size)
                         || (joins
                             && near_line(
                                 &r.matrix,
@@ -2874,9 +2874,19 @@ impl<'a> Importer<'a> {
 }
 
 /// Same baseline and direction, continuing after the previous advance.
-fn same_line(prev: &Affine, next: &Affine, end_x: f64) -> bool {
+/// The reach is in ems of the text (`font_size`, in text space): a PDF
+/// that sets the size with the font and draws with a plain text matrix
+/// gave ems of one point, so a vowel sign placed a fraction of a point
+/// off the baseline, or the next syllable starting a little before the
+/// sign's end, began a new text in the middle of a word (#771).
+fn same_line(prev: &Affine, next: &Affine, end_x: f64, font_size: f64) -> bool {
     let a = prev.as_coeffs();
-    let em = (a[0] * a[3] - a[1] * a[2]).abs().sqrt().max(1e-9);
+    let size = if font_size.is_finite() && font_size.abs() > 1e-9 {
+        font_size.abs()
+    } else {
+        1.0
+    };
+    let em = (size * (a[0] * a[3] - a[1] * a[2]).abs().sqrt()).max(1e-9);
     // Along the baseline: anything short of a line break; across it: tiny.
     on_line(prev, next, end_x, em * 0.05, em * -0.2, em * 3.0)
 }
@@ -4047,6 +4057,12 @@ mod tests {
     /// way real Hindi PDFs map them: some to a letter with its virama, one
     /// to a whole conjunct.
     fn deva_page(content: &str, properties: &str) -> Vec<String> {
+        deva_page_with(content, properties, &[])
+    }
+
+    /// [`deva_page`] with the glyphs at `zero` (indexes from code A) as
+    /// wide as nothing, as signs drawn over their letter are.
+    fn deva_page_with(content: &str, properties: &str, zero: &[usize]) -> Vec<String> {
         let map = [
             ("41", "0915"),
             ("42", "093F"),
@@ -4073,6 +4089,11 @@ mod tests {
         // F is a reph glyph (no advance), P a ra with its virama shown.
         let mut widths = vec!["500"; 16];
         widths[5] = "0";
+        for &z in zero {
+            if let Some(w) = widths.get_mut(z) {
+                *w = "0";
+            }
+        }
         let widths = widths.join(" ");
         let font = format!(
             "<< /Type /Font /Subtype /TrueType /BaseFont /Mangal /FirstChar 65 /LastChar 80 /Widths [{widths}] /ToUnicode 6 0 R >>"
@@ -4092,6 +4113,90 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// A PDF that sets the size with the font (10 Tf) and places each
+    /// glyph with a plain text matrix, as office suites write Hindi: a
+    /// vowel sign moved a fraction of a point up and ahead of its letter,
+    /// or a kerned sign, and the next syllable starting a little before
+    /// the sign's end stay in one word. Each began a new text there, so
+    /// क्षेत्र came in as क्षे and त्र, and the words broke apart when
+    /// edited (#771).
+    #[test]
+    fn hindi_placed_glyph_by_glyph_stays_one_word() {
+        // H (the u sign), K (the e sign) and B (the i sign) draw no advance.
+        let zero = [1, 7, 10];
+        // कुति: क, then ु 0.4 pt ahead and 0.2 pt up, then ति from 0.4 pt
+        // back, each part with its ActualText.
+        assert_eq!(
+            deva_page_with(
+                "BT /F1 10 Tf \
+                 /Span << /ActualText <FEFF09150941> >> BDC 1 0 0 1 10 50 Tm (A) Tj \
+                 1 0 0 1 15.4 50.2 Tm (H) Tj EMC \
+                 /Span << /ActualText <FEFF0924093F> >> BDC 1 0 0 1 15 50 Tm (CB) Tj EMC ET",
+                "",
+                &zero
+            ),
+            ["कुति"]
+        );
+        // क्षेत: the e sign kerned 0.59 pt along, then त placed where the
+        // conjunct ends.
+        assert_eq!(
+            deva_page_with(
+                "BT /F1 10 Tf /Span << /ActualText <FEFF0915094D09370947> >> BDC \
+                 1 0 0 1 10 50 Tm [(N) -59 (K)] TJ EMC 1 0 0 1 15 50 Tm (C) Tj ET",
+                "",
+                &zero
+            ),
+            ["क्षेत"]
+        );
+        // A line below, or the next word after a gap, still starts anew
+        // or takes a space.
+        assert_eq!(
+            deva_page_with(
+                "BT /F1 10 Tf 1 0 0 1 10 50 Tm (A) Tj 1 0 0 1 10 38 Tm (C) Tj ET",
+                "",
+                &zero
+            ),
+            ["क", "त"]
+        );
+        assert_eq!(
+            deva_page_with(
+                "BT /F1 10 Tf 1 0 0 1 10 50 Tm (A) Tj 1 0 0 1 18 50 Tm (C) Tj ET",
+                "",
+                &zero
+            ),
+            ["क त"]
+        );
+    }
+
+    /// The Devanagari test corpus written to PDF by an office suite
+    /// (`testdata/devanagari-corpus.pdf`, a FreeMono subset embedded,
+    /// one word a line) comes back word for word, each line one text
+    /// (#771); 6 of its 59 words came in as two texts before.
+    #[test]
+    fn an_office_suite_hindi_pdf_comes_back_word_for_word() {
+        let bytes = include_bytes!("../testdata/devanagari-corpus.pdf");
+        let corpus = include_str!("../../text/testdata/devanagari-corpus.txt");
+        let want: Vec<&str> = corpus
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        let mut ids = IdSource::default();
+        let imp = parse(bytes, &mut ids).expect("parse");
+        let got: Vec<String> = imp
+            .pages
+            .iter()
+            .flat_map(|p| p.shapes.iter())
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|s| s.text.as_str()).collect())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(got, want);
     }
 
     /// Hindi as PDFs draw it comes in as one text in typed order (#599):
