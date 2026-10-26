@@ -10,6 +10,7 @@ full, row-by-row status.
 - Save As: Embed fonts starts off, for `.tdraw` and `.cdr` files alike. It started on, so every drawing saved carried its own copy of the fonts its text uses; tick the box for the files that are going to another machine, and the choice stays for the next Save As (#886).
 - Area Fill: a drawing of many lines that nearly meet (a line stopping a few ten thousandths of a millimetre short of the next, as files carry from rounding) now fills the cell under the click, not the whole drawing. Ends of open lines within 0.01 mm of an outline, or of their own start, count as meeting it (#899).
 - Start on Windows: a start whose graphics driver hangs while the window is set up no longer stays open with no window. After 20 seconds without one, TraceDraw starts again with the next renderer by itself (OpenGL, then the software adapter), so the first start opens instead of only the one after it, and a drawing opened meanwhile gets a window of its own instead of going to the one that never showed (#570).
+- Font Manager: the fonts of a folder added to the libraries can be used in drawings straight away and after every restart, without installing them one by one; removing the folder takes them out again, except fonts installed on their own (#866).
 
 ## 0.19.4 (2026-10-26)
 
