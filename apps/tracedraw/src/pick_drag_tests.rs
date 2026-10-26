@@ -8544,3 +8544,205 @@ fn area_fill_keeps_the_curves_it_fills_between() {
     );
     assert!(overlap.segments().count() <= 4, "{overlap:?}");
 }
+<<<<<<< HEAD
+=======
+
+/// A node dragged with the Shape tool snaps to the other nodes of its own
+/// curve, not only to other objects (#673).
+#[test]
+fn a_dragged_node_snaps_to_another_node_of_its_own_curve() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The top right corner dropped 3 px off the bottom left one.
+    let from = app.view.to_screen(Point::new(60.0, 10.0));
+    let to = app.view.to_screen(Point::new(10.0, 40.0)) + egui::vec2(3.0, -3.0);
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let p = match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    let on_corner = tracedraw_core::nodes::nodes(&p)
+        .iter()
+        .filter(|n| (n.pos - Point::new(10.0, 40.0)).hypot() < 1e-6)
+        .count();
+    assert_eq!(on_corner, 2, "{p:?}");
+}
+
+/// With Ctrl the node snaps where the move kept on its axis takes it: a
+/// middle node dragged right with the pointer below the line lands on
+/// the curve's own end node (#673).
+#[test]
+fn a_ctrl_dragged_node_snaps_to_its_own_curve_on_its_axis() {
+    use tracedraw_core::geometry::BezPath;
+    let (ctx, mut app, _) = setup();
+    let mut p = BezPath::new();
+    p.move_to((20.0, 60.0));
+    p.line_to((60.0, 60.0));
+    p.line_to((100.0, 60.0));
+    let curve = app
+        .new_shape(ShapeKind::Path {
+            path: p,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![curve]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let from = app.view.to_screen(Point::new(60.0, 60.0));
+    // 1 mm short of the end node along the line, 15 px below it: out of
+    // reach of the end node unless the move is kept on its axis first.
+    let to = app.view.to_screen(Point::new(99.0, 60.0)) + egui::vec2(0.0, 15.0);
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    drag(&ctx, &mut app, from, to, Modifiers::CTRL, Vec::new());
+    let p = match app.doc().find_shape(curve).map(|s| s.kind.clone()) {
+        Some(ShapeKind::Path { path, .. }) => path,
+        other => panic!("not a curve: {other:?}"),
+    };
+    let ns = tracedraw_core::nodes::nodes(&p);
+    assert!(
+        (ns[1].pos - Point::new(100.0, 60.0)).hypot() < 1e-6,
+        "{:?}",
+        ns[1].pos
+    );
+}
+
+/// A dragged node does not snap to where it started, nor to the segments
+/// that move with it (#673).
+#[test]
+fn a_dragged_node_does_not_snap_to_itself_or_its_moving_segments() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let node_at = |app: &App| {
+        let p = match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Path { path, .. }) => path,
+            other => panic!("not a curve: {other:?}"),
+        };
+        tracedraw_core::nodes::nodes(&p)
+            .iter()
+            .map(|n| n.pos)
+            .min_by(|a, b| {
+                let d = |q: &Point| (*q - Point::new(60.0, 10.0)).hypot();
+                d(a).total_cmp(&d(b))
+            })
+            .expect("a node")
+    };
+    // The top right node, 6 px right and down of where it was (inside
+    // the 10 px snapping radius of its start); then on to 6 px off the
+    // middle of the top side it bends.
+    let off = egui::vec2(6.0, 6.0);
+    for target in [Point::new(60.0, 10.0), Point::new(35.0, 10.0)] {
+        let from = app.view.to_screen(node_at(&app));
+        let to = app.view.to_screen(target) + off;
+        click_at(&ctx, &mut app, from, Modifiers::NONE);
+        drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+        let want = app.view.to_page(to);
+        let at = node_at(&app);
+        assert!((at - want).hypot() < 1e-3, "{at:?} snapped, not {want:?}");
+    }
+}
+
+/// Frame times of a node drag with the Shape tool on a curve of 3000
+/// nodes, the node snapping to the rest of its own curve (#673): the
+/// still part is found once a drag and only its pieces near the pointer
+/// are looked at, so a frame costs about what it did without it.
+#[test]
+#[ignore]
+fn frame_times_of_a_node_drag_on_a_long_curve() {
+    use tracedraw_core::geometry::BezPath;
+    let (ctx, mut app, _) = setup();
+    let mut p = BezPath::new();
+    for i in 0..3000 {
+        let q = (
+            10.0 + (i % 60) as f64 * 3.0,
+            10.0 + (i / 60) as f64 * 5.0 + (i % 2) as f64,
+        );
+        if i == 0 {
+            p.move_to(q);
+        } else {
+            p.line_to(q);
+        }
+    }
+    let curve = app
+        .new_shape(ShapeKind::Path {
+            path: p,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![curve]);
+    app.set_tool(Tool::Shape);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    // The node at (100, 135): row 25, column 30.
+    let from = app.view.to_screen(Point::new(100.0, 135.0));
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let n = 300;
+    let mut total = 0.0;
+    for i in 0..n {
+        let to = from + egui::vec2((i % 40) as f32 * 2.0, (i / 40) as f32 * 3.0 + 1.0);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events: vec![Event::PointerMoved(to)],
+            time: Some(i as f64 * 0.016),
+            ..Default::default()
+        };
+        let t = std::time::Instant::now();
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+        total += t.elapsed().as_secs_f64();
+        out.textures_delta.clear();
+    }
+    assert!(
+        matches!(app.drag, Drag::NodeMove { .. }),
+        "a node drag: {:?}",
+        app.drag
+    );
+    eprintln!(
+        "node drag on 3000 nodes: ui {:.3} ms a frame",
+        total * 1000.0 / n as f64
+    );
+}
+
+/// Shift+F3 opens Text > Change Case for the selected text, and does
+/// nothing without one (#801).
+#[test]
+fn shift_f3_opens_change_case_for_selected_text() {
+    use crate::ui::dialogs::Dialog;
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F3, Modifiers::SHIFT)],
+        Modifiers::SHIFT,
+    );
+    assert!(!matches!(app.dialog, Dialog::ChangeCase(_)));
+    tracedraw_text::install();
+    app.start_text(Point::new(20.0, 100.0), None);
+    app.text_insert("hello world");
+    let id = app.text_edit.as_ref().expect("editing").shape;
+    app.finish_text();
+    app.set_tool(Tool::Pick);
+    app.select(vec![id]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F3, Modifiers::SHIFT)],
+        Modifiers::SHIFT,
+    );
+    assert!(matches!(app.dialog, Dialog::ChangeCase(_)), "{:?}", app.dialog);
+}
+>>>>>>> c08b994a (Shift+F3 opens Text > Change Case (#801))

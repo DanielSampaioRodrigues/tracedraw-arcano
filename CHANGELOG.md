@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shift+F3 opens Text > Change Case for the selected text, and the menu row shows it (#801).
+
 ## 0.19.2 (2026-10-26)
 
 - Dimensions hold to the object they measure: a dimension whose ends were placed on nodes of an object (its corners, say) follows it when the object is moved, resized or reshaped, and its value changes with it. Moving the dimension by itself lets it go (#838).

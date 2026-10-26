@@ -2933,7 +2933,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sep(ui);
-    if item(ui, "menu.text.change_case", "", is_text) {
+    if item(ui, "menu.text.change_case", "Shift+F3", is_text) {
         app.dialog = Dialog::ChangeCase(crate::ops2::CaseMode::Sentence);
     }
     if item(ui, "menu.text.make_web_compatible", "", is_text) {

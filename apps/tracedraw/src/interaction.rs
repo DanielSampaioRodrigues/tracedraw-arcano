@@ -3026,6 +3026,15 @@ impl App {
         if pressed(Key::F3, Modifiers::NONE) {
             self.zoom_step(false);
         }
+        // Shift+F3: Text > Change Case for the selected text (#801).
+        if pressed(Key::F3, Modifiers::SHIFT)
+            && self
+                .selected_shapes()
+                .iter()
+                .any(|s| matches!(s.kind, ShapeKind::Text { .. }))
+        {
+            self.dialog = crate::ui::dialogs::Dialog::ChangeCase(crate::ops2::CaseMode::Sentence);
+        }
         if pressed(Key::T, cmd | Modifiers::SHIFT) {
             self.open_edit_text_dialog();
         }
