@@ -3229,6 +3229,7 @@ status.click_reference_object = "Kliknij obiekt odniesienia"
 status.click_shaping_target = "Kliknij obiekt docelowy (Esc anuluje)" # mt
 status.click_source_object = "Kliknij obiekt, z którego kopiować"
 status.click_text_path = "Kliknij ścieżkę, do której ma zostać dopasowany tekst (prawy przycisk anuluje)"
+status.brush_select_first = "Najpierw zaznacz obiekt, a potem przeciągnij po nim pędzlem"
 status.clip_frame_cancelled = "Anulowano Przytnij do ramki"
 status.clip_frame_select_contents = "Najpierw zaznacz zawartość, a następnie wybierz ramkę"
 status.clone_of_clone = "Klonu nie można sklonować; sklonuj zamiast tego jego oryginał"

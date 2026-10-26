@@ -3229,6 +3229,7 @@ status.click_reference_object = "基準オブジェクトをクリックして�
 status.click_shaping_target = "対象のオブジェクトをクリック (Esc でキャンセル)" # mt
 status.click_source_object = "コピー元のオブジェクトをクリックしてください"
 status.click_text_path = "テキストを沿わせるパスをクリックします (右クリックでキャンセル)"
+status.brush_select_first = "先にオブジェクトを選択してから、その上をブラシでドラッグしてください"
 status.clip_frame_cancelled = "フレームへのクリップをキャンセルしました"
 status.clip_frame_select_contents = "先に内容を選択し、次にフレームを選択してください"
 status.clone_of_clone = "クローンはクローンできません。代わりにマスターをクローンしてください"

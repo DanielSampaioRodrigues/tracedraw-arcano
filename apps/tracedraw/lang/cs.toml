@@ -3229,6 +3229,7 @@ status.click_reference_object = "Klikněte na referenční objekt"
 status.click_shaping_target = "Klepněte na cílový objekt (Esc zruší)" # mt
 status.click_source_object = "Klikněte na objekt, ze kterého chcete kopírovat"
 status.click_text_path = "Klikněte na cestu, ke které se má text přizpůsobit (pravé tlačítko zruší)"
+status.brush_select_first = "Nejprve vyberte objekt a potom přes něj táhněte štětcem"
 status.clip_frame_cancelled = "Oříznutí do rámečku zrušeno"
 status.clip_frame_select_contents = "Nejprve vyberte obsah, poté zvolte rámeček"
 status.clone_of_clone = "Klon nelze klonovat; klonujte raději jeho předlohu"

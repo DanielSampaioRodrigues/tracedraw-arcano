@@ -20,6 +20,9 @@ full, row-by-row status.
 - Print Preview shows the printer choice at the top of its options, with the gear button that opens the chosen printer's Properties, its status and the number of copies with Collate, so the printer can be changed without going back to the Print dialog (#792).
 - Print Merge docker: On every page is offered for Text and QR code fields too, not only pictures. Insert Field then puts the field in the same place on every page of the open drawing, and Create Merged Document fills those pages, one record each, instead of making a new drawing (#793).
 - Fonts embedded in an opened `.cdr` file (or carried by a `.tdraw` file) that are not installed say "Embedded" at the end of their row in the font lists and after the name in the font box, so it is clear the text is drawn with the copy that came with the drawing (#518).
+- A single click on an object with a drawing or shaping tool (the rectangle, ellipse, polygon and other box tools, Spiral, Common Shapes, Table outside a table, Knife, the connectors, Blend, Block Shadow, the shape brushes and others whose click had no job) selects it, Shift adds or takes it away, Ctrl reaches into groups, and a click on empty space lets go; a drag still draws. The line tools and Text keep their clicks (#271, by zalmanleib).
+- The shape brushes (Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen) change only the selected objects: with nothing selected a drag no longer takes the object under the pointer, and the status bar says to select one first (#271, by zalmanleib).
+- While typing text, Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, Ctrl+H and Ctrl+N align it left, centre, right, justified, force justified or not at all, and a new alignment keeps text typed at a point in place at the reference point of the X and Y fields instead of moving it (#271, by zalmanleib).
 
 ## 0.19.4 (2026-10-26)
 

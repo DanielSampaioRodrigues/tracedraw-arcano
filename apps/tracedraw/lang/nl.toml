@@ -3229,6 +3229,7 @@ status.click_reference_object = "Klik op het referentieobject"
 status.click_shaping_target = "Klik op het doelobject (Esc annuleert)" # mt
 status.click_source_object = "Klik op het object waarvan je wilt kopiëren"
 status.click_text_path = "Klik op het pad waarop de tekst moet worden geplaatst (rechtsklik annuleert)"
+status.brush_select_first = "Selecteer eerst een object en sleep er dan met het penseel overheen"
 status.clip_frame_cancelled = "Uitsnijden in kader geannuleerd"
 status.clip_frame_select_contents = "Selecteer eerst de inhoud en kies daarna het kader"
 status.clone_of_clone = "Een kloon kan niet worden gekloond; kloon in plaats daarvan het origineel"

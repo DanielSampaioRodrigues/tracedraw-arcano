@@ -3229,6 +3229,7 @@ status.click_reference_object = "Clique no objeto de referência"
 status.click_shaping_target = "Clique no objeto alvo (Esc cancela)" # mt
 status.click_source_object = "Clique no objeto de origem"
 status.click_text_path = "Clique no caminho em que o texto vai ser ajustado (botão direito cancela)"
+status.brush_select_first = "Selecione um objeto primeiro e depois arraste o pincel sobre ele"
 status.clip_frame_cancelled = "Recortar na moldura cancelado"
 status.clip_frame_select_contents = "Selecione o conteúdo primeiro e depois escolha a moldura"
 status.clone_of_clone = "Um clone não pode ser clonado; clone o mestre dele"

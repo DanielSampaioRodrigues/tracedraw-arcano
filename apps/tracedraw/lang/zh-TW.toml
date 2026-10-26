@@ -3229,6 +3229,7 @@ status.click_reference_object = "按一下參考物件"
 status.click_shaping_target = "按一下目標物件（Esc 取消）" # mt
 status.click_source_object = "按一下要複製來源的物件"
 status.click_text_path = "按一下要讓文字適合的路徑（按右鍵取消）"
+status.brush_select_first = "請先選取一個物件，然後用筆刷在其上拖曳"
 status.clip_frame_cancelled = "已取消裁剪至框架"
 status.clip_frame_select_contents = "請先選取內容，然後選擇框架"
 status.clone_of_clone = "無法仿製仿製物件；請改為仿製其主物件"

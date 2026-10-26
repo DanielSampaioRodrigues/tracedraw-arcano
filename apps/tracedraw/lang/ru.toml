@@ -3229,6 +3229,7 @@ status.click_reference_object = "Щёлкните опорный объект"
 status.click_shaping_target = "Щёлкните целевой объект (Esc отменяет)" # mt
 status.click_source_object = "Щёлкните объект, из которого копировать"
 status.click_text_path = "Щелкните путь, вдоль которого разместить текст (правый щелчок отменяет)"
+status.brush_select_first = "Сначала выделите объект, затем проведите по нему кистью"
 status.clip_frame_cancelled = "Обрезка по рамке отменена"
 status.clip_frame_select_contents = "Сначала выберите содержимое, затем рамку"
 status.clone_of_clone = "Клон нельзя клонировать; клонируйте его оригинал"

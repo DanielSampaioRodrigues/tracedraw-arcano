@@ -3229,6 +3229,7 @@ status.click_reference_object = "রেফারেন্স অবজেক্�
 status.click_shaping_target = "লক্ষ্য অবজেক্টে ক্লিক করুন (Esc বাতিল করে)" # mt
 status.click_source_object = "যে অবজেক্ট থেকে কপি করবেন তাতে ক্লিক করুন"
 status.click_text_path = "যে পাথে টেক্সট বসাতে চান তাতে ক্লিক করুন (ডান-ক্লিকে বাতিল)"
+status.brush_select_first = "প্রথমে একটি অবজেক্ট নির্বাচন করুন, তারপর ব্রাশ দিয়ে তার উপর টানুন"
 status.clip_frame_cancelled = "ফ্রেমে ক্লিপ বাতিল হয়েছে"
 status.clip_frame_select_contents = "প্রথমে বিষয়বস্তু নির্বাচন করুন, তারপর ফ্রেম বেছে নিন"
 status.clone_of_clone = "ক্লোনের ক্লোন করা যায় না; বরং তার মাস্টারের ক্লোন করুন"

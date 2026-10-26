@@ -3229,6 +3229,7 @@ status.click_reference_object = "Fai clic sull'oggetto di riferimento"
 status.click_shaping_target = "Fai clic sull'oggetto di destinazione (Esc annulla)" # mt
 status.click_source_object = "Fai clic sull'oggetto da cui copiare"
 status.click_text_path = "Fare clic sul tracciato a cui adattare il testo (clic destro annulla)"
+status.brush_select_first = "Seleziona prima un oggetto, poi trascina il pennello sopra di esso"
 status.clip_frame_cancelled = "Ritaglia nella cornice annullato"
 status.clip_frame_select_contents = "Seleziona prima il contenuto, poi scegli la cornice"
 status.clone_of_clone = "Un clone non si può clonare; clona invece il suo originale"

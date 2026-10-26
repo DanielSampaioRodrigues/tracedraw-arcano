@@ -3229,6 +3229,7 @@ status.click_reference_object = "Referans nesneye tıklayın"
 status.click_shaping_target = "Hedef nesneye tıklayın (Esc iptal eder)" # mt
 status.click_source_object = "Kopyalanacak nesneye tıklayın"
 status.click_text_path = "Metnin yerleştirileceği yolu tıklatın (sağ tık iptal eder)"
+status.brush_select_first = "Önce bir nesne seçin, ardından fırçayla üzerinde sürükleyin"
 status.clip_frame_cancelled = "Çerçeveye Kırp iptal edildi"
 status.clip_frame_select_contents = "Önce içeriği seçin, ardından çerçeveyi seçin"
 status.clone_of_clone = "Bir klon klonlanamaz; bunun yerine asıl nesnesini klonlayın"
