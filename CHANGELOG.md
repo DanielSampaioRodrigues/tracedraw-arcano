@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.19.4 (2026-10-26)
+
 - Print Preview: a page smaller than the paper repeated on it (step and repeat, several pages per sheet) shows every copy. Only the copies in one band of the preview were drawn and white covered the rest; any group or clip frame moved by its own transform was left out the same way in large renders (#848).
 - PDF import: Hindi written by office suites (the size set with the font, each glyph placed with a plain text matrix) comes in as whole words. A vowel sign placed a fraction of a point off the line, or the next syllable starting just before a sign's end, began a new text in the middle of a word, so क्षेत्र, शुद्धि or प्रार्थना came in as two texts and broke apart when edited; all 59 words of the test corpus and whole sentences now come back as typed (#771).
 - Toolbars move into rows: the standard toolbar, the property bar, the Text, Zoom and Transform toolbars and the time tracker, docked at the top or the bottom, can share a row. Drag a toolbar's grip onto another toolbar's row to put it beside that one, or onto the line between two rows to give it a row of its own; the Text, Zoom and Transform toolbars and the time tracker now have grips and float or dock like the others. The rows are kept with the preferences (#837, #855).
