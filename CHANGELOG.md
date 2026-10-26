@@ -16,6 +16,7 @@ full, row-by-row status.
 - Font Manager: the fonts of a folder added to the libraries can be used in drawings straight away and after every restart, without installing them one by one; removing the folder takes them out again, except fonts installed on their own (#866).
 - What is being drawn shows over a black or dark fill: a freehand stroke, a polyline, 2-point line, B-spline or 3-point curve in progress and the 3-point tools' base line are a black hairline on a white line, the Bezier and Pen segments placed so far lie on a white line under their outline colour, the connector line and the zoom, text frame and rubber band boxes are on a white line too, and the node squares of a curve in progress have a white edge (#672).
 - Shaping with open curves: an open curve or line as the target of Weld, Trim or Intersect is now cut by the closed objects and stays open (Trim keeps the parts outside, Intersect the part inside, Weld adds the parts outside to the welded shapes). An open curve acting on a closed object no longer distorts it: it takes no part, and the status bar points to the Knife tool for cutting a shape along a line (#828).
+- The main window starts as it was left: maximized when it was left maximized (a maximize the window system dropped while the window opened is asked for again, and the first frames no longer overwrite the kept state), and a kept size that comes back the same with a larger interface or system text size, where it shrank at every start. A kept size larger than the monitor starts maximized (#787).
 
 ## 0.19.4 (2026-10-26)
 
