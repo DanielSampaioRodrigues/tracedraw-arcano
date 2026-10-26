@@ -2463,6 +2463,7 @@ merge.pictures_folder_tip = "选择数据中所列图片所在的文件夹（不
 merge.placeholder = "占位图像" # mt
 merge.all_pages = "所有页面" # mt
 merge.all_pages_tip = "Place Inside Frame also puts the placeholder picture in the same place on the other pages: in the shape of the same kind and place there, or in a copy of the frame. Without a placeholder picture, each page takes the next picture of the pictures folder. Create Merged Document then fills this drawing's own pages, one record each, instead of making a new drawing." # mt
+merge.all_pages_text_tip = "插入字段会把字段放在此绘图每一页的相同位置。随后“创建合并文档”会填充此绘图自己的页面，每页一条记录，而不是新建绘图。"
 merge.placeholder_tip = "选择在页面上代替合并图像的图片" # mt
 merge.print_document = "打印合并文档..." # mt
 merge.save_data = "保存数据源..."

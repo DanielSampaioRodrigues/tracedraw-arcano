@@ -18,6 +18,7 @@ full, row-by-row status.
 - Shaping with open curves: an open curve or line as the target of Weld, Trim or Intersect is now cut by the closed objects and stays open (Trim keeps the parts outside, Intersect the part inside, Weld adds the parts outside to the welded shapes). An open curve acting on a closed object no longer distorts it: it takes no part, and the status bar points to the Knife tool for cutting a shape along a line (#828).
 - The main window starts as it was left: maximized when it was left maximized (a maximize the window system dropped while the window opened is asked for again, and the first frames no longer overwrite the kept state), and a kept size that comes back the same with a larger interface or system text size, where it shrank at every start. A kept size larger than the monitor starts maximized (#787).
 - Print Preview shows the printer choice at the top of its options, with the gear button that opens the chosen printer's Properties, its status and the number of copies with Collate, so the printer can be changed without going back to the Print dialog (#792).
+- Print Merge docker: On every page is offered for Text and QR code fields too, not only pictures. Insert Field then puts the field in the same place on every page of the open drawing, and Create Merged Document fills those pages, one record each, instead of making a new drawing (#793).
 
 ## 0.19.4 (2026-10-26)
 

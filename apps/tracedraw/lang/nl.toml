@@ -2463,6 +2463,7 @@ merge.pictures_folder_tip = "Kies de map met de afbeeldingen die in de gegevens 
 merge.placeholder = "Tijdelijke afbeelding" # mt
 merge.all_pages = "Op elke pagina" # mt
 merge.all_pages_tip = "Place Inside Frame also puts the placeholder picture in the same place on the other pages: in the shape of the same kind and place there, or in a copy of the frame. Without a placeholder picture, each page takes the next picture of the pictures folder. Create Merged Document then fills this drawing's own pages, one record each, instead of making a new drawing." # mt
+merge.all_pages_text_tip = "Veld invoegen zet het veld op dezelfde plek op elke pagina van deze tekening. Samengevoegd document maken vult daarna de eigen pagina's van deze tekening, één record per pagina, in plaats van een nieuwe tekening te maken."
 merge.placeholder_tip = "Kies een afbeelding die op de pagina de samengevoegde afbeeldingen vertegenwoordigt" # mt
 merge.print_document = "Samengevoegd document afdrukken..." # mt
 merge.save_data = "Gegevensbron opslaan..."

@@ -2463,6 +2463,7 @@ merge.pictures_folder_tip = "Verilerde adı geçen resimlerin bulunduğu klasör
 merge.placeholder = "Yer tutucu görüntü" # mt
 merge.all_pages = "Her sayfada" # mt
 merge.all_pages_tip = "Place Inside Frame also puts the placeholder picture in the same place on the other pages: in the shape of the same kind and place there, or in a copy of the frame. Without a placeholder picture, each page takes the next picture of the pictures folder. Create Merged Document then fills this drawing's own pages, one record each, instead of making a new drawing." # mt
+merge.all_pages_text_tip = "Alan Ekle, alanı bu çizimin her sayfasında aynı yere koyar. Birleştirilmiş Belge Oluştur ardından yeni bir çizim yapmak yerine bu çizimin kendi sayfalarını, her sayfaya bir kayıt olmak üzere doldurur."
 merge.placeholder_tip = "Sayfada birleştirilecek görüntülerin yerini tutacak bir resim seçin" # mt
 merge.print_document = "Birleştirilmiş belgeyi yazdır..." # mt
 merge.save_data = "Veri kaynağını kaydet..."

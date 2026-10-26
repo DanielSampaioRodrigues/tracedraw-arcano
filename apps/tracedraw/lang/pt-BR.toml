@@ -2463,6 +2463,7 @@ merge.pictures_folder_tip = "Escolha a pasta onde estão as imagens citadas nos 
 merge.placeholder = "Imagem provisória" # mt
 merge.all_pages = "Em todas as páginas" # mt
 merge.all_pages_tip = "Colocar dentro do quadro também põe a imagem placeholder no mesmo lugar nas outras páginas: na forma igual e na mesma posição, ou numa cópia do quadro. Sem imagem placeholder, cada página recebe a próxima imagem da pasta de imagens. Criar documento mesclado preenche então as páginas deste desenho, um registro por página, em vez de criar um desenho novo." # mt
+merge.all_pages_text_tip = "Inserir campo põe o campo no mesmo lugar em cada página deste desenho. Criar documento mesclado preenche então as páginas deste desenho, um registro em cada, em vez de criar um desenho novo."
 merge.placeholder_tip = "Escolha uma imagem que represente as imagens mescladas na página" # mt
 merge.print_document = "Imprimir documento mesclado..." # mt
 merge.save_data = "Salvar fonte de dados..."
