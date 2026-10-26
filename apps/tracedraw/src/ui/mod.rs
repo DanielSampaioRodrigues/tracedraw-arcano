@@ -249,6 +249,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 }
 
 fn root_frame(app: &mut App, ui: &mut Ui) {
+    // The rest of a notch a number field took scrolls nothing (#783).
+    crate::ui::field::hold_taken_wheel(ui.ctx());
     // Dockers set their canvas previews again each frame they are shown;
     // the document palette says where it is when it is drawn.
     app.docker_preview.clear();

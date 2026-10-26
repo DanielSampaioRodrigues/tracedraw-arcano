@@ -120,6 +120,15 @@ arrows at its right (11 px): a click on one steps the value by a unit
 (or the step the field was given), as does the mouse wheel over the
 field; Shift steps ten times as much, Ctrl a tenth; a whole-number field
 stays whole and the range holds (`ui::field::tests::arrows_and_the_wheel_step_the_value`).
+The wheel steps once a notch; parts of a notch from a touchpad or a fine
+wheel add up to one step. The wheel over a field (or the outline width
+box, the font list, the page tabs) belongs to it: the bar or panel
+around it does not slide or scroll with that notch, on the frames the
+smoothed scroll of the notch lasts as well, so the field stays under the
+pointer and notch after notch steps it (#783,
+`ui::field::tests::the_wheel_steps_a_field_in_a_long_bar_without_sliding_the_bar`,
+`ui::field::tests::the_wheel_steps_a_field_in_a_scrolling_panel_without_scrolling_it`,
+`ui::propbar::tests::the_wheel_over_the_outline_width_in_a_long_bar_keeps_the_bar_still`).
 Every step applies at once, one undo step each, whether or not the box
 holds the focus: the rotation angle, the scale percentages, the arc
 angles, the dimension text size and line width, the corner radii and the
@@ -175,7 +184,7 @@ Time Tracker bars and the toolbox show what fits between a "«" button at
 their start and a "»" button at their end (up and down arrows for the
 toolbox on a side). "»" slides the bar so the first item not wholly in
 view comes first; "«" slides it back, cut between items, to the start;
-the mouse wheel over the bar slides it too. The items stay as they are on
+the mouse wheel over the bar (away from a number field) slides it too. The items stay as they are on
 the bar and work as there (the bar is drawn once). A bar that fits shows
 no buttons; the slide is worked out again when the window changes size
 (`ui::overflow::tests`).
