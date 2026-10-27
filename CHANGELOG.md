@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Envelope: the frame and the enveloped object stay smooth. The frame was drawn as 16 straight lines a segment and showed as a row of lines when zoomed in; a hard bend drew the object in visible facets; and Horizontal and Vertical followed a polygon through the frame instead of its curves. The frame is now drawn within a quarter pixel at any zoom, the object gets more points only where the envelope bends hard, and its sides lie on the frame (#881).
 - Properties panel: the outline's mitre limit, nib stretch and nib angle sit under an Advanced header after the common settings (caps, corners, arrows, dashes, position, behind fill, scale with object), closed at first unless one of them is set, so the outline section is shorter and its basic options are found at a glance (#487).
 - Edit Fill: the gradient preview shows the start, end and skew nodes, and dragging them moves, turns and stretches the gradient as on the canvas (Ctrl turns in 15 degree steps); the preview has the object's proportions, the rotation and centre fields move nodes placed freely too, and OK now keeps nodes placed (or reset) in the dialog (#939).
 
