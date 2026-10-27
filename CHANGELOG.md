@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
+
 ## 0.19.7 (2026-10-27)
 
 - Symbols: a symbol instance copied in one drawing and pasted in another brings its symbol along and shows the same objects there. It kept only the symbol's number in the list, so in a drawing without symbols it showed nothing, and in one with symbols of its own it showed one of those; symbols that show other symbols come along too, and pasting again reuses the symbol already brought (#678).
