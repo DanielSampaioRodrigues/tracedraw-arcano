@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text fitted to a path: with the Pick tool the property bar shows the path's own fields (placement with Top centre and Bottom centre, distance from the path, the two mirrors, Straighten Text) before the text fields, so text on the bottom of a circle can be turned to read left to right, as on a stamp. The text fields came first and hid them (#193).
+
 ## 0.19.8 (2026-10-27)
 
 - Graphics cards with OpenGL 2.1 only (the Intel HD Graphics of 2010 PCs under Windows, driver 8.15.10.2900): the window no longer comes out black. Such drivers took egui's shaders and buffers and drew everything after the first mesh of a frame as black boxes, so after the splash screen only the menu bar could be seen. On desktop OpenGL below 3.0 TraceDraw now draws with the fixed-function pipeline those drivers were made for (no shaders, no buffer objects), with the same result as on other cards. Should a driver still show nothing, TraceDraw reads two of the first frames back (with a small probe drawn last in them), notes in the log that the window came back nearly black, and starts again with the next renderer by itself instead of leaving a black window. The log now also names the driver's texture limit, extension count and any OpenGL error (#616).
