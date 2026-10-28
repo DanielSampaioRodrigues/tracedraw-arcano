@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: on a stretched curve, the corner rounding rings now round corners on the page, so a new rounding comes out round, also after other corners were rounded. A corner rounded before the stretch keeps its stretched arc and its ring: dragging it changes that corner alone, and once it is dragged back to sharp it rounds round again (#1000).
 - Shape tool: end nodes of two different objects are no longer joined, by Join or by dropping one on the other; the status bar says to combine the objects first (Object > Combine, Ctrl+L), after which their ends join as before (#1007).
 - Text panel: the Fit Text to Frame button in the Text Box section shows its icon, now drawn: it was an arrow character the bundled interface font lacks, so on Windows the button was blank (#1041).
 - Text on a path: Top and Bottom in the placement list centre text that is set off its circle (a Distance from path), as a stamp's bottom line. The text landed an eighth of the way round, because it was centred on the path's length rather than on the longer or shorter line the letters stand on (#193).
