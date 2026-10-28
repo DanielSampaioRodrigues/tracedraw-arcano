@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
