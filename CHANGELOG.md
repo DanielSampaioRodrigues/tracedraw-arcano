@@ -13,6 +13,7 @@ full, row-by-row status.
 - Pen: going on from the end of a curve, a second click on that end node makes it a cusp, so the new segment leaves it straight; the curved, mirrored start stays the default (#1138).
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
 
+- Saving as .cdr: curves whose outline ends back at its start, such as text fitted to a path (written as its letters' outlines), close on their last node instead of adding a closing line of no length after it. The other program that opened such a file closed when the text was clicked; lines of no length and empty subpaths are also left out (#1130).
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
