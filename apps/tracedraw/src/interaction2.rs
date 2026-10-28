@@ -58,9 +58,10 @@ impl App {
             return true;
         }
         if self.pending_merge_frame {
-            // The shape under the pointer, also one inside a group.
+            // The shape under the pointer, also one inside a group; a clip
+            // frame rather than the picture it holds (#596).
             self.pending_merge_frame = false;
-            match self.hits_at(p, true).first().copied() {
+            match self.merge_frame_at(p) {
                 Some(id) => {
                     self.select(vec![id]);
                     self.place_merge_field_inside();
@@ -242,6 +243,7 @@ impl App {
                     center: p,
                     start_angle: 0.0,
                     current_angle: 0.0,
+                    grab: None,
                 };
                 self.free_transform_last = p;
                 self.free_transform_reflected = false;

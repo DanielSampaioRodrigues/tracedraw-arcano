@@ -504,6 +504,7 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
                             .password(true)
                             .hint_text(tr("studio.key_hint")),
                     )
+                    .on_hover_text(trf("studio.key_field_tip", &[("name", &name)]))
                     .changed()
                 {
                     app.studio_set_key(&id, key.clone());
@@ -515,6 +516,7 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
                     if testable
                         && ui
                             .add_enabled(!key.trim().is_empty(), egui::Button::new(tr("studio.test")).small())
+                            .on_hover_text(tr("studio.test_tip"))
                             .clicked()
                     {
                         app.studio_test_key(&id);
@@ -541,7 +543,11 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
         });
     ui.add_space(6.0);
     let mut remember = app.settings.studio.remember_keys;
-    if ui.checkbox(&mut remember, tr("studio.remember_keys")).changed() {
+    if ui
+        .checkbox(&mut remember, tr("studio.remember_keys"))
+        .on_hover_text(tr("studio.remember_keys_tip"))
+        .changed()
+    {
         app.studio_remember_keys(remember);
     }
     dim(ui, tr("studio.keys_privacy"));

@@ -94,7 +94,7 @@ Properties.
 |---|---|
 | Drag node | move the selected nodes; Ctrl constrains |
 | Click segment | chooses that segment: it is drawn over in the main colour with its handles, its end node is not shown as chosen (To Line and To Curve act on the segment through it), and the spot clicked gets a small round mark; Add Node (+ or the property bar button) puts the new node at that spot |
-| Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along; one undo step (Bend Segment) |
+| Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along, and a node made cusp keeps its other handle where it is even when its handles line up (the type chosen for the node counts, not how its handles read, #1140); one undo step (Bend Segment) |
 | Drag handle | smooth nodes move the opposite handle to stay collinear; symmetrical also keep the length; with Ctrl or Shift the handle keeps to the constrain angle about its node (on the page), the node keeping its type (#510, `pick_drag_tests::ctrl_or_shift_keeps_a_handle_to_the_constrain_angle`) |
 | Smooth, Symmetrical (property bar, node menu, C, S, Y) | a node between two curves gets its handles in line (symmetrical: of one length); between a straight segment and a curve, the curve's handle lines up with the straight segment, keeping its length, and the straight segment stays straight; between two straight segments both become curves (as To Curve makes them) and the node is smoothed, except a closing line that is only a close, which stays straight; an end node of an open curve stays as it is |
 | Double-click segment | add a node |
@@ -107,8 +107,8 @@ Properties.
 | Home, End (with nodes chosen) | the first or last node of the curve |
 | Arrow keys (with nodes chosen) | move the chosen nodes by the nudge distance (Shift: super nudge, Ctrl: micro nudge), one undo step per press |
 | Break (property bar) | split the subpath at the node |
-| Join (property bar) | join two selected end nodes into one node halfway between them, their handles moving along and no segment added: the two ends of one open subpath close it there, ends of two subpaths make one subpath, and ends on two curves make one curve (the first chosen keeps its place and look); one undo step (Join Nodes) |
-| Drop an end node on another | dragging one end node and letting go within the pick distance of an end node of a selected curve joins the two as Join does; the curve dropped onto keeps its place and look |
+| Join (property bar) | join two selected end nodes of one curve into one node halfway between them, their handles moving along and no segment added: the two ends of one open subpath close it there, ends of two subpaths make one subpath; one undo step (Join Nodes). End nodes of two objects are not joined: the status bar says to combine them first (Object > Combine, Ctrl+L), after which they are two subpaths of one curve (#1007, `pick_drag_tests::join_takes_end_nodes_of_one_object_only`) |
+| Drop an end node on another | dragging one end node and letting go within the pick distance of another end node of the same curve joins the two as Join does; on an end node of another object it only snaps there (#1007) |
 | Extend Curve to Close | two selected end nodes are joined by a straight segment: the ends of one subpath close it, ends of two subpaths make one |
 | Extract Subpath | the subpath of the selected node becomes its own curve |
 | Reduce nodes | RDP simplification (0.3 screen pixels) of the curves with selected nodes, else of every selected curve |
@@ -151,7 +151,12 @@ step.
 A curve being edited shows a small white circle with a ring in the node
 colour inside each corner (a node where two segments meet at an angle,
 as the Corners panel counts them), 18 px from the node along the middle
-of the corner (#635).
+of the corner (#635), when Options > Nodes and Handles > Show corner
+rounding rings on curve nodes is on. That preference is off at first, so
+the widgets do not get in the way of node editing (#884); it is saved
+with the other preferences. With it off no widget shows and a press where
+one would sit works as any other press of the Shape tool. Rectangles
+round their corners with their own handles either way.
 
 - With no node chosen every corner has one (a curve with more than 32
   corners shows none, so a traced outline is not covered in them); with
@@ -166,11 +171,37 @@ of the corner (#635).
   rounding back off. The status bar shows the radius.
 - Open curves round their inner corners the same way.
 - The drag is one undo step, "Fillet". The rounded corners become arcs
-  of the curve (nodes and segments, as the Corners panel makes them), so
-  a rounded corner no longer shows a widget; the chosen nodes are
-  cleared.
+  of the curve (nodes and segments, as the Corners panel makes them); the
+  chosen nodes are cleared.
+- A rounded corner keeps its widget, so its radius can change again
+  later (#872). A rounded corner is a circular arc (one cubic or more,
+  smooth where they join) between two straight sides, tangent to both,
+  whose sides, run on, meet as far from both ends of the arc; the
+  radius is read back from the arc. Its widget sits 18 px off the
+  middle of the arc, along the middle of the corner. Dragging it takes
+  the corner back to the sharp corner its sides meet at and rounds that
+  again, starting from the radius it had: with no node chosen every
+  corner of the curve (sharp or rounded) takes the new radius, with
+  nodes chosen only theirs (a rounded corner is chosen by any node of
+  its arc). Dragging back past the corner makes it sharp. Arcs between
+  curved sides, scallops and chamfers are not found again.
+- On a stretched or skewed curve corners round on the page, so a new
+  rounding is round, also on a curve stretched after other corners were
+  rounded. A corner rounded before the stretch keeps its stretched arc
+  and its widget: dragging it changes that arc in the curve's own space,
+  that corner on its own, until it is dragged back to sharp; rounded
+  again, it is round (#1000,
+  `pick_drag_tests::corner_widgets_round_stretched_curves_on_the_page`).
+- The arcs are found from the curve itself, so a drawing saved and
+  opened again, or a curve rounded with the Corners panel, keeps its
+  widgets too; no extra data is stored.
 - A click on a widget keeps the selection.
-- Checked by `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`
+- Checked by `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`,
+  `pick_drag_tests::corner_widgets_follow_their_preference_off_by_default`,
+  `pick_drag_tests::rounded_corners_keep_their_widgets_and_round_again`,
+  `corner_cut::tests::rounded_corners_are_found_and_taken_back_off`,
+  `corner_cut::tests::chosen_rounded_corners_are_taken_off_alone`,
+  `corner_cut::tests::other_curves_are_not_rounded_corners`
   and `tracedraw_core` `corner_cut::tests::corners_and_the_largest_fillet_they_take`.
 
 ## Rectangles, ellipses and polygons
@@ -252,6 +283,7 @@ Reduce Nodes, Curve smoothness.
 - `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`
 - `pick_drag_tests::dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes`
 - `nodes::tests::bending_a_segment_moves_its_point_and_keeps_the_ends` (core)
+- `nodes::tests::bending_a_segment_keeps_chosen_cusp_nodes_cusp` (core)
 - `pick_drag_tests::c_s_and_y_set_the_type_of_the_chosen_nodes`
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do` (marks, node
   transform handles)

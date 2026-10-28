@@ -10,6 +10,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -75,12 +76,51 @@ impl FontManagerPrefs {
     }
 }
 
-/// Load the font files installed for TraceDraw (at start).
+/// Load the font files installed for TraceDraw and those of the added
+/// folders (at start).
 pub fn install_saved(prefs: &FontManagerPrefs) -> Vec<String> {
-    if prefs.installed.is_empty() {
+    install_saved_in(tracedraw_text::fonts(), prefs)
+}
+
+fn install_saved_in(fonts: &tracedraw_text::FontSystem, prefs: &FontManagerPrefs) -> Vec<String> {
+    let mut paths = prefs.installed.clone();
+    paths.extend(folder_files(prefs));
+    if paths.is_empty() {
         return Vec::new();
     }
-    tracedraw_text::fonts().install_paths(&prefs.installed)
+    fonts.install_paths(&paths)
+}
+
+/// The font files of the added folders: usable in drawings for as long as
+/// their folder is in the libraries (#866).
+fn folder_files(prefs: &FontManagerPrefs) -> Vec<PathBuf> {
+    prefs
+        .folders
+        .iter()
+        .flat_map(|d| catalog::font_files(d))
+        .collect()
+}
+
+/// Take out the fonts of `dir`, a folder just removed from the
+/// libraries, except those installed on their own or in another folder
+/// still added (the system's fonts are never taken out). Returns how many
+/// files went.
+fn remove_folder_fonts(
+    fonts: &tracedraw_text::FontSystem,
+    prefs: &FontManagerPrefs,
+    dir: &std::path::Path,
+) -> usize {
+    let keep: BTreeSet<PathBuf> = prefs
+        .installed
+        .iter()
+        .cloned()
+        .chain(folder_files(prefs))
+        .collect();
+    catalog::font_files(dir)
+        .into_iter()
+        .filter(|p| !keep.contains(p))
+        .filter(|p| fonts.uninstall_path(p))
+        .count()
 }
 
 /// The library the list shows.
@@ -657,6 +697,15 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
                 if !prefs.folders.contains(&dir) {
                     prefs.folders.push(dir.clone());
                 }
+                // Its fonts are usable at once, without Install (#866).
+                let files = catalog::font_files(&dir);
+                let added = fonts.install_paths(&files);
+                log::info!("fonts of {}: {}", dir.display(), added.join(", "));
+                st.note = Some(trf(
+                    "font_manager.installed_n",
+                    &[("n", &files.len().to_string())],
+                ));
+                app.font_families = fonts.available_families();
                 st.library = Library::Folder(dir);
                 app.save_settings();
             }
@@ -722,6 +771,9 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
         }
         Action::RemoveFolder(dir) => {
             prefs.folders.retain(|f| f != &dir);
+            if remove_folder_fonts(fonts, prefs, &dir) > 0 {
+                app.font_families = fonts.available_families();
+            }
             app.font_catalog.rescan(&dir);
             if st.library == Library::Folder(dir) {
                 st.library = Library::MyFonts;
@@ -809,7 +861,9 @@ fn menu_row(
                 actions.push(Action::AddFont);
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_file"));
         ui.menu_button(tr("font_manager.menu_edit"), |ui| {
             ui.add_enabled_ui(any, |ui| {
                 ui.menu_button(tr("font_manager.add_to_collection"), |ui| {
@@ -844,7 +898,9 @@ fn menu_row(
                 st.selected.clear();
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_edit"));
         ui.menu_button(tr("font_manager.menu_font"), |ui| {
             let can_install = selected.iter().any(|r| !r.installed && r.path.is_some());
             if ui
@@ -878,7 +934,9 @@ fn menu_row(
                 }
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_font"));
         ui.menu_button(tr("font_manager.menu_view"), |ui| {
             let mut details = prefs.details;
             if ui
@@ -889,13 +947,17 @@ fn menu_row(
                 st.collapsed.insert("__toggle_details");
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_view"));
         ui.menu_button(tr("font_manager.menu_help"), |ui| {
             if ui.button(tr("font_manager.help")).clicked() {
                 actions.push(Action::Help);
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_help"));
     });
 }
 
@@ -1095,7 +1157,7 @@ fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> e
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn toolbar(
@@ -1298,6 +1360,7 @@ fn section(
         ]
     };
     p.add(egui::Shape::line(pts, Stroke::new(1.5, SECTION_BLUE)));
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     if resp.clicked() {
         if open {
             st.collapsed.insert(id);
@@ -1333,7 +1396,7 @@ fn library_row(ui: &mut Ui, label: &str, picked: bool) -> egui::Response {
         egui::FontId::proportional(13.0),
         Tokens::text(),
     );
-    resp
+    resp.rich_tip_with(|| format!("{label}\n{}", tr("font_manager.library_desc")))
 }
 
 fn left_panes(
@@ -1380,7 +1443,7 @@ fn left_panes(
                                 name
                             };
                             let r = library_row(ui, &label, st.library == lib)
-                                .on_hover_text(dir.display().to_string());
+                                .rich_tip(dir.display().to_string());
                             if r.clicked() {
                                 st.library = lib;
                             }
@@ -1454,7 +1517,11 @@ fn left_panes(
                                     }
                                 });
                             }
-                            if ui.small_button(tr("font_manager.new_collection")).clicked() {
+                            if ui
+                                .small_button(tr("font_manager.new_collection"))
+                                .rich_tip(crate::ui::tips::keyed("font_manager.new_collection"))
+                                .clicked()
+                            {
                                 actions.push(Action::NewCollection);
                             }
                         },
@@ -1479,6 +1546,8 @@ fn left_panes(
                             !st.filters.is_empty(),
                             egui::Button::new(tr("font_manager.clear_filters")).small(),
                         )
+                        .rich_tip(crate::ui::tips::keyed("font_manager.clear_filters"))
+                        .rich_disabled_tip(crate::ui::tips::keyed("font_manager.clear_filters"))
                         .clicked()
                     {
                         st.filters.clear();
@@ -1492,7 +1561,8 @@ fn left_panes(
                         |ui: &mut Ui, st: &mut FontManagerState, items: Vec<(Filter, String)>| {
                             for (f, label) in items {
                                 let mut on = st.filters.contains(&f);
-                                if ui.checkbox(&mut on, label).changed() {
+                                let tip = format!("{label}\n{}", tr("font_manager.filter_desc"));
+                                if ui.checkbox(&mut on, label).rich_tip(tip).changed() {
                                     if on {
                                         st.filters.insert(f);
                                     } else {
@@ -1690,8 +1760,14 @@ fn sample_and_search(ui: &mut Ui, st: &mut FontManagerState, prefs: &mut FontMan
             egui::TextEdit::singleline(&mut prefs.sample)
                 .hint_text(tr("font_manager.sample_hint"))
                 .desired_width(w - 28.0),
-        );
-        let arrow = ui.add_sized([22.0, 20.0], egui::Button::new("\u{25BE}"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "font_manager.sample_tip",
+            "font_manager.sample_desc",
+        ));
+        let arrow = ui
+            .add_sized([22.0, 20.0], egui::Button::new("\u{25BE}"))
+            .rich_tip(crate::ui::tips::keyed("font_manager.sample_presets"));
         egui::Popup::menu(&arrow)
             .id(egui::Id::new("font_manager_samples"))
             .show(|ui| {
@@ -1706,7 +1782,8 @@ fn sample_and_search(ui: &mut Ui, st: &mut FontManagerState, prefs: &mut FontMan
             egui::TextEdit::singleline(&mut st.search)
                 .hint_text(tr("font_manager.search"))
                 .desired_width(ui.available_width()),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("font_manager.search"));
     });
 }
 
@@ -2064,7 +2141,7 @@ fn status_line(
             let mut px = prefs.sample_px();
             if ui
                 .add(egui::Slider::new(&mut px, SAMPLE_PX).show_value(false))
-                .on_hover_text(tr("font_manager.sample_size"))
+                .rich_tip(tr("font_manager.sample_size"))
                 .changed()
             {
                 prefs.sample_px = px;
@@ -2273,6 +2350,43 @@ mod tests {
         inst.installed = true;
         cat.installed = Some(vec![inst]);
         assert!(cat.faces(&Library::Folder(dir.clone()), &prefs)[0].installed);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The fonts of an added folder are usable in drawings, also after a
+    /// restart, without installing them one by one; removing the folder
+    /// takes them out again, except a file installed on its own (#866).
+    #[test]
+    fn the_fonts_of_an_added_folder_are_usable() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-fm-use-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).expect("dir");
+        let file = dir.join("sub").join("s.ttf");
+        std::fs::write(
+            &file,
+            include_bytes!("../../assets/fonts/Selawik-Regular.ttf"),
+        )
+        .expect("write");
+        let fonts = tracedraw_text::FontSystem::empty();
+        let mut prefs = FontManagerPrefs {
+            folders: vec![dir.clone()],
+            ..Default::default()
+        };
+        assert_eq!(
+            install_saved_in(&fonts, &prefs),
+            vec!["Selawik".to_string()]
+        );
+        assert!(fonts.has_family("Selawik"));
+        prefs.folders.clear();
+        assert_eq!(remove_folder_fonts(&fonts, &prefs, &dir), 1);
+        assert!(!fonts.has_family("Selawik"));
+        // Installed on its own as well: it stays when the folder goes.
+        prefs.installed = vec![file.clone()];
+        prefs.folders = vec![dir.clone()];
+        install_saved_in(&fonts, &prefs);
+        prefs.folders.clear();
+        assert_eq!(remove_folder_fonts(&fonts, &prefs, &dir), 0);
+        assert!(fonts.has_family("Selawik"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

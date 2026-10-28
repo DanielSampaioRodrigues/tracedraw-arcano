@@ -61,6 +61,20 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// A canonical path as people type it: on Windows without the `\\?\`
+/// prefix (`\\?\C:\a` is `C:\a`, `\\?\UNC\server\share` is
+/// `\\server\share`); other paths as they are.
+pub fn plain_path(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Read a whole file (or an uploaded one in a browser).
 pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let path = path.as_ref();
@@ -276,6 +290,18 @@ pub fn create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
         return Ok(());
     }
     std::fs::create_dir(path)
+}
+
+/// Rename a file or folder; one already called `to` is never replaced
+/// (nothing in a browser).
+pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    if to.as_ref().exists() {
+        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+    }
+    std::fs::rename(from, to)
 }
 
 /// A folder worth a shortcut in the Save Drawing dialog.

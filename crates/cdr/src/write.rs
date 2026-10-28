@@ -100,7 +100,9 @@ pub struct Png {
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
+    w.faces = &previews.fonts;
     let mut tree = w.document(doc);
+    let font_ids = w.fonts.clone();
     if !v.zip() {
         // RIFF files carry their picture and an empty keywords and
         // comment list right after `vrsn`.
@@ -127,7 +129,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     }
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(v, doc, &root, &files, previews)
+        zip_v16(v, doc, &root, &files, previews, &font_ids)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
@@ -1079,7 +1081,14 @@ fn cmyk_profile_member(name: &str) -> String {
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
 
-fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Previews) -> Vec<u8> {
+fn zip_v16(
+    v: Ver,
+    doc: &Document,
+    root: &[u8],
+    files: &DataFiles,
+    previews: &Previews,
+    font_ids: &[(u16, String)],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -1093,7 +1102,7 @@ fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Pr
             .is_ok()
             && zip.write_all(data).is_ok();
     }
-    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts) {
+    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts, font_ids) {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(&data).is_ok();
     }
     ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()
@@ -1605,10 +1614,9 @@ fn ftil() -> Vec<u8> {
     identity_matrix()
 }
 
-/// `mcfg`: the document configuration. Versions before 21 get the page
-/// size and the length files of the version have; from 21 the record has
-/// the layout of those files with the fields that are understood (see
-/// `docs/cdr-format.md`, Writing).
+/// `mcfg`: the document configuration. Every version from 7 gets the
+/// record of files of its version, with the fields that are understood
+/// (see `docs/cdr-format.md`, Writing).
 fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 >= 21 {
         return mcfg_21(w_mm, h_mm);
@@ -1619,25 +1627,10 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 == 12 {
         return mcfg_12(w_mm, h_mm);
     }
-    let mut b = Buf::default();
-    let size: usize = if v.0 >= 15 {
-        8323
-    } else if v.tagged() {
-        8197
-    } else {
-        4088
-    };
-    if v.tagged() {
-        b.u32(SINCE_13).u32(size as u32 - 8).zeros(4);
-    } else if v.0 >= 9 {
-        b.zeros(4);
+    if v.0 <= 8 {
+        return mcfg_7_8(v, w_mm, h_mm);
     }
-    b.i32(units(w_mm))
-        .i32(units(h_mm))
-        .u32(0x0f)
-        .u32(1)
-        .pad_to(size);
-    b.done()
+    mcfg_9_11(v, w_mm, h_mm)
 }
 
 /// The configuration record of versions 13 to 20 (8323 bytes, tag 1300):
@@ -1771,6 +1764,213 @@ fn mcfg_12(w_mm: f64, h_mm: f64) -> Vec<u8> {
     }
     out.resize(8152, 0);
     out
+}
+
+/// The configuration record of version 8 (656 bytes, no tag) and of
+/// version 7 (536 bytes), with the values files saved for those versions
+/// hold: the page size, the paper (A4 code as before), the ruler origin
+/// at the page's bottom-left corner, a grid of 0.2 across and down, the
+/// units, a scale of 1, the 46.5 inch square twice, the nudge (1000) and
+/// the flags and default colour records after them. Version 7 holds the
+/// same fields with the page colour (white) inserted after the paper and
+/// 4 more bytes after the ruler origin, and stops 120 bytes earlier. A
+/// record holding only the page size, followed by zeros, was what these
+/// versions got before (every version 7 file written so crashed the
+/// program that wrote the samples, issue #98).
+fn mcfg_7_8(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    const SIZE_8: usize = 656;
+    let (w, h) = (units(w_mm), units(h_mm));
+    let mut r = vec![0u8; SIZE_8];
+    put(&mut r, 0, &w.to_le_bytes());
+    put(&mut r, 4, &h.to_le_bytes());
+    put(&mut r, 8, &0x0fu32.to_le_bytes());
+    put(&mut r, 12, &1u32.to_le_bytes());
+    // Ruler origin: the page's bottom-left corner, from the page centre.
+    put(&mut r, 24, &(-(w / 2)).to_le_bytes());
+    put(&mut r, 28, &(-(h / 2)).to_le_bytes());
+    put(&mut r, 32, &0.2f64.to_le_bytes());
+    put(&mut r, 40, &0.2f64.to_le_bytes());
+    put(&mut r, 48, &2u16.to_le_bytes());
+    put(&mut r, 50, &2u16.to_le_bytes());
+    put(&mut r, 56, &1.0f64.to_le_bytes());
+    for (at, x) in [
+        (64, 2i32),
+        (68, 11_811_024),
+        (72, 11_811_024),
+        (76, 3),
+        (88, 1_000),
+        (92, 10_000),
+        (100, 2),
+        (444, 1),
+        (448, 1),
+        (452, 1),
+        (456, 1),
+        (460, 2),
+        (468, 1),
+        (476, 1),
+        (500, 1),
+        (504, 1),
+        (512, 1),
+        (524, 1),
+        (528, 1),
+        (532, 1),
+        (536, 1),
+        (592, 3),
+        (600, 1),
+        (604, 1),
+        (608, 1),
+        (616, 1),
+        (636, 2),
+        (644, 4),
+        (648, 100),
+        (652, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    // Colour records (model 5, palette 5, black) and the values between.
+    for at in [484, 552, 564, 576] {
+        put(&mut r, at, &[5, 0, 5, 0]);
+    }
+    for (at, x) in [(560, 196u16), (572, 32), (574, 196), (584, 196), (586, 196)] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    if v.0 >= 8 {
+        return r;
+    }
+    // Version 7: the page colour (model 5, palette 5, white) after the
+    // paper, 4 bytes more after the ruler origin, a flag the version 8
+    // record leaves zero (its byte 464) and 536 bytes in all.
+    let mut r7 = Vec::with_capacity(536);
+    r7.extend_from_slice(r.get(..12).unwrap_or_default());
+    r7.extend_from_slice(&[5, 0, 5, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0]);
+    r7.extend_from_slice(r.get(12..32).unwrap_or_default());
+    r7.extend_from_slice(&[0; 4]);
+    r7.extend_from_slice(r.get(32..520).unwrap_or_default());
+    r7.resize(536, 0);
+    put(&mut r7, 464 + 16, &1u32.to_le_bytes());
+    r7
+}
+
+/// The configuration record of version 11 (4088 bytes), version 10
+/// (4096) and version 9 (848), with the values files saved for those
+/// versions hold: 4 zero bytes, the page size, the paper (A4 code as
+/// before), the ruler origin at the page's bottom-left corner, a grid of
+/// 0.2 across and down, the units, a scale of 1, the 46.5 inch square
+/// twice, the nudge (1000), the flags and default colour records after
+/// them, four drawing scales (2.54 in version 11, 0.000254 before) and
+/// 12.0 at the end. The name fields (two default style names and a web
+/// folder) are left empty. Version 10 holds 8 bytes more near the end;
+/// version 9 lacks the 8 bytes after the nudge and the name fields and
+/// stops after the scales. A record holding only the page size, followed
+/// by zeros, was what these versions got before: a zero grid and scale
+/// (issue #98).
+fn mcfg_9_11(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    const SIZE_11: usize = 4088;
+    let (w, h) = (units(w_mm), units(h_mm));
+    let mut r = vec![0u8; SIZE_11];
+    put(&mut r, 4, &w.to_le_bytes());
+    put(&mut r, 8, &h.to_le_bytes());
+    put(&mut r, 12, &0x0fu32.to_le_bytes());
+    // Ruler origin: the page's bottom-left corner, from the page centre.
+    put(&mut r, 372, &(-(w / 2)).to_le_bytes());
+    put(&mut r, 376, &(-(h / 2)).to_le_bytes());
+    let scale = if v.0 >= 11 { 2.54f64 } else { 0.000_254 };
+    let fine = if v.0 >= 11 { 0.51f64 } else { 0.000_051 };
+    for (at, x) in [
+        (384, 0.2f64),
+        (392, 0.2),
+        (408, 1.0),
+        (848, scale),
+        (856, scale),
+        (864, scale),
+        (872, scale),
+        (888, fine),
+        (904, 0.1),
+        (912, 0.1),
+        (4080, 12.0),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    put(&mut r, 416, &[2, 0, 2, 0]);
+    for (at, x) in [
+        (16, 1i32),
+        (28, 1),
+        (32, 1),
+        (400, 2),
+        (428, 11_811_024),
+        (432, 11_811_024),
+        (436, 1),
+        (440, 1),
+        (444, 1),
+        (448, 11_811_024),
+        (452, 11_811_024),
+        (456, 1),
+        (492, 1),
+        (496, 1),
+        (500, 1),
+        (508, 3),
+        (520, 1_000),
+        (524, 2),
+        (528, 2),
+        (532, 1),
+        (540, 2),
+        (544, 10_000),
+        (552, 1),
+        (556, 1),
+        (560, 1),
+        (568, 1),
+        (592, 196),
+        (700, 3),
+        (704, 1),
+        (708, 1),
+        (712, 1),
+        (720, 1),
+        (744, 2),
+        (752, 4),
+        (756, 100),
+        (768, 1),
+        (784, 255),
+        (800, 1),
+        (836, 1),
+        (880, 2),
+        (896, 1),
+        (920, 2),
+        (924, 1),
+        (940, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    r[797] = 100;
+    // Colour records (model 5, palette 5, black) and the values between.
+    for at in [472, 584, 596, 608, 776, 788] {
+        put(&mut r, at, &[5, 0, 5, 0]);
+    }
+    for (at, x) in [(604, 32u16), (606, 196), (616, 196), (618, 196)] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    if v.0 >= 11 {
+        return r;
+    }
+    // Version 10: a zero and a 1 more at 940, 4096 bytes in all.
+    let mut r10 = Vec::with_capacity(4096);
+    r10.extend_from_slice(r.get(..940).unwrap_or_default());
+    r10.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0]);
+    r10.extend_from_slice(r.get(940..).unwrap_or_default());
+    if v.0 >= 10 {
+        return r10;
+    }
+    // Version 9: without the two values after the nudge (528), the name
+    // fields (620 to 700) and the flag after the last scales (924), 4
+    // zero bytes before the scales, and 848 bytes in all.
+    let mut r9 = Vec::with_capacity(848);
+    r9.extend_from_slice(r10.get(..528).unwrap_or_default());
+    r9.extend_from_slice(r10.get(536..620).unwrap_or_default());
+    r9.extend_from_slice(&[0; 4]);
+    r9.extend_from_slice(r10.get(700..848).unwrap_or_default());
+    r9.extend_from_slice(&[0; 4]);
+    r9.extend_from_slice(r10.get(848..924).unwrap_or_default());
+    r9.resize(848, 0);
+    r9
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size
@@ -2303,16 +2503,31 @@ fn curve_coords_typed(
     let mut types: Vec<u8> = Vec::new();
     let mut last_start = 0usize;
     let mut last = Point::ZERO;
+    // A subpath that is only its move draws nothing: dropped.
+    let drop_lone_move = |pts: &mut Vec<(i32, i32)>, types: &mut Vec<u8>, start: usize| {
+        if pts.len() == start + 1 && types.get(start).is_some_and(|t| t & 0xc0 == 0) {
+            pts.pop();
+            types.pop();
+        }
+    };
     for (i, el) in path.elements().iter().enumerate() {
         match el {
             PathEl::MoveTo(p) => {
+                drop_lone_move(&mut pts, &mut types, last_start);
                 pts.push((units(p.x), units(p.y)));
                 types.push(node_bits(i));
                 last_start = pts.len() - 1;
                 last = *p;
             }
             PathEl::LineTo(p) => {
-                pts.push((units(p.x), units(p.y)));
+                // A line of no length (a file of an earlier version read
+                // back: a curve to the start, then the closing line) is
+                // left out.
+                let q = (units(p.x), units(p.y));
+                if pts.len() > last_start && pts.last() == Some(&q) {
+                    continue;
+                }
+                pts.push(q);
                 types.push(0x40 | node_bits(i));
                 last = *p;
             }
@@ -2338,13 +2553,30 @@ fn curve_coords_typed(
                 last = *p;
             }
             PathEl::ClosePath => {
-                // A closing line back to the subpath start, flagged.
+                // A closing line back to the subpath start, flagged. A
+                // subpath already back at its start (letters' outlines
+                // end so) closes on its last node instead: a closing
+                // line of no length beside a smooth start node made the
+                // program that opens the file close when the curve was
+                // clicked (#1130).
                 let s = pts.get(last_start).copied().unwrap_or((0, 0));
-                pts.push(s);
-                types.push(0x48);
+                if pts.len() <= last_start + 1 {
+                    drop_lone_move(&mut pts, &mut types, last_start);
+                    last_start = pts.len();
+                    continue;
+                }
+                let back = pts.last() == Some(&s) && types.last().is_some_and(|t| t & 0xc0 != 0xc0);
+                match types.last_mut() {
+                    Some(t) if back => *t |= 0x08,
+                    _ => {
+                        pts.push(s);
+                        types.push(0x48);
+                    }
+                }
             }
         }
     }
+    drop_lone_move(&mut pts, &mut types, last_start);
     if pts.is_empty() {
         return None;
     }
@@ -2485,13 +2717,12 @@ fn object_style_json(
 /// The style codes of the font tables: one bit per weight and slant
 /// (0x40 regular, 0x80 italic, 0x1000 bold, 0x2000 bold italic), single
 /// underline in bits 18 to 20, single strike-through in bits 24 to 26.
+/// A face of another weight (a variable font's weight axis set on the
+/// text, #1013) takes the code of its weight: one bit per 100 of weight
+/// (1 = 100 ... 64 = 400, 1024 = 600, 4096 = 700 ... 65536 = 900), the
+/// next bit up its italic.
 fn style_flags(sp: &TextSpan) -> u32 {
-    let mut f = match (sp.bold, sp.italic) {
-        (false, false) => 0x40,
-        (false, true) => 0x80,
-        (true, false) => 0x1000,
-        (true, true) => 0x2000,
-    };
+    let mut f = weight_code(sp);
     if sp.underline {
         f |= 1 << 18;
     }
@@ -2499,6 +2730,31 @@ fn style_flags(sp: &TextSpan) -> u32 {
         f |= 1 << 24;
     }
     f
+}
+
+/// The weight `sp` is drawn at, in the steps of 100 the style codes
+/// count: its variable font weight axis when that is set (#1013), else
+/// 700 bold and 400 regular.
+fn span_weight(sp: &TextSpan) -> u32 {
+    match sp.variation("wght").filter(|w| w.is_finite()) {
+        Some(w) => (w / 100.0).round().clamp(1.0, 9.0) as u32 * 100,
+        None if sp.bold => 700,
+        None => 400,
+    }
+}
+
+/// The style code of `sp`'s face: a power of two counting weights from
+/// 1 for 100 (64 = 400, 1024 = 600, 4096 = 700), the italic of a weight
+/// the bit above it (128 = 400 italic, 8192 = 700 italic).
+fn weight_code(sp: &TextSpan) -> u32 {
+    let step = span_weight(sp) / 100 - 1;
+    1 << (2 * step + u32::from(sp.italic))
+}
+
+/// The weight member of a version 16+ font style: the weight's code,
+/// without the italic, which has a member of its own.
+fn weight_member(sp: &TextSpan) -> u32 {
+    1 << (2 * (span_weight(sp) / 100 - 1))
 }
 
 /// The style string of a run (versions 16+): its font, size, weight,
@@ -2509,7 +2765,7 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
 
 /// The `character` member of a style string.
 fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
-    let weight = if sp.bold { 4096 } else { 64 };
+    let weight = weight_member(sp);
     let size = (sp.size_pt * 254000.0 / 72.0).round() as i64;
     let family = sp.font_family.replace('\\', "\\\\").replace('"', "\\\"");
     let font = format!(
@@ -2564,7 +2820,7 @@ fn full_text_style(
         Some(sp) => (
             sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
             (sp.size_pt * 254000.0 / 72.0).round() as i64,
-            if sp.bold { 4096 } else { 64 },
+            weight_member(sp),
             u8::from(sp.italic),
             u8::from(sp.underline),
             u8::from(sp.strikethrough),
@@ -2654,6 +2910,15 @@ struct Writer<'a> {
     /// which each page's entries for them repeat.
     master_guids: [[u8; 16]; 3],
     has_text: bool,
+    /// The faces the text uses, with their font files (see
+    /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
+    /// each family named with a weight.
+    faces: &'a [FontFace],
+    split_families: HashMap<String, Option<(String, u16)>>,
+    /// The faces the runs of version 16+ text use (font id, face bits of
+    /// the style flags), for the font table as [`Writer::text_formats`]
+    /// gives them before.
+    run_faces: Vec<(u16, u32)>,
 }
 
 /// The master page's layers, in the order of `Writer::master_guids`.
@@ -2724,7 +2989,41 @@ impl<'a> Writer<'a> {
             guids: master_guids.len() as u64,
             master_guids,
             has_text: false,
+            faces: &[],
+            split_families: HashMap::new(),
+            run_faces: Vec::new(),
         }
+    }
+
+    /// `spans` with their faces named as files name them, `None` when
+    /// every span keeps its own: a span in a family named with its weight
+    /// ("Titillium Web SemiBold", how text in a semibold face reads) is
+    /// written as the family ("Titillium Web") at that weight, carried
+    /// as the weight axis value the style codes are taken from (#892).
+    fn file_spans(&mut self, spans: &[TextSpan]) -> Option<Vec<TextSpan>> {
+        let mut out: Option<Vec<TextSpan>> = None;
+        for (i, sp) in spans.iter().enumerate() {
+            if sp.bold || sp.variation("wght").is_some() {
+                continue;
+            }
+            let split = match self.split_families.get(&sp.font_family) {
+                Some(s) => s.clone(),
+                None => {
+                    let s = fonts::split_family(&sp.font_family, false, self.faces);
+                    self.split_families
+                        .insert(sp.font_family.clone(), s.clone());
+                    s
+                }
+            };
+            let Some((family, weight)) = split else {
+                continue;
+            };
+            if let Some(file_sp) = out.get_or_insert_with(|| spans.to_vec()).get_mut(i) {
+                file_sp.font_family = family;
+                file_sp.set_variation("wght", Some(f64::from(weight)));
+            }
+        }
+        out
     }
 
     fn guid(&mut self) -> [u8; 16] {
@@ -2823,6 +3122,7 @@ impl<'a> Writer<'a> {
             .text_formats
             .iter()
             .map(|f| (f.font, f.flags & 0x3_ffff))
+            .chain(self.run_faces.iter().copied())
             .collect();
         let mut out = Vec::new();
         if v.redirects() {
@@ -3371,6 +3671,19 @@ impl<'a> Writer<'a> {
             for x in all.iter_mut() {
                 x.effects.clear();
             }
+            // A blend goes out as one plain group of what it draws: its
+            // start object and its steps as curves (and its end when the
+            // effect holds it), ordinary objects held together as the
+            // blend is one object here. They were loose objects of the
+            // layer; a blend of two texts saved so closed the program
+            // that wrote the samples when the text was clicked (#946).
+            let blends = s
+                .effects
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::live::Effect::Blend { .. }));
+            if blends && all.len() > 1 {
+                return self.group(&all, centre, depth + 1);
+            }
             return self.objects(&all, centre, depth + 1);
         }
         let v = self.v;
@@ -3484,6 +3797,8 @@ impl<'a> Writer<'a> {
                 // spacing from version 16); the object takes the first
                 // paragraph's.
                 let own_align = *align;
+                let file_spans = self.file_spans(spans);
+                let spans = file_spans.as_deref().unwrap_or(spans);
                 let first_align = paragraph_aligns(spans, own_align)
                     .first()
                     .copied()
@@ -3510,7 +3825,7 @@ impl<'a> Writer<'a> {
                     r#"{},"frame":{{"equalWidthColumns":"1","rtlColumns":"0","columns":"{},0"}},"paragraph":{{"justify":"{}"}}"#,
                     spans
                         .first()
-                        .map(|sp| character_json(sp, Some(&s.fill)))
+                        .map(|sp| character_json(sp, Some(sp.fill.as_ref().unwrap_or(&s.fill))))
                         .unwrap_or_else(|| r#""character":{}"#.to_string()),
                     units(if width.is_finite() { width } else { 0.0 }).max(0),
                     justify_code(*align)
@@ -3822,7 +4137,11 @@ impl<'a> Writer<'a> {
             let format = formats.get(pi);
             let align = format.map_or(align, |f| f.align);
             for sp in runs {
-                self.font_id(&sp.font_family);
+                let id = self.font_id(&sp.font_family);
+                let face = (id, style_flags(sp) & 0x3_ffff);
+                if !self.run_faces.contains(&face) {
+                    self.run_faces.push(face);
+                }
             }
             let first = runs.first().or(spans.first());
             let leading = format.map_or(1.0, |f| {
@@ -3831,7 +4150,10 @@ impl<'a> Writer<'a> {
             // The paragraph's default style is complete, as files hold it:
             // a style that leaves out the spacings makes the program that
             // opens the file hang.
-            let default = full_text_style(first, Some(fill), align, leading);
+            // The colour is the first run's own when it has one: a
+            // paragraph of one run keeps its colour only here (#1057).
+            let first_fill = first.and_then(|sp| sp.fill.as_ref()).unwrap_or(fill);
+            let default = full_text_style(first, Some(first_fill), align, leading);
             t.u32(style_for(align))
                 .zeros(1)
                 .u8(0)

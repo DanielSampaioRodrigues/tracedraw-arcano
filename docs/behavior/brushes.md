@@ -1,9 +1,12 @@
 # Shape brushes: Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen
 
 Drag over a selected curve (objects that are not curves are converted
-first; with nothing selected, the object under the pointer is taken) to
-reshape the outline within the nib. The whole drag is one undo step; the
-next drag is another.
+first) to reshape the outline within the nib. Only selected objects
+change: with nothing selected a drag does nothing and the status bar
+says "Select an object first, then drag over it with the brush"; a
+click selects (see "Clicks with drawing tools" in `toolbox.md`;
+`brushes::tests::brushes_change_only_the_selected_objects`). The whole
+drag is one undo step; the next drag is another.
 
 ## Common behaviour
 
@@ -22,7 +25,8 @@ next drag is another.
   and Twirl, half a millimetre for Smooth, the spike spacing for
   Roughen), moved and fitted back into curves (Roughen: straight lines,
   so the spikes stay sharp), and the fitted curves are merged into as few
-  as keep the stretch within 0.1 mm (kurbo's curve fitter; Smooth merges
+  as keep the stretch within 0.1 mm (`fit::fit_path`, whose splitting is bounded, so a long stroke never
+  hangs, #1133; Smooth merges
   within its own tolerance), so a stroke leaves a handful of nodes, not
   one every few millimetres (`effects::brush_runs`, `fewer_curves`). A
   piece out of reach shorter than one and a half times the reach is
@@ -58,6 +62,7 @@ object". The settings are kept in the preferences (`tools.brush_radius`,
 - `tracedraw_core::effects::tests::brushes_leave_the_segments_out_of_reach_exactly`
 - `tracedraw_core::effects::tests::smooth_fits_jagged_lines_within_the_nib`
 - `tracedraw_core::effects::tests::a_smooth_stroke_along_a_wobbly_spiral_leaves_few_nodes_on_it`
+- `tracedraw_core::effects::tests::long_smudge_and_twirl_strokes_stay_light`
 - `brushes::tests::a_stroke_is_one_step_and_follows_the_settings`
 - `brushes::tests::attract_repel_and_twirl_follow_their_modes`
 - `brushes::page_space_tests::the_nib_is_measured_on_the_page_whatever_the_object_scale`

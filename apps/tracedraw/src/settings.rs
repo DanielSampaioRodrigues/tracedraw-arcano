@@ -73,6 +73,15 @@ impl Captions {
     }
 }
 
+/// A page size the user saved under a name, in millimetres (portrait or
+/// landscape as saved).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageSizePreset {
+    pub name: String,
+    pub width_mm: f64,
+    pub height_mm: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -120,6 +129,10 @@ pub struct Settings {
     /// outline widths).
     #[serde(default)]
     pub custom_dashes: Vec<Vec<f64>>,
+    /// Page sizes saved in Document Options > Page Size, listed in every
+    /// page size list after the favourites.
+    #[serde(default)]
+    pub page_sizes: Vec<PageSizePreset>,
     /// The unit outline widths are shown and typed in (a unit id, "pt"
     /// by default); widths are kept in millimetres.
     #[serde(default = "default_outline_units")]
@@ -721,6 +734,11 @@ pub struct NodePrefs {
     /// control handle to take it (Shape tool, and the curve tools'
     /// nodes).
     pub pick_distance: f32,
+    /// The Shape tool shows a corner widget inside the corners of a curve
+    /// (or of the chosen nodes), dragged to round them (#635). Off by
+    /// default, so it does not get in the way of node editing (#884);
+    /// rectangles keep their own corner rounding either way.
+    pub corner_widgets: bool,
 }
 
 impl Default for NodePrefs {
@@ -735,6 +753,7 @@ impl Default for NodePrefs {
             unselected_filled: true,
             show_direction: false,
             pick_distance: 6.0,
+            corner_widgets: false,
         }
     }
 }
@@ -1342,6 +1361,7 @@ impl Default for Settings {
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
             custom_dashes: Vec::new(),
+            page_sizes: Vec::new(),
             outline_units: default_outline_units(),
             text_units: default_outline_units(),
             document_defaults: DocumentDefaults::default(),

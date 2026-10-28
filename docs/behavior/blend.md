@@ -14,6 +14,9 @@ Intermediate objects between a start and an end object.
 | Apply to sizing | off | the object acceleration changes the steps' sizes too |
 | Color blend | Direct | Direct (straight through RGB), Clockwise (hue increasing), Counterclockwise (hue decreasing), through HSB |
 
+A blend asking for more than 999 steps (from a file or a script) draws
+999 (`tracedraw_core::live::tests::a_blend_draws_at_most_its_maximum_steps`, #980).
+
 Not yet: mapping nodes, splitting and fusing.
 
 ## Panel (Effects > Blend)
@@ -40,6 +43,26 @@ line on dragging from one object to another.
 
 Interactive: drag from the start object to the end object; the start
 and end are the two selected objects' order on drop.
+
+## On the canvas (Blend tool)
+
+A click on a blended object (the start, the end or a step; text as any
+other object) selects it and picks its blend; a click on empty space
+lets go. The selected blend shows a white square on the start object's
+centre, a crossed one on the end object's, the line between them, and
+two sliders on that line: the object acceleration (triangle above the
+line) and the colour acceleration (triangle below). Each sits where the
+middle step lands, `0.5 ^ (1 + acc)` of the way from the start, so at
+0 both are halfway. Dragging a slider along the line sets its
+acceleration to the one that puts the middle step there (two decimals,
+-1..1): toward the start bunches the steps (or the colours) near the
+start, toward the end near the end. With Link acceleration both
+follow either slider. Each drag is one undo step and the bar shows the
+new values; a press on a slider never starts a new blend
+(`blend_tool.rs`, `text_effect_tests::the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it`).
+
+Not yet on the canvas: dragging the start or end square to another
+object, and dropping colours on them.
 
 The steps lie between the two objects in the stacking order: with the
 end object below the start one (a front object blended to one behind
@@ -70,14 +93,31 @@ only inside the effect; such a blend draws its end with the steps.
 ## Formulas
 
 For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)`):
-- Geometry: both paths are resampled to the same node count
-  (the larger of the two, nodes mapped by arc length, or by the user's
-  node map), then interpolated node by node, including control points.
-  Before that the end outline is wound the way the start outline is,
-  and its first node is the one whose direction from its own centre is
-  closest to the start outline's first node's direction from its centre,
-  so equal shapes blend without twisting through the middle whatever
-  their relative position.
+- Geometry: the end outline is wound the way the start outline is and
+  started where it best fits the start outline's first node (the two
+  outlines compared as 120 points each, about their own centres and at
+  their own sizes, over every place the end outline could start), so
+  equal shapes blend without twisting through the middle whatever their
+  relative position. Then each outline gains a node where the other has
+  one at the same share of its length (nodes less than half of one
+  120th of the length apart pair up instead), and the steps are
+  interpolated node by node, control points included: a step's side is
+  straight where both paired sides are straight. So a square into a
+  circle gives steps of eight nodes that round off evenly, and two
+  rectangles give rectangles with their corners kept (#1020). Open
+  outlines, and closed ones with more than 512 nodes together, are
+  paired as 120 points spread evenly along their length, each step a
+  polygon through them. Outlines of several parts (letters, holes)
+  blend part by part, the n-th into the n-th, the same way.
+  A blend read from a `.cdr` file (versions 9 and 13) pairs the two
+  outlines node for node instead, each run from its first node as the
+  file gives it: every node of a step lies on the straight line between
+  its two paired nodes (control points too), so a step between a
+  rectangle and a pentagon is a pentagon with sharp corners. When one
+  outline has fewer nodes, its last segment (the one closing back to its
+  first node) is cut into equal parts until the counts match. Open
+  outlines, and outlines of more than 4096 nodes, are paired by arc
+  length.
 - Transform: interpolated as translation + rotation + scale (not matrix
   entries), so blends rotate the short way unless "rotation" adds turns.
 - Colour: mixed directly (each colour's values from start to end).

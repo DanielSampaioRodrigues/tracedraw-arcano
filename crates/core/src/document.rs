@@ -190,6 +190,30 @@ pub mod text_outline {
     }
 }
 
+/// Hook for a metafile player. Readers of other formats meet Windows
+/// metafiles (WMF or EMF) as the pictures of embedded objects; the player
+/// lives in the import crate, so the app registers it here.
+pub mod metafile {
+    use super::Shape;
+    use crate::geometry::Size;
+    use crate::id::IdSource;
+    use std::sync::OnceLock;
+
+    /// A metafile's objects (mm, y up, origin at the bottom left of its
+    /// frame) and the size of that frame, `None` when it cannot be read.
+    pub type Player = fn(&[u8], &mut IdSource) -> Option<(Vec<Shape>, Size)>;
+    static PLAYER: OnceLock<Player> = OnceLock::new();
+
+    pub fn set(f: Player) {
+        let _ = PLAYER.set(f);
+    }
+
+    /// The objects a metafile draws, when a player is registered.
+    pub fn play(bytes: &[u8], ids: &mut IdSource) -> Option<(Vec<Shape>, Size)> {
+        PLAYER.get().and_then(|f| f(bytes, ids))
+    }
+}
+
 /// The glyphs of a text object in its local space (apply its transform),
 /// placed as [`Shape::local_path`] places its outline. `None` for other
 /// shapes and without a text engine.
@@ -879,6 +903,15 @@ impl TextAlign {
     }
 }
 
+/// A value set for one axis of a variable font (#870): the axis's
+/// OpenType tag ("wght", "wdth", "slnt", "opsz" or a font's own) and a
+/// value in the axis's units, drawn clamped to the font's range.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FontVariation {
+    pub tag: String,
+    pub value: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -926,6 +959,11 @@ pub struct TextSpan {
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
+    /// Axis values of a variable font set for these characters (#870);
+    /// an axis not listed takes the value the text's weight and slant
+    /// give, else the font's default.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variations: Vec<FontVariation>,
     /// The formatting of the paragraph these characters are in, when it
     /// has its own (see [`crate::paragraphs`]); `None` = the text
     /// object's alignment and paragraph style.
@@ -957,7 +995,31 @@ impl TextSpan {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            variations: Vec::new(),
             paragraph: None,
+        }
+    }
+
+    /// The value set for variable font axis `tag`, if any.
+    pub fn variation(&self, tag: &str) -> Option<f64> {
+        self.variations
+            .iter()
+            .find(|v| v.tag == tag)
+            .map(|v| v.value)
+    }
+
+    /// Set axis `tag` to `value`, or take it off (`None`); a value that
+    /// is not finite takes it off too.
+    pub fn set_variation(&mut self, tag: &str, value: Option<f64>) {
+        match value.filter(|v| v.is_finite()) {
+            Some(value) => match self.variations.iter_mut().find(|v| v.tag == tag) {
+                Some(v) => v.value = value,
+                None => self.variations.push(FontVariation {
+                    tag: tag.to_string(),
+                    value,
+                }),
+            },
+            None => self.variations.retain(|v| v.tag != tag),
         }
     }
 
@@ -1974,6 +2036,13 @@ pub struct RasterFx {
     pub source: u64,
 }
 
+/// A live effect that draws objects beside the object (a blend's steps)
+/// rather than changing the object: with bitmap effects on the object they
+/// stay vector objects around its picture, made from the object as it is.
+pub fn beside_picture(e: &crate::live::Effect) -> bool {
+    matches!(e, crate::live::Effect::Blend { .. })
+}
+
 /// The lengths the transform gives the object's x and y unit vectors.
 pub fn transform_scale(t: Affine) -> (f64, f64) {
     let c = t.as_coeffs();
@@ -2112,7 +2181,32 @@ impl Shape {
     /// How the object is drawn: itself, or, with visible bitmap effects
     /// whose picture is made, a bitmap of that picture in its place (its
     /// fill, outlines, shadow, effects and opacity are in the picture).
+    /// Live effects that draw objects beside it (a blend's steps, see
+    /// [`beside_picture`]) are not in the picture: the object is then a
+    /// group of those objects, drawn from it as it is, around the picture.
     pub fn drawn_as(&self) -> Option<Shape> {
+        let pic = self.picture()?;
+        if !self.effects.iter().any(beside_picture) {
+            return Some(pic);
+        }
+        let mut plain = self.clone();
+        plain.raster_fx = None;
+        plain.effects.retain(beside_picture);
+        let ev = crate::live::evaluate(&plain);
+        let mut children = ev.below;
+        children.push(pic);
+        children.extend(ev.above);
+        for c in &mut children {
+            c.effects.clear();
+        }
+        let mut group = Shape::new(self.id, ShapeKind::Group { children });
+        group.visible = self.visible;
+        Some(group)
+    }
+
+    /// The bitmap of the picture its visible bitmap effects make, in its
+    /// place, when that picture is made (see [`Shape::drawn_as`]).
+    pub fn picture(&self) -> Option<Shape> {
         let fx = self.raster_fx.as_ref()?;
         if fx.png.is_empty() || !fx.effects.iter().any(|e| e.visible) {
             return None;
@@ -2205,6 +2299,9 @@ impl Shape {
         let mut c = self.clone();
         let (sx, sy) = transform_scale(c.transform);
         c.transform = Affine::IDENTITY;
+        // A blend's steps are not in the picture: moving its end does not
+        // make the picture again.
+        c.effects.retain(|e| !beside_picture(e));
         if let Some(fx) = c.raster_fx.as_mut() {
             fx.png = Default::default();
             fx.source = 0;
@@ -3061,8 +3158,12 @@ impl Shape {
             ShapeKind::Text { .. } => self
                 .text_bounds()
                 .unwrap_or_else(|| self.page_path().bounding_box()),
+            // A member that draws nothing (an empty curve, such as a
+            // dimension's arrowheads when it has none) takes no room:
+            // its box would stretch the group's to the origin (#996).
             ShapeKind::Group { children } => children
                 .iter()
+                .filter(|c| !c.is_empty_path())
                 .map(|c| {
                     let mut c = c.clone();
                     c.transform = self.transform * c.transform;
@@ -3072,6 +3173,11 @@ impl Shape {
                 .unwrap_or_else(|| self.page_path().bounding_box()),
             _ => self.page_path().bounding_box(),
         }
+    }
+
+    /// A curve with no segments: it draws nothing.
+    pub fn is_empty_path(&self) -> bool {
+        matches!(&self.kind, ShapeKind::Path { path, .. } if path.elements().is_empty())
     }
 
     /// The frame of paragraph text in page space (its four corners, the
@@ -4730,6 +4836,35 @@ mod index_keys {
 
 #[cfg(test)]
 mod tests {
+    /// An empty curve in a group takes no room in the group's box: the
+    /// box of a dimension without arrowheads reached the origin (#996).
+    #[test]
+    fn an_empty_curve_takes_no_room_in_its_group() {
+        use crate::geometry::{Affine, BezPath, Rect};
+        let mut line = BezPath::new();
+        line.move_to((100.0, 300.0));
+        line.line_to((150.0, 310.0));
+        let part = |id: u64, path: BezPath| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Path {
+                    path,
+                    closed: false,
+                },
+            )
+        };
+        let mut group = Shape::new(
+            ShapeId(1),
+            ShapeKind::Group {
+                children: vec![part(2, line), part(3, BezPath::new())],
+            },
+        );
+        assert_eq!(group.bounds(), Rect::new(100.0, 300.0, 150.0, 310.0));
+        assert_eq!(group.visual_bounds(), group.bounds());
+        group.transform = Affine::translate((-20.0, 5.0));
+        assert_eq!(group.bounds(), Rect::new(80.0, 305.0, 130.0, 315.0));
+    }
+
     #[test]
     fn node_types_of_curves_inside_groups_survive_the_native_format() {
         use crate::geometry::BezPath;
@@ -4770,6 +4905,55 @@ mod tests {
     }
 
     use super::*;
+
+    /// Variable font axis values (#870) are set, replaced and taken off
+    /// per tag, saved with the text in the native format and left out of
+    /// it when none is set.
+    #[test]
+    fn variable_font_axes_are_kept_with_the_text() {
+        let mut sp = TextSpan::new("Hello", "Quicksand", 24.0);
+        sp.set_variation("wght", Some(550.0));
+        sp.set_variation("wdth", Some(80.0));
+        sp.set_variation("wght", Some(620.0));
+        sp.set_variation("XOPQ", Some(f64::NAN));
+        assert_eq!(sp.variation("wght"), Some(620.0));
+        assert_eq!(sp.variations.len(), 2);
+        sp.set_variation("wdth", None);
+        assert_eq!(sp.variation("wdth"), None);
+
+        let text = |sp: TextSpan| {
+            Shape::new(
+                ShapeId(1),
+                ShapeKind::Text {
+                    spans: vec![sp],
+                    origin: crate::geometry::Point::new(0.0, 0.0),
+                    frame: None,
+                    align: TextAlign::Left,
+                    para: ParagraphStyle::default(),
+                    on_path: None,
+                },
+            )
+        };
+        let mut doc = Document::default();
+        doc.pages[0].layers[0].shapes = vec![text(sp.clone())];
+        let json = doc.to_json().expect("json");
+        assert!(json.contains("\"wght\""));
+        let back = Document::from_json(&json).expect("opens again");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("a text");
+        };
+        assert_eq!(spans[0].variations, sp.variations);
+
+        doc.pages[0].layers[0].shapes = vec![text(TextSpan::new("Hello", "Quicksand", 24.0))];
+        let json = doc.to_json().expect("json");
+        assert!(!json.contains("variations"));
+        // Files written before keep opening.
+        let back = Document::from_json(&json).expect("opens again");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("a text");
+        };
+        assert!(spans[0].variations.is_empty());
+    }
 
     /// Imported rounded corners keep their size (#619): a corner larger
     /// than the shorter side stays as it was, and a stretched rectangle

@@ -21,6 +21,42 @@ change marked `TraceDraw:` in a comment.
   and run it (`gpu::eframe_context_fallback::tests`); the copy's own tests
   run in no gate. The licence texts, which the published crate leaves
   out, are egui's `LICENSE-MIT` and `LICENSE-APACHE` at tag 0.36.2.
+- Change: a painter for the fixed-function OpenGL pipeline
+  (`native/fixed_function_painter.rs`, its arithmetic and tests in
+  `native/fixed_function_geometry.rs`, the choice in
+  `native/gl_painter.rs`), TraceDraw's own code. The OpenGL renderer draws
+  with it instead of `egui_glow`'s painter when the context is desktop
+  OpenGL below 3.0, or when `TRACEDRAW_GL_PAINTER=fixed` asks for it
+  (`shaders` asks for `egui_glow`'s): client-side vertex arrays and
+  `GL_MODULATE` texturing, no shaders, buffer objects or vertex array
+  objects. The OpenGL 2.1 driver of the Intel HD Graphics of 2010
+  (8.15.10.2900, #616) compiles `egui_glow`'s GLSL 1.20 shaders and then
+  draws everything after the first mesh of a frame as black boxes and
+  stray triangles; the fixed-function pipeline is what such drivers were
+  made for, and it computes what egui's shader does (vertex colour times
+  texel, premultiplied alpha). `TRACEDRAW_GL_CONTEXT=compat` asks for the
+  compatibility profile before OpenGL 3.3 core and OpenGL ES, for tests
+  under Mesa forced to OpenGL 2.1 (which would answer the ES attempt);
+  `fixed` alone, on a core profile, draws nothing (every fixed-function
+  call is invalid there, the log shows `OpenGL error` lines), which is
+  how TraceDraw's read-back check of the renderer is exercised.
+  TraceDraw's tests include and run the arithmetic
+  (`gpu::eframe_fixed_function_geometry::tests`).
+- Change: a window made maximized is not given its size and position a
+  second time once it exists (`native/window_start.rs`, used by
+  `glow_integration.rs` and by `epi_integration::create_window`, which
+  `wgpu_integration.rs` calls in place of `egui_winit::create_window`).
+  egui-winit applies them again after creating a window, as it then knows
+  the monitor's scaling; the window already has that size as the size it
+  restores to, and on Windows a size or position asked for after the
+  maximize clears it, so the hidden window was restored, shown at its
+  normal size for a moment and maximized again: TraceDraw started without
+  the splash screen opened at its normal size and then grew to the
+  screen (#787). TraceDraw's tests include and run it
+  (`splash::eframe_window_start::tests`). Check whether egui 0.37 still
+  needs it before dropping the copy.
 - Drop the copy and the `[patch.crates-io]` entry when the workspace moves
   to egui/eframe 0.37 or later: what holds that back is the egui 0.37
-  API migration across the app.
+  API migration across the app. The fixed-function painter has no
+  upstream counterpart: carry it over, or drop it once no supported card
+  needs it.

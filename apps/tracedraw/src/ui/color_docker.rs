@@ -9,6 +9,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use tracedraw_core::{Color, Command, Fill, ShapeId};
 
@@ -77,9 +78,9 @@ fn follow_selection(app: &mut App) {
 fn set_color(app: &mut App, c: Color) {
     let model = MODELS.get(app.color_model).copied().unwrap_or("CMYK");
     app.mixer_color = c.convert_to(model);
-    let (h, s, _) = app.mixer_color.to_hsb();
+    let (h, s, _) = crate::ui::color_picker::viewer_point(app.mixer_color);
     if s > 1e-3 {
-        app.color_docker.hue = h as f32;
+        app.color_docker.hue = h;
     }
 }
 
@@ -147,7 +148,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn to32(c: [f32; 3]) -> Color32 {
@@ -158,14 +159,76 @@ fn to32(c: [f32; 3]) -> Color32 {
 /// The saturation (left to right) and brightness (bottom to top) square
 /// of `hue`, as an `n` x `n` grid of shaded cells.
 fn hsb_square(p: &Painter, r: Rect, hue: f32, n: usize) {
-    let mut mesh = Mesh::default();
+    color_square(p, r, &square_colors(hue, "HSB", n), n);
+}
+
+/// The screen colours of the viewer's square for `hue` in `model`, as an
+/// `(n + 1)` x `(n + 1)` grid of vertex colours, row by row from the top:
+/// in CMYK the look of the inks each point gives (#907), else the
+/// saturation and brightness of the hue.
+fn square_colors(hue: f32, model: &str, n: usize) -> Vec<Color32> {
     let n = n.max(1);
+    let cmyk = model == "CMYK";
+    let mut out = Vec::with_capacity((n + 1) * (n + 1));
     for j in 0..=n {
         for i in 0..=n {
             let s = i as f32 / n as f32;
             let v = 1.0 - j as f32 / n as f32;
-            let pos = r.min + Vec2::new(r.width() * s, r.height() * (1.0 - v));
-            mesh.colored_vertex(pos, to32(tracedraw_core::color::hsb_to_rgb(hue, s, v)));
+            out.push(to32(if cmyk {
+                crate::ui::color_picker::from_viewer(hue, s, v, model).to_rgb_f32()
+            } else {
+                tracedraw_core::color::hsb_to_rgb(hue, s, v)
+            }));
+        }
+    }
+    out
+}
+
+/// The colours of the square `id` for `hue` in `model`, kept between
+/// frames while the hue, the model and the colour engine stay the same:
+/// CMYK looks cost more than a frame should spend on them every time.
+fn cached_square_colors(
+    ui: &Ui,
+    id: egui::Id,
+    hue: f32,
+    model: &str,
+    n: usize,
+) -> std::sync::Arc<Vec<Color32>> {
+    let cmyk = model == "CMYK";
+    let engine = if cmyk {
+        tracedraw_core::color::engine::icc().map_or(0usize, |e| std::sync::Arc::as_ptr(&e) as usize)
+    } else {
+        0
+    };
+    let key = (hue.to_bits(), cmyk, n, engine);
+    type Cached = (u32, bool, usize, usize);
+    let id = id.with("colors");
+    if let Some((k, c)) = ui.data(|d| d.get_temp::<(Cached, std::sync::Arc<Vec<Color32>>)>(id)) {
+        if k == key {
+            return c;
+        }
+    }
+    let c = std::sync::Arc::new(square_colors(hue, model, n));
+    ui.data_mut(|d| d.insert_temp(id, (key, c.clone())));
+    c
+}
+
+/// The viewer's square from its vertex colours (`n` x `n` cells).
+fn color_square(p: &Painter, r: Rect, colors: &[Color32], n: usize) {
+    let mut mesh = Mesh::default();
+    let n = n.max(1);
+    for j in 0..=n {
+        for i in 0..=n {
+            let pos = r.min
+                + Vec2::new(
+                    r.width() * i as f32 / n as f32,
+                    r.height() * j as f32 / n as f32,
+                );
+            let c = colors
+                .get(j * (n + 1) + i)
+                .copied()
+                .unwrap_or(Color32::GRAY);
+            mesh.colored_vertex(pos, c);
         }
     }
     let w = (n + 1) as u32;
@@ -179,13 +242,18 @@ fn hsb_square(p: &Painter, r: Rect, hue: f32, n: usize) {
     p.add(Shape::mesh(mesh));
 }
 
-/// The hue strip, red at the top through the spectrum to red again.
-fn hue_strip(p: &Painter, r: Rect) {
+/// The hue strip, red at the top through the spectrum to red again: each
+/// hue's pure screen colour, or in CMYK the look of its solid inks.
+fn hue_strip(p: &Painter, r: Rect, model: &str) {
     let mut mesh = Mesh::default();
     let n = 36u32;
     for k in 0..=n {
         let t = k as f32 / n as f32;
-        let c = to32(tracedraw_core::color::hsb_to_rgb(t * 360.0, 1.0, 1.0));
+        let c = to32(if model == "CMYK" {
+            crate::ui::color_picker::from_viewer(t * 360.0, 1.0, 1.0, model).to_rgb_f32()
+        } else {
+            tracedraw_core::color::hsb_to_rgb(t * 360.0, 1.0, 1.0)
+        });
         let y = r.top() + r.height() * t;
         mesh.colored_vertex(Pos2::new(r.left(), y), c);
         mesh.colored_vertex(Pos2::new(r.right(), y), c);
@@ -205,8 +273,8 @@ fn shown_point(picked: Option<(f32, f32, Color)>, color: Color) -> (f32, f32) {
     match picked {
         Some((s, b, c)) if c == color => (s, b),
         _ => {
-            let (_, s, b) = color.to_hsb();
-            (s as f32, b as f32)
+            let (_, s, b) = crate::ui::color_picker::viewer_point(color);
+            (s, b)
         }
     }
 }
@@ -227,15 +295,17 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
         let (s, b) = shown_point(ui.data(|d| d.get_temp(picked_id)), color);
         ui.add_space(8.0);
         let (strip, st) = ui.allocate_exact_size(Vec2::new(18.0, side), Sense::click_and_drag());
+        let model = crate::ui::color_picker::edit_model(color);
+        let colors = cached_square_colors(ui, sq.id, hue, model, 16);
         let p = ui.painter();
-        hsb_square(p, square, hue, 16);
+        color_square(p, square, &colors, 16);
         p.rect_stroke(
             square,
             0.0,
             Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Outside,
         );
-        hue_strip(p, strip);
+        hue_strip(p, strip, model);
         p.rect_stroke(
             strip,
             0.0,
@@ -269,12 +339,7 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
         }
         if let Some((h, ns, nb)) = out {
             // The colour this point gives, as the caller makes it.
-            let c = crate::ui::color_picker::from_viewer(
-                h,
-                ns,
-                nb,
-                crate::ui::color_picker::edit_model(color),
-            );
+            let c = crate::ui::color_picker::from_viewer(h, ns, nb, model);
             ui.data_mut(|d| d.insert_temp(picked_id, (ns, nb, c)));
         }
         if st.dragged() || st.clicked() {
@@ -293,6 +358,7 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
 fn slider(
     ui: &mut Ui,
     label: &str,
+    name: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     scale: f32,
@@ -306,6 +372,7 @@ fn slider(
                     .show_value(true)
                     .max_decimals(1),
             ))
+            .rich_tip(crate::ui::tips::pair(name, "color.channel_desc"))
             .changed();
         if changed {
             *value = x / scale;
@@ -320,39 +387,39 @@ pub(crate) fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
     let mut changed = false;
     match c {
         Color::Rgb { r, g, b } => {
-            changed |= slider(ui, "R", r, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "G", g, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "B", b, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "R", "color.channel_red", r, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "G", "color.channel_green", g, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "B", "color.channel_blue", b, 0.0..=255.0, 255.0);
         }
         Color::Cmyk { c, m, y, k } => {
-            changed |= slider(ui, "C", c, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "M", m, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "Y", y, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "K", k, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "C", "color.channel_cyan", c, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "M", "color.channel_magenta", m, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "Y", "color.channel_yellow", y, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "K", "color.channel_black", k, 0.0..=100.0, 100.0);
         }
         // Hues are degrees already.
         Color::Hsb { h, s, b } => {
-            changed |= slider(ui, "H", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "B", b, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
+            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "B", "color.channel_brightness", b, 0.0..=100.0, 100.0);
         }
         Color::Hsl { h, s, l } => {
-            changed |= slider(ui, "H", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "L", l, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
+            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 100.0);
         }
         Color::Lab { l, a, b } => {
-            changed |= slider(ui, "L", l, 0.0..=100.0, 1.0);
-            changed |= slider(ui, "a", a, -128.0..=127.0, 1.0);
-            changed |= slider(ui, "b", b, -128.0..=127.0, 1.0);
+            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 1.0);
+            changed |= slider(ui, "a", "color.channel_lab_a", a, -128.0..=127.0, 1.0);
+            changed |= slider(ui, "b", "color.channel_lab_b", b, -128.0..=127.0, 1.0);
         }
         Color::Gray { v } => {
-            changed |= slider(ui, "L", v, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "L", "color.channel_gray", v, 0.0..=100.0, 100.0);
         }
         Color::Yiq { y, i, q } => {
-            changed |= slider(ui, "Y", y, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "I", i, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "Q", q, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "Y", "color.channel_luma", y, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "I", "color.channel_yiq_i", i, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "Q", "color.channel_yiq_q", q, 0.0..=255.0, 255.0);
         }
         // A spot ink's tint is set where the inks are listed.
         Color::Registration | Color::Spot { .. } => {}
@@ -422,7 +489,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("docker.model"));
+            .rich_tip(tr("docker.model"));
     });
     ui.add_space(4.0);
     let old = selected_fill(app);
@@ -433,6 +500,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         let mut hex = c.to_hex();
         if ui
             .add(egui::TextEdit::singleline(&mut hex).desired_width(70.0))
+            .rich_tip(crate::ui::tips::keyed("docker.hex_color"))
             .lost_focus()
         {
             if let Some(nc) = Color::from_hex(&hex) {
@@ -443,8 +511,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             }
         }
         if !c.in_cmyk_gamut(6.0) {
-            ui.label(egui::RichText::new("\u{26A0}").color(Color32::from_rgb(200, 120, 0)))
-                .on_hover_text(tr("docker.gamut_warning"));
+            gamut_warning(ui).rich_tip(tr("docker.gamut_warning"));
         }
         if crate::ui::propbar::pic_button(
             ui,
@@ -461,6 +528,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     if let Some(ec) = app.eyedropper_color {
         if ui
             .button(trf("docker.use_sampled", &[("c", &ec.to_hex())]))
+            .rich_tip(crate::ui::tips::keyed("docker.use_sampled_tip"))
             .clicked()
         {
             c = ec;
@@ -471,7 +539,12 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     if app.color_docker.shown[0] {
         if let Some((h, s, b)) = viewer(ui, app.color_docker.hue, c) {
             app.color_docker.hue = h;
-            c = Color::Hsb { h, s, b };
+            c = crate::ui::color_picker::from_viewer(
+                h,
+                s,
+                b,
+                crate::ui::color_picker::edit_model(c),
+            );
             changed = true;
         }
         ui.add_space(6.0);
@@ -499,17 +572,37 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         let has = !app.selection.is_empty();
         if ui
             .add_enabled(has, egui::Button::new(tr("docker.fill")))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.fill",
+                "docker.color_fill_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.fill",
+                "docker.color_fill_desc",
+            ))
             .clicked()
         {
             app.apply_fill(Fill::Solid(c));
         }
         if ui
             .add_enabled(has, egui::Button::new(tr("docker.outline")))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
             .clicked()
         {
             app.apply_outline_color(Some(c));
         }
-        if ui.button(tr("docker.add_to_palette")).clicked() {
+        if ui
+            .button(tr("docker.add_to_palette"))
+            .rich_tip(crate::ui::tips::keyed("docker.add_to_palette"))
+            .clicked()
+        {
             let mut colors = app.doc().palette.clone();
             if !colors.contains(&c) {
                 colors.push(c);
@@ -520,6 +613,36 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     ui.add_space(6.0);
     spot_inks(app, ui, c);
 }
+
+/// The out-of-gamut sign: an orange triangle with an exclamation mark,
+/// drawn rather than taken from a font (no bundled font has the warning
+/// sign character, so it drew as an empty box, #949).
+fn gamut_warning(ui: &mut Ui) -> Response {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
+    let orange = Color32::from_rgb(200, 120, 0);
+    let p = ui.painter();
+    let top = Pos2::new(r.center().x, r.top() + 1.5);
+    let left = Pos2::new(r.left() + 1.0, r.bottom() - 1.5);
+    let right = Pos2::new(r.right() - 1.0, r.bottom() - 1.5);
+    p.add(Shape::convex_polygon(
+        vec![top, right, left],
+        orange,
+        Stroke::NONE,
+    ));
+    let x = r.center().x;
+    let white = Stroke::new(1.6, Color32::WHITE);
+    p.line_segment(
+        [Pos2::new(x, r.top() + 6.0), Pos2::new(x, r.bottom() - 6.0)],
+        white,
+    );
+    p.circle_filled(Pos2::new(x, r.bottom() - 3.8), 0.9, Color32::WHITE);
+    resp
+}
+
+/// The remove button of a spot ink: the multiplication sign, which the
+/// bundled interface font has (a heavier cross drew as an empty box on
+/// systems without a font for it, #949).
+const REMOVE_INK: char = '\u{00D7}';
 
 /// The drawing's spot inks: each applies as fill or outline at the tint;
 /// a new one takes the new color's process values and the name typed.
@@ -544,19 +667,24 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             ui.label(&ink.name);
             if ui
                 .add_enabled(has, egui::Button::new(tr("docker.fill")).small())
+                .rich_tip(crate::ui::tips::pair("docker.fill", "docker.ink_fill_desc"))
                 .clicked()
             {
                 app.apply_fill(Fill::Solid(ink.color(tint)));
             }
             if ui
                 .add_enabled(has, egui::Button::new(tr("docker.outline")).small())
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.outline",
+                    "docker.ink_outline_desc",
+                ))
                 .clicked()
             {
                 app.apply_outline_color(Some(ink.color(tint)));
             }
             if ui
-                .small_button("\u{2715}")
-                .on_hover_text(tr("docker.remove_ink"))
+                .small_button(REMOVE_INK.to_string())
+                .rich_tip(tr("docker.remove_ink"))
                 .clicked()
             {
                 remove = Some(ink.id);
@@ -567,11 +695,14 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
         ui.horizontal(|ui| {
             ui.label(tr("docker.tint"));
             ui.spacing_mut().slider_width = 140.0;
-            ui.add(
+            // A rail in the slider colour: a plain slider's groove has the
+            // white of fields and vanished on the panel (#949).
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
                     .suffix(" %")
                     .max_decimals(0),
-            );
+            ))
+            .rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
         });
     }
     ui.horizontal(|ui| {
@@ -579,7 +710,11 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             egui::TextEdit::singleline(&mut app.color_docker.new_ink)
                 .hint_text(tr("docker.ink_name"))
                 .desired_width(120.0),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "docker.ink_name",
+            "docker.ink_name_desc",
+        ));
         let name = app.color_docker.new_ink.trim().to_string();
         let taken = inks.iter().any(|i| i.name == name);
         if ui
@@ -587,7 +722,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
                 !name.is_empty() && !taken,
                 egui::Button::new(tr("docker.new_ink")),
             )
-            .on_hover_text(tr("docker.new_ink_tip"))
+            .rich_tip(tr("docker.new_ink_tip"))
             .clicked()
         {
             add_ink(app, name, current);
@@ -649,7 +784,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
                 Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
-            if resp.on_hover_text(name).clicked() {
+            if resp.rich_tip(name).clicked() {
                 out = Some(*c);
             }
         }
@@ -658,25 +793,183 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
 
-    /// In CMYK every point near the black corner gives K 100, whose
-    /// screen look is lighter: the ring stays at the point picked instead
-    /// of jumping back up to that look, so the click is seen to take
-    /// (#761). Another colour shows where it sits.
+    /// The other places that drew the same remove cross as a spot ink.
+    const CROSS_SOURCES: [(&str, &str); 11] = [
+        ("dockers.rs", include_str!("dockers.rs")),
+        ("dockers2.rs", include_str!("dockers2.rs")),
+        ("effect_dialog.rs", include_str!("effect_dialog.rs")),
+        ("effects_docker.rs", include_str!("effects_docker.rs")),
+        ("export_docker.rs", include_str!("export_docker.rs")),
+        ("focus_bar.rs", include_str!("focus_bar.rs")),
+        ("font_sampler.rs", include_str!("font_sampler.rs")),
+        ("lab_dialog.rs", include_str!("lab_dialog.rs")),
+        ("options.rs", include_str!("options.rs")),
+        (
+            "print_merge_docker.rs",
+            include_str!("print_merge_docker.rs"),
+        ),
+        ("toolbar.rs", include_str!("toolbar.rs")),
+    ];
+
+    /// The characters `src` writes as `\u{...}` escapes or as non-ASCII
+    /// characters outside comments: its text icons.
+    pub(crate) fn source_glyphs(src: &str) -> Vec<char> {
+        let mut out = Vec::new();
+        for line in src.lines() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            out.extend(code.chars().filter(|c| !c.is_ascii()));
+            for (at, _) in code.match_indices("\\u{") {
+                let rest = &code[at + 3..];
+                let Some(end) = rest.find('}') else { continue };
+                if let Some(c) = u32::from_str_radix(&rest[..end], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                {
+                    out.push(c);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Every text icon of the panel is in the fonts the app bundles, so
+    /// it never draws as an empty box where no system font has it: the
+    /// remove button of a spot ink and the out-of-gamut sign did (#949).
+    /// The other remove buttons use the same cross, which the bundled
+    /// fonts have, instead of the heavy cross U+2715, which they lack.
+    #[test]
+    fn every_text_icon_is_in_the_bundled_fonts() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts_bundled(&ctx);
+        let mut out = ctx.run_ui(Default::default(), |_| {});
+        out.textures_delta.clear();
+        let font = egui::FontId::proportional(12.0);
+        let has = |c: char| ctx.fonts_mut(|f| f.has_glyph(&font, c));
+        let glyphs = source_glyphs(include_str!("color_docker.rs"));
+        assert!(glyphs.contains(&REMOVE_INK), "{glyphs:?}");
+        let missing: Vec<String> = glyphs
+            .into_iter()
+            .filter(|c| !has(*c))
+            .map(|c| format!("U+{:04X}", c as u32))
+            .collect();
+        assert!(missing.is_empty(), "not in the bundled fonts: {missing:?}");
+        let heavy = char::from_u32(0x2715).expect("a char");
+        assert!(!has(heavy));
+        for (name, src) in CROSS_SOURCES {
+            let glyphs = source_glyphs(src);
+            assert!(glyphs.contains(&REMOVE_INK), "{name}");
+            assert!(!glyphs.contains(&heavy), "{name}");
+        }
+    }
+
+    /// The spot ink tint slider shows its groove: a rail as wide as the
+    /// slider, in the slider rail colour rather than the white of fields
+    /// that the panel is drawn on (#949).
+    #[test]
+    fn the_tint_slider_shows_its_rail() {
+        let mut app = App::headless();
+        add_ink(
+            &mut app,
+            "Gold".into(),
+            Color::cmyk_pct(0.0, 20.0, 80.0, 10.0),
+        );
+        let ctx = crate::theme::ui_context();
+        ctx.set_visuals(crate::theme::visuals());
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(320.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| spot_inks(&mut app, ui, Color::BLACK));
+        out.textures_delta.clear();
+        let rail = Tokens::slider_rail();
+        assert_ne!(rail, Tokens::field());
+        assert_ne!(rail, crate::theme::visuals().panel_fill);
+        let widest = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.fill == rail => Some(r.rect.width()),
+                _ => None,
+            })
+            .fold(0.0f32, f32::max);
+        assert!(widest >= 100.0, "no visible tint rail ({widest})");
+    }
+
+    /// The ring stays at the point picked while the colour is the one it
+    /// gave (#761); another colour shows where it sits.
     #[test]
     fn the_ring_stays_where_a_dark_cmyk_colour_was_picked() {
-        let k100 = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
         let picked = crate::ui::color_picker::from_viewer(0.0, 0.05, 0.02, "CMYK");
-        assert_eq!(picked, k100, "the darkest points are all K 100");
-        let (_, _, look) = k100.to_hsb();
-        assert!(look > 0.1, "K 100 looks lighter than the corner: {look}");
-        assert_eq!(shown_point(Some((0.05, 0.02, picked)), k100), (0.05, 0.02));
+        assert_eq!(
+            shown_point(Some((0.05, 0.02, picked)), picked),
+            (0.05, 0.02)
+        );
         let other = Color::cmyk_pct(0.0, 100.0, 100.0, 0.0);
         let (s, b) = shown_point(Some((0.05, 0.02, picked)), other);
         assert!(b > 0.5 && s > 0.5, "{s} {b}");
+    }
+
+    /// In CMYK the ring reaches every corner of the square, and the
+    /// square's corners show the ink extremes, not screen colours the
+    /// press cannot print (#907).
+    #[test]
+    fn a_cmyk_colour_reaches_the_corners_of_the_viewer() {
+        for (c, at) in [
+            (Color::cmyk_pct(0.0, 0.0, 0.0, 0.0), (0.0, 1.0)),
+            (Color::cmyk_pct(0.0, 100.0, 100.0, 0.0), (1.0, 1.0)),
+            (Color::cmyk_pct(0.0, 0.0, 0.0, 100.0), (0.0, 0.0)),
+            (Color::cmyk_pct(0.0, 100.0, 100.0, 100.0), (1.0, 0.0)),
+        ] {
+            let (s, b) = shown_point(None, c);
+            assert!(
+                (s - at.0).abs() < 1e-4 && (b - at.1).abs() < 1e-4,
+                "{c:?}: {s} {b}"
+            );
+        }
+        let n = 4;
+        let colors = square_colors(0.0, "CMYK", n);
+        let corner = |i: usize, j: usize| colors[j * (n + 1) + i];
+        let look = |c: Color| to32(c.to_rgb_f32());
+        assert_eq!(corner(0, 0), look(Color::cmyk_pct(0.0, 0.0, 0.0, 0.0)));
+        assert_eq!(corner(n, 0), look(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)));
+        assert_eq!(corner(0, n), look(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)));
+        assert_eq!(
+            corner(n, n),
+            look(Color::cmyk_pct(0.0, 100.0, 100.0, 100.0))
+        );
+        // RGB keeps the screen's own square, black at the bottom.
+        let rgb = square_colors(0.0, "RGB", n);
+        assert_eq!(rgb[n * (n + 1)], Color32::BLACK);
+        assert_eq!(rgb[n], Color32::from_rgb(255, 0, 0));
+    }
+
+    /// The docker's viewer makes a colour of the chosen model, and in
+    /// CMYK its bottom right corner is the hue's inks over full black.
+    #[test]
+    fn the_docker_viewer_picks_in_the_model() {
+        let c = crate::ui::color_picker::from_viewer(240.0, 1.0, 0.0, "CMYK");
+        assert_eq!(c, Color::cmyk_pct(100.0, 100.0, 0.0, 100.0));
+        let r = crate::ui::color_picker::from_viewer(0.0, 1.0, 0.0, "RGB");
+        assert_eq!(
+            r,
+            Color::Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0
+            }
+        );
     }
 
     #[test]

@@ -337,6 +337,32 @@ impl App {
         None
     }
 
+    /// What a click at `p` picks: the topmost object there, or an object
+    /// whose drop shadow lies at `p` over whatever is beneath it (a
+    /// shadow draws above the objects under its own), so a shadow is
+    /// picked for editing with its object (#935). In focus mode and
+    /// while a symmetry is edited, as [`Self::hit_test`].
+    pub fn pick_at(&self, p: Point) -> Option<ShapeId> {
+        let hit = self.hit_test(p);
+        if self.focus_shape_on_page().is_some() || self.symmetry_edit.is_some() {
+            return hit;
+        }
+        self.page_layers()
+            .into_iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .filter(|s| !s.locked && s.visible && !self.outside_clip_edit(s.id))
+            .find_map(|s| {
+                if Some(s.id) == hit {
+                    hit
+                } else {
+                    crate::shadow_tool::shadow_covers(s, p).then_some(s.id)
+                }
+            })
+            .or(hit)
+    }
+
     /// `s` (in page space) is under `p` within `tol` page units: text,
     /// groups, tables, bitmaps, clip frames and symbols anywhere in their
     /// box; filled objects inside their shape (an open curve only when the
@@ -487,10 +513,11 @@ impl App {
         chain.get(next.min(chain.len().saturating_sub(1))).copied()
     }
 
-    /// The topmost object at `p` and the objects inside it under `p`, one
+    /// The topmost object at `p` (or the one whose drop shadow is there,
+    /// see [`Self::pick_at`]) and the objects inside it under `p`, one
     /// group level further in each, down to the innermost one.
     fn hit_chain(&self, p: Point) -> Vec<ShapeId> {
-        let Some(top) = self.hit_test(p) else {
+        let Some(top) = self.pick_at(p) else {
             return Vec::new();
         };
         let tol = 3.0 / self.view.zoom as f64;
@@ -504,6 +531,18 @@ impl App {
             current = c;
         }
         chain
+    }
+
+    /// Whether a Pick press at `p` lands on what is selected: `None`
+    /// where no object is, else whether the topmost object there, or one
+    /// of its parts under `p`, is in the selection (a drag then moves the
+    /// selection as it is, see [`Self::press_target`]).
+    pub fn over_selection(&self, p: Point) -> Option<bool> {
+        if self.selection.is_empty() {
+            return self.hit_test(p).map(|_| false);
+        }
+        let chain = self.hit_chain(p);
+        (!chain.is_empty()).then(|| chain.iter().any(|id| self.selection.contains(id)))
     }
 
     /// What a Pick press at `p` takes: a selected object under `p` (an
@@ -612,6 +651,32 @@ impl App {
         }
         self.select(ids);
         self.marquee_selection = Some(self.selection.clone());
+    }
+
+    /// A click that selects with a tool other than Pick (see
+    /// [`Tool::click_selects`]): the object under `p` becomes the
+    /// selection, Shift adds it or takes it away, Ctrl reaches one group
+    /// level further in, and a click on empty space (without Shift) lets
+    /// go of the selection. The tool stays.
+    pub fn click_select(&mut self, p: Point, mods: Modifiers) {
+        let hit = if mods.ctrl {
+            self.hit_test_step(p)
+        } else {
+            self.pick_at(p)
+        };
+        match hit {
+            Some(id) if mods.shift => {
+                if let Some(i) = self.selection.iter().position(|s| *s == id) {
+                    self.selection.remove(i);
+                    self.rotate_mode = false;
+                } else {
+                    self.select_add(id);
+                }
+            }
+            Some(id) => self.select(vec![id]),
+            None if mods.shift => {}
+            None => self.select(Vec::new()),
+        }
     }
 
     /// Add `id` to the selection, taking out the groups holding it and the
@@ -745,6 +810,46 @@ impl App {
     }
 
     /// Start moving the selection from `p` (page).
+    /// The selection's own point under `p` that a drag in rotate mode
+    /// turns the selection by: a node, a segment's midpoint or an
+    /// ellipse's quadrant (as the pointer marks it), away from the centre
+    /// of rotation (#933).
+    pub(crate) fn grab_turn_point(&self, p: Point) -> Option<Point> {
+        use crate::snap_points::SnapMode;
+        if !self.rotate_mode || !matches!(self.tool, Tool::Pick | Tool::FreeformPick) {
+            return None;
+        }
+        let t = self.selection_hover_target(p)?;
+        if !matches!(
+            t.mode,
+            SnapMode::Node | SnapMode::Midpoint | SnapMode::Quadrant
+        ) {
+            return None;
+        }
+        let c = self.rotation_center()?;
+        ((t.point - c).hypot() > self.snap_tolerance()).then_some(t.point)
+    }
+
+    /// Rotate mode: a press on a node of the selection (see
+    /// [`App::grab_turn_point`]) starts turning it about the centre of
+    /// rotation, the node following the pointer round its circle.
+    fn start_grab_turn(&mut self, p: Point) -> bool {
+        let Some(g) = self.grab_turn_point(p) else {
+            return false;
+        };
+        let Some(c) = self.rotation_center() else {
+            return false;
+        };
+        let a = (g - c).atan2();
+        self.drag = Drag::Rotate {
+            center: c,
+            start_angle: a,
+            current_angle: a,
+            grab: Some(g),
+        };
+        true
+    }
+
     fn start_move(&mut self, p: Point) {
         // A text fitted to a path slides along it instead.
         if self.fitted_text().is_some() {
@@ -849,6 +954,41 @@ impl App {
         }
     }
 
+    /// A selection box or freehand selection of the Pick tools is being
+    /// dragged.
+    pub fn selecting(&self) -> bool {
+        matches!(self.drag, Drag::Marquee { .. } | Drag::Lasso { .. })
+            && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+    }
+
+    /// A selection box (or freehand selection) runs from the press until
+    /// the left button goes up, whatever the right button does meanwhile:
+    /// a right press is ignored. egui takes the right press for the start
+    /// of a new click or drag and never reported the left release as the
+    /// end of the drag, so the box stayed on the canvas, frozen, until the
+    /// next one replaced it (#1015). While the left button is held the box
+    /// follows the latest pointer position even when egui reports no
+    /// hover after the right press.
+    fn selection_drag_input(
+        &mut self,
+        response: &Response,
+        hover: Option<egui::Pos2>,
+        mods: Modifiers,
+    ) {
+        let held = response.ctx.input(|i| i.pointer.primary_down());
+        let at = hover.or(if held { self.pointer_screen } else { None });
+        if let Some(s) = at {
+            let p = self.view.to_page(s);
+            self.pointer_page = Some(p);
+            if held {
+                self.pick_drag_to(p, mods);
+            }
+        }
+        if !held {
+            self.end_drag();
+        }
+    }
+
     pub(crate) fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
         let b = self.selection_bounds()?;
         let reach = if self.rotate_mode {
@@ -869,9 +1009,11 @@ impl App {
         // egui ends a drag when the right button of a right click goes up
         // and then hovers nothing while the left one is held: the
         // transform goes on with the latest pointer position.
+        // A Pen or Bezier handle pulled out of the drawing window goes on
+        // following the pointer, and its release ends it there (#1014).
         let hover = response.hover_pos().or_else(|| {
             let held = response.ctx.input(|i| i.pointer.primary_down());
-            if self.transforming() && held {
+            if (self.transforming() && held) || self.curve_drag_running(response) {
                 self.pointer_screen
             } else {
                 None
@@ -894,10 +1036,18 @@ impl App {
             }
             return;
         }
+        if self.selecting() {
+            self.selection_drag_input(response, hover, mods);
+            return;
+        }
         let Some(p) = pointer else {
-            let released = self.transforming() && !response.ctx.input(|i| i.pointer.primary_down());
+            let up = !response.ctx.input(|i| i.pointer.primary_down());
+            let released = self.transforming() && up;
             if response.drag_stopped() || released {
                 self.end_drag();
+            }
+            if up {
+                self.end_curve_drag_outside();
             }
             return;
         };
@@ -961,6 +1111,7 @@ impl App {
             && self.settings.zoom_right_click_out
         {
             self.view.zoom_at(screen, 0.5);
+            self.end_zoom_one_shot();
             return;
         }
         // Right click: context menu (drawn by the UI at this position);
@@ -1026,6 +1177,16 @@ impl App {
             }
             return;
         }
+        // A click with a tool whose click has no job of its own selects;
+        // a drag goes on to the tool below.
+        if self.tool.click_selects() && response.clicked_by(PointerButton::Primary) {
+            // A click on a slider of the selected blend keeps the blend.
+            if self.tool == Tool::Blend && self.blend_handle_at(p).is_some() {
+                return;
+            }
+            self.click_select(p, mods);
+            return;
+        }
         match self.tool {
             Tool::Pick | Tool::FreeformPick => self.pick_input(response, p, screen, mods),
             Tool::Shape => {
@@ -1064,7 +1225,7 @@ impl App {
             }
             t if t.is_box_tool() => self.box_input(response, p, mods),
             Tool::ThreePointRectangle | Tool::ThreePointEllipse | Tool::ThreePointCurve => {
-                self.three_point_input(response, p)
+                self.three_point_input(response, p, mods)
             }
             Tool::Freehand => self.freehand_input(response, p, mods),
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
@@ -1101,7 +1262,16 @@ impl App {
                         .map(|o| self.view.to_page(o))
                         .unwrap_or(p);
                     if let Some(handle) = self.shadow_handle_at(press) {
-                        self.drag = Drag::ShadowHandle { handle };
+                        self.drag = Drag::ShadowHandle {
+                            handle,
+                            grab: Vec2::ZERO,
+                        };
+                    } else if let Some(grab) = self.grab_shadow(press) {
+                        // On the shadow itself: it moves with the pointer.
+                        self.drag = Drag::ShadowHandle {
+                            handle: crate::shadow_tool::ShadowHandle::End,
+                            grab,
+                        };
                     } else if let Some(id) = self.hit_test(press) {
                         self.select(vec![id]);
                         self.drag = Drag::Shadow {
@@ -1117,7 +1287,9 @@ impl App {
                             self.drag_new_shadow(shape, start, p, first);
                             self.drag = Drag::Shadow { shape, start };
                         }
-                        Drag::ShadowHandle { handle } => self.drag_shadow_handle(handle, p),
+                        Drag::ShadowHandle { handle, grab } => {
+                            self.drag_shadow_handle(handle, p + grab)
+                        }
                         _ => {}
                     }
                 }
@@ -1125,7 +1297,7 @@ impl App {
                     if self.shadow_handle_at(p).is_some() {
                         return;
                     }
-                    match self.hit_test(p) {
+                    match self.pick_at(p) {
                         Some(id) => self.select(vec![id]),
                         None => self.select(Vec::new()),
                     }
@@ -1294,6 +1466,7 @@ impl App {
                             center: c,
                             start_angle: a,
                             current_angle: a,
+                            grab: None,
                         };
                     } else {
                         self.drag = Drag::Skew {
@@ -1333,6 +1506,12 @@ impl App {
                 if let Some(now) = self.pointer_page {
                     self.pick_drag_to(now, mods);
                 }
+                return;
+            }
+            // Rotate mode: a node of the selection (a midpoint, a quadrant)
+            // turns it about the centre of rotation, carried onto other
+            // objects' points and edges (#933).
+            if !mods.shift && self.start_grab_turn(p) {
                 return;
             }
             // The centre mark moves the selection, whatever lies under it.
@@ -1440,7 +1619,7 @@ impl App {
             let hit = if mods.ctrl {
                 self.hit_test_step(p)
             } else {
-                self.hit_test(p)
+                self.pick_at(p)
             };
             match hit {
                 Some(id) if mods.shift => {
@@ -1570,8 +1749,9 @@ impl App {
         };
         // Handles snap to other objects, guidelines, the grid and the
         // page, never to the selection's own points: the point of the box
-        // a scale or skew handle stands for, and the pointer turning the
-        // selection (unless Ctrl turns it in steps).
+        // a scale or skew handle stands for. The pointer turning the
+        // selection (unless Ctrl turns it in steps) snaps to points only
+        // (#933, see `snap_turn_point`).
         let snapped_handle = match &self.drag {
             Drag::Scale { grab, .. } => self.snap_point_excluding(p - *grab, &self.selection),
             Drag::Skew {
@@ -1583,7 +1763,12 @@ impl App {
                 let grab = *start - handle_point(*start_bounds, *handle);
                 self.snap_point_excluding(p - grab, &self.selection) + grab
             }
-            Drag::Rotate { .. } if !mods.ctrl => self.snap_point_excluding(p, &self.selection),
+            Drag::Rotate {
+                center,
+                grab: Some(g),
+                ..
+            } if !mods.ctrl => self.snap_turn_grab(*center, *g, p, &self.selection),
+            Drag::Rotate { .. } if !mods.ctrl => self.snap_turn_point(p, &self.selection),
             _ => p,
         };
         match &mut self.drag {
@@ -1648,6 +1833,7 @@ impl App {
                 center,
                 start_angle,
                 current_angle,
+                ..
             } => {
                 let mut a = (snapped_handle - *center).atan2();
                 // Ctrl turns in steps of the constrain angle.
@@ -1766,6 +1952,19 @@ impl App {
         if response.clicked_by(PointerButton::Primary) {
             self.view
                 .zoom_at(screen, if mods.shift { 0.5 } else { 2.0 });
+            self.end_zoom_one_shot();
+        }
+    }
+
+    /// After a zoom with the Zoom tool picked by F2, the tool before it
+    /// comes back.
+    fn end_zoom_one_shot(&mut self) {
+        if self.zoom_one_shot && self.tool == Tool::Zoom {
+            let back = match self.previous_tool {
+                Tool::Zoom => Tool::Pick,
+                t => t,
+            };
+            self.set_tool(back);
         }
     }
 
@@ -1811,13 +2010,24 @@ impl App {
     }
 
     /// 3-point rectangle, ellipse and curve: drag the base segment, then
-    /// click the third point (Esc cancels, see `keyboard`).
-    fn three_point_input(&mut self, response: &Response, p: Point) {
+    /// click the third point (Esc cancels, see `keyboard`). Ctrl keeps the
+    /// base to steps of the constrain angle from where it starts, as the
+    /// other line tools do (the curve's chord: the constrain key of the
+    /// curve tools, Ctrl by default; #934). Held at the third click of the
+    /// curve, it makes the curve a bow: the arc of the circle through the
+    /// three points.
+    fn three_point_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
+        let constrain = if self.tool == Tool::ThreePointCurve {
+            self.constrain_held(&mods)
+        } else {
+            mods.ctrl || mods.command
+        };
+        let step = self.settings.constrain_angle;
         if self.three_point_base.is_some() {
             if response.clicked_by(PointerButton::Primary) {
                 if let Some((a, b)) = self.three_point_base.take() {
-                    self.finish_three_point(a, b, p);
+                    self.finish_three_point(a, b, p, constrain);
                 }
             }
             return;
@@ -1836,8 +2046,12 @@ impl App {
             };
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::ThreePointBase { current, .. } = &mut self.drag {
-                *current = p;
+            if let Drag::ThreePointBase { start, current } = &mut self.drag {
+                *current = if constrain {
+                    constrain_from(*start, p, step)
+                } else {
+                    p
+                };
             }
         }
     }
@@ -1927,11 +2141,14 @@ impl App {
             .curve
             .as_ref()
             .is_some_and(|c| c.closes_at_first() && c.nodes.first().is_some_and(|n| near(n.0)));
+        // The last node, or the one a curve going on from an end starts
+        // at with that end's mirrored handle (#1138).
         let on_last = smooth
-            && self
-                .curve
-                .as_ref()
-                .is_some_and(|c| c.nodes.len() >= 2 && c.nodes.last().is_some_and(|n| near(n.0)));
+            && self.curve.as_ref().is_some_and(|c| {
+                c.nodes
+                    .last()
+                    .is_some_and(|n| near(n.0) && (c.nodes.len() >= 2 || n.1.is_some()))
+            });
         if response.clicked_by(PointerButton::Primary) {
             // A line going on from an end of the selected curve: a click
             // on that curve's other end closes it (#631).
@@ -1961,22 +2178,9 @@ impl App {
                 }
                 return;
             }
-            // The Pen's automatic adding and deleting: a click on a node of
-            // the curve being drawn deletes it, on a segment adds a node.
-            if let Some(auto) = self.pen_auto_at(raw) {
-                if let Some(c) = &mut self.curve {
-                    match auto {
-                        crate::pen_look::PenAuto::Delete(i) => {
-                            c.delete_node(i);
-                        }
-                        crate::pen_look::PenAuto::Add(k, t) => {
-                            c.insert_node(k, t);
-                        }
-                    }
-                    c.dragging_handle = false;
-                }
-                return;
-            }
+            // While a curve is drawn the Pen's automatic adding and
+            // deleting is off: a click on a node or a segment, of this
+            // curve or another, places the next node there (#1143).
         }
         if response.drag_started_by(PointerButton::Primary) && start_close {
             // Dragging from the first node shapes the closing segment.
@@ -2087,6 +2291,36 @@ impl App {
                 c.dragging_handle = false;
                 c.alt_from = None;
             }
+        }
+    }
+
+    /// A handle of the curve being drawn is pulled (or its closing
+    /// segment shaped) by the drawing window's own primary drag, this
+    /// frame or in the release that ends it.
+    fn curve_drag_running(&self, response: &Response) -> bool {
+        self.curve
+            .as_ref()
+            .is_some_and(|c| c.dragging_handle || c.closing.is_some())
+            && (response.dragged_by(PointerButton::Primary)
+                || response.drag_stopped_by(PointerButton::Primary))
+    }
+
+    /// The button went up with the pointer nowhere over the drawing (out
+    /// of the window): a handle pull of the curve being drawn ends where
+    /// it was last seen, and a closing drag closes the curve. Otherwise
+    /// the curve waited for a release it never saw, the preview stopped
+    /// following the pointer and the next click only ended the pull
+    /// instead of placing a node (#1014).
+    pub(crate) fn end_curve_drag_outside(&mut self) {
+        if self.curve.as_ref().is_some_and(|c| c.closing.is_some()) {
+            if let Some(c) = self.curve.take() {
+                self.close_curve(c);
+            }
+            return;
+        }
+        if let Some(c) = &mut self.curve {
+            c.dragging_handle = false;
+            c.alt_from = None;
         }
     }
 
@@ -2508,6 +2742,7 @@ impl App {
                 let r = Rect::from_points(start, current);
                 if r.width() > 0.5 && r.height() > 0.5 {
                     self.view.fit(r, self.canvas_rect);
+                    self.end_zoom_one_shot();
                 }
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
@@ -2619,6 +2854,7 @@ impl App {
                 center,
                 start_angle,
                 current_angle,
+                ..
             } => {
                 let a = current_angle - start_angle;
                 Some(
@@ -3162,8 +3398,11 @@ impl App {
         if pressed(Key::F2, Modifiers::SHIFT) {
             self.zoom_to_selection();
         }
-        if pressed(Key::F2, Modifiers::NONE) {
+        if pressed(Key::F2, Modifiers::NONE) && self.tool != Tool::Zoom {
+            // One zoom, then back to the tool before (#1039); Z keeps
+            // the Zoom tool.
             self.set_tool(Tool::Zoom);
+            self.zoom_one_shot = true;
         }
         // + and -: with the Shape tool and nodes chosen, a node in the
         // middle of each segment ending at them, and deleting them; with a

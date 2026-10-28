@@ -10,6 +10,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke as EStroke, Ui, Vec2};
 use tracedraw_core::patch::{StrokeField, StrokeMix};
 use tracedraw_core::{LineCap, LineJoin, OutlinePosition, Stroke, WidthNode};
@@ -41,10 +42,15 @@ pub struct OutlinePenState {
     pub shown: Option<(Option<Stroke>, Vec<StrokeField>, Option<bool>)>,
 }
 
-/// Outline widths the width list offers, in points.
-const WIDTHS_PT: [f64; 13] = [
-    0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 12.0, 24.0,
-];
+/// The widths the width list offers in unit `u`, as (millimetres, label):
+/// the same presets the property bar's width list offers, so both lists
+/// match in every unit.
+pub(crate) fn width_choices(u: crate::app::Units) -> Vec<(f64, String)> {
+    crate::ui::propbar::outline_width_presets(u)
+        .into_iter()
+        .map(|mm| (mm, crate::ui::propbar::outline_width_number(mm, u)))
+        .collect()
+}
 
 /// The dash styles the style list offers before the custom ones.
 fn preset_dashes() -> [Vec<f64>; 4] {
@@ -190,7 +196,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut OutlinePenState, clos
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .on_hover_text(tr("dialog.help"))
+                .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                 .clicked();
             if !st.defaults {
                 let mut on = st.overprint.unwrap_or(false);
@@ -272,10 +278,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
         } else if st.stroke.width <= Stroke::HAIRLINE + 1e-9 {
             tr("docker.hairline")
         } else {
-            format!("{:.3}", u.from_mm(st.stroke.width))
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string()
+            crate::ui::propbar::outline_width_number(st.stroke.width, u)
         };
         egui::ComboBox::from_id_salt("outline_pen_width")
             .selected_text(shown)
@@ -291,13 +294,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
                     st.stroke.width = Stroke::HAIRLINE;
                     touch(st, StrokeField::Width);
                 }
-                for pt in WIDTHS_PT {
-                    let mm = pt * 25.4 / 72.0;
-                    let v = u.from_mm(mm);
-                    let label = format!("{v:.3}")
-                        .trim_end_matches('0')
-                        .trim_end_matches('.')
-                        .to_string();
+                for (mm, label) in width_choices(u) {
                     if ui.selectable_label(false, label).clicked() {
                         st.stroke.width = mm;
                         touch(st, StrokeField::Width);
@@ -358,7 +355,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
         }
         if ui
             .button("\u{2026}")
-            .on_hover_text(tr("docker.edit_line_style"))
+            .rich_tip(tr("docker.edit_line_style"))
             .clicked()
         {
             crate::ui::line_style::request(ui);
@@ -379,7 +376,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
                     .width(70.0)
                     .mixed(limit_mixed),
             )
-            .on_hover_text(tr("docker.miter_limit_tip"))
+            .rich_tip(tr("docker.miter_limit_tip"))
             .changed()
         {
             touch(st, StrokeField::MiterLimit);
@@ -826,7 +823,7 @@ enum Pic {
 /// A 28 x 24 button with a picture; true when clicked.
 fn pic_button(ui: &mut Ui, pic: Pic, on: bool, enabled: bool, tip: &str) -> bool {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 24.0), Sense::click());
-    let resp = resp.on_hover_text(tr(tip));
+    let resp = resp.rich_tip(tr(tip));
     let p = ui.painter();
     if on {
         p.rect_filled(rect, 3.0, Tokens::ACCENT.gamma_multiply(0.35));
@@ -998,6 +995,33 @@ mod tests {
     use super::*;
     use tracedraw_core::geometry::Rect as PRect;
     use tracedraw_core::ShapeKind;
+
+    /// The dialog's width list and the property bar's width list offer
+    /// the same widths in every outline unit, and the dialog's labels are
+    /// the property bar's labels without the unit (#967). In millimetres
+    /// both start 0.1, 0.2, 0.25 rather than points turned into mm.
+    #[test]
+    fn the_width_list_matches_the_property_bar() {
+        use crate::ui::propbar::{outline_width_label, outline_width_presets, OUTLINE_UNITS};
+        for u in OUTLINE_UNITS {
+            let bar = outline_width_presets(u);
+            let dialog = width_choices(u);
+            assert_eq!(dialog.len(), bar.len(), "{u:?}");
+            for ((mm, label), want) in dialog.iter().zip(&bar) {
+                assert!((mm - want).abs() < 1e-12, "{u:?}: {mm} vs {want}");
+                assert_eq!(
+                    format!("{label} {}", u.short()),
+                    outline_width_label(*want, u),
+                    "{u:?}"
+                );
+            }
+        }
+        let mm: Vec<String> = width_choices(crate::app::Units::Millimeters)
+            .into_iter()
+            .map(|(_, l)| l)
+            .collect();
+        assert_eq!(&mm[..3], &["0.1", "0.2", "0.25"]);
+    }
 
     fn rect(app: &mut App, x: f64) -> tracedraw_core::ShapeId {
         app.new_shape(ShapeKind::Rect {
