@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
 - Distort: a value changed on the property bar (Amplitude, Frequency, Random, Smooth, Local, direction, Rotations, Degrees) shows on the selected object at once, also when it has no distortion yet. It changed only objects already distorted, so with a plain object selected the bar seemed to do nothing until Apply (#1030).
 - Opening `.cdr`: the steps of blends from versions 9 and X3 keep the sharp corners of the objects they blend, as where the files were made: between a rectangle and a pentagon each step is a pentagon. The corners were cut off, so the steps came out rounder and larger than in the original (#597).
 - Print Merge: Place Inside Frame, picking the shape with a click, takes a shape that already holds a picture, not the picture inside it. The merge then put each record's photo in that picture's box, with the old picture still showing next to the shape (#596).
