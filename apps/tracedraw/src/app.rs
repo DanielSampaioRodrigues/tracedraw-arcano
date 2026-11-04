@@ -1586,6 +1586,8 @@ pub struct App {
     pub macros: crate::macros::MacroState,
     /// AI Drawing: the request, the key in use, the conversation.
     pub ai: crate::ai::AiSession,
+    /// Arcano edition: the Assistant panel's conversation.
+    pub assistente: crate::assistente::Assistente,
     /// AI Generate and Remove Background.
     pub ai_image: crate::ai_image::ImageSession,
     /// Arcano edition: the AI studio (several services, keys by service).
@@ -1997,10 +1999,11 @@ pub enum DockerTab {
     Effects,
     Macros,
     PrintMerge,
+    Assistente,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 44] = [
+    pub const ALL: [DockerTab; 45] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -2045,6 +2048,7 @@ impl DockerTab {
         DockerTab::Effects,
         DockerTab::Macros,
         DockerTab::PrintMerge,
+        DockerTab::Assistente,
     ];
 
     /// Window > Panels, in groups divided by separators (the object
@@ -2063,6 +2067,7 @@ impl DockerTab {
             DockerTab::Export,
             DockerTab::PrintMerge,
             DockerTab::AiGenerate,
+            DockerTab::Assistente,
         ],
         &[DockerTab::Transformations, DockerTab::Coordinates],
         &[DockerTab::Guidelines],
@@ -2155,6 +2160,7 @@ impl DockerTab {
             DockerTab::Export => "docker.export",
             DockerTab::Comments => "docker.comments",
             DockerTab::AiGenerate => "docker.ai_generate",
+            DockerTab::Assistente => "docker.assistant",
             DockerTab::Macros => "docker.macros",
             DockerTab::Effects => "docker.effects",
             DockerTab::PrintMerge => "docker.print_merge",
@@ -2774,6 +2780,7 @@ impl App {
             breakpoints: Default::default(),
             debug_expr: String::new(),
             ai: Default::default(),
+            assistente: Default::default(),
             ai_image: Default::default(),
             studio: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]

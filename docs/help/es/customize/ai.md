@@ -83,6 +83,16 @@ mosaicos **Estilo** y **Paleta de colores**. Abajo, indique el número de
 **Generar**. Los resultados se quedan en el panel; haga clic en uno para
 insertarlo.
 
+## The Assistant panel {#assistant}
+
+The [[docker.assistant]] panel (Window > Panels) is a conversation with the
+text service set up above that works on the open drawing. Ask in your own
+words ("center the title", "make the spine text 9 pt", "which fonts does this
+file use?"): the assistant reads the drawing and the selection, looks at the
+page, measures fonts, runs scripts and checks the result, as an AI app does
+through the MCP server. Every change is one undo step. **Stop** ends it after
+the step under way; **New Conversation** starts over. Ctrl+Enter sends.
+
 ## Otros comandos de IA {#other}
 
 - [[menu.bitmaps > menu.bitmaps.remove_background]] conserva el motivo de una

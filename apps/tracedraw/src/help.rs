@@ -225,6 +225,7 @@ pub fn docker_topic(t: DockerTab) -> &'static str {
         DockerTab::Export => "web-graphics/export-docker",
         DockerTab::Comments => "objects/comments",
         DockerTab::AiGenerate => "customize/ai#generate",
+        DockerTab::Assistente => "customize/ai#assistant",
         DockerTab::Effects => "effects/effects-docker",
     }
 }

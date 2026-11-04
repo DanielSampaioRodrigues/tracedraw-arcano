@@ -789,6 +789,10 @@ fn docker_page(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         return;
     }
     // AI Generate keeps Generate at the bottom, under its own scroll.
+    if tab == DockerTab::Assistente {
+        crate::assistente::docker(app, ui);
+        return;
+    }
     if tab == DockerTab::AiGenerate {
         crate::ui::ai_generate_docker::ai_generate(app, ui);
         return;

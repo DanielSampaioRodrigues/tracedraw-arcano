@@ -45,6 +45,16 @@ TraceDraw 可以根据文字描述进行绘图，并使用你选择且用自己�
 
 每种模式都有 **模型**、可选的参考图片（**使用所选内容** 或 **导入文件**）、**提示**，以及 **样式** 和 **调色板** 图块。在底部设置 **图像** 数量（1 到 4）和 **插入绘图**，然后单击 **生成**。结果保留在面板中；单击其中一个即可插入。
 
+## The Assistant panel {#assistant}
+
+The [[docker.assistant]] panel (Window > Panels) is a conversation with the
+text service set up above that works on the open drawing. Ask in your own
+words ("center the title", "make the spine text 9 pt", "which fonts does this
+file use?"): the assistant reads the drawing and the selection, looks at the
+page, measures fonts, runs scripts and checks the result, as an AI app does
+through the MCP server. Every change is one undo step. **Stop** ends it after
+the step under way; **New Conversation** starts over. Ctrl+Enter sends.
+
 ## 其他 AI 命令 {#other}
 
 - [[menu.bitmaps > menu.bitmaps.remove_background]] 保留图片的主体，使其余部分变为透明。
