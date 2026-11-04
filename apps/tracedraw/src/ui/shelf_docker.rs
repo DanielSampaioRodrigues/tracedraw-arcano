@@ -19,6 +19,8 @@ const TILE_H: f32 = THUMB + 26.0;
 const THUMBS_PER_FRAME: usize = 6;
 
 pub fn shelf(app: &mut App, ui: &mut Ui) {
+    // Arcano edition: where the house library is kept.
+    crate::biblioteca::header(app, ui);
     app.shelf.ensure_loaded();
     let has_selection = !app.selection.is_empty();
     let drawing = app.has_document() && !app.show_welcome;

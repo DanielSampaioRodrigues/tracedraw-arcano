@@ -108,6 +108,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::FontManager(_) => "text/fonts#font-manager",
         Dialog::PaletteEditor(_) => "color/palettes#palette-editor",
         Dialog::NewDocument(_) => "get-started/new-document",
+        Dialog::Capa(_) => "get-started/new-document",
         Dialog::About => "welcome/about-and-updates#about",
         Dialog::GithubOpen(_) => "get-started/github#open",
         Dialog::GithubSave(_) => "get-started/github#save",

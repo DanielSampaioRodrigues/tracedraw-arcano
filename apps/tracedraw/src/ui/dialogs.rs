@@ -1064,6 +1064,8 @@ pub enum Dialog {
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
+    /// Arcano edition: File > New Book Cover.
+    Capa(Box<crate::capa::CapaDialog>),
     About,
     /// File > GitHub.
     GithubOpen(crate::github::GithubForm),
@@ -2750,6 +2752,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::NewDocument(st) => {
             crate::new_document::new_document_dialog(app, ctx, st, &mut close)
         }
+        Dialog::Capa(st) => crate::capa::dialog(app, ctx, st, &mut close),
         Dialog::PageNumberSettings => {
             window(ctx, tr("dialog.page_number_settings")).show(ctx, |ui| {
                 let pn = &mut app.page_numbers;

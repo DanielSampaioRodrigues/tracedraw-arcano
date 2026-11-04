@@ -578,6 +578,13 @@ pub struct Settings {
     /// 1970.
     #[serde(default)]
     pub studio_catalog_checked: u64,
+    /// Arcano edition: File > New Book Cover's papers and last cover.
+    #[serde(default)]
+    pub capa: crate::capa::CapaPrefs,
+    /// Arcano edition: the synced folder the house library is kept in
+    /// (empty: this computer only).
+    #[serde(default)]
+    pub arcano_library: String,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1831,6 +1838,8 @@ impl Default for Settings {
             fork_source: String::new(),
             studio: Default::default(),
             studio_catalog_checked: 0,
+            capa: Default::default(),
+            arcano_library: String::new(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

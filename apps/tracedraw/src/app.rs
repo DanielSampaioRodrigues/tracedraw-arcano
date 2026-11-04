@@ -3171,6 +3171,8 @@ impl App {
             self.studio.keys = s.studio.keys.clone();
         }
         crate::i18n::set_language(crate::i18n::startup_language_here(&s.language));
+        // Arcano edition: the house library's folder.
+        crate::biblioteca::set(&s.arcano_library);
         self.workspace = Workspace::from_id(&s.workspace);
         self.set_workspace(self.workspace);
         // The bars as they were left, over the workspace's own.
