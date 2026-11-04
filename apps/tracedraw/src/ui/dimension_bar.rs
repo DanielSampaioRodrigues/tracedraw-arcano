@@ -24,7 +24,7 @@ fn dim(ui: &mut Ui, text: String) {
 }
 
 /// What a precision looks like: 1.23 with that many decimals.
-fn precision_sample(p: u8) -> String {
+pub(crate) fn precision_sample(p: u8) -> String {
     let p = p.min(6) as usize;
     format!("{:.p$}", 1.234_567)
 }
@@ -160,7 +160,7 @@ fn length_field(
 /// lines joined in rounded corners (#641).
 fn options_part(app: &mut App, ui: &mut Ui, style: &DimensionStyle) {
     let button = ui
-        .button(format!("{} \u{25BE}", tr("dimension.options")))
+        .button(format!("{} \u{23F7}", tr("dimension.options")))
         .rich_tip(tr("dimension.options"));
     // The menu stays open while its fields are typed in and stepped; a
     // click outside closes it.

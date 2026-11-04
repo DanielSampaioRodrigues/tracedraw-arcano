@@ -21,7 +21,7 @@ shortcut beside it, and you can add your own; see
 | <kbd>Ctrl+F4</kbd>, <kbd>Alt+F4</kbd> | close the drawing, exit |
 | <kbd>Ctrl+Z</kbd>, <kbd>Ctrl+Shift+Z</kbd>, <kbd>Ctrl+R</kbd> | undo, redo, repeat |
 | <kbd>Ctrl+X</kbd>, <kbd>Ctrl+C</kbd>, <kbd>Ctrl+V</kbd>, <kbd>Ctrl+Shift+V</kbd> | cut, copy, paste, paste in view |
-| <kbd>Ctrl+D</kbd>, <kbd>Ctrl+Shift+D</kbd> | duplicate, Step and Repeat panel |
+| <kbd>Ctrl+D</kbd>, <kbd>Ctrl+Shift+D</kbd> | duplicate, Repeat Copies panel |
 | <kbd>+</kbd> | duplicate the selection in place |
 | <kbd>Ctrl+A</kbd>, <kbd>Delete</kbd> | select all, delete |
 | <kbd>Ctrl+0</kbd> to <kbd>Ctrl+9</kbd>, <kbd>0</kbd> to <kbd>9</kbd>, <kbd>Alt+0</kbd> to <kbd>Alt+9</kbd> | store, select (twice: zoom to) and add to selection groups |
@@ -31,7 +31,7 @@ shortcut beside it, and you can add your own; see
 
 | Keys | Action |
 |---|---|
-| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | Zoom tool, zoom to the selection, zoom out |
+| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | Zoom tool for one zoom (then the tool before comes back; <kbd>Z</kbd> keeps it), zoom to the selection, zoom out |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom to fit, zoom to the page |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | zoom in and out one step |
 | <kbd>Alt+Shift+R</kbd> | rulers on and off |
@@ -59,9 +59,9 @@ shortcut beside it, and you can add your own; see
 | Keys | Panel |
 |---|---|
 | <kbd>Alt+Enter</kbd> | Properties |
-| <kbd>Ctrl+Shift+A</kbd> | Align and Distribute |
+| <kbd>Ctrl+Shift+A</kbd> | Paste Style From |
 | <kbd>Alt+F7</kbd>, <kbd>Alt+F8</kbd>, <kbd>Alt+F9</kbd>, <kbd>Alt+F10</kbd> | Transformations: position, rotate, scale and mirror, size |
-| <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd> | Text, Glyphs |
+| <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd>, <kbd>Ctrl+F12</kbd> | Text, Glyphs, Fonts |
 | <kbd>F11</kbd>, <kbd>Shift+F11</kbd> | fill (Properties), Color |
 | <kbd>F12</kbd>, <kbd>Shift+F12</kbd> | outline (Properties), outline color |
 | <kbd>Ctrl+F7</kbd>, <kbd>Ctrl+F8</kbd>, <kbd>Ctrl+F9</kbd>, <kbd>Ctrl+F10</kbd> | Envelope, Blend, Contour, Extrude |
@@ -78,13 +78,15 @@ Pressing a panel's shortcut when its panel is in front hides the panels.
 | <kbd>Alt+F12</kbd> | align to baseline |
 | <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd> | bold, italic, underline (while editing) |
 | <kbd>Ctrl+8</kbd>, <kbd>Ctrl+2</kbd> | larger and smaller text |
-| <kbd>Ctrl+F12</kbd> | spell check |
+| <kbd>Shift+F3</kbd> | change case |
+| <kbd>Ctrl+L</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+R</kbd> | align left, center, right (while editing) |
+| <kbd>Ctrl+J</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Ctrl+N</kbd> | full justify, force justify, no alignment (while editing) |
 
 ## Tools {#tools}
 
 | Key | Tool |
 |---|---|
-| <kbd>Space</kbd> | Pick (from most tools) |
+| <kbd>Space</kbd> | Pick (from most tools); on the Pick tool, back to the tool used before |
 | <kbd>F10</kbd> | Shape |
 | <kbd>F5</kbd>, <kbd>F6</kbd>, <kbd>F7</kbd> | Freehand, Rectangle, Ellipse |
 | <kbd>Z</kbd>, <kbd>H</kbd> | Zoom, Pan |
@@ -103,3 +105,6 @@ while you use it, explained on its page; for the [[tool.shape]] tool, see
 <kbd>Enter</kbd> presses [[dialog.ok]] and <kbd>Esc</kbd> closes a dialog box
 without applying it. While a dialog box is open, the shortcuts above are not
 used, except <kbd>F1</kbd>.
+<kbd>Tab</kbd> goes to the first box you can type in, and on through the
+dialog box's controls; <kbd>Shift</kbd>+<kbd>Tab</kbd> goes back. The keys stay
+in the dialog box.

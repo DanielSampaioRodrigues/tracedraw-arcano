@@ -13,11 +13,14 @@ TraceDraw の各バージョンでは機能と修正が加わります。この�
   点が付きます。コマンドをオフにすると印は消え、TraceDraw を次に起動したとき
   にはコマンドは再びオフになっています。
 - 各バージョンの変更点の完全な一覧は、プロジェクトの
-  [変更履歴](https://github.com/igtoth/tracedraw/blob/main/CHANGELOG.md)
+  [変更履歴](https://github.com/tracedraw/tracedraw/blob/main/CHANGELOG.md)
   にあります。
 
 ## 最近のバージョンの主な新機能 {#highlights}
 
+- **オブジェクトのサムネール。** [[docker.objects]] パネルは各オブジェクトを
+  名前の横に小さく描いて表示します。リスト上の Ctrl+ホイールか下部の
+  スライダーでサイズを変えられます。[オブジェクトとレイヤーの整理](../objects/objects-and-layers.md#objects-docker)を参照。
 - **お使いの言語でヘルプ。** すべての **?** ボタンと <kbd>F1</kbd> キーで、
   目の前のダイアログボックス、パネル、ツールについてのこのヘルプのページが、
   TraceDraw に設定された言語で開きます。

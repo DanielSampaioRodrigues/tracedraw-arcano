@@ -14,7 +14,7 @@ use crate::ui::dialogs::{Dialog, OptionsPage};
 
 /// Where the Help is published (`web/help_site.py` builds it into
 /// `site/help/`, the project's page).
-pub const BASE: &str = "https://igtoth.github.io/tracedraw/help/";
+pub const BASE: &str = "https://tracedraw.github.io/tracedraw/help/";
 
 /// The first page of the Help.
 pub const HOME: &str = "index";
@@ -55,6 +55,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::NodeAlign { .. } => "lines-shapes/shape-tool#align-nodes",
         Dialog::RenamePage { .. } => "pages-layout/pages#rename-page",
         Dialog::GoToPage { .. } => "pages-layout/pages#go-to-page",
+        Dialog::PageSpacing { .. } => "pages-layout/multipage-view#page-spacing",
         Dialog::InsertPage { .. } => "pages-layout/pages#insert-page",
         Dialog::DeletePage { .. } => "pages-layout/pages#delete-page",
         Dialog::DuplicatePage { .. } => "pages-layout/pages#duplicate-page",
@@ -73,13 +74,15 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::ConfirmResetSettings => "customize/reset-settings",
         Dialog::Recover(_) => "get-started/open-and-save#recovery",
         Dialog::Updates => "welcome/about-and-updates#updates",
-        Dialog::OpenNotes(_) => "get-started/open-and-save#open-notes",
+        Dialog::UpdatePolicy => "welcome/about-and-updates#automatic-check",
+        Dialog::OpenNotes(_) | Dialog::MissingFonts(_) => "get-started/open-and-save#open-notes",
         Dialog::ConfirmShelfRemove { .. } => "objects/shelf#remove",
         Dialog::Export(_) => "file-formats/export",
         Dialog::Print(_) => "printing/print",
         Dialog::PrintMerge(_) => "printing/print-merge",
         Dialog::CreatePattern { .. } => "color/patterns#create-pattern",
         Dialog::CreateTable { .. } => "objects/tables#create-table",
+        Dialog::TextToTable(_) => "objects/tables#convert",
         Dialog::PasteSpecial(_) => "objects/paste-special",
         Dialog::Barcode(_) => "objects/barcodes",
         Dialog::ConvertToBitmap(_) => "bitmaps/convert-to-bitmap",
@@ -89,6 +92,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::Trace(_) => "bitmaps/tracing",
         Dialog::Effect(_) => "effects/bitmap-effects",
         Dialog::TextDefaults { .. } => "text/fonts",
+        Dialog::CopyProperties(_) => "effects/copy-and-clone#clone",
         Dialog::EditText { .. } => "text/adding-text#edit",
         Dialog::TextTabs => "text/paragraphs#tabs",
         Dialog::TextColumns => "text/paragraphs#columns",
@@ -100,7 +104,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::CustomHyphens(_) => "text/writing-tools#custom-hyphens",
         Dialog::Encode(_) => "text/writing-tools#encode",
         Dialog::BorderGrommet(_) => "printing/border-and-grommet",
-        Dialog::ColorManagement(_) => "color/color-management",
+        Dialog::ColorManagement(_) | Dialog::ConvertColors(_) => "color/color-management",
         Dialog::FontManager(_) => "text/fonts#font-manager",
         Dialog::PaletteEditor(_) => "color/palettes#palette-editor",
         Dialog::NewDocument(_) => "get-started/new-document",
@@ -110,13 +114,14 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::GithubHistory => "get-started/github#history",
         Dialog::WebNotice => "get-started/browser-version",
         Dialog::MacrosDesktopOnly => "get-started/browser-version#differences",
+        Dialog::StorageRefused(_) => "get-started/browser-version",
         Dialog::TimeTracker(_) => "customize/time-tracker",
         Dialog::Preflight(_) => "printing/preflight",
         Dialog::PublishPdf(_) => "file-formats/publish-pdf",
         Dialog::PdfPassword(_) => "file-formats/publish-pdf#password",
         Dialog::PdfText(_) => "file-formats/import#formats",
         Dialog::ChangeDefaults(_) => "templates-styles/object-styles#document-defaults",
-        Dialog::SaveAs(_) => "get-started/open-and-save#save-as",
+        Dialog::SaveAs(_) | Dialog::Package(_) => "get-started/open-and-save#save-as",
     }
 }
 
@@ -147,6 +152,10 @@ pub fn options_topic(p: OptionsPage) -> &'static str {
         GraphPaper => "customize/tool-options#graph-paper",
         Table => "customize/tool-options#table",
         Eraser => "customize/tool-options#eraser",
+        ShapeRecognition => "customize/tool-options#shape-recognition",
+        Dimension => "customize/tool-options#dimension",
+        Connector => "customize/tool-options#connector",
+        MeshFill => "customize/tool-options#mesh-fill",
         GlobalGeneral => "customize/global-options#general",
         Printing => "customize/global-options#printing",
         FileFormats => "customize/global-options#file-formats",
@@ -422,6 +431,7 @@ mod tests {
             Dialog::ConfirmClose,
             Dialog::ConfirmResetSettings,
             Dialog::Updates,
+            Dialog::UpdatePolicy,
             Dialog::TextTabs,
             Dialog::TextColumns,
             Dialog::TextBullets,
@@ -470,11 +480,11 @@ mod tests {
     fn urls_carry_the_language_and_fall_back_to_english() {
         assert_eq!(
             url_in("color/fills#mesh-fill", "pt-BR"),
-            "https://igtoth.github.io/tracedraw/help/pt-BR/color/fills.html#mesh-fill"
+            "https://tracedraw.github.io/tracedraw/help/pt-BR/color/fills.html#mesh-fill"
         );
         assert_eq!(
             url_in("printing/print", "xx"),
-            "https://igtoth.github.io/tracedraw/help/en/printing/print.html"
+            "https://tracedraw.github.io/tracedraw/help/en/printing/print.html"
         );
         assert_eq!(url_in("", "ja"), format!("{BASE}ja/index.html"));
     }

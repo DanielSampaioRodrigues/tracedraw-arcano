@@ -51,6 +51,9 @@ pub struct DocSlot {
     pub cdr_unsaved_version: Option<u16>,
     pub tdraw_version: Option<u32>,
     pub fit_pending: bool,
+    /// The view of Options > Display > View when a drawing opens is
+    /// still to be set (#1134).
+    pub open_view_pending: bool,
     pub page_numbers: PageNumberSettings,
     pub missing_fonts: Vec<String>,
     /// Drawing units of this drawing (the property bar's Units).
@@ -62,6 +65,13 @@ pub struct DocSlot {
     /// The drawing's rendered page, kept while another drawing is active
     /// (its window shows it when windows are tiled or cascaded).
     pub raster: crate::raster::Raster,
+    /// The window's pictures of the drawing's other pages in the
+    /// Multipage View, keyed by page id: ids repeat between drawings, so
+    /// each window keeps its own (#1663).
+    pub page_rasters: std::collections::HashMap<PageId, crate::raster::Raster>,
+    /// The drawing copied for the other pages' renders, kept with the
+    /// drawing: revisions repeat between drawings too (#1663).
+    pub page_snapshot: Option<(u64, std::sync::Arc<Document>)>,
     /// Where the drawing's canvas began on screen when it was last drawn
     /// (see `App::anchor_view`).
     pub view_anchor: Option<egui::Pos2>,
@@ -85,12 +95,15 @@ impl Default for DocSlot {
             cdr_unsaved_version: None,
             tdraw_version: None,
             fit_pending: false,
+            open_view_pending: false,
             page_numbers: PageNumberSettings::default(),
             missing_fonts: Vec::new(),
             units: Default::default(),
             pivots: Default::default(),
             picked_layer: None,
             raster: Default::default(),
+            page_rasters: Default::default(),
+            page_snapshot: None,
             view_anchor: None,
         }
     }
@@ -113,8 +126,10 @@ impl App {
         std::mem::swap(&mut self.view, &mut slot.view);
         std::mem::swap(&mut self.selection, &mut slot.selection);
         std::mem::swap(&mut self.fit_pending, &mut slot.fit_pending);
+        std::mem::swap(&mut self.open_view_pending, &mut slot.open_view_pending);
         std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
         std::mem::swap(self.raster.get_mut(), &mut slot.raster);
+        std::mem::swap(self.page_rasters.get_mut(), &mut slot.page_rasters);
         std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
         // Measured in another window.
         *self.visual_cache.get_mut() = (u64::MAX, Default::default());
@@ -136,6 +151,7 @@ impl App {
         std::mem::swap(&mut self.missing_fonts, &mut slot.missing_fonts);
         std::mem::swap(&mut self.units, &mut slot.units);
         std::mem::swap(&mut self.pivots, &mut slot.pivots);
+        std::mem::swap(self.page_snapshot.get_mut(), &mut slot.page_snapshot);
         *self.visual_cache.get_mut() = (u64::MAX, Default::default());
     }
 
@@ -265,6 +281,7 @@ impl App {
         self.effect_node_drag = None;
         self.selected_effect_node = None;
         self.lens_synced_to = None;
+        self.bevel_synced_to = None;
         self.extrude_drag = None;
         self.distort_drag = None;
         self.context_menu = None;
@@ -288,6 +305,7 @@ impl App {
         self.engine = Engine::new(doc);
         self.engine
             .set_max_history(self.settings.undo_levels.max(1));
+        self.engine.set_max_history_bytes(crate::app::UNDO_MEMORY);
         self.selection.clear();
         self.file = file;
         self.opened_from = None;
@@ -297,12 +315,15 @@ impl App {
         self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
+        self.open_view_pending = true;
         self.page_numbers = PageNumberSettings::default();
         self.missing_fonts.clear();
         self.units = units;
         self.pivots = Default::default();
         self.picked_layer = None;
         *self.raster.get_mut() = Default::default();
+        self.page_rasters.get_mut().clear();
+        *self.page_snapshot.get_mut() = None;
         self.view_anchor = None;
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
@@ -469,11 +490,14 @@ impl App {
         self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
+        self.open_view_pending = false;
         self.page_numbers = PageNumberSettings::default();
         self.missing_fonts.clear();
         self.pivots = Default::default();
         self.picked_layer = None;
         *self.raster.get_mut() = Default::default();
+        self.page_rasters.get_mut().clear();
+        *self.page_snapshot.get_mut() = None;
         self.view_anchor = None;
         // Its message in the status bar goes with it (#1128).
         self.status.clear();

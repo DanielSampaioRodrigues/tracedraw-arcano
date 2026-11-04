@@ -93,6 +93,9 @@ pub(crate) fn install_event_handlers(runner_ref: &WebRunner) -> Result<(), JsVal
     install_pointerup(runner_ref, &document)?;
     install_pointerdown(runner_ref, &canvas)?;
     install_mouseleave(runner_ref, &canvas)?;
+    // TraceDraw: a pen's pressure while it moves, also outside the canvas
+    // during a drag (#1410).
+    install_pen_pressure(runner_ref, &document)?;
 
     install_touchstart(runner_ref, &canvas)?;
     // Use `document` here to notice if the user drag outside of the canvas:
@@ -420,9 +423,30 @@ fn install_copy_cut_paste(runner_ref: &WebRunner, target: &EventTarget) -> Resul
 
 fn install_window_events(runner_ref: &WebRunner, window: &EventTarget) -> Result<(), JsValue> {
     // Save-on-close
-    runner_ref.add_event_listener(window, "onbeforeunload", |_: web_sys::Event, runner| {
+    // TraceDraw: the event is `beforeunload`; `onbeforeunload` (the
+    // property's name) never fires, so nothing was saved on close (#1395).
+    runner_ref.add_event_listener(window, "beforeunload", |_: web_sys::Event, runner| {
         runner.save();
     })?;
+
+    // TraceDraw: save when the page is hidden (another tab, a minimized
+    // window, a phone's home screen, a tab being closed): the last moment
+    // a browser reliably gives a page that may be discarded without
+    // another event (#1395).
+    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+        runner_ref.add_event_listener(
+            &document,
+            "visibilitychange",
+            |_: web_sys::Event, runner| {
+                if web_sys::window()
+                    .and_then(|w| w.document())
+                    .is_some_and(|d| d.hidden())
+                {
+                    runner.save();
+                }
+            },
+        )?;
+    }
 
     // We want to handle the case of dragging the browser from one monitor to another,
     // which can cause the DPR to change without any resize event (e.g. Safari).
@@ -537,6 +561,8 @@ fn install_pointerdown(runner_ref: &WebRunner, target: &EventTarget) -> Result<(
         |event: web_sys::PointerEvent, runner: &mut AppRunner| {
             let modifiers = modifiers_from_mouse_event(&event);
             runner.input.set_modifiers(modifiers);
+            // TraceDraw: the pen's pressure before its press (#1410).
+            push_pen_pressure(runner, &event);
             let mut should_stop_propagation = true;
             if let Some(button) = button_from_mouse_event(&event) {
                 let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
@@ -576,6 +602,9 @@ fn install_pointerup(runner_ref: &WebRunner, target: &EventTarget) -> Result<(),
             runner.input.set_modifiers(modifiers);
 
             let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+
+            // TraceDraw: a lifted pen has no pressure (#1410).
+            push_pen_pressure(runner, &event);
 
             if is_interested_in_pointer_event(
                 runner,
@@ -643,6 +672,65 @@ fn is_interested_in_pointer_event(runner: &AppRunner, pos: egui::Pos2) -> bool {
         .input(|i| i.pointer.any_down() || i.any_touches());
 
     is_hovering_canvas || is_pointer_down
+}
+
+/// TraceDraw: the pressure of a pen's pointer event as a moving touch
+/// with a force, which TraceDraw's raw input hook reads and takes out
+/// (see `pen_pressure.rs`, #1410). Nothing for a mouse or a touch. The
+/// pen's position and buttons still come from the mouse events as before.
+///
+/// One reading per event: the app samples a drag once per frame, so the
+/// readings `getCoalescedEvents` would add between frames would be read
+/// and dropped (the last of them is the event's own).
+fn push_pen_pressure(runner: &mut AppRunner, event: &web_sys::PointerEvent) {
+    let reading =
+        runner
+            .input
+            .pen
+            .reading(&event.pointer_type(), event.pressure(), event.buttons());
+    if let Some(force) = reading {
+        let pos = pos_from_mouse_event(runner.canvas(), event, runner.egui_ctx());
+        runner.input.raw.events.push(super::pen_pressure::pen_touch(
+            event.pointer_id(),
+            pos,
+            force,
+        ));
+    }
+}
+
+/// TraceDraw: a pen's pressure as it moves (over the canvas, or anywhere
+/// during a drag) and when the browser cancels it (#1410).
+fn install_pen_pressure(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
+    runner_ref.add_event_listener(
+        target,
+        "pointermove",
+        |event: web_sys::PointerEvent, runner| {
+            if event.pointer_type() == super::pen_pressure::PEN
+                && is_interested_in_pointer_event(
+                    runner,
+                    egui::pos2(event.client_x() as f32, event.client_y() as f32),
+                )
+            {
+                push_pen_pressure(runner, &event);
+                runner.needs_repaint.repaint();
+            }
+        },
+    )?;
+    runner_ref.add_event_listener(
+        target,
+        "pointercancel",
+        |event: web_sys::PointerEvent, runner| {
+            if event.pointer_type() == super::pen_pressure::PEN {
+                let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+                runner.input.raw.events.push(super::pen_pressure::pen_touch(
+                    event.pointer_id(),
+                    pos,
+                    None,
+                ));
+                runner.needs_repaint.repaint();
+            }
+        },
+    )
 }
 
 fn install_mousemove(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
@@ -937,6 +1025,12 @@ fn handle_gesture(event: web_sys::Event, runner: &mut AppRunner) {
 fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
     runner_ref.add_event_listener(target, "dragover", |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
+            // TraceDraw: where files are dragged goes in as a pointer move,
+            // so that a drop can be told apart by where it lands
+            // (TraceDraw #1142); the browser sends no mouse moves during the
+            // drag.
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
             runner.input.raw.hovered_files.clear();
 
             // NOTE: data_transfer.files() is always empty in dragover
@@ -975,6 +1069,9 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
 
     runner_ref.add_event_listener(target, "drop", |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
+            // TraceDraw: where the files were let go, before them (#1142).
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
             // TODO(https://github.com/emilk/egui/issues/3702): support dropping folders
             runner.input.raw.hovered_files.clear();
             runner.needs_repaint.repaint_asap();

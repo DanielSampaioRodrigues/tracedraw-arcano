@@ -20,7 +20,7 @@ later, and removing the last one gives the original back.
 - The native `.tdraw` file stores the list; a bitmap without effects
   writes no `fx` field, and older files load unchanged.
 - Changes that rework the pixels themselves (colour modes, Resample,
-  Manually Inflate Bitmap, Straighten Image, Bitmap Color Mask, Update
+  Bitmap Padding > Custom, Straighten Image, Color Mask, Update
   From Link, Effects > Flatten Effects) keep what the bitmap shows and
   drop the list.
 
@@ -46,14 +46,51 @@ later, and removing the last one gives the original back.
 
 ## Effect dialogs
 
-- Before and after previews of the first selected bitmap side by side:
-  a copy at most 240 pixels across, worked out again only when a setting
-  changes. Settings measured in pixels (radius, size, width, height,
+- Live preview on the drawing: while the dialog is open and its Preview
+  box is ticked (it starts ticked on the desktop and cleared in the
+  browser), every selected object shows the
+  effect with the values the dialog holds, from the moment it opens and
+  again each time a value changes, without any button. The preview is
+  made off the interface thread (the canvas keeps answering; a spinner
+  and "Updating the preview..." show beside the box meanwhile), starts
+  once a changed value has rested 80 ms (300 ms at most while a slider
+  keeps moving), one at a time (a value changed meanwhile follows when
+  the running one is done), and never again for the same values. Every
+  preview starts from the objects as they were without it, so previews
+  never stack. OK keeps what the drawing shows as one undo step ("Add
+  Effect" or "Edit Effect") without making it again; Cancel, Esc, the
+  close button or clearing the box put the drawing and the history back
+  exactly as they were (no undo step, redo kept). Editing from the FX
+  section previews nothing until a value differs from the effect as it
+  is. At most one preview is being made at a time: one dropped (the box
+  cleared, Cancel, the dialog closed) stops before its next effect and
+  the next one waits until it has, so toggling the box on a large
+  picture never runs several makings side by side. Values whose making
+  failed are not made again until a value changes. In the browser the
+  preview is made on the interface thread, so the box starts cleared
+  there and opening an effect never stalls the page.
+- Every effect dialog is a window the user sizes with the shared Before
+  and After preview of the first selected bitmap at the left
+  (`before-after-preview.md`: the Preview list with Before and After
+  stacked, side by side, Before or After, zoom and pan, the copy as
+  large as the panes show, at most 768 pixels across) and the settings
+  at the right; the result is worked out again only when a setting
+  changes (on a copy at most 240 pixels across while a slider is
+  dragged). Settings measured in pixels (radius, size, width, height,
   distance, period, amplitude, spacing and the like) are scaled with the
   copy, never below their minimum, so the preview looks like the result.
+  The before view is the bitmap without the effect being set up (its
+  effects so far on the copy), whether or not the live preview is on the
+  drawing.
 - Settings: sliders for numbers, a dial and a number for directions
   (degrees counter-clockwise from the right), lists, check boxes and
-  colour buttons. Reset puts every setting back to its default.
+  colour buttons, in the shared settings panel at the right (each
+  slider under its label, stretched to the panel's width;
+  `before-after-preview.md`). Under it the Reset, undo and redo row:
+  Reset puts every setting back to its default, the arrows step
+  through the settings states made in the dialog (a slider's drag is
+  one step on release, a list, a box, a colour, Reset), and the history
+  starts afresh when the dialog opens.
 - Editing an effect from the FX section previews from what the effects
   before it made, and the after view also runs the visible effects after
   it; OK changes that effect in place ("Edit Effect").
@@ -87,14 +124,13 @@ later, and removing the last one gives the original back.
 Effects > Adjust > Image Adjustments opens a larger dialog instead of
 the plain one:
 
-- A 600 x 420 preview of a copy at most 720 pixels across. Tools above
-  it: Rotate left and Rotate right (the view, a quarter turn), Pan (drag;
-  the default tool), Zoom in and Zoom out (click a point to zoom by 1.5
-  about it), Zoom to fit, 100% (one bitmap pixel per screen point); the
-  wheel zooms about the pointer with any tool. Preview modes: Full
-  preview, Before and after full preview (side by side, same view) and
-  Before and after split preview (the original left of a dashed divider,
-  the result right; drag the divider).
+- The shared Before and After preview (`before-after-preview.md`),
+  showing After at first, with Before and After stacked, side by side,
+  Before, and Before and After split (the original left of a dashed
+  divider, the result right; drag the divider) in its Preview list;
+  Zoom to fit, Zoom out, Zoom in and Pan, then Rotate left and Rotate
+  right (the view, a quarter turn) and 100% (one bitmap pixel per
+  screen point); the wheel zooms about the pointer.
 - Auto adjust sets the black and white points to the levels that cut
   0.5 % of the opaque pixels at either end. Select white point and Select
   black point turn the preview into a picker: a click sets that point
@@ -120,8 +156,8 @@ the original pixels.
 
 ## Auto inflate
 
-Document Options > General > Auto inflate bitmaps for effects, also
-Bitmaps > Inflate Bitmap > Auto Inflate Bitmap (a check mark), is on by
+Document Setup > General > Pad bitmaps for effects automatically, also
+Image > Bitmap Padding > Automatic (a check mark), is on by
 default. When on, the visible effects that spread past the edges grow the
 original first by their reach (summed, at most the larger side), with a
 transparent margin, and the bitmap's place grows by the same amount in
@@ -130,9 +166,9 @@ millimetres, so a blur is not cut off at the edges. Reach: Gaussian Blur
 `Strength / 2` pixels. The switch is stored in the document and applies
 to effects rendered from then on.
 
-Bitmaps > Inflate Bitmap > Manually Inflate Bitmap grows the selected
-bitmaps' canvas by hand: for Width and Height, Inflate to (pixels, from
-the first selected bitmap) or Inflate by (100 to 1000 %, default 100),
+Image > Bitmap Padding > Custom grows the selected
+bitmaps' canvas by hand: for Width and Height, Pad to (pixels, from
+the first selected bitmap) or Pad by (100 to 1000 %, default 100),
 which follow each other; Maintain aspect ratio (on) moves both
 percentages together. Every selected bitmap grows by the percentages,
 centred, with transparent margins, keeping its resolution, in one undo
@@ -381,15 +417,44 @@ through the master curve, then its channel's curve.
 - Given the Image Adjustments, then undo and redo walk the recorded
   steps and a new change drops the undone ones, snapshots are numbered
   from 1, Auto adjust finds 60 and 200 on columns of grays from 60 to
-  200 with two outliers, the pickers keep the points apart, and every
-  quarter turn maps preview points back to the same pixel
-  (`ui::lab_dialog::tests`).
+  200 with two outliers, the pickers keep the points apart
+  (`ui::lab_dialog::tests`), and every quarter turn of the shared
+  preview maps preview points back to the same point of the picture
+  (`ui::before_after::tests::turned_points_map_back`).
 - Given gray 64, then Contrast Enhancement with input high 128 doubles
   only red when Red is chosen and every channel for Master, and
   Target Color Balance from 64 to 128 changes only green when Green is
   chosen and all three with Always adjust all channels
   (`channel_lists_limit_levels_and_target_balance`); a preset file keeps
   only its numbers (`presets_keep_numbers_only`).
+- Given a selected bitmap and the Blur dialog, then the drawing shows
+  the blur as soon as the dialog opens and follows a changed radius
+  with no button pressed, idle frames make nothing again, the dialog
+  closed by Esc leaves the bitmap and the history as they were, and OK
+  keeps the preview shown as one "Add Effect" step
+  (`fx::preview::tests::the_effect_shows_on_the_drawing_while_its_dialog_is_open`).
+- Given the Preview box, when it is cleared, then the effect leaves the
+  drawing with no step left, ticked again it comes back, and OK with
+  the box cleared makes the effect then, still one step
+  (`the_preview_box_puts_the_effect_on_the_drawing_and_takes_it_off`).
+- Given an effect edited from the FX section, then nothing is made
+  until a value differs, the change then shows in the effect's place,
+  and OK is one "Edit Effect" step
+  (`editing_an_effect_previews_the_change_in_its_place`); a vector
+  object previews as its picture and is itself again on Cancel
+  (`a_vector_object_previews_its_picture`); a cancelled preview job
+  gives nothing (`a_cancelled_job_gives_nothing`), and a raised flag
+  stops the render before its next effect
+  (`a_raised_flag_stops_the_render`).
+- Given a dropped preview whose thread still runs, then no second one
+  starts beside it until it has ended, also when the Preview box is
+  cleared and ticked again
+  (`a_dropped_preview_still_running_holds_the_next_one_back`); given a
+  preview whose thread died, then the same values are not made again
+  frame after frame, and a changed value is made
+  (`a_failed_preview_is_not_made_again_until_a_value_changes`); the
+  box starts cleared in the browser
+  (`the_preview_box_starts_cleared_in_the_browser`).
 - Given a preview at a quarter of the size, then pixel settings are a
   quarter, never below their minimum, and other settings stay
   (`previews_scale_pixel_sizes_only`).
@@ -403,7 +468,7 @@ The Effects menu's bitmap effects work on any object, not only bitmaps.
 A vector object keeps its shape, fill and outlines; its effects are kept
 with it (`Shape::raster_fx`) and it is drawn as the picture they make:
 the object alone, drawn in its own space at the drawing's rendering
-resolution (Layout > Page Setup, 72 to 1200 dpi; 300 when none is set;
+resolution (Page > Page Setup, 72 to 1200 dpi; 300 when none is set;
 fewer pixels when it would pass 16 million) with a margin of 2 mm, its outline width and 8 % of
 its size, then the visible effects in order. The picture is kept in the
 drawing, so the screen, PDF, SVG, EPS and EMF draw it without the
@@ -444,9 +509,9 @@ its default settings to a 64-pixel landscape, and its name below.
 The bitmap's context menu writes its pixels, the effects in its stack
 included, to a PNG file (a download in the browser).
 
-## Bitmap Mask docker
+## Color Mask docker
 
-Bitmaps > Bitmap Mask opens the docker:
+Image > Color Mask opens the docker:
 
 - An eyedropper (the Color Eyedropper tool; each colour it samples
   fills the selected slot and ticks it) and "Select colours from

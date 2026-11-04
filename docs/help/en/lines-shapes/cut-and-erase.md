@@ -60,6 +60,10 @@ lines that stick out past a crossing.
   objects at once. Each part goes whole, up to the crossings at its ends, even
   where it reaches past the rectangle; a closed shape that nothing crosses goes
   whole.
+- Choose **Freehand** on the property bar and drag a stroke across outlines:
+  every part the stroke crosses is deleted, up to the crossings with other
+  lines, in one step. Hold <kbd>Alt</kbd> as a drag starts to use the other
+  way (stroke or rectangle) for that drag only.
 
 Rectangles, ellipses and polygons become curves; a closed shape that loses a
 part opens, and an object with nothing left is deleted.
@@ -75,7 +79,9 @@ The [[tool.eraser]] tool (<kbd>X</kbd>) rubs out parts of objects.
 3. Drag over the objects. A click erases one dot.
 
 Erased objects become curves; an object erased completely is deleted.
-Double-click an object with the tool to delete it whole. Bitmaps, groups and
-clip frames are not erased. The defaults of the eraser are on the
+Double-click an object with the tool to delete it whole. A clip frame is
+erased through its frame: the frame loses the band and the contents inside
+are hidden along it, so the eraser cuts through the frame and its contents
+together. Bitmaps and groups are not erased. The defaults of the eraser are on the
 [[tool.eraser]] page of the tool options; see
 [Tool options](../customize/tool-options.md#eraser).

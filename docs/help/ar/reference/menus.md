@@ -34,6 +34,7 @@
 | [[menu.file.send_to_documents]] | [Printing a drawing](../printing/print.md#other) |
 | [[menu.file.send_to_mail]] | [Printing a drawing](../printing/print.md#other) |
 | [[menu.file.publish_to_pdf]] | [Publishing to PDF](../file-formats/publish-pdf.md) |
+| [[menu.file.package]] | [Packaging a drawing](../file-formats/package.md) |
 | [[menu.file.print_merge]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_create]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_edit]] | [Print merge](../printing/print-merge.md) |
@@ -66,7 +67,7 @@
 | [[menu.edit.select_all_guidelines]] | [Selecting objects](../objects/selecting.md) |
 | [[menu.edit.select_all_nodes]] | [Selecting objects](../objects/selecting.md) |
 | [[menu.edit.find_and_replace]] | [Finding and replacing](../objects/find-replace.md) |
-| [[menu.edit.step_and_repeat]] | [Making copies with Step and Repeat](../objects/step-and-repeat.md) |
+| [[menu.edit.step_and_repeat]] | [Making copies with Repeat Copies](../objects/step-and-repeat.md) |
 
 ## [[menu.view]] {#view}
 
@@ -107,27 +108,6 @@
 | [[menu.view.snap_objects]] | [Snapping](../pages-layout/snapping.md) |
 | [[menu.view.snap_page]] | [Snapping](../pages-layout/snapping.md) |
 | [[menu.view.snap_off]] | [Snapping](../pages-layout/snapping.md) |
-
-## [[menu.layout]] {#layout}
-
-| الأمر | انظر |
-|---|---|
-| [[menu.layout.insert_page]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.duplicate_page]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.rename_page]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.delete_page]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.go_to_page]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.insert_page_number]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_number_active]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_number_all]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_number_odd]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_number_even]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_number_settings]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.switch_orientation]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.document_options]] | [Document options](../pages-layout/document-options.md) |
-| [[menu.layout.page_size]] | [Working with pages](../pages-layout/pages.md) |
-| [[menu.layout.page_layout]] | [Document options](../pages-layout/document-options.md) |
-| [[menu.layout.page_background]] | [Document options](../pages-layout/document-options.md) |
 
 ## [[menu.object]] {#object}
 
@@ -196,7 +176,7 @@
 | [[menu.object.distribute_spacing_v]] | [Aligning and distributing objects](../objects/align-distribute.md) |
 | [[menu.object.distribute_bottom]] | [Aligning and distributing objects](../objects/align-distribute.md) |
 | [[menu.object.align_distribute_docker]] | [Aligning and distributing objects](../objects/align-distribute.md) |
-| [[menu.object.fit_objects_to_path]] | [Adding and editing text](../text/adding-text.md#text-on-path) |
+| [[menu.object.fit_objects_to_path]] | [Fitting objects to a path](../objects/fit-objects-to-path.md) |
 | [[menu.object.order]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_front_of_page]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_back_of_page]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
@@ -241,60 +221,6 @@
 | [[menu.object.properties]] | [The Properties panel](../objects/properties-docker.md) |
 | [[menu.object.objects]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
 
-## [[menu.effects]] {#effects}
-
-| الأمر | انظر |
-|---|---|
-| [[menu.effects.flatten]] | [Bitmap effects](../effects/bitmap-effects.md) |
-| [[menu.effects.brush_strokes]] | [Brush strokes and painterly brushes](../lines-shapes/artistic-media.md) |
-| [[menu.effects.bevel]] | [Bevels](../effects/bevel.md) |
-| [[menu.effects.blend]] | [Blends](../effects/blend.md) |
-| [[menu.effects.contour]] | [Contours](../effects/contour.md) |
-| [[menu.effects.envelope]] | [Envelopes](../effects/envelope.md) |
-| [[menu.effects.extrude]] | [Extrusions](../effects/extrude.md) |
-| [[menu.effects.lens]] | [Lenses](../effects/lens.md) |
-| [[menu.effects.picture_mosaic]] | [Vector and picture mosaics](../effects/mosaics.md) |
-| [[menu.effects.vector_mosaic]] | [Vector and picture mosaics](../effects/mosaics.md) |
-
-## [[menu.bitmaps]] {#bitmaps}
-
-| الأمر | انظر |
-|---|---|
-| [[menu.bitmaps.convert_to_bitmap]] | [Converting objects to bitmaps](../bitmaps/convert-to-bitmap.md) |
-| [[menu.bitmaps.straighten_image]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.edit_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.crop_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.resample]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.remove_background_local]] | [إزالة الخلفية](../bitmaps/remove-background.md) |
-| [[menu.bitmaps.remove_background]] | [AI drawing and generating](../customize/ai.md) |
-| [[menu.bitmaps.ai_art_styles]] | [AI drawing and generating](../customize/ai.md) |
-| [[menu.bitmaps.mode]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_bw]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_grayscale]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_duotone]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_paletted]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_rgb]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_lab]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.mode_cmyk]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
-| [[menu.bitmaps.inflate]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.inflate_auto]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.inflate_manual]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.break_link]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.update_from_link]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
-| [[menu.bitmaps.quick_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.centerline_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_technical]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_line_drawing]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.outline_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_line_art]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_logo]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_detailed_logo]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_clipart]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_low_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.trace_high_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
-| [[menu.bitmaps.plugins]] | [الصور النقطية](../bitmaps/index.md) |
-| [[menu.bitmaps.bitmap_mask]] | [Masking colors out of bitmaps](../bitmaps/bitmap-mask.md) |
-
 ## [[menu.text]] {#text}
 
 | الأمر | انظر |
@@ -330,7 +256,7 @@
 | [[menu.text.custom_hyphens]] | [Writing tools](../text/writing-tools.md) |
 | [[menu.text.writing_tools]] | [Writing tools](../text/writing-tools.md) |
 | [[menu.text.spell_check]] | [Writing tools](../text/writing-tools.md) |
-| [[menu.text.grammatik]] | [Writing tools](../text/writing-tools.md) |
+| [[menu.text.grammar]] | [Writing tools](../text/writing-tools.md) |
 | [[menu.text.thesaurus]] | [Writing tools](../text/writing-tools.md) |
 | [[menu.text.autocorrect]] | [Writing tools](../text/writing-tools.md) |
 | [[menu.text.change_case]] | [Writing tools](../text/writing-tools.md) |
@@ -339,7 +265,7 @@
 | [[menu.text.text_docker]] | [Adding and editing text](../text/adding-text.md) |
 | [[menu.text.glyphs]] | [Fonts and glyphs](../text/fonts.md) |
 
-## [[menu.table]] {#table}
+### [[menu.table]] {#table}
 
 | الأمر | انظر |
 |---|---|
@@ -368,6 +294,91 @@
 | [[menu.table.split_into_rows]] | [Tables](../objects/tables.md) |
 | [[menu.table.split_into_columns]] | [Tables](../objects/tables.md) |
 
+## [[menu.bitmaps]] {#bitmaps}
+
+| الأمر | انظر |
+|---|---|
+| [[menu.bitmaps.convert_to_bitmap]] | [Converting objects to bitmaps](../bitmaps/convert-to-bitmap.md) |
+| [[menu.bitmaps.straighten_image]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.edit_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.crop_bitmap]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.resample]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.remove_background_local]] | [إزالة الخلفية](../bitmaps/remove-background.md) |
+| [[menu.bitmaps.remove_background]] | [AI drawing and generating](../customize/ai.md) |
+| [[menu.bitmaps.ai_art_styles]] | [AI drawing and generating](../customize/ai.md) |
+| [[menu.bitmaps.mode]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_bw]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_grayscale]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_duotone]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_paletted]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_rgb]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_lab]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.mode_cmyk]] | [Changing the color mode of bitmaps](../bitmaps/color-modes.md) |
+| [[menu.bitmaps.inflate]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.inflate_auto]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.inflate_manual]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.break_link]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.update_from_link]] | [Resampling, straightening and inflating bitmaps](../bitmaps/resample-and-straighten.md) |
+| [[menu.bitmaps.trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.quick_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.centerline_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_technical]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_line_drawing]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.outline_trace]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_line_art]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_logo]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_detailed_logo]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_clipart]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_low_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_high_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_optimized]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.plugins]] | [الصور النقطية](../bitmaps/index.md) |
+| [[menu.bitmaps.bitmap_mask]] | [Masking colors out of bitmaps](../bitmaps/bitmap-mask.md) |
+
+## [[menu.effects]] {#effects}
+
+| الأمر | انظر |
+|---|---|
+| [[menu.effects.flatten]] | [Bitmap effects](../effects/bitmap-effects.md) |
+| [[menu.effects.brush_strokes]] | [Brush strokes and painterly brushes](../lines-shapes/artistic-media.md) |
+| [[menu.effects.bevel]] | [Bevels](../effects/bevel.md) |
+| [[menu.effects.blend]] | [Blends](../effects/blend.md) |
+| [[menu.effects.contour]] | [Contours](../effects/contour.md) |
+| [[menu.effects.envelope]] | [Envelopes](../effects/envelope.md) |
+| [[menu.effects.extrude]] | [Extrusions](../effects/extrude.md) |
+| [[menu.effects.lens]] | [Lenses](../effects/lens.md) |
+| [[menu.effects.picture_mosaic]] | [Vector and picture mosaics](../effects/mosaics.md) |
+| [[menu.effects.vector_mosaic]] | [Vector and picture mosaics](../effects/mosaics.md) |
+
+## [[menu.layout]] {#layout}
+
+| الأمر | انظر |
+|---|---|
+| [[menu.layout.insert_page]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.duplicate_page]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.rename_page]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.delete_page]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.go_to_page]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.insert_page_number]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_number_active]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_number_all]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_number_odd]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_number_even]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_number_settings]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.switch_orientation]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.document_options]] | [Document options](../pages-layout/document-options.md) |
+| [[menu.layout.page_size]] | [Working with pages](../pages-layout/pages.md) |
+| [[menu.layout.page_spacing]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_0]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_5]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_10]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_20]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_30]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_50]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_spacing_custom]] | [Multipage view](../pages-layout/multipage-view.md#page-spacing) |
+| [[menu.layout.page_layout]] | [Document options](../pages-layout/document-options.md) |
+| [[menu.layout.page_background]] | [Document options](../pages-layout/document-options.md) |
+
 ## [[menu.tools]] {#tools}
 
 | الأمر | انظر |
@@ -375,6 +386,7 @@
 | [[menu.tools.options]] | [التخصيص والأتمتة](../customize/index.md) |
 | [[menu.tools.save_settings_as_default]] | [التخصيص والأتمتة](../customize/index.md) |
 | [[menu.tools.color_management]] | [Color management](../color/color-management.md) |
+| [[menu.tools.convert_colors]] | [Converting colors to CMYK or RGB](../color/convert-colors.md) |
 | [[menu.tools.scripts]] | [Scripts and automation](../customize/scripts.md) |
 | [[menu.tools.scripts_docker]] | [Scripts and automation](../customize/scripts.md) |
 | [[menu.tools.scripts_run]] | [Scripts and automation](../customize/scripts.md) |

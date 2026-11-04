@@ -36,8 +36,29 @@
   both ends across the objects. Freehand: drag a line of any shape; the
   cut follows it as drawn.
 - The objects cut are the selection, or with nothing selected every
-  visible object on the page's unlocked layers; bitmaps, groups and text
-  are not cut (`knife.rs`).
+  visible object on the page's unlocked layers; groups and text are not
+  cut (`knife.rs`).
+- A bitmap, or a cropped one (a clip frame holding one bitmap, as Crop
+  Bitmap and the Shape tool make and as `.cdr` crop paths are read), is
+  cut the way a picture is cropped (#1333, `picture_pieces`): each piece
+  is the whole picture, its pixels untouched, behind an outline of its
+  own (a clip frame whose frame has no fill or outline), so the Shape
+  tool edits each piece's outline as it edits a cropped picture's. With
+  Split the outlines are the two sides of the cut, run on far past the
+  picture, so they meet exactly along it and the pieces show the
+  picture with no seam; with Gap they are the picture's outline less the
+  band, the gap's width apart. Keep as one object leaves one picture
+  behind an outline of several parts. The pieces keep the object's
+  place, turn, transparency and effects; a cut beside the picture
+  leaves it as it is. One undo step with the other objects cut
+  (`knife::tests::a_cut_crops_a_bitmap_into_pieces`,
+  `knife::tests::a_turned_or_cropped_picture_is_cut_where_it_is_drawn`).
+- Any other clip frame is cut through its frame as a closed object is
+  (#1606): each piece is a clip frame whose frame has the piece's
+  outline and the frame's fill and outline, holding the contents where
+  they show (the first keeps the clip frame, the others copies of the
+  contents with ids of their own); see `clip-frame.md`
+  (`knife::tests::a_clip_frame_is_cut_through_its_frame`).
 - Closed objects lose a band along the cut: Split (first choice) takes a
   hair (0.01 mm), so the pieces meet; Gap takes the width beside it.
   Each separate piece becomes an object of its own (Keep as one object:
@@ -48,6 +69,9 @@
   object's place. The pieces are selected; one undo step.
 - The bar: Two-point line, Freehand; Split, Gap and its width; Keep as
   one object; kept in the preferences (`tools.knife`).
+- Space switches to the Pick tool and back from the Knife and the Crop
+  tool as from any tool, a crop area waiting or not
+  (`pick_drag_tests::space_toggles_from_the_crop_and_knife_tools`).
 
 ## Segment delete
 
@@ -99,6 +123,21 @@
   at every object whose box meets the rectangle, a level or upright line
   (a box of no height or width) included, and takes the stretches of
   theirs the rectangle touches.
+- Freehand (#1150): the property bar's Box and Freehand choose what a
+  drag draws (Box at first, kept with the tool settings); Alt held at the
+  press takes the other one for that drag. A freehand stroke (points
+  kept a screen pixel apart, drawn as a black line on a white one)
+  removes every virtual segment it crosses or touches, whole, as far as
+  the crossings at its ends, on all objects at once, one undo step;
+  stretches it passes beside stay, so a stroke across a crowded spot
+  takes only what it goes through, where the box would take everything
+  in it (`segment_delete::tests::a_freehand_stroke_removes_the_stretches_it_crosses`,
+  `pick_drag_tests::segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar`).
+  Only the objects whose box meets the stroke's box are looked at. A
+  click that slipped into a stroke of under 8 pixels that crosses
+  nothing deletes as a click at the press. Some Linux desktops move the
+  window on Alt+drag; there, the bar's Freehand does the same without
+  Alt.
 - Curves, rectangles, ellipses and polygons can lose segments; they
   become curves. A closed subpath that loses a stretch opens (what is
   left of it runs on over its start as one piece); an object with
@@ -116,8 +155,20 @@
   bounds the band does not touch are left alone.
 - Click: erases a dot of the nib's size.
 - Double-click an object: deletes it whole.
-- Bitmaps, groups and clip frames are not erased (erasing bitmaps by
-  masking is not implemented).
+- A clip frame is erased through its frame (#1672), as Crop and the
+  Knife take it: the frame loses the band and becomes a closed curve
+  with its fill, outline and id, in the clip frame's space; the
+  contents stay inside, untouched, and are clipped by what is left of
+  the frame, so they are gone along the band and nowhere else. The clip
+  frame stays one object (a band across it leaves a frame of several
+  parts); a clip frame whose frame is erased away is deleted with its
+  contents. This takes a cropped picture too: its outline gets the hole.
+  A frame that is a group is not erased. One undo step with the other
+  objects erased
+  (`shape_tool::eraser_tests::a_clip_frame_is_erased_through_its_frame`,
+  `shape_tool::eraser_tests::a_clip_frame_under_the_pointer_is_erased_and_one_erased_away_goes`).
+- Bitmaps and groups are not erased (erasing bitmaps by masking is not
+  implemented).
 
 ## Checks
 
@@ -135,6 +186,8 @@
 - `ui::crop_bar::tests::the_bar_and_the_area_draw`
 - `knife::tests::straight_cuts_split_closed_objects`
 - `knife::tests::freehand_cuts_and_open_curves`
+- `shape_tool::eraser_tests::a_band_through_a_rectangle_splits_it_and_a_dot_outside_does_nothing`
+- `shape_tool::eraser_tests::a_clip_frame_is_erased_through_its_frame`
 
 - Given a 40 x 20 mm rectangle and a 4 mm vertical band through its
   middle, when erased, then the object is a path with two subpaths and
@@ -142,3 +195,7 @@
 - Given a dot 100 mm away, then the object is unchanged.
 - Given a 100 mm band across the whole rectangle, then the object is
   deleted.
+- Given a 40 x 40 mm clip frame holding a 30 x 30 mm square and a 4 mm
+  vertical band through its middle, when erased, then it is still the
+  clip frame, its frame is a curve of two parts with the frame's fill,
+  the contents are unchanged, and one undo brings the frame back whole.

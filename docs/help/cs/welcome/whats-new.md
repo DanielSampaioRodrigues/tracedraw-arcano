@@ -13,11 +13,14 @@ zjistit, co se změnilo, a uvádí hlavní novinky posledních verzí.
   nabídky, která ho obsahuje. Značky zmizí, když příkaz vypnete, a při příštím
   spuštění TraceDraw je příkaz opět vypnutý.
 - Úplný seznam změn každé verze je v
-  [seznamu změn](https://github.com/igtoth/tracedraw/blob/main/CHANGELOG.md)
+  [seznamu změn](https://github.com/tracedraw/tracedraw/blob/main/CHANGELOG.md)
   projektu.
 
 ## Hlavní novinky posledních verzí {#highlights}
 
+- **Náhledy objektů.** Panel [[docker.objects]] ukazuje každý objekt
+  zmenšený vedle jeho názvu; Ctrl+kolečko nad seznamem nebo posuvník dole
+  nastaví velikost. Viz [Uspořádání objektů a vrstev](../objects/objects-and-layers.md#objects-docker).
 - **Nápověda ve vašem jazyce.** Každé tlačítko **?** a <kbd>F1</kbd> otevřou
   stránku této nápovědy o dialogovém okně, panelu nebo nástroji před vámi, v
   jazyce nastaveném v TraceDraw.

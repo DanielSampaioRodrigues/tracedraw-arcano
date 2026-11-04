@@ -6,23 +6,39 @@
 use crate::app::App;
 use crate::view::View;
 use egui::{Color32, Painter, Pos2, Rect as ERect};
+use tracedraw_core::document::{Guide, GuideLine};
 use tracedraw_core::geometry::{Rect, Size};
 use tracedraw_core::PageId;
 
-/// Space between pages, in millimetres.
-pub const GAP_MM: f64 = 30.0;
+/// The spacings Page > Page Spacing offers, in millimetres; Custom...
+/// takes any other.
+pub const SPACING_PRESETS: [(f64, &str); 6] = [
+    (0.0, "menu.layout.page_spacing_0"),
+    (5.0, "menu.layout.page_spacing_5"),
+    (10.0, "menu.layout.page_spacing_10"),
+    (20.0, "menu.layout.page_spacing_20"),
+    (30.0, "menu.layout.page_spacing_30"),
+    (50.0, "menu.layout.page_spacing_50"),
+];
+
+/// Columns of the grid: always this many (fewer pages fill one row), so
+/// a page added goes at the next place and the pages before it stay
+/// where they were (#1018).
+pub const COLUMNS: usize = 4;
 
 /// The pages' places in the current page's coordinates (mm, Y up): a grid
-/// with as many columns as the square root of the page count (rounded
-/// up), left to right then down, each page at the top left of its cell.
+/// of [`COLUMNS`] columns, left to right then down, each page at the top
+/// left of its cell, cells `gap` mm apart (a negative or non-finite gap
+/// counts as none).
 /// The current page is at the origin; an unknown `active` keeps the grid
 /// where the first page is at the origin.
-pub fn layout(pages: &[(PageId, Size)], active: PageId) -> Vec<(PageId, Rect)> {
+pub fn layout(pages: &[(PageId, Size)], active: PageId, gap: f64) -> Vec<(PageId, Rect)> {
+    let gap = if gap.is_finite() { gap.max(0.0) } else { 0.0 };
     let n = pages.len();
     if n == 0 {
         return Vec::new();
     }
-    let cols = ((n as f64).sqrt().ceil() as usize).max(1);
+    let cols = n.clamp(1, COLUMNS);
     let rows = n.div_ceil(cols);
     let mut col_w = vec![0.0f64; cols];
     let mut row_h = vec![0.0f64; rows];
@@ -38,8 +54,8 @@ pub fn layout(pages: &[(PageId, Size)], active: PageId) -> Vec<(PageId, Rect)> {
     let mut placed: Vec<(PageId, Rect)> = Vec::with_capacity(n);
     for (i, (id, size)) in pages.iter().enumerate() {
         let (r, c) = (i / cols, i % cols);
-        let x0: f64 = col_w.iter().take(c).sum::<f64>() + c as f64 * GAP_MM;
-        let top: f64 = -(row_h.iter().take(r).sum::<f64>() + r as f64 * GAP_MM);
+        let x0: f64 = col_w.iter().take(c).sum::<f64>() + c as f64 * gap;
+        let top: f64 = -(row_h.iter().take(r).sum::<f64>() + r as f64 * gap);
         let w = size.width.max(0.0);
         let h = size.height.max(0.0);
         placed.push((*id, Rect::new(x0, top - h, x0 + w, top)));
@@ -74,8 +90,32 @@ pub fn bounds(placed: &[(PageId, Rect)]) -> Option<Rect> {
 impl App {
     /// The grid of pages around the current one.
     pub fn multipage_layout(&self) -> Vec<(PageId, Rect)> {
-        let pages: Vec<(PageId, Size)> = self.doc().pages.iter().map(|p| (p.id, p.size)).collect();
-        layout(&pages, self.page)
+        let doc = self.doc();
+        let pages: Vec<(PageId, Size)> = doc.pages.iter().map(|p| (p.id, p.size)).collect();
+        layout(&pages, self.page, doc.metadata.page_spacing())
+    }
+
+    /// The space between the pages of the Multipage View, mm.
+    pub fn page_spacing(&self) -> f64 {
+        self.doc().metadata.page_spacing()
+    }
+
+    /// Page > Page Spacing and Document Setup > Layout: set the space
+    /// between the pages of the Multipage View, in mm, as one undo step
+    /// (a document property, saved with the drawing). The current page
+    /// stays where it is on screen. False when nothing changed.
+    pub fn set_page_spacing(&mut self, mm: f64) -> bool {
+        if !self.has_document() || !mm.is_finite() {
+            return false;
+        }
+        let mm = mm.clamp(0.0, tracedraw_core::document::MAX_PAGE_SPACING);
+        if (mm - self.page_spacing()).abs() < 1e-9 {
+            return false;
+        }
+        let mut metadata = self.doc().metadata.clone();
+        metadata.page_spacing = Some(mm);
+        self.run(tracedraw_core::Command::SetMetadata { metadata });
+        true
     }
 
     /// Turn the Multipage View on or off; turning it on shows every page.
@@ -130,6 +170,33 @@ impl App {
         }
     }
 
+    /// The guidelines of the other pages in the Multipage View, each moved
+    /// to where its page sits in the grid (the current page's
+    /// coordinates) and given the page's box there, so they can be drawn
+    /// within their page (#1448). None outside the Multipage View; the
+    /// current page's guidelines are drawn as always.
+    pub fn other_page_guides(&self) -> Vec<(Guide, Rect)> {
+        if !self.multipage {
+            return Vec::new();
+        }
+        let doc = self.doc();
+        let mut out = Vec::new();
+        for (id, r) in self.multipage_layout() {
+            if id == self.page {
+                continue;
+            }
+            let Some(page) = doc.pages.iter().find(|p| p.id == id) else {
+                continue;
+            };
+            for g in &page.guides {
+                let mut g = *g;
+                g.line = shifted(g.line, r.x0, r.y0);
+                out.push((g, r));
+            }
+        }
+        out
+    }
+
     /// What Zoom to Fit and a new view fit: the page, or every page in the
     /// Multipage View.
     pub fn fit_rect(&self) -> Rect {
@@ -139,6 +206,20 @@ impl App {
             }
         }
         self.page_rect()
+    }
+}
+
+/// A guideline moved by `(dx, dy)`: a page's guideline where the page
+/// sits in the grid.
+fn shifted(line: GuideLine, dx: f64, dy: f64) -> GuideLine {
+    match line {
+        GuideLine::Horizontal { y } => GuideLine::Horizontal { y: y + dy },
+        GuideLine::Vertical { x } => GuideLine::Vertical { x: x + dx },
+        GuideLine::Angled { x, y, angle } => GuideLine::Angled {
+            x: x + dx,
+            y: y + dy,
+            angle,
+        },
     }
 }
 
@@ -281,6 +362,9 @@ pub fn draw_other_pages(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The space between pages of a drawing that sets none.
+    const GAP_MM: f64 = tracedraw_core::document::DEFAULT_PAGE_SPACING;
     use tracedraw_core::geometry::Point;
 
     fn pages(n: usize) -> Vec<(PageId, Size)> {
@@ -291,20 +375,38 @@ mod tests {
 
     #[test]
     fn pages_sit_in_a_grid_with_the_current_one_at_the_origin() {
-        let ps = pages(4);
-        let placed = layout(&ps, PageId(1));
-        // Two columns, two rows, 30 mm apart, rows going down.
+        let ps = pages(6);
+        let placed = layout(&ps, PageId(1), GAP_MM);
+        // Four columns, 30 mm apart, then the next row going down.
         assert_eq!(placed[0].1, Rect::new(0.0, 0.0, 100.0, 50.0));
         assert_eq!(placed[1].1, Rect::new(130.0, 0.0, 230.0, 50.0));
-        assert_eq!(placed[2].1, Rect::new(0.0, -80.0, 100.0, -30.0));
+        assert_eq!(placed[3].1, Rect::new(390.0, 0.0, 490.0, 50.0));
+        assert_eq!(placed[4].1, Rect::new(0.0, -80.0, 100.0, -30.0));
         // Another page current: the same grid, moved so it is at the origin.
-        let placed = layout(&ps, PageId(4));
-        assert_eq!(placed[3].1, Rect::new(0.0, 0.0, 100.0, 50.0));
+        let placed = layout(&ps, PageId(6), GAP_MM);
+        assert_eq!(placed[5].1, Rect::new(0.0, 0.0, 100.0, 50.0));
         assert_eq!(placed[0].1, Rect::new(-130.0, 80.0, -30.0, 130.0));
         assert_eq!(page_at(&placed, Point::new(-50.0, 100.0)), Some(PageId(1)));
         assert_eq!(page_at(&placed, Point::new(-20.0, 100.0)), None);
-        assert_eq!(bounds(&placed), Some(Rect::new(-130.0, 0.0, 100.0, 130.0)));
-        assert!(layout(&[], PageId(1)).is_empty());
+        assert_eq!(bounds(&placed), Some(Rect::new(-130.0, 0.0, 360.0, 130.0)));
+        assert!(layout(&[], PageId(1), GAP_MM).is_empty());
+    }
+
+    /// Pages added one by one go at the next place of a grid of four
+    /// columns; the pages before never move (#1018). The grid used to have
+    /// as many columns as the square root of the page count, so the 4th
+    /// and the 10th page rearranged every page.
+    #[test]
+    fn adding_pages_never_moves_the_pages_before() {
+        for n in 1..=13 {
+            let before = layout(&pages(n), PageId(1), GAP_MM);
+            let after = layout(&pages(n + 1), PageId(1), GAP_MM);
+            assert_eq!(after[..n], before[..], "page {} added", n + 1);
+            let (r, c) = (n / COLUMNS, n % COLUMNS);
+            let x0 = c as f64 * 130.0;
+            let y0 = -(r as f64) * 80.0;
+            assert_eq!(after[n].1, Rect::new(x0, y0, x0 + 100.0, y0 + 50.0));
+        }
     }
 
     #[test]
@@ -314,11 +416,20 @@ mod tests {
             (PageId(2), Size::new(40.0, 80.0)),
             (PageId(3), Size::new(150.0, 30.0)),
         ];
-        let placed = layout(&ps, PageId(1));
-        // Column 0 is as wide as page 3; row 0 as tall as page 2, whose
-        // top lines up with page 1's.
+        let placed = layout(&ps, PageId(1), GAP_MM);
+        // One row: each column as wide as its page, every top lined up
+        // with page 1's; the next row (page 5 on) would start below the
+        // tallest, page 2.
+        assert_eq!(placed[1].1, Rect::new(130.0, -30.0, 170.0, 50.0));
+        assert_eq!(placed[2].1, Rect::new(200.0, 20.0, 350.0, 50.0));
+        let mut five = ps.clone();
+        five.push((PageId(4), Size::new(10.0, 10.0)));
+        five.push((PageId(5), Size::new(150.0, 30.0)));
+        let placed = layout(&five, PageId(1), GAP_MM);
+        // Column 0 is now as wide as page 5, which sits a row below page
+        // 2's bottom.
         assert_eq!(placed[1].1, Rect::new(180.0, -30.0, 220.0, 50.0));
-        assert_eq!(placed[2].1, Rect::new(0.0, -90.0, 150.0, -60.0));
+        assert_eq!(placed[4].1, Rect::new(0.0, -90.0, 150.0, -60.0));
     }
 
     #[test]
@@ -388,12 +499,146 @@ mod tests {
             frame_at(&ctx, &mut app, t);
         }
         assert_eq!(renders(&app), at_rest, "no render while zooming");
-        // At rest: each page rendered again.
-        for _ in 0..20 {
+        // At rest: each page rendered again, one render on a thread at a
+        // time in the whole program (other tests' renders may hold the
+        // turn for a moment).
+        for _ in 0..400 {
             t += 0.02;
             frame_at(&ctx, &mut app, t);
+            if renders(&app) >= at_rest + 3 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(renders(&app) >= at_rest + 3);
+    }
+
+    /// The other pages' guidelines show in the Multipage View, each
+    /// where its page sits in the grid and within that page; they used
+    /// to show only while their page was the current one (#1448).
+    #[test]
+    fn the_other_pages_guidelines_show_where_their_pages_sit() {
+        let mut app = App::headless();
+        app.add_page();
+        let first = app.doc().pages[0].id;
+        let second = app.doc().pages[1].id;
+        app.page = second;
+        app.add_guide(Guide::horizontal(10.0));
+        app.add_guide(Guide::vertical(20.0));
+        app.add_guide(
+            GuideLine::Angled {
+                x: 5.0,
+                y: 6.0,
+                angle: 30.0,
+            }
+            .into(),
+        );
+        app.page = first;
+        app.add_guide(Guide::horizontal(40.0));
+        // Off: nothing beyond the current page's own guidelines.
+        app.set_multipage(false);
+        assert!(app.other_page_guides().is_empty());
+        app.set_multipage(true);
+        let r = app
+            .multipage_layout()
+            .into_iter()
+            .find(|(id, _)| *id == second)
+            .map(|(_, r)| r)
+            .expect("the second page's place");
+        assert!(r.x0 > 0.0, "beside the first page: {r:?}");
+        let shown = app.other_page_guides();
+        assert_eq!(shown.len(), 3, "the second page's three, not the first's");
+        assert!(shown.iter().all(|(_, page)| *page == r));
+        let lines: Vec<GuideLine> = shown.iter().map(|(g, _)| g.line).collect();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(matches!(lines[0], GuideLine::Horizontal { y } if near(y, 10.0 + r.y0)));
+        assert!(matches!(lines[1], GuideLine::Vertical { x } if near(x, 20.0 + r.x0)));
+        assert!(matches!(
+            lines[2],
+            GuideLine::Angled { x, y, angle }
+                if near(x, 5.0 + r.x0) && near(y, 6.0 + r.y0) && near(angle, 30.0)
+        ));
+        // The second page current: the first page's guideline, where
+        // that page now sits (to the left of the origin).
+        app.multipage_activate(second);
+        let shown = app.other_page_guides();
+        assert_eq!(shown.len(), 1);
+        assert!(shown[0].1.x0 < 0.0);
+        assert!(
+            matches!(shown[0].0.line, GuideLine::Horizontal { y } if near(y, 40.0 + shown[0].1.y0))
+        );
+        // A frame draws them within their page without trouble.
+        let ctx = crate::theme::ui_context();
+        app.show_welcome = false;
+        app.show_guides = true;
+        frame_at(&ctx, &mut app, 0.1);
+        frame_at(&ctx, &mut app, 0.2);
+    }
+
+    #[test]
+    fn the_cells_are_as_far_apart_as_the_spacing() {
+        let ps = pages(6);
+        for gap in [0.0, 5.0, 12.5, 50.0] {
+            let placed = layout(&ps, PageId(1), gap);
+            assert_eq!(placed[0].1, Rect::new(0.0, 0.0, 100.0, 50.0));
+            assert_eq!(placed[1].1, Rect::new(100.0 + gap, 0.0, 200.0 + gap, 50.0));
+            assert_eq!(
+                placed[3].1,
+                Rect::new(300.0 + 3.0 * gap, 0.0, 400.0 + 3.0 * gap, 50.0)
+            );
+            assert_eq!(placed[4].1, Rect::new(0.0, -50.0 - gap, 100.0, -gap));
+            assert_eq!(
+                bounds(&placed),
+                Some(Rect::new(0.0, -50.0 - gap, 400.0 + 3.0 * gap, 50.0))
+            );
+        }
+        // A negative or broken spacing counts as none.
+        assert_eq!(layout(&ps, PageId(1), -10.0), layout(&ps, PageId(1), 0.0));
+        assert_eq!(
+            layout(&ps, PageId(1), f64::NAN),
+            layout(&ps, PageId(1), 0.0)
+        );
+    }
+
+    /// The drawing's spacing drives the grid, hit testing and Zoom to
+    /// Fit; changing it is one undo step and keeps the current page in
+    /// place.
+    #[test]
+    fn the_drawing_s_page_spacing_moves_the_pages_apart() {
+        let mut app = App::headless();
+        app.add_page();
+        let first = app.doc().pages[0].id;
+        let second = app.doc().pages[1].id;
+        app.page = first;
+        app.set_multipage(true);
+        let w = app.doc().pages[0].size.width;
+        assert_eq!(app.page_spacing(), GAP_MM);
+        assert_eq!(app.multipage_layout()[1].1.x0, w + 30.0);
+        let fit_before = app.fit_rect().width();
+        let undo_before = app.engine.undo_label();
+        assert!(app.set_page_spacing(5.0));
+        assert!(!app.set_page_spacing(5.0), "no change, no undo step");
+        assert_eq!(app.doc().metadata.page_spacing, Some(5.0));
+        let placed = app.multipage_layout();
+        assert_eq!(placed[0].1.x0, 0.0, "the current page stays put");
+        assert_eq!(placed[1].1.x0, w + 5.0);
+        assert!((app.fit_rect().width() - (fit_before - 25.0)).abs() < 1e-9);
+        // A point in the old gap is on the second page now.
+        let p = Point::new(w + 10.0, 1.0);
+        assert_eq!(page_at(&placed, p), Some(second));
+        let s = app.view.to_screen(p);
+        assert!(app.multipage_press(s));
+        assert_eq!(app.page, second);
+        app.multipage_activate(first);
+        // One undo step back to the default.
+        assert_ne!(app.engine.undo_label(), undo_before);
+        app.undo();
+        assert_eq!(app.page_spacing(), 30.0);
+        assert_eq!(app.multipage_layout()[1].1.x0, w + 30.0);
+        // Out of range values are kept in range.
+        assert!(app.set_page_spacing(-3.0));
+        assert_eq!(app.page_spacing(), 0.0);
+        assert!(!app.set_page_spacing(f64::INFINITY));
     }
 
     #[test]
@@ -425,5 +670,76 @@ mod tests {
         app.set_multipage(false);
         assert!(!app.multipage_press(on_first));
         assert_eq!(app.fit_rect(), app.page_rect());
+    }
+
+    /// Each open drawing keeps its own pictures of its other pages: the
+    /// pages of a drawing never show another drawing's pages, not even
+    /// for a moment after switching, though page ids repeat between
+    /// drawings (#1663).
+    #[test]
+    fn each_drawing_keeps_its_own_other_page_pictures() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let fill = |app: &mut App, w: f64| {
+            for _ in 0..2 {
+                app.add_page();
+                app.new_shape(tracedraw_core::ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, w, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                });
+            }
+            app.page = app.doc().pages[0].id;
+        };
+        fill(&mut app, 60.0);
+        let a_pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
+        app.set_multipage(true);
+        let mut t = 0.0;
+        let mut rest = |app: &mut App| {
+            for _ in 0..400 {
+                t += 0.02;
+                frame_at(&ctx, app, t);
+                if renders(app) >= 2 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        rest(&mut app);
+        let a_renders = renders(&app);
+        assert!(a_renders >= 2, "the first drawing's other pages rendered");
+
+        app.open_document(
+            tracedraw_core::Document::new("Second", Size::new(123.0, 45.0)),
+            None,
+        );
+        fill(&mut app, 90.0);
+        let b_pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
+        // The ids the cache was keyed by repeat in the new drawing.
+        assert!(b_pages.iter().any(|id| a_pages.contains(id)));
+        // Nothing of the first drawing's pages is there to show.
+        assert!(app.page_rasters.borrow().is_empty());
+        assert!(app.page_snapshot.borrow().is_none());
+        rest(&mut app);
+        assert!(
+            renders(&app) >= 2,
+            "the second drawing's other pages rendered"
+        );
+
+        // Back to the first drawing: its own pictures, none of the
+        // second's, and no render needed to show them.
+        app.switch_document(0);
+        assert_eq!(renders(&app), a_renders);
+        let a_width = app.doc().pages[0].size.width;
+        assert_ne!(a_width, 123.0);
+        assert!(app
+            .page_snapshot
+            .borrow()
+            .as_ref()
+            .is_none_or(|(_, d)| d.pages[0].size.width == a_width));
+        // And to the second again: its own pictures came along.
+        app.switch_document(1);
+        assert!(renders(&app) >= 2);
     }
 }

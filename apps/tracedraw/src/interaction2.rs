@@ -130,15 +130,28 @@ impl App {
                     self.delete_virtual_segment_at(p);
                 }
                 if response.drag_started_by(PointerButton::Primary) {
-                    self.drag = Drag::Box {
-                        start: p,
-                        current: p,
-                        from_center: false,
+                    // Freehand from the bar, or the other way round with
+                    // Alt held at the press (#1150).
+                    self.drag = if self.segment_freehand != mods.alt {
+                        Drag::Freehand { points: vec![p] }
+                    } else {
+                        Drag::Box {
+                            start: p,
+                            current: p,
+                            from_center: false,
+                        }
                     };
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::Box { current, .. } = &mut self.drag {
-                        *current = p;
+                    let step = 1.0 / self.view.zoom.max(1e-6) as f64;
+                    match &mut self.drag {
+                        Drag::Box { current, .. } => *current = p,
+                        Drag::Freehand { points }
+                            if points.last().is_none_or(|l| (*l - p).hypot() > step) =>
+                        {
+                            points.push(p);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -225,6 +238,11 @@ impl App {
 
     fn free_transform_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         use crate::app::FreeTransformMode as M;
+        // A drag that ended without its release reaching here (Esc, a
+        // tool change) closes its undo group.
+        if !matches!(self.drag, Drag::Rotate { .. }) {
+            self.end_free_transform_group();
+        }
         if response.drag_started_by(PointerButton::Primary) {
             if let Some(id) = self.hit_test(p) {
                 if !self.selection.contains(&id) {
@@ -232,6 +250,9 @@ impl App {
                 }
             }
             if !self.selection.is_empty() {
+                // The whole drag is one undo step (#1342).
+                self.end_free_transform_group();
+                self.free_transform_group = Some(self.engine.begin_group());
                 if self.free_transform_duplicate {
                     // Transform a copy, leave the original where it is.
                     let offset = self.duplicate_offset;
@@ -269,14 +290,36 @@ impl App {
                 let t = free_transform_step(mode, center, last, p, first);
                 if t != Affine::IDENTITY {
                     self.transform_selection(t);
+                    // The steps so far become one at once: the drag keeps
+                    // one copy of the drawing from before it, not one a
+                    // pointer move.
+                    if let Some(mark) = self.free_transform_group {
+                        self.engine.join_group(mark, "Free Transform");
+                    }
                 }
             }
+        }
+        if response.drag_stopped_by(PointerButton::Primary)
+            && matches!(self.drag, Drag::Rotate { .. })
+        {
+            // Every step was applied as the pointer moved; the release
+            // has nothing more to do than close the undo group.
+            self.drag = Drag::None;
+            self.end_free_transform_group();
         }
         if response.clicked_by(PointerButton::Primary) {
             match self.hit_test(p) {
                 Some(id) => self.select(vec![id]),
                 None => self.select(Vec::new()),
             }
+        }
+    }
+
+    /// Close the undo group of a Free Transform drag, if one is open: its
+    /// steps become one "Free Transform" step.
+    pub fn end_free_transform_group(&mut self) {
+        if let Some(mark) = self.free_transform_group.take() {
+            self.engine.end_group(mark, "Free Transform");
         }
     }
 
@@ -351,10 +394,11 @@ impl App {
         }
     }
 
-    /// Area Fill: find the enclosed area under the click (all visible
-    /// outlines count as walls) and create a filled object from it. The
-    /// area can be anywhere, on the page or off it on the desktop, and a
-    /// drawing of any size (#499).
+    /// Area Fill: find the enclosed area under the click (the outlines
+    /// that show count as walls: a line hidden under an object's opaque
+    /// fill does not cut the area, #1281) and create a filled object from
+    /// it. The area can be anywhere, on the page or off it on the desktop,
+    /// and a drawing of any size (#499).
     pub fn area_fill_at(&mut self, p: Point) {
         let shapes: Vec<Shape> = self
             .doc()
@@ -364,32 +408,45 @@ impl App {
             .filter(|l| l.visible)
             .flat_map(|l| l.shapes.clone())
             .collect();
-        fn collect(s: &Shape, parent: Affine, out: &mut Vec<BezPath>) {
+        // Bottom to top: each outline and whether its fill hides what
+        // lies beneath it.
+        fn collect(s: &Shape, parent: Affine, out: &mut Vec<(BezPath, bool)>) {
             let t = parent * s.transform;
             if !s.effects.is_empty() {
-                // What the object draws: its warped outline and the
-                // objects its effects add.
+                // What the object draws, in drawing order: the objects its
+                // effects add below it, its warped outline, those above.
                 let mut on_page = s.clone();
                 on_page.transform_by(parent);
                 let ev = tracedraw_core::live::evaluate(&on_page);
-                for part in std::iter::once(ev.main).chain(ev.below).chain(ev.above) {
-                    out.push(part.page_path());
+                let see_through = s
+                    .effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Transparency { .. } | Effect::Lens(_)));
+                for part in ev.below {
+                    let covers = hides_below(&part);
+                    out.push((part.page_path(), covers));
+                }
+                let covers = !see_through && hides_below(&ev.main);
+                out.push((ev.main.page_path(), covers));
+                for part in ev.above {
+                    let covers = hides_below(&part);
+                    out.push((part.page_path(), covers));
                 }
                 return;
             }
             match &s.kind {
                 ShapeKind::Group { children } => children.iter().for_each(|c| collect(c, t, out)),
-                _ => out.push(t * s.local_path()),
+                _ => out.push((t * s.local_path(), hides_below(s))),
             }
         }
-        let mut paths = Vec::new();
+        let mut parts = Vec::new();
         for s in &shapes {
-            collect(s, Affine::IDENTITY, &mut paths);
+            collect(s, Affine::IDENTITY, &mut parts);
         }
         // The area the outlines close off around the click, its sides
         // their own curves (#734); a click in an open area or on an
         // outline makes nothing.
-        let path = match tracedraw_core::shaping::enclosed_area(&paths, p) {
+        let path = match tracedraw_core::shaping::enclosed_visible_area(&parts, p) {
             tracedraw_core::shaping::Enclosed::Area(path) => path,
             tracedraw_core::shaping::Enclosed::Open => {
                 self.status = tr("status.area_fill_open");
@@ -536,6 +593,11 @@ impl App {
             if let Some(id) = self.locked_at(p) {
                 // A locked object on top: its own menu, to unlock it.
                 self.context_locked = Some(id);
+            } else if self.selection_under(p) {
+                // A right click on a selected object keeps the selection,
+                // also when another object covers it there (one picked
+                // with Alt+click or a marquee): the menu is for what is
+                // selected, not for the object in front (#1684).
             } else if let Some(id) = self.hit_test(p) {
                 if !self.selection.contains(&id) {
                     self.select(vec![id]);
@@ -610,7 +672,7 @@ fn move_effect_node(effects: &mut [Effect], fill: &mut Fill, index: usize, d: Ve
     if let Fill::Mesh(m) = fill {
         if index >= 200 {
             if let Some(n) = m.nodes.get_mut(index - 200) {
-                n.pos += d;
+                n.translate(d);
             }
         }
     }
@@ -633,15 +695,24 @@ pub fn free_transform_step(
         |t: Affine| Affine::translate(center.to_vec2()) * t * Affine::translate(-center.to_vec2());
     match mode {
         M::Scale => {
-            // Scale about the press point by the ratio of distances.
-            let d0 = (last - center).hypot().max(1e-6);
-            let d1 = (p - center).hypot().max(1e-6);
+            // Scale about the press point by the ratio of distances. The
+            // first move away from the press point has no distance to
+            // scale from: it sets it.
+            let d0 = (last - center).hypot();
+            let d1 = (p - center).hypot();
+            if d0 < 1e-3 || d1 < 1e-3 {
+                return Affine::IDENTITY;
+            }
             about(Affine::scale(d1 / d0))
         }
         M::Skew => {
-            // Horizontal motion skews along x, vertical along y.
+            // Horizontal motion skews along x, vertical along y. One shear
+            // after the other, so the step keeps the area and never turns
+            // the object over: a single skew by both amounts mirrors it
+            // once their product passes 1, as a quick diagonal stroke did
+            // to text (#1342).
             let d = p - last;
-            about(Affine::skew(d.x / 50.0, d.y / 50.0))
+            about(Affine::skew(d.x / 50.0, 0.0) * Affine::skew(0.0, d.y / 50.0))
         }
         M::Reflection => {
             // Mirror across the line from the press point through the
@@ -661,6 +732,20 @@ pub fn free_transform_step(
             let a1 = (p - center).atan2();
             Affine::rotate_about(a1 - a0, center)
         }
+    }
+}
+
+/// The object's fill hides what lies beneath it: an opaque fill at full
+/// opacity, with no transparency mask (Area Fill, #1281).
+fn hides_below(s: &Shape) -> bool {
+    if s.opacity < 1.0 || s.opacity_mask.is_some() {
+        return false;
+    }
+    match &s.fill {
+        Fill::None => false,
+        Fill::Solid(_) | Fill::Pattern(_) | Fill::Texture(_) => true,
+        Fill::Fountain(f) => f.stops.iter().all(|st| st.opacity >= 1.0),
+        Fill::Mesh(m) => m.nodes.iter().all(|n| n.alpha >= 1.0),
     }
 }
 
@@ -721,5 +806,9 @@ mod free_transform_tests {
             true,
         );
         assert!(close(t * Point::new(15.0, 5.0), Point::new(5.0, 15.0)));
+        // The first move of a Free Scale starts at the press point: no
+        // distance to scale from, so nothing happens (#1342).
+        let t = free_transform_step(M::Scale, c, c, Point::new(6.0, 5.0), true);
+        assert_eq!(t, tracedraw_core::Affine::IDENTITY);
     }
 }

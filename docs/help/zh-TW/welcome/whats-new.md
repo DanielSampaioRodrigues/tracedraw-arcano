@@ -12,10 +12,13 @@ TraceDraw 的每個版本都會加入功能和修正。本頁說明如何得知�
   標題上方都會出現一個小圓點。關閉該命令後標記消失，下次啟動 TraceDraw 時該
   命令又會關閉。
 - 每個版本的完整變更清單在專案的
-  [變更記錄](https://github.com/igtoth/tracedraw/blob/main/CHANGELOG.md) 中。
+  [變更記錄](https://github.com/tracedraw/tracedraw/blob/main/CHANGELOG.md) 中。
 
 ## 最近版本的重點 {#highlights}
 
+- **物件縮圖。** [[docker.objects]] 面板在每個物件的名稱旁顯示其縮小的
+  圖形；在清單上按 Ctrl 捲動滾輪或拖曳底部的滑桿可調整大小。請參閱
+  [組織物件與圖層](../objects/objects-and-layers.md#objects-docker)。
 - **使用你的語言的說明。** 每個 **?** 按鈕和 <kbd>F1</kbd> 都會以 TraceDraw
   設定的語言開啟本說明中關於眼前對話方塊、面板或工具的頁面。
 - **文件屬性。** [[menu.file > menu.file.document_properties]] 保存繪圖的

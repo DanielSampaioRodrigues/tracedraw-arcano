@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
-$Upstream = 'https://github.com/igtoth/tracedraw.git'
+$Upstream = 'https://github.com/tracedraw/tracedraw.git'
 $ForkRs = Join-Path $Root 'apps\tracedraw\src\fork.rs'
 
 function Passo($t) { Write-Host ''; Write-Host "==> $t" -ForegroundColor Green }

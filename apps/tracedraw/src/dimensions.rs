@@ -213,21 +213,41 @@ pub struct Dimension {
     /// How the label was last drawn, to tell an edit made to it in place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drawn: Option<DrawnLabel>,
-    /// The measured points that sit on a node of an object: they follow
-    /// it when it is moved, resized or reshaped (#838).
+    /// The measured points that sit on a node or a segment of an object:
+    /// they follow it when it is moved, resized or reshaped (#838, #1178).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anchors: Vec<Anchor>,
 }
 
-/// A measured point held to a node of an object.
+/// A measured point held to a node of an object, or to a point along one
+/// of its segments (an edge, its midpoint or any point on it, #1178).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Anchor {
     /// Which point: 0 the first (`a`), 1 the second (`b`), 2 an angle's
     /// centre.
     pub point: u8,
     pub shape: ShapeId,
-    /// The node's place among the object's nodes ([`node_points`]).
+    /// The node's place among the object's nodes ([`node_points`]); not
+    /// read when `segment` is set.
     pub node: usize,
+    /// On a segment instead of a node: the segment's place among the
+    /// outline's segments ([`segment_point`]) and where along it the
+    /// point sits (0 at its start, 1 at its end). Kept as a share of the
+    /// segment, so a stretched edge keeps the point at the same share of
+    /// its length. Absent in files saved before 0.19.13 (a node anchor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment: Option<(usize, f64)>,
+}
+
+impl Anchor {
+    /// Where the anchor is on `s` now (page space); `None` when the node
+    /// or segment it names is gone.
+    pub fn place_on(&self, s: &Shape) -> Option<Point> {
+        match self.segment {
+            Some((i, t)) => segment_point(s, i, t),
+            None => node_points(s).get(self.node).copied(),
+        }
+    }
 }
 
 /// The nodes of `s` on the page, in order: what an anchor's `node` counts.
@@ -236,6 +256,16 @@ pub fn node_points(s: &Shape) -> Vec<Point> {
         .into_iter()
         .map(|n| n.pos)
         .collect()
+}
+
+/// The point at share `t` of segment `i` of `s` on the page (the
+/// segments of its page path in order, what an anchor's `segment`
+/// counts); `None` when it has no segment `i`.
+pub fn segment_point(s: &Shape, i: usize, t: f64) -> Option<Point> {
+    use tracedraw_core::geometry::ParamCurve;
+    let seg = s.page_path().segments().nth(i)?;
+    let p = seg.eval(t.clamp(0.0, 1.0));
+    finite(p).then_some(p)
 }
 
 /// A dimension's label as it was drawn: its text, the measured value as it
@@ -899,15 +929,19 @@ impl App {
     }
 
     /// The anchors of `d`'s points (page space) that sit on a node of an
-    /// object on the page: within 3 pixels of it.
+    /// object on the page, or else on one of its segments (an edge, its
+    /// midpoint or any point along it, #1178): within 3 pixels of it. A
+    /// node wins over a segment, so a corner stays a corner.
     fn anchors_for(&self, d: &Dimension) -> Vec<Anchor> {
+        use tracedraw_core::geometry::ParamCurveNearest;
         let tol = (3.0 / self.view.zoom as f64).max(1e-3);
         let mut out = Vec::new();
         for i in 0..3u8 {
             let Some(p) = d.point(i) else {
                 continue;
             };
-            let mut best: Option<(Anchor, f64)> = None;
+            let mut node_best: Option<(Anchor, f64)> = None;
+            let mut edge_best: Option<(Anchor, f64)> = None;
             for layer in self.page_layers() {
                 if !layer.visible {
                     continue;
@@ -916,44 +950,73 @@ impl App {
                     if is_dimension(s) || !s.visible {
                         continue;
                     }
-                    for (node, q) in node_points(s).into_iter().enumerate() {
-                        let dist = (q - p).hypot();
-                        if dist <= tol && best.is_none_or(|b| dist < b.1) {
+                    let path = s.page_path();
+                    if !path.bounding_box().inflate(tol, tol).contains(p) {
+                        continue;
+                    }
+                    for (node, q) in tracedraw_core::nodes::nodes(&path).into_iter().enumerate() {
+                        let dist = (q.pos - p).hypot();
+                        if dist <= tol && node_best.is_none_or(|b| dist < b.1) {
                             let a = Anchor {
                                 point: i,
                                 shape: s.id,
                                 node,
+                                segment: None,
                             };
-                            best = Some((a, dist));
+                            node_best = Some((a, dist));
+                        }
+                    }
+                    if node_best.is_some() {
+                        continue;
+                    }
+                    for (index, seg) in path.segments().enumerate() {
+                        let n = seg.nearest(p, 1e-6);
+                        let dist = n.distance_sq.sqrt();
+                        if dist <= tol && edge_best.is_none_or(|b| dist < b.1) {
+                            let a = Anchor {
+                                point: i,
+                                shape: s.id,
+                                node: 0,
+                                segment: Some((index, n.t)),
+                            };
+                            edge_best = Some((a, dist));
                         }
                     }
                 }
             }
-            out.extend(best.map(|b| b.0));
+            out.extend(node_best.or(edge_best).map(|b| b.0));
         }
         out
     }
 
     /// `d` (dimension group `g`'s) with its anchored points on their nodes
-    /// again, the dimension line or arc moved as far as they moved on
-    /// average; anchors whose object or node is gone let go. `None` when
+    /// or segments again, the dimension line or arc moved as far as they
+    /// moved on average; anchors whose object, node or segment is gone
+    /// let go. `None` when
     /// nothing changes. A dimension moved on its own (its group has a
-    /// transform the anchored points do not follow) lets go of them all:
-    /// it was pulled off the object on purpose.
+    /// transform the anchored points do not follow) stays held (#1492):
+    /// its anchored points go back on the object and only the rest (the
+    /// dimension line or arc, and a point held to nothing) keeps the
+    /// group's transform. Only Break Apart frees it.
     fn follow_anchors(&self, g: &Shape, d: &Dimension) -> Option<Dimension> {
         if d.anchors.is_empty() {
             return None;
         }
         let doc = self.doc();
         let parent = doc.parent_transform(g.id).unwrap_or(Affine::IDENTITY);
-        let to_local = (parent * g.transform).inverse();
+        let to_page = parent * g.transform;
+        if to_page.determinant().abs() <= 1e-12 {
+            // Flattened: no space to bring the held points back into.
+            return None;
+        }
+        let to_local = to_page.inverse();
         let mut next = d.clone();
         next.anchors.clear();
         let mut moved: Vec<Vec2> = Vec::new();
         for a in &d.anchors {
             let target = doc
                 .find_shape(a.shape)
-                .and_then(|s| node_points(s).get(a.node).copied())
+                .and_then(|s| a.place_on(s))
                 .map(|q| to_local * q);
             let (Some(target), Some(now)) = (target, d.point(a.point)) else {
                 continue;
@@ -964,16 +1027,15 @@ impl App {
                 next.set_point(a.point, target);
             }
         }
-        if g.transform != Affine::IDENTITY && !moved.is_empty() {
-            // Moved by itself, not with what it measures.
-            let mut loose = d.clone();
-            loose.anchors.clear();
-            return Some(loose);
-        }
         if moved.is_empty() && next.anchors.len() == d.anchors.len() {
             return None;
         }
-        if !moved.is_empty() {
+        // Moved by itself, not with what it measures: the held points are
+        // back on the object (in the group's own space, so the group's
+        // transform, baked in when it is drawn again, leaves them there),
+        // while the line or arc keeps the move.
+        let by_itself = g.transform != Affine::IDENTITY;
+        if !moved.is_empty() && !by_itself {
             let shift = moved.iter().fold(Vec2::ZERO, |s, v| s + *v) / moved.len() as f64;
             match &mut next.measure {
                 Measure::Linear { at, .. } | Measure::Angular { at, .. } => *at += shift,
@@ -1503,9 +1565,51 @@ mod tests {
         }
     }
 
+    /// A diameter dimension drawn across a circle: a click on the circle
+    /// in the empty part of the dimension's box picks the circle; only
+    /// the dimension's lines, arrowheads and label pick the dimension,
+    /// with "Treat all objects as filled" on or off (#1493).
+    #[test]
+    fn a_dimension_over_a_circle_is_picked_only_on_its_parts() {
+        let mut app = App::headless();
+        app.view.zoom = 4.0;
+        let circle = app
+            .new_shape_styled(
+                ShapeKind::Ellipse {
+                    rect: Rect::new(30.0, 30.0, 70.0, 70.0),
+                    arc: None,
+                },
+                |s| s.fill = Fill::Solid(Color::rgb8(200, 0, 0)),
+            )
+            .expect("circle");
+        // Across the middle, its line drawn inside the circle.
+        app.create_dimension(
+            Point::new(30.0, 50.0),
+            Point::new(70.0, 50.0),
+            Point::new(50.0, 40.0),
+        );
+        let dim = app.selection[0];
+        let g = app.doc().find_shape(dim).cloned().expect("dimension");
+        let label = app.doc().find_shape(label_id(&app, dim)).cloned();
+        let label_box = label.map(|l| app.visual_bounds(&l)).expect("label");
+        let p = Point::new(40.0, 47.0);
+        assert!(app.visual_bounds(&g).contains(p), "inside its box");
+        assert!(!label_box.contains(p), "away from the label");
+        assert_eq!(app.hit_test(p), Some(circle));
+        assert_eq!(app.pick_at(p), Some(circle));
+        // Its line, an extension line and its label pick it.
+        assert_eq!(app.hit_test(Point::new(40.0, 40.0)), Some(dim));
+        assert_eq!(app.hit_test(Point::new(30.0, 45.0)), Some(dim));
+        assert_eq!(app.hit_test(label_box.center()), Some(dim));
+        assert_eq!(app.hit_test(Point::new(31.0, 40.0)), Some(dim), "arrowhead");
+        app.settings.treat_all_filled = false;
+        assert_eq!(app.hit_test(p), Some(circle));
+        assert_eq!(app.hit_test(Point::new(40.0, 40.0)), Some(dim));
+    }
+
     /// A dimension drawn between two nodes of an object holds to them:
     /// resizing or moving the object takes the dimension along and its
-    /// value follows; a dimension moved by itself lets go; one whose
+    /// value follows; a dimension moved by itself stays held (#1492); one whose
     /// object is deleted lets go (#838).
     #[test]
     fn a_dimension_follows_the_object_it_measures() {
@@ -1557,15 +1661,249 @@ mod tests {
         assert!((a - Point::new(10.0, 60.0)).hypot() < 1e-6, "{a:?}");
         assert!((at.y - 50.0).abs() < 1e-6, "{at:?}");
         assert_eq!(d2.anchors.len(), 2);
-        // The dimension moved by itself lets go of the object.
+        // The dimension moved by itself stays held (#1492): its measured
+        // points stay on the corners, only its line moves.
         app.run(Command::TransformShapes {
             shapes: vec![dim],
             transform: Affine::translate((5.0, 5.0)),
         });
         app.bake_dimensions();
-        let d3 = Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
-        assert!(d3.anchors.is_empty());
+        let g = app.doc().find_shape(dim).expect("dim");
+        assert_eq!(g.transform, Affine::IDENTITY);
+        let d3 = Dimension::of(g).expect("data");
+        assert_eq!(d3.anchors, d2.anchors);
+        let Measure::Linear { a, b, at } = d3.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(10.0, 60.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(90.0, 60.0)).hypot() < 1e-6, "{b:?}");
+        assert!((at.y - 55.0).abs() < 1e-6, "{at:?}");
         assert!((d3.value() - 80.0).abs() < 1e-6);
+        // And it still follows the object.
+        app.run(Command::TransformShapes {
+            shapes: vec![rect],
+            transform: Affine::translate((0.0, 10.0)),
+        });
+        app.bake_dimensions();
+        let d4 = Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
+        let Measure::Linear { a, at, .. } = d4.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(10.0, 70.0)).hypot() < 1e-6, "{a:?}");
+        assert!((at.y - 65.0).abs() < 1e-6, "{at:?}");
+        assert_eq!(d4.anchors.len(), 2);
+        // Turned or scaled by itself it stays held too: the points stay
+        // on the corners, the line goes where the turn took it.
+        app.run(Command::TransformShapes {
+            shapes: vec![dim],
+            transform: Affine::rotate_about(std::f64::consts::PI, Point::new(50.0, 70.0)),
+        });
+        app.bake_dimensions();
+        let d5 = Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
+        let Measure::Linear { a, b, at } = d5.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(10.0, 70.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(90.0, 70.0)).hypot() < 1e-6, "{b:?}");
+        assert!((at.y - 75.0).abs() < 1e-6, "{at:?}");
+        assert_eq!(d5.anchors.len(), 2);
+        // Break Apart is what frees it: the pieces are no dimension.
+        app.select(vec![dim]);
+        app.break_apart();
+        assert!(app.doc().find_shape(dim).and_then(Dimension::of).is_none());
+    }
+
+    /// A diameter dimension on a circle, its points on the circle's
+    /// nodes, moved by itself: still held, the line moved along its
+    /// normal; an angular dimension's vertex and sides stay too (#1492).
+    #[test]
+    fn a_dimension_moved_by_itself_stays_on_its_object() {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        let circle = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(30.0, 30.0, 70.0, 70.0),
+                arc: None,
+            })
+            .expect("circle");
+        let nodes = node_points(app.doc().find_shape(circle).expect("circle"));
+        let (left, right) = (Point::new(30.0, 50.0), Point::new(70.0, 50.0));
+        assert!(
+            nodes.iter().any(|n| (*n - left).hypot() < 1e-6),
+            "{nodes:?}"
+        );
+        app.create_dimension(left, right, Point::new(50.0, 20.0));
+        let dim = app.selection[0];
+        app.run(Command::TransformShapes {
+            shapes: vec![dim],
+            transform: Affine::translate((15.0, -6.0)),
+        });
+        app.bake_dimensions();
+        let d = Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
+        assert_eq!(d.anchors.len(), 2, "{:?}", d.anchors);
+        let Measure::Linear { a, b, at } = d.measure else {
+            panic!("linear");
+        };
+        assert!(
+            (a - left).hypot() < 1e-6 && (b - right).hypot() < 1e-6,
+            "{a:?} {b:?}"
+        );
+        assert!((at.y - 14.0).abs() < 1e-6, "{at:?}");
+        // The circle moved: the dimension goes along.
+        app.run(Command::TransformShapes {
+            shapes: vec![circle],
+            transform: Affine::translate((-20.0, 0.0)),
+        });
+        app.bake_dimensions();
+        let d = Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
+        let Measure::Linear { a, .. } = d.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(10.0, 50.0)).hypot() < 1e-6, "{a:?}");
+        // Angular: the vertex on a corner of a rectangle, the sides on
+        // its two other corners; moved by itself only its arc moves.
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 100.0, 140.0, 130.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+        app.create_angular_dimension(
+            Point::new(100.0, 100.0),
+            Point::new(140.0, 100.0),
+            Point::new(100.0, 130.0),
+            Point::new(110.0, 110.0),
+        );
+        let ang = app.selection[0];
+        let before = Dimension::of(app.doc().find_shape(ang).expect("angle")).expect("data");
+        assert_eq!(before.anchors.len(), 3, "{:?}", before.anchors);
+        app.run(Command::TransformShapes {
+            shapes: vec![ang],
+            transform: Affine::translate((5.0, 5.0)),
+        });
+        app.bake_dimensions();
+        let after = Dimension::of(app.doc().find_shape(ang).expect("angle")).expect("data");
+        assert_eq!(after.anchors, before.anchors);
+        let Measure::Angular { center, a, b, at } = after.measure else {
+            panic!("angular");
+        };
+        assert!(
+            (center - Point::new(100.0, 100.0)).hypot() < 1e-6,
+            "{center:?}"
+        );
+        assert!((a - Point::new(140.0, 100.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(100.0, 130.0)).hypot() < 1e-6, "{b:?}");
+        assert!((at - Point::new(115.0, 115.0)).hypot() < 1e-6, "{at:?}");
+    }
+
+    /// A dimension drawn between two edges of a rectangle (not its
+    /// corners) holds to them: moving the rectangle takes the dimension
+    /// along, resizing it keeps each end at its share of the edge and
+    /// the value follows; the anchors survive the file (#1178).
+    #[test]
+    fn a_dimension_between_two_edges_follows_the_object() {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        let rect = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 50.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        // Left edge at 1/4 of its height, right edge at 3/4, 1 mm off the
+        // right edge as a click lands.
+        app.create_dimension(
+            Point::new(10.0, 15.0),
+            Point::new(51.0, 25.0),
+            Point::new(30.0, 40.0),
+        );
+        let dim = app.selection[0];
+        let read =
+            |app: &App| Dimension::of(app.doc().find_shape(dim).expect("dim")).expect("data");
+        let d0 = read(&app);
+        assert_eq!(d0.anchors.len(), 2, "{:?}", d0.anchors);
+        assert!(
+            d0.anchors.iter().all(|a| a.segment.is_some()),
+            "{:?}",
+            d0.anchors
+        );
+        // The step is followed up: the ends sit on the edges.
+        app.bake_dimensions();
+        let d0 = read(&app);
+        let Measure::Linear { a, b, at: at0 } = d0.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(10.0, 15.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(50.0, 25.0)).hypot() < 1e-6, "{b:?}");
+        // Moved: the dimension goes along, line and all.
+        app.run(Command::TransformShapes {
+            shapes: vec![rect],
+            transform: Affine::translate((20.0, 30.0)),
+        });
+        app.bake_dimensions();
+        let d1 = read(&app);
+        let Measure::Linear { a, b, at } = d1.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(30.0, 45.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(70.0, 55.0)).hypot() < 1e-6, "{b:?}");
+        assert!((at - at0 - Vec2::new(20.0, 30.0)).hypot() < 1e-6, "{at:?}");
+        assert_eq!(d1.anchors.len(), 2);
+        // Twice as wide and twice as tall, about its top left corner: each
+        // end keeps its share of its edge, the value follows.
+        app.run(Command::TransformShapes {
+            shapes: vec![rect],
+            transform: Affine::translate((30.0, 40.0))
+                * Affine::scale(2.0)
+                * Affine::translate((-30.0, -40.0)),
+        });
+        app.bake_dimensions();
+        let d2 = read(&app);
+        let Measure::Linear { a, b, .. } = d2.measure else {
+            panic!("linear");
+        };
+        assert!((a - Point::new(30.0, 50.0)).hypot() < 1e-6, "{a:?}");
+        assert!((b - Point::new(110.0, 70.0)).hypot() < 1e-6, "{b:?}");
+        assert!(
+            label_of(&app, dim).contains(&format!("{:.0}", d2.value())),
+            "{}",
+            label_of(&app, dim)
+        );
+        assert_eq!(d2.anchors.len(), 2);
+        // The rectangle given a new size as an object: still held.
+        app.run(Command::SetShapeKind {
+            shape: rect,
+            kind: ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 50.0),
+                radius: 0.0,
+                corners: None,
+            },
+        });
+        app.bake_dimensions();
+        let d3 = read(&app);
+        let Measure::Linear { a, b, .. } = d3.measure else {
+            panic!("linear");
+        };
+        assert!(
+            (a.x - 30.0).abs() < 1e-6 && (b.x - 70.0).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
+        // The anchors are kept in the file.
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-dimension-edges-{}.tdraw",
+            std::process::id()
+        ));
+        tracedraw_io::save_native(app.doc(), &path).expect("save");
+        let doc = tracedraw_io::load_native(&path).expect("load");
+        let _ = std::fs::remove_file(&path);
+        let saved = Dimension::of(doc.find_shape(dim).expect("dim")).expect("data");
+        assert_eq!(saved.anchors, d3.anchors);
+        // A dimension of an older file, its anchors on nodes only, reads.
+        let older: Anchor =
+            serde_json::from_str(r#"{"point":0,"shape":1,"node":2}"#).expect("older anchor");
+        assert_eq!(older.segment, None);
+        assert_eq!(older.node, 2);
     }
 
     /// The object deleted: the dimension stays where it is and lets go.
@@ -2343,6 +2681,56 @@ mod tests {
         app.start_text(Point::new(300.0, 300.0), None);
         let plain = time(&mut app);
         println!("keystroke: dimension label {label:.3} ms, plain text {plain:.3} ms");
+    }
+
+    /// What a drag step of a rectangle costs on a page of 400 objects
+    /// when 50 dimensions hold to it: on its edges (#1178) against on its
+    /// corners (#838) and against 50 loose dimensions:
+    /// `cargo test --release -- --ignored frame_times_dragging_an_object_with_dimensions --nocapture`.
+    #[test]
+    #[ignore]
+    fn frame_times_dragging_an_object_with_dimensions() {
+        let mut page = |place: fn(i: f64) -> (Point, Point)| {
+            let mut app = App::headless();
+            app.view.zoom = 1.0;
+            for i in 0..400 {
+                let x = (i % 20) as f64 * 10.0;
+                let y = (i / 20) as f64 * 10.0;
+                app.new_shape(ShapeKind::Rect {
+                    rect: Rect::new(x, y, x + 8.0, y + 8.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            }
+            let rect = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(300.0, 300.0, 400.0, 400.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            for i in 0..50 {
+                let (a, b) = place(i as f64);
+                app.create_dimension(a, b, Point::new(350.0, 420.0 + i as f64 * 2.0));
+            }
+            app.bake_dimensions();
+            let start = web_time::Instant::now();
+            for _ in 0..100 {
+                app.run(Command::TransformShapes {
+                    shapes: vec![rect],
+                    transform: Affine::translate((0.5, 0.25)),
+                });
+                app.bake_dimensions();
+            }
+            start.elapsed().as_secs_f64() * 1000.0 / 100.0
+        };
+        let edges = page(|i| (Point::new(300.0, 310.0 + i), Point::new(400.0, 320.0 + i)));
+        let nodes = page(|_| (Point::new(300.0, 300.0), Point::new(400.0, 300.0)));
+        let loose = page(|i| (Point::new(100.0, 310.0 + i), Point::new(200.0, 320.0 + i)));
+        println!(
+            "drag step with 50 dimensions: on edges {edges:.3} ms, on corners {nodes:.3} ms, loose {loose:.3} ms"
+        );
     }
 
     /// Joined, the extension lines run into the dimension line (or arc)

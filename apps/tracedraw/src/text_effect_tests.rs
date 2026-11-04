@@ -3,6 +3,7 @@
 
 use crate::app::App;
 use tracedraw_core::geometry::Shape as _;
+use tracedraw_core::geometry::Vec2;
 use tracedraw_core::{
     document::{spans_text, ShapeKind},
     geometry::{Point, Rect},
@@ -170,6 +171,53 @@ fn break_apart_splits_text_into_lines_words_then_letters() {
     assert_eq!(texts(&app).len(), 1);
 }
 
+/// Vertical text broken apart stays vertical, its pieces down its
+/// column and its lines (columns) to the left, as they were (#1303).
+#[test]
+fn break_apart_keeps_vertical_text_in_its_columns() {
+    let mut app = App::headless();
+    let pieces = |app: &App| -> Vec<(String, Point, bool)> {
+        app.selection
+            .iter()
+            .filter_map(|id| app.doc().find_shape(*id))
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text {
+                    spans,
+                    origin,
+                    para,
+                    ..
+                } => Some((spans_text(spans), *origin, para.vertical)),
+                _ => None,
+            })
+            .collect()
+    };
+    let id = text(&mut app, Point::new(100.0, 200.0), "one two\nthree");
+    app.select(vec![id]);
+    app.set_vertical_text(true);
+    app.break_apart();
+    let got = pieces(&app);
+    assert_eq!(
+        got.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(),
+        ["one two", "three"]
+    );
+    assert!(got.iter().all(|t| t.2), "the pieces stay vertical: {got:?}");
+    // The second line is the next column, to the left, starting as high.
+    assert!(got[1].1.x < got[0].1.x - 1.0, "{got:?}");
+    assert!((got[1].1.y - got[0].1.y).abs() < 1e-6, "{got:?}");
+    // One column: its words one under the other, not side by side.
+    let first = app.selection[0];
+    app.select(vec![first]);
+    app.break_apart();
+    let got = pieces(&app);
+    assert_eq!(
+        got.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(),
+        ["one", "two"]
+    );
+    assert!(got.iter().all(|t| t.2), "{got:?}");
+    assert!(got[1].1.y < got[0].1.y - 1.0, "{got:?}");
+    assert!((got[1].1.x - got[0].1.x).abs() < 1e-6, "{got:?}");
+}
+
 #[test]
 fn text_pieces_follow_lines_words_and_characters() {
     use crate::ops::text_pieces;
@@ -266,6 +314,14 @@ fn the_canvas_asks_for_the_input_method_while_text_is_typed() {
         .ime
         .expect("the input method is allowed");
     assert!(ime.cursor_rect.contains(egui::pos2(100.0, 100.0)));
+    // The area the system places its candidate window beside is the
+    // caret, not the whole canvas.
+    assert!(ime.rect.contains(egui::pos2(100.0, 100.0)));
+    assert!(
+        ime.rect.width() < 5.0 && ime.rect.height() < 25.0,
+        "{:?}",
+        ime.rect
+    );
 }
 
 /// Bounds of `ids` together, as they are drawn on the page.
@@ -696,7 +752,9 @@ fn the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it() {
     else {
         panic!("still a blend");
     };
-    assert!(accel_objects > 0.3, "{accel_objects}");
+    // (The middle step 30 % of the way: about 0.28 on the files' curve,
+    // #1192.)
+    assert!(accel_objects > 0.2, "{accel_objects}");
     assert_eq!(accel_colors, 0.0);
     assert_eq!((end_id, steps), (Some(b), 20));
     assert_eq!(app.selection, vec![a], "the blend stays selected");
@@ -732,9 +790,96 @@ fn the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it() {
     else {
         panic!("still a blend");
     };
-    assert!(accel_colors < -0.3, "{accel_colors}");
+    assert!(accel_colors < -0.2, "{accel_colors}");
     assert_eq!(o2, accel_objects, "the object slider stays");
     assert_eq!(app.engine.history_labels().0.len(), undo_before + 2);
+}
+
+/// The squares at the ends of a text blend's line, with the Blend tool
+/// in the window (#965, the reporter's second request): dragging the end
+/// square to empty space moves the end text, so the blend changes its
+/// direction, in one undo step; dropped on another text it makes that
+/// text the end; the start square dropped on a text moves the blend to
+/// it, the old start staying a plain text.
+#[test]
+fn the_blend_tool_s_end_squares_move_and_pick_the_end_objects() {
+    use crate::blend_tool::BlendHandle;
+    let ctx = crate::theme::ui_context();
+    let mut app = App::headless();
+    app.show_welcome = false;
+    let a = text(&mut app, Point::new(30.0, 150.0), "A");
+    let b = text(&mut app, Point::new(150.0, 150.0), "A");
+    let c = text(&mut app, Point::new(150.0, 60.0), "A");
+    let d = text(&mut app, Point::new(30.0, 60.0), "A");
+    app.selection = vec![a, b];
+    app.blend_selection(20, 0.0, 0.0, 0.0);
+    app.set_tool(crate::tools::Tool::Blend);
+    app.select(Vec::new());
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new());
+    }
+    app.zoom_to_page();
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new());
+    }
+    // A click on the text picks the blend and its controls.
+    let on_a = app.view.to_screen(center(&app, a));
+    click(&ctx, &mut app, on_a);
+    let ctl = app.blend_controls().expect("the blend's controls");
+    assert_eq!(ctl.shape, a);
+    let end_before = center(&app, b);
+    let grab = app.view.to_screen(ctl.end);
+    assert_eq!(app.blend_handle_at(ctl.end), Some(BlendHandle::End));
+    assert_eq!(app.blend_handle_at(ctl.start), Some(BlendHandle::Start));
+
+    // The end square dragged 40 mm to the right, onto empty page: the end
+    // text moves with it and the line follows.
+    let undo_before = app.engine.history_labels().0.len();
+    let to = app.view.to_screen(ctl.end + Vec2::new(40.0, 0.0));
+    drag(&ctx, &mut app, grab, to);
+    let moved = center(&app, b);
+    assert!((moved.x - end_before.x - 40.0).abs() < 1.0, "{moved:?}");
+    assert!((moved.y - end_before.y).abs() < 1.0, "{moved:?}");
+    let ctl = app.blend_controls().expect("controls");
+    assert!((ctl.end - moved).hypot() < 1e-6);
+    assert_eq!(app.engine.history_labels().0.len(), undo_before + 1);
+    assert!(matches!(blend_of(&app, a), Some(Effect::Blend { end_id: Some(id), .. }) if id == b));
+
+    // The end square dropped on the third text: that text becomes the
+    // end, the second text stays where it was.
+    let grab = app.view.to_screen(ctl.end);
+    let on_c = app.view.to_screen(center(&app, c));
+    drag(&ctx, &mut app, grab, on_c);
+    let Some(Effect::Blend { end_id, steps, .. }) = blend_of(&app, a) else {
+        panic!("still a blend");
+    };
+    assert_eq!((end_id, steps), (Some(c), 20));
+    assert!(
+        (center(&app, b) - moved).hypot() < 1e-6,
+        "the old end stays"
+    );
+    assert!((center(&app, c) - Point::new(150.0, 60.0)).hypot() > 0.0);
+    let ctl = app.blend_controls().expect("controls");
+    assert!((ctl.end - center(&app, c)).hypot() < 1e-6);
+    assert_eq!(app.selection, vec![a]);
+
+    // The start square dropped on the fourth text: the blend moves to it.
+    let grab = app.view.to_screen(ctl.start);
+    let on_d = app.view.to_screen(center(&app, d));
+    drag(&ctx, &mut app, grab, on_d);
+    assert!(blend_of(&app, a).is_none(), "the old start is plain text");
+    let Some(Effect::Blend { end_id, .. }) = blend_of(&app, d) else {
+        panic!("the blend is on the fourth text");
+    };
+    assert_eq!(end_id, Some(c));
+    assert_eq!(app.selection, vec![d]);
+    let ctl = app.blend_controls().expect("controls");
+    assert_eq!(ctl.shape, d);
+    assert!((ctl.start - center(&app, d)).hypot() < 1e-6);
+    // Undo takes the blend back to the first text.
+    app.undo();
+    assert!(blend_of(&app, a).is_some());
+    assert!(blend_of(&app, d).is_none());
 }
 
 /// Copy Envelope Properties from a shape with no envelope fits the text

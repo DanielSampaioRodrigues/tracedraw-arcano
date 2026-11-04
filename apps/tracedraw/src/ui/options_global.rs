@@ -292,7 +292,7 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
     hint(ui, "options.cdr_version_hint");
 }
 
-/// Options > Global > Bitmap Tracing: Quick Trace's preset and what every
+/// Options > Global > Bitmap Tracing: the automatic trace's preset and what every
 /// trace starts with.
 pub fn bitmap_tracing_page(app: &mut App, ui: &mut Ui) {
     let t = &mut app.settings.tracing;
@@ -346,6 +346,11 @@ pub fn warnings_page(app: &mut App, ui: &mut Ui) {
         .rich_tip(crate::ui::tips::pair(
             "options.warn_missing_fonts",
             "options.warn_missing_fonts_tip",
+        ));
+    ui.checkbox(&mut w.ask_missing_fonts, tr("options.ask_missing_fonts"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.ask_missing_fonts",
+            "options.ask_missing_fonts_tip",
         ));
     ui.checkbox(&mut w.shelf_remove, tr("options.warn_shelf_remove"))
         .rich_tip(crate::ui::tips::pair(

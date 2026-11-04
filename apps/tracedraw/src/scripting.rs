@@ -1045,7 +1045,11 @@ impl HostInner {
                     .page(self.page)
                     .map(|p| p.size)
                     .unwrap_or(tracedraw_core::document::paper::A4);
-                self.run(Command::AddPage { name: None, size })?;
+                self.run(Command::AddPage {
+                    name: None,
+                    size,
+                    layer: None,
+                })?;
                 json!({})
             }
             "layers" => {

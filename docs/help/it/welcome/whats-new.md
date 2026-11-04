@@ -14,11 +14,15 @@ come scoprire cosa è cambiato ed elenca i punti salienti delle ultime versioni.
   disattivate il comando, e il comando torna disattivato al prossimo avvio di
   TraceDraw.
 - L'elenco completo delle modifiche di ogni versione si trova nel
-  [registro delle modifiche](https://github.com/igtoth/tracedraw/blob/main/CHANGELOG.md)
+  [registro delle modifiche](https://github.com/tracedraw/tracedraw/blob/main/CHANGELOG.md)
   del progetto.
 
 ## Punti salienti delle ultime versioni {#highlights}
 
+- **Miniature degli oggetti.** Il pannello [[docker.objects]] mostra ogni
+  oggetto disegnato in piccolo accanto al nome; Ctrl+rotella sulla lista o il
+  cursore in basso imposta la dimensione. Vedere
+  [Organizzare oggetti e livelli](../objects/objects-and-layers.md#objects-docker).
 - **La Guida nella vostra lingua.** Ogni pulsante **?** e <kbd>F1</kbd> aprono
   la pagina di questa Guida sulla finestra di dialogo, il pannello o lo
   strumento che avete davanti, nella lingua impostata in TraceDraw.

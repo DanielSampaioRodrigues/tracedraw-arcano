@@ -5,3 +5,5 @@
 /site
 /dist
 /arcano/instalador
+# The Android build (scripts/android/build.sh).
+/dist-android/

@@ -31,18 +31,37 @@ parallel, or Small back when they have a vanishing point.
   at that face (back types) or against it (front types). Open subpaths
   show both sides.
 - Faces between corners (where the outline turns by more than 20
-  degrees) make one surface: its faces are filled and edged with a
-  hairline of their own colour, and the surface is outlined once with
-  the object's outline (at most 0.1 mm wide), so a curved side is
-  smooth, not a row of slats.
+  degrees) make one surface, drawn as one object: the outline of its
+  faces filled with their colour (a curved side, whose faces the light
+  shades differently, with a linear fountain across it through their
+  colours, at most a dozen stops) and outlined with the object's
+  outline (at most 0.1 mm wide), or with a hairline of its own colour
+  when the object has none. A square's body is its two sides, a
+  circle's its one curved side: each side breaks apart and takes a
+  colour or a fill as one part, not as a row of slats (#1281).
 - Surfaces are drawn farthest first: along the offset for parallel
   bodies, by distance from the vanishing point for the others (nearer
   is farther for Small back and Big front, the other way for Big back
   and Small front).
 - A back body draws its copy first (the far face, in the darkest
-  colour), then the surfaces, then the object; a front body draws the
-  object, the surfaces, then the copy looking like the object (its fill
-  and outline).
+  colour), then the surfaces, then the object: behind a filled object
+  the far face is hidden, through an object without a fill or with open
+  outlines it shows, and it is a part of its own when the body breaks
+  apart (#1281). A front body draws the object, the surfaces, then the
+  copy looking like the object (its fill and outline).
+- Outline only: an object without a fill whose body takes the object's
+  colour is drawn as a wire frame. Every side, the ones turned away
+  included, and the copy are outlines with no fill, so a box shows all
+  twelve edges and a cylinder its two ends and the two lines along its
+  side (#1281). A Solid or Shade body keeps its filled faces.
+- Area Fill takes the lines that show: an outline under an opaque fill
+  (the object behind a front body, the far face behind a back body) does
+  not cut the area, so a click in a side fills the whole side; through
+  an object without a fill every line counts. The curved side of a
+  circle with a Back type fills as one area too: the outlines cut by the
+  filled circle come back a hair off its outline, and the lines that
+  close such gaps cross it whichever way the ends round (#1281, see
+  `area-fill.md`).
 
 ## Colour and light
 
@@ -61,8 +80,14 @@ parallel, or Small back when they have a vanishing point.
   as the vanishing point. One undo step per drag.
 - The selected extrusion's handle is a square with a cross, joined to
   the object's middle by a dashed line: the vanishing point, or the
-  middle of a parallel body's copy. A drag that starts on it (within 6
-  pixels) moves it.
+  middle of a parallel body's copy. A drag that starts on it (within the
+  pick distance of Options > Nodes and Handles, 6 pixels at first)
+  moves it to the pointer. A drag that starts on the dashed line, away
+  from the handle, moves the handle by the pointer's way, so the line
+  keeps its length and angle from where it is (its other end stays on
+  the object's middle); Ctrl keeps that move horizontal or vertical,
+  and the pointer is the move cursor over the line. Each drag is one
+  undo step (`effect_line_tests::the_extrusion_line_moves_its_vanishing_point`).
 - A click selects the object under the pointer (or nothing). Groups and
   bitmaps are not extruded.
 
@@ -143,6 +168,8 @@ The panel shows these under the other controls; the bar has them in its
 - `extrude::tests::every_subpath_extrudes_and_holes_show_their_far_walls`
 - `extrude::tests::a_curved_side_is_one_outlined_surface`
 - `extrude::tests::odd_values_give_no_faces`
+- `extrude::tests::area_fill_reaches_the_side_of_a_back_cylinder`
+- `extrude_tool::tests::area_fill_takes_the_side_of_a_back_cylinder`
 - `extrude_tool::tests::a_drag_extrudes_toward_the_pointer`
 - `extrude_tool::tests::the_bar_edits_the_selected_extrusion`
 - `extrude_tool::tests::settings_read_older_effects_and_stay_in_range`

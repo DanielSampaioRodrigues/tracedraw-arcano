@@ -3,6 +3,7 @@
 use crate::app::{App, DockerDrag, DockerPlace, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::slider::Settled;
 use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
@@ -58,6 +59,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         let (tabs, front, shown) = app.docker_column(place);
         let tabs = tabs.to_vec();
+        let mut laid = Vec::with_capacity(tabs.len());
         for tab in tabs {
             let name = tr(tab.key());
             let active = shown && front == tab;
@@ -74,6 +76,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             let h = CLOSE_SLOT + 14.0 + icon_h + w;
             let (r, resp) =
                 ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click_and_drag());
+            laid.push((tab, r));
             let bg = if strip_at_left(place) {
                 egui::Rect::from_min_max(r.min, egui::pos2(r.max.x - 1.0, r.max.y))
             } else {
@@ -161,10 +164,29 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                     })
                 });
         }
-        // Add a docker.
+        // Where the tabs lie this frame, within the part of the column on
+        // screen: a tab dragged onto the column goes in between the two
+        // it is dropped between (#1051).
+        let shown_part = ui.clip_rect();
+        let strip = egui::Rect::from_x_y_ranges(
+            full.x_range(),
+            shown_part.top().max(full.top() + TITLE_H)..=shown_part.bottom().min(full.bottom()),
+        );
+        let nr = ui.ctx().cumulative_frame_nr();
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                strip_id(place),
+                StripLayout {
+                    frame: nr,
+                    strip,
+                    tabs: laid,
+                },
+            )
+        });
+        // The panel list: three dots.
         ui.add_space(8.0);
-        let (r, resp) =
-            ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::click());
+        let (r, _) = ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::hover());
+        let resp = ui.interact(r, more_button_id(place), egui::Sense::click());
         let c = r.center() + egui::vec2(0.5, 0.0);
         if resp.hovered() {
             ui.painter().rect_filled(
@@ -173,23 +195,30 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                 crate::theme::Tokens::icon_off(),
             );
         }
-        let s = egui::Stroke::new(1.5, crate::theme::Tokens::text_dim());
-        ui.painter()
-            .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
-        ui.painter()
-            .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
+        for dx in [-4.5, 0.0, 4.5] {
+            ui.painter().circle_filled(
+                c + egui::vec2(dx, 0.0),
+                1.4,
+                crate::theme::Tokens::text_dim(),
+            );
+        }
         let resp = resp.rich_tip(tr("docker.add_docker"));
-        // The panels in the groups of the Window menu, a box ticked at each
-        // one open anywhere: ticking opens it in front of this column,
-        // unticking closes it.
+        // The panels in the groups of the Window menu, each row a box
+        // ticked at a panel open anywhere, the panel's picture (the one
+        // its tab shows, or a blank where it has none), its name: ticking
+        // opens it in front of this column, unticking closes it.
         egui::Popup::menu(&resp)
-            .id(egui::Id::new(("docker_add_menu", place as u8)))
+            .id(more_menu_id(place))
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| {
                 crate::ui::menus::body(ui, |ui| {
                     let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
                         let open = app.docker_open(tab);
-                        if crate::ui::menus::check(ui, tab.key(), "", open) {
+                        let pic = tab_icon(tab);
+                        let pic = pic
+                            .as_ref()
+                            .map(|f| f as &dyn Fn(&egui::Painter, egui::Rect));
+                        if crate::ui::menus::check_pic(ui, tab.key(), open, pic) {
                             if open {
                                 app.close_docker(tab);
                             } else {
@@ -216,56 +245,208 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     });
 }
 
+/// The three-dot button at the end of the tab column at `place`.
+pub fn more_button_id(place: DockerPlace) -> egui::Id {
+    egui::Id::new(("docker_more", place as u8))
+}
+
+/// The panel list the three-dot button of the column at `place` opens.
+pub fn more_menu_id(place: DockerPlace) -> egui::Id {
+    egui::Id::new(("docker_add_menu", place as u8))
+}
+
+/// A column's tab strip as last drawn: the part of it on screen and its
+/// tabs' rectangles.
+#[derive(Clone)]
+struct StripLayout {
+    frame: u64,
+    strip: egui::Rect,
+    tabs: Vec<(DockerTab, egui::Rect)>,
+}
+
+fn strip_id(place: DockerPlace) -> egui::Id {
+    egui::Id::new(("docker_tab_strip", place as u8))
+}
+
+/// A docker dragged with the pointer at `p` over a column's tab strip
+/// (drawn this frame or the last): the column, the place among its
+/// other tabs it would take, and the line marking that place.
+fn strip_drop(
+    ctx: &egui::Context,
+    p: egui::Pos2,
+    dragged: DockerTab,
+) -> Option<(DockerPlace, usize, egui::Rect)> {
+    let nr = ctx.cumulative_frame_nr();
+    [
+        DockerPlace::Right,
+        DockerPlace::RightInner,
+        DockerPlace::Left,
+        DockerPlace::LeftInner,
+    ]
+    .into_iter()
+    .find_map(|place| {
+        let l = ctx.data(|d| d.get_temp::<StripLayout>(strip_id(place)))?;
+        if l.frame + 1 < nr || !l.strip.contains(p) {
+            return None;
+        }
+        let others: Vec<egui::Rect> = l
+            .tabs
+            .iter()
+            .filter(|(t, _)| *t != dragged)
+            .map(|(_, r)| *r)
+            .collect();
+        let index = others.iter().filter(|r| r.center().y < p.y).count();
+        let y = match (
+            index.checked_sub(1).and_then(|i| others.get(i)),
+            others.get(index),
+        ) {
+            (_, Some(next)) => next.top(),
+            (Some(last), None) => last.bottom(),
+            (None, None) => l.strip.top(),
+        };
+        // A tab slid out of view: the line stays at the strip's end.
+        let y = y.clamp(l.strip.top() + 1.5, l.strip.bottom() - 1.5);
+        let line = egui::Rect::from_x_y_ranges(l.strip.x_range(), (y - 1.5)..=(y + 1.5));
+        Some((place, index, line))
+    })
+}
+
 /// The places a docker can go, a dot at the one it has (a tab's menu and
-/// a docker's title menu).
+/// a docker's title menu). A side's second column is offered while the
+/// column at that side's edge holds another docker (a docker alone in
+/// it would only come back there).
 fn place_menu(app: &mut App, ui: &mut Ui, tab: DockerTab) {
     let current = app.docker_place(tab);
     for (key, place) in [
         ("bars.right", DockerPlace::Right),
+        ("docker.right_inner", DockerPlace::RightInner),
         ("bars.left", DockerPlace::Left),
+        ("docker.left_inner", DockerPlace::LeftInner),
         ("bars.floating", DockerPlace::Floating),
     ] {
-        if crate::ui::menus::radio(ui, key, "", current == Some(place)) && current != Some(place) {
+        let enabled = !place.is_inner() || can_take_inner(app, place, tab);
+        if crate::ui::menus::radio_if(ui, key, "", current == Some(place), enabled)
+            && current != Some(place)
+        {
             app.move_docker(tab, place, None);
         }
     }
 }
 
+/// `tab` can go into the second column at `inner`: the column is there
+/// already, or the column at that side's edge holds a docker other than
+/// `tab` for it to stand beside.
+fn can_take_inner(app: &App, inner: DockerPlace, tab: DockerTab) -> bool {
+    !app.docker_column(inner).0.is_empty()
+        || app.docker_column(inner.edge()).0.iter().any(|t| *t != tab)
+}
+
+/// The collapse button's two triangles in `r`: pointing right for a
+/// column at the window's right edge, left for one at the left edge.
+pub(crate) fn fold_arrows(r: egui::Rect, at_left: bool) -> [[egui::Pos2; 3]; 2] {
+    let dir = if at_left { -1.0 } else { 1.0 };
+    [-3.5f32, 3.0].map(|dx| {
+        let c = r.center() + egui::vec2(dx * dir, 0.0);
+        [
+            c + egui::vec2(-2.5 * dir, -4.5),
+            c + egui::vec2(2.5 * dir, 0.0),
+            c + egui::vec2(-2.5 * dir, 4.5),
+        ]
+    })
+}
+
 /// A column's tab strip lies at the window's left edge: the other
 /// column's (the default column's in a right-to-left language).
-fn strip_at_left(place: DockerPlace) -> bool {
-    (place == DockerPlace::Left) != crate::i18n::is_rtl()
+/// A side's second column has its strip at the same side as the column at
+/// that side's edge.
+pub(crate) fn strip_at_left(place: DockerPlace) -> bool {
+    (place.edge() == DockerPlace::Left) != crate::i18n::is_rtl()
+}
+
+/// Where the window drawing keeps, each frame, the docker columns on
+/// screen (their places and rects: the tab strip and the docker), for the
+/// drop targets of a dragged docker and of the palette.
+pub const DOCKER_COLUMNS: &str = "docker_column_rects";
+
+/// The docker columns the last layout put on screen (see
+/// [`DOCKER_COLUMNS`]).
+pub fn column_rects(ctx: &egui::Context) -> Vec<(DockerPlace, egui::Rect)> {
+    ctx.data(|d| d.get_temp::<Vec<(DockerPlace, egui::Rect)>>(egui::Id::new(DOCKER_COLUMNS)))
+        .unwrap_or_default()
 }
 
 /// Where a docker dropped with the pointer at `p` goes, in a window
-/// `screen` wide: within [`crate::ui::bars::EDGE_ZONE`] of a side the
-/// column there, elsewhere floating.
-pub fn drop_target(screen: egui::Rect, p: egui::Pos2) -> DockerPlace {
+/// `screen` wide with the docker columns `columns` on screen: over a
+/// column into it; within [`crate::ui::bars::EDGE_ZONE`] of a side the
+/// column there; within that distance of the drawing's side of a side's
+/// only column a second column there, beside it; elsewhere floating.
+pub fn drop_target(
+    screen: egui::Rect,
+    columns: &[(DockerPlace, egui::Rect)],
+    p: egui::Pos2,
+) -> DockerPlace {
     let zone = crate::ui::bars::EDGE_ZONE;
+    if let Some((place, _)) = columns.iter().find(|(_, r)| r.contains(p)) {
+        return *place;
+    }
     let (left, right) = if crate::i18n::is_rtl() {
         (DockerPlace::Right, DockerPlace::Left)
     } else {
         (DockerPlace::Left, DockerPlace::Right)
     };
     if p.x <= screen.left() + zone {
-        left
-    } else if p.x >= screen.right() - zone {
-        right
-    } else {
-        DockerPlace::Floating
+        return left;
     }
+    if p.x >= screen.right() - zone {
+        return right;
+    }
+    for (place, r) in columns {
+        if place.is_inner() || columns.iter().any(|(q, _)| *q == place.inner()) {
+            continue;
+        }
+        let gap = if strip_at_left(*place) {
+            p.x - r.right()
+        } else {
+            r.left() - p.x
+        };
+        if (0.0..=zone).contains(&gap) && p.y >= r.top() && p.y <= r.bottom() {
+            return place.inner();
+        }
+    }
+    DockerPlace::Floating
 }
 
-/// The band (or, floating, the window) a dragged docker would take.
+/// The band (or, floating, the window) a dragged docker would take: a
+/// column on screen, a new second column beside the side's column, or a
+/// column at the window's edge.
 fn drop_zone(
     screen: egui::Rect,
     menu_h: f32,
+    columns: &[(DockerPlace, egui::Rect)],
     place: DockerPlace,
     p: egui::Pos2,
     grab: egui::Vec2,
 ) -> egui::Rect {
     let top = screen.top() + menu_h;
     let w = STRIP_W + 340.0;
+    if let Some((_, r)) = columns.iter().find(|(q, _)| *q == place) {
+        return *r;
+    }
+    if place.is_inner() {
+        if let Some((_, r)) = columns.iter().find(|(q, _)| *q == place.edge()) {
+            return if strip_at_left(place) {
+                egui::Rect::from_min_max(
+                    egui::pos2(r.right(), r.top()),
+                    egui::pos2(r.right() + w, r.bottom()),
+                )
+            } else {
+                egui::Rect::from_min_max(
+                    egui::pos2(r.left() - w, r.top()),
+                    egui::pos2(r.left(), r.bottom()),
+                )
+            };
+        }
+    }
     match place {
         DockerPlace::Floating => {
             egui::Rect::from_min_size(p - grab, crate::app::FloatingDocker::DEFAULT_SIZE)
@@ -298,16 +479,32 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     };
     drag.last = Some(p);
     app.docker_drag = Some(drag);
-    let place = drop_target(screen, p);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
         egui::Id::new("docker_drag_overlay"),
     ));
     let fill = egui::Color32::from_rgba_unmultiplied(0x1E, 0x78, 0xD7, 46);
     let edge = egui::Stroke::new(1.5, egui::Color32::from_rgb(0x1E, 0x78, 0xD7));
-    let zone = drop_zone(screen, menu_h, place, p, drag.grab);
-    painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+    // Over a column's tabs: a line between the two tabs it would go
+    // between, and the release puts it there, so the tabs of a column
+    // can be put in any order (#1051).
+    if let Some((place, index, line)) = strip_drop(ctx, p, drag.tab) {
+        painter.rect_filled(line, 0.0, edge.color);
+        if !down {
+            app.docker_drag = None;
+            app.insert_docker(drag.tab, place, index);
+        }
+        return;
+    }
+    let columns = column_rects(ctx);
+    let mut place = drop_target(screen, &columns, p);
+    // A docker alone in its column, dropped beside it: it stays.
+    if place.is_inner() && !can_take_inner(app, place, drag.tab) {
+        place = place.edge();
+    }
+    let zone = drop_zone(screen, menu_h, &columns, place, p, drag.grab);
+    painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
     if !down {
         app.docker_drag = None;
         let at = (place == DockerPlace::Floating).then_some(zone.min);
@@ -558,7 +755,8 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
     if place == DockerPlace::Floating {
         return;
     }
-    // Collapse: two small triangles.
+    // Collapse: two small triangles pointing at the window edge the
+    // column folds toward (left for a column at the left).
     let fold = egui::Rect::from_center_size(
         egui::pos2(bar.right() - 36.0, bar.center().y),
         egui::vec2(20.0, 20.0),
@@ -571,14 +769,9 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
         )
         .rich_tip(tr("docker.collapse"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
-    for dx in [-3.5f32, 3.0] {
-        let c = fold.center() + egui::vec2(dx, 0.0);
+    for points in fold_arrows(fold, strip_at_left(place)) {
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
-            vec![
-                c + egui::vec2(-2.5, -4.5),
-                c + egui::vec2(2.5, 0.0),
-                c + egui::vec2(-2.5, 4.5),
-            ],
+            points.to_vec(),
             col,
             egui::Stroke::NONE,
         ));
@@ -852,7 +1045,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
             SectionIcon::Tool(crate::tools::Tool::Transparency),
         ),
     ]);
-    let corners = first.page_corners();
+    let corners = app.corners_as_seen(first);
     if corners.is_some() {
         sections.push((
             "corners",
@@ -1828,12 +2021,12 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         FountainKind::Linear | FountainKind::Conical | FountainKind::Square
     ) {
         changed |= ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut f.angle, -180.0..=180.0)
+            .add(
+                crate::ui::Slider::new(&mut f.angle, -180.0..=180.0)
                     .text(tr("docker.angle_lc"))
                     .suffix("°"),
-            ))
-            .drag_stopped();
+            )
+            .settled();
     }
     if !matches!(f.kind, FountainKind::Linear | FountainKind::Shaped) {
         ui.horizontal(|ui| {
@@ -1856,12 +2049,12 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     }
     let mut pad = f.edge_pad * 100.0;
     if ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut pad, 0.0..=49.0)
+        .add(
+            crate::ui::Slider::new(&mut pad, 0.0..=49.0)
                 .text(tr("docker.edge_pad"))
                 .suffix("%"),
-        ))
-        .drag_stopped()
+        )
+        .settled()
     {
         f.edge_pad = pad / 100.0;
         changed = true;
@@ -1935,12 +2128,12 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             changed |= color_row(ui, &tr("docker.front"), front);
             changed |= color_row(ui, &tr("docker.back"), back);
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=100.0)
+                .add(
+                    crate::ui::Slider::new(size_mm, 1.0..=100.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                ))
-                .drag_stopped();
+                )
+                .settled();
         }
         Pattern::Bitmap {
             width_px,
@@ -1953,12 +2146,12 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
             ));
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(size_mm, 1.0..=200.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                ))
-                .drag_stopped();
+                )
+                .settled();
         }
         Pattern::Vector { shapes, tile } => {
             ui.label(trf(
@@ -1967,19 +2160,19 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             ));
             let (mut w, mut h) = (tile.width, tile.height);
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut w, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(&mut w, 1.0..=200.0)
                         .text(tr("docker.tile_width"))
                         .logarithmic(true),
-                ))
-                .drag_stopped();
+                )
+                .settled();
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut h, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(&mut h, 1.0..=200.0)
                         .text(tr("docker.tile_height"))
                         .logarithmic(true),
-                ))
-                .drag_stopped();
+                )
+                .settled();
             if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
                 // Scale the tile content with its size so the drawing keeps its shape.
                 let sx = w / tile.width.max(1e-6);
@@ -2014,12 +2207,12 @@ pub(crate) fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed |= color_row(ui, &tr("docker.colour_a"), &mut t.color_a);
     changed |= color_row(ui, &tr("docker.colour_b"), &mut t.color_b);
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut t.scale, 1.0..=200.0)
+        .add(
+            crate::ui::Slider::new(&mut t.scale, 1.0..=200.0)
                 .text(tr("docker.scale_mm"))
                 .logarithmic(true),
-        ))
-        .drag_stopped();
+        )
+        .settled();
     ui.horizontal(|ui| {
         ui.label(tr("docker.seed"));
         changed |= ui
@@ -2194,13 +2387,13 @@ fn outline_editor_mixed(
                 let width_tip =
                     crate::ui::tips::pair("toolbar.outline_width", "docker.outline_width_desc");
                 let r = ui
-                    .add(crate::ui::Rail(
-                        egui::Slider::new(&mut s.width, 0.1..=25.0)
+                    .add(
+                        crate::ui::Slider::new(&mut s.width, 0.1..=25.0)
                             .logarithmic(true)
                             .show_value(false),
-                    ))
+                    )
                     .rich_tip(width_tip.clone());
-                let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
+                let mut w = r.settled();
                 // The width in the outline unit; the model keeps mm.
                 let u = lib.units;
                 let mut v = u.from_mm(s.width);
@@ -2472,9 +2665,7 @@ fn outline_editor_mixed(
                         tr(key)
                     };
                     if ui
-                        .add(crate::ui::Rail(
-                            egui::Slider::new(v, range).text(text).suffix(suffix),
-                        ))
+                        .add(crate::ui::Slider::new(v, range).text(text).suffix(suffix))
                         .rich_tip(if field == StrokeField::Stretch {
                             crate::ui::tips::pair(
                                 "docker.nib_stretch_tip",
@@ -2483,7 +2674,7 @@ fn outline_editor_mixed(
                         } else {
                             crate::ui::tips::pair("docker.nib_angle", "docker.nib_angle_desc")
                         })
-                        .drag_stopped()
+                        .settled()
                     {
                         touched.push(field);
                         changed = true;
@@ -2506,7 +2697,11 @@ pub fn kind_id(k: &ShapeKind) -> &'static str {
         ShapeKind::Polygon {
             complex: Some(_), ..
         } => "ComplexStar",
-        ShapeKind::Polygon { sharpness, .. } if *sharpness > 0.0 => "Star",
+        ShapeKind::Polygon { sharpness, .. }
+            if tracedraw_core::geometry::is_star_sharpness(*sharpness) =>
+        {
+            "Star"
+        }
         ShapeKind::Polygon { .. } => "Polygon",
         ShapeKind::Path { .. } => "Curve",
         ShapeKind::Text { .. } => "Text",
@@ -2531,7 +2726,7 @@ pub fn kind_name(k: &ShapeKind) -> String {
             let n = points.to_string();
             if complex.is_some() {
                 trf("kind.complex_star_n", &[("n", &n)])
-            } else if *sharpness > 0.0 {
+            } else if tracedraw_core::geometry::is_star_sharpness(*sharpness) {
                 trf("kind.star_n", &[("n", &n)])
             } else {
                 trf("kind.polygon_n", &[("n", &n)])
@@ -2637,10 +2832,83 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn draw(ctx: &egui::Context, app: &mut App) {
+    /// A docker dropped over a column joins it; just inside a side's only
+    /// column (on the drawing's side) it makes a second column there;
+    /// over the second column it joins that; near a window side with no
+    /// column, the column there; elsewhere it floats.
+    #[test]
+    fn a_docker_dropped_beside_a_column_makes_a_second_column() {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0));
+        let edge = egui::Rect::from_min_max(egui::pos2(1233.0, 100.0), egui::pos2(1600.0, 960.0));
+        let one = [(DockerPlace::Right, edge)];
+        let at = |cols: &[(DockerPlace, egui::Rect)], x: f32, y: f32| {
+            drop_target(screen, cols, egui::pos2(x, y))
+        };
+        assert_eq!(at(&one, 1400.0, 500.0), DockerPlace::Right);
+        assert_eq!(at(&one, 1200.0, 500.0), DockerPlace::RightInner);
+        assert_eq!(at(&one, 1233.0 - 56.0, 500.0), DockerPlace::RightInner);
+        assert_eq!(at(&one, 1100.0, 500.0), DockerPlace::Floating);
+        assert_eq!(at(&one, 20.0, 500.0), DockerPlace::Left);
+        // The band: a column's width on the drawing's side of the column.
+        let band = drop_zone(
+            screen,
+            24.0,
+            &one,
+            DockerPlace::RightInner,
+            egui::pos2(1200.0, 500.0),
+            egui::Vec2::ZERO,
+        );
+        assert_eq!(band.right(), edge.left());
+        assert_eq!(band.width(), STRIP_W + 340.0);
+        assert_eq!(band.y_range(), edge.y_range());
+        // With a second column: over it joins it, and no third is made.
+        let inner = egui::Rect::from_min_max(egui::pos2(866.0, 100.0), egui::pos2(1233.0, 960.0));
+        let two = [(DockerPlace::Right, edge), (DockerPlace::RightInner, inner)];
+        assert_eq!(at(&two, 1000.0, 500.0), DockerPlace::RightInner);
+        assert_eq!(at(&two, 1400.0, 500.0), DockerPlace::Right);
+        assert_eq!(at(&two, 840.0, 500.0), DockerPlace::Floating);
+        let band = drop_zone(
+            screen,
+            24.0,
+            &two,
+            DockerPlace::RightInner,
+            egui::pos2(1000.0, 500.0),
+            egui::Vec2::ZERO,
+        );
+        assert_eq!(band, inner);
+        // The left side, mirrored.
+        let left = egui::Rect::from_min_max(egui::pos2(0.0, 100.0), egui::pos2(367.0, 960.0));
+        let cols = [(DockerPlace::Right, edge), (DockerPlace::Left, left)];
+        assert_eq!(at(&cols, 380.0, 500.0), DockerPlace::LeftInner);
+        // A docker alone in its column has nothing to stand beside.
+        let mut app = App::headless();
+        assert!(can_take_inner(
+            &app,
+            DockerPlace::RightInner,
+            DockerTab::Hints
+        ));
+        assert!(!can_take_inner(
+            &app,
+            DockerPlace::LeftInner,
+            DockerTab::Hints
+        ));
+        app.move_docker(DockerTab::Hints, DockerPlace::Left, None);
+        assert!(!can_take_inner(
+            &app,
+            DockerPlace::LeftInner,
+            DockerTab::Hints
+        ));
+        assert!(can_take_inner(
+            &app,
+            DockerPlace::LeftInner,
+            DockerTab::Objects
+        ));
+    }
+
+    pub(crate) fn draw(ctx: &egui::Context, app: &mut App) {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -2650,6 +2918,80 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// The texture editor applies its Scale slider however the value
+    /// changes: a value typed in the slider's box and an arrow key with
+    /// the groove focused count, not only the end of a drag (they snapped
+    /// back before).
+    #[test]
+    fn the_fill_editor_sliders_apply_typed_and_stepped_values() {
+        let ctx = crate::theme::ui_context();
+        let mut t = Texture {
+            kind: Default::default(),
+            color_a: tracedraw_core::Color::BLACK,
+            color_b: tracedraw_core::Color::WHITE,
+            scale: 10.0,
+            seed: 1,
+        };
+        let run = |t: &mut Texture, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(320.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut changed = false;
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| changed = texture_editor(ui, t));
+            });
+            out.textures_delta.clear();
+            changed
+        };
+        let key = |key: egui::Key, pressed: bool| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let press = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(&mut t, Vec::new());
+        run(&mut t, Vec::new());
+        let rail = crate::ui::slider::rail_rect(&ctx, &tr("docker.scale_mm")).expect("drawn");
+        // Type 25 in the box.
+        let in_box = egui::pos2(rail.right() + 26.0, rail.center().y);
+        run(&mut t, vec![egui::Event::PointerMoved(in_box)]);
+        run(&mut t, vec![press(in_box, true)]);
+        run(&mut t, vec![press(in_box, false)]);
+        run(&mut t, Vec::new());
+        run(&mut t, vec![egui::Event::Text("25".into())]);
+        let applied = run(
+            &mut t,
+            vec![key(egui::Key::Enter, true), key(egui::Key::Enter, false)],
+        );
+        assert!(applied, "a typed value applies");
+        assert!((t.scale - 25.0).abs() < 1e-9, "{}", t.scale);
+        // Focus the groove (as Tab does) and step it with an arrow key.
+        let groove = crate::ui::slider::rail_id(&ctx, &tr("docker.scale_mm")).expect("drawn");
+        ctx.memory_mut(|m| m.request_focus(groove));
+        run(&mut t, Vec::new());
+        let applied = run(
+            &mut t,
+            vec![
+                key(egui::Key::ArrowRight, true),
+                key(egui::Key::ArrowRight, false),
+            ],
+        );
+        assert!(applied, "an arrow key step applies");
+        assert!(t.scale > 25.0, "{}", t.scale);
     }
 
     /// The pointer over a docker tab shows a close cross at its top; a
@@ -2780,6 +3122,142 @@ mod tests {
         assert_eq!(app.docker_tab, last, "{:?}", app.open_dockers);
     }
 
+    /// A tab dragged along its column and dropped between two other
+    /// tabs goes there; the column keeps the tab it had in front (#1051).
+    #[test]
+    fn a_docker_tab_dragged_along_its_column_changes_the_order() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+        };
+        let press = |at: egui::Pos2, pressed: bool| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let rect_of = |t: DockerTab| {
+            let l = ctx
+                .data(|d| d.get_temp::<StripLayout>(strip_id(DockerPlace::Right)))
+                .expect("the right column's tabs are laid out");
+            l.tabs.iter().find(|(x, _)| *x == t).expect("tab drawn").1
+        };
+        // A tab pressed at its middle, dragged to `to` and let go there.
+        let drag = |app: &mut App, tab: DockerTab, to: egui::Pos2| {
+            let from = rect_of(tab).center();
+            run(
+                app,
+                vec![egui::Event::PointerMoved(from), press(from, true)],
+            );
+            for k in 1..=4 {
+                let p = from + (to - from) * (k as f32 / 4.0);
+                run(app, vec![egui::Event::PointerMoved(p)]);
+            }
+            assert!(app.docker_drag.is_some(), "the tab is being dragged");
+            run(app, vec![press(to, false)]);
+            assert!(app.docker_drag.is_none());
+            run(app, Vec::new());
+        };
+        run(&mut app, Vec::new());
+        run(&mut app, Vec::new());
+        let before = app.open_dockers.clone();
+        assert!(before.len() >= 3, "{before:?}");
+        let (front, shown) = (app.docker_tab, app.show_dockers);
+        // The last tab dragged onto the top half of the first one: it
+        // goes first.
+        let last = *before.last().unwrap();
+        let first = rect_of(before[0]);
+        drag(
+            &mut app,
+            last,
+            egui::pos2(first.center().x, first.top() + CLOSE_SLOT + 4.0),
+        );
+        let mut want = before.clone();
+        want.pop();
+        want.insert(0, last);
+        assert_eq!(app.open_dockers, want);
+        assert_eq!((app.docker_tab, app.show_dockers), (front, shown));
+        // And dragged onto the bottom of the last tab it goes last again.
+        let end = rect_of(*want.last().unwrap());
+        drag(
+            &mut app,
+            last,
+            egui::pos2(end.center().x, end.bottom() - 4.0),
+        );
+        assert_eq!(app.open_dockers, before);
+        assert_eq!((app.docker_tab, app.show_dockers), (front, shown));
+    }
+
+    /// The collapse button of a docker column points at the window edge
+    /// the column folds toward: right for the right column, left for a
+    /// column docked at the left (it pointed right on both sides). Read
+    /// from the shapes the window paints.
+    #[test]
+    fn the_collapse_arrows_point_to_the_side_of_their_column() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.move_docker(DockerTab::Objects, DockerPlace::Left, None);
+        app.set_docker_column(DockerPlace::Left, true, Some(DockerTab::Objects));
+        app.set_docker_column(DockerPlace::Right, true, Some(DockerTab::Hints));
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+            out.textures_delta.clear();
+            shapes = out.shapes;
+        }
+        assert_eq!(
+            app.docker_place(DockerTab::Objects),
+            Some(DockerPlace::Left)
+        );
+        // Which way the triangles drawn in a button's rectangle point:
+        // the tip is the corner off the line of the other two.
+        let pointing = |place: DockerPlace| -> Vec<f32> {
+            let r = ctx
+                .read_response(egui::Id::new(("docker_fold", place as u8)))
+                .map(|r| r.rect)
+                .expect("the collapse button");
+            let mut dirs = Vec::new();
+            for clipped in &shapes {
+                if let egui::Shape::Path(p) = &clipped.shape {
+                    if p.points.len() == 3 && p.points.iter().all(|q| r.contains(*q)) {
+                        let [a, b, c] = [p.points[0], p.points[1], p.points[2]];
+                        let base = (a.x + c.x) / 2.0;
+                        dirs.push((b.x - base).signum());
+                    }
+                }
+            }
+            dirs
+        };
+        assert_eq!(pointing(DockerPlace::Right), vec![1.0, 1.0]);
+        assert_eq!(pointing(DockerPlace::Left), vec![-1.0, -1.0]);
+        // In pictures: the left column's button is mirrored.
+        let r = egui::Rect::from_center_size(egui::pos2(50.0, 50.0), egui::vec2(20.0, 20.0));
+        let right = fold_arrows(r, false);
+        let left = fold_arrows(r, true);
+        for (a, b) in right.iter().flatten().zip(left.iter().flatten()) {
+            assert!((a.x - 50.0 + (b.x - 50.0)).abs() < 1e-4 && a.y == b.y);
+        }
+    }
+
     /// A docker dragged by its tab (or its title) and dropped near the
     /// left edge goes to the column there, and the window draws with both
     /// columns and a floating docker.
@@ -2884,7 +3362,7 @@ mod tests {
         assert_eq!(app.open_dockers, [DockerTab::Properties]);
         // Dropped at the right edge: back in the default column, in front.
         assert_eq!(
-            drop_target(ctx.content_rect(), egui::pos2(1390.0, 400.0)),
+            drop_target(ctx.content_rect(), &[], egui::pos2(1390.0, 400.0)),
             DockerPlace::Right
         );
         app.move_docker(DockerTab::Objects, DockerPlace::Right, None);
@@ -3013,7 +3491,7 @@ mod tests {
     }
 
     /// Every text the frame painted.
-    fn painted_texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
+    pub(crate) fn painted_texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
         fn walk(s: &egui::Shape, out: &mut Vec<String>) {
             match s {
                 egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
@@ -3382,8 +3860,11 @@ mod tests {
             draw(&ctx2, &mut app2);
         }
         let texts = painted_texts(&ctx2, &mut app2);
+        // The slider's label, with the colon the slider adds.
         assert!(
-            texts.iter().any(|t| *t == tr("docker.nib_angle_lc")),
+            texts
+                .iter()
+                .any(|t| t.trim_end_matches(':') == tr("docker.nib_angle_lc")),
             "{texts:?}"
         );
     }
@@ -3500,6 +3981,19 @@ mod tests {
                         let (need, w) = overflow(&ctx, &mut app);
                         assert!(need <= 0.5, "{lang}, fill {k}, transparency {kind}: {need}");
                         assert!((w - empty).abs() < 1.0, "{lang}, fill {k}: {w}");
+                    }
+                    // Every type of the type buttons, vector and bitmap
+                    // patterns too (#1439).
+                    for ty in crate::ui::transparency_docker::TransparencyType::ALL {
+                        let Some(mask) = ty.default_mask() else {
+                            continue;
+                        };
+                        app.transparency_default.mask = mask;
+                        let t = app.transparency_default.clone();
+                        app.patch_transparency(&t, &[crate::mixed::TransparencyField::Mask]);
+                        let (need, w) = overflow(&ctx, &mut app);
+                        assert!(need <= 0.5, "{lang}, fill {k}, {ty:?}: {need}");
+                        assert!((w - empty).abs() < 1.0, "{lang}, fill {k}, {ty:?}: {w}");
                     }
                 }
             });

@@ -12,11 +12,13 @@ Customization > Commands lists them and takes shortcuts of your own
 | Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S | New, Open, Save, Save As |
 | Ctrl+I, Ctrl+E, Ctrl+P | Import, Export, Print |
 | Ctrl+F4, Alt+F4 | Close window, Exit |
+| Command+Q (macOS) | Quit TraceDraw from the application menu: asks about unsaved drawings as Exit does |
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+R | Undo, Redo, Repeat |
 | Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+Shift+V | Cut, Copy, Paste, Paste in view |
-| Ctrl+D, Ctrl+Shift+D | Duplicate, Step and Repeat panel |
+| Ctrl+D, Ctrl+Shift+D | Duplicate, Repeat Copies panel |
 | + (Pick tool, with a selection) | Duplicate in place |
 | Ctrl+Space | the Pick tool, from any tool |
+| Space | the Pick tool (not while a text or table cell is edited, where it types a space, nor during a drag, where it drops a copy); on the Pick tool, back to the tool used before it (`App::previous_tool`); Shift+Space and other combinations leave the tool alone |
 | Ctrl+0 to Ctrl+9, 0 to 9, Alt+0 to Alt+9 | store, select (twice: zoom to) and add to selection groups |
 | Ctrl+A, Delete or Backspace | Select all, Delete |
 | Ctrl+F, Ctrl+J, Ctrl+W | Find and Replace panel, Options, Refresh window |
@@ -28,13 +30,21 @@ Edit > Repeat (Ctrl+R) does again, on the selection of the time, the
 last repeatable action still in effect: a move, scale, rotation or
 skew, a fill, an outline, a transparency, or a copy made with a right
 click during a drag (which makes another copy, transformed as far again
-from the new selection). Each action is kept with the undo step it made
+from the new selection). A move, scale, rotation or skew is kept with
+the box of what it was done to and repeated about the same place of the
+box of the selection of the time: a rotation about the old box's centre
+(or a centre of rotation moved inside it) turns about the new box's
+centre, a resize from a side or corner handle resizes from the same
+side or corner, and a move moves as far; the object it is repeated on
+no longer moves away (#1289, `app::repeated_transform`). Each action is kept with the undo step it made
 (`Engine::last_step_id`, `App::repeatables`): an action undone is never
 repeated, the one before it is (#366); redone, it is the last again; and
 an undone step replaced by another change is gone for good. A copy made
 by a right click during a drag, or by its Repeat, is one undo step, the
-copies and their move together (`Engine::squash_since`; it was two, the
-first Undo only moving the copy back onto the original, #471). Checks:
+copies and their move together (`Engine::begin_group` and
+`end_group`, which also keep the undo memory limit from splitting
+them; it was two, the first Undo only moving the copy back onto the
+original, #471). Checks:
 `pick_drag_tests::repeat_after_an_undo_takes_the_last_action_still_in_effect`,
 `pick_drag_tests::repeat_after_a_right_click_copy_makes_another_copy` (#363),
 `engine::tests::steps_have_ids_that_follow_undo_and_redo`.
@@ -43,7 +53,7 @@ first Undo only moving the copy back onto the original, #471). Checks:
 
 | Keys | Action |
 | --- | --- |
-| F2, Shift+F2, F3, F4, Shift+F4 | Zoom tool, zoom to selection, zoom out, zoom to fit, zoom to page |
+| F2, Shift+F2, F3, F4, Shift+F4 | Zoom tool, zoom to selection, zoom out, zoom to fit, zoom to page (also while a text is being edited, #1699) |
 | Ctrl++ (or Ctrl+=), Ctrl+- | Zoom in and out one step |
 | Alt+Shift+R | Rulers on and off |
 | Alt+Q, Alt+Shift+A, Alt+Shift+D | Snapping off, alignment guides, dynamic guides |
@@ -61,7 +71,8 @@ first Undo only moving the copy back onto the original, #471). Checks:
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |
 | Ctrl+PgUp, Ctrl+PgDn | Forward one, back one |
-| Alt+Enter, Ctrl+Shift+A | Properties, Align and Distribute panels |
+| Alt+Enter | Properties panel |
+| Ctrl+Shift+A | Paste Style From: a dialog with Outline pen, Outline color, Fill and Text properties (all ticked at first, kept), then a click on the object to copy them from to the other selected objects, one undo step; a right click or Esc cancels the wait (#1345, `pick_drag_tests::ctrl_shift_a_copies_the_ticked_properties_from_the_object_clicked`) |
 | Alt+F7, Alt+F8, Alt+F9, Alt+F10 | Transformations panel on Position, Rotate, Scale and Mirror, Size |
 | Ctrl+M | Merge table cells |
 | Alt+Shift+F8, Alt+F11 | Run Macro, Macro Editor (Tools > Macros) |
@@ -77,6 +88,15 @@ first Undo only moving the copy back onto the original, #471). Checks:
 
 Panel shortcuts toggle: pressing one when its panel is already the
 active tab hides the panel column.
+
+Each key has one command. Ctrl+F12 opens the Fonts panel and Ctrl+F8
+the Blend panel, so Text > Proofing > Spell Check and Text > Convert
+have no built-in key (their menu rows showed Ctrl+F12 and Ctrl+F8,
+which opened those panels instead, #1779); Options > Customization >
+Commands gives them one. Check:
+`ui::options::tests::no_two_default_commands_share_a_shortcut` (menu
+commands, tools and panels; a menu row that opens a panel shows that
+panel's key and counts as the panel).
 
 ## Align keys and tool keys
 
@@ -99,6 +119,15 @@ Media; the Bezier, Pen, Crop and Knife tools have no key.
   dockers, tabs and the drawing; only the dialog (and the lists it
   opens) can be used until it closes
   (`ui::dialogs::tests::an_open_dialog_takes_the_clicks_outside_it`).
+- Tab and Shift+Tab move between the dialog's controls and stay in
+  it: Tab with nothing focused (a dialog just opened) or from its last
+  control goes to its first input box (its first control when it has
+  none), Shift+Tab from its first control to its last input box. egui
+  moves the focus in drawing order, so the menu bar, drawn first, took
+  it and the File menu opened on the next keys (#1258,
+  `chrome::keep_tab_in`, run for every dialog window, active only in
+  the three frames after a Tab;
+  `pick_drag_tests::tab_in_a_dialog_focuses_its_first_input_box`).
 - Esc with a menu or a drop-down list open closes it and changes
   nothing else (the selection stays).
 - Tools keep their own keys (see `pick-tool.md`, `shape-tool.md` and
@@ -126,8 +155,14 @@ name.
 - Your shortcuts are looked at before the built-in ones, so a key a
   built-in command uses runs your command instead; the page names the
   commands and tools that lost it. Another command of yours with the
-  same keys loses them. A command's built-in shortcut keeps working
-  beside yours until another command takes it.
+  same keys loses them, and a command or tool that had them built in
+  is left without a shortcut (kept as an empty one, as Delete leaves
+  it; Reset gives it back), so one key runs one command and no two
+  commands or tools share one (#1595,
+  `ui::options::tests::a_shortcut_given_to_a_command_is_taken_from_its_built_in_holder`).
+  A command's built-in shortcut keeps working beside yours until
+  another command takes it. A key of yours on a tool picks the tool as
+  its built-in key would (once a press, not W or K during a move).
 - The menus show your shortcut in place of the built-in one. Delete
   leaves the command without a shortcut, a built-in one too: it is
   kept as an empty shortcut, the menus show none and its keys do
@@ -142,8 +177,60 @@ name.
   letter you give a command or tool runs it instead of opening the
   menu with that access letter, and while the page waits for keys no
   menu opens.
+- Rows a menu shows only at times are listed all the same and take keys
+  (Object > Clip to Frame > Finish Editing Contents beside Edit Contents,
+  Text > Vertical Text), #1148.
+- The bars' own buttons (listed under Toolbar Buttons) that run a menu
+  command show that command's keys on their Shortcut Keys tab and set
+  them: New, Open, Save, Print, Cut, Copy, Paste, Undo, Redo, Import,
+  Export, Export as PDF, Full-screen Preview, Rulers, Grid,
+  Guidelines, Snap Off, Zoom In, Zoom Out and Zoom to Fit
+  (`bar_items::menu_command`, #1148). The buttons the menus lack (the
+  zoom levels list, Snap To, the other zoom buttons, Options, Launch)
+  have no Shortcut Keys tab.
+
+## In the browser
+
+Some of these keys stay with the browser in the browser version, which
+gives no page Ctrl+N, Ctrl+T, Ctrl+W, Ctrl+Shift+T, Ctrl+F4 or Alt+F4,
+and in some browsers or systems keeps Ctrl+PgUp, Ctrl+PgDn and Ctrl+1 to
+Ctrl+9 (tab switching) or Ctrl+Q and Ctrl+Shift+Q (quitting, on Linux).
+The page keeps from the browser every one of these it is allowed to, so
+they work where the browser lets them (`web.md`, Keyboard). Each command
+also has a key of the browser version, which the menus, context menus,
+toolbar tips and hints show there instead of the key the browser keeps
+(the desktop apps show and run their own keys only; both keys work in
+the browser):
+
+| Command | Desktop key | In the browser |
+|---|---|---|
+| File > New | Ctrl+N | Alt+Shift+N |
+| Text panel | Ctrl+T | Alt+Shift+X |
+| Edit Text | Ctrl+Shift+T | Alt+Shift+T |
+| Window > Refresh Window | Ctrl+W | Ctrl+F5 |
+| Window > Close Window | Ctrl+F4 | Alt+Shift+W |
+| Order > Forward One, Back One | Ctrl+PgUp, Ctrl+PgDn | Alt+PgUp, Alt+PgDn |
+| Convert to Curves | Ctrl+Q | Alt+Shift+C |
+| Convert Outline to Object | Ctrl+Shift+Q | Alt+Shift+Q |
+| Store selection group 0 to 9 | Ctrl+0 to Ctrl+9 | Alt+Shift+0 to Alt+Shift+9 (the digit keys whatever Shift types on them) |
+| File > Exit | Alt+F4 | none: close the tab |
+
+Each of these keys is bound to nothing else
+(`ui::menus::tests::browser_alternatives_are_free`). Options >
+Customization > Commands says which keys the browser keeps and lists
+their replacements. While typing text, the alignment keys the browser
+keeps (Ctrl+N) have their buttons on the property bar. Checks:
+`shortcuts::tests::browser_kept_keys_map_to_alternatives`,
+`ui::menus::tests::browser_kept_shortcuts_have_alternatives_in_the_menus`,
+`web_page::tests::the_editors_tab_keys_and_their_alternatives_are_kept_from_the_browser`.
 
 ## Checks
+
+- `ui::options::tests::bar_buttons_and_rows_shown_at_times_take_shortcuts`
+- `ui::options::tests::no_two_default_commands_share_a_shortcut`: no two
+  menu commands or tools have the same built-in keys, the documented
+  split of E (Align Centers Horizontally with a selection, Roughen
+  without) aside.
 
 - Given a dialog open, when Esc is pressed, then the dialog is closed
   and the tool and selection are unchanged.

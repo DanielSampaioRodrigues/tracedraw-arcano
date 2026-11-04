@@ -31,9 +31,14 @@ button with the alignment's picture dropping Left, Center, Right and
 Full justify), Bullets and Drop Cap (for paragraph text; they open their
 dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
 (Ctrl+Shift+T). Each change applies to the
-selected text objects at once (every span takes the font, size and
-style) as one "Text Style" undo step, and becomes the default for the
-next text. The size is the size as seen: a text scaled with the Pick
+selected text objects at once as one "Text Style" undo step, and
+becomes the default for the next text. Only what was changed goes to
+them: the fields show the first selected text, and a field left as it
+showed leaves each text's own value, so a new font for texts of 9 and
+11 pt keeps both sizes, their weights and slants (#1304,
+`text_editing::tests::a_font_for_several_texts_keeps_each_ones_size`);
+a font or a size picked from its list goes to all of them even when it
+is the one shown. The size is the size as seen: a text scaled with the Pick
 tool shows its font size times its vertical scale (24 pt doubled reads
 48 pt), and a size typed for it is the size it then shows (the
 characters keep it before the text's scale); a field left as it was
@@ -100,36 +105,85 @@ Text and Glyphs dockers and Options (default font):
   being edited or selected: with nothing to change it does nothing
   rather than ask for the font of new text (#665,
   `ui::font_list::live_tests::the_wheel_over_the_font_list_steps_the_font`).
+- Down and Up in the field while the list is closed (after a click in
+  the field, with the Pick tool or any other) do the same: the family
+  after or before the one in use, applied to the text at once, the field
+  keeping the keyboard for the next press, so the keys step through the
+  fonts and never nudge the selected text; Enter or a click on the
+  drawing leaves the field. With no text to change they open the list
+  instead (#1754,
+  `pick_drag_tests::arrows_in_the_font_field_step_the_selected_texts_font`,
+  `ui::font_list::live_tests::arrows_in_the_font_field_with_no_text_open_the_list`).
 - At the top of the list, the number of families shown and the Filter
-  button (#867). It shows or hides the filter's choices inside the list,
-  under its top row: what to show (all fonts, installed fonts, the fonts
-  in this drawing, or, in the browser, the fonts to download), boxes for
-  the kind of letters (Serif, Sans serif, Script, Decorative) and for
-  what a family has (Monospaced, Symbol, Variable, OpenType features).
-  They are part of the list, not a menu of their own (only one menu is
-  open at a time, so a menu opened from the list closed it): a click
-  there filters at once and leaves the list open
-  (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
-  The button counts the choices made ("Filter (2)"). A family shows
-  when it has one of the kinds ticked (if any) and every other box
-  ticked; Clear filter shows all fonts again. What a family is comes from its
-  faces' tables as the OpenType specification defines them: the OS/2
+  button (#867). It shows or hides the filter's choices beside the list,
+  in the same popup (only one menu is open at a time, so a menu opened
+  from the list closed it): a click there filters at once and leaves the
+  list open (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
+  The choices, Clear filter at the top, in sections that fold:
+  - Fonts shown: all fonts, installed fonts, the fonts in this drawing,
+    or, in the browser, the fonts to download.
+  - Style: Serif, Sans serif, Script, Decorative, Monospaced, Symbol.
+  - Weight: Light (below 350), Regular (350 to 599), Bold (600 and up),
+    from each face's OS/2 `usWeightClass`; a variable font counts for
+    every group its `wght` axis reaches.
+  - Width: Condensed (OS/2 `usWidthClass` 1 to 4), Normal (5), Expanded
+    (6 to 9); a variable font by its `wdth` axis (below, at and above
+    100 %).
+  - Technology: TrueType (`glyf`), OpenType with PostScript outlines
+    (`CFF `, `CFF2`), Variable (`fvar`), by the family's faces.
+  - Scripts: Latin, Greek, Cyrillic, Hebrew, Arabic, Devanagari, Bengali,
+    Thai, Korean, Japanese, Chinese and Symbols, from the OS/2 Unicode
+    range bits (as the Font Manager reads them; Latin for a font without
+    ranges that maps Latin letters, Symbols for a symbol character map).
+  - OpenType features: standard and discretionary ligatures, kerning,
+    small capitals, capitals to small capitals, old-style, lining,
+    proportional and tabular figures, fractions, superscripts,
+    subscripts, ordinals, slashed zero, swashes, stylistic and
+    contextual alternates, and stylistic sets (any of `ss01` to `ss20`),
+    from the feature lists of GSUB and GPOS (and a `kern` table).
+  - Embedding rights: Installable, Editable, Preview and print,
+    Restricted, Bitmap only, from OS/2 `fsType`; a family counts by its
+    most restrictive face.
+  - Folders: the folders the fonts are in, as the Font Manager has them:
+    each folder added to the libraries, and the operating system's font
+    folders, once each, whatever subfolder a file lies in (the folder's
+    name, its path as the tip; `FontSystem::folder_of`, the deepest
+    library or system folder a file lies under, else its own folder;
+    `font_folders::fonts_count_as_in_their_library_folder`). Until
+    0.27.0 every subfolder was listed on its own (#867). The system's
+    folders (`system_font_roots`) are the ones the font database reads
+    at startup: on Windows `Fonts` under `SYSTEMROOT` and the user's
+    local and roaming `Microsoft\Windows\Fonts`; on macOS
+    `/Library/Fonts`, `/System/Library/Fonts`, each
+    `com_apple_MobileAsset_Font*` folder of the fonts downloaded on
+    demand under `/System/Library/AssetsV2` (one subfolder per font
+    inside), `/Network/Library/Fonts` and `~/Library/Fonts`; on Linux
+    the folders fontconfig lists (`FONTCONFIG_FILE`, else the user's
+    `fontconfig/fonts.conf`, else `/etc/fonts/local.conf`, and
+    `/etc/fonts/fonts.conf`), else `/usr/share/fonts`,
+    `/usr/local/share/fonts`, `~/.fonts` and `~/.local/share/fonts`
+    (`font_folders::system_folders_are_the_ones_the_database_reads`).
+
+  In each section a family needs one of the choices ticked; of the
+  OpenType features it needs every one ticked; it needs what every
+  section with a choice asks. The button counts the choices made
+  ("Filter (2)"). The style comes from the faces' tables as the OpenType
+  specification defines them: the OS/2
   `sFamilyClass` class ID (1 to 5 and 7 serif, 8 sans serif, 9
   ornamental, 10 script, 12 symbolic), else the PANOSE family kind (2
   text, 3 handwritten, 4 decorative, 5 symbol) and, for text, the serif
   style digit (2 to 10 serif, 11 to 15 sans serif); monospaced from the
   `post` table's `isFixedPitch` or PANOSE (proportion 9, or spacing 3
-  for handwritten); variable from `fvar`; OpenType features when GSUB or
-  GPOS lists one of liga, dlig, hlig, smcp, c2sc, onum, lnum, pnum, tnum,
-  frac, swsh, salt, calt, ss01, ordn or zero; symbol from the symbol
-  character map or the class. A family whose tables say nothing is
-  judged by the words of its name ("Sans", "Serif", "Script", "Symbol";
-  "Mono", "Monospace", "Code" for monospaced). Families to download are
-  not read until fetched and show only with no box ticked. The used-last
-  rows hide while a box is ticked. Families are read once for the fonts
-  as they are now and at most 8 ms a frame, so the list opens as fast
-  with thousands of fonts and fills in over the next frames ("Reading
-  fonts..." until it is done); with no box ticked nothing is read
+  for handwritten); symbol from the symbol character map or the class.
+  A family whose tables say nothing is judged by the words of its name
+  ("Sans", "Serif", "Script", "Symbol"; "Mono", "Monospace", "Code" for
+  monospaced). Families to download are not read until fetched and show
+  only with nothing ticked. The used-last rows hide while a box is
+  ticked. Families are read once for the fonts as they are now (every
+  value in one pass over each face, kept in the list's cache until fonts
+  are added) and at most 8 ms a frame, so the list opens as fast with
+  thousands of fonts and fills in over the next frames ("Reading
+  fonts..." until it is done); with nothing ticked nothing is read
   (`tracedraw_text::traits`,
   `ui::font_list::tests::the_filter_keeps_the_families_with_what_it_asks`).
 - "Used last": the last five families picked in any font list, newest
@@ -205,7 +259,7 @@ concatenated spans; the layout's line boxes give its place on the page.
 | Typing, paste | inserts at the caret, replacing the selection, with the style of the character before the caret |
 | Backspace / Delete | the selection, else the character before / after the caret |
 | Enter / Shift+Enter | paragraph break / line break (U+2028) |
-| Tab | a tab character |
+| Tab | a tab character: the text after it starts at the next tab stop (every 12.7 mm unless the paragraph sets its own); the keyboard stays on the text, no field of the bars takes it (#1667, `pick_drag_tests::tab_in_paragraph_text_moves_the_text_to_the_next_stop`) |
 | Left / Right, Ctrl+Left / Right | one character, one word; Shift extends the selection |
 | Up / Down | the same x on the previous / next line (the x is remembered across moves) |
 | Home / End, Ctrl+Home / End | line start / end, text start / end |
@@ -213,12 +267,14 @@ concatenated spans; the layout's line boxes give its place on the page.
 | Mixed directions (an Arabic or Hebrew word in English text, or the other way round) | the Unicode bidirectional algorithm gives each character its level, the first strong letter setting the direction; it is worked out for each run of one formatting between tabs and line ends, so a direction change across differently formatted characters keeps them in text order. Each run of one level is shaped its own way; lines break in text order and each line shows its runs in display order: Arabic typed after "Asasa " reads right to left, joined, to the right of it, and a paragraph too narrow for "Hi مرحبا بك" keeps "Hi مرحبا" on the first line; digits inside right-to-left text read left to right (#628, `tracedraw_text::tests::mixed_text_is_cut_into_runs_of_one_direction`, `tracedraw_text::tests::lines_are_seen_in_bidi_order`, `tracedraw_text::tests::mixed_directions_lay_each_run_its_own_way`, `tracedraw_text::tests::mixed_paragraph_text_breaks_in_text_order`, `pick_drag_tests::right_to_left_typed_after_english_runs_right_to_left`) |
 | Right-to-left text (Arabic, Hebrew) | the caret before a letter is at its right end and the end of the text at its left; a selection shades the letters it holds, all of them after Ctrl+A, where it used to shade only the first letter (#629, `tracedraw_text::tests::right_to_left_carets_run_from_the_right`, `pick_drag_tests::select_all_in_right_to_left_text_highlights_all_of_it`); character backgrounds and a callout's box cover such text too, mixed directions included (`callouts::tests::text_boxes_and_backgrounds_cover_mixed_direction_text`) |
 | Ctrl+B / I / U | toggle bold, italic, underline on the selection, or on the whole text without one |
-| Ctrl+C / X / V | copy, cut, paste the selected characters |
+| Ctrl+C / X / V, Edit > Cut / Copy / Paste / Delete, the toolbar's buttons, the right-click menu | act on the characters of the text being edited, never on the object (#1377): Copy keeps the selected characters with their formatting (font, size, colours, outline, every character setting) for a paste into a text here and puts their plain text on the system clipboard for other programs (line breaks as the system's line end); Paste puts them back with their formatting while the clipboard still holds that text, also into another text (characters showing their text's own fill or outline get it as theirs where the texts differ), and pastes text copied elsewhere as it is, in the style at the caret. Objects copied with Edit > Copy (SVG on the system clipboard) paste their text with its formatting, never the SVG markup; Cut and Paste are one undo step each. Copied characters are the last copy (they replace objects copied before) and, pasted with the Pick tool, make an artistic text of them with their formatting and their text's fill and outline (`text_editing::tests::copied_characters_pasted_outside_a_text_keep_their_colours`). The right-click menu while editing has Undo, Cut, Copy, Paste, Delete, Select All and Properties. On the desktop the clipboard is read when Paste is chosen from a menu; in the browser a menu's Paste has only the characters copied here, Ctrl+V the clipboard's text; on Android the system clipboard is read first (#1378, `text_editing::tests::copied_characters_keep_their_colours_when_pasted`, `text_editing::tests::copied_objects_paste_their_text_not_their_markup`) |
 | Click / Shift+click / drag | place the caret / extend / select |
 | Double-click | select the word |
 | Esc | finish editing and return to the Pick tool; an empty text is removed |
 | Ctrl+Space | finish editing and switch to the Pick tool (Space alone types a space) |
+| F2, Shift+F2, F3, F4, Shift+F4 | zoom as with no text edited (Zoom tool for one zoom, to the selection, out, to fit, to the page) and the editing goes on: the caret and the selected characters stay, typing goes on into the text. After F2's one zoom the tool before comes back with the text still being edited. A key given another command or removed in Options > Customization > Commands is left alone (#1699, `pick_drag_tests::zoom_keys_work_while_editing_text`) |
 | Undo of typing | the typing of one editing session of one text is one step ("Edit Text"); a session folds keystrokes only into its own step, while it is the last one, so editing another text never touches it (#373, `text_editing::tests::editing_a_second_text_keeps_the_edit_of_the_first`) |
+| Undo of a new text | a text started with a click of the Text tool is made in one step with its first characters ("Create Object"): the font, size or colour picked for it before typing and the typing that follows while nothing else happens join that step, so one Undo takes the whole text back and never leaves an empty text object. A text started and left with no characters leaves no object and no undo step; a text emptied by deleting its characters goes in the step that emptied it, so Undo gives it back with its characters (#1481, `text_editing::tests::undoing_a_new_text_leaves_no_empty_text`, `text_editing::tests::a_style_given_before_typing_joins_the_new_text`, `text_editing::tests::a_new_text_left_empty_leaves_no_step`, `text_editing::tests::a_text_emptied_comes_back_with_its_characters`) |
 | Typing while a field has the keyboard (the font search field, a docker's box) | goes to the field only; the text waits until the field lets the keyboard go (#342, `pick_drag_tests::typing_in_a_focused_field_leaves_the_edited_text_alone`) |
 
 The caret is a black bar on a white edge, so it shows on the white page
@@ -276,14 +332,59 @@ system's CJK fonts), for each character
 (`text_effect_tests::an_input_method_composes_then_commits_cjk_text`,
 `text_effect_tests::the_canvas_asks_for_the_input_method_while_text_is_typed`).
 
+The candidate window opens beside the caret: the area given to the
+system is the caret's, not the whole canvas, whose corner it opened at.
+Input methods on Windows that post their characters (Tamil and other
+Indian scripts, #1151) and change a letter by deleting it with
+Backspace and sending its new form keep their order when the keys come
+faster than the frames: each run of kept characters goes before the
+editing key (Backspace, Delete, Enter, arrows, Home, End) that followed
+it, where it went after all of the frame's keys and a Backspace deleted
+the letter before (#1271,
+`system_chars::tests::kept_characters_keep_their_place_among_editing_keys`).
+On Android the on-screen keyboard types into an invisible view of the
+activity whose compositions and commits arrive as the same input
+method events (#1309, see `android.md`).
+
+**Older fonts with a script at the places of Latin letters** (Tamil
+fonts such as the one in #1358): the characters of code page 1252's
+places 0x80 to 0x9F, including the five the page leaves empty (0x81,
+0x8D, 0x8F, 0x90, 0x9D), type from Alt codes and keyboard programs, show
+in the Glyphs docker, and are drawn whichever of their two names the
+font maps (U+201A or U+0082, `tracedraw_text::tests::code_page_1252_places_go_by_either_name`).
+A letter the shaper's character map lacks while another map of the font
+has it (a symbol map beside a Unicode one) draws the font's glyph,
+never the empty notdef
+(`tracedraw_text::tests::letters_one_character_map_lacks_draw_from_the_other`),
+and Autocorrect leaves the letters typed in such fonts as typed (see
+`writing-tools.md`).
+
+**AltGr** (#1271): on Windows the right Alt key, which types the extra
+letters of many layouts (Polish ą ć ę ł ń ś ź ż, Czech, Croatian,
+Hungarian and Turkish letters, German @ € { } [ ] \ ~), reaches the
+program as Ctrl and Alt held together. While text is edited a key
+pressed with both is a character, never a Ctrl shortcut (AltGr+A
+selected all and the letter replaced the text, AltGr+E, L or N aligned
+it, AltGr+8 or 2 resized it), never the digit of an Alt code, and the
+copy, cut and paste the windowing layer makes of AltGr+C, X and V do
+nothing. The windowing layer drops the character of every key pressed
+with Ctrl; the message hook that keeps the characters input methods
+send (#1151) keeps those typed while Ctrl and Alt are held too, and the
+next frame types them, in artistic text, paragraph text and fields
+(`input_method_tests::letters_typed_with_altgr_type_into_text`,
+`system_chars::tests::characters_typed_with_altgr_are_kept`).
+
 **Break Apart** (Ctrl+K) on artistic text makes separate text objects of
 its lines when it has more than one line, else of its words, else of its
 letters (a text without spaces, like CJK text, breaks into its
 characters). Each piece keeps the text's look (font, size, styles, fill,
 outline, transformation) and sits where its letters were; the first
 piece keeps the object, the others go just above it, all selected, in one
-"Break Apart" undo step. A single letter, paragraph text and text on a
-path stay as they are
+"Break Apart" undo step. Vertical text stays vertical: its words and
+letters go down their column and its columns stay side by side, right
+to left, as they were (#1303,
+`text_effect_tests::break_apart_keeps_vertical_text_in_its_columns`).
+A single letter, paragraph text and text on a path stay as they are
 (`text_effect_tests::break_apart_splits_text_into_lines_words_then_letters`).
 Text with an envelope, perspective or distortion breaks instead into
 one curve per letter (an accent stays with its letter, underlines and
@@ -318,7 +419,21 @@ any other object; the steps and sides follow the letters' outlines
   property bar's size and scale fields, changes its frame and the text
   flows anew in it; the letters keep their size and the text's transform
   stays as it was (`text_frames.rs`). While the handle is dragged the
-  frame follows and the letters stay. This holds for text that is
+  frame follows and the drag outline shows the text flowed anew in it,
+  with the line breaks the release makes; the frame turns red when the
+  text no longer fits (a frame of a linked chain takes what fits of the
+  text after it, which flows on). Only the lines that show are broken
+  anew on each frame of the drag, at most once a frame: the text engine
+  keeps the shaped glyphs of the texts laid out last (up to 64 texts and
+  30 000 glyphs). A text whose layout takes longer than a quarter of a
+  60 Hz frame (`LIVE_REFLOW_BUDGET`, 4 ms) three times in a row, or a
+  text longer than 4000 bytes whose glyphs are not kept (a very long
+  one, which would take long to shape), shows its frame alone during the
+  drag, its old outline stretched with it, and flows on release, until
+  the drawing changes. The release is one
+  undo step, as before (#1327,
+  `pick_drag_tests::a_paragraph_frame_reflows_live_while_its_handle_is_dragged`,
+  benchmark `frame_times_of_a_paragraph_frame_resize`). This holds for text that is
   neither turned nor slanted and a scale by positive amounts; turning,
   slanting, mirroring and moving act on the whole text, and a turned
   text scales as a whole. With other objects in the selection each is
@@ -345,12 +460,19 @@ on its own line, which is why the lines are joined first.
 
 ## Linked frames
 
-- Text > Paragraph Text Frame > Link: with two paragraph frames
+- Text > Text Frame > Link: with two paragraph frames
   selected, the first flows into the second; the chain's text lives in
   its frames in order and overflow runs on into the next frame after
   typing, linking and resizing (`textflow.rs`, links kept in the object
   data as `text.next` and `text.prev`). Unlink leaves each frame with the
   text it shows.
+- Text > Convert keeps the letters in place both ways: the new frame
+  (paragraph text) is the text's own box plus 2 mm, and the new text is
+  moved so that its first letter sits where the old one's did, in the
+  text's own space; a text with a transform of its own (moved, scaled or
+  turned, as the texts of an opened `.cdr` file are) jumped away when
+  the frame was placed from its box on the page (#1238,
+  `converting_text_keeps_its_letters_in_place`).
 - The flow tab (#371): a paragraph frame that is picked, or whose text
   does not fit, has a tab under its bottom edge's middle, below the
   selection's bottom handle (a down arrow when the text does not fit,
@@ -366,7 +488,21 @@ on its own line, which is why the lines are joined first.
   space a new frame the size of the first one takes the text, its top
   left corner at the click; a drag makes the new frame the dragged
   rectangle. Esc or a right click cancels
-  (`the_flow_tab_links_to_a_new_frame_on_another_page`).
+  (`the_flow_tab_links_to_a_new_frame_on_another_page`). A drag that
+  starts on the tab does the same where it is let go (a release over a
+  frame links to it, over empty space makes the new frame there).
+- The top tab: a picked paragraph frame also has a tab over its top
+  edge's middle, above the selection's top handle (two links when
+  another frame flows into it, empty otherwise). A click (or a drag) on
+  the empty top tab of a frame no other frame flows into waits for the
+  next click, with its own hint on the status bar: on another paragraph
+  frame (one that flows on into no frame yet), that frame flows into
+  this one; on empty space (or a dragged rectangle) a new frame the size
+  of this one is made and flows into it, so the text starts in the new
+  frame.
+- While a link waits for its second click, a dashed blue line runs from
+  the middle of the tab it came from to the pointer
+  (`pick_drag_tests::text_frame_tabs_link_frames_by_drag_and_by_click`).
 - A copy of a frame (Duplicate, a right click during a move, Paste,
   stamping) is a frame of its own, in no chain: typing in it does not
   flow into the original's next frame. Frames of a chain copied together
@@ -400,12 +536,17 @@ on its own line, which is why the lines are joined first.
   own. `.tdraw` files write `paragraph` only on characters whose
   paragraph has its own formatting; files without it give every
   paragraph the object's formatting.
-- `.cdr`: artistic text is written with each paragraph's alignment
-  and, from version 16, its line spacing. Paragraph text goes out as one
-  artistic text a line, each placed where its paragraph's spacing and
-  indents put it, so the look is kept but the spacing values are not
-  (the frame records of paragraph text are not known well enough to
-  write; see `docs/cdr-format.md`). Reading, paragraphs whose alignment,
+- `.cdr`: text is written with each paragraph's alignment and, from
+  version 16, its line spacing. Paragraph text goes out as paragraph
+  text, its frame and the text flowing in it (and from version 16 its
+  columns), so it opens as paragraph text in the other program and in
+  TraceDraw (#1226). A frame the files cannot hold as TraceDraw draws
+  it (scaled or slanted by its transform, vertical text, fit to frame,
+  placed from the middle or bottom, linked frames, several columns
+  before version 16, any frame in version 8) goes out as one artistic
+  text a line, each placed where its paragraph's spacing and indents
+  put it, so the look is kept (see `docs/cdr-format.md`). Reading,
+  paragraphs whose alignment,
   line spacing, space before and after (version 16+ style strings) or
   indents differ from one another keep their own; text whose paragraphs
   agree keeps one object-level format as before.
@@ -464,7 +605,7 @@ the preferences, `text_sections_closed`).
   With no text selected the font, style, size, underline and alignment
   become those of new text; a font or size picked so first asks
   ("You have not selected anything. Use this setting as the default for
-  new text?", OK or Cancel), as the reference program does, since a pick
+  new text?", OK or Cancel), since a pick
   made by mistake changed the font of every new text without a word
   (`pick_drag_tests::a_size_picked_with_nothing_selected_asks_before_changing_the_default`).
   The Enter that applies a typed size does not answer the question.
@@ -477,6 +618,9 @@ Window > Panels > Glyphs. From the top:
 - Recent glyphs: the glyphs inserted last, newest first (up to 24, kept
   in the preferences as font and glyph); empty, it says "Shows the most
   recently used glyphs". A click inserts one again in its own font. The
+  box is two rows of glyphs tall, empty or full (it scrolls past two
+  rows), so the font list, the ranges and the grid show under it at once
+  (#1320). The
   box takes the theme's field colour (white in the light themes, dark in
   the dark ones), so the glyphs, drawn in the theme's text colour, stay
   readable (#660).
@@ -518,7 +662,12 @@ Window > Panels > Glyphs. From the top:
   features whose shaping gives another glyph); it lists them.
 - A click inserts the glyph at the caret of the text being edited, in
   the docker's font (an alternate with its OpenType feature on), else as
-  a new artistic text at the page centre.
+  a new artistic text at the page centre. The glyph clicked last stays
+  framed in the grid.
+- Under the grid, which takes the panel's height down to them (#1320): a
+  zoom slider between a small and a large A (the cells from 28 to 96
+  points, 44 at start), and Copy, which puts the glyph clicked last on
+  the clipboard as text (dimmed until a glyph was clicked).
 
 ## Character offsets, angle and spacing
 
@@ -549,6 +698,17 @@ Window > Panels > Glyphs. From the top:
   was not chosen); Ctrl keeps the move horizontal or vertical. The move
   becomes their offsets (layout space, so rotated text moves along its
   own axes). One undo step per drag ("Move Characters").
+- The chosen characters take the format, as characters selected while
+  editing do (#1662): the Text docker's (Ctrl+T) font, style, size,
+  underline, range kerning, background, strikethrough, OpenType
+  features and font axes, a fill from the docker or a palette
+  ("Character Fill") and an outline colour ("Character Outline") go to
+  them only, and the docker's Character fields show the first chosen
+  character (the property bar's text fields are not shown with the
+  Shape tool). The Paragraph settings go to the paragraphs holding the
+  chosen characters. With no character chosen, a change goes to the
+  whole text as before
+  (`text_nodes::tests::chosen_characters_take_the_format_fill_and_outline`).
 - The Interactive horizontal spacing arrow, below the lower right
   corner, changes the character spacing so the end of the widest line
   follows the pointer: `+dx / n` per character for `n` characters on
@@ -642,6 +802,13 @@ the browser the family is fetched when no font of the whole name is
 offered. A face a font lists under the whole name (family or legacy
 name, in any case: "Archivo Black", "Quicksand Light") draws as that
 face, at 400 or 700 for bold, as before.
+Bold text in a face listed only under a legacy name with a lighter
+weight ("Khand Light", a static face of the typographic family "Khand")
+is drawn by that family's bold face (Khand Bold, a face of 600 or more
+heavier than the light one) when it is installed, as the program that
+reads `.cdr` files draws it, and is saved to `.cdr` as that family at
+700 ("Khand" bold); without such a face the light face draws it
+thickened, as before (#1455).
 
 A .cdr run set in a face between or beyond regular and bold (thin,
 extra light, light, medium, semibold, extra bold, black) opens as that
@@ -738,6 +905,14 @@ italic when the face is upright; only what no axis gives is made
 synthetically (bold by drawing the letters twice, italic by slanting
 them).
 
+Fonts of many axes (Roboto Flex: 13 axes and up to 70 variation
+tuples on a glyph) draw like any other: the glyph reader is built with
+room for any number of tuples (`ttf-parser`'s `gvar-alloc` feature;
+without it a glyph of more than 32 tuples drew nothing, so the family
+listed but its text stayed empty, #870;
+`many_tuples::a_variable_font_with_many_tuples_per_glyph_draws` on a
+subset of that font in `crates/text/testdata/`).
+
 The axes can also be set on the text (#870): a button beside the font
 size, on the property bar (and the Text toolbar) and in the Text
 docker's first section, opens the sliders in a small window under it;
@@ -751,7 +926,9 @@ for each axis the font does not hide (flag
 the font's own axes by the names its `name` table gives them, each over
 the font's range. A slider shows the value set on the text, else the one
 the text's weight and slant give (the font's default for other axes).
-Releasing it, or typing a value, sets that axis on the selected
+While a slider is dragged the text shows each value at once, as a
+preview the history does not keep. Releasing it, or typing a value,
+sets that axis on the selected
 characters (every character of the selected text objects when not
 editing), one undo step; Default axes takes the values off. The values
 are kept on the characters (`TextSpan::variations`: tag and value),
@@ -879,6 +1056,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `tests::family_names_ending_in_a_weight_split`,
   `tests::a_family_named_with_its_weight_draws_with_the_nearest_face`,
   `tests::a_weight_in_the_family_name_reaches_every_way_of_drawing`,
+  `tests::bold_text_in_a_light_static_face_takes_the_family_bold`,
+  the .cdr writer's `write::tests::bold_text_in_a_light_face_is_written_as_the_family_bold`,
   the .cdr writer's `write::tests::faces_named_with_their_weight_round_trip`,
   `tests::a_drawing_brings_every_face_of_a_family`, the .cdr reader's
   `parse::tests::semibold_runs_keep_their_face` and

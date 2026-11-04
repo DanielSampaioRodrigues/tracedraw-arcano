@@ -10,6 +10,7 @@
 #![allow(clippy::should_implement_trait)]
 pub mod bytes;
 pub mod color;
+pub mod color_convert;
 pub mod command;
 pub mod corner_cut;
 pub mod distort;
@@ -19,6 +20,8 @@ pub mod engine;
 pub mod envelope;
 pub mod extrude;
 pub mod extrude3d;
+pub mod find;
+pub mod finite;
 pub mod fit;
 pub mod geometry;
 pub mod icc;
@@ -29,6 +32,7 @@ pub mod nodes;
 pub mod painterly;
 pub mod paragraphs;
 pub mod patch;
+pub mod picture_inks;
 mod press;
 pub mod shadow;
 pub mod shaping;
@@ -43,10 +47,10 @@ pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
     split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
-    FontVariation, Layer, LeadingUnit, MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page,
-    ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind, Shadow, Shape,
-    ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
-    TrackedTask, VerticalAlign,
+    FollowBlack, FontVariation, Layer, LeadingUnit, MasterScope, Metadata, ObjectDefaults,
+    ObjectStyle, Page, ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind,
+    Shadow, Shape, ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath,
+    TextSpan, TimeTracker, TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
@@ -55,8 +59,8 @@ pub use id::{LayerId, PageId, ShapeId};
 pub use paragraphs::ParagraphFormat;
 pub use style::{
     arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, FountainRepeat, LineCap, LineJoin,
-    Mesh, MeshNode, OutlinePosition, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
-    WidthNode,
+    Mesh, MeshHandle, MeshNode, OutlinePosition, Pattern, PatternTile, Stop, Stroke, Texture,
+    TextureKind, WidthNode,
 };
 pub use table::{BorderSet, CellBorders, CellMargins, CellSide, EdgeBorder, TableHit};
 pub use text_flow::{TextWrap, WrapMode, WrapSide};

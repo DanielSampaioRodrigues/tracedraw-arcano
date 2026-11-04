@@ -1,5 +1,7 @@
 # Atalhos de teclado
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Estes são os atalhos que vêm com o TraceDraw. Os menus mostram o atalho de cada
 comando ao lado dele, e você pode acrescentar os seus; veja
 [Opções de personalização](../customize/customization.md#commands). No macOS,
@@ -31,7 +33,7 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 
 | Teclas | Ação |
 |---|---|
-| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | ferramenta Zoom, zoom na seleção, afastar |
+| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | ferramenta Zoom para um zoom (depois a ferramenta anterior volta; <kbd>Z</kbd> a mantém), zoom na seleção, afastar |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom para caber, zoom na página |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | aproximar e afastar um passo |
 | <kbd>Alt+Shift+R</kbd> | ligar e desligar as réguas |
@@ -59,9 +61,9 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 | Teclas | Painel |
 |---|---|
 | <kbd>Alt+Enter</kbd> | Propriedades |
-| <kbd>Ctrl+Shift+A</kbd> | Alinhar e distribuir |
+| <kbd>Ctrl+Shift+A</kbd> | Copiar propriedades de |
 | <kbd>Alt+F7</kbd>, <kbd>Alt+F8</kbd>, <kbd>Alt+F9</kbd>, <kbd>Alt+F10</kbd> | Transformações: posição, girar, escala e espelhar, tamanho |
-| <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd> | Texto, Glifos |
+| <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd>, <kbd>Ctrl+F12</kbd> | Texto, Glifos, Fontes |
 | <kbd>F11</kbd>, <kbd>Shift+F11</kbd> | preenchimento (Propriedades), Cor |
 | <kbd>F12</kbd>, <kbd>Shift+F12</kbd> | contorno (Propriedades), cor do contorno |
 | <kbd>Ctrl+F7</kbd>, <kbd>Ctrl+F8</kbd>, <kbd>Ctrl+F9</kbd>, <kbd>Ctrl+F10</kbd> | Envelope, Mistura, Contorno concêntrico, Extrusão |
@@ -79,13 +81,15 @@ painéis.
 | <kbd>Alt+F12</kbd> | alinhar à linha de base |
 | <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd> | negrito, itálico, sublinhado (durante a edição) |
 | <kbd>Ctrl+8</kbd>, <kbd>Ctrl+2</kbd> | texto maior e menor |
-| <kbd>Ctrl+F12</kbd> | verificação ortográfica |
+| <kbd>Shift+F3</kbd> | mudar maiúsculas e minúsculas |
+| <kbd>Ctrl+L</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+R</kbd> | alinhar à esquerda, ao centro, à direita (durante a edição) |
+| <kbd>Ctrl+J</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Ctrl+N</kbd> | justificado, justificado forçado, sem alinhamento (durante a edição) |
 
 ## Ferramentas {#tools}
 
 | Tecla | Ferramenta |
 |---|---|
-| <kbd>Space</kbd> | Seleção (a partir da maioria das ferramentas) |
+| <kbd>Space</kbd> | Seleção (a partir da maioria das ferramentas); na ferramenta Seleção, volta à ferramenta usada antes |
 | <kbd>F10</kbd> | Forma |
 | <kbd>F5</kbd>, <kbd>F6</kbd>, <kbd>F7</kbd> | Mão livre, Retângulo, Elipse |
 | <kbd>Z</kbd>, <kbd>H</kbd> | Zoom, Deslocamento |
@@ -105,3 +109,6 @@ dela; para a ferramenta [[tool.shape]], veja
 <kbd>Enter</kbd> pressiona [[dialog.ok]] e <kbd>Esc</kbd> fecha uma caixa de
 diálogo sem aplicá-la. Enquanto uma caixa de diálogo está aberta, os atalhos
 acima não são usados, exceto <kbd>F1</kbd>.
+<kbd>Tab</kbd> vai para a primeira caixa em que se pode digitar e segue pelos
+controles da caixa de diálogo; <kbd>Shift</kbd>+<kbd>Tab</kbd> volta. As teclas
+ficam na caixa de diálogo.

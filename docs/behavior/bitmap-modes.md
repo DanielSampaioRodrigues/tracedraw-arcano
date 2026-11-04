@@ -1,19 +1,26 @@
 # Bitmap colour modes
 
-Bitmaps > Mode converts the selected bitmaps; every selected bitmap
-changes in one undo step. The dialogs show the first selected bitmap
-before and after (a copy at most 240 px across; the copy's pixel sizes
-follow its scale). Alpha is kept in every mode.
+Image > Mode converts the selected bitmaps; every selected bitmap
+changes in one undo step. The dialogs are windows the user sizes that
+show the first selected bitmap before and after in the shared preview
+(`before-after-preview.md`: the Preview list, zoom and pan, the copy as
+large as the panes show; the copy's pixel sizes follow its scale), the
+settings in the shared settings panel at the right (each slider under
+its label, stretched to the panel's width) with the Reset, undo and
+redo row under it: Reset puts the defaults back, the arrows step through
+the settings states made in the dialog (a slider's drag is one step on
+release), the history starts afresh when the dialog opens. Alpha is
+kept in every mode.
 
 | Item | Result |
 |---|---|
 | Black and White (1-bit)... | dialog below |
 | Grayscale (8-bit) | luminance `0.299 R + 0.587 G + 0.114 B` |
 | Duotone (8-bit)... | dialog below |
-| Paletted (8-bit)... | dialog below |
-| RGB Color (24-bit) | pixels unchanged |
+| Indexed (8-bit)... | dialog below |
+| RGB Color (24-bit) | the bitmap's colour mode becomes RGB (`Shape::cmyk_bitmap` off); pixels unchanged. Ticked while every selected bitmap is RGB |
 | Lab Color (24-bit) | each pixel through CIE Lab (D65) and back, unchanged within one level |
-| CMYK Color (32-bit) | pixels unchanged (the document's colour management converts on output) |
+| CMYK Color (32-bit) | the colour mode becomes CMYK and the pixels show as the inks print them (through the colour management profiles and back), as Tools > Convert Colors does (#1254, `colour-management.md`). Ticked while every selected bitmap is CMYK |
 
 ## Black and White (1-bit)
 
@@ -52,7 +59,7 @@ before the conversion, so higher is lighter.
   `prod(1 - coverage_i * (1 - ink_i))`.
 - Load and Save keep the type, inks and curves in a JSON file.
 
-## Paletted (8-bit)
+## Indexed (8-bit)
 
 - Palette: Uniform Colors (6 x 6 x 6 colours and 40 grays), Standard VGA
   (16), Adaptive and Optimized (median cut of the image's colours to
@@ -72,17 +79,25 @@ is not greyed out in the menu.
 
 ## Convert to Bitmap
 
-Bitmaps > Convert to Bitmap (also Object > Convert to Bitmap) turns the
+Image > Convert to Bitmap (also Object > Convert to Bitmap) turns the
 selection into one bitmap in one undo step:
 
 - Resolution: a list (72, 96, 150, 200, 300, 400, 600 dpi) and a value
   (36 to 2400, default 300).
-- Color mode: Black and White (1-bit), Grayscale (8-bit), Paletted
-  (8-bit), RGB Color (24-bit, default), CMYK Color (32-bit; the pixels
-  stay, colour management converts on output). Black and white uses a 50
-  % threshold, or Floyd-Steinberg when Dithered; Paletted an optimized
-  256-colour palette, dithered by Floyd-Steinberg or not.
-- Dithered: only for Black and White and Paletted (256 colours or fewer).
+- Color mode: Black and White (1-bit), Grayscale (8-bit), Indexed
+  (8-bit), RGB Color (24-bit, default), CMYK Color (32-bit). The result
+  is a bitmap in that colour mode, which the status line shows (#1777):
+  Grayscale stores the luminance `0.299 R + 0.587 G + 0.114 B` as an
+  8-bit grayscale PNG (with an alpha channel when the background is
+  transparent), and a bitmap whose PNG is grayscale is in the Grayscale
+  mode; CMYK marks the bitmap CMYK (`Shape::cmyk_bitmap`) and takes its
+  pixels through the colour management profiles and back, so it shows as
+  the inks print it, as Image > Mode > CMYK Color does (#1254). Black and
+  white uses a 50 % threshold, or Floyd-Steinberg when Dithered; Indexed
+  an optimized 256-colour palette, dithered by Floyd-Steinberg or not;
+  both stay RGB pictures. A `.cdr` save still writes every picture's
+  pixels as RGB (`docs/cdr-format.md`).
+- Dithered: only for Black and White and Indexed (256 colours or fewer).
 - Always overprint black: the bitmap is marked to overprint, so its black
   prints over the colours beneath (multiplied when overprints are
   simulated).
@@ -110,6 +125,9 @@ object does.
 - `bitmap_modes::tests::conversions_apply_to_every_selected_bitmap_in_one_step`
 - `ui::dialogs::tests::every_dialog_draws_and_accepts_enter` draws the
   three dialogs.
+- `ops2::tests::convert_to_bitmap_gives_the_colour_mode_asked_for`:
+  Grayscale gives a grayscale PNG and status, CMYK a CMYK bitmap with
+  the printed pixels, RGB an RGB one (#1777).
 - `ops2::tests::convert_to_bitmap_applies_mode_dither_and_overprint`:
   black and white gives only black and white, grayscale equal channels,
   overprint marks the bitmap, no anti-aliasing leaves no half-covered

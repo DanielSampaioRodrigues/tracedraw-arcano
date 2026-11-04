@@ -4,6 +4,7 @@
 //! tracedraw-cli inspect file.cdr          dump the RIFF chunk tree
 //! tracedraw-cli info file.cdr             version, pages, objects, warnings
 //! tracedraw-cli convert in.cdr out.svg    export the first page (or .tdraw)
+//! tracedraw-cli check file.cdr            findings of a written file
 //! ```
 
 use std::process::ExitCode;
@@ -80,7 +81,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr> [chunk id]\n  tracedraw-cli info <file.cdr|file.cmx|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.cmx|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr> [chunk id]\n  tracedraw-cli info <file.cdr|file.cmx|file.tdraw> [--unknown]\n  tracedraw-cli check <file.cdr>   findings of a written file (curves, boxes, ids, text, references)\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.cmx|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
     ExitCode::from(2)
 }
 
@@ -414,6 +415,38 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("check") => {
+            // Checks a .cdr file for what a reader would stumble on
+            // (curves, boxes, ids, text records, references); one line per
+            // finding, exit code 1 when there are any.
+            let Some(path) = args.get(2) else {
+                return usage();
+            };
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            match tracedraw_cdr::check::check_bytes(&bytes) {
+                Ok(findings) if findings.is_empty() => {
+                    outln!("{path}: no findings");
+                    ExitCode::SUCCESS
+                }
+                Ok(findings) => {
+                    for f in &findings {
+                        outln!("{path}: {f}");
+                    }
+                    outln!("{path}: {} finding(s)", findings.len());
+                    ExitCode::FAILURE
+                }
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("info") => {
             let Some(path) = args.get(2) else {
                 return usage();
@@ -465,6 +498,18 @@ fn main() -> ExitCode {
                         outln!("skipped objects: {}", r.skipped_objects);
                         for w in &r.warnings {
                             outln!("warning: {w}");
+                        }
+                        // --unknown: the chunks and `loda` arguments the
+                        // reader left uninterpreted, most frequent first.
+                        if args.iter().skip(3).any(|a| a == "--unknown") {
+                            outln!(
+                                "unknown records: {} ({} kind(s))",
+                                r.unknown.records(),
+                                r.unknown.entries.len()
+                            );
+                            for line in r.unknown.lines() {
+                                outln!("  {line}");
+                            }
                         }
                     }
                     ExitCode::SUCCESS
@@ -660,30 +705,17 @@ fn main() -> ExitCode {
                 std::fs::write(output, tracedraw_io::eps::document_to_ps(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".cdr") {
-                // TRACEDRAW_CDR_VERSION picks the version written (14 to
-                // 27, the versions checked to open in other programs; the
-                // experimental 7 to 13 only with TRACEDRAW_CDR_EXPERIMENTAL=1).
+                // TRACEDRAW_CDR_VERSION picks the version written (7 to 27).
                 let asked: u16 = std::env::var("TRACEDRAW_CDR_VERSION")
                     .ok()
                     .and_then(|v| v.trim().parse().ok())
                     .unwrap_or(tracedraw_cdr::write::DEFAULT_VERSION);
-                let experimental =
-                    std::env::var("TRACEDRAW_CDR_EXPERIMENTAL").is_ok_and(|v| v.trim() == "1");
-                let allowed = if experimental {
-                    tracedraw_cdr::write::versions()
-                } else {
-                    tracedraw_cdr::write::checked_versions()
-                };
+                let allowed = tracedraw_cdr::write::checked_versions();
                 if !allowed.contains(&asked) {
                     eprintln!(
-                        "cdr version {asked} is not saved: use {} to {}{}",
+                        "cdr version {asked} is not saved: use {} to {}",
                         allowed.start(),
-                        allowed.end(),
-                        if experimental {
-                            ""
-                        } else {
-                            " (7 to 13 are experimental: TRACEDRAW_CDR_EXPERIMENTAL=1)"
-                        }
+                        allowed.end()
                     );
                     std::process::exit(2);
                 }
@@ -718,6 +750,25 @@ fn main() -> ExitCode {
                                 .collect(),
                             embed_fonts: std::env::var("TRACEDRAW_CDR_EMBED_FONTS")
                                 .is_ok_and(|v| v.trim() == "1"),
+                            // Drop shadows go out as pictures beneath
+                            // their objects (#1031).
+                            shadows: tracedraw_io::shadow_pictures(
+                                &doc,
+                                tracedraw_io::SHADOW_PICTURE_DPI,
+                            )
+                            .into_iter()
+                            .map(|(shape, rect, data, width, height)| {
+                                tracedraw_cdr::write::ShadowPicture {
+                                    shape,
+                                    rect,
+                                    png: tracedraw_cdr::write::Png {
+                                        data,
+                                        width,
+                                        height,
+                                    },
+                                }
+                            })
+                            .collect(),
                         }
                     }),
                 )

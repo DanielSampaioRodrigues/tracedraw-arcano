@@ -63,7 +63,7 @@ the fields that changed to every selected object with Overprint fill in
 one step (`App::apply_edit_fill`, `edit_fill_applies_what_was_changed`,
 `nodes_are_added_moved_and_reversed`); with nothing selected it changes
 the default fill. While the dialog is open the selection shows what it
-holds, as in the reference program: each change is applied as an engine
+holds: each change is applied as an engine
 preview (`begin_preview`) and made anew on the next change; OK takes the
 preview back and applies the fill as one step, and Cancel, Esc or the
 close button take it back, leaving the drawing, the undo and redo
@@ -75,7 +75,8 @@ release point, keeping the kind and colours of a gradient the object
 already has (a linear black to white one otherwise); the skew handle
 goes square to the line, as far from the start as the end. A click on
 an object with a gradient picks it (its nodes show); on one without, it
-gives the default fill; Ctrl constrains the angle to 15 degree steps;
+gives the default fill; Ctrl constrains the angle to steps of the
+constrain angle (15 degrees at first, #1661);
 dragging a palette colour onto a stop recolours it; dragging a colour
 onto the fill line adds a stop.
 
@@ -87,7 +88,7 @@ the fields edit it; with nothing selected they set the default fill for
 the next object.
 
 Handles on the canvas (Interactive Fill, gradient-filled selection):
-three nodes placed freely, as the reference program shows them. The
+three nodes placed freely. The
 start node and the end node are squares in the first and last colours,
 joined by a dashed line with an arrow at the end; the skew handle is a
 small round node joined to the start by a thin line. Radial fills draw
@@ -100,6 +101,18 @@ the dashed ellipse their frame makes, square fills the parallelogram.
   line and keeps its length.
 - Skew handle: sets the second axis on its own, so a radial fill
   becomes an ellipse and a linear fill's bands slant.
+- The line: a drag that starts on the line from the start to the end
+  (within the pick distance of Options > Nodes and Handles, 6 pixels at
+  first) away from the nodes and the midpoint sliders moves the whole
+  fill: the start, the end and the skew handle all go as far as the
+  pointer, so the line keeps its length and angle and the colour nodes
+  ride on it. Ctrl keeps the move horizontal or vertical, whichever is
+  longer. The nodes and the sliders win where they are on the line; the
+  pointer is the move cursor over the line and the nodes; one undo step
+  per drag (`App::drag_fountain_line`,
+  `effect_line_tests::the_fill_line_moves_the_whole_fill_for_every_kind`).
+  Linear, radial, conical and square fills alike; a shaped fill has no
+  line, and pattern and texture fills have no frame on the canvas.
 
 Colour nodes on the line (#330): every stop is a node on the line from
 the start to the end, at `start + pos (end - start)` (the first is the
@@ -150,6 +163,20 @@ and a shaped fill follows the outline anyway. Before this the gradient
 kept running the same way on the page whatever the object did (#775,
 `command::tests::gradients_turn_and_mirror_with_their_object`,
 `tests::a_gradient_is_drawn_turned_and_mirrored_with_its_object`).
+
+## A new outline cuts the fill
+
+A change of the outline itself (nodes moved, added or deleted with the
+Shape tool, a curve's B-spline edited, an area cut off with the Crop
+tool, an ellipse made a pie) keeps the fill where it lies on the page:
+its nodes are mapped from the old box to the new one, so the part of
+the fill over what is left stays as it was and the rest is cut off. A
+gradient transparency is kept in place the same way. Before this the
+fill and the transparency started again across the new box, squeezed
+into it (#1491, `command::tests::a_new_outline_keeps_gradients_in_place`,
+`crop_tool::tests::crop_cuts_the_gradient_transparency`). Text, groups,
+tables and symbols place their paint their own way and are left as they
+are.
 
 ## Formulas
 

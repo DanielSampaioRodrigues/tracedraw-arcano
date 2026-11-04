@@ -30,15 +30,36 @@ the screen shows the same artwork as the About banner at a larger size
 status line, a thin progress bar and the footer (copyright on the left,
 the version on the right).
 
-- The bundled interface font is installed at once; the system font list
-  (and the system fonts for Chinese, Japanese, Arabic, Hindi and Bengali)
-  is read on a worker thread. Texts in those languages appear once their
-  fonts are in; the name and version always show.
-- Status: "Loading fonts..." while the thread works, then "Opening
-  <file>..." for a file named on the command line, else "Preparing the
-  workspace...".
-- The bar eases towards 80 % over 1.6 s while the fonts load and fills
-  once they are in. The splash stays up at least 1.6 s.
+- The bundled interface font is installed at once. The system font list
+  is read on a worker thread that starts with the program, before the
+  window and the graphics driver are set up, so the two run side by side.
+  The editor cannot be built without the list (its font lists, text in a
+  drawing), so the splash stays up, drawn and answering, until the list
+  is in; the window's thread never waits for the read. With thousands of
+  fonts or a slow disk the read can take minutes, and the editor used to
+  wait for it on the window's thread: the window stayed blank (or was not
+  shown at all) for that long and then showed the splash broken for a
+  moment (#1388). Without the splash screen the window is drawn plain
+  until the list is in, then the editor appears in it. The log says
+  `system fonts read in N ms`. The system fonts for Chinese,
+  Japanese, Arabic, Hindi and Bengali are read on a second worker thread.
+  When the interface language is one of those, its texts appear once
+  those fonts are in and the splash waits for them; in every other
+  language the editor starts without waiting and takes the fonts in when
+  they arrive (a name in those scripts, in the recent drawings, shows as
+  boxes for a moment). The name and version always show.
+- Status: "Loading fonts..." while the system font list is read, or while
+  a language that needs a system font waits for it, else "Opening <file>..." for a file named on the command
+  line, or "Preparing the workspace...".
+- The bar is full as soon as nothing is waited for; while fonts load it
+  eases towards 80 % over 1.6 s, then creeps on towards 97 % (two thirds
+  of the way in 30 s) so that it never stands still. Nothing holds the
+  splash back: it stays up for as long as the start takes (it used to
+  stay at least 1.6 s), one frame with the last status after the fonts it
+  waits for are in, and goes with the editor built.
+- Each start logs `the editor was built in N ms` and `first frame N s
+  after the start` (the start of the program to the first frame of the
+  editor), the numbers to compare when a start seems slower.
 - Then the editor is built and the window becomes the main window:
   decorations, resizable, the maximize button, a minimum of 800 x 500
   (never more than four fifths of the monitor, so it fits a 1366 x 768
@@ -47,6 +68,19 @@ the version on the right).
   than 95 % of the monitor) centred on the monitor, then maximized in
   the next frames when it was left maximized or when that size does
   not fit the monitor (a small screen; see Window state below).
+- The window system applies that size a few frames later. The frame
+  that asks for it and every frame until the window has its size (or,
+  when it starts maximized, until it is maximized and fills the screen)
+  are drawn plain in the interface's background colour, for at most one
+  second (`splash::GROW_SECONDS`); the editor's first frame is drawn at
+  the window's final size. The editor used to draw at once: its first
+  frames came at the splash's size while the window grew, so the grown
+  window showed the last splash frame in its top left corner, the
+  editor squeezed below it and torn, leftover pixels over the rest for
+  half a second to a second on X11 (#1673,
+  `splash::tests::the_main_window_is_drawn_plain_until_it_has_grown`,
+  `splash::tests::a_window_that_starts_maximized_is_drawn_plain_until_it_fills_the_screen`,
+  `splash::tests::a_window_that_never_grows_gets_the_editor_after_a_second`).
 - The splash window is made resizable too, though it has no frame to
   drag: a window made not resizable stays at its size for good under
   some window managers (Xfwm4), and the main window could then neither
@@ -56,6 +90,12 @@ the version on the right).
 - Options > General > Show the splash screen at start-up turns it off.
   `--no-splash` or `TRACEDRAW_NO_SPLASH=1` skip it for one run and open a
   plain 1600 x 950 window (automation and the visual checks use this).
+- `--x11` (Linux) opens the window through the windowing layer's X11
+  backend (XWayland on a Wayland desktop), where a graphics tablet's pen
+  moves the pointer and reports its pressure (#850, see
+  `pen-pressure.md`); the environment is left unchanged. With no
+  `DISPLAY` it prints that `--x11` needs XWayland or an X11 session and
+  exits with status 2 instead of trying every renderer.
 - The browser build has no splash: the page shows its own loader.
 
 ## One window for every start (#646)
@@ -84,12 +124,61 @@ and `--reset-settings` starts open windows of their own.
   raise itself: it asks for attention instead.
 - A start with the next renderer after a failed one (see below) takes the
   place over. Portable copies and `TRACEDRAW_CONFIG_DIR` each have their
-  own window. The browser build has none of this.
+  own window.
+- macOS does not put a file opened from Finder (double click, Open With,
+  a file dropped on the Dock icon) on the command line: it sends the
+  running program an "open documents" event, at launch and later. The
+  windowing layer's application delegate takes it
+  (`application:openURLs:`, in the patched winit copy, see
+  `vendor/README.md`) and hands the paths to the handler TraceDraw sets
+  before the window opens (`winit::platform::macos::set_open_files_handler`);
+  they join the files handed over above and open in tabs of the window.
+  Files that come before the handler is set wait for it. They are kept
+  too: a start with the next renderer (see below) gets them on its
+  command line (`instance::with_files_opened_by_system`), since the
+  window that failed had them only in its inbox. The
+  `CFBundleDocumentTypes` of `packaging/macos/Info.plist` offer TraceDraw
+  for `.tdraw` and `.cdr` by content type, not by extension only: Finder
+  keeps the default program of a file per content type (Get Info >
+  Open with > Change All, and a double click go through it), and a type
+  given by extension only matches none of the system's. The system types
+  `.cdr` files as disk images (`com.apple.disk-image-cdr`, kind
+  "DVD/CD-R Master Image", opened by the disk image mounter), so the
+  `.cdr` entry names that type and `dev.tracedraw.cdr` (imported, for
+  systems without a `.cdr` type of their own), as an Editor with the rank
+  Alternate: TraceDraw never takes `.cdr` files over by itself, but Change
+  All makes it their default program and a double click then opens them
+  in TraceDraw. `.tdraw` is TraceDraw's own type (`dev.tracedraw.tdraw`,
+  exported, Owner). The same two formats as the Linux launcher and the
+  Windows installers (#1504). Checked by
+  `macos_package::tests`; the association itself is not yet tried on a
+  Mac.
+- Android: the app is offered for opening, editing and sharing drawings,
+  pictures, SVG and PDF from other apps (a file manager's Open with, a
+  mail's attachment, Share; the intent filters of
+  `packaging/android/AndroidManifest.xml`). The activity runs once
+  (`singleTask`): a document opened while the app runs comes through
+  `onNewIntent`, the one that started the app waits until the editor is
+  ready (`readyForDocuments`; not again when the app comes back from the
+  recent apps, which hands the first intent over once more), and each
+  opens in a tab of its own (request code `OPENED_ELSEWHERE`, `files.rs`),
+  waiting, like the files handed over on the desktop, while a dialog or a
+  question is up. The intent filters take pictures as `image/*`, which
+  also covers the types file managers give `.cdr` files.
+- Browser: the installed app (see `web.md`) is offered for `.tdraw`,
+  `.cdr`, `.svg` and `.pdf` by the system (`file_handlers` of
+  `web/manifest.webmanifest`, in browsers that support them); with
+  `launch_handler` `focus-existing` the files go to the window already
+  open, where each opens in a tab of its own (`index.html` reads them
+  from the launch queue, `web::take_launched_files`).
 - Checks: `instance::tests::a_second_start_hands_its_files_to_the_first`,
   `a_crash_leaves_nothing_in_the_way`, `strangers_are_refused`,
   `starts_at_the_same_time_make_one_window`,
   `a_handed_over_file_opens_in_a_tab_once_no_question_is_up`,
-  `the_linux_launcher_starts_once_for_several_files`; checked by hand on
+  `the_linux_launcher_starts_once_for_several_files`,
+  `winit_opened_files::tests::files_before_the_handler_wait_for_it_and_later_ones_go_straight_to_it`,
+  `android_package::tests::documents_opened_from_other_apps_reach_the_editor`,
+  `instance::tests::files_the_system_opens_reach_the_inbox_and_a_restart`; checked by hand on
   X11 with two starts (the second ended in 12 ms, its file in a new tab of
   the first window).
 
@@ -335,11 +424,19 @@ screen, and after 6 requests; each request is logged (#787,
 - `ui::brand::tests::the_embedded_icon_decodes`
 - `ui::brand::tests::cubic_helpers_follow_the_curve`
 - `ui::brand::tests::the_main_curve_spans_the_right_part`
-- `splash::tests::progress_waits_for_the_fonts_and_the_minimum_time`
+- `splash::tests::progress_waits_for_the_fonts_and_holds_nothing_back`
 - `splash::tests::the_status_names_the_file_being_opened`
 - `splash::tests::the_main_window_keeps_a_sensible_size`
 - `splash::tests::the_main_window_is_centred`
+- `splash::tests::the_main_window_is_drawn_plain_until_it_has_grown`
+- `splash::tests::a_window_that_starts_maximized_is_drawn_plain_until_it_fills_the_screen`
+- `splash::tests::a_window_that_never_grows_gets_the_editor_after_a_second`
 - `splash::tests::a_splash_frame_draws_and_then_starts_the_editor`
+- `splash::tests::the_editor_does_not_wait_for_system_fonts_the_language_does_not_need`
+- `splash::tests::a_language_that_needs_a_system_font_waits_for_it`
+- `splash::tests::the_editor_waits_for_the_font_list_with_the_splash_drawn`
+- `splash::tests::the_font_list_is_read_in_the_background`
+- `start_tests::the_editor_starts_once_the_fonts_are_in`
 
 ## Recent drawings on the Welcome Screen
 
@@ -347,6 +444,22 @@ Get Started lists the drawings opened or saved last (ten at most), each
 with a thumbnail of its first page, its name and its folder; a click
 opens it, a drawing whose file is gone is greyed out, and Clear list
 forgets them.
+
+- While the pointer is on a row an x shows at its right; a click on it
+  takes that drawing off the list, and so does Remove from list in the
+  row's right-click menu (for a drawing whose file is gone too). The
+  other drawings stay in their order, the drawing's thumbnail is
+  deleted, and the file itself is left alone (#1152).
+  `pick_drag_tests::a_recent_document_comes_off_the_list_by_itself`
+- Whether a drawing's file is still there is asked of the disk on a
+  worker thread, once and then again at most every 2 s while the list
+  shows; the list draws with the last answer, a file not looked at yet
+  counting as there. The list asked the disk about every drawing every
+  frame on the window's thread, so a drawing on a network share that did
+  not answer, or a drive waking up, held the window, at start-up too
+  (#1388). `file_presence::tests::a_disk_that_hangs_never_holds_the_window`,
+  `file_presence::tests::the_answer_comes_from_the_disk`,
+  `file_presence::tests::an_old_answer_is_asked_again`
 
 - The thumbnail is made when a drawing is opened or saved: the first
   page rendered with a white background, 160 pixels on its long side,

@@ -280,6 +280,11 @@ pub struct ExtrudeDrag {
     /// `anchor` (the object's middle).
     pub handle: bool,
     pub anchor: Point,
+    /// The drag took the line from `anchor` to the handle (not the handle
+    /// itself), pressed at `press`: the handle moves by the pointer's way
+    /// from there, so the line keeps its length and angle.
+    pub line: bool,
+    pub press: Point,
 }
 
 fn is_extrude(e: &Effect) -> bool {
@@ -458,19 +463,51 @@ impl App {
         out
     }
 
+    /// The selected extrusion whose line (from the object's middle to its
+    /// handle) passes within the pick distance of `p`, away from the
+    /// handle: its object, handle and middle.
+    pub fn extrusion_line_at(&self, p: Point) -> Option<(ShapeId, Point, Point)> {
+        let tol = self.line_pick_tol();
+        let handles = self.extrusion_handles();
+        if handles.iter().any(|(_, h, _)| (*h - p).hypot() <= tol) {
+            return None;
+        }
+        handles
+            .into_iter()
+            .find(|(_, h, mid)| crate::effect_line::near_segment(*mid, *h, p, tol))
+    }
+
     /// Start a drag at `at` (page space). False when nothing is there.
+    /// On the handle it takes the handle; elsewhere on the line to it, the
+    /// whole line, which the drag moves; else a new extrusion of the
+    /// object pressed. Each drag is one undo step.
     pub fn begin_extrude(&mut self, at: Point) -> bool {
-        let tol = 6.0 / self.view.zoom.max(1e-6) as f64;
+        let tol = self.line_pick_tol();
         if let Some((id, h, anchor)) = self
             .extrusion_handles()
             .into_iter()
             .find(|(_, h, _)| (*h - at).hypot() <= tol)
         {
+            self.effect_edit_step = None;
             self.extrude_drag = Some(ExtrudeDrag {
                 id,
                 start: h,
                 handle: true,
                 anchor,
+                line: false,
+                press: at,
+            });
+            return true;
+        }
+        if let Some((id, h, anchor)) = self.extrusion_line_at(at) {
+            self.effect_edit_step = None;
+            self.extrude_drag = Some(ExtrudeDrag {
+                id,
+                start: h,
+                handle: true,
+                anchor,
+                line: true,
+                press: at,
             });
             return true;
         }
@@ -490,14 +527,29 @@ impl App {
             start: at,
             handle: false,
             anchor: at,
+            line: false,
+            press: at,
         });
         true
     }
 
     /// The pointer moved to `p` during a drag.
+    #[cfg(test)]
     pub fn drag_extrude(&mut self, p: Point) {
+        self.drag_extrude_to(p, false);
+    }
+
+    /// The pointer moved to `p` during a drag; a drag of the line keeps
+    /// its move horizontal or vertical with `ctrl`.
+    pub fn drag_extrude_to(&mut self, p: Point, ctrl: bool) {
         let Some(dd) = self.extrude_drag else {
             return;
+        };
+        // The line: its handle goes by the pointer's way from the press.
+        let p = if dd.line {
+            dd.start + crate::effect_line::constrain_move(p - dd.press, ctrl)
+        } else {
+            p
         };
         let Some((local, parent)) = self.extrude_frames(dd.id) else {
             self.extrude_drag = None;
@@ -533,7 +585,10 @@ impl App {
             self.begin_extrude(origin);
         }
         if response.dragged_by(PointerButton::Primary) && self.extrude_drag.is_some() {
-            self.drag_extrude(p);
+            let ctrl = response
+                .ctx
+                .input(|i| i.modifiers.ctrl || i.modifiers.command);
+            self.drag_extrude_to(p, ctrl);
         }
         if response.drag_stopped() {
             self.extrude_drag = None;
@@ -578,6 +633,118 @@ mod tests {
             fill: Fill::Solid(Color::rgb8(220, 40, 40)),
         });
         id
+    }
+
+    /// #1281: Area Fill in a side of a front body takes the whole side:
+    /// the object behind it is hidden and its outline cuts nothing. An
+    /// object without a fill shows its wire frame, and every line counts.
+    #[test]
+    fn area_fill_takes_what_shows_of_a_side() {
+        let mut app = App::headless();
+        let id = square(&mut app);
+        let set = |app: &mut App| {
+            app.run(Command::SetEffects {
+                shape: id,
+                effects: vec![Effect::Extrude {
+                    depth: Vec2::new(-10.0, -10.0),
+                    vanishing: None,
+                    amount: 0.0,
+                    shade_from: None,
+                    shade_to: None,
+                    light_angle: 135.0,
+                    light_intensity: 50.0,
+                    bevel: 0.0,
+                    kind: Some(ExtrudeKind::FrontParallel),
+                    on_object: false,
+                    solid: None,
+                    space: Default::default(),
+                }],
+            });
+        };
+        set(&mut app);
+        let area_at = |app: &mut App, p: Point| -> f64 {
+            app.select(Vec::new());
+            app.area_fill_at(p);
+            let sel = app.selection.clone();
+            assert_eq!(sel.len(), 1, "an area at {p:?}");
+            let s = app.doc().find_shape(sel[0]).cloned().expect("area");
+            assert_eq!(s.name.as_deref(), Some("Area Fill"));
+            let a = tracedraw_core::geometry::Shape::area(&s.page_path()).abs();
+            app.run(Command::DeleteShapes { shapes: sel });
+            a
+        };
+        // The side over the edge x = 20 runs from it to the near face's
+        // edge x = 10: a parallelogram of 10 by 20, over the corner of the
+        // object behind.
+        let a = area_at(&mut app, Point::new(17.0, 8.0));
+        assert!((a - 200.0).abs() < 0.5, "{a}");
+        // Without a fill the square behind shows through and its top
+        // edge cuts the side: what is left below it, 150.
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::None,
+        });
+        let a = area_at(&mut app, Point::new(17.0, 8.0));
+        assert!((a - 150.0).abs() < 0.5, "{a}");
+    }
+
+    /// #1281: Area Fill fills the curved side of a circle extruded
+    /// backwards (a cylinder with a Back ending) from a click anywhere in
+    /// it: the outlines cut by the filled circle meet on the grid the
+    /// area is found on, so the side does not leak.
+    #[test]
+    fn area_fill_takes_the_side_of_a_back_cylinder() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                arc: None,
+            })
+            .expect("circle");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::rgb8(220, 40, 40)),
+        });
+        let vanishing = Point::new(60.0, 60.0);
+        app.run(Command::SetEffects {
+            shape: id,
+            effects: vec![Effect::Extrude {
+                depth: Vec2::new(0.0, 0.0),
+                vanishing: Some(vanishing),
+                amount: 0.25,
+                shade_from: None,
+                shade_to: None,
+                light_angle: 135.0,
+                light_intensity: 50.0,
+                bevel: 0.0,
+                kind: Some(ExtrudeKind::SmallBack),
+                on_object: false,
+                solid: None,
+                space: Default::default(),
+            }],
+        });
+        // Clicks across the side: half way from a point of the circle
+        // facing the vanishing point to its copy.
+        let mut areas = Vec::new();
+        for deg in [20.0f64, 45.0, 70.0] {
+            let t = deg.to_radians();
+            let p = Point::new(10.0 + 10.0 * t.cos(), 10.0 + 10.0 * t.sin());
+            let q = p + (vanishing - p) * 0.25;
+            app.select(Vec::new());
+            app.area_fill_at(p.midpoint(q));
+            let sel = app.selection.clone();
+            assert_eq!(sel.len(), 1, "an area at {deg} degrees");
+            let s = app.doc().find_shape(sel[0]).cloned().expect("area");
+            assert_eq!(s.name.as_deref(), Some("Area Fill"));
+            areas.push(tracedraw_core::geometry::Shape::area(&s.page_path()).abs());
+            app.run(Command::DeleteShapes { shapes: sel });
+        }
+        // The one side, whole, from every click.
+        assert!(
+            areas.iter().all(|a| (a - areas[0]).abs() < 0.5),
+            "{areas:?}"
+        );
+        assert!(areas[0] > 200.0 && areas[0] < 300.0, "{areas:?}");
     }
 
     fn extrusion(app: &App, id: ShapeId) -> Option<Effect> {
@@ -642,10 +809,12 @@ mod tests {
         };
         assert_eq!(kind, Some(ExtrudeKind::BackParallel));
         assert!((depth - Vec2::new(8.0, 4.0)).hypot() < 1e-9);
-        // The body is drawn: two faces and the far face behind the object.
+        // The body is drawn: the far face, hidden behind the filled
+        // square, and two faces, one object each (#1281).
         let s = app.doc().find_shape(id).cloned().expect("square");
         let ev = tracedraw_core::live::evaluate(&s);
         assert_eq!(ev.below.iter().filter(|s| s.fill != Fill::None).count(), 3);
+        assert_eq!(ev.below.len(), 3);
     }
 
     #[test]

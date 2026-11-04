@@ -284,6 +284,16 @@ impl EpiIntegration {
             self.can_drag_window = true;
         }
 
+        // TraceDraw: a paste shortcut that the application's gate says
+        // must not read the clipboard's text is not handed to egui-winit,
+        // which would read it (see vendor/README.md, #1488).
+        if super::paste_gate::blocks(event) {
+            return EventResponse {
+                repaint: true,
+                consumed: egui_winit.egui_ctx().egui_wants_keyboard_input(),
+            };
+        }
+
         egui_winit.on_window_event(window, event)
     }
 
@@ -426,8 +436,15 @@ impl EpiIntegration {
     }
 
     pub fn save(&mut self, app: &mut dyn epi::App, window: Option<&winit::window::Window>) {
+        // TraceDraw: `App::save` runs without the "persistence" feature
+        // too, with a storage that keeps nothing, so the app hears of
+        // Android's suspend (its window goes and the system may end the
+        // process without another word) and backs its drawings up (#1395).
         #[cfg(not(feature = "persistence"))]
-        let _ = (self, app, window);
+        {
+            let _ = (self, window);
+            app.save(&mut NoStorage);
+        }
 
         #[cfg(feature = "persistence")]
         if let Some(storage) = self.frame.storage_mut() {
@@ -457,6 +474,24 @@ impl EpiIntegration {
             storage.flush();
         }
     }
+}
+
+/// TraceDraw: the storage `App::save` gets without the "persistence"
+/// feature: it keeps nothing.
+#[cfg(not(feature = "persistence"))]
+struct NoStorage;
+
+#[cfg(not(feature = "persistence"))]
+impl epi::Storage for NoStorage {
+    fn get_string(&self, _key: &str) -> Option<String> {
+        None
+    }
+
+    fn set_string(&mut self, _key: &str, _value: String) {}
+
+    fn remove_string(&mut self, _key: &str) {}
+
+    fn flush(&mut self) {}
 }
 
 fn load_default_egui_icon() -> egui::IconData {

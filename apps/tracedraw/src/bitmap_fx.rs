@@ -11,7 +11,7 @@ pub enum ColorMode {
     Cmyk,
 }
 
-/// Convert the colour mode (Bitmaps > Mode).
+/// Convert the colour mode (Image > Mode).
 pub fn convert_mode(img: &RgbaImage, mode: ColorMode) -> RgbaImage {
     match mode {
         ColorMode::Grayscale => {
@@ -29,6 +29,67 @@ pub fn convert_mode(img: &RgbaImage, mode: ColorMode) -> RgbaImage {
     }
 }
 
+/// Grid points per channel of the table [`through_cmyk`] samples.
+const CMYK_GRID: usize = 17;
+
+/// `img` as it prints: every pixel taken to CMYK and back to the screen
+/// through the colour engine (the drawing's profiles, or the press model
+/// without them), so a picture converted to CMYK shows the colours the
+/// inks can make (#1254). Alpha is kept. The engine is sampled on a grid
+/// of `CMYK_GRID` points per channel and the pixels read from it by
+/// trilinear interpolation, so a large photo takes a few milliseconds.
+pub fn through_cmyk(img: &RgbaImage) -> RgbaImage {
+    let n = CMYK_GRID;
+    let step = 255.0 / (n - 1) as f32;
+    let mut grid: Vec<[f32; 3]> = Vec::with_capacity(n * n * n);
+    for r in 0..n {
+        for g in 0..n {
+            for b in 0..n {
+                let c = tracedraw_core::Color::rgb8(
+                    (r as f32 * step).round() as u8,
+                    (g as f32 * step).round() as u8,
+                    (b as f32 * step).round() as u8,
+                );
+                let back = c.convert_to("CMYK").convert_to("RGB").to_rgb8();
+                grid.push([back[0] as f32, back[1] as f32, back[2] as f32]);
+            }
+        }
+    }
+    let at = |r: usize, g: usize, b: usize| grid[(r * n + g) * n + b];
+    let mut out = img.clone();
+    for p in out.pixels_mut() {
+        let pos = |v: u8| {
+            let x = v as f32 / step;
+            let i = (x.floor() as usize).min(n - 2);
+            (i, x - i as f32)
+        };
+        let (ri, rf) = pos(p[0]);
+        let (gi, gf) = pos(p[1]);
+        let (bi, bf) = pos(p[2]);
+        let mut acc = [0.0f32; 3];
+        for (dr, wr) in [(0, 1.0 - rf), (1, rf)] {
+            for (dg, wg) in [(0, 1.0 - gf), (1, gf)] {
+                for (db, wb) in [(0, 1.0 - bf), (1, bf)] {
+                    let w = wr * wg * wb;
+                    if w > 0.0 {
+                        let v = at(ri + dr, gi + dg, bi + db);
+                        acc[0] += w * v[0];
+                        acc[1] += w * v[1];
+                        acc[2] += w * v[2];
+                    }
+                }
+            }
+        }
+        *p = Rgba([
+            acc[0].round().clamp(0.0, 255.0) as u8,
+            acc[1].round().clamp(0.0, 255.0) as u8,
+            acc[2].round().clamp(0.0, 255.0) as u8,
+            p[3],
+        ]);
+    }
+    out
+}
+
 /// Decode PNG bytes into an RGBA image.
 pub fn decode(png: &[u8]) -> Option<RgbaImage> {
     image::load_from_memory_with_format(png, image::ImageFormat::Png)
@@ -43,7 +104,41 @@ pub fn encode(img: &RgbaImage) -> Option<Vec<u8>> {
     Some(buf.into_inner())
 }
 
-/// Resample to a new pixel size (Bitmaps > Resample).
+/// Encode `img` as a grayscale PNG (8-bit gray, with an alpha channel
+/// only when a pixel is not opaque): a grayscale picture, whose colour
+/// mode the status line reads from the PNG (#1777). Each pixel's level
+/// is its luminance, `0.299 R + 0.587 G + 0.114 B`.
+pub fn encode_gray(img: &RgbaImage) -> Option<Vec<u8>> {
+    let level = |p: &Rgba<u8>| {
+        (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    let mut buf = std::io::Cursor::new(Vec::new());
+    if img.pixels().all(|p| p[3] == 255) {
+        let gray = image::GrayImage::from_fn(img.width(), img.height(), |x, y| {
+            image::Luma([level(img.get_pixel(x, y))])
+        });
+        gray.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    } else {
+        let gray = image::GrayAlphaImage::from_fn(img.width(), img.height(), |x, y| {
+            let p = img.get_pixel(x, y);
+            image::LumaA([level(p), p[3]])
+        });
+        gray.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    }
+    Some(buf.into_inner())
+}
+
+/// Whether `png` is a grayscale PNG (colour type 0 or 4 in its header):
+/// a bitmap in the Grayscale colour mode (#1777).
+pub fn png_is_gray(png: &[u8]) -> bool {
+    png.get(..8) == Some(b"\x89PNG\r\n\x1a\n".as_slice())
+        && png.get(12..16) == Some(b"IHDR".as_slice())
+        && matches!(png.get(25), Some(0 | 4))
+}
+
+/// Resample to a new pixel size (Image > Resample).
 pub fn resample(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
     image::imageops::resize(
         img,
@@ -63,7 +158,7 @@ pub fn inflate_to(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
     out
 }
 
-/// Grow the canvas by `px` on every side (Inflate Bitmap).
+/// Grow the canvas by `px` on every side (Bitmap Padding).
 pub fn inflate(img: &RgbaImage, px: u32) -> RgbaImage {
     let mut out = ImageBuffer::from_pixel(
         img.width() + 2 * px,
@@ -74,7 +169,7 @@ pub fn inflate(img: &RgbaImage, px: u32) -> RgbaImage {
     out
 }
 
-/// The slots of the Bitmap Mask docker.
+/// The slots of the Color Mask docker.
 pub const MASK_SLOTS: usize = 10;
 
 /// One colour of a bitmap mask: in use, the colour, and how far (in % of
@@ -96,7 +191,7 @@ impl Default for MaskSlot {
     }
 }
 
-/// The Bitmap Mask docker's state.
+/// The Color Mask docker's state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaskSettings {
     pub slots: [MaskSlot; MASK_SLOTS],

@@ -223,6 +223,76 @@ impl Canvas {
     }
 }
 
+/// A canvas overlay rasterised for a test: what `body` paints on a
+/// `w` x `h` point area at `ppp` device pixels per point, read back as
+/// 8-bit RGB over black.
+pub(crate) struct Raster {
+    canvas: Canvas,
+}
+
+impl Raster {
+    /// The device pixel at column `x`, row `y`.
+    pub(crate) fn rgb(&self, x: usize, y: usize) -> [u8; 3] {
+        let p = self.canvas.px[y * self.canvas.w + x];
+        [p[0], p[1], p[2]].map(|c| (c * 255.0).round().clamp(0.0, 255.0) as u8)
+    }
+
+    pub(crate) fn save(&self, path: &std::path::Path) {
+        self.canvas.save(path, (0, 0, self.canvas.w, self.canvas.h));
+    }
+}
+
+pub(crate) fn rasterise(w: usize, h: usize, ppp: f32, body: impl FnOnce(&egui::Painter)) -> Raster {
+    let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(ppp);
+    let mut input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(w as f32, h as f32),
+        )),
+        ..Default::default()
+    };
+    input
+        .viewports
+        .entry(egui::ViewportId::ROOT)
+        .or_default()
+        .native_pixels_per_point = Some(ppp);
+    let mut body = Some(body);
+    let mut out = ctx.run_ui(input, |ui| {
+        if let Some(b) = body.take() {
+            b(ui.painter());
+        }
+    });
+    let mut tex = Textures::default();
+    tex.apply(&out.textures_delta);
+    out.textures_delta.clear();
+    let shapes = std::mem::take(&mut out.shapes);
+    let prims = ctx.tessellate(shapes, out.pixels_per_point);
+    // Device pixels: the meshes are in points.
+    let scale = out.pixels_per_point;
+    let prims: Vec<egui::ClippedPrimitive> = prims
+        .into_iter()
+        .map(|mut p| {
+            if let Primitive::Mesh(m) = &mut p.primitive {
+                for v in &mut m.vertices {
+                    v.pos = egui::pos2(v.pos.x * scale, v.pos.y * scale);
+                }
+            }
+            p.clip_rect = egui::Rect::from_min_max(
+                (p.clip_rect.min.to_vec2() * scale).to_pos2(),
+                (p.clip_rect.max.to_vec2() * scale).to_pos2(),
+            );
+            p
+        })
+        .collect();
+    let mut canvas = Canvas::new(
+        (w as f32 * scale).round() as usize,
+        (h as f32 * scale).round() as usize,
+    );
+    canvas.paint(&tex, &prims);
+    Raster { canvas }
+}
+
 /// What a screenshot shows.
 enum Shot {
     /// A menu command that opens a dialog.
@@ -519,7 +589,7 @@ fn shots() -> Vec<(String, Shot, bool)> {
         Shot::Dialog(|_| Dialog::WebNotice),
         false,
     ));
-    // Text > Writing Tools > Autocorrect: the Autocorrect tab of
+    // Text > Proofing > Autocorrect: the Autocorrect tab of
     // Options > Text.
     v.push((
         name("text/writing-tools#autocorrect"),
@@ -655,6 +725,79 @@ fn help_shots() {
     let list = made.join("\n") + "\n";
     std::fs::write(dir.join("shots.txt"), list).unwrap();
     eprintln!("{} screenshots; not made: {missed:#?}", made.len());
+}
+
+/// Every tool icon on a toolbox-like panel, light and dark, at 1x and
+/// 2x pixels per point, into `$ICON_SHEET` (a check of the icon style
+/// by eye; see docs/behavior/icons.md).
+#[test]
+#[ignore]
+fn icon_sheet() {
+    let Some(dir) = std::env::var_os("ICON_SHEET") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    use crate::tools::Tool;
+    let cols = 8;
+    let rows = Tool::ALL.len().div_ceil(cols);
+    let cell = 32.0;
+    let icon = 22.0;
+    for theme in [crate::theme::Theme::Light, crate::theme::Theme::Dark] {
+        crate::theme::set_theme(theme);
+        for ppp in [1.0f32, 2.0] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ppp);
+            let w = (cols as f32 * cell) as usize;
+            let h = (rows as f32 * cell) as usize;
+            let mut tex = Textures::default();
+            let mut canvas = None;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(w as f32, h as f32),
+                    )),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let painter = ui.painter();
+                    let all =
+                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w as f32, h as f32));
+                    painter.rect_filled(all, 0.0, crate::theme::Tokens::panel());
+                    for (i, t) in Tool::ALL.iter().enumerate() {
+                        let (c, r) = ((i % cols) as f32, (i / cols) as f32);
+                        let center = egui::pos2((c + 0.5) * cell, (r + 0.5) * cell);
+                        let rect = egui::Rect::from_center_size(center, egui::Vec2::splat(icon));
+                        crate::ui::icons::draw(painter, rect, *t, crate::theme::Tokens::icon());
+                    }
+                });
+                tex.apply(&out.textures_delta);
+                let shapes = std::mem::take(&mut out.shapes);
+                let mut prims = ctx.tessellate(shapes, out.pixels_per_point);
+                for p in &mut prims {
+                    p.clip_rect = egui::Rect::from_min_max(
+                        (p.clip_rect.min.to_vec2() * ppp).to_pos2(),
+                        (p.clip_rect.max.to_vec2() * ppp).to_pos2(),
+                    );
+                    if let Primitive::Mesh(m) = &mut p.primitive {
+                        for v in &mut m.vertices {
+                            v.pos = (v.pos.to_vec2() * ppp).to_pos2();
+                        }
+                    }
+                }
+                let (pw, ph) = ((w as f32 * ppp) as usize, (h as f32 * ppp) as usize);
+                let mut c = Canvas::new(pw, ph);
+                c.paint(&tex, &prims);
+                out.textures_delta.clear();
+                canvas = Some((c, pw, ph));
+            }
+            let (c, pw, ph) = canvas.unwrap();
+            let name = format!("icons_{}_{}x.png", theme.id(), ppp as u32);
+            c.save(&dir.join(name), (0, 0, pw, ph));
+        }
+    }
+    crate::theme::set_theme(crate::theme::Theme::Light);
 }
 
 #[test]

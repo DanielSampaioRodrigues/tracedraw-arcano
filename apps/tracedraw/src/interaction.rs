@@ -21,14 +21,6 @@ use tracedraw_core::{
     Color, Command, Fill, ShapeId,
 };
 
-/// A press this close to a handle's centre takes it: within the handle,
-/// short of the selection box (the handles stand outside it).
-const HANDLE_PX: f32 = 6.0;
-/// The selection handles' size, interface points.
-pub(crate) const HANDLE_SIZE: f32 = 10.0;
-/// How far out of the selection box the handles' centres stand,
-/// interface points: a gap of 1.5 points between handle and box.
-pub(crate) const HANDLE_OFFSET: f32 = HANDLE_SIZE / 2.0 + 1.5;
 /// How far out of the selection box the rotate and skew arrows' centres
 /// stand (rotate mode), interface points.
 pub(crate) const ROTATE_HANDLE_OFFSET: f32 = 9.0;
@@ -215,6 +207,85 @@ fn take_chorded_right_press() -> bool {
     CHORDED_RIGHT.with(|c| c.replace(false))
 }
 
+thread_local! {
+    /// The left button let go while the right one is still held, reported
+    /// by the windowing layer outside egui's events (see
+    /// [`note_chorded_left_release`]).
+    static CHORDED_LEFT_UP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a mouse button event is the left button going up while the
+/// right one is still held: `button` and `buttons` as the browser's mouse
+/// events give them (button 0 is the left one, bit 2 of `buttons` the
+/// right one held, bit 1 the left one).
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn is_chorded_left_release(button: i16, buttons: u16) -> bool {
+    button == 0 && buttons & 1 == 0 && buttons & 2 != 0
+}
+
+/// Note the left button let go while the right one is held. A browser
+/// sends the pointer's release only when its last button goes up, so the
+/// left release of a right click made during a drag never reached egui:
+/// it took the left button for held, and the moved object stayed on the
+/// pointer until Esc (#1334). The browser build listens for the mouse
+/// event itself (`web.rs`); [`release_chorded_left`] gives egui the
+/// release.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn note_chorded_left_release() {
+    CHORDED_LEFT_UP.with(|c| c.set(true));
+}
+
+/// The raw input hook's part: a noted left release (see
+/// [`note_chorded_left_release`]) becomes egui's release of the primary
+/// button, at the latest pointer position, while egui still has it held.
+pub fn release_chorded_left(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    if !CHORDED_LEFT_UP.with(|c| c.replace(false)) {
+        return;
+    }
+    if !ctx.input(|i| i.pointer.primary_down()) {
+        return;
+    }
+    let pos = raw
+        .events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            egui::Event::PointerMoved(p) => Some(*p),
+            _ => None,
+        })
+        .or_else(|| ctx.pointer_latest_pos());
+    let Some(pos) = pos else {
+        return;
+    };
+    raw.events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: ctx.input(|i| i.modifiers),
+    });
+}
+
+/// Half the width of the outline of `s` (in page space) as it is drawn:
+/// its own width, scaled by the object's scale when the outline scales
+/// with the object, as the renderer draws it; 0 without an outline.
+fn outline_half_width(s: &tracedraw_core::Shape) -> f64 {
+    let Some(stroke) = &s.stroke else {
+        return 0.0;
+    };
+    let scale = if stroke.scale_with_object {
+        let c = s.transform.as_coeffs();
+        (c[0] * c[3] - c[1] * c[2]).abs().sqrt()
+    } else {
+        1.0
+    };
+    let half = stroke.width * scale / 2.0;
+    if half.is_finite() {
+        half.max(0.0)
+    } else {
+        0.0
+    }
+}
+
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
         self.hit_test_where(p, |_| false)
@@ -331,10 +402,54 @@ impl App {
                 }
             }
             if !skip(s.id) && self.shape_hit(s, p, tol) {
-                return Some(s.id);
+                return Some(self.blend_end_under_steps(s, p, tol, &skip).unwrap_or(s.id));
             }
         }
         None
+    }
+
+    /// A press on the steps of the blend that `s` starts, away from `s`
+    /// itself, over the blend's end object: that end object, as it is
+    /// what shows there. The steps are drawn by the start object above
+    /// the end and a text step is picked anywhere in its box, so the
+    /// steps of a text blend covered nearly all of the end text, and a
+    /// click on it picked the start text (the colour then went to the
+    /// other end, #1739). Elsewhere on the steps the start is picked.
+    /// The end object counts when it is a visible, unlocked object of
+    /// the page, as the objects a click picks.
+    fn blend_end_under_steps(
+        &self,
+        s: &tracedraw_core::Shape,
+        p: Point,
+        tol: f64,
+        skip: &impl Fn(ShapeId) -> bool,
+    ) -> Option<ShapeId> {
+        let end = s.effects.iter().find_map(|e| match e {
+            tracedraw_core::live::Effect::Blend {
+                end_id: Some(end), ..
+            } => Some(*end),
+            _ => None,
+        })?;
+        if skip(end) {
+            return None;
+        }
+        // The start object itself, without its steps, under the press:
+        // it stays the pick.
+        let mut own = s.clone();
+        own.effects
+            .retain(|e| !matches!(e, tracedraw_core::live::Effect::Blend { .. }));
+        if self.shape_hit(&own, p, tol) {
+            return None;
+        }
+        self.page_layers()
+            .into_iter()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter())
+            .find(|e| e.id == end)
+            .filter(|e| {
+                !e.locked && e.visible && !self.outside_clip_edit(e.id) && self.shape_hit(e, p, tol)
+            })
+            .map(|e| e.id)
     }
 
     /// What a click at `p` picks: the topmost object there, or an object
@@ -372,7 +487,15 @@ impl App {
         if let Some(own) = self.without_edited_symmetry(s) {
             return self.shape_hit(&own, p, tol);
         }
-        if !self.visual_bounds(s).inflate(tol, tol).contains(p) {
+        // A thick outline is picked anywhere it shows, out to the
+        // tolerance beyond its visible edge, not only near its centre
+        // line (#1678); a thin one within the tolerance as before.
+        let half = outline_half_width(s);
+        if !self
+            .visual_bounds(s)
+            .inflate(tol + half, tol + half)
+            .contains(p)
+        {
             return false;
         }
         if !s.effects.is_empty() {
@@ -386,6 +509,13 @@ impl App {
                     part.effects.clear();
                     self.shape_hit(&part, p, tol)
                 });
+        }
+        // A dimension is picked on its lines, arrowheads and label only,
+        // never in the empty part of its box: an object under it (the
+        // circle a diameter is measured across) is picked there (#1493).
+        // "Treat all objects as filled" leaves its lines as lines.
+        if crate::dimensions::is_dimension(s) {
+            return self.dimension_hit(s, p, tol);
         }
         if matches!(
             s.kind,
@@ -405,7 +535,26 @@ impl App {
         if (filled || self.settings.treat_all_filled) && path.contains(p) {
             return true;
         }
-        crate::canvas::distance_to_path(&path, p) <= tol * 1.5
+        crate::canvas::distance_to_path(&path, p) <= (tol * 1.5).max(half + tol)
+    }
+
+    /// A part of dimension `s` (in page space) is under `p`: its label
+    /// anywhere in its box, its arrowheads inside, its lines near them.
+    fn dimension_hit(&self, s: &tracedraw_core::Shape, p: Point, tol: f64) -> bool {
+        let ShapeKind::Group { children } = &s.kind else {
+            return false;
+        };
+        children.iter().filter(|c| c.visible).any(|c| {
+            let mut c = c.clone();
+            c.transform_by(s.transform);
+            if matches!(c.kind, ShapeKind::Text { .. }) {
+                return self.visual_bounds(&c).inflate(tol, tol).contains(p);
+            }
+            let path = c.page_path();
+            let closed = !matches!(c.kind, ShapeKind::Path { closed: false, .. });
+            (closed && !matches!(c.fill, Fill::None) && path.contains(p))
+                || crate::canvas::distance_to_path(&path, p) <= tol * 1.5
+        })
     }
 
     /// The children of a group (`g` in page space) that are under `p`, top
@@ -501,6 +650,39 @@ impl App {
         }
     }
 
+    /// Ctrl+click with the Pick tool on a clip frame on a layer: its
+    /// contents are taken out for editing (Edit Contents), the object of
+    /// the contents under the pointer selected (all of them when the
+    /// click is off them). Nothing happens while contents are edited
+    /// already, or off a clip frame; then `false` (#982).
+    pub fn ctrl_click_edits_clip_frame(&mut self, p: Point) -> bool {
+        if self.clip_frame_edit.is_some() {
+            return false;
+        }
+        let chain = self.hit_chain(p);
+        let Some(&clip) = chain.first() else {
+            return false;
+        };
+        let doc = self.doc();
+        let on_layer = doc.top_level_of(clip) == Some(clip);
+        let is_clip = doc
+            .find_shape(clip)
+            .is_some_and(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }));
+        if !on_layer || !is_clip {
+            return false;
+        }
+        let under = chain.get(1).copied();
+        self.select(vec![clip]);
+        self.edit_clip_frame();
+        if self.clip_frame_edit.is_none() {
+            return false;
+        }
+        if let Some(id) = under.filter(|id| self.doc().find_shape(*id).is_some()) {
+            self.select(vec![id]);
+        }
+        true
+    }
+
     /// Ctrl+click: one group level further in at `p` than what is selected
     /// there (the first level inside the topmost group when nothing of it
     /// is), down to the innermost object.
@@ -543,6 +725,20 @@ impl App {
         }
         let chain = self.hit_chain(p);
         (!chain.is_empty()).then(|| chain.iter().any(|id| self.selection.contains(id)))
+    }
+
+    /// Whether a selected object lies under `p`, also one hidden behind
+    /// another object there (a right click on it keeps the selection and
+    /// opens the selection's menu, #1684): the objects at `p` on the
+    /// layers, or inside groups and clip frames for one chosen in there.
+    pub fn selection_under(&self, p: Point) -> bool {
+        if self.selection.is_empty() {
+            return false;
+        }
+        self.hits_at(p, false)
+            .iter()
+            .chain(self.hits_at(p, true).iter())
+            .any(|id| self.selection.contains(id))
     }
 
     /// What a Pick press at `p` takes: a selected object under `p` (an
@@ -695,12 +891,31 @@ impl App {
         self.rotate_mode = false;
     }
 
+    /// The selection handles' size, interface points: Options > Nodes
+    /// and Handles > Handle size (Small 6, Medium 8, Large 10, the
+    /// default; #1285).
+    pub fn handle_size(&self) -> f32 {
+        self.settings.nodes.handles.px()
+    }
+
+    /// How far out of the selection box the handles' centres stand,
+    /// interface points: a gap of 1.5 points between handle and box.
+    pub fn handle_offset(&self) -> f32 {
+        self.handle_size() / 2.0 + 1.5
+    }
+
+    /// A press this close to a handle's centre takes it: within the
+    /// handle, short of the selection box (the handles stand outside it).
+    fn handle_reach(&self) -> f32 {
+        (self.handle_size() / 2.0 + 1.0).max(4.0)
+    }
+
     /// Screen-space handle positions for the selection box.
     pub fn handle_positions(&self, b: Rect) -> [(Handle, egui::Pos2); 8] {
         let off = if self.rotate_mode {
             ROTATE_HANDLE_OFFSET
         } else {
-            HANDLE_OFFSET
+            self.handle_offset()
         };
         let r = self.view.rect_to_screen(b).expand(off);
         [
@@ -865,6 +1080,7 @@ impl App {
             total: Vec2::ZERO,
             start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
             source: self.selection_snap_source(p),
+            start_geometry: None,
         };
     }
 
@@ -918,7 +1134,22 @@ impl App {
     /// Space while the selection is moved, scaled, turned or slanted drops
     /// a copy where the outline is, and the drag goes on.
     fn stamp_on_space(&mut self, response: &Response) {
-        if !response.ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+        // One copy a press: a key held sends its press again and again
+        // (`repeat`), which left a trail of copies (#1502).
+        let pressed = response.ctx.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key {
+                        key: egui::Key::Space,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    }
+                )
+            })
+        });
+        if !pressed {
             return;
         }
         let t = match &self.drag {
@@ -994,7 +1225,7 @@ impl App {
         let reach = if self.rotate_mode {
             ROTATE_HANDLE_PX
         } else {
-            HANDLE_PX
+            self.handle_reach()
         };
         self.handle_positions(b)
             .iter()
@@ -1018,6 +1249,15 @@ impl App {
             } else {
                 None
             }
+        });
+        // A finger's tap: the windowing layer lets the pointer go with the
+        // finger (the release comes with PointerGone), so the frame of the
+        // click has no hover position and no tool saw the tap: the Text
+        // tool placed no text and the keyboard never came (#1496, #1489).
+        // Where the click happened stands in.
+        let hover = hover.or_else(|| {
+            let clicked = response.ctx.input(|i| i.pointer.any_click());
+            response.interact_pointer_pos().filter(|_| clicked)
         });
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
@@ -1105,10 +1345,11 @@ impl App {
             return;
         }
 
-        // With the Zoom tool a right click zooms out by default.
+        // With the Zoom tool a right click zooms out by default; with the
+        // Pan tool when Options > Tools > Zoom/Pan says so.
         if response.secondary_clicked()
-            && self.tool == Tool::Zoom
-            && self.settings.zoom_right_click_out
+            && ((self.tool == Tool::Zoom && self.settings.zoom_right_click_out)
+                || (self.tool == Tool::Pan && self.settings.pan_right_click_out))
         {
             self.view.zoom_at(screen, 0.5);
             self.end_zoom_one_shot();
@@ -1136,6 +1377,18 @@ impl App {
         }
 
         if self.pending_text_link.is_some() {
+            // A drag that began on the tab: the release says where the
+            // text flows, as a click there would.
+            if self.text_link_from_tab {
+                if response.drag_stopped_by(PointerButton::Primary) {
+                    let now = self.pointer_page.unwrap_or(p);
+                    self.finish_text_link(now, None);
+                } else if !response.ctx.input(|i| i.pointer.primary_down()) {
+                    // Let go without a drag: the next click says.
+                    self.text_link_from_tab = false;
+                }
+                return;
+            }
             if response.drag_started_by(PointerButton::Primary) {
                 self.text_link_drag = Some(p);
             } else if response.drag_stopped_by(PointerButton::Primary) {
@@ -1147,8 +1400,7 @@ impl App {
                 self.finish_text_link(p, None);
             }
             if response.secondary_clicked() {
-                self.pending_text_link = None;
-                self.text_link_drag = None;
+                self.cancel_text_link();
             }
             return;
         }
@@ -1238,7 +1490,7 @@ impl App {
                     self.eyedropper_click(p, attrs, mods.shift);
                 }
             }
-            Tool::InteractiveFill => self.fill_input(response, p),
+            Tool::InteractiveFill => self.fill_input(response, p, mods),
             Tool::Crop => self.crop_input(response, p),
             Tool::Contour => self.contour_input(response, p),
             Tool::Knife
@@ -1265,12 +1517,24 @@ impl App {
                         self.drag = Drag::ShadowHandle {
                             handle,
                             grab: Vec2::ZERO,
+                            begun: false,
                         };
+                    } else if self.shadow_on_line(press) {
+                        // On the line between the handles: the whole
+                        // shadow moves with the pointer.
+                        if let Some((_, sh, b)) = self.selected_shadow() {
+                            self.drag = Drag::ShadowLine {
+                                press,
+                                end: sh.end_point(b),
+                                begun: false,
+                            };
+                        }
                     } else if let Some(grab) = self.grab_shadow(press) {
                         // On the shadow itself: it moves with the pointer.
                         self.drag = Drag::ShadowHandle {
                             handle: crate::shadow_tool::ShadowHandle::End,
                             grab,
+                            begun: false,
                         };
                     } else if let Some(id) = self.hit_test(press) {
                         self.select(vec![id]);
@@ -1287,14 +1551,31 @@ impl App {
                             self.drag_new_shadow(shape, start, p, first);
                             self.drag = Drag::Shadow { shape, start };
                         }
-                        Drag::ShadowHandle { handle, grab } => {
-                            self.drag_shadow_handle(handle, p + grab)
+                        Drag::ShadowHandle {
+                            handle,
+                            grab,
+                            begun,
+                        } => {
+                            self.drag_shadow_handle(handle, p + grab, begun);
+                            self.drag = Drag::ShadowHandle {
+                                handle,
+                                grab,
+                                begun: true,
+                            };
+                        }
+                        Drag::ShadowLine { press, end, begun } => {
+                            self.drag_shadow_line(press, end, p, mods.ctrl || mods.command, begun);
+                            self.drag = Drag::ShadowLine {
+                                press,
+                                end,
+                                begun: true,
+                            };
                         }
                         _ => {}
                     }
                 }
                 if response.clicked_by(PointerButton::Primary) {
-                    if self.shadow_handle_at(p).is_some() {
+                    if self.shadow_handle_at(p).is_some() || self.shadow_on_line(p) {
                         return;
                     }
                     match self.pick_at(p) {
@@ -1324,37 +1605,30 @@ impl App {
                     }
                 }
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(h) = self.fountain_handle_at(p) {
-                        if let Some(i) = self.fountain_stop_of(h) {
-                            self.fill_node = Some(i);
-                        }
-                        self.drag = Drag::FountainHandle {
-                            handle: h,
-                            begun: false,
-                        };
+                    // A node, a slider, or the line (the whole mask moves).
+                    let press = response
+                        .ctx
+                        .input(|i| i.pointer.press_origin())
+                        .map(|o| self.view.to_page(o))
+                        .unwrap_or(p);
+                    if self.begin_fountain_drag(p, press) {
                         return;
                     }
-                    if let Some(id) = self.hit_test(p) {
-                        self.select(vec![id]);
+                    // The selection takes the mask; an unselected object
+                    // pressed outside it is picked and takes it (#1661).
+                    if let Some(shape) = self.transparency_drag_target(p) {
                         self.drag = Drag::FillGradient {
-                            shape: id,
+                            shape,
                             start: p,
                             current: p,
                         };
                     }
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::FountainHandle { handle, begun } = self.drag {
-                        self.drag_fountain_handle(handle, p, begun);
-                        self.drag = Drag::FountainHandle {
-                            handle,
-                            begun: true,
-                        };
+                    if self.fountain_drag_to(p, mods.ctrl || mods.command) {
                         return;
                     }
-                    if let Drag::FillGradient { current, .. } = &mut self.drag {
-                        *current = p;
-                    }
+                    self.fill_gradient_drag_to(p, mods);
                 }
                 if response.clicked() {
                     if let Some(h) = self.fountain_handle_at(p) {
@@ -1422,12 +1696,19 @@ impl App {
             || response.drag_started_by(PointerButton::Primary)
         {
             // A handle comes first: the tab never takes a drag of one.
-            if let Some(id) = self
-                .flow_tab_at(screen)
-                .filter(|_| self.handle_at(screen).is_none())
-            {
-                self.start_text_link(id);
-                return;
+            // A drag from the tab ends where the text flows.
+            let from_tab = response.drag_started_by(PointerButton::Primary);
+            if self.handle_at(screen).is_none() {
+                if let Some(id) = self.flow_tab_at(screen) {
+                    self.start_text_link(id);
+                    self.text_link_from_tab = from_tab;
+                    return;
+                }
+                if let Some(id) = self.flow_in_tab_at(screen) {
+                    self.start_text_link_in(id);
+                    self.text_link_from_tab = from_tab;
+                    return;
+                }
             }
         }
         // Resting over the selection (not over a handle or the centre of
@@ -1530,7 +1811,16 @@ impl App {
             // Ctrl takes the object inside a group, unless the press is on
             // what is selected already (Ctrl then keeps the move straight);
             // an object chosen inside a group moves alone (#849).
-            let hit = self.press_target(p, mods.ctrl);
+            // Alt starts a selection by touching anywhere, also over an
+            // object, selected or not (the object in front of a hidden
+            // one, a background under the objects to pick), as a press
+            // beside it would; a drag moves the selection without Alt
+            // (#1341, #1350).
+            let hit = if mods.alt {
+                None
+            } else {
+                self.press_target(p, mods.ctrl)
+            };
             match hit {
                 Some(id) => {
                     if mods.shift {
@@ -1594,19 +1884,19 @@ impl App {
                 return;
             }
             self.deselect_guides();
-            // Alt digs: the object beneath the selected one there (with
-            // Ctrl among the objects inside groups).
+            // Alt digs: the object beneath the selected one there, or,
+            // with none of the selection under the pointer, beneath the
+            // topmost one (the hidden object behind the one clicked,
+            // #1350); after the bottom one, the top again (with Ctrl
+            // among the objects inside groups).
             if mods.alt {
                 let hits = self.hits_at(p, mods.ctrl);
                 if !hits.is_empty() {
-                    let below = match self.selection.as_slice() {
-                        [one] => hits
-                            .iter()
-                            .position(|h| h == one)
-                            .map(|i| (i + 1) % hits.len()),
+                    let from = match self.selection.as_slice() {
+                        [one] => hits.iter().position(|h| h == one),
                         _ => None,
                     };
-                    let id = hits[below.unwrap_or(0)];
+                    let id = hits[(from.unwrap_or(0) + 1) % hits.len()];
                     if mods.shift {
                         self.select_add(id);
                     } else {
@@ -1614,6 +1904,16 @@ impl App {
                     }
                     return;
                 }
+            }
+            // Editing a clip frame's contents: a Ctrl+click off them
+            // finishes (#1337).
+            if mods.ctrl && !mods.shift && self.ctrl_click_finishes_clip_edit(p) {
+                self.finish_clip_frame_edit();
+                return;
+            }
+            // Ctrl+click on a clip frame: editing its contents (#982).
+            if mods.ctrl && !mods.shift && self.ctrl_click_edits_clip_frame(p) {
+                return;
             }
             // Ctrl: one group level further in.
             let hit = if mods.ctrl {
@@ -1708,7 +2008,9 @@ impl App {
     /// frame does (they are not tool shortcuts then).
     fn note_drop_keys(&mut self, ctx: &egui::Context) {
         if matches!(self.drag, Drag::Move { .. }) {
-            self.drop_keys = ctx.input(|i| (i.key_down(Key::W), i.key_down(Key::K)));
+            // Alt adds to the frame as W does (#1337).
+            self.drop_keys =
+                ctx.input(|i| (i.key_down(Key::W) || i.modifiers.alt, i.key_down(Key::K)));
         }
     }
 
@@ -1721,11 +2023,33 @@ impl App {
             self.drag_guide_to(p);
             return;
         }
+        // Once the pointer has left the snapping radius of where the move
+        // began, the selection's start geometry attracts it (#1765); not
+        // before, or every move begun on a node would stick to it.
+        let away = match &self.drag {
+            Drag::Move {
+                start,
+                start_geometry: None,
+                ..
+            } => {
+                self.snap_enabled()
+                    && self.snap.objects
+                    && (p - *start).hypot() > self.snap_tolerance()
+            }
+            _ => false,
+        };
+        if away {
+            let g = std::rc::Rc::new(self.selection_start_geometry());
+            if let Drag::Move { start_geometry, .. } = &mut self.drag {
+                *start_geometry = Some(g);
+            }
+        }
         let snapped_move = match &self.drag {
             Drag::Move {
                 start,
                 start_bounds,
                 source,
+                start_geometry,
                 ..
             } => {
                 // The pointer's way since the press, snapped; Ctrl
@@ -1737,7 +2061,8 @@ impl App {
                     Some(false) => d.x = 0.0,
                     None => {}
                 }
-                let mut t = self.snap_move_from(*source, *start_bounds, d);
+                let mut t =
+                    self.snap_move_from(*source, *start_bounds, d, start_geometry.as_deref());
                 match axis {
                     Some(true) => t.y = 0.0,
                     Some(false) => t.x = 0.0,
@@ -1964,7 +2289,14 @@ impl App {
                 Tool::Zoom => Tool::Pick,
                 t => t,
             };
-            self.set_tool(back);
+            if self.text_edit.is_some() {
+                // F2 while editing a text (#1699): the editing goes on.
+                self.zoom_one_shot = false;
+                self.previous_tool = Tool::Zoom;
+                self.tool = back;
+            } else {
+                self.set_tool(back);
+            }
         }
     }
 
@@ -2057,6 +2389,16 @@ impl App {
     }
 
     fn freehand_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        // Resting before the first click: the pointer shows the point the
+        // line would start at, as it does for the next node once the line
+        // has begun (the preview snaps it then) (#1538).
+        if self.tool == Tool::Freehand
+            && self.curve.is_none()
+            && matches!(self.drag, Drag::None)
+            && response.hovered()
+        {
+            let _ = self.snap_point(p);
+        }
         // A click, then another: a straight line between them (Ctrl keeps
         // it to steps of the constrain angle); Esc drops the first click.
         if response.clicked_by(PointerButton::Primary) && self.tool == Tool::Freehand {
@@ -2077,6 +2419,7 @@ impl App {
         if response.drag_started_by(PointerButton::Primary) {
             self.curve = None;
             self.drag = Drag::Freehand { points: vec![p] };
+            self.pen_stroke = crate::pen::PenStroke::start(self.pen_pressure);
         }
         if response.dragged_by(PointerButton::Primary) {
             if let Drag::Freehand { points } = &mut self.drag {
@@ -2086,9 +2429,21 @@ impl App {
                     .unwrap_or(true)
                 {
                     points.push(p);
+                    let n = points.len();
+                    self.pen_stroke.record(n, self.pen_pressure);
                 }
             }
         }
+    }
+
+    /// The pressures a pen recorded along the freehand drag of `points`,
+    /// when it had one at every point and Options > Tools > Curve tools
+    /// lets the pressure set the width (#850).
+    pub fn pen_pressures(&self, points: &[Point]) -> Option<&[f32]> {
+        if !self.settings.curves.pen_pressure {
+            return None;
+        }
+        self.pen_stroke.pressures(points.len())
     }
 
     /// Bezier/Pen: click places a node without a handle (the segment to
@@ -2230,7 +2585,10 @@ impl App {
             // is the one the preview showed, shaped by the handle of the
             // node before (straight when that node has none), arriving
             // straight at the new node (#314).
-            if drag || !c.dragging_handle {
+            // A B-Spline point on the last one is not placed twice: the
+            // curve would bend at its end where the preview showed none.
+            let again = bspline && c.on_last_control(p);
+            if (drag || !c.dragging_handle) && !again {
                 c.nodes.push((p, None));
             }
             c.dragging_handle = drag;
@@ -2475,7 +2833,7 @@ impl App {
         }
     }
 
-    fn fill_input(&mut self, response: &Response, p: Point) {
+    fn fill_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         // A double click on a colour node removes it; on the line, it adds
         // one there.
         if response.double_clicked_by(PointerButton::Primary) {
@@ -2494,14 +2852,13 @@ impl App {
             }
         }
         if response.drag_started_by(PointerButton::Primary) {
-            if let Some(h) = self.fountain_handle_at(p) {
-                if let Some(i) = self.fountain_stop_of(h) {
-                    self.fill_node = Some(i);
-                }
-                self.drag = Drag::FountainHandle {
-                    handle: h,
-                    begun: false,
-                };
+            // A node, a slider, or the line (the whole fill moves).
+            let press = response
+                .ctx
+                .input(|i| i.pointer.press_origin())
+                .map(|o| self.view.to_page(o))
+                .unwrap_or(p);
+            if self.begin_fountain_drag(p, press) {
                 return;
             }
             if let Some(id) = self.hit_test_inside(p) {
@@ -2514,17 +2871,10 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::FountainHandle { handle, begun } = self.drag {
-                self.drag_fountain_handle(handle, p, begun);
-                self.drag = Drag::FountainHandle {
-                    handle,
-                    begun: true,
-                };
+            if self.fountain_drag_to(p, mods.ctrl || mods.command) {
                 return;
             }
-            if let Drag::FillGradient { current, .. } = &mut self.drag {
-                *current = p;
-            }
+            self.fill_gradient_drag_to(p, mods);
         }
         if response.clicked_by(PointerButton::Primary) {
             // A click on a node picks it (the node bar opens under it).
@@ -2561,8 +2911,48 @@ impl App {
         }
     }
 
+    /// The gradient line of an Interactive Fill or Transparency drag
+    /// follows the pointer to `p`; with Ctrl (Cmd) it turns in steps of
+    /// the constrain angle about where the drag began (#1661).
+    fn fill_gradient_drag_to(&mut self, p: Point, mods: Modifiers) {
+        let step = self.settings.constrain_angle;
+        if let Drag::FillGradient { start, current, .. } = &mut self.drag {
+            *current = if mods.ctrl || mods.command {
+                constrain_from(*start, p, step)
+            } else {
+                p
+            };
+        }
+    }
+
+    /// The object a Transparency drag starting at `p` puts its mask on,
+    /// picking it when it was not selected: with a selection, the
+    /// selection (pressed on a selected object, even where another one
+    /// covers it, or on no object); an unselected object pressed outside
+    /// the selected ones is picked alone; with nothing selected, the
+    /// object under the press (#1661).
+    fn transparency_drag_target(&mut self, p: Point) -> Option<ShapeId> {
+        let on_selected = self.selection.iter().copied().find(|id| {
+            self.doc()
+                .shape_on_page(*id)
+                .is_some_and(|s| s.bounds().contains(p))
+        });
+        if let Some(id) = on_selected {
+            return Some(id);
+        }
+        match self.hit_test(p) {
+            Some(id) => {
+                self.select(vec![id]);
+                Some(id)
+            }
+            None => self.selection.first().copied(),
+        }
+    }
+
     pub fn end_drag(&mut self) {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
+        // The page shows the drawing as it is now (#1259).
+        self.node_drag_shown = None;
         if !matches!(drag, Drag::Move { .. }) {
             self.drop_frame = None;
         }
@@ -2619,6 +3009,19 @@ impl App {
             } => self.finish_connector(from, start, current),
             Drag::Freehand { points } if self.tool == Tool::Eraser => self.erase_along(&points),
             Drag::Freehand { points } if self.tool == Tool::Knife => self.knife_cut(&points),
+            Drag::Freehand { points } if self.tool == Tool::SegmentDelete => {
+                // A click that slipped into a little stroke reaching
+                // nothing still deletes as a click at the press.
+                if !self.delete_virtual_segments_along(&points) {
+                    if let Some(first) = points.first().copied() {
+                        let zoom = self.view.zoom.max(1e-6) as f64;
+                        let far = points.iter().any(|q| (*q - first).hypot() * zoom >= 8.0);
+                        if !far {
+                            self.delete_virtual_segment_at(first);
+                        }
+                    }
+                }
+            }
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }
@@ -2664,6 +3067,12 @@ impl App {
             }
             Drag::AlongPath { start, current } => self.finish_along_path(start, current),
             Drag::Pivot => {}
+            // A Free Transform drag applied its steps as the pointer
+            // moved (a release off the canvas ends it here): nothing is
+            // left to apply, its undo step is closed (#1342).
+            Drag::Rotate { .. } if self.tool == Tool::FreeTransform => {
+                self.end_free_transform_group();
+            }
             Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. } => {
                 if let Some(t) = self.preview_transform_of(&drag) {
                     self.finish_transform(t);
@@ -2697,7 +3106,11 @@ impl App {
                 self.add_painterly_stroke(&points);
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
-                let shapes = self.media_shapes(&points);
+                // A pen's pressure along the drag sets the width (#850).
+                let pen = self
+                    .pen_pressures(&points)
+                    .and_then(|pr| crate::pen::PressureProfile::new(&points, pr));
+                let shapes = self.media_shapes_pen(&points, pen.as_ref());
                 if let Some(layer) = self.active_layer() {
                     let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
                     let cmds: Vec<Command> = shapes
@@ -2717,7 +3130,15 @@ impl App {
                 let pts = tracedraw_core::geometry::simplify(&points, tol.max(0.02));
                 if pts.len() >= 2 {
                     let path = tracedraw_core::geometry::smooth_path(&pts, false);
-                    self.add_drawn_line(path);
+                    // Drawn with a pen: the outline follows its pressure
+                    // along the stroke (#850); the mouse keeps it even.
+                    let widths = self
+                        .pen_pressures(&points)
+                        .and_then(|pr| crate::pen::PressureProfile::new(&points, pr))
+                        .zip(self.default_stroke())
+                        .map(|(pen, st)| pen.freehand_widths(st.width))
+                        .unwrap_or_default();
+                    self.add_drawn_line_with_widths(path, widths);
                 }
             }
             Drag::FillGradient {
@@ -2726,7 +3147,13 @@ impl App {
                 current,
             } if self.tool == Tool::Transparency => {
                 if (current - start).hypot() > 0.5 {
-                    self.transparency_from_drag(shape, start, current);
+                    // The whole selection when the drag began on it (#1661).
+                    let ids = if self.selection.contains(&shape) {
+                        self.selection.clone()
+                    } else {
+                        vec![shape]
+                    };
+                    self.transparency_from_drag_on(&ids, start, current);
                 }
             }
             Drag::FillGradient {
@@ -2768,6 +3195,8 @@ impl App {
             | Drag::ContourDrag { .. }
             | Drag::Shadow { .. }
             | Drag::ShadowHandle { .. }
+            | Drag::ShadowLine { .. }
+            | Drag::FountainLine { .. }
             | Drag::RulerOrigin { .. }
             | Drag::Node { .. }
             | Drag::KindNode { .. }
@@ -2880,7 +3309,102 @@ impl App {
         }
     }
 
+    /// Pick `t` by its key. The Pick tool's key (Space) on the Pick tool
+    /// goes back to the tool used before it, not during a drag, where
+    /// Space drops a copy; true then, the key having done its work.
+    fn pick_tool_by_key(&mut self, t: Tool, pointer_busy: bool) -> bool {
+        if t == Tool::Pick && pointer_busy {
+            return false;
+        }
+        if t == Tool::Pick && self.tool == Tool::Pick {
+            if self.previous_tool != Tool::Pick {
+                self.choose_tool(self.previous_tool);
+            }
+            return true;
+        }
+        self.choose_tool(t);
+        false
+    }
+
+    /// The zoom keys while a text is being edited, which type nothing
+    /// (#1699): F3 zooms out, F4 to fit all objects, Shift+F4 to the
+    /// page, Shift+F2 to the selection, and F2 picks the Zoom tool for one
+    /// zoom, after which the text is edited on where it was. Each key
+    /// taken is consumed, so the typing does not see it; one the user
+    /// gave another command or removed (Options > Customization >
+    /// Commands) is left alone.
+    pub(crate) fn text_view_keys(&mut self, ctx: &egui::Context) {
+        let keys = [
+            (Key::F2, Modifiers::SHIFT),
+            (Key::F2, Modifiers::NONE),
+            (Key::F3, Modifiers::NONE),
+            (Key::F4, Modifiers::SHIFT),
+            (Key::F4, Modifiers::NONE),
+        ];
+        for (key, mods) in keys {
+            // Exact modifiers: Shift+F3 (Change Case) is not F3.
+            let hit = ctx.input_mut(|i| {
+                let before = i.events.len();
+                i.events.retain(|e| {
+                    !matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
+                        if *k == key && modifiers.matches_exact(mods))
+                });
+                i.events.len() != before
+            });
+            if !hit || self.builtin_key_overridden(ctx, key, mods) {
+                continue;
+            }
+            match (key, mods.shift) {
+                (Key::F2, true) => self.zoom_to_selection(),
+                (Key::F2, false) => {
+                    if self.tool != Tool::Zoom {
+                        // Not `set_tool`, which would end the editing.
+                        self.previous_tool = self.tool;
+                        self.tool = Tool::Zoom;
+                        self.zoom_one_shot = true;
+                        self.flyout_open = None;
+                    }
+                }
+                (Key::F3, _) => self.zoom_step(false),
+                (Key::F4, true) => self.zoom_to_page(),
+                _ => self.zoom_to_fit(),
+            }
+        }
+    }
+
+    /// The built-in shortcut `key` with `mods` is another command's by
+    /// the user's choice, or was removed (Options > Customization >
+    /// Commands).
+    fn builtin_key_overridden(&mut self, ctx: &egui::Context, key: Key, mods: Modifiers) -> bool {
+        let text = crate::shortcuts::format(mods, key);
+        if self
+            .settings
+            .shortcuts
+            .iter()
+            .any(|(_, v)| crate::shortcuts::same(v, &text))
+        {
+            return true;
+        }
+        if !self.settings.shortcuts.iter().any(|(_, v)| v.is_empty()) {
+            return false;
+        }
+        if self.shortcut_editor.entries.is_empty() {
+            self.shortcut_editor.entries = crate::ui::menus::commands(self, ctx);
+        }
+        self.shortcut_editor.entries.iter().any(|e| {
+            crate::shortcuts::same(&e.shortcut, &text)
+                && self
+                    .settings
+                    .shortcuts
+                    .iter()
+                    .any(|(id, v)| id == &e.key && v.is_empty())
+        })
+    }
+
     pub fn keyboard(&mut self, ctx: &egui::Context) {
+        // The pen's pressure, which the raw input hook read from this
+        // frame's touch events, before the tools see the pointer (#850).
+        self.pen_pressure = crate::pen::pressure(ctx);
         // A macro's message, input box, modal form or error owns the
         // keyboard (see ui/macros_ui.rs); Esc stops a running macro.
         if self.macros.modal() {
@@ -2909,8 +3433,10 @@ impl App {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
-        // Text typing has priority.
+        // Text typing has priority; the zoom keys, which type nothing,
+        // still zoom (#1699).
         if self.text_edit.is_some() && !dialog_open {
+            self.text_view_keys(ctx);
             self.text_keyboard(ctx);
             return;
         }
@@ -2958,8 +3484,7 @@ impl App {
             return;
         }
         if self.pending_text_link.is_some() && ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.pending_text_link = None;
-            self.text_link_drag = None;
+            self.cancel_text_link();
             return;
         }
         if self.transforming() && ctx.input(|i| i.key_pressed(Key::Escape)) {
@@ -2972,20 +3497,48 @@ impl App {
         // Ctrl+E can be released before the frame that sees it). Shortcuts
         // match the modifiers exactly, so Ctrl+Shift+Z is not also Ctrl+Z;
         // only + and - ignore Shift, which some layouts need to type them.
+        // A key held sends its press again and again (`repeat`); the
+        // presses a held key makes are kept apart for what must happen
+        // once a press, such as picking a tool (#1502).
+        // In the browser version a key that stands in for one the browser
+        // keeps (Alt+PgUp for Ctrl+PgUp, #1409) also counts as that key.
+        let web_keys = crate::shortcuts::web_keys();
         let presses: Vec<(Key, Modifiers)> = input
+            .events
+            .iter()
+            .flat_map(|e| match e {
+                egui::Event::Key {
+                    key,
+                    physical_key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => {
+                    let kept = web_keys
+                        .then(|| crate::shortcuts::browser_key_for(*key, *physical_key, *modifiers))
+                        .flatten()
+                        .map(|(m, k)| (k, m));
+                    [Some((*key, *modifiers)), kept]
+                }
+                _ => [None, None],
+            })
+            .flatten()
+            .collect();
+        let first_presses: Vec<(Key, Modifiers)> = input
             .events
             .iter()
             .filter_map(|e| match e {
                 egui::Event::Key {
                     key,
                     pressed: true,
+                    repeat: false,
                     modifiers,
                     ..
                 } => Some((*key, *modifiers)),
                 _ => None,
             })
             .collect();
-        let pressed = |k: Key, m: Modifiers| {
+        let matches = |presses: &[(Key, Modifiers)], k: Key, m: Modifiers| {
             presses.iter().any(|(key, mods)| {
                 *key == k
                     && if matches!(k, Key::Plus | Key::Equals | Key::Minus) {
@@ -2995,21 +3548,38 @@ impl App {
                     }
             })
         };
+        let pressed = |k: Key, m: Modifiers| matches(&presses, k, m);
+        let first_pressed = |k: Key, m: Modifiers| matches(&first_presses, k, m);
         let cmd = Modifiers::COMMAND;
 
-        // Menu commands with a shortcut of the user's (Options >
+        let pointer_busy = !matches!(self.drag, Drag::None) || input.pointer.any_down();
+        // Menu commands and tools with a shortcut of the user's (Options >
         // Customization > Commands) come first: they may take a built-in
-        // shortcut over.
+        // shortcut over (#1595).
         for (key, mods) in &presses {
             let text = crate::shortcuts::format(*mods, *key);
-            if let Some(id) = self
+            let Some(id) = self
                 .settings
                 .shortcuts
                 .iter()
-                .find(|(id, v)| id.starts_with("menu.") && crate::shortcuts::same(v, &text))
+                .find(|(_, v)| crate::shortcuts::same(v, &text))
                 .map(|(id, _)| id.clone())
-            {
+            else {
+                continue;
+            };
+            if id.starts_with("menu.") {
                 self.pending_command = Some(id);
+                return;
+            }
+            if let Some(t) = Tool::ALL.iter().find(|t| t.id() == id) {
+                // A key held picks its tool once (#1502); W and K during a
+                // move say what a drop on a clip frame does and pick none.
+                let drop_key = matches!(self.drag, Drag::Move { .. })
+                    && mods.is_none()
+                    && matches!(key, Key::W | Key::K);
+                if first_pressed(*key, *mods) && !drop_key {
+                    self.pick_tool_by_key(*t, pointer_busy);
+                }
                 return;
             }
         }
@@ -3180,6 +3750,11 @@ impl App {
         if pressed(Key::L, cmd) {
             self.combine();
         }
+        // Copy Properties From: its dialog, then a click on the object
+        // to copy from (#1345).
+        if pressed(Key::A, cmd | Modifiers::SHIFT) {
+            self.open_copy_properties();
+        }
         if pressed(Key::J, cmd) {
             self.dialog = crate::ui::dialogs::Dialog::Options;
         }
@@ -3269,10 +3844,14 @@ impl App {
         }
         // Order: Ctrl+Home/End to the front/back of the page, Shift+PgUp/PgDn
         // within the layer, Ctrl+PgUp/PgDn one step.
-        if pressed(Key::Home, cmd) || pressed(Key::PageUp, Modifiers::SHIFT) {
+        if pressed(Key::Home, cmd) {
+            self.order_page(true);
+        } else if pressed(Key::PageUp, Modifiers::SHIFT) {
             self.order(0);
         }
-        if pressed(Key::End, cmd) || pressed(Key::PageDown, Modifiers::SHIFT) {
+        if pressed(Key::End, cmd) {
+            self.order_page(false);
+        } else if pressed(Key::PageDown, Modifiers::SHIFT) {
             self.order(3);
         }
         if pressed(Key::PageUp, cmd) {
@@ -3574,15 +4153,23 @@ impl App {
                         let drop_key = matches!(self.drag, Drag::Move { .. })
                             && mods.is_none()
                             && matches!(k, Key::W | Key::K);
-                        if pressed(k, mods) && !drop_key {
-                            self.set_tool(*t);
+                        // A key held picks its tool once: the presses it
+                        // repeats would send Space back and forth between
+                        // the Pick tool and the tool before it (#1502).
+                        if first_pressed(k, mods) && !drop_key {
+                            if *t == Tool::Pick && pointer_busy {
+                                continue;
+                            }
+                            if self.pick_tool_by_key(*t, pointer_busy) {
+                                return;
+                            }
                         }
                     }
                 }
             }
         }
         // Arrow nudge: plain, Shift super nudge, Ctrl micro nudge
-        // (Document Options > Rulers).
+        // (Document Setup > Rulers).
         let mut d = Vec2::ZERO;
         for (key, mods) in &presses {
             let step = if mods.matches_exact(Modifiers::NONE) {

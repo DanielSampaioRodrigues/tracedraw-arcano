@@ -1,7 +1,7 @@
 # TraceDraw: Edição Editora Arcano 3
 
 Esta é a versão do TraceDraw usada na Editora Arcano 3. Ela é o projeto
-original ([igtoth/tracedraw](https://github.com/igtoth/tracedraw), licença
+original ([tracedraw/tracedraw](https://github.com/tracedraw/tracedraw), licença
 MIT ou Apache 2.0) com algumas mudanças por cima:
 
 - **Português do Brasil revisado**: todas as linhas de tradução automática

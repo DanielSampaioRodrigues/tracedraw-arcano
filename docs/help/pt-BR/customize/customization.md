@@ -1,5 +1,7 @@
 # Opções de personalização
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] define a
 aparência da interface, seus próprios atalhos de teclado, quais barras
 aparecem e como a paleta de cores se comporta.
@@ -41,6 +43,15 @@ O **x** ao lado de um atalho o remove, e voltar aos padrões remove todos. As
 teclas de ferramenta são uma letra ou <kbd>Shift</kbd> e uma letra. Veja
 [Atalhos de teclado](../reference/keyboard-shortcuts.md).
 
+Um comando pode ter vários atalhos: uma tecla nova se junta às que ele já tem
+(uma tecla padrão continua funcionando ao lado dela), e cada tecla tem o próprio
+botão de excluir. Os botões das barras que executam um comando de menu (Novo,
+Abrir, Salvar, Desfazer, Aproximar e outros) também aceitam atalhos, as mesmas
+teclas do comando de menu, assim como linhas que os menus mostram só às vezes
+(como Concluir edição do conteúdo). Uma lista **Botões das barras de
+ferramentas** tem todos os botões das barras Padrão e Zoom: arraste dali de
+volta para a barra um botão que você tirou.
+
 ## Barras de comando {#command-bars}
 
 ![A página Barras de comando das opções de personalização](../../img/customize-customization-command-bars.png)
@@ -61,6 +72,8 @@ teclas de ferramenta são uma letra ou <kbd>Shift</kbd> e uma letra. Veja
 
 - [[options.palette_auto_update]] e [[options.palette_show_document]] (ambos
   ligados).
+- **Linhas** (de 1 a 8, ou Ajustar) e **Tamanho das amostras** (de
+  Extrapequeno a Extragrande) da paleta padrão.
 - [[options.palette_swatches]]: [[options.palette_no_color]] (ligado), e o que
   o [[options.palette_right_button]] faz: [[options.palette_set_outline]] (de
   início) ou abrir o [[options.palette_context_menu]].

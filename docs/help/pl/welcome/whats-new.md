@@ -13,11 +13,14 @@ sprawdzić, co się zmieniło, i wymienia najważniejsze nowości ostatnich wers
   menu, które je zawiera. Oznaczenia znikają po wyłączeniu polecenia, a przy
   następnym uruchomieniu TraceDraw polecenie znowu jest wyłączone.
 - Pełna lista zmian każdej wersji znajduje się w
-  [dzienniku zmian](https://github.com/igtoth/tracedraw/blob/main/CHANGELOG.md)
+  [dzienniku zmian](https://github.com/tracedraw/tracedraw/blob/main/CHANGELOG.md)
   projektu.
 
 ## Najważniejsze nowości ostatnich wersji {#highlights}
 
+- **Miniatury obiektów.** Panel [[docker.objects]] pokazuje każdy obiekt
+  narysowany w małym rozmiarze obok nazwy; Ctrl+kółko nad listą lub suwak na
+  dole ustawia rozmiar. Zobacz [Porządkowanie obiektów i warstw](../objects/objects-and-layers.md#objects-docker).
 - **Pomoc w Twoim języku.** Każdy przycisk **?** i <kbd>F1</kbd> otwierają
   stronę tej Pomocy o oknie dialogowym, panelu lub narzędziu przed Tobą, w
   języku ustawionym w TraceDraw.

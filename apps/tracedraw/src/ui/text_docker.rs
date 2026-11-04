@@ -456,8 +456,10 @@ pub(crate) fn edit_spans(app: &mut App, f: impl Fn(&mut TextSpan) + Clone) {
                 para,
                 on_path,
             } => {
-                let mut spans = spans.clone();
-                spans.iter_mut().for_each(f.clone());
+                // The characters chosen with the Shape tool, else all of
+                // them (#1662).
+                let chosen = app.chosen_chars(s.id);
+                let spans = crate::text_nodes::apply_to_chars(spans, &chosen, f.clone());
                 Some(tracedraw_core::Command::SetShapeKind {
                     shape: s.id,
                     kind: ShapeKind::Text {
@@ -569,6 +571,12 @@ pub fn text_docker(app: &mut App, ui: &mut Ui) {
             .into_iter()
             .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
     });
+    // With the Shape tool the property bar does not read the text fields:
+    // the docker reads them itself, from the first chosen character
+    // (#1662).
+    if let Some(t) = first.as_ref().filter(|_| app.chosen_chars_active()) {
+        app.sync_text_defaults_from(t.id);
+    }
     let from = (app.settings.text_docker_from as usize).min(SECTIONS.len() - 1);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -733,10 +741,9 @@ fn style_name(picks: &[(String, (String, bool, bool))], now: &(String, bool, boo
 }
 
 fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
-    let span = first.and_then(|t| match &t.kind {
-        ShapeKind::Text { spans, .. } => spans.first().cloned(),
-        _ => None,
-    });
+    // The character at the caret, the first one chosen with the Shape
+    // tool, else the text's first (#1662).
+    let span = first.and_then(|t| app.shown_span(t));
     let mut changed = false;
     ui.horizontal(|ui| {
         let w = ui.available_width()
@@ -960,9 +967,10 @@ fn axis_name(axis: &tracedraw_text::VariationAxis) -> String {
 /// The axes of the selected text's variable font (#870): a slider for
 /// each (weight, width, slant, optical size and the font's own axes),
 /// showing the value set on the text or, with none set, the one its
-/// weight and slant give. Releasing a slider (or typing a value) sets it
-/// on the selected characters, one undo step; Default axes takes every
-/// value off again. Nothing shows for a static font.
+/// weight and slant give. The text follows a slider while it is dragged;
+/// releasing it (or typing a value) sets the value on the selected
+/// characters, one undo step; Default axes takes every value off again.
+/// Nothing shows for a static font.
 fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     let axes = axes_of(ui.ctx(), sp);
     if axes.is_empty() {
@@ -992,20 +1000,43 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
             let mut v = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(held);
             let step = if axis.max - axis.min > 20.0 { 1.0 } else { 0.1 };
             ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(60.0);
-            let r = ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut v, axis.min..=axis.max)
-                    .step_by(step)
-                    .clamping(egui::SliderClamping::Always),
-            ));
+            let r = ui.add(crate::ui::Slider::new(&mut v, axis.min..=axis.max).step_by(step));
             if r.dragged() {
                 ui.data_mut(|d| d.insert_temp(id, v));
+                if r.changed() {
+                    preview_axis(app, &axis.tag, v);
+                }
             }
             if r.drag_stopped() || r.changed() && !r.dragged() {
                 ui.data_mut(|d| d.remove::<f64>(id));
-                let tag = axis.tag.clone();
-                edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+                set_axis(app, &axis.tag, v);
             }
         });
+    }
+}
+
+/// Show the selected text with `tag` at `v` while its slider is dragged
+/// (#870): a preview the history does not keep, replaced at each value.
+fn preview_axis(app: &mut App, tag: &str, v: f64) {
+    end_axis_preview(app);
+    app.engine.begin_preview();
+    app.live_axis = true;
+    let tag = tag.to_string();
+    edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+}
+
+/// Set `tag` to `v` on the selected text, one undo step, the preview of
+/// a drag taken back first.
+fn set_axis(app: &mut App, tag: &str, v: f64) {
+    end_axis_preview(app);
+    let tag = tag.to_string();
+    edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+}
+
+/// The text as it was before an axis slider was dragged.
+fn end_axis_preview(app: &mut App) {
+    if std::mem::take(&mut app.live_axis) {
+        app.engine.withdraw_preview();
     }
 }
 
@@ -1126,15 +1157,16 @@ pub(crate) fn font_axes_button(app: &mut App, ui: &mut Ui, salt: &str) {
     }
 }
 
-/// The text fill: the selected characters' colour while editing, else the
-/// text objects' fill (span colours give way to it).
+/// The text fill: the selected characters' colour while editing (or the
+/// characters chosen with the Shape tool), else the text objects' fill
+/// (span colours give way to it).
 fn set_text_fill(app: &mut App, fill: Option<Fill>) {
     if app.table_edit.is_some() {
         let f = Some(fill.unwrap_or(Fill::None));
         app.cells_apply_style(move |sp| sp.fill = f.clone());
         return;
     }
-    if app.text_selection_active() {
+    if app.text_selection_active() || app.chosen_chars_active() {
         app.apply_fill(fill.unwrap_or(Fill::None));
         return;
     }
@@ -1630,6 +1662,20 @@ mod tests {
         out.textures_delta.clear();
         edit_spans(&mut app, |s| s.variations.clear());
         assert_eq!(wght(&app), None);
+        app.undo();
+        assert_eq!(wght(&app), Some(650.0));
+
+        // Dragged, the text follows each value; released, the last one is
+        // kept in one undo step that takes it back to where it was.
+        let steps = app.engine.history_labels().0.len();
+        for v in [400.0, 500.0, 600.0] {
+            preview_axis(&mut app, "wght", v);
+            assert_eq!(wght(&app), Some(v));
+        }
+        set_axis(&mut app, "wght", 600.0);
+        assert!(!app.live_axis && !app.engine.in_preview());
+        assert_eq!(wght(&app), Some(600.0));
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
         app.undo();
         assert_eq!(wght(&app), Some(650.0));
     }

@@ -118,6 +118,10 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     crate::comments::draw_comments(app, painter);
     crate::perspective_draw::draw_grid(app, painter, rect);
     draw_frame_links(app, painter);
+    if app.pending_text_link.is_some() {
+        let pointer = painter.ctx().pointer_hover_pos();
+        draw_pending_text_link(app, painter, pointer);
+    }
     draw_drop_frame(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
@@ -313,19 +317,15 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         // The pointer as the next node would take it (the constrain key:
         // in steps of the constrain angle).
         let ctrl = painter.ctx().input(|i| app.constrain_held(&i.modifiers));
-        let preview = if c.dragging_handle {
-            None
-        } else {
-            app.pointer_page
-                .map(|p| app.curve_point(app.snap_point(p), ctrl))
-        };
+        let preview = app.curve_preview_point(ctrl);
         let path = c.path(preview);
         if c.bspline {
             // The control polygon, dashed, as the curve is drawn.
-            let mut poly: Vec<egui::Pos2> = c.nodes.iter().map(|n| view.to_screen(n.0)).collect();
-            if let Some(p) = preview {
-                poly.push(view.to_screen(p));
-            }
+            let poly: Vec<egui::Pos2> = c
+                .bspline_controls(preview)
+                .into_iter()
+                .map(|p| view.to_screen(p))
+                .collect();
             for w in poly.windows(2) {
                 painter.extend(egui::Shape::dashed_line(
                     &[w[0], w[1]],
@@ -411,7 +411,10 @@ pub(crate) fn ime_at_caret(app: &App, painter: &Painter, top: Pos2, bottom: Pos2
     ctx.output_mut(|o| {
         o.ime = Some(egui::output::IMEOutput {
             purpose: egui::IMEPurpose::Normal,
-            rect: painter.clip_rect(),
+            // The windowing layer places the input method's candidate
+            // window beside this area: the caret, not the whole canvas
+            // (whose corner put it far from the letters typed).
+            rect: caret,
             cursor_rect: caret,
             should_interrupt_composition: false,
         })
@@ -452,14 +455,18 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     // the picture is not taken for the full one.
     let without_copies = app.symmetry_without_copies();
     let doc: &Document = without_copies.as_deref().unwrap_or(app.doc());
-    let revision = app.engine.revision()
+    // Nodes being dragged: the drawing as it was before the drag, its
+    // picture already made, until the button is released (#1259).
+    let revision = app
+        .node_drag_revision()
+        .unwrap_or_else(|| app.engine.revision())
         ^ if without_copies.is_some() {
             1u64 << 62
         } else {
             0
         };
     // Paragraph text being resized keeps its letters while the frame
-    // follows the drag (the text flows anew on release).
+    // follows the drag (the drag outline shows the text flowed anew).
     let preview_ids = preview.map(|t| {
         let ids: Vec<_> = app
             .selection
@@ -842,7 +849,7 @@ fn three_point_preview(
     match tool {
         Tool::ThreePointCurve => crate::app::three_point_curve(a, b, c, arc),
         _ => {
-            let local = Rect::new(0.0, height.min(0.0), len, height.max(0.0));
+            let local = crate::app::three_point_box(tool, len, height);
             let t = Affine::translate(a.to_vec2()) * Affine::rotate(base.atan2());
             let p = if tool == Tool::ThreePointEllipse {
                 tracedraw_core::geometry::ellipse_path(local)
@@ -1134,7 +1141,8 @@ fn draw_shadow_handles(app: &App, painter: &Painter) {
     }
     let [r, g, bl] = sh.color.to_rgb8();
     for (c, fill) in [(a, Color32::WHITE), (z, Color32::from_rgb(r, g, bl))] {
-        let rect = ERect::from_center_size(c, egui::vec2(9.0, 9.0));
+        let side = crate::shadow_tool::HANDLE_SIDE_PX;
+        let rect = ERect::from_center_size(c, egui::vec2(side, side));
         painter.rect_filled(rect, 0.0, fill);
         painter.rect_stroke(
             rect,
@@ -1181,9 +1189,15 @@ fn draw_blend_controls(app: &App, painter: &Painter) {
             ));
         }
     }
-    for p in [a, z] {
+    for (h, p) in [(BlendHandle::Start, a), (BlendHandle::End, z)] {
         let rect = ERect::from_center_size(p, egui::vec2(9.0, 9.0));
-        painter.rect_filled(rect, 0.0, Color32::WHITE);
+        // The square being dragged is filled in the selection colour.
+        let fill = if app.blend_handle_drag == Some(h) {
+            Tokens::SELECTION
+        } else {
+            Color32::WHITE
+        };
+        painter.rect_filled(rect, 0.0, fill);
         painter.rect_stroke(
             rect,
             0.0,
@@ -1366,8 +1380,13 @@ pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
     let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
     let line = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
     for s in app.selected_rc().iter() {
-        // What the release will make: rounded corners keep their size.
-        let mut paths = vec![s.page_path_after(t)];
+        // What the release will make: rounded corners keep their size,
+        // and a paragraph text flows anew in the frame it is given (when
+        // that is quick enough to do every frame, #1327).
+        let mut paths = vec![match app.live_frame(s.id, t) {
+            Some(live) => live.outline.clone(),
+            None => s.page_path_after(t),
+        }];
         // A symmetry out of edit mode goes whole: its copies too, also
         // those of one inside a group.
         let mut moved = s.clone();
@@ -1548,7 +1567,7 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         // no frame of its own, so the objects' outlines stay in view.
         // Objects chosen inside a group show round handles.
         let nested = app.selection_nested();
-        let size = crate::interaction::HANDLE_SIZE;
+        let size = app.handle_size();
         // Black with a white edge, so they show on a dark drawing (#670).
         let edge = EStroke::new(1.0, Color32::WHITE);
         for (_, p) in app.handle_positions(bounds) {
@@ -1678,10 +1697,51 @@ pub(crate) fn text_frame_color(f: &crate::text_frames::ShownFrame) -> Color32 {
 /// screen: hanging under its middle, below the bottom handle of the
 /// selection (it sat under that handle, so dragging the frame taller
 /// started a text link instead, #503).
-pub fn flow_tab_rect(a: Pos2, b: Pos2) -> ERect {
+/// `handle` is the selection handles' size (`App::handle_size`): the tab
+/// hangs 3.5 points below the handle's far edge.
+pub fn flow_tab_rect(a: Pos2, b: Pos2, handle: f32) -> ERect {
     let mid = a + (b - a) * 0.5;
-    let top = crate::interaction::HANDLE_OFFSET + crate::interaction::HANDLE_SIZE / 2.0 + 2.0;
+    let top = handle + 3.5;
     ERect::from_min_size(mid + egui::vec2(-6.0, top), egui::vec2(12.0, 9.0))
+}
+
+/// The top tab of a frame whose top edge runs from `a` to `b` on screen:
+/// over its middle, above the top handle of the selection, as the flow
+/// tab hangs under the bottom edge. A click on it says which frame's text
+/// flows into this one.
+pub fn flow_in_tab_rect(a: Pos2, b: Pos2, handle: f32) -> ERect {
+    let mid = a + (b - a) * 0.5;
+    let gap = handle + 3.5;
+    ERect::from_min_size(mid + egui::vec2(-6.0, -gap - 9.0), egui::vec2(12.0, 9.0))
+}
+
+/// Two small chain links in the middle of a tab: the frame flows on (or,
+/// on a top tab, text flows into it).
+fn tab_links(painter: &Painter, tab: ERect, ink: Color32) {
+    let c = tab.center();
+    for dx in [-2.0, 2.0] {
+        painter.rect_stroke(
+            ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(4.0, 3.0)),
+            1.0,
+            EStroke::new(1.0, ink),
+            epaint::StrokeKind::Inside,
+        );
+    }
+}
+
+/// While a link waits for its second click: a dashed line from the tab it
+/// came from to the pointer.
+fn draw_pending_text_link(app: &App, painter: &Painter, pointer: Option<Pos2>) {
+    let (Some(from), Some(to)) = (app.text_link_origin(), pointer) else {
+        return;
+    };
+    painter.extend(egui::Shape::dashed_line(
+        &[from, to],
+        EStroke::new(1.0, Tokens::SELECTION),
+        5.0,
+        3.0,
+    ));
+    painter.circle_filled(from, 2.5, Tokens::SELECTION);
 }
 
 /// Paragraph text frames: dashed lines in the colour `text_frame_color`
@@ -1704,7 +1764,7 @@ fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
         // the text does not fit, two links when it flows on, empty on a
         // picked frame; a click on it says where the text flows on.
         if f.overflow || f.chosen {
-            let tab = flow_tab_rect(pts[0], pts[1]);
+            let tab = flow_tab_rect(pts[0], pts[1], app.handle_size());
             let ink = if f.overflow { red } else { color };
             painter.rect(
                 tab,
@@ -1725,14 +1785,23 @@ fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
                     EStroke::NONE,
                 ));
             } else if f.linked {
-                for dx in [-2.0, 2.0] {
-                    painter.rect_stroke(
-                        ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(4.0, 3.0)),
-                        1.0,
-                        EStroke::new(1.0, ink),
-                        epaint::StrokeKind::Inside,
-                    );
-                }
+                tab_links(painter, tab, ink);
+            }
+        }
+        // The top tab over the top edge's middle on a picked frame: two
+        // links when another frame flows into it, else empty; a click on
+        // an empty one says which frame flows in.
+        if f.chosen {
+            let tab = flow_in_tab_rect(pts[3], pts[2], app.handle_size());
+            painter.rect(
+                tab,
+                0.0,
+                Color32::WHITE,
+                EStroke::new(1.0, color),
+                epaint::StrokeKind::Inside,
+            );
+            if f.receives {
+                tab_links(painter, tab, color);
             }
         }
     }
@@ -2090,6 +2159,13 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let [r, g, b] = prefs.secondary_rgb;
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();
+    // Several objects: the one picked last has its outline in the node
+    // colour, the others in the second colour (#1007).
+    let key = app.shape_tool_key_curve();
+    let outline_of = |id: tracedraw_core::ShapeId| match key {
+        Some(k) if k != id => secondary,
+        _ => main,
+    };
     // A clip frame shows its frame's nodes.
     for s in app.shape_tool_shapes() {
         // A picture shows a node at each corner; dragging one crops it.
@@ -2125,7 +2201,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
         // control points as nodes; the curve's own nodes do not show.
         if s.spline.is_some() {
             for (pts, _) in flatten(&s.page_path(), view) {
-                painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+                painter.add(egui::Shape::line(pts, EStroke::new(1.0, outline_of(s.id))));
             }
             let own = crate::kind_nodes::nodes(&s);
             let poly: Vec<Pos2> = own.iter().map(|(_, p)| view.to_screen(*p)).collect();
@@ -2182,14 +2258,16 @@ fn draw_nodes(app: &App, painter: &Painter) {
             }
             continue;
         };
-        // The curve being edited shows its outline in the node colour.
+        // The curve being edited shows its outline in the node colour
+        // (the second colour for the objects picked before the last one).
+        let outline = outline_of(s.id);
         for (mut pts, closed) in flatten(&s.page_path(), view) {
             if closed {
                 if let Some(first) = pts.first().copied() {
                     pts.push(first);
                 }
             }
-            painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+            painter.add(egui::Shape::line(pts, EStroke::new(1.0, outline)));
         }
         let all = nodes::nodes(path);
         if prefs.show_direction {
@@ -2452,6 +2530,16 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
         };
         draw_guide_line(app, painter, rect, g.line, color, g.style.pattern());
     }
+    // The other pages' guidelines in the Multipage View, each within its
+    // page (#1448).
+    for (g, page_rect) in app.other_page_guides() {
+        let paper = app.view.rect_to_screen(page_rect).intersect(rect);
+        if paper.width() < 1.0 || paper.height() < 1.0 {
+            continue;
+        }
+        let color = to_color32(app.guide_color(&g));
+        draw_guide_line(app, painter, paper, g.line, color, g.style.pattern());
+    }
     // The copies a right click during the drag will leave.
     if app.drag_copy {
         for (_, g) in &moving {
@@ -2536,7 +2624,7 @@ pub fn draw_docker_preview(app: &App, painter: &Painter) {
 }
 
 /// A polyline drawn in dashes of `on` px with `off` px gaps.
-fn dashed_polyline(painter: &Painter, pts: &[Pos2], stroke: EStroke, on: f32, off: f32) {
+pub(crate) fn dashed_polyline(painter: &Painter, pts: &[Pos2], stroke: EStroke, on: f32, off: f32) {
     let period = on + off;
     let mut walked = 0.0f32;
     for w in pts.windows(2) {
@@ -2891,22 +2979,32 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
             pts.push(persp[0]);
             painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
         }
-        // Mesh grid lines.
+        // Mesh grid lines: the curves between the nodes, as a few
+        // straight pieces each when they bend (plain segments stay cheap
+        // in an overlay redrawn every frame).
         if let tracedraw_core::Fill::Mesh(m) = &s.fill {
-            let cols = m.cols as usize + 1;
-            for r in 0..=m.rows as usize {
-                let pts: Vec<egui::Pos2> = (0..cols)
-                    .filter_map(|c| m.nodes.get(r * cols + c))
-                    .map(|n| app.view.to_screen(s.transform * n.pos))
+            use tracedraw_core::geometry::ParamCurve;
+            let curved = m.is_curved();
+            let line = |r: u32, c: u32, across: bool| {
+                let Some(edge) = m.edge(r, c, across) else {
+                    return;
+                };
+                let pieces = if curved { 8 } else { 1 };
+                let pts: Vec<egui::Pos2> = (0..=pieces)
+                    .map(|i| edge.eval(i as f64 / pieces as f64))
+                    .map(|p| app.view.to_screen(s.transform * p))
                     .collect();
                 painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            };
+            for r in 0..=m.rows {
+                for c in 0..m.cols {
+                    line(r, c, true);
+                }
             }
-            for c in 0..cols {
-                let pts: Vec<egui::Pos2> = (0..=m.rows as usize)
-                    .filter_map(|r| m.nodes.get(r * cols + c))
-                    .map(|n| app.view.to_screen(s.transform * n.pos))
-                    .collect();
-                painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            for c in 0..=m.cols {
+                for r in 0..m.rows {
+                    line(r, c, false);
+                }
             }
         }
         for (i, p) in nodes {

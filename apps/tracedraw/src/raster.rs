@@ -29,6 +29,124 @@ struct Job {
     rx: std::sync::mpsc::Receiver<Option<(ColorImage, f64)>>,
 }
 
+/// Turns to render on a thread: one page job runs at a time in the whole
+/// program (each holds a copy of the drawing and decodes on band threads
+/// of its own; Multipage view used to start one per slow page at once,
+/// and a job made stale kept running beside the next one). The page being
+/// edited goes first: when it had to wait, the turn is kept for it for a
+/// moment after the running job ends, and other pages wait.
+#[cfg(not(target_arch = "wasm32"))]
+struct Turns(std::sync::Mutex<TurnState>);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+struct TurnState {
+    busy: bool,
+    /// The current page asked while a job ran.
+    current_waits: bool,
+    /// Until when a freed turn is kept for the current page.
+    kept_until: Option<web_time::Instant>,
+    /// Turns given to other pages, for tests.
+    #[cfg(test)]
+    to_others: usize,
+}
+
+/// How long a freed turn waits for the current page that asked for it.
+#[cfg(not(target_arch = "wasm32"))]
+const KEEP_FOR_CURRENT: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Turns {
+    const fn new() -> Self {
+        Turns(std::sync::Mutex::new(TurnState {
+            busy: false,
+            current_waits: false,
+            kept_until: None,
+            #[cfg(test)]
+            to_others: 0,
+        }))
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, TurnState> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The turn for the current page (`current`) or another one, unless a
+    /// job holds it or it is kept for the current page.
+    fn take(&'static self, current: bool) -> Option<Turn> {
+        let mut st = self.state();
+        if st.busy {
+            st.current_waits |= current;
+            return None;
+        }
+        if !current && st.kept_until.is_some_and(|t| web_time::Instant::now() < t) {
+            return None;
+        }
+        st.busy = true;
+        #[cfg(test)]
+        if !current {
+            st.to_others += 1;
+        }
+        if current {
+            st.current_waits = false;
+            st.kept_until = None;
+        }
+        Some(Turn(self))
+    }
+
+    /// How long until a refused page should ask again, or `None` when a
+    /// job holds the turn (its end repaints the window). A turn that is
+    /// only kept for the current page has no job to wake the window, so
+    /// whoever was refused must ask for a repaint of its own (#1384).
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        let st = self.state();
+        if st.busy {
+            return None;
+        }
+        Some(st.kept_until.map_or(std::time::Duration::ZERO, |t| {
+            t.saturating_duration_since(web_time::Instant::now())
+        }))
+    }
+}
+
+/// A job's turn, given back when it is dropped.
+#[cfg(not(target_arch = "wasm32"))]
+struct Turn(&'static Turns);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for Turn {
+    fn drop(&mut self) {
+        let mut st = self.0.state();
+        st.busy = false;
+        if std::mem::take(&mut st.current_waits) {
+            st.kept_until = Some(web_time::Instant::now() + KEEP_FOR_CURRENT);
+        }
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+static RENDER_TURNS: Turns = Turns::new();
+
+/// The program's turns, which every page of its window shares. Under
+/// test each test thread has turns of its own: the tests run at the same
+/// time, each with a window of its own, and one test's job would hold
+/// back another's page, whose picture then came at a moment the test
+/// could not foresee (a render starting in the middle of a drag).
+#[cfg(not(target_arch = "wasm32"))]
+fn program_turns() -> &'static Turns {
+    #[cfg(test)]
+    {
+        thread_local! {
+            static TURNS: &'static Turns = Box::leak(Box::new(Turns::new()));
+        }
+        TURNS.with(|t| *t)
+    }
+    #[cfg(not(test))]
+    {
+        &RENDER_TURNS
+    }
+}
+
 #[derive(Default)]
 pub struct Raster {
     texture: Option<TextureHandle>,
@@ -64,6 +182,12 @@ pub struct Raster {
     pub snapshot: Option<std::sync::Arc<Document>>,
     /// Renders started so far, on this thread or another.
     renders: u64,
+    /// Turns other than the program's, for tests.
+    #[cfg(not(target_arch = "wasm32"))]
+    turns: Option<&'static Turns>,
+    /// Every render counts as slow, for tests.
+    #[cfg(test)]
+    always_slow: bool,
 }
 
 /// Screen colours as they would print, on a `N` x `N` x `N` grid of the
@@ -255,6 +379,17 @@ impl Raster {
         self.renders
     }
 
+    /// True while a picture is on its way: a render running on its
+    /// thread, or a moved view waiting to rest before it is rendered.
+    #[cfg(test)]
+    pub fn drawing(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.job.is_some() {
+            return true;
+        }
+        self.settle.is_some()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn texture(
         &mut self,
@@ -386,11 +521,26 @@ impl Raster {
         // thread of its own, the window answering all along. A page
         // beside the current one always is: many of them come due in the
         // same moment, once a zoom rests (#903).
+        #[cfg(test)]
+        if self.always_slow {
+            self.last_seconds = 1.0;
+        }
         #[cfg(not(target_arch = "wasm32"))]
         if window.is_none()
             && (self.last_seconds > SLOW_RENDER || self.follows_zoom)
             && self.texture.is_some()
         {
+            // Another page's job (or a stale one) is running: the last
+            // picture shows meanwhile, and the job holding the turn
+            // repaints when it ends. A page beside the current one
+            // yields to it.
+            let turns = self.turns.unwrap_or_else(program_turns);
+            let Some(turn) = turns.take(!self.follows_zoom) else {
+                if let Some(wait) = turns.retry_after() {
+                    ctx.request_repaint_after(wait);
+                }
+                return self.shown_meanwhile(view, screen);
+            };
             let doc = self
                 .snapshot
                 .take()
@@ -401,6 +551,8 @@ impl Raster {
                 let t = web_time::Instant::now();
                 let image = render_page(&doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()));
                 let _ = tx.send(image.map(|i| (i, t.elapsed().as_secs_f64())));
+                drop(doc);
+                drop(turn);
                 wake.request_repaint();
             });
             self.renders += 1;
@@ -492,8 +644,200 @@ impl Key {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
+
+    /// One page job at a time, and the current page first: another page
+    /// that asks first every frame waits while the turn is kept for the
+    /// current page.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn one_render_job_runs_at_a_time_and_the_current_page_goes_first() {
+        static TURNS: Turns = Turns::new();
+        let job = TURNS.take(false).expect("free");
+        assert!(TURNS.take(false).is_none());
+        // The current page asks while the job runs, and so waits.
+        assert!(TURNS.take(true).is_none());
+        std::thread::spawn(move || drop(job)).join().unwrap();
+        // Freed: another page asking first does not get it.
+        assert!(TURNS.take(false).is_none());
+        let current = TURNS.take(true).expect("kept for the current page");
+        drop(current);
+        // Nobody waits: whoever asks.
+        assert!(TURNS.take(false).is_some());
+    }
+
+    /// Tests running at the same time do not share the program's turns:
+    /// a job of another test holding its turn leaves this test's pages
+    /// free to start theirs, while the pages of one test (one window)
+    /// still take turns.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_test_has_render_turns_of_its_own() {
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let other = std::thread::spawn(move || {
+            let turn = program_turns().take(true).expect("free");
+            held_tx.send(()).expect("sent");
+            let _ = done_rx.recv();
+            drop(turn);
+        });
+        held_rx.recv().expect("held");
+        let mine = program_turns()
+            .take(true)
+            .expect("not held by the other test");
+        assert!(
+            program_turns().take(false).is_none(),
+            "one job at a time in this test"
+        );
+        drop(mine);
+        done_tx.send(()).expect("sent");
+        other.join().expect("joined");
+    }
+
+    /// Two slow pages drawn every frame, the other page asked first and
+    /// the drawing changing each frame: the current page's render starts
+    /// within one release of the turn.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_current_page_gets_the_next_turn() {
+        static TURNS: Turns = Turns::new();
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let view = View::default();
+        let mut current = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
+        let mut other = Raster {
+            turns: Some(&TURNS),
+            follows_zoom: true,
+            ..Default::default()
+        };
+        let draw = |r: &mut Raster, revision: u64| {
+            let page = doc.pages[0].id;
+            let input = egui::RawInput {
+                time: Some(revision as f64),
+                ..Default::default()
+            };
+            let mut full = ctx.run_ui(input, |ui| {
+                r.texture(
+                    ui.ctx(),
+                    &doc,
+                    page,
+                    &view,
+                    rect,
+                    None,
+                    revision,
+                    false,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                );
+            });
+            full.textures_delta.clear();
+        };
+        draw(&mut other, 0);
+        draw(&mut current, 0);
+        other.always_slow = true;
+        current.always_slow = true;
+        // The other page takes the turn first.
+        draw(&mut other, 1);
+        assert!(other.job.is_some());
+        // From the first time the current page waits, no other page may
+        // take a turn before it.
+        let mut given = None;
+        for revision in 2..2000 {
+            draw(&mut other, revision);
+            draw(&mut current, revision);
+            if current.job.is_some() {
+                break;
+            }
+            let st = TURNS.state();
+            if st.current_waits && given.is_none() {
+                given = Some(st.to_others);
+            }
+            if let Some(n) = given {
+                assert_eq!(st.to_others, n, "another page went first");
+            }
+            drop(st);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(given.is_some(), "the current page had to wait");
+        assert!(current.job.is_some(), "the current page got a turn");
+    }
     use tracedraw_core::geometry::Size;
+
+    /// A page beside the current one that is refused its turn only because
+    /// the turn is kept for the current page, with no job running to wake
+    /// the window when it ends: a repaint is asked for when the turn is
+    /// free again, or the page keeps its old, blurry picture until the next
+    /// pointer move or key press (#1384).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_page_refused_a_kept_turn_asks_for_a_repaint() {
+        static TURNS: Turns = Turns::new();
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let page = doc.pages[0].id;
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let view = View::default();
+        let mut other = Raster {
+            turns: Some(&TURNS),
+            follows_zoom: true,
+            ..Default::default()
+        };
+        // One frame at egui time `time`; how long egui may wait before the
+        // next one.
+        let draw = |r: &mut Raster, revision: u64, time: f64| {
+            let input = egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut full = ctx.run_ui(input, |ui| {
+                r.texture(
+                    ui.ctx(),
+                    &doc,
+                    page,
+                    &view,
+                    rect,
+                    None,
+                    revision,
+                    false,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                );
+            });
+            full.textures_delta.clear();
+            full.viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .map_or(std::time::Duration::MAX, |v| v.repaint_delay)
+        };
+        draw(&mut other, 0, 0.0);
+        assert!(other.has_picture());
+        // The frame after a texture is loaded repaints once on its own;
+        // measure from the next one.
+        draw(&mut other, 0, 0.5);
+        // A job holds the turn and the current page asks for it meanwhile;
+        // when the job ends the turn is kept for the current page.
+        let job = TURNS.take(false).expect("free");
+        assert!(TURNS.take(true).is_none());
+        drop(job);
+        // The drawing changed: the page wants a new render and is refused.
+        let delay = draw(&mut other, 1, 1.0);
+        assert!(other.job.is_none(), "the turn is kept for the current page");
+        assert_eq!(other.render_count(), 1);
+        assert!(
+            delay <= KEEP_FOR_CURRENT,
+            "no repaint asked for: waits {delay:?}"
+        );
+    }
 
     #[test]
     fn proofed_pixels_follow_the_grid_of_proofed_colours() {
@@ -624,10 +968,16 @@ mod tests {
     /// the new picture is taken once it is ready (#345).
     #[test]
     fn a_slow_page_is_drawn_on_its_own_thread() {
+        // Turns of its own: the program's are shared with the other tests
+        // running at the same time, whose jobs could keep it waiting.
+        static TURNS: Turns = Turns::new();
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
-        let mut raster = Raster::default();
+        let mut raster = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
         let view = View::default();
         let (first, _) = pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
         let key = raster.key.clone();
@@ -637,7 +987,15 @@ mod tests {
         zoomed.zoom *= 2.0;
         let t = SETTLE_SECONDS + 0.01;
         pass(&ctx, &mut raster, &doc, &zoomed, rect, 0.0);
-        let (tex, screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, t);
+        let (mut tex, mut screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, t);
+        for _ in 0..500 {
+            if raster.job.is_some() {
+                break;
+            }
+            assert_eq!(tex, first, "the old picture shows while waiting");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            (tex, screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, t);
+        }
         assert_eq!(tex, first);
         assert!(raster.job.is_some(), "drawn on its thread");
         assert_eq!(raster.key, key, "the old picture shows meanwhile");
@@ -664,10 +1022,14 @@ mod tests {
     /// until the view rests (#902, #903).
     #[test]
     fn a_picture_that_follows_the_zoom_keeps_its_place_while_resized() {
+        // Turns of its own, as above: a turn kept for another test's
+        // current page would defer this page's render.
+        static TURNS: Turns = Turns::new();
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
         let mut raster = Raster {
             follows_zoom: true,
+            turns: Some(&TURNS),
             ..Default::default()
         };
         let view = View {
@@ -700,7 +1062,10 @@ mod tests {
         );
         assert_eq!(raster.render_count(), renders + 1);
         // The main canvas keeps rendering when its size changes.
-        let mut main = Raster::default();
+        let mut main = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
         pass(&ctx, &mut main, &doc, &view, rect, 0.0);
         let wider = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(330.0, 200.0));

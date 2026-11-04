@@ -4,7 +4,8 @@
 //! messages show. See docs/behavior/options.md.
 
 use crate::ui::dialogs::{
-    ExportState, PrintState, EXPORT_FORMATS, EXPORT_SCALE_RANGE, EXPORT_SIZE_UNITS, PDF_STANDARDS,
+    ExportState, PrintState, AI_VERSIONS, EXPORT_FORMATS, EXPORT_SCALE_RANGE, EXPORT_SIZE_UNITS,
+    PDF_STANDARDS,
 };
 use serde::{Deserialize, Serialize};
 
@@ -265,6 +266,8 @@ pub struct ExportPreset {
     pub selection_only: bool,
     pub all_pages: bool,
     pub pdf_standard: usize,
+    /// AI: PDF-compatible (0) or classic version 8 (1, #1728).
+    pub ai_version: usize,
     pub bleed_mm: f64,
     pub output_condition: String,
     pub webp_lossless: bool,
@@ -304,6 +307,7 @@ impl ExportPreset {
             selection_only: st.selection_only,
             all_pages: st.all_pages,
             pdf_standard: st.pdf_standard,
+            ai_version: st.ai_version,
             bleed_mm: st.bleed_mm,
             output_condition: st.output_condition.clone(),
             webp_lossless: st.webp_lossless,
@@ -328,6 +332,9 @@ impl ExportPreset {
         st.all_pages = self.all_pages;
         if self.pdf_standard < PDF_STANDARDS.len() {
             st.pdf_standard = self.pdf_standard;
+        }
+        if self.ai_version < AI_VERSIONS.len() {
+            st.ai_version = self.ai_version;
         }
         if self.bleed_mm.is_finite() {
             st.bleed_mm = self.bleed_mm.clamp(0.0, 50.0);
@@ -453,12 +460,20 @@ impl FormatPrefs {
     /// fall back to the usual ones.
     pub fn state(&self) -> ExportState {
         let d = ExportState::default();
+        let format = if self.export_format < EXPORT_FORMATS.len() {
+            self.export_format
+        } else {
+            d.format
+        };
+        // A remembered export of this format keeps its page choice.
+        let all_pages = self
+            .export_by_format
+            .iter()
+            .find(|p| self.remember_last && p.format == format)
+            .map_or(ExportState::pages_by_default(format), |p| p.all_pages);
         ExportState {
-            format: if self.export_format < EXPORT_FORMATS.len() {
-                self.export_format
-            } else {
-                d.format
-            },
+            format,
+            all_pages,
             dpi: if self.export_dpi.is_finite() {
                 self.export_dpi
                     .clamp(crate::ui::dialogs::MIN_EXPORT_DPI, 2400.0)
@@ -521,7 +536,7 @@ impl FormatPrefs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TracePrefs {
-    /// The preset Bitmaps > Quick Trace uses.
+    /// The preset Image > Trace > Automatic uses.
     pub quick_preset: crate::trace::Preset,
     /// Every trace starts with these.
     pub remove_background: bool,
@@ -530,10 +545,12 @@ pub struct TracePrefs {
 
 impl Default for TracePrefs {
     fn default() -> Self {
-        let s = crate::trace::Preset::Clipart.settings();
+        // The automatic trace draws the picture as it is in the fewest nodes it
+        // can.
+        let s = crate::trace::Preset::Optimized.settings();
         TracePrefs {
-            quick_preset: crate::trace::Preset::Clipart,
-            remove_background: s.remove_background,
+            quick_preset: crate::trace::Preset::Optimized,
+            remove_background: s.removes_background(),
             delete_original: s.delete_original,
         }
     }
@@ -543,7 +560,11 @@ impl TracePrefs {
     /// The settings of `preset` with the choices every trace starts with.
     pub fn settings(&self, preset: crate::trace::Preset) -> crate::trace::Settings {
         crate::trace::Settings {
-            remove_background: self.remove_background,
+            remove: if self.remove_background {
+                crate::trace::Remove::Background
+            } else {
+                crate::trace::Remove::None
+            },
             delete_original: self.delete_original,
             ..preset.settings()
         }
@@ -557,8 +578,14 @@ impl TracePrefs {
 pub struct WarningPrefs {
     /// When objects of an opened file could not be read.
     pub unread_objects: bool,
-    /// When an opened drawing uses fonts that are not installed.
+    /// When an opened drawing uses fonts that are not installed: the
+    /// plain note naming them.
     pub missing_fonts: bool,
+    /// The Missing Fonts dialog (#936) after such a drawing opens, which
+    /// asks which installed font draws each missing one. A choice of its
+    /// own, so "Do not show this message again" ticked on the plain note
+    /// before the dialog existed does not silence the dialog (#1243).
+    pub ask_missing_fonts: bool,
     /// Before an item is taken off the Shelf.
     pub shelf_remove: bool,
 }
@@ -568,6 +595,7 @@ impl Default for WarningPrefs {
         WarningPrefs {
             unread_objects: true,
             missing_fonts: true,
+            ask_missing_fonts: true,
             shelf_remove: true,
         }
     }
@@ -594,6 +622,11 @@ pub struct CurvePrefs {
     /// steps of the constrain angle while a curve is drawn.
     #[serde(default)]
     pub constrain_key: ConstrainKey,
+    /// A graphics tablet's pen: its pressure along a Freehand or Brush
+    /// Strokes drag sets the stroke's width (#850). The mouse, and a pen
+    /// whose platform gives no pressure, draw an even width either way.
+    #[serde(default = "yes")]
+    pub pen_pressure: bool,
 }
 
 /// The modifier key that constrains the angle while drawing curves.
@@ -635,6 +668,7 @@ impl Default for CurvePrefs {
             pen_preview: true,
             pen_auto_add_delete: true,
             constrain_key: ConstrainKey::Ctrl,
+            pen_pressure: true,
         }
     }
 }
@@ -820,6 +854,62 @@ mod tests {
             ..ExportState::default()
         });
         assert_eq!((g.state().format, g.state().pdf_standard), (1, 3));
+    }
+
+    /// PDF and PostScript export every page unless that format was last
+    /// exported with the current page alone; other formats start with the
+    /// current page (#1161).
+    #[test]
+    fn pdf_exports_every_page_by_default() {
+        use crate::ui::dialogs::EXPORT_FORMATS;
+        let at = |ext: &str| EXPORT_FORMATS.iter().position(|f| f.1 == ext).expect(ext);
+        let (pdf, png) = (at("pdf"), at("png"));
+        assert!(ExportState::pages_by_default(pdf));
+        assert!(ExportState::pages_by_default(at("ps")));
+        assert!(!ExportState::pages_by_default(png));
+        let mut app = crate::app::App::headless();
+        app.settings.formats.remember_last = false;
+        app.settings.formats.export_format = pdf;
+        assert!(app.settings.formats.state().all_pages);
+        let mut st = app.settings.formats.state();
+        st.remember = true;
+        app.recall_export_format(&mut st, png);
+        assert!(!st.all_pages);
+        app.recall_export_format(&mut st, pdf);
+        assert!(st.all_pages);
+        // The current page alone, once chosen, is what PDF comes back with.
+        st.all_pages = false;
+        app.keep_export_choices(&st);
+        app.recall_export_format(&mut st, png);
+        app.recall_export_format(&mut st, pdf);
+        assert!(!st.all_pages);
+    }
+
+    /// The AI export's kind (PDF-compatible or classic version 8) is
+    /// kept in a preset and comes back; an unknown one is ignored (#1728).
+    #[test]
+    fn a_preset_keeps_the_ai_version() {
+        let st = ExportState {
+            ai_version: 1,
+            ..ExportState::default()
+        };
+        let p = ExportPreset::from_state("old ai", &st);
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ExportPreset = serde_json::from_str(&json).unwrap();
+        let mut fresh = ExportState::default();
+        back.apply(&mut fresh);
+        assert!(fresh.classic_ai());
+        // Presets saved before the choice existed: PDF-compatible.
+        let old: ExportPreset = serde_json::from_str(r#"{"name": "x"}"#).unwrap();
+        let mut fresh = ExportState::default();
+        old.apply(&mut fresh);
+        assert!(!fresh.classic_ai());
+        let bad = ExportPreset {
+            ai_version: 9,
+            ..ExportPreset::default()
+        };
+        bad.apply(&mut fresh);
+        assert_eq!(fresh.ai_version, 0);
     }
 
     /// Choosing a format in the Export dialog brings back how that format
@@ -1036,7 +1126,7 @@ mod tests {
         };
         let s = t.settings(crate::trace::Preset::HighQualityImage);
         let p = crate::trace::Preset::HighQualityImage.settings();
-        assert!(!s.remove_background && s.delete_original);
+        assert!(s.remove == crate::trace::Remove::None && s.delete_original);
         assert_eq!((s.detail, s.colors), (p.detail, p.colors));
         // Preferences written before these existed read as the defaults.
         let old: crate::settings::Settings = serde_json::from_str("{}").expect("settings");

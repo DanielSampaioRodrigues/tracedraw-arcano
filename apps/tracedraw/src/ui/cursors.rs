@@ -345,10 +345,47 @@ pub fn for_tool(
         {
             ToolCursor::ShapeArrow(shape_mark(app, pos))
         }
-        // The fill's handles move.
-        Tool::InteractiveFill
-            if matches!(app.drag, Drag::FountainHandle { .. })
-                || pos.is_some_and(|s| app.fountain_handle_at(app.view.to_page(s)).is_some()) =>
+        // The fill's (or the mask's) handles and its line move.
+        Tool::InteractiveFill | Tool::Transparency
+            if matches!(
+                app.drag,
+                Drag::FountainHandle { .. } | Drag::FountainLine { .. }
+            ) || pos.is_some_and(|s| {
+                let p = app.view.to_page(s);
+                app.fountain_handle_at(p).is_some() || app.fountain_on_line(p)
+            }) =>
+        {
+            ToolCursor::System(egui::CursorIcon::Move)
+        }
+        // An effect's control line moves the whole effect.
+        Tool::DropShadow
+            if matches!(app.drag, Drag::ShadowLine { .. })
+                || pos.is_some_and(|s| app.shadow_on_line(app.view.to_page(s))) =>
+        {
+            ToolCursor::System(egui::CursorIcon::Move)
+        }
+        Tool::Extrude
+            if app.extrude_drag.is_some_and(|d| d.line)
+                || pos.is_some_and(|s| app.extrusion_line_at(app.view.to_page(s)).is_some()) =>
+        {
+            ToolCursor::System(egui::CursorIcon::Move)
+        }
+        Tool::Blend
+            if app.blend_handle_drag == Some(crate::blend_tool::BlendHandle::Line)
+                || (app.blend_handle_drag.is_none()
+                    && pos.is_some_and(|s| {
+                        app.blend_handle_at(app.view.to_page(s))
+                            == Some(crate::blend_tool::BlendHandle::Line)
+                    })) =>
+        {
+            ToolCursor::System(egui::CursorIcon::Move)
+        }
+        Tool::Distort
+            if app
+                .distort_drag
+                .as_ref()
+                .is_some_and(|d| d.grab == crate::distort_tool::Grab::Line)
+                || pos.is_some_and(|s| app.distortion_line_at(app.view.to_page(s))) =>
         {
             ToolCursor::System(egui::CursorIcon::Move)
         }
@@ -455,7 +492,6 @@ pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
         _ => egui::CursorIcon::None,
     };
     ctx.set_cursor_icon(icon);
-    refresh_still_pointer(ctx, icon, pos);
     if icon != egui::CursorIcon::None {
         return;
     }
@@ -468,30 +504,51 @@ pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
     }
 }
 
-/// Windows shows a new system pointer, or hides or shows the pointer,
-/// only when the mouse next moves, so a tool picked with its shortcut
-/// kept the old pointer over a still mouse (#1026). When the pointer's
-/// system icon changes while the mouse stays still, it is put back where
-/// it is, which Windows takes as a move and updates the pointer.
-fn refresh_still_pointer(ctx: &egui::Context, icon: egui::CursorIcon, pos: Option<Pos2>) {
-    let id = egui::Id::new("tool_cursor_icon");
-    let last = ctx.data_mut(|d| {
-        let last = d.get_temp::<egui::CursorIcon>(id);
-        d.insert_temp(id, icon);
-        last
-    });
-    let still = ctx.input(|i| i.pointer.delta() == Vec2::ZERO && !i.pointer.any_down());
-    if let Some(p) = pos.filter(|_| needs_refresh(last, icon, still)) {
-        if cfg!(target_os = "windows") {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(p));
-        }
+/// At the end of a frame: on Windows a pointer left hidden (a drawn
+/// pointer, or anything else that asked for `CursorIcon::None`) is the
+/// blank image instead (see [`hidden_pointer`]). Decided from the frame's
+/// last word on the pointer, so a system pointer asked for after a drawn
+/// one in the same frame shows, never the blank image in its place.
+pub fn finish_frame(ctx: &egui::Context) {
+    ctx.output_mut(|o| blank_when_hidden(o, cfg!(target_os = "windows")));
+}
+
+/// The blank image for a pointer the frame left hidden, where `windows`.
+fn blank_when_hidden(out: &mut egui::PlatformOutput, windows: bool) {
+    if out.cursor_icon == egui::CursorIcon::None && out.cursor_image.is_none() {
+        out.cursor_image = hidden_pointer(windows);
     }
 }
 
-/// Whether the pointer must be refreshed: its icon changed from the one
-/// shown last frame while the mouse did not move.
-fn needs_refresh(last: Option<egui::CursorIcon>, now: egui::CursorIcon, still: bool) -> bool {
-    still && last.is_some_and(|l| l != now)
+/// Side of the blank pointer image, in pixels.
+const BLANK_SIDE: u16 = 32;
+
+/// How a drawn pointer hides the system one. `CursorIcon::None` hides
+/// the pointer through the windowing layer's visibility switch, which on
+/// Windows moves the system's cursor display count (`ShowCursor`); Windows
+/// shows the change only at the next pointer update, a mouse move. A tool
+/// picked by its shortcut over a still mouse therefore kept the old
+/// pointer (Pick to Pen: the hide waited), or none at all (Pen to another
+/// tool: the show waited, so the arrow set at once stayed invisible),
+/// until the mouse moved (#1026, #1124); putting the pointer back where it
+/// was (#1112) did not count as a move. A new pointer image is applied at
+/// once (`SetCursor`), so on Windows the system pointer is swapped for a
+/// fully transparent image instead of hidden, and the display count never
+/// changes. The image's bytes are shared, so the integration makes one
+/// cursor of it. Elsewhere hiding takes effect at once and stays as it was.
+fn hidden_pointer(windows: bool) -> Option<egui::CustomCursorImage> {
+    use std::sync::{Arc, OnceLock};
+    static BLANK: OnceLock<Arc<[u8]>> = OnceLock::new();
+    if !windows {
+        return None;
+    }
+    let side = usize::from(BLANK_SIDE);
+    let rgba = BLANK.get_or_init(|| Arc::from(vec![0u8; side * side * 4]));
+    Some(egui::CustomCursorImage {
+        rgba: Arc::clone(rgba),
+        size: [BLANK_SIDE, BLANK_SIDE],
+        hotspot: [0, 0],
+    })
 }
 
 /// The system pointer nearest to a drawn one.
@@ -672,7 +729,7 @@ fn badge(painter: &Painter, p: Pos2, tool: Tool) {
         CornerRadius::same(3),
         Color32::from_white_alpha(200),
     );
-    crate::ui::icons::draw(painter, r, tool, badge_ink());
+    crate::ui::icons::draw_on(painter, r, tool, badge_ink(), Color32::WHITE);
 }
 
 /// The outline of the arrow that picks a command's target object, its
@@ -971,6 +1028,65 @@ pub fn paint_copy_plus(ctx: &egui::Context, p: Pos2) {
     copy_plus(&painter, p + Vec2::new(14.0, 16.0));
 }
 
+/// The colour eyedroppers' readout beside the pointer at `p` (#990): a
+/// swatch, the colour's name when it has one, and its values. It sits
+/// below and right of the pointer, and on the other side where the
+/// window ends. Plain rectangles and a few short texts, whose layout
+/// egui keeps from frame to frame.
+pub fn paint_color_readout(ctx: &egui::Context, p: Pos2, r: &crate::eyedropper::Reading) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("color_readout"),
+    ));
+    let font = egui::FontId::proportional(11.0);
+    let bold = crate::theme::bold(11.0);
+    let text = crate::theme::Tokens::text();
+    let mut galleys = Vec::with_capacity(r.lines.len() + 1);
+    if !r.name.is_empty() {
+        galleys.push(painter.layout_no_wrap(r.name.clone(), bold, text));
+    }
+    for l in &r.lines {
+        galleys.push(painter.layout_no_wrap(l.clone(), font.clone(), text));
+    }
+    const PAD: f32 = 5.0;
+    const SWATCH: f32 = 14.0;
+    let text_w = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max);
+    let text_h: f32 = galleys.iter().map(|g| g.size().y).sum();
+    let size = Vec2::new(PAD * 3.0 + SWATCH + text_w, PAD * 2.0 + text_h.max(SWATCH));
+    let screen = ctx.content_rect();
+    let mut at = p + Vec2::new(18.0, 20.0);
+    if at.x + size.x > screen.right() {
+        at.x = p.x - 8.0 - size.x;
+    }
+    if at.y + size.y > screen.bottom() {
+        at.y = p.y - 8.0 - size.y;
+    }
+    let frame = Rect::from_min_size(at, size);
+    painter.rect(
+        frame,
+        CornerRadius::same(3),
+        crate::theme::Tokens::panel(),
+        Stroke::new(1.0, crate::theme::Tokens::control_border()),
+        egui::StrokeKind::Inside,
+    );
+    let [cr, cg, cb] = r.color.to_rgb8();
+    let swatch = Rect::from_min_size(at + Vec2::splat(PAD), Vec2::splat(SWATCH));
+    painter.rect(
+        swatch,
+        CornerRadius::ZERO,
+        Color32::from_rgb(cr, cg, cb),
+        Stroke::new(1.0, crate::theme::Tokens::control_border()),
+        egui::StrokeKind::Inside,
+    );
+    let mut y = at.y + PAD;
+    let x = swatch.right() + PAD;
+    for g in galleys {
+        let h = g.size().y;
+        painter.galley(Pos2::new(x, y), g, text);
+        y += h;
+    }
+}
+
 /// A 9-point square with a plus, its top left at `at`.
 fn copy_plus(painter: &Painter, at: Pos2) {
     let s = Rect::from_min_size(at, Vec2::splat(9.0));
@@ -1126,42 +1242,106 @@ mod tests {
         }
     }
 
-    /// A tool picked by its shortcut over a still mouse changes the
-    /// system pointer at once on Windows too: the pointer is put back
-    /// where it is, which Windows takes as a move (#1026). Nothing happens
-    /// when the pointer moved, a button is held or the icon stayed.
+    /// A drawn pointer hides the system one with a blank pointer image
+    /// on Windows, where hiding the pointer took effect only when the
+    /// mouse next moved (#1026, #1124): one fully transparent image, the
+    /// same bytes every frame so the integration makes one cursor of it.
+    /// Elsewhere the pointer is hidden, and a system pointer never comes
+    /// with an image, also when it was asked for after a drawn one in the
+    /// same frame.
     #[test]
-    fn a_new_pointer_over_a_still_mouse_is_refreshed() {
+    fn a_drawn_pointer_hides_the_system_one_with_a_blank_image_on_windows() {
         use egui::CursorIcon as C;
-        assert!(needs_refresh(Some(C::Default), C::None, true));
-        assert!(needs_refresh(Some(C::None), C::Text, true));
-        assert!(!needs_refresh(Some(C::Default), C::None, false));
-        assert!(!needs_refresh(Some(C::Text), C::Text, true));
-        assert!(!needs_refresh(None, C::Text, true));
+        let blank = hidden_pointer(true).unwrap();
+        let side = usize::from(BLANK_SIDE);
+        assert_eq!(blank.size, [BLANK_SIDE, BLANK_SIDE]);
+        assert_eq!(blank.hotspot, [0, 0]);
+        assert_eq!(blank.rgba.len(), side * side * 4);
+        assert!(blank.rgba.iter().all(|b| *b == 0));
+        let again = hidden_pointer(true).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&blank.rgba, &again.rgba));
+        assert!(hidden_pointer(false).is_none());
+
+        // The end of a frame, on Windows and elsewhere.
+        for windows in [true, false] {
+            let mut out = egui::PlatformOutput {
+                cursor_icon: C::None,
+                ..Default::default()
+            };
+            blank_when_hidden(&mut out, windows);
+            assert_eq!(out.cursor_image.is_some(), windows);
+            assert_eq!(out.cursor_icon, C::None);
+            for icon in [C::Default, C::Text, C::Crosshair, C::Move] {
+                let mut out = egui::PlatformOutput {
+                    cursor_icon: icon,
+                    ..Default::default()
+                };
+                blank_when_hidden(&mut out, windows);
+                assert!(out.cursor_image.is_none(), "{icon:?}");
+            }
+        }
 
         let ctx = crate::theme::ui_context();
         let at = Pos2::new(120.0, 80.0);
-        let frame = |cursor: ToolCursor| {
+        // `later`: a system pointer something else in the frame asks for
+        // after the tool's pointer.
+        let frame = |cursor: ToolCursor, later: Option<C>| {
             let input = egui::RawInput {
                 events: vec![egui::Event::PointerMoved(at)],
                 ..Default::default()
             };
-            let mut out = ctx.run_ui(input, |ui| show(ui.ctx(), cursor, Some(at)));
+            let mut out = ctx.run_ui(input, |ui| {
+                show(ui.ctx(), cursor, Some(at));
+                if let Some(icon) = later {
+                    ui.ctx().set_cursor_icon(icon);
+                }
+                finish_frame(ui.ctx());
+            });
             out.textures_delta.clear();
-            out.viewport_output
-                .get(&egui::ViewportId::ROOT)
-                .is_some_and(|v| {
-                    v.commands
-                        .iter()
-                        .any(|c| *c == egui::ViewportCommand::CursorPosition(at))
-                })
+            (
+                out.platform_output.cursor_icon,
+                out.platform_output.cursor_image.is_some(),
+            )
         };
-        assert!(!frame(ToolCursor::System(C::Default)));
-        assert!(!frame(ToolCursor::System(C::Default)));
-        // The Pen tool picked by its shortcut: the drawn nib hides the
-        // system arrow, and the same frame puts the pointer back.
-        assert_eq!(frame(ToolCursor::PenNib(None)), cfg!(target_os = "windows"));
-        assert!(!frame(ToolCursor::PenNib(None)));
+        let frame_of = |cursor: ToolCursor| frame(cursor, None);
+        assert_eq!(
+            frame_of(ToolCursor::System(C::Default)),
+            (C::Default, false)
+        );
+        // The Pen tool picked by its shortcut: the drawn nib takes the
+        // place of the system arrow.
+        assert_eq!(
+            frame_of(ToolCursor::PenNib(None)),
+            (C::None, cfg!(target_os = "windows"))
+        );
+        assert_eq!(
+            frame_of(ToolCursor::PenNib(None)),
+            (C::None, cfg!(target_os = "windows"))
+        );
+        // Back to the Pick tool: the arrow, and no image.
+        assert_eq!(
+            frame_of(ToolCursor::System(C::Default)),
+            (C::Default, false)
+        );
+        // The nib, then a text box's I-beam in the same frame: the I-beam,
+        // never the blank image in its place.
+        assert_eq!(
+            frame(ToolCursor::PenNib(None), Some(C::Text)),
+            (C::Text, false)
+        );
+        // Every drawn pointer takes the blank image on Windows.
+        for cursor in [
+            ToolCursor::Cross,
+            ToolCursor::IBeam,
+            ToolCursor::Badge(Tool::Rectangle),
+            ToolCursor::Hand { closed: false },
+        ] {
+            assert_eq!(
+                frame_of(cursor),
+                (C::None, cfg!(target_os = "windows")),
+                "{cursor:?}"
+            );
+        }
     }
 
     /// The cross hair (alone, with a tool's badge, with a nib) and the

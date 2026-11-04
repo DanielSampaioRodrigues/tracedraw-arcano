@@ -15,6 +15,16 @@ pressure 0.5, sprayer spacing 8 mm.
 - Brush Strokes panel > Apply to curve replaces the selected curves by
   strokes of the current mode along their path.
 
+## Property bar
+
+Mode (a list: Preset, Brush, Sprayer, Calligraphic, Expression; the
+Brush Strokes panel shows the same choice), Width (mm), then the mode's
+own fields: Shape (the stroke profile for Preset and Brush, the sprayed
+object for Sprayer), Nib angle (Calligraphic), Spacing (Sprayer),
+Pressure (Expression). The bar held the calligraphic fields only, so
+the other modes could be reached from the panel alone (#1681,
+`media::tests::the_property_bar_lists_the_brush_modes`).
+
 ## Modes
 
 - Calligraphic: the outline swept by a flat nib of `width` at `angle`
@@ -27,7 +37,17 @@ pressure 0.5, sprayer spacing 8 mm.
   for a dry-brush look.
 - Expression: pen-pressure simulation; the speed between samples stands
   in for pressure (slow strokes are wide), scaled by the pressure
-  setting (0.5 = half the width at full speed).
+  setting (0.5 = half the width at full speed). Drawn with a graphics
+  tablet's pen whose pressure the platform reports, the real pressure
+  takes the speed's place.
+- Pen pressure (#850, see `pen-pressure.md`): with a pen that reports
+  it, the Preset, Brush and Expression widths are scaled by
+  `(1 - p) + p x pressure`, `p` the Pressure setting (0.5 by default:
+  half the width at no pressure, the full width at full pressure); the
+  calligraphic nib and the sprayer keep their size. Options > Tools >
+  Curve tools > Graphics tablet turns it off. In the browser the pen's
+  pointer events give the pressure (#1410); the mouse gives none there
+  either.
 - Sprayer: objects (circles, squares, stars, hearts, leaves) placed
   from the start every `spacing` mm along the path (so a 40 mm path at
   8 mm gets 6 objects, at 0, 8, ... 40), each sized between 70 % and

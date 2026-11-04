@@ -817,8 +817,10 @@ mod tests {
                 })
                 .collect()
         };
-        let mut a = red(&one.faces(&square()).below);
-        let mut b = red(&two.faces(&square()).below);
+        // Both bodies draw their far face first.
+        let mut a = red(one.faces(&square()).below.get(1..).unwrap_or_default());
+        let lit = two.faces(&square()).below;
+        let mut b = red(lit.get(1..).unwrap_or_default());
         a.sort_unstable();
         b.sort_unstable();
         assert_eq!(a.len(), b.len());

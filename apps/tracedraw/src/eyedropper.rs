@@ -19,12 +19,162 @@ use tracedraw_core::{
     Color, Command, Fill, Stroke,
 };
 
+/// A decoded picture, shared with the readout's cache.
+type Picture = std::sync::Arc<image::RgbaImage>;
+
+/// What the colour eyedroppers show beside the pointer while it hovers
+/// (#990): the colour under it, the palette or ink name it has, and its
+/// values in the drawing's colour model. Worked out again only when the
+/// pointer moves, the drawing changes or Shift is pressed or released;
+/// the last picture read stays decoded, so hovering a bitmap does not
+/// decode it each frame.
+#[derive(Default)]
+pub struct HoverReadout {
+    /// The pointer (page position in 1/1000 mm), the drawing's revision,
+    /// Shift, and whether a picker asked: the input the reading is for.
+    key: Option<ReadoutKey>,
+    /// The picture decoded last, by its bytes.
+    picture: Option<(tracedraw_core::SharedBytes, Picture)>,
+    /// What the readout shows, none when nothing is under the pointer.
+    pub reading: Option<Reading>,
+    /// How many times the colour was worked out, and pictures decoded
+    /// (for the tests).
+    pub computed: u64,
+    pub decoded: u64,
+}
+
+impl std::fmt::Debug for HoverReadout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HoverReadout")
+            .field("reading", &self.reading)
+            .finish()
+    }
+}
+
+/// The pointer (page position in 1/1000 mm), the zoom (for the hit
+/// tolerance), the page, the drawing's revision, Shift, and whether a
+/// picker asked.
+type ReadoutKey = (i64, i64, i64, tracedraw_core::PageId, u64, bool, bool);
+
+/// The readout's content.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reading {
+    pub color: Color,
+    /// The palette colour's or spot ink's name; empty for none.
+    pub name: String,
+    /// The values in the drawing's model, one per line, then the hex.
+    pub lines: Vec<String>,
+}
+
+/// The readout for `c` in a drawing of `mode`: a CMYK or RGB colour's
+/// values in its own model (so a colour converted to RGB reads as RGB,
+/// #1254), another model's in the drawing's (CMYK or RGB), a spot ink as
+/// its tint; then its hex value.
+pub fn reading_of(
+    c: Color,
+    name: String,
+    mode: tracedraw_core::document::PrimaryColorMode,
+) -> Reading {
+    use tracedraw_core::document::PrimaryColorMode;
+    let shown = match (c, mode) {
+        (Color::Spot { .. }, _) | (Color::Registration, _) => c,
+        (Color::Cmyk { .. }, _) | (Color::Rgb { .. }, _) => c,
+        (_, PrimaryColorMode::Cmyk) => c.convert_to("CMYK"),
+        (_, PrimaryColorMode::Rgb) => c.convert_to("RGB"),
+    };
+    let mut lines: Vec<String> = crate::ui::palette::color_lines(shown)
+        .lines()
+        .map(str::to_string)
+        .collect();
+    lines.push(c.to_hex().to_uppercase());
+    Reading {
+        color: c,
+        name,
+        lines,
+    }
+}
+
+impl App {
+    /// The colour eyedropper's readout, while a colour eyedropper waits
+    /// to sample: the Colour Eyedropper in Select mode, or a colour
+    /// picker's eyedropper (`picker`). `p` is the pointer on the page.
+    /// Cheap when nothing changed since the last frame.
+    pub fn hover_reading(&mut self, p: Point, shift: bool, picker: bool) -> Option<&Reading> {
+        let q = |v: f64| (v * 1000.0).round() as i64;
+        let key = (
+            q(p.x),
+            q(p.y),
+            q(self.view.zoom as f64),
+            self.page,
+            self.engine.revision(),
+            shift && !picker,
+            picker,
+        );
+        if self.eyedropper_hover.key != Some(key) {
+            let mut cache = std::mem::take(&mut self.eyedropper_hover.picture);
+            let mut decoded = 0;
+            let mut decode = |png: &tracedraw_core::SharedBytes| -> Option<Picture> {
+                if let Some((b, img)) = &cache {
+                    if tracedraw_core::SharedBytes::ptr_eq(b, png) {
+                        return Some(img.clone());
+                    }
+                }
+                decoded += 1;
+                let img = std::sync::Arc::new(image::load_from_memory(png).ok()?.to_rgba8());
+                cache = Some((png.clone(), img.clone()));
+                Some(img)
+            };
+            let c = if picker {
+                // A picker's click takes the fill, else the outline, else
+                // the paper's white.
+                Some(
+                    self.sample_color_with(p, false, &mut decode)
+                        .or_else(|| self.sample_color_with(p, true, &mut decode))
+                        .unwrap_or(Color::WHITE),
+                )
+            } else {
+                self.sample_color_with(p, shift, &mut decode)
+            };
+            let reading = c.map(|c| {
+                let name = self.color_name(c);
+                reading_of(c, name, self.doc().metadata.primary_color_mode)
+            });
+            self.eyedropper_hover.picture = cache;
+            self.eyedropper_hover.reading = reading;
+            self.eyedropper_hover.key = Some(key);
+            self.eyedropper_hover.computed += 1;
+            self.eyedropper_hover.decoded += decoded;
+        }
+        self.eyedropper_hover.reading.as_ref()
+    }
+
+    /// The name `c` has: a spot ink's, or a palette colour's.
+    pub fn color_name(&self, c: Color) -> String {
+        if let Color::Spot { ink, .. } = c {
+            if let Some(i) = self.doc().ink(ink) {
+                return i.name.clone();
+            }
+        }
+        crate::ui::palette::name_of(self, c)
+    }
+
+    /// Does the Colour Eyedropper wait to sample (Select mode)?
+    pub fn eyedropper_sampling(&self) -> bool {
+        self.tool == crate::tools::Tool::ColorEyedropper
+            && !(self.eyedropper_apply && self.eyedropper_color.is_some())
+    }
+}
+
 /// Which groups the Attributes eyedropper copies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AttrGroups {
     pub outline: bool,
     pub fill: bool,
     pub text: bool,
+    /// The transparency (uniform, or a fountain, pattern or texture
+    /// mask, with its merge mode), also without the other effects
+    /// (#1338).
+    pub transparency: bool,
     pub size: bool,
     pub rotation: bool,
     pub position: bool,
@@ -37,6 +187,7 @@ impl Default for AttrGroups {
             outline: true,
             fill: true,
             text: true,
+            transparency: true,
             size: false,
             rotation: false,
             position: false,
@@ -97,6 +248,21 @@ impl App {
     /// The object read is the innermost one under `p`: a group's child, a
     /// clip frame's content (#403: a picture in a frame gave nothing).
     pub fn sample_color_at(&self, p: Point, outline: bool) -> Option<Color> {
+        self.sample_color_with(p, outline, &mut |png| {
+            image::load_from_memory(png)
+                .ok()
+                .map(|i| std::sync::Arc::new(i.to_rgba8()))
+        })
+    }
+
+    /// [`App::sample_color_at`] with the pictures decoded by `decode`
+    /// (the hover readout keeps the last one decoded).
+    fn sample_color_with(
+        &self,
+        p: Point,
+        outline: bool,
+        decode: &mut dyn FnMut(&tracedraw_core::SharedBytes) -> Option<Picture>,
+    ) -> Option<Color> {
         let s = self.leaf_to_read(p)?;
         let s = &s;
         if outline {
@@ -115,7 +281,7 @@ impl App {
             let lp = s.transform.inverse() * p;
             if rect.contains(lp) && rect.width() > 0.0 && rect.height() > 0.0 {
                 // Pictures keep the bytes they came with: PNG, JPEG and others.
-                if let Some(img) = image::load_from_memory(png).ok().map(|i| i.to_rgba8()) {
+                if let Some(img) = decode(png) {
                     let fx = (lp.x - rect.x0) / rect.width() * *width_px as f64;
                     let fy = (rect.y1 - lp.y) / rect.height() * *height_px as f64;
                     let n = self.eyedropper_sample.max(1) as i64;
@@ -139,7 +305,15 @@ impl App {
                     if let (Some(r), Some(g), Some(b)) =
                         (r.checked_div(cnt), g.checked_div(cnt), b.checked_div(cnt))
                     {
-                        return Some(Color::rgb8(r as u8, g as u8, b as u8));
+                        // A bitmap in CMYK mode gives its colour in CMYK,
+                        // so a picture converted with Convert Colors reads
+                        // in the model it went to (#1254).
+                        let c = Color::rgb8(r as u8, g as u8, b as u8);
+                        return Some(if s.cmyk_bitmap {
+                            c.convert_to("CMYK")
+                        } else {
+                            c
+                        });
                     }
                 }
             }
@@ -241,6 +415,29 @@ impl App {
                 }
                 cmds.push(Command::SetShapeKind { shape: id, kind });
             }
+        }
+        if g.transparency && !g.effects {
+            // The sampled transparency in place of the object's own; its
+            // other effects stay.
+            let mut effects: Vec<Effect> = s
+                .effects
+                .iter()
+                .filter(|e| !matches!(e, Effect::Transparency { .. }))
+                .cloned()
+                .collect();
+            effects.extend(
+                a.effects
+                    .iter()
+                    .filter(|e| matches!(e, Effect::Transparency { .. }))
+                    .cloned(),
+            );
+            if effects != s.effects {
+                cmds.push(Command::SetEffects { shape: id, effects });
+            }
+            cmds.push(Command::SetOpacity {
+                shapes: shapes.clone(),
+                opacity: a.opacity,
+            });
         }
         if g.effects {
             cmds.push(Command::SetOpacity {
@@ -439,11 +636,15 @@ mod tests {
         app.select(Vec::new());
         app.eyedropper_click(Point::new(5.0, 5.0), true, false);
         assert!(app.eyedropper_attrs.is_some());
-        // Defaults: fill and outline, no transformations, no effects.
+        // Defaults: fill, outline and transparency, no transformations,
+        // no effects.
         app.eyedropper_click(Point::new(45.0, 5.0), true, false);
         let sb = app.doc().find_shape(b).expect("b");
         assert_eq!(sb.fill, Fill::Solid(Color::rgb8(0, 0, 250)));
-        assert!((sb.opacity - 1.0).abs() < 1e-9);
+        assert!(
+            (sb.opacity - 0.5).abs() < 1e-9,
+            "the transparency comes too"
+        );
         assert!((sb.bounds().width() - 10.0).abs() < 1e-9);
         // Tick size and effects: b takes a's size about its own centre.
         app.eyedropper_groups.size = true;
@@ -458,6 +659,85 @@ mod tests {
         app.eyedropper_click(Point::new(45.0, 5.0), true, true);
         let s = app.eyedropper_attrs.as_ref().expect("sample");
         assert!((s.height - 20.0).abs() < 1e-6);
+    }
+
+    /// The attributes eyedropper copies transparency by default, a
+    /// fountain mask with its merge mode too, in place of the target's
+    /// own and keeping its other effects; unticked, the target keeps its
+    /// own (#1338: only the colour came across).
+    #[test]
+    fn attributes_eyedropper_copies_transparency() {
+        use tracedraw_core::live::MergeMode;
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(40.0, 0.0, 50.0, 10.0));
+        let c = rect(&mut app, Rect::new(80.0, 0.0, 90.0, 10.0));
+        let mask = Effect::Transparency {
+            mask: Fill::Fountain(Default::default()),
+            merge: MergeMode::Multiply,
+            target: 2,
+        };
+        app.run(Command::SetEffects {
+            shape: a,
+            effects: vec![mask.clone()],
+        });
+        let warp = Effect::Perspective {
+            corners: [
+                Point::new(40.0, 0.0),
+                Point::new(50.0, 0.0),
+                Point::new(50.0, 10.0),
+                Point::new(40.0, 10.0),
+            ],
+        };
+        app.run(Command::SetEffects {
+            shape: b,
+            effects: vec![warp.clone()],
+        });
+        app.select(Vec::new());
+        app.eyedropper_click(Point::new(5.0, 5.0), true, false);
+        app.eyedropper_click(Point::new(45.0, 5.0), true, false);
+        let sb = app.doc().find_shape(b).expect("b");
+        assert_eq!(sb.effects, vec![warp, mask.clone()]);
+        // Unticked: c keeps having none.
+        app.eyedropper_groups.transparency = false;
+        app.eyedropper_click(Point::new(85.0, 5.0), true, false);
+        let sc = app.doc().find_shape(c).expect("c");
+        assert!(sc.effects.is_empty(), "{:?}", sc.effects);
+        // A sample without transparency clears the target's.
+        app.eyedropper_groups.transparency = true;
+        app.eyedropper_click(Point::new(85.0, 5.0), true, true);
+        app.eyedropper_click(Point::new(5.0, 5.0), true, false);
+        assert!(app.doc().find_shape(a).expect("a").effects.is_empty());
+    }
+
+    /// Clear Transparency takes a fountain transparency and a uniform one
+    /// away in one step, and is greyed with nothing to clear (#1338).
+    #[test]
+    fn clear_transparency_removes_masks_and_opacity() {
+        use tracedraw_core::live::MergeMode;
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(40.0, 0.0, 50.0, 10.0));
+        app.run(Command::SetEffects {
+            shape: a,
+            effects: vec![Effect::Transparency {
+                mask: Fill::Fountain(Default::default()),
+                merge: MergeMode::Normal,
+                target: 2,
+            }],
+        });
+        app.run(Command::SetOpacity {
+            shapes: vec![b],
+            opacity: 0.4,
+        });
+        app.select(vec![a, b]);
+        assert!(app.can_clear_transparency());
+        let steps = app.engine.history_labels().0.len();
+        app.clear_transparency();
+        assert!(app.doc().find_shape(a).expect("a").effects.is_empty());
+        assert!((app.doc().find_shape(b).expect("b").opacity - 1.0).abs() < 1e-9);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        assert!(!app.can_clear_transparency());
     }
 
     /// Pictures give their pixels: placed alone, in a group, inside a clip
@@ -540,6 +820,101 @@ mod tests {
             .expect("a colour")
             .to_rgb8();
         assert!(c[0] < 20 && c[1] > 180 && c[2] < 20, "{c:?}");
+        // Converted to CMYK: the picture gives CMYK colours, and the
+        // readout shows C, M, Y, K; back to RGB, RGB again (#1254).
+        app.select(vec![id]);
+        let to = |target| crate::ui::convert_colors::ConvertColorsState {
+            to: target,
+            whole: false,
+            spots: false,
+        };
+        assert!(app.convert_colors(&to(tracedraw_core::color_convert::ColorTarget::Cmyk)));
+        let c = app.sample_color_at(left, false).expect("a colour");
+        assert_eq!(c.model_name(), "CMYK", "{c:?}");
+        let r = app
+            .hover_reading(left, false, false)
+            .cloned()
+            .expect("read");
+        assert!(r.lines[0].starts_with("C:"), "{:?}", r.lines);
+        assert!(app.convert_colors(&to(tracedraw_core::color_convert::ColorTarget::Rgb)));
+        let c = app.sample_color_at(left, false).expect("a colour");
+        assert_eq!(c.model_name(), "RGB", "{c:?}");
+        let r = app
+            .hover_reading(left, false, false)
+            .cloned()
+            .expect("read");
+        assert!(r.lines[0].starts_with("R:"), "{:?}", r.lines);
+    }
+
+    /// The readout names a palette colour and gives its values in the
+    /// drawing's model and its hex; it is worked out again only when the
+    /// pointer moves or the drawing changes, and a picture hovered is
+    /// decoded once (#990).
+    #[test]
+    fn the_hover_readout_names_the_colour_and_keeps_its_work() {
+        use tracedraw_core::document::PrimaryColorMode;
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let (name, c) = app
+            .palette
+            .iter()
+            .find(|(n, c)| !n.is_empty() && matches!(c, Color::Cmyk { .. }))
+            .cloned()
+            .expect("a named CMYK colour");
+        let id = rect(&mut app, Rect::new(10.0, 10.0, 50.0, 40.0));
+        app.select(vec![id]);
+        app.apply_fill(Fill::Solid(c));
+        let inside = Point::new(30.0, 25.0);
+        let r = app
+            .hover_reading(inside, false, false)
+            .cloned()
+            .expect("read");
+        assert_eq!(r.color, c);
+        assert_eq!(r.name, name);
+        assert!(r.lines[0].starts_with("C:"), "{:?}", r.lines);
+        assert_eq!(r.lines.len(), 5, "C, M, Y, K, hex: {:?}", r.lines);
+        assert_eq!(r.lines[4], c.to_hex().to_uppercase());
+        // A CMYK or RGB colour reads in its own model whatever the
+        // drawing's (#1254); another model's in the drawing's.
+        let cmyk = reading_of(c, String::new(), PrimaryColorMode::Rgb);
+        assert!(cmyk.lines[0].starts_with("C:"), "{:?}", cmyk.lines);
+        let hsb = Color::rgb8(200, 30, 30).convert_to("HSB");
+        let rgb = reading_of(hsb, String::new(), PrimaryColorMode::Rgb);
+        assert!(rgb.lines[0].starts_with("R:"), "{:?}", rgb.lines);
+        let in_cmyk = reading_of(hsb, String::new(), PrimaryColorMode::Cmyk);
+        assert!(in_cmyk.lines[0].starts_with("C:"), "{:?}", in_cmyk.lines);
+        // A colour of no palette has no name.
+        let odd = reading_of(Color::rgb8(1, 2, 3), String::new(), PrimaryColorMode::Cmyk);
+        assert!(odd.lines[0].starts_with("R:"), "{:?}", odd.lines);
+        assert_eq!(odd.lines.last().map(String::as_str), Some("#010203"));
+        // Nothing worked out again while nothing changes.
+        let n = app.eyedropper_hover.computed;
+        for _ in 0..5 {
+            app.hover_reading(inside, false, false);
+        }
+        assert_eq!(app.eyedropper_hover.computed, n);
+        app.hover_reading(Point::new(31.0, 25.0), false, false);
+        assert_eq!(app.eyedropper_hover.computed, n + 1, "the pointer moved");
+        app.apply_fill(Fill::Solid(Color::rgb8(0, 255, 0)));
+        let r = app.hover_reading(Point::new(31.0, 25.0), false, false);
+        assert_eq!(r.map(|r| r.color), Some(Color::rgb8(0, 255, 0)), "edited");
+        // Off every object: nothing to sample, but a picker gets white.
+        assert!(app
+            .hover_reading(Point::new(150.0, 200.0), false, false)
+            .is_none());
+        let r = app.hover_reading(Point::new(150.0, 200.0), false, true);
+        assert_eq!(r.map(|r| r.color), Some(Color::WHITE));
+        // A picture: decoded once however the pointer moves over it.
+        let img = image::RgbaImage::from_pixel(20, 20, image::Rgba([0, 0, 255, 255]));
+        let pic = app.place_image_at(img, None, None).expect("picture");
+        let b = app.doc().find_shape(pic).unwrap().bounds();
+        let before = app.eyedropper_hover.decoded;
+        for i in 0..10 {
+            let p = Point::new(b.x0 + b.width() * (0.1 + i as f64 * 0.08), b.center().y);
+            let r = app.hover_reading(p, false, false);
+            assert_eq!(r.map(|r| r.color), Some(Color::rgb8(0, 0, 255)));
+        }
+        assert_eq!(app.eyedropper_hover.decoded, before + 1);
     }
 
     #[test]

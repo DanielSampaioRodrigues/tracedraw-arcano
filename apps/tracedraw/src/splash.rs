@@ -1,15 +1,25 @@
 //! The splash screen. While TraceDraw starts, a small borderless window
 //! centred on the screen shows the application icon, the name, the
 //! tagline and the version over the brand artwork (see `ui/brand.rs`),
-//! with what is loading and a progress bar. The system font list is read
-//! on a worker thread meanwhile; when it is in and the splash has been up
-//! for [`MIN_TIME`], the editor is built (opening the file named on the
-//! command line) and the window becomes the main window, maximized or at
-//! the size it was left. Options > General turns the splash off;
-//! `--no-splash` or `TRACEDRAW_NO_SPLASH=1` skip it for one run.
+//! with what is loading and a progress bar. The splash stays up only as
+//! long as the start takes: nothing holds it back once the editor can be
+//! built (opening the file named on the command line), and the window
+//! becomes the main window, maximized or at the size it was left. The
+//! system fonts are read on a worker thread meanwhile (since the start of
+//! the program, see `lib.rs`). The editor cannot be built without the list
+//! of system fonts, so the splash stays up, drawn and answering, until the
+//! list is in: reading it can take minutes on a computer with thousands of
+//! fonts or a slow disk, and the editor used to wait for it on the
+//! window's thread, which left the window blank (#1388). The interface
+//! fonts themselves (copies of the fonts for Chinese, Japanese, Arabic,
+//! Hindi and Bengali) are waited for only when the interface language
+//! needs one; the editor takes them in when they arrive otherwise.
+//! Options > General turns the splash off; `--no-splash` or
+//! `TRACEDRAW_NO_SPLASH=1` skip it for one run.
 
 use crate::i18n::{tr, trf};
 use crate::settings::Settings;
+use crate::theme::FontLoad;
 use crate::ui::brand;
 use egui::{Color32, CornerRadius, FontId, Pos2, Rect, Stroke, TextureHandle, Vec2};
 use std::path::Path;
@@ -22,8 +32,16 @@ pub const DEFAULT_SIZE: Vec2 = Vec2::new(1600.0, 950.0);
 /// Small enough for a 1280 x 720 screen with a taskbar, at any interface
 /// size (see [`min_size_for`]).
 pub const MIN_SIZE: Vec2 = Vec2::new(800.0, 500.0);
-/// The shortest time the splash stays up, so it never just flashes.
-pub const MIN_TIME: Duration = Duration::from_millis(1600);
+/// How fast the progress bar eases towards [`WAITING_FILL`] while the
+/// splash waits for the fonts of the interface language.
+const EASE_TIME: Duration = Duration::from_millis(1600);
+/// How far the bar goes while the splash waits for something.
+const WAITING_FILL: f32 = 0.8;
+/// After [`EASE_TIME`] a long wait (thousands of fonts, a slow disk)
+/// creeps on towards [`CREEP_FILL`], two thirds of the way in this time,
+/// so that the bar never stands still while TraceDraw is working (#1388).
+const CREEP_TIME: Duration = Duration::from_secs(30);
+const CREEP_FILL: f32 = 0.97;
 
 /// What the shell does after a splash frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +56,14 @@ pub enum Step {
 pub struct Splash {
     started: Instant,
     /// The interface fonts, read on a worker thread.
-    fonts: Option<std::thread::JoinHandle<egui::FontDefinitions>>,
+    fonts: FontLoad,
+    /// The interface language needs a system font: its texts wait for the
+    /// fonts, and so does the start of the editor.
+    wait_for_fonts: bool,
+    /// Whether the list of system fonts is in (`tracedraw_text::fonts_loaded`,
+    /// a stand-in in tests): the editor is built only then, so that the
+    /// window's thread never waits for the font scan (#1388).
+    font_list_ready: fn() -> bool,
     /// Frames drawn since the full fonts were installed (they apply from
     /// the next frame on).
     frames_with_fonts: Option<u32>,
@@ -60,14 +85,19 @@ impl Splash {
     pub fn start(ctx: &egui::Context, file: Option<&Path>) -> Self {
         ctx.set_fonts(crate::theme::bundled_font_definitions());
         ctx.set_visuals(crate::theme::visuals());
-        let fonts = std::thread::Builder::new()
-            .name("tracedraw-fonts".into())
-            .spawn(crate::theme::font_definitions)
-            .map_err(|e| log::warn!("font thread: {e}"))
-            .ok();
+        // The scan the program started (a thread of its own when that one
+        // could not be made); with no thread at all the editor reads the
+        // fonts itself, as before.
+        let scanning = tracedraw_text::load_in_background();
         Splash {
             started: Instant::now(),
-            fonts,
+            fonts: FontLoad::start(),
+            wait_for_fonts: crate::theme::needs_system_font(&crate::i18n::language()),
+            font_list_ready: if scanning {
+                tracedraw_text::fonts_loaded
+            } else {
+                || true
+            },
             frames_with_fonts: None,
             file_name: file
                 .and_then(|p| p.file_name())
@@ -86,21 +116,19 @@ impl Splash {
         if ctx.input(|i| i.key_down(egui::Key::F8)) {
             self.reset_requested = true;
         }
-        if self.frames_with_fonts.is_none() && self.fonts.as_ref().is_none_or(|h| h.is_finished()) {
-            let defs = self
-                .fonts
-                .take()
-                .and_then(|h| h.join().ok())
-                .unwrap_or_else(crate::theme::font_definitions);
-            ctx.set_fonts(defs);
+        if self.frames_with_fonts.is_none() && self.fonts.is_finished() {
+            ctx.set_fonts(self.fonts.finish());
             self.frames_with_fonts = Some(0);
         } else if let Some(n) = self.frames_with_fonts.as_mut() {
             *n = n.saturating_add(1);
         }
         let elapsed = self.started.elapsed();
-        let fonts_ready = self.frames_with_fonts.is_some();
-        let texts = !crate::theme::needs_system_font(&crate::i18n::language())
-            || self.frames_with_fonts.is_some_and(|n| n >= 1);
+        // The editor waits for the list of system fonts, here, with the
+        // splash drawn; it starts without the interface fonts unless its
+        // texts need one, and installs them when they arrive.
+        let fonts_ready =
+            (self.font_list_ready)() && (self.frames_with_fonts.is_some() || !self.wait_for_fonts);
+        let texts = !self.wait_for_fonts || self.frames_with_fonts.is_some_and(|n| n >= 1);
         let status = status_text(fonts_ready, self.file_name.as_deref());
         paint(
             ui,
@@ -110,7 +138,7 @@ impl Splash {
             self.icon.as_ref(),
             self.logo.as_ref(),
         );
-        if fonts_ready && elapsed >= MIN_TIME {
+        if fonts_ready {
             if self.last_frame_drawn {
                 return Step::Start;
             }
@@ -118,6 +146,12 @@ impl Splash {
         }
         ctx.request_repaint_after(Duration::from_millis(16));
         Step::Wait
+    }
+
+    /// The fonts still being read when the editor starts: the shell
+    /// installs them when they are in.
+    pub fn take_fonts(&mut self) -> FontLoad {
+        std::mem::take(&mut self.fonts)
     }
 }
 
@@ -132,12 +166,17 @@ pub fn status_text(fonts_ready: bool, file: Option<&str>) -> String {
 }
 
 /// The progress bar's fill, 0 to 1: it eases towards 80 % over
-/// [`MIN_TIME`] while the fonts load and reaches the end once they are in.
+/// [`EASE_TIME`] while the fonts load, then creeps on below
+/// [`CREEP_FILL`], and is full once they are in (the editor is built
+/// right after).
 pub fn progress(elapsed: Duration, fonts_ready: bool) -> f32 {
-    let t = (elapsed.as_secs_f32() / MIN_TIME.as_secs_f32()).clamp(0.0, 1.0);
+    if fonts_ready {
+        return 1.0;
+    }
+    let t = (elapsed.as_secs_f32() / EASE_TIME.as_secs_f32()).clamp(0.0, 1.0);
     let eased = 1.0 - (1.0 - t) * (1.0 - t);
-    let cap = if fonts_ready { 1.0 } else { 0.8 };
-    cap * eased
+    let late = elapsed.saturating_sub(EASE_TIME).as_secs_f32() / CREEP_TIME.as_secs_f32();
+    WAITING_FILL * eased + (CREEP_FILL - WAITING_FILL) * (1.0 - (-late * 1.1).exp())
 }
 
 /// Paint the splash over the whole of `ui`. `texts` draws the tagline and
@@ -359,7 +398,8 @@ pub fn main_window_builder(settings: &Settings, plain: bool) -> egui::ViewportBu
 /// points (see [`remember_window`]) and sent in interface points. A
 /// window that starts maximized is maximized by [`WindowSettle`] in the
 /// next frames, once the window system has applied this size (#787).
-pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
+/// The window is drawn plain until it has grown ([`WindowGrow`], #1673).
+pub fn open_main_window(ctx: &egui::Context, settings: &Settings) -> WindowGrow {
     use egui::ViewportCommand as V;
     let zoom = ctx.zoom_factor().max(0.01);
     let monitor = monitor_in_system_points(ctx);
@@ -383,6 +423,105 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
         ctx.send_viewport_cmd(V::OuterPosition((p.to_vec2() / zoom).to_pos2()));
     }
     ctx.send_viewport_cmd(V::Focus);
+    let maximize = start_maximized(settings.window_size, settings.window_maximized, monitor);
+    WindowGrow::new(size, maximize)
+}
+
+/// The longest time, in seconds, the main window is drawn plain while it
+/// grows from the splash's size to its own (see [`WindowGrow`]): a window
+/// system that never gives it that size still gets the editor.
+pub const GROW_SECONDS: f64 = 1.0;
+/// How far, in system points, the window's size may be from the size
+/// asked for and count as grown (a window manager rounding it to its
+/// increments or to the screen).
+const GROW_SLACK: f32 = 16.0;
+
+/// The main window growing from the splash's size to its own (#1673).
+/// The splash window becomes the main window by asking for a new size,
+/// which the window system applies a few frames later. Until then, or
+/// until the maximize a window that starts maximized gets, the window is
+/// drawn plain in the interface's background colour, not with the
+/// editor: an editor frame drawn at the old size, before the surface
+/// follows the window, left the last splash frame in one corner and the
+/// rest of the grown window unpainted (torn blocks and leftover pixels on
+/// X11) until the editor's slow first frame at the new size came, half a
+/// second to a second later. A plain frame is cheap, so the grown window
+/// is painted at once, and the editor's first frame is drawn at the
+/// window's final size.
+#[derive(Debug, Clone)]
+pub struct WindowGrow {
+    /// The size asked for, in system points.
+    asked: Vec2,
+    /// The window starts maximized ([`start_maximized`]).
+    maximize: bool,
+    /// The input time of the first frame.
+    started: Option<f64>,
+}
+
+impl WindowGrow {
+    /// The main window was asked for `asked` (system points), and is to
+    /// be maximized next when `maximize`.
+    pub fn new(asked: Vec2, maximize: bool) -> Self {
+        WindowGrow {
+            asked,
+            maximize,
+            started: None,
+        }
+    }
+
+    /// One frame while the window grows: true once the editor can be
+    /// drawn. Until then `ui` is painted plain and another frame asked for.
+    pub fn step(&mut self, ui: &mut egui::Ui) -> bool {
+        let ctx = ui.ctx().clone();
+        let (now, inner, maximized, monitor) = ctx.input(|i| {
+            let v = i.viewport();
+            (
+                i.time,
+                v.inner_rect.map(|r| r.size()),
+                v.maximized,
+                v.monitor_size,
+            )
+        });
+        let started = *self.started.get_or_insert(now);
+        let zoom = ctx.zoom_factor();
+        let state = WindowState {
+            inner: inner.map(|s| s * zoom),
+            maximized,
+            monitor: monitor.map(|m| m * zoom),
+        };
+        if now - started >= GROW_SECONDS || window_grown(self.asked, self.maximize, state) {
+            return true;
+        }
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
+        ctx.request_repaint();
+        false
+    }
+}
+
+/// What the window system reports of the window, in system points.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WindowState {
+    pub inner: Option<Vec2>,
+    pub maximized: Option<bool>,
+    pub monitor: Option<Vec2>,
+}
+
+/// Whether the main window has its own size: the size `asked` (system
+/// points), or, when it starts maximized (`maximize`), maximized and
+/// filling the monitor. A size not reported counts as grown, as there
+/// is nothing to wait for.
+pub fn window_grown(asked: Vec2, maximize: bool, state: WindowState) -> bool {
+    let Some(inner) = state.inner else {
+        return true;
+    };
+    if maximize {
+        let fills = state.monitor.is_none_or(|m| {
+            m.x <= 0.0 || m.y <= 0.0 || inner.x >= m.x * FILLS_SHARE || inner.y >= m.y * FILLS_SHARE
+        });
+        return state.maximized == Some(true) && fills;
+    }
+    (inner.x - asked.x).abs() <= GROW_SLACK && (inner.y - asked.y).abs() <= GROW_SLACK
 }
 
 /// Frames after the main window opens during which its state is still
@@ -652,7 +791,9 @@ mod tests {
             "{w} {h}"
         );
         // Opened again with the interface at 150 %: the same window.
-        let cmds = window_frame(1.5, info.clone(), |ctx| open_main_window(ctx, &settings));
+        let cmds = window_frame(1.5, info.clone(), |ctx| {
+            open_main_window(ctx, &settings);
+        });
         let size = cmds
             .iter()
             .find_map(|c| match c {
@@ -667,7 +808,9 @@ mod tests {
             monitor_size: Some(Vec2::new(2560.0, 1440.0)),
             ..info
         };
-        let cmds = window_frame(1.0, at_100, |ctx| open_main_window(ctx, &settings));
+        let cmds = window_frame(1.0, at_100, |ctx| {
+            open_main_window(ctx, &settings);
+        });
         assert!(cmds.iter().any(
             |c| matches!(c, V::InnerSize(s) if (*s - Vec2::new(1500.0, 900.0)).length() < 0.5)
         ));
@@ -808,7 +951,9 @@ mod tests {
         // The splash asks for the size and position only.
         let mut window = fake_windows_window();
         let info = window.info();
-        let cmds = window_frame(1.0, info, |ctx| open_main_window(ctx, &settings));
+        let cmds = window_frame(1.0, info, |ctx| {
+            open_main_window(ctx, &settings);
+        });
         assert!(
             !cmds.iter().any(|c| matches!(c, V::Maximized(_))),
             "{cmds:?}"
@@ -983,16 +1128,110 @@ mod tests {
         assert!(cmds.iter().any(|c| matches!(c, V::Decorations(true))));
     }
 
+    /// A frame of the growing main window at input time `time`, reported
+    /// as `inner` (maximized or not) on a 1600 x 1000 monitor: whether the
+    /// editor may draw, and whether the frame painted the window.
+    fn grow_frame(grow: &mut WindowGrow, time: f64, inner: Vec2, maximized: bool) -> (bool, bool) {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput {
+            time: Some(time),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, inner)),
+            ..Default::default()
+        };
+        input.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: Some(maximized),
+                minimized: Some(false),
+                inner_rect: Some(Rect::from_min_size(Pos2::ZERO, inner)),
+                monitor_size: Some(Vec2::new(1600.0, 1000.0)),
+                ..Default::default()
+            },
+        );
+        let mut grown = false;
+        let mut out = ctx.run_ui(input, |ui| grown = grow.step(ui));
+        out.textures_delta.clear();
+        (grown, !out.shapes.is_empty())
+    }
+
+    /// #1673: the splash window grows into the main window a few frames
+    /// after it asks for its size. Until it has that size the window is
+    /// drawn plain, not with the editor: an editor frame drawn at the
+    /// splash's size left the last splash frame in a corner and the rest
+    /// of the grown window unpainted until the editor's slow first frame
+    /// at the new size.
     #[test]
-    fn progress_waits_for_the_fonts_and_the_minimum_time() {
+    fn the_main_window_is_drawn_plain_until_it_has_grown() {
+        let ctx = egui::Context::default();
+        let mut grow = None;
+        let monitor = egui::ViewportInfo {
+            monitor_size: Some(Vec2::new(1920.0, 1080.0)),
+            ..Default::default()
+        };
+        let mut input = egui::RawInput::default();
+        input.viewports.insert(egui::ViewportId::ROOT, monitor);
+        let settings = Settings {
+            window_maximized: false,
+            ..Settings::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            grow = Some(open_main_window(ui.ctx(), &settings));
+        });
+        out.textures_delta.clear();
+        let mut grow = grow.expect("the window grows");
+        // 1600 x 950 fits 95 % of 1920 x 1080: not maximized.
+        assert!(!grow.maximize);
+        assert_eq!(grow.asked, DEFAULT_SIZE);
+        // Still at the splash's size: a plain frame, painted.
+        assert_eq!(grow_frame(&mut grow, 0.0, SIZE, false), (false, true));
+        assert_eq!(
+            grow_frame(&mut grow, 0.1, Vec2::new(900.0, 600.0), false),
+            (false, true)
+        );
+        // At its size (a window manager may round it): the editor.
+        assert!(grow_frame(&mut grow, 0.2, DEFAULT_SIZE - Vec2::splat(4.0), false).0);
+    }
+
+    #[test]
+    fn a_window_that_starts_maximized_is_drawn_plain_until_it_fills_the_screen() {
+        let mut grow = WindowGrow::new(Vec2::new(1520.0, 950.0), true);
+        // At its normal size, then maximized but not resized yet.
+        assert!(!grow_frame(&mut grow, 0.0, SIZE, false).0);
+        assert!(!grow_frame(&mut grow, 0.1, Vec2::new(1520.0, 950.0), false).0);
+        assert!(!grow_frame(&mut grow, 0.2, Vec2::new(1520.0, 950.0), true).0);
+        assert!(grow_frame(&mut grow, 0.3, Vec2::new(1600.0, 975.0), true).0);
+    }
+
+    #[test]
+    fn a_window_that_never_grows_gets_the_editor_after_a_second() {
+        let mut grow = WindowGrow::new(DEFAULT_SIZE, false);
+        assert!(!grow_frame(&mut grow, 5.0, SIZE, false).0);
+        assert!(!grow_frame(&mut grow, 5.0 + GROW_SECONDS * 0.9, SIZE, false).0);
+        assert!(grow_frame(&mut grow, 5.0 + GROW_SECONDS, SIZE, false).0);
+        // Nothing reported: nothing to wait for.
+        assert!(window_grown(DEFAULT_SIZE, true, WindowState::default()));
+    }
+
+    #[test]
+    fn progress_waits_for_the_fonts_and_holds_nothing_back() {
         assert_eq!(progress(Duration::ZERO, false), 0.0);
-        let half = progress(MIN_TIME / 2, false);
+        let half = progress(EASE_TIME / 2, false);
         assert!(half > 0.4 && half < 0.8, "{half}");
-        // Without the fonts the bar stops at 80 %.
-        assert!((progress(MIN_TIME * 3, false) - 0.8).abs() < 1e-6);
-        // With them it fills once the minimum time is over.
-        assert!((progress(MIN_TIME, true) - 1.0).abs() < 1e-6);
-        assert!(progress(MIN_TIME / 2, true) < 1.0);
+        // Without the fonts the bar reaches 80 %, then creeps on and never
+        // stands still, never full (#1388).
+        assert!((progress(EASE_TIME, false) - WAITING_FILL).abs() < 1e-6);
+        let mut last = progress(EASE_TIME, false);
+        for s in [5, 30, 60, 180] {
+            let p = progress(EASE_TIME + Duration::from_secs(s), false);
+            assert!(p > last && p < CREEP_FILL, "{s} s: {p}");
+            last = p;
+        }
+        assert!(progress(EASE_TIME + Duration::from_secs(3600), false) <= CREEP_FILL);
+        let late = progress(EASE_TIME + CREEP_TIME, false);
+        assert!(late > 0.89 && late < 0.92, "{late}");
+        // With them it is full at once: no minimum time keeps the splash.
+        assert!((progress(Duration::ZERO, true) - 1.0).abs() < 1e-6);
+        assert!((progress(EASE_TIME / 2, true) - 1.0).abs() < 1e-6);
     }
 
     #[test]
@@ -1031,35 +1270,120 @@ mod tests {
         assert_eq!(centred_position(Vec2::new(10.0, 10.0), None), None);
     }
 
+    fn input() -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            ..Default::default()
+        }
+    }
+
+    /// Splash frames until the editor starts (at most `max`); the steps.
+    fn run_frames(ctx: &egui::Context, splash: &mut Splash, max: usize) -> Vec<Step> {
+        let mut steps = Vec::new();
+        for _ in 0..max {
+            let mut out = ctx.run_ui(input(), |ui| steps.push(splash.update(ui)));
+            out.textures_delta.clear();
+            if steps.last() == Some(&Step::Start) {
+                break;
+            }
+        }
+        steps
+    }
+
     #[test]
     fn a_splash_frame_draws_and_then_starts_the_editor() {
         crate::i18n::set_language("en");
         let ctx = egui::Context::default();
         let mut splash = Splash::start(&ctx, Some(Path::new("/tmp/a.cdr")));
-        // Let the font thread finish and pretend the minimum time is over.
-        for _ in 0..3000 {
-            if splash.fonts.as_ref().is_none_or(|h| h.is_finished()) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+        splash.font_list_ready = || true;
+        // No minimum time: the editor starts as soon as the last status
+        // has been drawn once, with the fonts in or not.
+        let steps = run_frames(&ctx, &mut splash, 4);
+        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+        assert!(!splash.reset_requested);
+    }
+
+    #[test]
+    fn the_editor_does_not_wait_for_system_fonts_the_language_does_not_need() {
+        crate::i18n::set_language("en");
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || true;
+        assert!(!splash.wait_for_fonts);
+        // Whatever the font thread has done, the editor starts in two
+        // frames, and the load it leaves is the shell's to install.
+        let steps = run_frames(&ctx, &mut splash, 4);
+        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+        let mut load = splash.take_fonts();
+        let defs = load.finish();
+        assert!(!load.pending());
+        assert!(defs.families.contains_key(&egui::FontFamily::Proportional));
+        // Nothing is left to install afterwards.
+        assert!(!load.poll(&ctx));
+    }
+
+    /// The editor is never built before the list of system fonts is in:
+    /// it would wait for it on the window's thread, with the window blank
+    /// and not answering for as long as the scan takes, minutes with
+    /// thousands of fonts or a slow disk (#1388). The splash keeps drawing
+    /// meanwhile, says it is loading fonts and its bar keeps moving.
+    #[test]
+    fn the_editor_waits_for_the_font_list_with_the_splash_drawn() {
+        crate::i18n::set_language("en");
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || false;
+        assert!(!splash.wait_for_fonts);
+        for _ in 0..20 {
+            let mut out = ctx.run_ui(input(), |ui| {
+                assert_eq!(splash.update(ui), Step::Wait);
+            });
+            out.textures_delta.clear();
+            // Every frame asks for the next: the window keeps answering.
+            assert!(ctx.has_requested_repaint());
+            assert!(!out.shapes.is_empty());
         }
-        splash.started = Instant::now()
-            .checked_sub(MIN_TIME * 2)
-            .unwrap_or_else(Instant::now);
-        let input = || egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
-            ..Default::default()
-        };
+        assert_eq!(status_text(false, None), tr("splash.loading_fonts"));
+        // The list is in: the editor starts within two frames.
+        splash.font_list_ready = || true;
+        let steps = run_frames(&ctx, &mut splash, 4);
+        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+    }
+
+    /// The program reads the system fonts on a thread of its own from its
+    /// start: the splash asks for that read, it never reads them itself.
+    #[test]
+    fn the_font_list_is_read_in_the_background() {
+        assert!(tracedraw_text::load_in_background());
+        // Asking again starts nothing new.
+        assert!(tracedraw_text::load_in_background());
+        let t = std::time::Instant::now();
+        while !tracedraw_text::fonts_loaded() && t.elapsed() < std::time::Duration::from_secs(60) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(tracedraw_text::fonts_loaded());
+    }
+
+    #[test]
+    fn a_language_that_needs_a_system_font_waits_for_it() {
+        crate::i18n::set_language("en");
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || true;
+        splash.wait_for_fonts = true;
         let mut steps = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..3000 {
             let mut out = ctx.run_ui(input(), |ui| steps.push(splash.update(ui)));
             out.textures_delta.clear();
+            if steps.last() == Some(&Step::Start) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        // The first frame installs the fonts, the next shows the last
-        // status, then the editor starts.
-        assert_eq!(steps[0], Step::Wait);
-        assert!(steps.contains(&Step::Start));
-        assert!(!splash.reset_requested);
+        assert_eq!(steps.last(), Some(&Step::Start));
+        // The fonts were installed first and nothing is left to hand over.
+        assert!(splash.frames_with_fonts.is_some());
+        assert!(!splash.take_fonts().pending());
     }
 
     #[test]

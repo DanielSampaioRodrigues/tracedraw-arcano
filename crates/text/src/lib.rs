@@ -43,6 +43,8 @@ pub struct FontSystem {
     /// each added.
     carried: RwLock<Vec<(Vec<String>, DocumentFont)>>,
     cache: Mutex<HashMap<String, CachedOutline>>,
+    /// Texts shaped lately, by [`FontSystem::shaping_key`].
+    shaped: Mutex<HashMap<String, Arc<Shaped>>>,
     /// Families the application can fetch when text asks for them (the
     /// browser build's font folder), sorted; see
     /// [`FontSystem::offer_families`].
@@ -61,6 +63,19 @@ pub struct FontSystem {
     /// typographic family ("Arial"), with their faces: drawings name fonts
     /// that way.
     legacy: RwLock<HashMap<String, Vec<fontdb::ID>>>,
+    /// Stand-ins chosen by the user for families that are not installed
+    /// (the Missing Fonts dialog, this session only, #936): tried before
+    /// [`substitutes`].
+    chosen: RwLock<HashMap<String, String>>,
+    /// The folders the user added to the font libraries (the Font
+    /// Manager): a font file under one of them counts as in that folder,
+    /// not in the subfolder it lies in (#867). See [`FontSystem::folder_of`].
+    roots: RwLock<Vec<std::path::PathBuf>>,
+    /// Faces loaded from memory under a name the application keeps them
+    /// by (the fonts a browser stores for TraceDraw, #1400), which the
+    /// catalog lists as their path and [`FontSystem::uninstall_path`]
+    /// takes out. See [`FontSystem::install_named`].
+    named: RwLock<Vec<(fontdb::ID, std::path::PathBuf)>>,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -120,6 +135,49 @@ pub fn add_font_data(data: Vec<u8>) -> bool {
 /// The process-wide font system; loads system fonts on first use.
 pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
+}
+
+/// Whether the font system has started: [`fonts`] then answers at once.
+/// Reading the system fonts can take minutes (thousands of font files,
+/// a slow or cold disk), so a window asks this before it calls [`fonts`]
+/// and keeps drawing meanwhile.
+pub fn fonts_loaded() -> bool {
+    SYSTEM.get().is_some()
+}
+
+/// Start reading the system fonts on a worker thread (once; later calls
+/// do nothing). True when the fonts are read or being read, so that
+/// [`fonts_loaded`] turns true without anyone calling [`fonts`]; false
+/// when no thread could be made (the browser has none).
+pub fn load_in_background() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    if fonts_loaded() || STARTED.load(Ordering::SeqCst) {
+        return true;
+    }
+    if cfg!(target_arch = "wasm32") {
+        return false;
+    }
+    if STARTED.swap(true, Ordering::SeqCst) {
+        return true;
+    }
+    match std::thread::Builder::new()
+        .name("tracedraw-font-scan".into())
+        .spawn(|| {
+            let started = std::time::Instant::now();
+            fonts();
+            log::info!(
+                "system fonts read in {:.0} ms",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }) {
+        Ok(_) => true,
+        Err(e) => {
+            log::warn!("font scan thread: {e}");
+            STARTED.store(false, Ordering::SeqCst);
+            false
+        }
+    }
 }
 
 /// Families that stand in for `family` when it is not installed, best
@@ -462,9 +520,10 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
 }
 
 /// How a family's fonts are built, for the icons of font lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum FontKind {
     /// TrueType outlines.
+    #[default]
     TrueType,
     /// OpenType with PostScript (CFF) outlines.
     OpenType,
@@ -487,7 +546,7 @@ pub struct FaceStyle {
 
 /// What a font list shows about a family (see
 /// [`FontSystem::family_info`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FamilyInfo {
     pub kind: FontKind,
     /// Its faces, upright first, by weight; empty for an offered family.
@@ -504,6 +563,74 @@ pub struct FamilyInfo {
     pub monospace: bool,
     /// A face has OpenType layout features beyond kerning.
     pub features: bool,
+    /// How its faces are built: [`traits::Technology::bit`]s (#867).
+    pub kinds: u8,
+    /// The weights its faces (or `wght` axis) reach:
+    /// [`traits::WeightClass::bit`]s.
+    pub weights: u8,
+    /// The widths its faces (or `wdth` axis) reach:
+    /// [`traits::WidthClass::bit`]s.
+    pub widths: u8,
+    /// The most restrictive embedding rights of its faces (OS/2 `fsType`).
+    pub embedding: Option<catalog::Embedding>,
+    /// The writing systems its faces cover: [`traits::script_bit`]s.
+    pub scripts: u16,
+    /// The OpenType feature tags of its faces (GSUB, GPOS, and `kern`
+    /// for a `kern` table), sorted, each once.
+    pub feature_tags: Vec<[u8; 4]>,
+    /// The folders its font files are in, sorted.
+    pub folders: Vec<std::path::PathBuf>,
+}
+
+/// What a font list's filter reads of one face (#867).
+struct FilterFacts {
+    weights: u8,
+    widths: u8,
+    scripts: u16,
+    embedding: catalog::Embedding,
+    tags: Vec<[u8; 4]>,
+}
+
+/// The weights, widths, scripts, embedding rights and feature tags of
+/// face `f` (`weight` its OS/2 weight class), from its OS/2 table, its
+/// variation axes, its character map and its GSUB and GPOS tables.
+fn filter_facts(f: &ttf_parser::Face, symbol: bool, weight: u16) -> FilterFacts {
+    let raw = f.raw_face();
+    let os2 = raw
+        .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+        .unwrap_or(&[]);
+    let be16 = |at: usize| {
+        os2.get(at..at + 2)
+            .map_or(0, |b| u16::from_be_bytes([b[0], b[1]]))
+    };
+    let mut weights = traits::WeightClass::bits_of(weight as f32, weight as f32);
+    let mut widths = traits::WidthClass::of_class(be16(6)).bit();
+    for axis in f.variation_axes() {
+        if axis.tag == ttf_parser::Tag::from_bytes(b"wght") {
+            weights |= traits::WeightClass::bits_of(axis.min_value, axis.max_value);
+        } else if axis.tag == ttf_parser::Tag::from_bytes(b"wdth") {
+            widths |= traits::WidthClass::bits_of_axis(axis.min_value, axis.max_value);
+        }
+    }
+    let scripts = catalog::face_scripts(f, os2, symbol)
+        .into_iter()
+        .fold(0u16, |b, s| b | traits::script_bit(s));
+    let mut tags = Vec::new();
+    for t in [b"GSUB", b"GPOS"] {
+        if let Some(table) = raw.table(ttf_parser::Tag::from_bytes(t)) {
+            tags.extend(catalog::feature_tags(table));
+        }
+    }
+    if f.tables().kern.is_some() {
+        tags.push(*b"kern");
+    }
+    FilterFacts {
+        weights,
+        widths,
+        scripts,
+        embedding: catalog::Embedding::from_fs_type(be16(8)),
+        tags,
+    }
 }
 
 /// A face's style name: the typographic subfamily (name ID 17), else the
@@ -745,24 +872,105 @@ fn symbol_encoded(family: &str) -> bool {
     matches!(key.as_str(), "symbol" | "symbolmt")
 }
 
-/// The glyph `face` draws for `c`: through its Unicode character map, or
-/// for a font made for the symbol encoding (a Windows symbol map only)
-/// the glyph of the code 0x20 to 0xFF typed, found at U+F020 to U+F0FF as
-/// the system finds it (#469).
+/// The Unicode blocks of scripts that older fonts set at the places of
+/// Latin letters (see [`FontSystem::latin_places_hold_another_script`]):
+/// the scripts of India and Sri Lanka, of South-East Asia, Tibetan,
+/// Arabic, Hebrew, Armenian, Georgian, Ethiopic, Greek and Cyrillic.
+pub const SCRIPT_BLOCKS: [(char, char); 22] = [
+    ('\u{0900}', '\u{097F}'),
+    ('\u{0980}', '\u{09FF}'),
+    ('\u{0A00}', '\u{0A7F}'),
+    ('\u{0A80}', '\u{0AFF}'),
+    ('\u{0B00}', '\u{0B7F}'),
+    ('\u{0B80}', '\u{0BFF}'),
+    ('\u{0C00}', '\u{0C7F}'),
+    ('\u{0C80}', '\u{0CFF}'),
+    ('\u{0D00}', '\u{0D7F}'),
+    ('\u{0D80}', '\u{0DFF}'),
+    ('\u{0E00}', '\u{0E7F}'),
+    ('\u{0E80}', '\u{0EFF}'),
+    ('\u{0F00}', '\u{0FFF}'),
+    ('\u{1000}', '\u{109F}'),
+    ('\u{1780}', '\u{17FF}'),
+    ('\u{0600}', '\u{06FF}'),
+    ('\u{0590}', '\u{05FF}'),
+    ('\u{0530}', '\u{058F}'),
+    ('\u{10A0}', '\u{10FF}'),
+    ('\u{1200}', '\u{137F}'),
+    ('\u{0370}', '\u{03FF}'),
+    ('\u{0400}', '\u{04FF}'),
+];
+
+/// The characters of Windows code page 1252 at 0x80 to 0x9F; the five
+/// places the page leaves empty read as the control characters of the
+/// same number, as the system's conversion of the page reads them (its
+/// published best-fit table).
+pub const CP1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+
+/// The other name of a character code page 1252 has at 0x80 to 0x9F:
+/// the control character of that number for the character the page has
+/// there ("‚" and U+0082), and back. Fonts that set the letters of a
+/// script at the page's places (older Tamil fonts) map one or the
+/// other, and text typed for them may hold either (#1358).
+pub fn cp1252_twin(c: char) -> Option<char> {
+    let cp = c as u32;
+    // Most letters are none of these: a quick look first (text is laid
+    // out at every frame while it is edited).
+    if !matches!(cp, 0x80..=0x9F | 0x152..=0x192 | 0x2C6 | 0x2DC | 0x2013..=0x2122) {
+        return None;
+    }
+    if (0x80..=0x9F).contains(&cp) {
+        return CP1252_HIGH
+            .get(cp as usize - 0x80)
+            .copied()
+            .filter(|t| *t != c);
+    }
+    CP1252_HIGH
+        .iter()
+        .position(|t| *t == c)
+        .and_then(|i| char::from_u32(0x80 + i as u32))
+}
+
+/// `text` with the characters `face` lacks under one name of code page
+/// 1252's places 0x80 to 0x9F but has under the other written with that
+/// other ([`cp1252_twin`]), one for one; `None` when nothing changes.
+fn cp1252_remapped(face: &ttf_parser::Face, text: &str) -> Option<String> {
+    let twin_drawn = |c: char| {
+        cp1252_twin(c).filter(|t| face.glyph_index(c).is_none() && face.glyph_index(*t).is_some())
+    };
+    if !text.chars().any(|c| twin_drawn(c).is_some()) {
+        return None;
+    }
+    Some(text.chars().map(|c| twin_drawn(c).unwrap_or(c)).collect())
+}
+
+/// The glyph `face` draws for `c`: through its Unicode character map
+/// (under the other name of a character of code page 1252's places 0x80
+/// to 0x9F when it has that one, [`cp1252_twin`]), or for a font made for
+/// the symbol encoding (a Windows symbol map only) the glyph of the code
+/// 0x20 to 0xFF typed, found at U+F020 to U+F0FF as the system finds it
+/// (#469).
 pub(crate) fn face_glyph(face: &ttf_parser::Face, c: char) -> Option<ttf_parser::GlyphId> {
-    face.glyph_index(c).or_else(|| {
-        let cp = c as u32;
-        if !(0x20..=0xFF).contains(&cp) {
-            return None;
-        }
-        face.tables()
-            .cmap?
-            .subtables
-            .into_iter()
-            .filter(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
-            .find_map(|s| s.glyph_index(0xF000 + cp).or_else(|| s.glyph_index(cp)))
-            .filter(|g| g.0 != 0)
-    })
+    face.glyph_index(c)
+        .or_else(|| cp1252_twin(c).and_then(|t| face.glyph_index(t)))
+        .or_else(|| {
+            let cp = c as u32;
+            if !(0x20..=0xFF).contains(&cp) {
+                return None;
+            }
+            face.tables()
+                .cmap?
+                .subtables
+                .into_iter()
+                .filter(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+                .find_map(|s| s.glyph_index(0xF000 + cp).or_else(|| s.glyph_index(cp)))
+                .filter(|g| g.0 != 0)
+        })
 }
 
 /// A letter of a symbol-encoded family as the character it draws; others
@@ -1084,6 +1292,30 @@ fn script_fonts(c: char) -> &'static [&'static str] {
     }
 }
 
+/// How many texts' shaped glyphs [`FontSystem::shaped`] keeps.
+const SHAPED_KEPT: usize = 64;
+
+/// How many glyphs [`FontSystem::shaped`] keeps in all (each holds its
+/// outline): a longer text is not kept.
+const SHAPED_GLYPHS: usize = 30_000;
+
+/// A text shaped: its glyphs in paragraphs (split at newlines), where
+/// each paragraph starts in the concatenated span text, the number of
+/// characters, and each span's metrics. Everything but the line breaking,
+/// which the frame decides.
+struct Shaped {
+    paragraphs: Vec<Vec<Glyph>>,
+    para_starts: Vec<usize>,
+    total_chars: usize,
+    metrics: Vec<Metrics>,
+}
+
+impl Shaped {
+    fn glyphs(&self) -> usize {
+        self.paragraphs.iter().map(Vec::len).sum()
+    }
+}
+
 /// One shaped glyph, positioned relative to the pen of its line.
 #[derive(Clone)]
 struct Glyph {
@@ -1326,11 +1558,185 @@ impl TextLayout {
     }
 }
 
+/// The folders of the system fonts on Android: the system's own, then
+/// the ones a device maker or a product adds.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const ANDROID_FONT_DIRS: [&str; 3] = ["/system/fonts", "/product/fonts", "/vendor/fonts"];
+
+/// The folders the operating system keeps its fonts in (and the user's
+/// own font folders): the folders the font database reads at startup,
+/// each once. A font under one of them counts as in it for the font
+/// list's filter, whatever subfolder it lies in (#867).
+///
+/// Read once and kept: on Linux the list comes from the fontconfig
+/// configuration, which is parsed in full (some milliseconds), and the
+/// font list asked for it with every family it looked at.
+pub fn system_font_roots() -> Vec<std::path::PathBuf> {
+    static ROOTS: OnceLock<Vec<std::path::PathBuf>> = OnceLock::new();
+    ROOTS.get_or_init(read_system_font_roots).clone()
+}
+
+/// [`system_font_roots`] read from the system now.
+fn read_system_font_roots() -> Vec<std::path::PathBuf> {
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(windows)]
+    out.extend(windows_font_roots(&|name| std::env::var(name).ok()));
+    #[cfg(target_os = "macos")]
+    {
+        out.push("/Library/Fonts".into());
+        out.push("/System/Library/Fonts".into());
+        out.extend(asset_font_roots(std::path::Path::new(
+            "/System/Library/AssetsV2",
+        )));
+        out.push("/Network/Library/Fonts".into());
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(std::path::PathBuf::from(home).join("Library").join("Fonts"));
+        }
+    }
+    #[cfg(target_os = "android")]
+    for dir in ANDROID_FONT_DIRS {
+        out.push(dir.into());
+    }
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    out.extend(fontconfig_font_roots(&|name| std::env::var(name).ok()));
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|dir| seen.insert(dir.clone()));
+    out
+}
+
+/// The folders Windows keeps fonts in, the ones the font database reads:
+/// the system's (`Fonts` under `SYSTEMROOT`, else `WINDIR`, else
+/// `C:\Windows`) and the user's, local and roaming, under the profile's
+/// `AppData` (and as `LOCALAPPDATA` and `APPDATA` name them). `var`
+/// reads an environment variable (#867).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_font_roots(var: &dyn Fn(&str) -> Option<String>) -> Vec<std::path::PathBuf> {
+    let system = var("SYSTEMROOT").or_else(|| var("WINDIR")).map_or_else(
+        || std::path::PathBuf::from("C:\\Windows"),
+        std::path::PathBuf::from,
+    );
+    let mut out = vec![system.join("Fonts")];
+    if let Some(profile) = var("USERPROFILE") {
+        let app_data = std::path::PathBuf::from(profile).join("AppData");
+        for kind in ["Local", "Roaming"] {
+            out.push(
+                app_data
+                    .join(kind)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Fonts"),
+            );
+        }
+    }
+    for name in ["LOCALAPPDATA", "APPDATA"] {
+        if let Some(dir) = var(name) {
+            out.push(
+                std::path::PathBuf::from(dir)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Fonts"),
+            );
+        }
+    }
+    out
+}
+
+/// The folders of the fonts macOS downloads on demand, the ones the font
+/// database reads: each `com_apple_MobileAsset_Font*` folder under
+/// `assets` (`/System/Library/AssetsV2`), sorted. Each holds a subfolder
+/// per font, so the fonts count as in the asset folder, not one folder
+/// each (#867). None when `assets` cannot be read.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn asset_font_roots(assets: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(dir) = std::fs::read_dir(assets) else {
+        return Vec::new();
+    };
+    let mut out: Vec<std::path::PathBuf> = dir
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("com_apple_MobileAsset_Font")
+        })
+        .map(|entry| entry.path())
+        .collect();
+    out.sort();
+    out
+}
+
+/// The folders fontconfig lists for fonts, read the way the font database
+/// reads them: the file `FONTCONFIG_FILE` names alone, else the user's
+/// `fontconfig/fonts.conf` under `XDG_CONFIG_HOME` (`~/.config`) or,
+/// without one, `/etc/fonts/local.conf`, and `/etc/fonts/fonts.conf`
+/// after either; the usual folders when the configuration lists none.
+/// `var` reads an environment variable (#867).
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+fn fontconfig_font_roots(var: &dyn Fn(&str) -> Option<String>) -> Vec<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    let home = var("HOME").map(PathBuf::from);
+    let mut config = fontconfig_parser::FontConfig::default();
+    if let Some(file) = var("FONTCONFIG_FILE") {
+        let _ = config.merge_config(Path::new(&file));
+    } else {
+        let user = var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|h| h.join(".config")));
+        let read_global = match user {
+            Some(dir) => config
+                .merge_config(&dir.join("fontconfig").join("fonts.conf"))
+                .is_err(),
+            None => true,
+        };
+        if read_global {
+            let _ = config.merge_config(Path::new("/etc/fonts/local.conf"));
+        }
+        let _ = config.merge_config(Path::new("/etc/fonts/fonts.conf"));
+    }
+    let mut out: Vec<PathBuf> = config
+        .dirs
+        .into_iter()
+        .filter_map(|dir| match dir.path.strip_prefix("~") {
+            Ok(rest) => home.as_ref().map(|h| h.join(rest)),
+            Err(_) => Some(dir.path),
+        })
+        .collect();
+    if out.is_empty() {
+        out.push("/usr/share/fonts".into());
+        out.push("/usr/local/share/fonts".into());
+        if let Some(home) = home {
+            out.push(home.join(".fonts"));
+            out.push(home.join(".local").join("share").join("fonts"));
+        }
+    }
+    out
+}
+
+/// The folder `file` counts as in: the deepest of `roots` it lies
+/// under, else the folder it is in (#867).
+fn folder_under(
+    file: &std::path::Path,
+    roots: &[std::path::PathBuf],
+) -> Option<std::path::PathBuf> {
+    let parent = file.parent()?;
+    let best = roots
+        .iter()
+        .filter(|r| parent.starts_with(r))
+        .max_by_key(|r| r.components().count());
+    Some(best.map_or_else(|| parent.to_path_buf(), Clone::clone))
+}
+
 impl FontSystem {
     fn load() -> Self {
         let mut db = fontdb::Database::new();
         #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();
+        // The font database looks in no folder on Android: the system's
+        // fonts (Roboto, Noto and the rest) are in these.
+        #[cfg(target_os = "android")]
+        for dir in ANDROID_FONT_DIRS {
+            db.load_fonts_dir(dir);
+        }
         #[cfg(windows)]
         installed::drop_unregistered(&mut db);
         if let Ok(extra) = EXTRA_FONTS.lock() {
@@ -1375,12 +1781,43 @@ impl FontSystem {
             document_families: RwLock::new(Vec::new()),
             carried: RwLock::new(Vec::new()),
             cache: Mutex::new(HashMap::new()),
+            shaped: Mutex::new(HashMap::new()),
             offered: RwLock::new(Vec::new()),
             requests: Mutex::new((Vec::new(), Vec::new())),
             fallbacks: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             legacy: RwLock::new(legacy),
+            chosen: RwLock::new(HashMap::new()),
+            roots: RwLock::new(Vec::new()),
+            named: RwLock::new(Vec::new()),
         }
+    }
+
+    /// Draw text set in `family`, while it is not installed, with
+    /// `with` (an installed family) for the rest of the session; `None`
+    /// goes back to the automatic choice (#936). Views redraw.
+    pub fn set_substitute(&self, family: &str, with: Option<&str>) {
+        {
+            let mut chosen = self.chosen.write().unwrap_or_else(|e| e.into_inner());
+            match with {
+                Some(w) if !w.is_empty() && w != family => {
+                    chosen.insert(family.to_string(), w.to_string());
+                }
+                _ => {
+                    chosen.remove(family);
+                }
+            }
+        }
+        self.fonts_changed();
+    }
+
+    /// The stand-in chosen for `family` with [`FontSystem::set_substitute`].
+    pub fn chosen_substitute(&self, family: &str) -> Option<String> {
+        self.chosen
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(family)
+            .cloned()
     }
 
     /// Note the legacy family names of faces just loaded (see
@@ -1441,6 +1878,9 @@ impl FontSystem {
     /// Fonts were added: drop what was laid out or chosen without them.
     fn fonts_changed(&self) {
         if let Ok(mut c) = self.cache.lock() {
+            c.clear();
+        }
+        if let Ok(mut c) = self.shaped.lock() {
             c.clear();
         }
         if let Ok(mut f) = self.fallbacks.lock() {
@@ -1768,6 +2208,21 @@ impl FontSystem {
         std::borrow::Cow::Owned(out)
     }
 
+    /// The installed font file of the face that draws text set in
+    /// `family` in that weight and slant, found as [`FontSystem::face_file`]
+    /// finds it (any file, collections too): for copying the drawing's
+    /// fonts into a package (#852). `None` when only a stand-in draws the
+    /// text or the face did not come from a file.
+    pub fn face_path(&self, family: &str, bold: bool, italic: bool) -> Option<std::path::PathBuf> {
+        let db = self.db();
+        let (id, _) = self.own_face(&db, family, bold, italic)?;
+        match &db.face(id)?.source {
+            #[cfg(not(target_arch = "wasm32"))]
+            fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => Some(p.clone()),
+            _ => None,
+        }
+    }
+
     /// The family came with a document (it is not installed).
     pub fn is_document_family(&self, family: &str) -> bool {
         self.document_families
@@ -1834,6 +2289,43 @@ impl FontSystem {
         None
     }
 
+    /// Whether `family` sets the letters of another script at the places
+    /// of Latin ones, as fonts made before Unicode had the script do
+    /// (older Tamil fonts among them): it has a symbol character map, or
+    /// it says it draws a script of [`SCRIPT_BLOCKS`] and maps none of
+    /// that script's characters. Its letters are typed with the Latin
+    /// keys of their places, so nothing may change the letters typed
+    /// (Autocorrect's capitals and quotes, #1358).
+    pub fn latin_places_hold_another_script(&self, family: &str) -> bool {
+        if symbol_encoded(family) {
+            return true;
+        }
+        let Some(id) = self.face_for(family, false, false) else {
+            return false;
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return false;
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return false;
+        };
+        let symbol_map = face.tables().cmap.is_some_and(|c| {
+            c.subtables
+                .into_iter()
+                .any(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+        });
+        if symbol_map {
+            return true;
+        }
+        let Some(os2) = face.tables().os2 else {
+            return false;
+        };
+        let ranges = os2.unicode_ranges();
+        SCRIPT_BLOCKS.iter().any(|(first, last)| {
+            ranges.contains_char(*first) && !(*first..=*last).any(|c| face.glyph_index(c).is_some())
+        })
+    }
+
     /// The characters `family`'s regular face draws, in code point order
     /// (empty when the family is unknown). For the Glyphs docker.
     pub fn char_coverage(&self, family: &str) -> Vec<char> {
@@ -1864,7 +2356,10 @@ impl FontSystem {
                         _ => return,
                     };
                     if let Some(c) = char::from_u32(typed) {
-                        if !c.is_control() && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
+                        // 0x80 to 0x9F: letters in fonts that set a
+                        // script at the places of code page 1252 (#1358).
+                        let drawn = !c.is_control() || ('\u{80}'..='\u{9f}').contains(&c);
+                        if drawn && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
                             out.push(c);
                         }
                     }
@@ -1936,7 +2431,7 @@ impl FontSystem {
             }
             ids
         };
-        self.info_of(family, ids)
+        self.info_of(family, ids, &self.folder_roots())
     }
 
     /// [`FontSystem::family_info`] of each of `families`, reading the
@@ -1959,6 +2454,7 @@ impl FontSystem {
                 }
             }
         }
+        let roots = self.folder_roots();
         families
             .iter()
             .map(|family| {
@@ -1967,13 +2463,21 @@ impl FontSystem {
                     let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
                     ids = legacy.get(family).cloned().unwrap_or_default();
                 }
-                self.info_of(family, ids)
+                self.info_of(family, ids, &roots)
             })
             .collect()
     }
 
     /// What a font list shows about `family`, whose faces are `ids`.
-    fn info_of(&self, family: &str, ids: Vec<fontdb::ID>) -> Option<FamilyInfo> {
+    /// `roots` are [`FontSystem::folder_roots`], for the filter's folders.
+    fn info_of(
+        &self,
+        family: &str,
+        ids: Vec<fontdb::ID>,
+        roots: &[std::path::PathBuf],
+    ) -> Option<FamilyInfo> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = roots;
         if ids.is_empty() {
             let offered = self
                 .offered
@@ -1983,12 +2487,7 @@ impl FontSystem {
                 .is_ok();
             return offered.then(|| FamilyInfo {
                 kind: FontKind::Offered,
-                faces: Vec::new(),
-                embedded: false,
-                symbol: false,
-                class: traits::FontClass::Unknown,
-                monospace: false,
-                features: false,
+                ..Default::default()
             });
         }
         let db = self.db();
@@ -1998,6 +2497,11 @@ impl FontSystem {
         let mut monospace = false;
         let mut features = false;
         let mut faces: Vec<FaceStyle> = Vec::new();
+        // What the filter reads (#867).
+        let (mut kinds, mut weights, mut widths, mut scripts) = (0u8, 0u8, 0u8, 0u16);
+        let mut embedding: Option<catalog::Embedding> = None;
+        let mut feature_tags: Vec<[u8; 4]> = Vec::new();
+        let mut folders: Vec<std::path::PathBuf> = Vec::new();
         for id in ids {
             let Some(info) = db.face(id) else {
                 continue;
@@ -2018,11 +2522,31 @@ impl FontSystem {
                     })
                 });
                 let style = face_style_name(&f);
-                Some((face_kind, symbol, style, traits::face_traits(&f)))
+                Some((
+                    face_kind,
+                    symbol,
+                    style,
+                    traits::face_traits(&f),
+                    filter_facts(&f, symbol, info.weight.0),
+                ))
             });
-            let Some(Some((face_kind, face_symbol, style, face_traits))) = read else {
+            let Some(Some((face_kind, face_symbol, style, face_traits, facts))) = read else {
                 continue;
             };
+            if let Some(t) = traits::Technology::of(face_kind) {
+                kinds |= t.bit();
+            }
+            weights |= facts.weights;
+            widths |= facts.widths;
+            scripts |= facts.scripts;
+            embedding = embedding.max(Some(facts.embedding));
+            feature_tags.extend(facts.tags);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) = &info.source {
+                if let Some(dir) = folder_under(p, roots) {
+                    folders.push(dir);
+                }
+            }
             if class == traits::FontClass::Unknown {
                 class = face_traits.class;
             }
@@ -2065,7 +2589,75 @@ impl FontSystem {
             class,
             monospace: monospace || traits::name_monospace(family),
             features,
+            kinds,
+            weights,
+            widths,
+            embedding,
+            scripts,
+            feature_tags: {
+                feature_tags.sort();
+                feature_tags.dedup();
+                feature_tags
+            },
+            folders: {
+                folders.sort();
+                folders.dedup();
+                folders
+            },
         })
+    }
+
+    /// The folders the installed font files are in, sorted, each once
+    /// (a font list's filter offers them, #867): the font libraries'
+    /// folders and the system's, not every subfolder (see
+    /// [`FontSystem::folder_of`]).
+    pub fn font_folders(&self) -> Vec<std::path::PathBuf> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let roots = self.folder_roots();
+        let db = self.db();
+        let mut out: Vec<std::path::PathBuf> = db
+            .faces()
+            .filter_map(|face| match &face.source {
+                #[cfg(not(target_arch = "wasm32"))]
+                fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => {
+                    folder_under(p, &roots)
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// The folders added to the font libraries (the Font Manager's
+    /// folders): fonts under them count as in them (#867). A change
+    /// moves the [`FontSystem::generation`] on, so cached font lists and
+    /// their filter folders are read again.
+    pub fn set_font_roots(&self, roots: &[std::path::PathBuf]) {
+        if let Ok(mut r) = self.roots.write() {
+            if r.as_slice() != roots {
+                *r = roots.to_vec();
+                self.generation.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// The folder a font file counts as in, for the filter: the deepest
+    /// of the library folders ([`FontSystem::set_font_roots`]) and the
+    /// system's font folders it lies under, else the folder it is in.
+    /// A folder chosen in the Font Manager is listed once, whatever
+    /// subfolders its fonts are in (#867).
+    pub fn folder_of(&self, file: &std::path::Path) -> Option<std::path::PathBuf> {
+        folder_under(file, &self.folder_roots())
+    }
+
+    /// The library folders and the system's font folders, for
+    /// [`folder_under`]: gathered once per listing, not once per face.
+    fn folder_roots(&self) -> Vec<std::path::PathBuf> {
+        let mut out = self.roots.read().map(|r| r.clone()).unwrap_or_default();
+        out.extend(system_font_roots());
+        out
     }
 
     /// The axes of the variable font text in `family` (bold and italic as
@@ -2163,10 +2755,18 @@ impl FontSystem {
         let target = target_weight(family, bold);
         let weight = fontdb::Weight(target);
         let base = split_weight(family).map(|(b, _)| b);
-        let mut fams: Vec<fontdb::Family> = substitutes(base.unwrap_or(family))
-            .into_iter()
+        // The stand-in the user chose comes first (#936).
+        let chosen = self.chosen_substitute(family);
+        let mut fams: Vec<fontdb::Family> = chosen
+            .as_deref()
             .map(fontdb::Family::Name)
+            .into_iter()
             .collect();
+        fams.extend(
+            substitutes(base.unwrap_or(family))
+                .into_iter()
+                .map(fontdb::Family::Name),
+        );
         fams.extend([
             fontdb::Family::Name("DejaVu Sans"),
             fontdb::Family::Name("Arial"),
@@ -2207,10 +2807,16 @@ impl FontSystem {
             stretch: fontdb::Stretch::Normal,
             style,
         };
-        if let Some(id) = db
-            .query(&exact)
-            .or_else(|| self.legacy_face(db, family, weight, style))
-        {
+        if let Some(id) = db.query(&exact) {
+            return Some((id, plain));
+        }
+        if let Some(id) = self.legacy_face(db, family, weight, style) {
+            let id = if bold {
+                self.bold_face_of_family(db, family, id, style)
+                    .unwrap_or(id)
+            } else {
+                id
+            };
             return Some((id, plain));
         }
         let target = target_weight(family, bold);
@@ -2228,6 +2834,42 @@ impl FontSystem {
         db.query(&q)
             .or_else(|| self.legacy_face(db, base, weight, style))
             .map(|id| (id, target))
+    }
+
+    /// Bold text in a face listed only under a name with a lighter weight
+    /// ("Khand Light", a static face whose typographic family is "Khand"):
+    /// the bold face of that family (Khand Bold), when it has one heavier
+    /// than `light` and of 600 or more, instead of the light face
+    /// thickened. The program that reads `.cdr` files draws such text
+    /// with the family's bold face; drawn light and written so, the text
+    /// lost its bold there (#1455).
+    fn bold_face_of_family(
+        &self,
+        db: &fontdb::Database,
+        family: &str,
+        light: fontdb::ID,
+        style: fontdb::Style,
+    ) -> Option<fontdb::ID> {
+        let (base, _) = split_weight(family)?;
+        let face = db.face(light)?;
+        let of_base = |f: &fontdb::FaceInfo| {
+            f.families
+                .iter()
+                .any(|(n, _)| n.trim().eq_ignore_ascii_case(base.trim()))
+        };
+        if !of_base(face) {
+            return None;
+        }
+        let q = fontdb::Query {
+            families: &[fontdb::Family::Name(base)],
+            weight: fontdb::Weight(target_weight(family, true)),
+            stretch: fontdb::Stretch::Normal,
+            style,
+        };
+        let id = db.query(&q)?;
+        let bold = db.face(id)?;
+        (id != light && of_base(bold) && bold.weight.0 >= 600 && bold.weight.0 > face.weight.0)
+            .then_some(id)
     }
 
     /// The installed family that draws text set in `family` when that is
@@ -2499,6 +3141,18 @@ impl FontSystem {
         } else {
             text
         };
+        // A font with a script at the places of code page 1252 draws the
+        // characters of 0x80 to 0x9F under the name it maps them by.
+        let twins: Option<String> = text
+            .chars()
+            .any(|c| cp1252_twin(c).is_some())
+            .then(|| {
+                let (data, index) = self.face_data(id)?;
+                let face = ttf_parser::Face::parse(&data, index).ok()?;
+                cp1252_remapped(&face, text)
+            })
+            .flatten();
+        let text = twins.as_deref().unwrap_or(text);
         // The runs of each direction, in text order, each with its level
         // (#628); text with no right-to-left letter is one run whose
         // direction harfbuzz takes from its script.
@@ -2838,7 +3492,19 @@ impl FontSystem {
             })
         };
         for (info, pos) in infos.iter().zip(positions) {
-            let gid = ttf_parser::GlyphId(info.glyph_id as u16);
+            // A letter the shaper's character map lacks while another map
+            // of the font has it (a symbol map beside a Unicode one, the
+            // places of code page 1252 under their other name, as older
+            // fonts with a script at the places of Latin letters have):
+            // the glyph the font has for it, never the empty notdef
+            // (#1358). The run went to this face because it has the
+            // letter ([`FontSystem::coverage_runs`]).
+            let stand_in = (info.glyph_id == 0)
+                .then(|| text.get(info.cluster as usize..)?.chars().next())
+                .flatten()
+                .and_then(|c| face_glyph(&face, c))
+                .filter(|g| g.0 != 0);
+            let gid = stand_in.unwrap_or(ttf_parser::GlyphId(info.glyph_id as u16));
             let mut sink = OutlineSink {
                 path: BezPath::new(),
                 scale,
@@ -2900,7 +3566,10 @@ impl FontSystem {
                 .and_then(|k| chars.get(k))
                 .map(|(_, c)| *c)
                 .unwrap_or(' ');
-            let mut adv = pos.x_advance as f64 * scale;
+            let mut adv = match stand_in {
+                Some(g) => face.glyph_hor_advance(g).unwrap_or(0) as f64 * scale,
+                None => pos.x_advance as f64 * scale,
+            };
             if ch == ' ' {
                 adv *= word_scale;
             }
@@ -2932,24 +3601,42 @@ impl FontSystem {
 
     /// Full layout of a text object.
     pub fn layout(&self, req: &TextRequest) -> TextLayout {
-        self.layout_with(req, false)
+        self.layout_with(req, false, false)
     }
 
     /// The glyphs of a text object as its fonts draw them, placed as
     /// [`FontSystem::layout`] places its outline, and its other marks
     /// (underlines, strike lines, added hyphens) as curves.
     pub fn glyph_layout(&self, req: &TextRequest) -> GlyphLayout {
-        self.layout_with(req, true).glyph_layout
+        self.layout_with(req, true, false).glyph_layout
     }
 
-    fn layout_with(&self, req: &TextRequest, collect: bool) -> TextLayout {
+    /// [`FontSystem::layout`] of the part of a paragraph text its frame
+    /// shows: the line breaking stops at the first line that does not
+    /// fit, so a long text that overflows a small frame costs no more
+    /// than what shows. `path`, `overflow` and `fitted_chars` are those of
+    /// the whole layout; `lines`, `baselines` and `bounds` end at that
+    /// line. For a frame being resized, laid out anew every frame (#1327).
+    pub fn layout_fitted(&self, req: &TextRequest) -> TextLayout {
+        self.layout_with(req, false, true)
+    }
+
+    /// True when the glyphs of `req` are shaped and kept (see
+    /// [`FontSystem::shaped`]): laying it out in another frame only
+    /// breaks its lines.
+    pub fn is_shaped(&self, req: &TextRequest) -> bool {
+        let key = self.shaping_key(req, 1.0);
+        self.shaped.lock().is_ok_and(|c| c.contains_key(&key))
+    }
+
+    fn layout_with(&self, req: &TextRequest, collect: bool, fitted_only: bool) -> TextLayout {
         if req.para.fit_to_frame && req.frame.is_some() {
             // Scale the font size so the text fills the frame height.
             let (mut lo, mut hi) = (0.1, 20.0);
             let mut best = 1.0;
             for _ in 0..14 {
                 let mid = (lo + hi) / 2.0;
-                let l = self.layout_scaled(req, mid, false);
+                let l = self.layout_scaled(req, mid, false, fitted_only);
                 if l.overflow {
                     hi = mid;
                 } else {
@@ -2957,44 +3644,64 @@ impl FontSystem {
                     lo = mid;
                 }
             }
-            return self.layout_scaled(req, best, collect);
+            return self.layout_scaled(req, best, collect, fitted_only);
         }
-        self.layout_scaled(req, 1.0, collect)
+        self.layout_scaled(req, 1.0, collect, fitted_only)
     }
 
-    fn layout_scaled(&self, req: &TextRequest, size_scale: f64, collect: bool) -> TextLayout {
-        let spans = req.spans;
-        if spans.is_empty() {
-            return TextLayout {
-                path: BezPath::new(),
-                bounds: Rect::ZERO,
-                glyphs: 0,
-                overflow: false,
-                fitted_chars: 0,
-                baselines: Vec::new(),
-                lines: Vec::new(),
-                glyph_layout: GlyphLayout::default(),
-                vertical: false,
-            };
-        }
-        let para = req.para;
-        // Vertical text is laid out as written lines in a frame turned on
-        // its side (the columns run down the frame's height), and turned
-        // into columns as the glyphs are placed; see `orient` below.
-        let vertical = para.vertical && req.on_path.is_none();
-        let frame = req.frame.map(|f| {
-            if vertical {
-                Size::new(f.height, f.width)
-            } else {
-                f
-            }
+    /// The key of a text's shaped glyphs: what [`FontSystem::cache_key`]
+    /// holds but the frame, which only the line breaking uses, and the
+    /// font scale of Fit Text to Frame.
+    fn shaping_key(&self, req: &TextRequest, size_scale: f64) -> String {
+        let all = Self::cache_key(&TextRequest {
+            spans: req.spans,
+            frame: None,
+            align: req.align,
+            para: req.para,
+            on_path: None,
         });
-        let turn = tracedraw_core::document::vertical_line_frame();
-        // Each paragraph's alignment and style: its own, or the object's.
-        let styles = tracedraw_core::paragraphs::paragraph_styles(spans, req.align, para);
-        let fallback = (req.align, para.clone());
-        let style_of =
-            |pi: usize| -> &(TextAlign, ParagraphStyle) { styles.get(pi).unwrap_or(&fallback) };
+        format!("{}|{}|{all}", self.generation(), size_scale.to_bits())
+    }
+
+    /// The glyphs of a text in paragraphs, shaped, kept for the texts laid
+    /// out last: a paragraph frame being resized asks for the same text in
+    /// a new frame every frame of the drag, and shaping takes most of a
+    /// layout (#1327).
+    fn shaped<'s>(
+        &self,
+        req: &TextRequest,
+        size_scale: f64,
+        style_of: &dyn Fn(usize) -> &'s (TextAlign, ParagraphStyle),
+    ) -> Arc<Shaped> {
+        let key = self.shaping_key(req, size_scale);
+        if let Ok(c) = self.shaped.lock() {
+            if let Some(hit) = c.get(&key) {
+                return hit.clone();
+            }
+        }
+        let shaped = Arc::new(self.shape_paragraphs(req.spans, size_scale, style_of));
+        let glyphs = shaped.glyphs();
+        if glyphs <= SHAPED_GLYPHS {
+            if let Ok(mut c) = self.shaped.lock() {
+                // Few: what is kept is for the texts being worked on now.
+                let kept: usize = c.values().map(|s| s.glyphs()).sum();
+                if c.len() >= SHAPED_KEPT || kept + glyphs > SHAPED_GLYPHS {
+                    c.clear();
+                }
+                c.insert(key, shaped.clone());
+            }
+        }
+        shaped
+    }
+
+    /// Shape `spans` into paragraphs of glyph runs, and the metrics of
+    /// each span (see [`Shaped`]).
+    fn shape_paragraphs<'s>(
+        &self,
+        spans: &[TextSpan],
+        size_scale: f64,
+        style_of: &dyn Fn(usize) -> &'s (TextAlign, ParagraphStyle),
+    ) -> Shaped {
         let metrics: Vec<Metrics> = spans
             .iter()
             .map(|s| {
@@ -3005,8 +3712,7 @@ impl FontSystem {
                 self.metrics(&scaled)
             })
             .collect();
-
-        // 1. Split the spans into paragraphs of glyph runs. `char_idx`
+        // Split the spans into paragraphs of glyph runs. `char_idx`
         // counts characters of the concatenated span text, newlines and
         // tabs included, so lines can report where they start.
         let mut paragraphs: Vec<Vec<Glyph>> = vec![Vec::new()];
@@ -3132,6 +3838,63 @@ impl FontSystem {
             }
         }
         let total_chars = char_idx;
+        Shaped {
+            paragraphs,
+            para_starts,
+            total_chars,
+            metrics,
+        }
+    }
+
+    fn layout_scaled(
+        &self,
+        req: &TextRequest,
+        size_scale: f64,
+        collect: bool,
+        fitted_only: bool,
+    ) -> TextLayout {
+        let spans = req.spans;
+        if spans.is_empty() {
+            return TextLayout {
+                path: BezPath::new(),
+                bounds: Rect::ZERO,
+                glyphs: 0,
+                overflow: false,
+                fitted_chars: 0,
+                baselines: Vec::new(),
+                lines: Vec::new(),
+                glyph_layout: GlyphLayout::default(),
+                vertical: false,
+            };
+        }
+        let para = req.para;
+        // Vertical text is laid out as written lines in a frame turned on
+        // its side (the columns run down the frame's height), and turned
+        // into columns as the glyphs are placed; see `orient` below.
+        let vertical = para.vertical && req.on_path.is_none();
+        let frame = req.frame.map(|f| {
+            if vertical {
+                Size::new(f.height, f.width)
+            } else {
+                f
+            }
+        });
+        let turn = tracedraw_core::document::vertical_line_frame();
+        // Each paragraph's alignment and style: its own, or the object's.
+        let styles = tracedraw_core::paragraphs::paragraph_styles(spans, req.align, para);
+        let fallback = (req.align, para.clone());
+        let style_of =
+            |pi: usize| -> &(TextAlign, ParagraphStyle) { styles.get(pi).unwrap_or(&fallback) };
+        // 1. The glyphs, shaped once per text and kept: a frame being
+        // resized only breaks them into lines anew (#1327).
+        let shaped = self.shaped(req, size_scale, &style_of);
+        let Shaped {
+            paragraphs,
+            para_starts,
+            total_chars,
+            metrics,
+        } = &*shaped;
+        let total_chars = *total_chars;
 
         // 2. Flow the paragraphs into lines: break them to the room each
         // line has (the column, less indents, drop caps and the objects the
@@ -3186,7 +3949,7 @@ impl FontSystem {
         let mut col = 0usize;
         let mut y = 0.0f64; // top of the frame or baseline of artistic text
         let mut prev_para: Option<usize> = None;
-        for (pi, glyphs) in paragraphs.iter().enumerate() {
+        'paragraphs: for (pi, glyphs) in paragraphs.iter().enumerate() {
             let (_, ps) = style_of(pi);
             let m_para = glyphs
                 .first()
@@ -3198,7 +3961,7 @@ impl FontSystem {
             let para_start = para_starts.get(pi).copied().unwrap_or(0);
             let Some(w) = col_width else {
                 // Artistic text: one line a paragraph.
-                let m = line_metrics(glyphs, &metrics, m_para);
+                let m = line_metrics(glyphs, metrics, m_para);
                 let advance = if pi == 0 {
                     0.0
                 } else {
@@ -3234,7 +3997,7 @@ impl FontSystem {
                     glyph_advance: g.advance,
                 }
             });
-            let mut br = Breaker::new(glyphs, ps.hyphenate, &metrics, pi, para_start);
+            let mut br = Breaker::new(glyphs, ps.hyphenate, metrics, pi, para_start);
             let mut row = 0usize;
             // How far a line moves down from the one before it.
             let advance_of = |m: &Metrics, first: bool, prev: Option<usize>| -> f64 {
@@ -3403,6 +4166,10 @@ impl FontSystem {
                     lines.push(line);
                 }
                 row += 1;
+                // The rest does not show: no need to break it into lines.
+                if fitted_only && overflow {
+                    break 'paragraphs;
+                }
                 if br.done() {
                     break;
                 }
@@ -4409,6 +5176,8 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 
 #[cfg(test)]
 mod devanagari_tests;
+#[cfg(test)]
+mod tamil_tests;
 
 /// `line` (an underline or a strike line) wound the same way as the
 /// letters it crosses, whose summed signed area is `glyph_area`: text is
@@ -4982,6 +5751,91 @@ mod tests {
         });
         assert!(wrapped.bounds.height() > one_line.bounds.height() * 2.0);
         assert!(!wrapped.overflow);
+    }
+
+    /// A text laid out in another frame is shaped once: the second
+    /// frame breaks the glyphs kept from the first into lines, and gives
+    /// the layout a fresh shaping gives (#1327).
+    #[test]
+    fn a_text_in_a_new_frame_is_broken_anew_from_the_glyphs_kept() {
+        if !has_fonts() {
+            return;
+        }
+        // A font system of its own: other tests empty the shared one's.
+        let f = FontSystem::load();
+        let spans = [span(
+            "one two three four five six seven eight nine ten eleven twelve",
+        )];
+        let para = ParagraphStyle::default();
+        let req = |w: f64| TextRequest {
+            spans: &spans,
+            frame: Some(Size::new(w, 100.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        };
+        let styles = tracedraw_core::paragraphs::paragraph_styles(&spans, TextAlign::Left, &para);
+        let fallback = (TextAlign::Left, para.clone());
+        let style_of =
+            |pi: usize| -> &(TextAlign, ParagraphStyle) { styles.get(pi).unwrap_or(&fallback) };
+        let wide = f.shaped(&req(80.0), 1.0, &style_of);
+        let narrow = f.shaped(&req(30.0), 1.0, &style_of);
+        assert!(Arc::ptr_eq(&wide, &narrow), "shaped once for both frames");
+        let from_kept = f.layout(&req(30.0));
+        f.shaped.lock().unwrap().clear();
+        let fresh = f.layout(&req(30.0));
+        assert_eq!(from_kept.lines.len(), fresh.lines.len());
+        assert!(from_kept.lines.len() > f.layout(&req(80.0)).lines.len());
+        assert_eq!(from_kept.path, fresh.path);
+        assert_eq!(from_kept.fitted_chars, fresh.fitted_chars);
+        // Other words are shaped on their own.
+        let other = [span("other words")];
+        let o = f.shaped(
+            &TextRequest {
+                spans: &other,
+                ..req(30.0)
+            },
+            1.0,
+            &style_of,
+        );
+        assert!(!Arc::ptr_eq(&o, &narrow));
+        assert!(f.is_shaped(&req(55.0)));
+        assert!(!f.is_shaped(&TextRequest {
+            spans: &[span("never laid out")],
+            ..req(30.0)
+        }));
+    }
+
+    /// The layout of what a frame shows stops breaking lines at the first
+    /// that does not fit, and draws what the whole layout draws.
+    #[test]
+    fn the_fitted_layout_draws_what_the_whole_one_does() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let text = "one two three four five six seven eight nine ten ".repeat(40);
+        let spans = [span(&text)];
+        let para = ParagraphStyle::default();
+        let req = |h: f64| TextRequest {
+            spans: &spans,
+            frame: Some(Size::new(40.0, h)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        };
+        for h in [15.0, 40.0, 2000.0] {
+            let whole = f.layout(&req(h));
+            let fitted = f.layout_fitted(&req(h));
+            assert_eq!(fitted.path, whole.path, "{h}");
+            assert_eq!(fitted.overflow, whole.overflow);
+            assert_eq!(fitted.fitted_chars, whole.fitted_chars);
+            if whole.overflow {
+                assert!(fitted.lines.len() < whole.lines.len());
+            } else {
+                assert_eq!(fitted.lines, whole.lines);
+            }
+        }
     }
 
     #[test]
@@ -6043,6 +6897,43 @@ mod tests {
     /// The bundled interface font (SIL Open Font License).
     const SELAWIK: &[u8] =
         include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+
+    /// The characters of code page 1252's places 0x80 to 0x9F go by
+    /// either name: a font that maps one draws text holding the other,
+    /// one for one (#1358).
+    #[test]
+    fn code_page_1252_places_go_by_either_name() {
+        assert_eq!(cp1252_twin('\u{82}'), Some('\u{201A}'));
+        assert_eq!(cp1252_twin('\u{201A}'), Some('\u{82}'));
+        assert_eq!(cp1252_twin('\u{2122}'), Some('\u{99}'));
+        // The places the page leaves empty have one name only.
+        assert_eq!(cp1252_twin('\u{81}'), None);
+        assert_eq!(cp1252_twin('A'), None);
+        assert_eq!(cp1252_twin('\u{0B95}'), None);
+        let face = ttf_parser::Face::parse(SELAWIK, 0).expect("font");
+        let quote = face
+            .glyph_index('\u{201A}')
+            .expect("the font has the quote");
+        assert!(face.glyph_index('\u{82}').is_none());
+        assert_eq!(face_glyph(&face, '\u{82}'), Some(quote));
+        assert_eq!(
+            cp1252_remapped(&face, "a\u{82}b").as_deref(),
+            Some("a\u{201A}b")
+        );
+        assert_eq!(cp1252_remapped(&face, "a\u{201A}b"), None);
+        // Laid out, the code draws the quote, not a stand-in's box.
+        let fonts = system_with(&[SELAWIK]);
+        let family = fonts.families().first().cloned().expect("family");
+        let drawn = |text: &str| {
+            fonts
+                .outline(&[TextSpan::new(text, &family, 24.0)])
+                .path
+                .elements()
+                .len()
+        };
+        assert_eq!(drawn("\u{82}"), drawn("\u{201A}"));
+        assert!(drawn("\u{82}") > 0);
+    }
     /// A variable font (weight 300 to 700, 300 by default) with letters
     /// Selawik lacks ("Ĉ") and without one it has (U+0336).
     const QUICKSAND: &[u8] = include_bytes!("../testdata/Quicksand-VF.ttf");
@@ -6059,8 +6950,6 @@ mod tests {
     /// (platform, encoding, language, name id, bytes), the tables laid
     /// out again; checksums are not kept (fonts are read without them).
     fn with_names(font: &[u8], records: &[(u16, u16, u16, u16, Vec<u8>)]) -> Vec<u8> {
-        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
-        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
         let mut name = Vec::new();
         name.extend_from_slice(&0u16.to_be_bytes());
         name.extend_from_slice(&(records.len() as u16).to_be_bytes());
@@ -6073,6 +6962,14 @@ mod tests {
             strings.extend_from_slice(bytes);
         }
         name.extend_from_slice(&strings);
+        with_table(font, b"name", &name)
+    }
+
+    /// `font` with its table `which` replaced by `table`, the tables laid
+    /// out again; checksums are not kept (fonts are read without them).
+    fn with_table(font: &[u8], which: &[u8; 4], table: &[u8]) -> Vec<u8> {
+        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
         let n = usize::from(be16(font, 4));
         let mut tables: Vec<([u8; 4], Vec<u8>)> = (0..n)
             .map(|i| {
@@ -6080,8 +6977,8 @@ mod tests {
                 let tag: [u8; 4] = font[at..at + 4].try_into().expect("tag");
                 let off = be32(font, at + 8) as usize;
                 let len = be32(font, at + 12) as usize;
-                let data = if &tag == b"name" {
-                    name.clone()
+                let data = if &tag == which {
+                    table.to_vec()
                 } else {
                     font[off..off + len].to_vec()
                 };
@@ -6152,6 +7049,75 @@ mod tests {
             f.face_for("FZHei-B01", false, false)
         );
         assert!(f.family_info("方正黑体_GBK").is_some());
+    }
+
+    /// `font` named `names` (name id, text; Windows English records)
+    /// with the OS/2 weight class `weight`.
+    fn named_face(font: &[u8], names: &[(u16, &str)], weight: u16) -> Vec<u8> {
+        let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+        let records: Vec<(u16, u16, u16, u16, Vec<u8>)> = names
+            .iter()
+            .map(|(id, s)| (3, 1, 0x409, *id, utf16(s)))
+            .collect();
+        let named = with_names(font, &records);
+        let face = ttf_parser::RawFace::parse(&named, 0).expect("font");
+        let mut os2 = face
+            .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+            .expect("OS/2")
+            .to_vec();
+        os2[4..6].copy_from_slice(&weight.to_be_bytes());
+        with_table(&named, b"OS/2", &os2)
+    }
+
+    /// Bold text in a static face listed only under its weight's name
+    /// ("Khand Light": name ID 1, the family "Khand" in ID 16) is drawn by
+    /// the family's bold face, as the program that reads `.cdr` files
+    /// draws it, not by the light face thickened (#1455); text that is
+    /// not bold keeps the light face, and without a bold face the light
+    /// one draws bold text as before.
+    #[test]
+    fn bold_text_in_a_light_static_face_takes_the_family_bold() {
+        const SELAWIK_BOLD: &[u8] =
+            include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+        let light = named_face(
+            SELAWIK,
+            &[
+                (1, "Khand Light"),
+                (2, "Regular"),
+                (4, "Khand Light"),
+                (6, "Khand-Light"),
+                (16, "Khand"),
+                (17, "Light"),
+            ],
+            300,
+        );
+        let bold = named_face(
+            SELAWIK_BOLD,
+            &[
+                (1, "Khand"),
+                (2, "Bold"),
+                (4, "Khand Bold"),
+                (6, "Khand-Bold"),
+            ],
+            700,
+        );
+        let f = system_with(&[&light, &bold]);
+        let file = |family: &str, b: bool, i: bool| f.face_file(family, b, i).map(|d| d.to_vec());
+        assert_eq!(file("Khand Light", false, false), Some(light.clone()));
+        assert_eq!(file("Khand Light", true, false), Some(bold.clone()));
+        assert_eq!(file("Khand Light", true, true), Some(bold.clone()));
+        assert_eq!(file("Khand", true, false), Some(bold.clone()));
+        assert_eq!(
+            f.face_and_weight("Khand Light", true, false)
+                .map(|(_, w)| w),
+            Some(700)
+        );
+        // Only the light face: it draws the bold text.
+        let g = system_with(&[&light]);
+        assert_eq!(
+            g.face_file("Khand Light", true, false).map(|d| d.to_vec()),
+            Some(light)
+        );
     }
 
     #[test]
@@ -6489,6 +7455,127 @@ mod tests {
         );
     }
 
+    /// A font with a symbol character map beside its Unicode one, the
+    /// symbol map lacking letters the Unicode one has (as older fonts
+    /// with a script at the places of Latin letters can be made): the
+    /// shaper reads the symbol map only, yet every letter the font lists
+    /// draws its own glyph, never the empty notdef (#1358).
+    #[test]
+    fn letters_one_character_map_lacks_draw_from_the_other() {
+        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
+        let face = ttf_parser::Face::parse(SELAWIK, 0).expect("font");
+        let a = face.glyph_index('A').expect("A").0;
+        // Selawik's Unicode map, as it is.
+        let n = usize::from(be16(SELAWIK, 4));
+        let (off, len) = (0..n)
+            .map(|i| 12 + 16 * i)
+            .find(|at| &SELAWIK[*at..*at + 4] == b"cmap")
+            .map(|at| {
+                (
+                    be32(SELAWIK, at + 8) as usize,
+                    be32(SELAWIK, at + 12) as usize,
+                )
+            })
+            .expect("cmap");
+        let cmap = &SELAWIK[off..off + len];
+        let unicode_at = (0..usize::from(be16(cmap, 2)))
+            .map(|i| 4 + 8 * i)
+            .find(|at| be16(cmap, *at) == 3 && be16(cmap, at + 2) == 1)
+            .map(|at| be32(cmap, at + 4) as usize)
+            .expect("Windows Unicode map");
+        let unicode = &cmap[unicode_at..unicode_at + usize::from(be16(cmap, unicode_at + 2))];
+        // A symbol map with "A" alone, at U+F041.
+        let mut symbol = Vec::new();
+        let delta = a.wrapping_sub(0xF041);
+        for v in [
+            4u16, 32, 0, 4, 4, 1, 0, // header: two segments
+            0xF041, 0xFFFF, 0, // end codes, pad
+            0xF041, 0xFFFF, // start codes
+            delta, 1, // deltas
+            0, 0, // range offsets
+        ] {
+            symbol.extend_from_slice(&v.to_be_bytes());
+        }
+        let mut table = Vec::new();
+        for v in [0u16, 2, 3, 0] {
+            table.extend_from_slice(&v.to_be_bytes());
+        }
+        table.extend_from_slice(&20u32.to_be_bytes());
+        for v in [3u16, 1] {
+            table.extend_from_slice(&v.to_be_bytes());
+        }
+        table.extend_from_slice(&(20 + symbol.len() as u32).to_be_bytes());
+        table.extend_from_slice(&symbol);
+        table.extend_from_slice(unicode);
+        let font = with_table(SELAWIK, b"cmap", &table);
+        let fonts = system_with(&[&font]);
+        let family = fonts.families().first().cloned().expect("family");
+        assert!(fonts.char_coverage(&family).contains(&'B'));
+        let got = fonts.outline(&[TextSpan::new("AB", &family, 100.0)]);
+        let want = system_with(&[SELAWIK]).outline(&[TextSpan::new("AB", "Selawik", 100.0)]);
+        assert_eq!(got.glyphs, 2);
+        assert_eq!(got.path.elements().len(), want.path.elements().len());
+        let (g, w) = (got.path.bounding_box(), want.path.bounding_box());
+        assert!(
+            (g.x0 - w.x0).abs() < 1e-6 && (g.x1 - w.x1).abs() < 1e-6,
+            "{g:?} {w:?}"
+        );
+        // "B" alone, as wide as the font has it.
+        let one = |f: &FontSystem, family: &str| {
+            f.outline(&[TextSpan::new("B", family, 100.0)]).lines[0]
+                .edges
+                .clone()
+        };
+        assert_eq!(
+            one(&fonts, &family),
+            one(&system_with(&[SELAWIK]), "Selawik")
+        );
+    }
+
+    /// Fonts with another script at the places of Latin letters: a
+    /// symbol character map, or a script claimed and none of its
+    /// characters mapped (#1358). A font that maps the script it claims,
+    /// or claims none, is not one.
+    #[test]
+    fn fonts_with_a_script_at_latin_places_are_told_apart() {
+        const TEST_SYMBOL: &[u8] = include_bytes!("../testdata/TestSymbol.ttf");
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
+        // Selawik claiming Tamil (bit 20 of the first Unicode range).
+        let n = usize::from(u16::from_be_bytes([SELAWIK[4], SELAWIK[5]]));
+        let (off, len) = (0..n)
+            .map(|i| 12 + 16 * i)
+            .find(|at| &SELAWIK[*at..*at + 4] == b"OS/2")
+            .map(|at| {
+                (
+                    be32(SELAWIK, at + 8) as usize,
+                    be32(SELAWIK, at + 12) as usize,
+                )
+            })
+            .expect("OS/2");
+        let mut os2 = SELAWIK[off..off + len].to_vec();
+        let range = be32(&os2, 42) | 1 << 20;
+        os2[42..46].copy_from_slice(&range.to_be_bytes());
+        let claims_tamil = with_table(SELAWIK, b"OS/2", &os2);
+        let tamil_font = include_bytes!("../testdata/NotoSansTamil-VF.ttf");
+        for (font, legacy) in [
+            (TEST_SYMBOL, true),
+            (SELAWIK, false),
+            (&claims_tamil[..], true),
+            (&tamil_font[..], false),
+        ] {
+            let f = system_with(&[font]);
+            let family = f.families().first().cloned().expect("family");
+            assert_eq!(
+                f.latin_places_hold_another_script(&family),
+                legacy,
+                "{family}"
+            );
+        }
+        assert!(system_with(&[]).latin_places_hold_another_script("Symbol"));
+        assert!(!system_with(&[]).latin_places_hold_another_script("Unknown"));
+    }
+
     /// Letters in another colour keep the font's kerning with their
     /// neighbours: "Hell" and "o" in two colours are as wide as "Hello"
     /// in one, its "lo" pair kerned, and each part draws its own letters
@@ -6584,19 +7671,55 @@ mod tests {
         assert_eq!(info.class, FontClass::Serif);
         assert!(info.monospace);
 
-        let mut filter = FontFilter::default();
-        filter.set(FontTrait::Variable, true);
+        let mut filter = FontFilter {
+            tech: traits::Technology::Variable.bit(),
+            ..Default::default()
+        };
         assert!(filter.matches(Some(&quicksand)));
         assert!(!filter.matches(Some(&selawik)));
+        // Weights, widths, rights, scripts and features from the files.
+        use traits::{script_bit, Technology, WeightClass, WidthClass};
+        assert_eq!(quicksand.kinds, Technology::Variable.bit());
+        assert_ne!(
+            quicksand.weights & WeightClass::Light.bit(),
+            0,
+            "wght axis from 300"
+        );
+        assert_ne!(quicksand.weights & WeightClass::Bold.bit(), 0, "to 700");
+        assert_eq!(selawik.weights, WeightClass::Normal.bit());
+        assert_eq!(selawik.widths, WidthClass::Normal.bit());
+        assert_ne!(selawik.scripts & script_bit(catalog::Script::Latin), 0);
+        assert!(selawik.embedding.is_some());
+        assert!(
+            selawik.feature_tags.windows(2).all(|w| w[0] < w[1]),
+            "sorted once"
+        );
+        assert!(selawik.folders.is_empty(), "loaded from memory");
+        let condensed = with_os2(SELAWIK, 6, &[0, 3]);
+        let c = system_with(&[&condensed]);
+        let ci = c.family_info("Selawik").expect("installed");
+        assert_eq!(ci.widths, WidthClass::Condensed.bit());
+        let restricted = with_os2(SELAWIK, 8, &[0, 2]);
+        let r = system_with(&[&restricted]);
+        assert_eq!(
+            r.family_info("Selawik").and_then(|i| i.embedding),
+            Some(catalog::Embedding::Restricted)
+        );
+        filter = FontFilter {
+            widths: WidthClass::Condensed.bit(),
+            ..Default::default()
+        };
+        assert!(filter.matches(Some(&ci)) && !filter.matches(Some(&selawik)));
         filter = FontFilter::default();
         filter.set(FontTrait::SansSerif, true);
         assert!(filter.matches(Some(&selawik)));
         assert!(!filter.matches(Some(&quicksand)));
-        filter.set(FontTrait::Monospace, true);
-        assert!(!filter.matches(Some(&selawik)));
         assert!(!filter.matches(Some(&info)));
-        filter.set(FontTrait::Serif, true);
+        // Styles widen: sans serif or monospaced.
+        filter.set(FontTrait::Monospace, true);
+        assert!(filter.matches(Some(&selawik)));
         assert!(filter.matches(Some(&info)));
+        assert!(!filter.matches(Some(&quicksand)));
     }
 
     /// Reading what the filter needs for every installed family stays
@@ -6859,6 +7982,30 @@ mod tests {
         assert!(!f.has_family("Junk"));
     }
 
+    /// A stand-in chosen for a missing family draws its text for the
+    /// session and goes back to the automatic one when cleared (#936).
+    #[test]
+    fn a_chosen_stand_in_draws_a_missing_family() {
+        let f = system_with(&[SELAWIK, QUICKSAND]);
+        let auto = f.substitute("Gone Grotesk").expect("a stand-in");
+        let other = if auto == "Quicksand" {
+            "Selawik"
+        } else {
+            "Quicksand"
+        };
+        let before = f.generation();
+        f.set_substitute("Gone Grotesk", Some(other));
+        assert!(f.generation() > before, "views redraw");
+        assert_eq!(f.chosen_substitute("Gone Grotesk").as_deref(), Some(other));
+        assert_eq!(f.substitute("Gone Grotesk").as_deref(), Some(other));
+        // Bold text of the family too, and other families are not touched.
+        assert!(f.face_for("Gone Grotesk", true, false).is_some());
+        assert_eq!(f.substitute("Other Gone").as_deref(), Some(auto.as_str()));
+        f.set_substitute("Gone Grotesk", None);
+        assert_eq!(f.substitute("Gone Grotesk"), Some(auto));
+        assert!(f.chosen_substitute("Gone Grotesk").is_none());
+    }
+
     /// The file to embed for a face is the one that draws its text
     /// (#1009): found by the legacy name, by the family of a name with a
     /// weight, the regular face for a style the family lacks, a variable
@@ -6882,6 +8029,24 @@ mod tests {
         assert_eq!(file("Quicksand", true, false), Some(QUICKSAND.len()));
         assert_eq!(file("Quicksand Light", false, false), Some(QUICKSAND.len()));
         assert_eq!(file("Nowhere Sans", false, false), None);
+    }
+
+    /// A package copies the file a face came from (#852): the path of
+    /// the face that draws the text, none for a stand-in or a font loaded
+    /// from memory.
+    #[test]
+    fn the_path_of_a_face_is_the_file_it_came_from() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-facepath-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("Selawik-Regular.ttf");
+        std::fs::write(&path, SELAWIK).expect("written");
+        let f = system_with(&[QUICKSAND]);
+        f.install_paths(std::slice::from_ref(&path));
+        assert_eq!(f.face_path("Selawik", false, false), Some(path.clone()));
+        assert_eq!(f.face_path("Selawik", true, true), Some(path));
+        assert_eq!(f.face_path("Quicksand", false, false), None, "from memory");
+        assert_eq!(f.face_path("Nowhere Sans", false, false), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Save As's Embed fonts: the installed faces the text uses go with
@@ -7159,5 +8324,215 @@ mod tests {
         assert!(layout.lines[0].baseline < plain.lines[0].baseline * 2.0);
         assert!((gap(&layout, 1) - gap(&plain, 1)).abs() < 1e-6);
         assert!((gap(&layout, 2) - gap(&plain, 2)).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod many_tuples {
+    use super::*;
+
+    /// A subset of Roboto Flex (13 axes, 68 variation tuples on its
+    /// "H"): the letters draw, at the default and at axis values set
+    /// on the text (#870). The glyph reader refused any glyph with more
+    /// than 32 variation tuples, so the font listed but drew nothing.
+    #[test]
+    fn a_variable_font_with_many_tuples_per_glyph_draws() {
+        const ROBOTO_FLEX: &[u8] = include_bytes!("../testdata/RobotoFlex-subset.ttf");
+        let mut db = fontdb::Database::new();
+        db.load_font_data(ROBOTO_FLEX.to_vec());
+        let f = FontSystem::from_db(db);
+        assert!(f.has_family("Roboto Flex"));
+        let axes = f.variation_axes("Roboto Flex", false, false);
+        assert_eq!(axes.len(), 13, "{axes:?}");
+        assert!(axes.iter().any(|a| a.tag == "wght"));
+        let draw = |wdth: Option<f64>| {
+            let mut s = TextSpan::new("Hello", "Roboto Flex", 100.0);
+            s.set_variation("wdth", wdth);
+            f.outline(&[s])
+        };
+        let plain = draw(None);
+        assert!(!plain.path.elements().is_empty(), "the letters draw");
+        let width = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        assert!(width(&plain) > 0.0);
+        // The width axis at its narrowest makes the word narrower.
+        let narrow = draw(Some(25.0));
+        assert!(!narrow.path.elements().is_empty());
+        assert!(
+            width(&narrow) < width(&plain),
+            "{} vs {}",
+            width(&narrow),
+            width(&plain)
+        );
+    }
+}
+
+#[cfg(test)]
+mod font_folders {
+    use super::*;
+
+    /// The filter's folders are the font libraries' folders and the
+    /// system's, not the subfolder each file is in (#867).
+    #[test]
+    fn fonts_count_as_in_their_library_folder() {
+        const QUICKSAND: &[u8] = include_bytes!("../testdata/Quicksand-VF.ttf");
+        let dir = std::env::temp_dir().join(format!("tracedraw-folders-{}", std::process::id()));
+        let root = dir.join("My Fonts");
+        let deep = root.join("google").join("quicksand");
+        std::fs::create_dir_all(&deep).expect("dirs");
+        let file = deep.join("Quicksand-VF.ttf");
+        std::fs::write(&file, QUICKSAND).expect("font");
+        let mut db = fontdb::Database::new();
+        db.load_font_file(&file).expect("load");
+        let f = FontSystem::from_db(db);
+        // No library folder set: the file's own folder.
+        assert_eq!(f.font_folders(), vec![deep.clone()]);
+        assert_eq!(
+            f.family_info("Quicksand").expect("info").folders,
+            vec![deep.clone()]
+        );
+        // The library folder it lies under, once, whatever the subfolder.
+        let g = f.generation();
+        f.set_font_roots(std::slice::from_ref(&root));
+        assert!(f.generation() > g, "cached lists read again");
+        let g = f.generation();
+        f.set_font_roots(std::slice::from_ref(&root));
+        assert_eq!(f.generation(), g, "the same folders change nothing");
+        assert_eq!(f.font_folders(), vec![root.clone()]);
+        assert_eq!(
+            f.family_info("Quicksand").expect("info").folders,
+            vec![root.clone()]
+        );
+        // The deepest root wins; a root elsewhere does not count.
+        f.set_font_roots(&[dir.clone(), root.join("google"), dir.join("Other")]);
+        assert_eq!(f.folder_of(&file), Some(root.join("google")));
+        assert!(!system_font_roots().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The system's font folders are read once: the font list asks for
+    /// them with every family it looks at, and reading them parses the
+    /// whole fontconfig configuration on Linux (1.4 ms on a small one,
+    /// so a list of a thousand families spent over a second in it).
+    /// A thousand calls after the first take a few milliseconds, where
+    /// a thousand fresh reads took over a second.
+    #[test]
+    fn system_font_roots_are_read_once() {
+        let first = system_font_roots();
+        assert_eq!(first, read_system_font_roots());
+        let t = std::time::Instant::now();
+        for _ in 0..1000 {
+            assert_eq!(system_font_roots(), first);
+        }
+        let cached = t.elapsed();
+        assert!(cached < std::time::Duration::from_millis(100), "{cached:?}");
+    }
+
+    /// The system's folders are the ones the font database reads, so a
+    /// font in a subfolder of one counts as in it (#867).
+    #[test]
+    fn system_folders_are_the_ones_the_database_reads() {
+        use std::path::PathBuf;
+        // Windows: the system folder is named by SYSTEMROOT, the user's
+        // local and roaming folders by the profile.
+        let env = |name: &str| -> Option<String> {
+            match name {
+                "SYSTEMROOT" => Some("C:\\WINDOWS".into()),
+                "WINDIR" => Some("C:\\Windows".into()),
+                "USERPROFILE" => Some("C:\\Users\\me".into()),
+                "LOCALAPPDATA" => Some("C:\\Users\\me\\AppData\\Local".into()),
+                _ => None,
+            }
+        };
+        let roots = windows_font_roots(&env);
+        let profile = PathBuf::from("C:\\Users\\me").join("AppData");
+        let roaming = profile
+            .join("Roaming")
+            .join("Microsoft")
+            .join("Windows")
+            .join("Fonts");
+        assert_eq!(roots[0], PathBuf::from("C:\\WINDOWS").join("Fonts"));
+        assert!(roots.contains(&roaming), "{roots:?}");
+        assert!(roots.contains(
+            &profile
+                .join("Local")
+                .join("Microsoft")
+                .join("Windows")
+                .join("Fonts")
+        ));
+        let font = roaming.join("Quicksand-VF.ttf");
+        assert_eq!(folder_under(&font, &roots), Some(roaming));
+        // Without SYSTEMROOT, WINDIR; without either, C:\Windows.
+        let windir = |name: &str| (name == "WINDIR").then(|| "D:\\Win".to_string());
+        assert_eq!(
+            windows_font_roots(&windir),
+            vec![PathBuf::from("D:\\Win").join("Fonts")]
+        );
+        assert_eq!(
+            windows_font_roots(&|_| None),
+            vec![PathBuf::from("C:\\Windows").join("Fonts")]
+        );
+
+        // macOS: the on-demand fonts' asset folders, each font in a
+        // subfolder of its own, count as the asset folder.
+        let dir = std::env::temp_dir().join(format!("tracedraw-roots-{}", std::process::id()));
+        let assets = dir.join("AssetsV2");
+        let fonts7 = assets.join("com_apple_MobileAsset_Font7");
+        let font3 = assets.join("com_apple_MobileAsset_Font3");
+        let deep = fonts7.join("1234abcd.asset").join("AssetData");
+        std::fs::create_dir_all(&deep).expect("dirs");
+        std::fs::create_dir_all(&font3).expect("dirs");
+        std::fs::create_dir_all(assets.join("com_apple_MobileAsset_Other")).expect("dirs");
+        let roots = asset_font_roots(&assets);
+        assert_eq!(roots, vec![font3, fonts7.clone()]);
+        let font = deep.join("Font.ttf");
+        assert_eq!(folder_under(&font, &roots), Some(fonts7));
+        assert_eq!(folder_under(&font, &[]), Some(deep));
+        assert!(asset_font_roots(&dir.join("missing")).is_empty());
+
+        // Linux: the folders fontconfig lists, a library sorted into
+        // subfolders among them; the usual folders when it lists none.
+        #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+        {
+            let library = dir.join("Library");
+            let conf = dir.join("fonts.conf");
+            std::fs::write(
+                &conf,
+                format!(
+                    "<?xml version=\"1.0\"?><fontconfig><dir>{}</dir><dir>/usr/share/fonts</dir></fontconfig>",
+                    library.display()
+                ),
+            )
+            .expect("conf");
+            let file = conf.to_string_lossy().into_owned();
+            let env = move |name: &str| (name == "FONTCONFIG_FILE").then(|| file.clone());
+            let roots = fontconfig_font_roots(&env);
+            assert_eq!(
+                roots,
+                vec![library.clone(), PathBuf::from("/usr/share/fonts")]
+            );
+            let font = library
+                .join("google")
+                .join("quicksand")
+                .join("Quicksand-VF.ttf");
+            assert_eq!(folder_under(&font, &roots), Some(library));
+            std::fs::write(&conf, "<?xml version=\"1.0\"?><fontconfig></fontconfig>")
+                .expect("conf");
+            let file = conf.to_string_lossy().into_owned();
+            let env = move |name: &str| match name {
+                "FONTCONFIG_FILE" => Some(file.clone()),
+                "HOME" => Some("/home/me".to_string()),
+                _ => None,
+            };
+            assert_eq!(
+                fontconfig_font_roots(&env),
+                vec![
+                    PathBuf::from("/usr/share/fonts"),
+                    PathBuf::from("/usr/local/share/fonts"),
+                    PathBuf::from("/home/me/.fonts"),
+                    PathBuf::from("/home/me/.local/share/fonts"),
+                ]
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -9,7 +9,7 @@ use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
     live::Effect,
-    Color, Command, Fill, ShapeId, TextSpan,
+    Color, Command, Fill, ShapeId, Stroke, TextSpan,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub struct ClipEditMark {
     pub begins: bool,
 }
 
-/// Step and Repeat docker state.
+/// Repeat Copies docker state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepRepeat {
     pub copies: u32,
@@ -98,12 +98,48 @@ impl AlignTo {
     }
 }
 
+/// What Copy Properties From copies, ticked in its dialog (all at
+/// first).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CopyProperties {
+    pub outline_pen: bool,
+    pub outline_color: bool,
+    pub fill: bool,
+    pub text: bool,
+}
+
+impl Default for CopyProperties {
+    fn default() -> Self {
+        CopyProperties {
+            outline_pen: true,
+            outline_color: true,
+            fill: true,
+            text: true,
+        }
+    }
+}
+
+impl CopyProperties {
+    /// Something is ticked.
+    pub fn any(self) -> bool {
+        self.outline_pen || self.outline_color || self.fill || self.text
+    }
+}
+
 impl App {
     /// The bounds of everything drawn on the current page (its layers'
     /// objects, effects included), page mm.
     pub fn drawing_bounds(&self) -> Option<tracedraw_core::geometry::Rect> {
+        self.page_drawing_bounds(self.page)
+    }
+
+    /// As [`Self::drawing_bounds`], for the page `page`.
+    pub fn page_drawing_bounds(
+        &self,
+        page: tracedraw_core::PageId,
+    ) -> Option<tracedraw_core::geometry::Rect> {
         let doc = self.doc();
-        let page = doc.page(self.page).ok()?;
+        let page = doc.page(page).ok()?;
         page.layers
             .iter()
             .flat_map(|l| l.shapes.iter())
@@ -112,17 +148,17 @@ impl App {
             .reduce(|a, b| a.union(b))
     }
 
-    /// Layout > Fit Page to Selection: the current page takes the size
+    /// Page > Fit Page to Selection: the current page takes the size
     /// of the selection's bounds and the page's objects move so the
     /// selection sits on the page from its bottom-left corner; one undo
     /// step. Nothing happens without a selection.
     pub fn fit_page_to_selection(&mut self) {
         if let Some(b) = self.selection_bounds() {
-            self.fit_page_to(b, "Fit Page to Selection");
+            self.fit_pages_to(&[(self.page, b)], "Fit Page to Selection");
         }
     }
 
-    /// Layout > Fit Page to Drawing: as [`Self::fit_page_to_selection`],
+    /// Page > Fit Page to Drawing: as [`Self::fit_page_to_selection`],
     /// for everything on the page.
     pub fn fit_page_to_drawing(&mut self) {
         self.fit_page_to_drawing_with_margin(0.0);
@@ -147,44 +183,84 @@ impl App {
     /// The property bar's Autofit Page: [`Self::fit_page_to_drawing`]
     /// with `margin` mm left free around the drawing on every side.
     pub fn fit_page_to_drawing_with_margin(&mut self, margin: f64) {
+        self.autofit_pages(margin, false);
+    }
+
+    /// The property bar's Autofit Page with the page bar's scope: the
+    /// current page, or with All Pages on every page, each fitted to its
+    /// own drawing with `margin` mm around it (#1393). Pages with nothing
+    /// drawn keep their size. One undo step.
+    pub fn autofit_pages(&mut self, margin: f64, all: bool) {
         let margin = if margin.is_finite() {
             margin.max(0.0)
         } else {
             0.0
         };
-        if let Some(b) = self.drawing_bounds() {
-            self.fit_page_to(b.inflate(margin, margin), "Fit Page to Drawing");
-        }
-    }
-
-    fn fit_page_to(&mut self, b: tracedraw_core::geometry::Rect, label: &'static str) {
-        use tracedraw_core::geometry::{Affine, Size, Vec2};
-        if !(b.width().is_finite() && b.height().is_finite()) || b.width() < 0.1 || b.height() < 0.1
-        {
-            self.status = crate::i18n::tr("status.fit_page_nothing");
+        let pages: Vec<tracedraw_core::PageId> = if all {
+            self.doc().pages.iter().map(|p| p.id).collect()
+        } else {
+            vec![self.page]
+        };
+        let fits: Vec<_> = pages
+            .into_iter()
+            .filter_map(|p| {
+                self.page_drawing_bounds(p)
+                    .map(|b| (p, b.inflate(margin, margin)))
+            })
+            .collect();
+        if fits.is_empty() {
+            if all {
+                self.status = crate::i18n::tr("status.fit_page_nothing");
+            }
             return;
         }
-        let page = self.page;
-        let shapes: Vec<ShapeId> = self
-            .doc()
-            .page(page)
-            .map(|p| {
-                p.layers
-                    .iter()
-                    .flat_map(|l| l.shapes.iter().map(|s| s.id))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut cmds = vec![Command::ResizePage {
-            page,
-            size: Size::new(b.width(), b.height()),
-        }];
-        let shift = Vec2::new(-b.x0, -b.y0);
-        if shift.hypot() > 1e-9 && !shapes.is_empty() {
-            cmds.push(Command::TransformShapes {
-                shapes,
-                transform: Affine::translate(shift),
+        self.fit_pages_to(&fits, "Fit Page to Drawing");
+    }
+
+    /// Size each page to its rectangle and move the page's objects so the
+    /// rectangle's bottom-left corner is the page's; one undo step for
+    /// all of them. A page whose rectangle is empty or not a number keeps
+    /// its size; when every one is, nothing happens and the status says
+    /// so.
+    fn fit_pages_to(
+        &mut self,
+        fits: &[(tracedraw_core::PageId, tracedraw_core::geometry::Rect)],
+        label: &'static str,
+    ) {
+        use tracedraw_core::geometry::{Affine, Size, Vec2};
+        let mut cmds = Vec::new();
+        for &(page, b) in fits {
+            if !(b.width().is_finite() && b.height().is_finite())
+                || b.width() < 0.1
+                || b.height() < 0.1
+            {
+                continue;
+            }
+            let shapes: Vec<ShapeId> = self
+                .doc()
+                .page(page)
+                .map(|p| {
+                    p.layers
+                        .iter()
+                        .flat_map(|l| l.shapes.iter().map(|s| s.id))
+                        .collect()
+                })
+                .unwrap_or_default();
+            cmds.push(Command::ResizePage {
+                page,
+                size: Size::new(b.width(), b.height()),
             });
+            let shift = Vec2::new(-b.x0, -b.y0);
+            if shift.hypot() > 1e-9 && !shapes.is_empty() {
+                cmds.push(Command::TransformShapes {
+                    shapes,
+                    transform: Affine::translate(shift),
+                });
+            }
+        }
+        if cmds.is_empty() {
+            self.status = crate::i18n::tr("status.fit_page_nothing");
+            return;
         }
         if let Err(e) = self.engine.run_batch(label, &cmds) {
             self.status = e.to_string();
@@ -193,7 +269,7 @@ impl App {
 
     // ----- layout ----------------------------------------------------------------
 
-    /// Layout > Insert Page Number: an artistic text "1", "2"... on the
+    /// Page > Insert Page Number: an artistic text "1", "2"... on the
     /// chosen pages (bottom centre), named "page-number". With a master
     /// layer active it is one field on that layer that shows the number
     /// of each page it is drawn on (#807).
@@ -338,23 +414,35 @@ impl App {
     }
 
     pub fn ungroup_all(&mut self) {
-        // Repeat ungroup until no selected object is a group.
+        // Repeat ungroup until no selected object is a group (or a clip
+        // frame whose frame is one, #1605).
         for _ in 0..64 {
             let groups: Vec<ShapeId> = self
                 .selected_shapes()
                 .iter()
-                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
+                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }) || s.is_clip_frame_of_group())
                 .map(|s| s.id)
                 .collect();
             if groups.is_empty() {
                 break;
             }
+            let before = self.top_level_ids();
             let mut new_sel: Vec<ShapeId> = self
                 .selection
                 .iter()
                 .copied()
                 .filter(|s| !groups.contains(s))
                 .collect();
+            for g in &groups {
+                // A clip frame stays, as the first of its pieces.
+                if self
+                    .doc()
+                    .find_shape(*g)
+                    .is_some_and(Shape::is_clip_frame_of_group)
+                {
+                    new_sel.push(*g);
+                }
+            }
             for g in groups {
                 let children: Vec<ShapeId> = self
                     .doc()
@@ -368,6 +456,13 @@ impl App {
                     .unwrap_or_default();
                 self.run(Command::Ungroup { group: g });
                 new_sel.extend(children);
+            }
+            // The pieces a clip frame came apart into; a group's objects
+            // are new on the layer too and already taken, each id once.
+            for id in self.added_top_level_ids(&before) {
+                if !new_sel.contains(&id) {
+                    new_sel.push(id);
+                }
             }
             self.selection = new_sel;
         }
@@ -920,30 +1015,51 @@ impl App {
         self.set_tool(crate::tools::Tool::Shape);
     }
 
-    /// Remove any transparency from the selection.
+    /// Some selected object has transparency: uniform (an opacity under
+    /// 100 %) or a fountain, pattern or texture mask.
+    pub fn can_clear_transparency(&self) -> bool {
+        self.selected_shapes().iter().any(|s| {
+            s.opacity < 1.0
+                || s.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Transparency { .. }))
+        })
+    }
+
+    /// Remove any transparency from the selection (the Transparency
+    /// tool's Clear Transparency, its kind list's None), one undo step;
+    /// objects without transparency are left as they are.
     pub fn clear_transparency(&mut self) {
-        let shapes = self.selection.clone();
         let mut cmds = Vec::new();
-        for id in &shapes {
-            let Some(s) = self.doc().find_shape(*id).cloned() else {
-                continue;
-            };
-            let effects: Vec<Effect> = s
-                .effects
+        for s in self.selected_shapes() {
+            if s.effects
                 .iter()
-                .filter(|e| !matches!(e, Effect::Transparency { .. }))
-                .cloned()
-                .collect();
-            cmds.push(Command::SetEffects {
-                shape: *id,
-                effects,
-            });
+                .any(|e| matches!(e, Effect::Transparency { .. }))
+            {
+                let effects: Vec<Effect> = s
+                    .effects
+                    .iter()
+                    .filter(|e| !matches!(e, Effect::Transparency { .. }))
+                    .cloned()
+                    .collect();
+                cmds.push(Command::SetEffects {
+                    shape: s.id,
+                    effects,
+                });
+            }
+            if s.opacity < 1.0 {
+                cmds.push(Command::SetOpacity {
+                    shapes: vec![s.id],
+                    opacity: 1.0,
+                });
+            }
         }
-        cmds.push(Command::SetOpacity {
-            shapes,
-            opacity: 1.0,
-        });
-        let _ = self.engine.run_batch("Clear Transparency", &cmds);
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Clear Transparency", &cmds) {
+            self.status = e.to_string();
+        }
     }
 
     /// Object > Clip to Frame > Edit Contents: take the contents out so they can
@@ -1045,6 +1161,15 @@ impl App {
             Some((frame, outside)) => id == *frame || outside.contains(&id),
             None => false,
         }
+    }
+
+    /// A Ctrl+click at `p` while a clip frame's contents are edited
+    /// leaves the edit when it is off the contents (#1337: there was no
+    /// way out but the bar's Finish). A plain click there only empties
+    /// the selection, the objects outside staying out of reach (#851).
+    pub fn ctrl_click_finishes_clip_edit(&self, p: Point) -> bool {
+        // Only the contents can be hit while editing.
+        self.clip_frame_edit.is_some() && self.hit_test(p).is_none()
     }
 
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
@@ -1327,30 +1452,103 @@ impl App {
         self.status = tr("status.pattern_created");
     }
 
-    /// Edit > Copy Properties From: fill and outline of `source` to the selection.
+    /// Edit > Copy Properties From (Ctrl+Shift+A): the dialog that asks
+    /// what to copy; its OK waits for a click on the object to copy from
+    /// (#1345).
+    pub fn open_copy_properties(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        self.dialog = crate::ui::dialogs::Dialog::CopyProperties(self.copy_properties_choice);
+    }
+
+    /// The dialog's OK: remember the boxes and wait for the click.
+    pub fn start_copy_properties(&mut self, choice: CopyProperties) {
+        self.copy_properties_choice = choice;
+        if choice.any() {
+            self.pending_copy_properties = true;
+            self.status = tr("status.click_source_object");
+        }
+    }
+
+    /// Copy Properties From: the properties ticked in its dialog
+    /// (outline pen, outline colour, fill, text) from `source` to the
+    /// other selected objects, one undo step.
     pub fn copy_properties_from(&mut self, source: ShapeId) {
         let Some(src) = self.doc().find_shape(source).cloned() else {
             return;
         };
-        let shapes: Vec<ShapeId> = self
-            .selection
-            .iter()
-            .copied()
-            .filter(|s| *s != source)
+        let c = self.copy_properties_choice;
+        let targets: Vec<Shape> = self
+            .selected_shapes()
+            .into_iter()
+            .filter(|s| s.id != source)
             .collect();
-        if shapes.is_empty() {
+        if targets.is_empty() {
             return;
         }
-        let cmds = vec![
-            Command::SetFill {
-                shapes: shapes.clone(),
+        let mut cmds = Vec::new();
+        if c.fill {
+            cmds.push(Command::SetFill {
+                shapes: targets.iter().map(|s| s.id).collect(),
                 fill: src.fill.clone(),
-            },
-            Command::SetStroke {
-                shapes,
-                stroke: src.stroke.clone(),
-            },
-        ];
+            });
+        }
+        for t in &targets {
+            let stroke = match (c.outline_pen, c.outline_color) {
+                (false, false) => continue,
+                (true, true) => src.stroke.clone(),
+                // The pen (width, style, ends, corners) with the target's
+                // own colour.
+                (true, false) => match (&src.stroke, &t.stroke) {
+                    (Some(s), Some(own)) => Some(Stroke {
+                        color: own.color,
+                        fill: own.fill.clone(),
+                        ..s.clone()
+                    }),
+                    (s, _) => s.clone(),
+                },
+                // The colour on the target's own pen.
+                (false, true) => match (&src.stroke, &t.stroke) {
+                    (Some(s), Some(own)) => Some(Stroke {
+                        color: s.color,
+                        fill: s.fill.clone(),
+                        ..own.clone()
+                    }),
+                    (Some(s), None) => Some(s.clone()),
+                    (None, own) => own.clone(),
+                },
+            };
+            if stroke != t.stroke {
+                cmds.push(Command::SetStroke {
+                    shapes: vec![t.id],
+                    stroke,
+                });
+            }
+        }
+        if c.text {
+            if let ShapeKind::Text { spans: from, .. } = &src.kind {
+                if let Some(f) = from.first() {
+                    for t in &targets {
+                        let mut kind = t.kind.clone();
+                        if let ShapeKind::Text { spans, .. } = &mut kind {
+                            for sp in spans.iter_mut() {
+                                sp.font_family = f.font_family.clone();
+                                sp.size_pt = f.size_pt;
+                                sp.bold = f.bold;
+                                sp.italic = f.italic;
+                            }
+                            if kind != t.kind {
+                                cmds.push(Command::SetShapeKind { shape: t.id, kind });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if cmds.is_empty() {
+            return;
+        }
         if let Err(e) = self.engine.run_batch("Copy Properties", &cmds) {
             self.status = e.to_string();
         }
@@ -1358,41 +1556,153 @@ impl App {
 
     /// Object > Fit Objects to Path: the last selected object is the path;
     /// the others are placed along it with the Fit Objects to Path panel's
-    /// settings (#1027).
+    /// settings (#1027), with the copies the panel asks for (#1091,
+    /// #1196). Copies go into their original's layer and, with the
+    /// objects placed, become the selection.
     pub fn fit_objects_to_path(&mut self) {
         let shapes = self.selected_shapes();
-        let moves = fit_to_path_moves(&shapes, &self.fit_path);
-        if moves.is_empty() {
+        let plan = self.fit_path_plan(&shapes);
+        if plan.is_empty() {
             return;
         }
-        let cmds: Vec<Command> = moves
-            .into_iter()
-            .map(|(id, transform)| Command::TransformShapes {
-                shapes: vec![id],
-                transform,
+        let mut cmds = Vec::with_capacity(plan.len());
+        let mut placed = Vec::with_capacity(plan.len());
+        let mut copied = false;
+        for p in &plan {
+            if !p.copy {
+                cmds.push(Command::TransformShapes {
+                    shapes: vec![p.source],
+                    transform: p.transform,
+                });
+                placed.push(p.source);
+                continue;
+            }
+            let Some(src) = shapes.iter().find(|s| s.id == p.source) else {
+                continue;
+            };
+            let top = self
+                .doc()
+                .ancestors(src.id)
+                .first()
+                .copied()
+                .unwrap_or(src.id);
+            let Some(layer) = self
+                .doc()
+                .locate(top)
+                .ok()
+                .map(|(l, _)| l)
+                .or_else(|| self.active_layer())
+            else {
+                continue;
+            };
+            let id = self.engine.new_shape_id();
+            let mut c = crate::app::reid_pub(src.clone(), id, &mut self.engine);
+            c.transform_by(p.transform);
+            cmds.push(Command::AddShape { layer, shape: c });
+            placed.push(id);
+            copied = true;
+        }
+        // Group all objects: the ones placed that are not inside a group
+        // already, in the same step (#1091).
+        let grouped: Vec<ShapeId> = placed
+            .iter()
+            .copied()
+            .filter(|id| {
+                !shapes.iter().any(|s| s.id == *id) || self.doc().ancestors(*id).is_empty()
             })
             .collect();
+        let group = self.fit_path.group && grouped.len() >= 2;
+        if group {
+            cmds.push(Command::Group {
+                shapes: grouped.clone(),
+            });
+        }
         if let Err(e) = self.engine.run_batch("Fit Objects to Path", &cmds) {
             self.status = e.to_string();
+            return;
+        }
+        if group {
+            if let Some(g) = self.doc().ancestors(grouped[0]).first().copied() {
+                self.select(vec![g]);
+                return;
+            }
+        }
+        if copied {
+            self.select(placed);
         }
     }
 
-    /// The outlines the selected objects would have after
-    /// [`Self::fit_objects_to_path`], for the panel's preview; empty when
-    /// the selection cannot be fitted or is too large to preview cheaply.
-    pub fn fit_objects_to_path_preview(&self) -> Vec<BezPath> {
-        if self.selection.len() < 2 || self.selection.len() > 200 {
-            return Vec::new();
+    /// [`crate::fit_path::fit_to_path_plan_with`] for `shapes` with the panel's settings and the
+    /// centres of rotation moved with the Pick tool.
+    fn fit_path_plan(&self, shapes: &[Shape]) -> Vec<crate::fit_path::Placement> {
+        let pivot = |s: &Shape| {
+            self.pivots
+                .single
+                .get(&s.id)
+                .map(|local| s.transform * *local)
+        };
+        crate::fit_path::fit_to_path_plan_with(shapes, &self.fit_path, &pivot)
+    }
+
+    /// The Fit Objects to Path panel for the objects selected now: values
+    /// set for other objects (or in another drawing) are not carried
+    /// over; the panel starts again from the defaults, with no preview
+    /// until a value is entered (#1136).
+    pub fn fit_path_follow_selection(&mut self) {
+        let drawing = self.docs.get(self.active_doc).map(|d| d.drawing);
+        let same = self
+            .fit_path_for
+            .as_ref()
+            .is_some_and(|(d, sel)| *d == drawing && *sel == self.selection);
+        if !same {
+            self.fit_path = FitPathSettings::default();
+            self.fit_path_edited = false;
+            self.fit_path_for = Some((drawing, self.selection.clone()));
         }
-        let shapes = self.selected_shapes();
-        let moves = fit_to_path_moves(&shapes, &self.fit_path);
-        moves
-            .into_iter()
-            .filter_map(|(id, t)| {
-                let s = shapes.iter().find(|s| s.id == id)?;
-                Some(t * s.page_path())
-            })
-            .collect()
+    }
+
+    /// The outlines the selected objects (and the copies) would have
+    /// after [`Self::fit_objects_to_path`], for the panel's preview; empty
+    /// when the selection cannot be fitted or is too large to preview
+    /// cheaply, and until a value was entered for these objects (#1136).
+    /// Worked out again only when the settings, the selection or the
+    /// drawing change; past [`FIT_PREVIEW_OUTLINES`] objects each shows
+    /// as its box.
+    pub fn fit_objects_to_path_preview(&mut self) -> &[BezPath] {
+        if !self.fit_path_edited || self.selection.len() < 2 || self.selection.len() > 200 {
+            self.fit_path_preview = None;
+            return &[];
+        }
+        let key = FitPreviewKey {
+            settings: self.fit_path,
+            revision: self.engine.revision(),
+            drawing: self.docs.get(self.active_doc).map(|d| d.drawing),
+            selection: self.selection.clone(),
+        };
+        if self
+            .fit_path_preview
+            .as_ref()
+            .is_none_or(|(k, _)| *k != key)
+        {
+            let shapes = self.selected_shapes();
+            let plan = self.fit_path_plan(&shapes);
+            let boxes = plan.len() > FIT_PREVIEW_OUTLINES;
+            let paths = plan
+                .into_iter()
+                .filter_map(|p| {
+                    let s = shapes.iter().find(|s| s.id == p.source)?;
+                    Some(if boxes {
+                        p.transform * kurbo::Shape::to_path(&s.bounds(), 0.1)
+                    } else {
+                        p.transform * s.page_path()
+                    })
+                })
+                .collect();
+            self.fit_path_preview = Some((key, paths));
+        }
+        self.fit_path_preview
+            .as_ref()
+            .map_or(&[], |(_, p)| p.as_slice())
     }
 
     /// The Join Curves docker: join the open ends of the selected curves
@@ -1521,6 +1831,29 @@ impl App {
     }
 
     pub fn set_bitmap_mode(&mut self, mode: crate::bitmap_fx::ColorMode) {
+        // RGB and CMYK are the bitmap's colour mode: the same conversion
+        // as Tools > Convert Colors on the selected bitmaps (#1254).
+        let to = match mode {
+            crate::bitmap_fx::ColorMode::Rgb => {
+                Some(tracedraw_core::color_convert::ColorTarget::Rgb)
+            }
+            crate::bitmap_fx::ColorMode::Cmyk => {
+                Some(tracedraw_core::color_convert::ColorTarget::Cmyk)
+            }
+            crate::bitmap_fx::ColorMode::Grayscale => None,
+        };
+        if let Some(to) = to {
+            let shapes: Vec<ShapeId> = self.bitmap_shapes().into_iter().map(|b| b.0).collect();
+            if shapes.is_empty() {
+                return;
+            }
+            self.convert_colors(&crate::ui::convert_colors::ConvertColorsState {
+                to,
+                whole: false,
+                spots: false,
+            });
+            return;
+        }
         for (id, rect, _, _, png) in self.bitmap_shapes() {
             let Some(img) = crate::bitmap_fx::decode(&png) else {
                 continue;
@@ -1530,7 +1863,7 @@ impl App {
         }
     }
 
-    /// Bitmaps > Inflate Bitmap > Manually Inflate Bitmap: grow every
+    /// Image > Bitmap Padding > Custom: grow every
     /// selected bitmap's canvas to `pw` by `ph` percent of its size (100
     /// or more), centred, with transparent margins; one undo step. The
     /// bitmap keeps its resolution, so it grows on the page too.
@@ -1582,7 +1915,7 @@ impl App {
         }
     }
 
-    /// The Bitmap Mask docker's Apply: hide (or keep only) the colours of
+    /// The Color Mask docker's Apply: hide (or keep only) the colours of
     /// the slots in use in the selected bitmaps. True when a bitmap changed.
     pub fn apply_bitmap_mask(&mut self) -> bool {
         let slots = self.mask.active();
@@ -1704,7 +2037,7 @@ impl App {
         });
     }
 
-    /// Bitmaps > Convert to Bitmap: the selection becomes one bitmap with
+    /// Image > Convert to Bitmap: the selection becomes one bitmap with
     /// the dialog's resolution, colour mode, dithering, anti-aliasing,
     /// background and overprint, in one undo step.
     pub fn convert_to_bitmap_with(&mut self, o: &crate::bitmap_modes::ConvertOptions) {
@@ -1722,12 +2055,22 @@ impl App {
         else {
             return;
         };
+        // The colour mode asked for (#1777): a grayscale picture is stored
+        // as a grayscale PNG; a CMYK one shows its pixels as the inks
+        // print them and is marked CMYK, as Image > Mode > CMYK does
+        // (#1254).
+        use crate::bitmap_modes::ConvertMode;
         let png = match o.mode {
-            crate::bitmap_modes::ConvertMode::Rgb | crate::bitmap_modes::ConvertMode::Cmyk => png,
-            _ => match crate::bitmap_fx::decode(&png)
-                .map(|img| crate::bitmap_modes::convert_pixels(&img, o))
-                .and_then(|img| crate::bitmap_fx::encode(&img))
-            {
+            ConvertMode::Rgb => png,
+            mode => match crate::bitmap_fx::decode(&png).and_then(|img| match mode {
+                ConvertMode::Cmyk => {
+                    crate::bitmap_fx::encode(&crate::bitmap_fx::through_cmyk(&img))
+                }
+                ConvertMode::Grayscale => {
+                    crate::bitmap_fx::encode_gray(&crate::bitmap_modes::convert_pixels(&img, o))
+                }
+                _ => crate::bitmap_fx::encode(&crate::bitmap_modes::convert_pixels(&img, o)),
+            }) {
                 Some(p) => p,
                 None => return,
             },
@@ -1746,6 +2089,7 @@ impl App {
         bitmap.fill = Fill::None;
         bitmap.stroke = None;
         bitmap.overprint_fill = o.overprint_black;
+        bitmap.cmyk_bitmap = o.mode == ConvertMode::Cmyk;
         let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
         let cmds = vec![
             Command::DeleteShapes { shapes: ids },
@@ -1779,7 +2123,7 @@ impl App {
 
     // ----- tracing ---------------------------------------------------------------------
 
-    /// Bitmaps > Quick Trace: the preset and choices of Options > Global >
+    /// Image > Trace > Automatic: the preset and choices of Options > Global >
     /// Bitmap Tracing.
     pub fn quick_trace(&mut self) {
         let prefs = &self.settings.tracing;
@@ -1811,12 +2155,22 @@ impl App {
         let Some((preset, settings)) = self.last_trace.clone() else {
             return;
         };
-        let mut st = crate::ui::dialogs::TraceState::new(preset, &self.settings.tracing);
-        st.settings = settings;
+        let st = crate::ui::dialogs::TraceState::with_settings(preset, settings);
         self.dialog = crate::ui::dialogs::Dialog::Trace(st);
     }
 
     pub fn trace_bitmaps(&mut self, settings: &crate::trace::Settings) {
+        self.trace_bitmaps_using(settings, None);
+    }
+
+    /// [`trace_bitmaps`](Self::trace_bitmaps) with `ready`, the trace of
+    /// one of the bitmaps made already (the dialog's live preview of the
+    /// whole picture): that bitmap is not traced again.
+    pub fn trace_bitmaps_using(
+        &mut self,
+        settings: &crate::trace::Settings,
+        ready: Option<(ShapeId, std::sync::Arc<Vec<crate::trace::Traced>>, f64)>,
+    ) {
         let bitmaps = self.bitmap_shapes();
         if bitmaps.is_empty() {
             return;
@@ -1827,15 +2181,20 @@ impl App {
         let mut cmds = Vec::new();
         let mut new_sel = Vec::new();
         for (id, rect, w, h, png) in bitmaps {
-            let Some(img) = crate::bitmap_fx::decode(&png) else {
-                continue;
-            };
             let Ok((_, src)) = self.doc().shape(id) else {
                 continue;
             };
             let transform = src.transform;
-            let traced = crate::trace::trace(&img, settings);
-            let stroke_px = crate::trace::last_stroke_width_px();
+            let (traced, stroke_px): (Vec<crate::trace::Traced>, f64) = match &ready {
+                Some((rid, t, px)) if *rid == id => (t.as_ref().clone(), *px),
+                _ => {
+                    let Some(img) = crate::bitmap_fx::decode(&png) else {
+                        continue;
+                    };
+                    let traced = crate::trace::trace(&img, settings);
+                    (traced, crate::trace::last_stroke_width_px())
+                }
+            };
             let mut children = Vec::new();
             for t in traced {
                 let sid = self.engine.new_shape_id();
@@ -1859,6 +2218,28 @@ impl App {
             }
             if children.is_empty() {
                 continue;
+            }
+            // Group by color: the curves of each colour in a group of their
+            // own, in the order the colours stack. With Merge adjacent
+            // every colour is one curve already: the box is greyed in the
+            // dialog and no groups are made.
+            if settings.group_by_color && !settings.merge_adjacent {
+                let mut by_color: Vec<(Color, Vec<Shape>)> = Vec::new();
+                for s in children.drain(..) {
+                    let c = match (&s.fill, &s.stroke) {
+                        (Fill::Solid(c), _) => *c,
+                        (_, Some(st)) => st.color,
+                        _ => Color::BLACK,
+                    };
+                    match by_color.iter_mut().find(|(k, _)| *k == c) {
+                        Some((_, v)) => v.push(s),
+                        None => by_color.push((c, vec![s])),
+                    }
+                }
+                for (_, shapes) in by_color {
+                    let gid = self.engine.new_shape_id();
+                    children.push(Shape::new(gid, ShapeKind::Group { children: shapes }));
+                }
             }
             let gid = self.engine.new_shape_id();
             let mut group = Shape::new(gid, ShapeKind::Group { children });
@@ -1978,8 +2359,20 @@ impl App {
         }
     }
 
-    /// Text > Convert: artistic to paragraph text or back.
+    /// Text > Convert: artistic to paragraph text or back. The letters stay
+    /// where they were: the new text is moved so its first letter lands
+    /// on the old one's place, in the text's own space. A frame is as
+    /// large as the text's own box (not its box on the page, which a
+    /// turned, scaled or moved text no longer matches) plus 2 mm; the
+    /// frame's place came from the box on the page and moved texts that
+    /// had a transform of their own away (#1238).
     pub fn toggle_text_kind(&mut self) {
+        use tracedraw_core::document::text_glyph_layout;
+        // The pen position of the first glyph, in the text's own space.
+        let first_letter = |kind: &ShapeKind| {
+            text_glyph_layout(kind)
+                .and_then(|l| l.glyphs.first().map(|g| g.transform * Point::ZERO))
+        };
         for s in self.text_shapes() {
             let ShapeKind::Text {
                 spans,
@@ -1992,37 +2385,47 @@ impl App {
             else {
                 continue;
             };
-            let b = s.bounds();
+            let local = s.local_path().bounding_box();
+            let local = if local.width().is_finite() && local.height().is_finite() {
+                local
+            } else {
+                Rect::from_origin_size(origin, (0.0, 0.0))
+            };
             let new_frame = match frame {
                 Some(_) => None,
                 None => Some(Size::new(
-                    b.width().max(10.0) + 2.0,
-                    b.height().max(5.0) + 2.0,
+                    local.width().max(10.0) + 2.0,
+                    local.height().max(5.0) + 2.0,
                 )),
             };
-            let new_origin = match (frame, new_frame) {
-                (None, Some(_)) => {
-                    Point::new(origin.x, origin.y - (b.height() - (b.y1 - origin.y)))
-                }
+            // A first guess from the box, then the first letter's place.
+            let guess = match (frame, new_frame) {
+                (None, Some(f)) => Point::new(local.x0, local.y1 + 1.0 - f.height),
                 (Some(_), None) => Point::new(
-                    origin.x,
-                    b.y1 - spans
-                        .first()
-                        .map(|s| s.size_pt * 25.4 / 72.0)
-                        .unwrap_or(5.0),
+                    local.x0,
+                    local.y1
+                        - spans
+                            .first()
+                            .map(|s| s.size_pt * 25.4 / 72.0)
+                            .unwrap_or(5.0),
                 ),
                 _ => origin,
             };
+            let make = |origin: Point| ShapeKind::Text {
+                spans: spans.clone(),
+                origin,
+                frame: new_frame,
+                align,
+                para: para.clone(),
+                on_path: on_path.clone(),
+            };
+            let new_origin = match (first_letter(&s.kind), first_letter(&make(guess))) {
+                (Some(was), Some(now)) => guess + (was - now),
+                _ => guess,
+            };
             self.run(Command::SetShapeKind {
                 shape: s.id,
-                kind: ShapeKind::Text {
-                    spans,
-                    origin: new_origin,
-                    frame: new_frame,
-                    align,
-                    para,
-                    on_path,
-                },
+                kind: make(new_origin),
             });
         }
     }
@@ -2199,13 +2602,19 @@ impl App {
     }
 
     /// The characters the paragraph settings act on in text `id`: the
-    /// selection (or the caret) while it is being edited; `None`, every
-    /// paragraph, when the whole object is selected.
+    /// selection (or the caret) while it is being edited, else the
+    /// characters chosen with the Shape tool; `None`, every paragraph,
+    /// when the whole object is selected.
     pub fn paragraph_range(&self, id: ShapeId) -> Option<(usize, usize)> {
-        self.text_edit
-            .as_ref()
-            .filter(|te| te.shape == id)
-            .map(|te| te.selection())
+        if let Some(te) = &self.text_edit {
+            return (te.shape == id).then(|| te.selection());
+        }
+        // The characters chosen with the Shape tool: from the first to
+        // the last (#1662).
+        let chosen = self.chosen_chars(id);
+        let first = chosen.iter().min()?;
+        let last = chosen.iter().max()?;
+        Some((*first, last + 1))
     }
 
     /// The alignment and paragraph style the paragraph controls show for a
@@ -2705,8 +3114,27 @@ impl App {
             });
             return;
         }
-        let cmds: Vec<Command> = self
-            .selected_shapes()
+        let selected = self.selected_shapes();
+        // The fields the bar shows were read from one text object (the
+        // first selected); only those changed since go to every selected
+        // text, so a new font keeps each text's own size, weight and slant
+        // (#1304). Without such a reading, every field applies.
+        let shown = self.text_shown.clone().filter(|t| {
+            selected
+                .iter()
+                .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+                .is_some_and(|s| s.id == t.shape)
+        });
+        let changed = |f: &dyn Fn(&crate::app::TextShown) -> bool| shown.as_ref().is_none_or(f);
+        let set_font = changed(&|t| t.font.as_ref() != Some(&self.text_font));
+        let set_size = changed(&|t| {
+            t.size_pt
+                .is_none_or(|v| (v - self.text_size_pt).abs() > 0.005)
+        });
+        let set_bold = changed(&|t| t.bold != Some(self.text_bold));
+        let set_italic = changed(&|t| t.italic != Some(self.text_italic));
+        let set_underline = changed(&|t| t.underline != Some(self.text_underline));
+        let cmds: Vec<Command> = selected
             .iter()
             .filter_map(|s| match &s.kind {
                 ShapeKind::Text {
@@ -2717,20 +3145,30 @@ impl App {
                     para,
                     on_path,
                 } => {
-                    let mut spans = spans.clone();
                     // The bar's size is the size as seen: before the text's
                     // own scale it is smaller (or larger). A size the bar
                     // shows unchanged leaves each character's as it was.
                     let scale = self.text_scale(s.id);
-                    for sp in spans.iter_mut() {
-                        sp.font_family = self.text_font.clone();
-                        if (sp.size_pt * scale - self.text_size_pt).abs() > 0.005 {
+                    // The characters chosen with the Shape tool, else all
+                    // of them (#1662).
+                    let chosen = self.chosen_chars(s.id);
+                    let spans = crate::text_nodes::apply_to_chars(spans, &chosen, |sp| {
+                        if set_font {
+                            sp.font_family = self.text_font.clone();
+                        }
+                        if set_size && (sp.size_pt * scale - self.text_size_pt).abs() > 0.005 {
                             sp.size_pt = self.text_size_pt / scale;
                         }
-                        sp.bold = self.text_bold;
-                        sp.italic = self.text_italic;
-                        sp.underline = self.text_underline;
-                    }
+                        if set_bold {
+                            sp.bold = self.text_bold;
+                        }
+                        if set_italic {
+                            sp.italic = self.text_italic;
+                        }
+                        if set_underline {
+                            sp.underline = self.text_underline;
+                        }
+                    });
                     Some(Command::SetShapeKind {
                         shape: s.id,
                         kind: ShapeKind::Text {
@@ -2803,26 +3241,345 @@ impl App {
 
     // ----- palettes -----------------------------------------------------------------------
 
+    /// Window > Color Palettes, the Palette Manager's tick: show palette
+    /// `i` in a bar of its own, or close its bar. The default bar's
+    /// palette gives way to the first palette bar's (whose bar closes);
+    /// the last palette shown stays.
     pub fn toggle_palette(&mut self, i: usize) {
-        if let Some(pos) = self.visible_palettes.iter().position(|p| *p == i) {
-            if self.visible_palettes.len() > 1 {
-                self.visible_palettes.remove(pos);
-            }
+        let Some(p) = self.palettes.get(i) else {
+            return;
+        };
+        let id = crate::settings::palette_id(p);
+        if self.visible_palettes.first() == Some(&i) {
+            let Some(k) = self
+                .settings
+                .palette_bars
+                .iter()
+                .position(|b| b.palette != crate::settings::DOCUMENT_PALETTE)
+            else {
+                return;
+            };
+            let bar = self.settings.palette_bars.remove(k);
+            self.settings.main_palette = bar.palette;
+        } else if let Some(k) = self
+            .settings
+            .palette_bars
+            .iter()
+            .position(|b| b.palette == id)
+        {
+            self.settings.palette_bars.remove(k);
         } else {
-            self.visible_palettes.push(i);
+            self.open_palette_bar(&id);
+            return;
         }
         self.rebuild_palette();
     }
 
-    /// The bottom palette strip shows the first visible palette.
-    pub fn rebuild_palette(&mut self) {
-        if let Some(i) = self.visible_palettes.first() {
-            if let Some(p) = self.palettes.get(*i) {
-                self.palette = p.colors.clone();
-                self.palette_rgb = crate::ui::palette::as_rgb(&self.palette);
-                self.palette_scroll = 0;
+    /// Open the palette `id` ([`crate::settings::palette_id`], or
+    /// [`crate::settings::DOCUMENT_PALETTE`]) in a bar of its own, where
+    /// the default palette is docked (at the bottom while that floats),
+    /// with its swatch size. A palette shown already is not opened twice.
+    pub fn open_palette_bar(&mut self, id: &str) {
+        let shown = self.settings.palette_bars.iter().any(|b| b.palette == id)
+            || self
+                .visible_palettes
+                .first()
+                .and_then(|i| self.palettes.get(*i))
+                .is_some_and(|p| crate::settings::palette_id(p) == id);
+        if shown || id.is_empty() {
+            return;
+        }
+        let dock = match self.settings.bars.dock(crate::ui::bars::Bar::Palette) {
+            crate::ui::bars::Dock::Floating => crate::ui::bars::Dock::Bottom,
+            d => d,
+        };
+        let k = self.settings.palette_bars.len() as f32;
+        self.settings
+            .palette_bars
+            .push(crate::settings::PaletteBarPrefs {
+                palette: id.to_string(),
+                dock,
+                pos: [320.0 + 24.0 * k, 420.0 - 24.0 * k],
+                swatch_size: self.settings.palette.swatch_size,
+                ..Default::default()
+            });
+        self.rebuild_palette();
+    }
+
+    /// The palette with `id`, its index in [`Self::palettes`]; a palette
+    /// file not open yet is opened (on the desktop) and joins the list.
+    pub fn find_palette(&mut self, id: &str) -> Option<usize> {
+        if id.is_empty() {
+            return None;
+        }
+        if let Some(i) = self
+            .palettes
+            .iter()
+            .position(|p| crate::settings::palette_id(p) == id)
+        {
+            return Some(i);
+        }
+        let path = std::path::Path::new(id);
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        if crate::files::WEB || !crate::palette::PALETTE_EXTENSIONS.contains(&ext.as_str()) {
+            return None;
+        }
+        match crate::palette::load_palette(path) {
+            Ok(p) => {
+                self.palettes.push(p);
+                Some(self.palettes.len() - 1)
+            }
+            Err(e) => {
+                log::warn!("palette bar: {id}: {e}");
+                None
             }
         }
+    }
+
+    /// The default palette bar shows the palette the preferences name
+    /// (the default palette when it is gone), and each palette bar its
+    /// palette (#1164), keeping how far it was scrolled. A bar whose
+    /// palette cannot be found any more closes, and a palette shown
+    /// twice keeps its first bar; [`Self::visible_palettes`] follows.
+    pub fn rebuild_palette(&mut self) {
+        let main_id = self.settings.main_palette.clone();
+        let default = self
+            .palettes
+            .iter()
+            .position(|p| p.key == "palette.default_cmyk")
+            .unwrap_or(0);
+        let main = self.find_palette(&main_id).unwrap_or(default);
+        if main == default {
+            self.settings.main_palette.clear();
+        }
+        if self.visible_palettes.first() != Some(&main) {
+            self.palette_scroll = 0;
+        }
+        self.visible_palettes = vec![main];
+        if let Some(p) = self.palettes.get(main) {
+            self.palette = p.colors.clone();
+            self.palette_rgb = crate::ui::palette::as_rgb(&self.palette);
+        }
+        let old = std::mem::take(&mut self.extra_palettes);
+        let bars = std::mem::take(&mut self.settings.palette_bars);
+        let mut kept = Vec::with_capacity(bars.len());
+        let mut rows = Vec::with_capacity(bars.len());
+        for mut bar in bars {
+            bar.sanitize();
+            let document = bar.palette == crate::settings::DOCUMENT_PALETTE;
+            let index = if document {
+                if rows
+                    .iter()
+                    .any(|r: &crate::ui::palette::ExtraRow| r.document)
+                {
+                    continue;
+                }
+                usize::MAX
+            } else {
+                match self.find_palette(&bar.palette) {
+                    Some(i) if !self.visible_palettes.contains(&i) => i,
+                    Some(_) => continue,
+                    None => {
+                        log::warn!("palette bar: no palette {}", bar.palette);
+                        continue;
+                    }
+                }
+            };
+            let scroll = old
+                .iter()
+                .find(|r| r.index == index && r.document == document)
+                .map_or(0, |r| r.scroll);
+            let colors = self
+                .palettes
+                .get(index)
+                .map(|p| p.colors.clone())
+                .unwrap_or_default();
+            if !document {
+                self.visible_palettes.push(index);
+            }
+            rows.push(crate::ui::palette::ExtraRow {
+                index,
+                document,
+                rgb: crate::ui::palette::as_rgb(&colors),
+                colors,
+                scroll,
+            });
+            kept.push(bar);
+        }
+        self.settings.palette_bars = kept;
+        self.extra_palettes = rows;
+    }
+
+    /// The name palette `i` shows with: the one the user gave it, else its
+    /// own.
+    pub fn palette_name(&self, i: usize) -> String {
+        let Some(p) = self.palettes.get(i) else {
+            return String::new();
+        };
+        self.settings
+            .palette_names
+            .get(&crate::settings::palette_id(p))
+            .filter(|n| !n.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| p.display_name())
+    }
+
+    /// The document palette's name, as the user gave it or its own.
+    pub fn document_palette_name(&self) -> String {
+        self.settings
+            .palette_names
+            .get(crate::settings::DOCUMENT_PALETTE)
+            .filter(|n| !n.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| tr("palette.show_document"))
+    }
+
+    /// Give the palette `id` the name `name`; an empty name, or its own,
+    /// takes the user's name away (Reset Name). A palette of the user's
+    /// kept in a file whose format holds a name (`.gpl`, `.tdpal`,
+    /// `.json`) gets it in the file too, unless locked; built-in palettes
+    /// and their files never change.
+    pub fn rename_palette(&mut self, id: &str, name: &str) {
+        let name = name.trim();
+        let i = self
+            .palettes
+            .iter()
+            .position(|p| crate::settings::palette_id(p) == id);
+        let own = match i {
+            Some(i) => self.palettes[i].display_name(),
+            None => tr("palette.show_document"),
+        };
+        if name.is_empty() || name == own {
+            self.settings.palette_names.remove(id);
+        } else {
+            self.settings
+                .palette_names
+                .insert(id.to_string(), name.chars().take(120).collect());
+        }
+        let Some(i) = i else {
+            return;
+        };
+        let p = &self.palettes[i];
+        let in_file = p.path.as_ref().filter(|path| {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            matches!(ext.as_str(), "gpl" | "tdpal" | "json")
+        });
+        if let (false, false, Some(path), false) = (
+            p.builtin,
+            self.palette_locked(i),
+            in_file.cloned(),
+            name.is_empty(),
+        ) {
+            self.palettes[i].name = name.to_string();
+            if let Err(e) = crate::palette::save_palette(&self.palettes[i], &path) {
+                log::warn!("could not keep the name in {}: {e}", path.display());
+            }
+        }
+    }
+
+    /// A copy of palette `i` as a palette of the user's (no file), named
+    /// after it, at the end of the list.
+    pub fn duplicate_palette(&mut self, i: usize) -> Option<usize> {
+        let p = self.palettes.get(i)?;
+        let base = trf("palette.copy_name", &[("name", &self.palette_name(i))]);
+        let mut name = base.clone();
+        let mut n = 2;
+        while self
+            .palettes
+            .iter()
+            .any(|q| q.name == name && q.key.is_empty())
+        {
+            name = format!("{base} {n}");
+            n += 1;
+        }
+        let copy = crate::palette::Palette {
+            name,
+            key: "",
+            colors: p.colors.clone(),
+            builtin: false,
+            path: None,
+        };
+        self.palettes.push(copy);
+        Some(self.palettes.len() - 1)
+    }
+
+    /// Move palette `from` to `to` in the list (the Palette Manager's
+    /// order, Window > Color Palettes too); the bars keep their palettes.
+    pub fn move_palette_in_list(&mut self, from: usize, to: usize) {
+        let n = self.palettes.len();
+        if from >= n || to >= n || from == to {
+            return;
+        }
+        let p = self.palettes.remove(from);
+        self.palettes.insert(to, p);
+        let moved = |k: usize| {
+            if k == from {
+                to
+            } else if from < to && k > from && k <= to {
+                k - 1
+            } else if to < from && k >= to && k < from {
+                k + 1
+            } else {
+                k
+            }
+        };
+        for k in &mut self.locked_palettes {
+            *k = moved(*k);
+        }
+        if let Some(main) = self.visible_palettes.first().copied() {
+            // The default bar keeps its palette wherever it went.
+            if let Some(p) = self.palettes.get(moved(main)) {
+                let id = crate::settings::palette_id(p);
+                let is_default = p.key == "palette.default_cmyk";
+                self.settings.main_palette = if is_default { String::new() } else { id };
+            }
+        }
+        self.visible_palettes.clear();
+        self.rebuild_palette();
+    }
+
+    /// Clear: the document palette holds no colour (one undo step).
+    pub fn clear_document_palette(&mut self) {
+        if self.has_document() && !self.doc().palette.is_empty() {
+            self.run(Command::SetDocumentPalette { colors: Vec::new() });
+            self.doc_palette_current = None;
+        }
+    }
+
+    /// Take palette `i` of the user's out of the list (its file stays):
+    /// its bar closes; the default bar shows the default palette if it
+    /// showed this one. Built-in palettes stay.
+    pub fn delete_palette(&mut self, i: usize) {
+        let Some(p) = self.palettes.get(i) else {
+            return;
+        };
+        if p.builtin {
+            return;
+        }
+        let id = crate::settings::palette_id(p);
+        self.settings.palette_bars.retain(|b| b.palette != id);
+        if self.settings.main_palette == id {
+            self.settings.main_palette.clear();
+        }
+        self.settings.palette_names.remove(&id);
+        self.palettes.remove(i);
+        self.locked_palettes.retain(|k| *k != i);
+        for k in &mut self.locked_palettes {
+            if *k > i {
+                *k -= 1;
+            }
+        }
+        // The indices after it moved: the bars find their palettes again.
+        self.visible_palettes.clear();
+        self.rebuild_palette();
     }
 
     pub fn open_palette_file(&mut self) {
@@ -2836,15 +3593,206 @@ impl App {
             )
             .pick_file(self, |app, path| {
                 match crate::palette::load_palette(&path) {
-                    Ok(p) => {
-                        app.palettes.push(p);
-                        let i = app.palettes.len() - 1;
-                        app.visible_palettes.insert(0, i);
-                        app.rebuild_palette();
-                    }
+                    Ok(p) => app.add_palette(p),
                     Err(e) => app.status = format!("{}: {e}", path.display()),
                 }
             });
+    }
+
+    /// A palette opened from a file: it joins the list and gets a strip
+    /// of its own next to the default palette, which stays where it is.
+    /// The same file opened again takes the place of the copy already
+    /// open (its colours read anew) rather than adding a second one. The
+    /// opened palette went first, so the default palette moved to a
+    /// strip of its own and two palettes seemed to come at once (#1343).
+    pub fn add_palette(&mut self, p: crate::palette::Palette) {
+        let open = p.path.as_ref().and_then(|path| {
+            self.palettes
+                .iter()
+                .position(|q| q.path.as_ref() == Some(path))
+        });
+        let i = match open {
+            Some(i) => {
+                // A locked palette keeps its colours.
+                if !self.palette_locked(i) {
+                    self.palettes[i] = p;
+                }
+                i
+            }
+            None => {
+                self.palettes.push(p);
+                self.palettes.len() - 1
+            }
+        };
+        if !self.visible_palettes.contains(&i) {
+            if let Some(p) = self.palettes.get(i) {
+                let id = crate::settings::palette_id(p);
+                self.open_palette_bar(&id);
+            }
+        }
+        self.rebuild_palette();
+    }
+
+    /// The name New Palette suggests: "Palette 1", "Palette 2"... the
+    /// first no palette has yet.
+    pub fn next_palette_name(&self) -> String {
+        let taken = |name: &str| {
+            (0..self.palettes.len()).any(|i| {
+                self.palettes
+                    .get(i)
+                    .is_some_and(|p| crate::settings::palette_id(p) == name)
+                    || self.palette_name(i) == name
+            })
+        };
+        (1..)
+            .map(|n| trf("palette.new_default", &[("n", &n.to_string())]))
+            .find(|name| !taken(name))
+            .unwrap_or_default()
+    }
+
+    /// New Palette: an empty palette of the user's named `name` (made
+    /// unique), under My Palettes, shown at once in a bar of its own
+    /// docked at the bottom (under the bars there). Its index.
+    pub fn new_palette(&mut self, name: &str) -> Option<usize> {
+        let base = name.trim();
+        let base = if base.is_empty() {
+            self.next_palette_name()
+        } else {
+            base.to_string()
+        };
+        let taken = |app: &Self, n: &str| {
+            app.palettes
+                .iter()
+                .any(|p| crate::settings::palette_id(p) == n)
+                || n == crate::settings::DOCUMENT_PALETTE
+        };
+        let mut name = base.clone();
+        let mut k = 2;
+        while taken(self, &name) {
+            name = format!("{base} {k}");
+            k += 1;
+        }
+        self.palettes.push(crate::palette::Palette {
+            name: name.clone(),
+            key: "",
+            colors: Vec::new(),
+            builtin: false,
+            path: None,
+        });
+        let i = self.palettes.len() - 1;
+        self.open_palette_bar(&name);
+        if let Some(b) = self
+            .settings
+            .palette_bars
+            .iter_mut()
+            .find(|b| b.palette == name)
+        {
+            b.dock = crate::ui::bars::Dock::Bottom;
+        }
+        self.store_user_palettes();
+        self.palette_manager.selected = crate::ui::palette_manager::Selected::Palette(i);
+        Some(i)
+    }
+
+    /// Palette `i` takes colours dropped on it or added from the
+    /// selection: one of the user's, not locked.
+    pub fn palette_takes_colors(&self, i: usize) -> bool {
+        self.palettes.get(i).is_some_and(|p| !p.builtin) && !self.palette_locked(i)
+    }
+
+    /// Add `colors` to the user's palette `i` (those it has not got yet),
+    /// its bar shows them at once. Says whether any was added.
+    pub fn add_colors_to_palette(&mut self, i: usize, colors: &[Color]) -> bool {
+        if !self.palette_takes_colors(i) {
+            return false;
+        }
+        let named: Vec<(String, Color)> = colors
+            .iter()
+            .map(|c| (crate::ui::palette::name_of(self, *c), *c))
+            .collect();
+        let Some(p) = self.palettes.get_mut(i) else {
+            return false;
+        };
+        let mut added = false;
+        for (name, c) in named {
+            if !p.colors.iter().any(|(_, x)| *x == c) {
+                p.colors.push((name, c));
+                added = true;
+            }
+        }
+        if added {
+            if let Some(path) = p.path.clone() {
+                if let Err(e) = crate::palette::save_palette(p, &path) {
+                    log::warn!("palette {}: {e}", path.display());
+                }
+            }
+            self.store_user_palettes();
+            self.rebuild_palette();
+        }
+        added
+    }
+
+    /// The fill and outline colours of the selection join the user's
+    /// palette `i`.
+    pub fn add_selection_colors_to_palette(&mut self, i: usize) -> bool {
+        if !self.has_document() {
+            return false;
+        }
+        let mut colors = Vec::new();
+        Self::colors_of(&self.selected_shapes(), &mut colors);
+        self.add_colors_to_palette(i, &colors)
+    }
+
+    /// Keep the palettes made in TraceDraw (no file behind them) in the
+    /// preferences.
+    pub fn store_user_palettes(&mut self) {
+        self.settings.user_palettes = self
+            .palettes
+            .iter()
+            .filter(|p| !p.builtin && p.key.is_empty() && p.path.is_none())
+            .map(|p| crate::settings::UserPalette {
+                name: p.name.clone(),
+                colors: p.colors.clone(),
+            })
+            .collect();
+    }
+
+    /// The palettes made in TraceDraw, from the preferences, back in the
+    /// list (those not in it yet).
+    pub fn restore_user_palettes(&mut self) {
+        let stored = self.settings.user_palettes.clone();
+        for u in stored {
+            if u.name.is_empty()
+                || self
+                    .palettes
+                    .iter()
+                    .any(|p| crate::settings::palette_id(p) == u.name)
+            {
+                continue;
+            }
+            self.palettes.push(crate::palette::Palette {
+                name: u.name,
+                key: "",
+                colors: u.colors,
+                builtin: false,
+                path: None,
+            });
+        }
+    }
+
+    /// Palette `i` is locked: the Palette Editor shows it without changing
+    /// it.
+    pub fn palette_locked(&self, i: usize) -> bool {
+        self.locked_palettes.contains(&i)
+    }
+
+    /// The Palette Manager's padlock: lock palette `i` or unlock it.
+    pub fn toggle_palette_lock(&mut self, i: usize) {
+        if let Some(pos) = self.locked_palettes.iter().position(|k| *k == i) {
+            self.locked_palettes.remove(pos);
+        } else if i < self.palettes.len() {
+            self.locked_palettes.push(i);
+        }
     }
 
     fn colors_of(shapes: &[Shape], out: &mut Vec<Color>) {
@@ -2950,25 +3898,23 @@ impl App {
 
     // ----- step and repeat ---------------------------------------------------------------
 
+    /// The Repeat Copies values belong to the objects they were set
+    /// The values typed in the Repeat Copies docker stay as typed, for
+    /// this selection, the copies an Apply makes and any object picked
+    /// next, until they are changed again (#1198; until 0.27.0 they went
+    /// back to the defaults at every change of the selection, so a
+    /// distance typed came back as 6.35 mm after each Apply or click,
+    /// #1032).
     pub fn step_and_repeat_apply(&mut self) {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
             return;
         }
-        let Some(b) = self.selection_bounds() else {
+        let Some(step) = self.step_and_repeat_step() else {
             return;
         };
+        let (dx, dy) = (step.x, step.y);
         let sr = self.step_repeat.clone();
-        let dx = if sr.mode_x == 1 {
-            b.width() + sr.dx
-        } else {
-            sr.dx
-        };
-        let dy = if sr.mode_y == 1 {
-            b.height() + sr.dy
-        } else {
-            sr.dy
-        };
         let Some(layer) = self.active_layer() else {
             return;
         };
@@ -3380,146 +4326,23 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
         .join(", ")
 }
 
-/// How Fit Objects to Path spaces the objects along the path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FitSpacing {
-    /// Spread evenly over the whole path (after the start offset).
-    Even,
-    /// A fixed distance between the centres of neighbouring objects.
-    Distance,
+/// Past this many objects (copies included) the Fit Objects to Path
+/// preview shows each object as its box.
+pub const FIT_PREVIEW_OUTLINES: usize = 200;
+
+/// What the Fit Objects to Path preview was worked out for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FitPreviewKey {
+    settings: FitPathSettings,
+    revision: u64,
+    drawing: Option<u64>,
+    selection: Vec<ShapeId>,
 }
 
-/// The Fit Objects to Path panel's settings (millimetres, #1027).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FitPathSettings {
-    pub spacing: FitSpacing,
-    /// Distance between object centres with [`FitSpacing::Distance`].
-    pub distance: f64,
-    /// Where along the path the first object goes.
-    pub offset: f64,
-    /// Turn each object to follow the direction of the path.
-    pub rotate: bool,
-    /// Start from the other end of the path.
-    pub reverse: bool,
-}
-
-impl Default for FitPathSettings {
-    fn default() -> Self {
-        FitPathSettings {
-            spacing: FitSpacing::Even,
-            distance: 10.0,
-            offset: 0.0,
-            rotate: false,
-            reverse: false,
-        }
-    }
-}
-
-/// The move (and turn) of each object for Fit Objects to Path: the last
-/// shape is the path, the others are centred on points along its first
-/// subpath, in selection order. Empty when there is nothing to fit.
-pub fn fit_to_path_moves(shapes: &[Shape], set: &FitPathSettings) -> Vec<(ShapeId, Affine)> {
-    let Some((path_shape, objects)) = shapes.split_last() else {
-        return Vec::new();
-    };
-    if objects.is_empty() {
-        return Vec::new();
-    }
-    // The first subpath, flattened; a closed one ends where it started.
-    let mut pts: Vec<Point> = Vec::new();
-    let mut closed = false;
-    let mut done = false;
-    kurbo::flatten(
-        path_shape.page_path().elements().iter().copied(),
-        0.05,
-        |el| match el {
-            _ if done => {}
-            kurbo::PathEl::MoveTo(p) => {
-                if pts.is_empty() {
-                    pts.push(p);
-                } else {
-                    done = true;
-                }
-            }
-            kurbo::PathEl::LineTo(p) => pts.push(p),
-            kurbo::PathEl::ClosePath => {
-                if let Some(&first) = pts.first() {
-                    pts.push(first);
-                }
-                closed = true;
-                done = true;
-            }
-            _ => {}
-        },
-    );
-    pts.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
-    if pts.len() < 2 {
-        return Vec::new();
-    }
-    if set.reverse {
-        pts.reverse();
-    }
-    let mut cum = vec![0.0];
-    for w in pts.windows(2) {
-        cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
-    }
-    let total = cum.last().copied().unwrap_or(0.0);
-    if total <= 1e-9 {
-        return Vec::new();
-    }
-    let n = objects.len();
-    let offset = if set.offset.is_finite() {
-        set.offset
-    } else {
-        0.0
-    };
-    let at = |i: usize| -> f64 {
-        let d = match set.spacing {
-            FitSpacing::Even => {
-                let start = offset.clamp(0.0, total);
-                let room = total - start;
-                if closed {
-                    offset + room * i as f64 / n as f64
-                } else if n == 1 {
-                    start + room / 2.0
-                } else {
-                    start + room * i as f64 / (n as f64 - 1.0)
-                }
-            }
-            FitSpacing::Distance => offset + set.distance.max(0.0) * i as f64,
-        };
-        if closed {
-            d.rem_euclid(total)
-        } else {
-            d.clamp(0.0, total)
-        }
-    };
-    objects
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let target = at(i);
-            let k = cum
-                .partition_point(|c| *c <= target)
-                .saturating_sub(1)
-                .min(pts.len() - 2);
-            let seg = pts[k + 1] - pts[k];
-            let len = seg.hypot().max(1e-9);
-            let u = ((target - cum[k]) / len).clamp(0.0, 1.0);
-            let pos = pts[k] + seg * u;
-            let c = s.bounds().center();
-            let turn = if set.rotate {
-                Affine::rotate(seg.y.atan2(seg.x))
-            } else {
-                Affine::IDENTITY
-            };
-            (
-                s.id,
-                Affine::translate(pos.to_vec2()) * turn * Affine::translate(-c.to_vec2()),
-            )
-        })
-        .collect()
-}
+pub use crate::fit_path::{
+    FitAlign, FitCopies, FitMeasure, FitOrder, FitPathSettings, FitPlace, FitReference,
+    FitRotation, FitSpacing, FitSpin,
+};
 
 #[cfg(test)]
 mod tests {
@@ -3543,6 +4366,57 @@ mod tests {
             ShapeKind::SymbolInstance { index } => index,
             ref k => panic!("{k:?}"),
         }
+    }
+
+    /// The Repeat Copies values stay as typed: after an Apply (its copies
+    /// are selected) and for another object picked next, the same count
+    /// and distances are used until changed (#1198).
+    #[test]
+    fn step_and_repeat_values_stay_as_typed() {
+        let mut app = App::headless();
+        let rect = |x: f64| ShapeKind::Rect {
+            rect: kurbo::Rect::new(x, 0.0, x + 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        };
+        let a = app.new_shape(rect(0.0)).expect("a");
+        let b = app.new_shape(rect(100.0)).expect("b");
+        let count = |app: &App| {
+            app.doc()
+                .all_layers()
+                .map(|l| l.shapes.len())
+                .sum::<usize>()
+        };
+        let before = count(&app);
+        app.select(vec![a]);
+        app.step_repeat.copies = 3;
+        app.step_repeat.dx = 0.0;
+        app.step_repeat.dy = 20.0;
+        app.step_and_repeat_apply();
+        assert_eq!(count(&app), before + 3);
+        assert_eq!(app.selection.len(), 3);
+        // The copies are selected: the values are still the typed ones.
+        assert_eq!(
+            app.step_repeat,
+            StepRepeat {
+                copies: 3,
+                dx: 0.0,
+                dy: 20.0,
+                ..StepRepeat::default()
+            }
+        );
+        // Another object picked: the same values again.
+        app.select(vec![b]);
+        app.step_and_repeat_apply();
+        assert_eq!(count(&app), before + 6);
+        let copy = app
+            .doc()
+            .find_shape(app.selection[0])
+            .expect("copy")
+            .bounds();
+        let orig = app.doc().find_shape(b).expect("b").bounds();
+        assert!((copy.x0 - orig.x0).abs() < 1e-9);
+        assert!((copy.y0 - orig.y0 - 20.0).abs() < 1e-9);
     }
 
     /// New Symbol is one step to undo: the symbol goes with its instance.
@@ -4152,6 +5026,76 @@ mod tests {
         assert!(!ConvertMode::Rgb.can_dither() && ConvertMode::Paletted.can_dither());
     }
 
+    /// #1777: Grayscale gives a grayscale picture and CMYK a CMYK one whose
+    /// pixels show as the inks print them; RGB stays an RGB picture.
+    #[test]
+    fn convert_to_bitmap_gives_the_colour_mode_asked_for() {
+        use crate::bitmap_modes::{ConvertMode, ConvertOptions};
+        let convert = |mode| {
+            let mut app = App::headless();
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rectangle");
+            // A green no ink mix can print, so the CMYK pixels differ.
+            app.run(Command::SetFill {
+                shapes: vec![id],
+                fill: Fill::Solid(Color::rgb8(0, 255, 0)),
+            });
+            app.select(vec![id]);
+            app.convert_to_bitmap_with(&ConvertOptions {
+                dpi: 72.0,
+                mode,
+                transparent: false,
+                ..Default::default()
+            });
+            let s = app.selected_shapes().into_iter().next().expect("bitmap");
+            let ShapeKind::Bitmap { png, .. } = &s.kind else {
+                panic!("not a bitmap");
+            };
+            let info = crate::ui::status::object_info(&app);
+            (png.to_vec(), s.cmyk_bitmap, info)
+        };
+        let middle = |png: &[u8]| {
+            let img = crate::bitmap_fx::decode(png).expect("png");
+            *img.get_pixel(img.width() / 2, img.height() / 2)
+        };
+        let (rgb, rgb_cmyk, rgb_info) = convert(ConvertMode::Rgb);
+        assert!(!rgb_cmyk && !crate::bitmap_fx::png_is_gray(&rgb));
+        assert!(rgb_info.contains(&tr("convert_colors.rgb")), "{rgb_info}");
+        let (gray, gray_cmyk, gray_info) = convert(ConvertMode::Grayscale);
+        assert!(crate::bitmap_fx::png_is_gray(&gray), "a grayscale PNG");
+        assert!(!gray_cmyk);
+        assert!(
+            gray_info.contains(&tr("convert_colors.gray")),
+            "{gray_info}"
+        );
+        let g = middle(&gray);
+        assert!(g[0] == g[1] && g[1] == g[2] && g[3] == 255);
+        // 0.587 x 255 for the green.
+        assert!((g[0] as i32 - 150).abs() <= 2, "{g:?}");
+        // The exporters' decoder reads it too.
+        let pm = tiny_skia::Pixmap::decode_png(&gray).expect("decodes");
+        assert_eq!(
+            pm.pixel(pm.width() / 2, pm.height() / 2).map(|p| p.red()),
+            Some(g[0])
+        );
+        let (cmyk, cmyk_flag, cmyk_info) = convert(ConvertMode::Cmyk);
+        assert!(cmyk_flag, "marked as a CMYK picture");
+        assert!(
+            cmyk_info.contains(&tr("convert_colors.cmyk")),
+            "{cmyk_info}"
+        );
+        let (c, r) = (middle(&cmyk), middle(&rgb));
+        assert_eq!(r, image::Rgba([0, 255, 0, 255]));
+        assert_ne!(c, r, "the pixels go through the inks");
+        let expected = crate::bitmap_fx::through_cmyk(&image::RgbaImage::from_pixel(1, 1, r));
+        assert_eq!(c, *expected.get_pixel(0, 0));
+    }
+
     #[test]
     fn manual_inflate_grows_by_percent_around_the_middle() {
         let mut app = App::headless();
@@ -4243,12 +5187,15 @@ mod tests {
         app.open_docker(crate::app::DockerTab::FitToPath);
         assert!(app.open_dockers.contains(&crate::app::DockerTab::FitToPath));
         assert_eq!(app.docker_tab, crate::app::DockerTab::FitToPath);
-        // The panel draws and previews three outlines.
+        // The panel draws; it previews the three outlines once a value is
+        // entered for these objects (#1136).
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::ui::dockers2::show(&mut app, ui, crate::app::DockerTab::FitToPath);
         });
         out.textures_delta.clear();
-        assert_eq!(app.docker_preview.len(), 3);
+        assert!(app.docker_preview.is_empty());
+        app.fit_path_edited = true;
+        assert_eq!(app.fit_objects_to_path_preview().len(), 3);
         assert!(
             (centre(&app, a) - Point::new(52.0, 51.0)).hypot() < 1e-9,
             "nothing moved yet"
@@ -4267,8 +5214,8 @@ mod tests {
             spacing: FitSpacing::Distance,
             distance: 20.0,
             offset: 10.0,
-            rotate: false,
             reverse: true,
+            ..FitPathSettings::default()
         };
         app.fit_objects_to_path();
         for (id, x) in [(a, 90.0), (b, 70.0), (c, 50.0)] {
@@ -4278,6 +5225,67 @@ mod tests {
             );
         }
         assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+    }
+
+    /// The panel starts from the defaults, with no preview, for objects it
+    /// was not used on: values entered for other objects or in another
+    /// drawing are not carried over; for the same objects they stay, and
+    /// the preview shows once a value is entered (#1136).
+    #[test]
+    fn fit_objects_to_path_starts_from_the_defaults_for_other_objects() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let show = |app: &mut App| {
+            app.docker_preview.clear();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                crate::ui::dockers2::show(app, ui, crate::app::DockerTab::FitToPath);
+            });
+            out.textures_delta.clear();
+        };
+        let a = square_at(&mut app, 50.0, 50.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        app.select(vec![a, line]);
+        app.open_docker(crate::app::DockerTab::FitToPath);
+        show(&mut app);
+        assert!(app.docker_preview.is_empty(), "no preview before a value");
+        // Values entered for these objects (as the panel's fields do).
+        let entered = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            distance: 20.0,
+            offset: 30.0,
+            rotation: FitRotation::Follow,
+            reverse: true,
+            ..FitPathSettings::default()
+        };
+        app.fit_path = entered;
+        app.fit_path_edited = true;
+        show(&mut app);
+        assert_eq!(app.fit_path, entered);
+        assert_eq!(app.docker_preview.len(), 1);
+        app.fit_objects_to_path();
+        // Another object on the path: the defaults, no preview.
+        let b = square_at(&mut app, 80.0, 80.0);
+        app.select(vec![b, line]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        assert!(app.docker_preview.is_empty());
+        // Back to the first objects: the defaults too (the panel follows
+        // the objects selected, it does not remember every selection).
+        app.select(vec![a, line]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        // Another drawing with objects of the same ids.
+        app.fit_path = entered;
+        app.fit_path_edited = true;
+        show(&mut app);
+        assert_eq!(app.fit_path, entered);
+        app.new_document();
+        let a2 = square_at(&mut app, 50.0, 50.0);
+        let line2 = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        app.select(vec![a2, line2]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        assert!(app.docker_preview.is_empty());
     }
 
     /// With Rotate the objects turn with the path; on a closed path they go
@@ -4306,7 +5314,7 @@ mod tests {
             assert!((centre(&app, *id) - Point::from(p)).hypot() < 1e-6, "{p:?}");
         }
         // Turned: on the right side (going down) the 4 x 2 object stands up.
-        app.fit_path.rotate = true;
+        app.fit_path.rotation = FitRotation::Follow;
         app.fit_path.offset = 50.0;
         app.fit_objects_to_path();
         let s = app.doc().find_shape(ids[0]).expect("shape").clone();
@@ -4319,6 +5327,143 @@ mod tests {
             (r.width() - 2.0).abs() < 1e-6 && (r.height() - 4.0).abs() < 1e-6,
             "{r:?}"
         );
+    }
+
+    /// Keep originals leaves the objects where they were and places
+    /// copies; Group all objects puts what was placed in one group, which
+    /// is selected; one undo takes it all back (#1091).
+    #[test]
+    fn fit_objects_to_path_keeps_originals_and_groups() {
+        let mut app = App::headless();
+        let a = square_at(&mut app, 200.0, 0.0);
+        let b = square_at(&mut app, 210.0, 0.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        let count = |app: &App| {
+            app.doc()
+                .all_layers()
+                .map(|l| l.shapes.len())
+                .sum::<usize>()
+        };
+        let before = count(&app);
+        app.select(vec![a, b, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            keep_originals: true,
+            group: true,
+            copies: FitCopies::Count,
+            count: 4,
+            ..FitPathSettings::default()
+        };
+        app.fit_objects_to_path();
+        // The originals stay; four copies in one group.
+        assert!((centre(&app, a) - Point::new(202.0, 1.0)).hypot() < 1e-9);
+        assert!((centre(&app, b) - Point::new(212.0, 1.0)).hypot() < 1e-9);
+        assert_eq!(count(&app), before + 1);
+        assert_eq!(app.selection.len(), 1);
+        let g = app
+            .doc()
+            .find_shape(app.selection[0])
+            .expect("group")
+            .clone();
+        match &g.kind {
+            ShapeKind::Group { children } => {
+                assert_eq!(children.len(), 4);
+                let xs: Vec<f64> = children.iter().map(|c| c.bounds().center().x).collect();
+                for (x, w) in xs.iter().zip([0.0, 100.0 / 3.0, 200.0 / 3.0, 100.0]) {
+                    assert!((x - w).abs() < 1e-6, "{xs:?}");
+                }
+            }
+            k => panic!("{k:?}"),
+        }
+        assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+        app.undo();
+        assert_eq!(count(&app), before);
+        // Grouping the objects themselves.
+        app.select(vec![a, b, line]);
+        app.fit_path = FitPathSettings {
+            group: true,
+            ..FitPathSettings::default()
+        };
+        app.fit_objects_to_path();
+        assert_eq!(count(&app), before - 1);
+        let g = app.selection[0];
+        assert!(app.doc().ancestors(a).contains(&g));
+    }
+
+    /// Copies along the path: a count makes the missing objects as
+    /// copies in the original's layer, below the path's selection; the
+    /// objects placed become the selection and one undo takes it all
+    /// back. The preview is worked out once while nothing changes, and
+    /// a long run previews as boxes (#1091, #1196).
+    #[test]
+    fn fit_objects_to_path_makes_copies_in_one_step() {
+        let mut app = App::headless();
+        let a = square_at(&mut app, 200.0, 0.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        let before = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        app.select(vec![a, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            copies: FitCopies::Count,
+            count: 5,
+            place: FitPlace::Above,
+            side: 1.0,
+            ..FitPathSettings::default()
+        };
+        app.fit_path_edited = true;
+        assert_eq!(app.fit_objects_to_path_preview().len(), 5);
+        let first = app.fit_objects_to_path_preview().as_ptr();
+        assert_eq!(app.fit_objects_to_path_preview().as_ptr(), first, "kept");
+        app.fit_objects_to_path();
+        let after = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        assert_eq!(after, before + 4);
+        assert_eq!(app.selection.len(), 5);
+        assert_eq!(app.selection[0], a);
+        for (id, x) in app
+            .selection
+            .clone()
+            .iter()
+            .zip([0.0, 25.0, 50.0, 75.0, 100.0])
+        {
+            // 2 mm high, 1 mm above the line.
+            assert!(
+                (centre(&app, *id) - Point::new(x, 2.0)).hypot() < 1e-6,
+                "{x}"
+            );
+        }
+        assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+        app.undo();
+        let undone = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        assert_eq!(undone, before);
+        assert!((centre(&app, a) - Point::new(202.0, 1.0)).hypot() < 1e-6);
+        // Filling a long path: boxes instead of outlines in the preview.
+        app.select(vec![a, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            distance: 0.25,
+            copies: FitCopies::Fill,
+            ..FitPathSettings::default()
+        };
+        app.fit_path_edited = true;
+        let n = app.fit_objects_to_path_preview().len();
+        assert_eq!(n, 401);
+        assert!(app
+            .fit_objects_to_path_preview()
+            .iter()
+            .all(|p| p.elements().len() <= 6));
     }
 }
 
@@ -4376,6 +5521,205 @@ mod clip_frame_tests {
             corners: None,
         })
         .expect("a layer")
+    }
+
+    /// Ungroup takes a clip frame whose frame is a group apart into clip
+    /// frames of the group's objects, Break Apart one whose frame is a
+    /// combined curve into clip frames of its parts; the pieces come out
+    /// selected, one undo step each (#1605, #1607).
+    #[test]
+    fn clip_frames_ungroup_and_break_apart_through_their_frame() {
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        let inner = rect(&mut app, Rect::new(2.0, 2.0, 28.0, 8.0));
+        app.select(vec![a, b]);
+        app.group_selection();
+        let group = app.selection[0];
+        app.engine
+            .run(&tracedraw_core::Command::PlaceInside {
+                contents: vec![inner],
+                frame: group,
+            })
+            .expect("place inside");
+        app.select(vec![group]);
+        let count = |app: &App| app.doc().pages[0].layers[0].shapes.len();
+        assert_eq!(count(&app), 1);
+        app.ungroup_selection();
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2, "the pieces are selected");
+        for id in app.selection.clone() {
+            let s = app.doc().find_shape(id).expect("piece");
+            assert!(
+                matches!(s.kind, ShapeKind::ClipFrame { .. }),
+                "{:?}",
+                s.kind
+            );
+            assert!(!s.is_clip_frame_of_group());
+        }
+        app.undo();
+        assert_eq!(count(&app), 1);
+        assert!(app
+            .doc()
+            .find_shape(group)
+            .is_some_and(|s| s.is_clip_frame_of_group()));
+        // Combined: the frame is one curve of two parts.
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        let inner = rect(&mut app, Rect::new(2.0, 2.0, 28.0, 8.0));
+        app.select(vec![a, b]);
+        app.combine();
+        let combined = app.selection[0];
+        app.engine
+            .run(&tracedraw_core::Command::PlaceInside {
+                contents: vec![inner],
+                frame: combined,
+            })
+            .expect("place inside");
+        app.select(vec![combined]);
+        assert!(app.selected_shapes().iter().any(App::breaks_apart));
+        app.break_apart();
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2);
+        for id in app.selection.clone() {
+            let s = app.doc().find_shape(id).expect("piece");
+            assert!(
+                matches!(s.kind, ShapeKind::ClipFrame { .. }),
+                "{:?}",
+                s.kind
+            );
+            assert!(!s.breaks_into_parts());
+        }
+        app.undo();
+        assert_eq!(count(&app), 1);
+    }
+
+    /// None of the commands that take a clip frame apart (Ungroup,
+    /// Ungroup All, Break Apart, the Knife) leaves two objects of one id
+    /// in the drawing or an id twice in the selection, with contents that
+    /// hold a group (each copy's objects get ids of their own); Ungroup on
+    /// a plain group selects each object once (#1605, #1606, #1607).
+    #[test]
+    fn taking_a_clip_frame_apart_repeats_no_id() {
+        use std::collections::HashSet;
+        use tracedraw_core::geometry::Point;
+        use tracedraw_core::{Command, Shape};
+
+        fn ids_in(shapes: &[Shape], out: &mut Vec<ShapeId>) {
+            for s in shapes {
+                out.push(s.id);
+                match &s.kind {
+                    ShapeKind::Group { children } => ids_in(children, out),
+                    ShapeKind::ClipFrame { frame, contents } => {
+                        ids_in(std::slice::from_ref(frame), out);
+                        ids_in(contents, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        fn twice(ids: &[ShapeId]) -> Vec<ShapeId> {
+            let mut seen = HashSet::new();
+            ids.iter().copied().filter(|id| !seen.insert(*id)).collect()
+        }
+        fn check(app: &App, step: &str) {
+            let mut ids = Vec::new();
+            for layer in &app.doc().pages[0].layers {
+                ids_in(&layer.shapes, &mut ids);
+            }
+            let doubled = twice(&ids);
+            assert!(
+                doubled.is_empty(),
+                "{step}: ids twice in the drawing: {doubled:?}"
+            );
+            let doubled = twice(&app.selection);
+            assert!(
+                doubled.is_empty(),
+                "{step}: ids twice in the selection: {doubled:?}"
+            );
+            for id in &app.selection {
+                assert!(
+                    app.doc().find_shape(*id).is_some(),
+                    "{step}: {id:?} is selected but not in the drawing"
+                );
+            }
+        }
+        // The contents: a group of two objects and an object beside it.
+        fn contents(app: &mut App) -> Vec<ShapeId> {
+            let c1 = rect(app, Rect::new(2.0, 2.0, 6.0, 8.0));
+            let c2 = rect(app, Rect::new(22.0, 2.0, 28.0, 8.0));
+            app.select(vec![c1, c2]);
+            app.group_selection();
+            let group = app.selection[0];
+            let c3 = rect(app, Rect::new(10.0, 3.0, 20.0, 7.0));
+            vec![group, c3]
+        }
+        fn place(app: &mut App, frame: ShapeId) {
+            let contents = contents(app);
+            app.engine
+                .run(&Command::PlaceInside { contents, frame })
+                .expect("place inside");
+            app.select(vec![frame]);
+        }
+        let count = |app: &App| app.doc().pages[0].layers[0].shapes.len();
+
+        // Ungroup and Ungroup All: the frame a group.
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        app.select(vec![a, b]);
+        app.group_selection();
+        let frame = app.selection[0];
+        place(&mut app, frame);
+        check(&app, "placed");
+        app.ungroup_selection();
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2, "{:?}", app.selection);
+        check(&app, "ungroup");
+        app.undo();
+        app.select(vec![frame]);
+        app.ungroup_all();
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2, "{:?}", app.selection);
+        check(&app, "ungroup all");
+
+        // Break Apart: the frame a curve of two parts.
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        app.select(vec![a, b]);
+        app.combine();
+        let frame = app.selection[0];
+        place(&mut app, frame);
+        app.break_apart();
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2, "{:?}", app.selection);
+        check(&app, "break apart");
+
+        // The Knife: a cut through the frame.
+        let mut app = App::headless();
+        let frame = rect(&mut app, Rect::new(0.0, 0.0, 40.0, 40.0));
+        place(&mut app, frame);
+        app.select(Vec::new());
+        app.knife(Point::new(15.0, -5.0), Point::new(15.0, 45.0));
+        assert_eq!(count(&app), 2);
+        assert_eq!(app.selection.len(), 2, "{:?}", app.selection);
+        check(&app, "knife");
+
+        // A plain group: each object selected once, in the drawing's order.
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(20.0, 0.0, 30.0, 10.0));
+        app.select(vec![a, b]);
+        app.group_selection();
+        app.ungroup_selection();
+        assert_eq!(app.selection, vec![a, b]);
+        check(&app, "ungroup a group");
+        app.undo();
+        app.ungroup_all();
+        assert_eq!(app.selection, vec![a, b]);
+        check(&app, "ungroup all on a group");
     }
 
     /// The four ways of fitting contents to a frame, and the bar's
@@ -4617,6 +5961,89 @@ mod fit_page_tests {
         let before = app.engine.history_labels().0.len();
         app.fit_page_to_selection();
         assert_eq!(app.engine.history_labels().0.len(), before);
+    }
+
+    /// Autofit Page with All Pages on fits every page to its own drawing,
+    /// not only the current one, in one undo step; a page with nothing on
+    /// it keeps its size. With Current Page on only the current page
+    /// changes (#1393).
+    #[test]
+    fn autofit_with_all_pages_fits_every_page() {
+        let mut app = App::headless();
+        let first = app.page;
+        let a = rect(&mut app, Rect::new(30.0, 40.0, 80.0, 90.0));
+        app.add_page();
+        let second = app.page;
+        let b = rect(&mut app, Rect::new(10.0, 20.0, 110.0, 50.0));
+        app.add_page();
+        let empty = app.page;
+        app.goto_page(1);
+        assert_eq!(app.page, second);
+        let size = |app: &App, p| app.doc().page(p).expect("page").size;
+        let bounds = |app: &App, id| app.doc().shape_on_page(id).expect("shape").bounds();
+        let empty_size = size(&app, empty);
+        let close = |s: tracedraw_core::geometry::Size, w: f64, h: f64| {
+            (s.width - w).abs() < 1e-9 && (s.height - h).abs() < 1e-9
+        };
+
+        // Current page only: the first page keeps its A4 size.
+        let depth = app.engine.history_labels().0.len();
+        app.autofit_pages(2.0, false);
+        assert!(
+            close(size(&app, second), 104.0, 34.0),
+            "{:?}",
+            size(&app, second)
+        );
+        assert!(close(
+            size(&app, first),
+            empty_size.width,
+            empty_size.height
+        ));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        app.undo();
+
+        // All pages: each page takes its own drawing's size plus the
+        // margin and its objects move in by the margin.
+        app.autofit_pages(2.0, true);
+        assert!(
+            close(size(&app, first), 54.0, 54.0),
+            "{:?}",
+            size(&app, first)
+        );
+        assert!(
+            close(size(&app, second), 104.0, 34.0),
+            "{:?}",
+            size(&app, second)
+        );
+        assert!(close(
+            size(&app, empty),
+            empty_size.width,
+            empty_size.height
+        ));
+        for id in [a, b] {
+            let r = bounds(&app, id);
+            assert!(
+                (r.x0 - 2.0).abs() < 1e-9 && (r.y0 - 2.0).abs() < 1e-9,
+                "{r:?}"
+            );
+        }
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1, "one step");
+        app.undo();
+        assert!(close(
+            size(&app, first),
+            empty_size.width,
+            empty_size.height
+        ));
+        assert!((bounds(&app, a).x0 - 30.0).abs() < 1e-9);
+        assert!((bounds(&app, b).x0 - 10.0).abs() < 1e-9);
+
+        // Nothing drawn on any page: no step, and the status says so.
+        let mut app = App::headless();
+        app.add_page();
+        let depth = app.engine.history_labels().0.len();
+        app.autofit_pages(0.0, true);
+        assert_eq!(app.engine.history_labels().0.len(), depth);
+        assert_eq!(app.status, crate::i18n::tr("status.fit_page_nothing"));
     }
 }
 

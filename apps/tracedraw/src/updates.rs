@@ -21,6 +21,17 @@ pub const LATEST_URL: &str = concat!(
 );
 /// The release list, for when no download fits this system.
 pub const RELEASES_PAGE: &str = concat!("https://github.com/", fork_repo!(), "/releases");
+/// TraceDraw's page in the Microsoft Store (the browser version offers it
+/// on Windows).
+pub const MICROSOFT_STORE_PAGE: &str = "https://apps.microsoft.com/detail/9P50L12VHF33";
+/// TraceDraw's page in the Microsoft Store app, which Help > Updates opens
+/// in a copy installed from the Store.
+#[cfg(not(target_os = "android"))]
+pub const STORE_PAGE: &str = "ms-windows-store://pdp/?productid=9P50L12VHF33";
+/// TraceDraw's page on Google Play, which Help > Updates opens in the
+/// Android app.
+#[cfg(target_os = "android")]
+pub const STORE_PAGE: &str = "https://play.google.com/store/apps/details?id=dev.tracedraw.app";
 /// How often the check at start runs, seconds.
 pub const DAILY: u64 = 24 * 60 * 60;
 
@@ -201,6 +212,43 @@ pub fn linux_kind(
     } else {
         Kind::Tarball
     }
+}
+
+/// Whether this copy runs from the Microsoft Store's package (MSIX): it
+/// then has a package identity. The Store updates such a copy itself and
+/// its policy (10.2.10.1) refuses an app that offers downloads of code, so
+/// it never asks GitHub for a release.
+#[cfg(windows)]
+pub fn store_install() -> bool {
+    static STORE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *STORE.get_or_init(|| {
+        #[link(name = "kernel32", kind = "raw-dylib")]
+        unsafe extern "system" {
+            fn GetCurrentPackageFullName(length: *mut u32, name: *mut u16) -> i32;
+        }
+        // A packaged process answers that the empty buffer is too small;
+        // one without a package answers APPMODEL_ERROR_NO_PACKAGE (15700).
+        const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+        let mut length = 0u32;
+        // SAFETY: with a zero length and no buffer the call only reports
+        // the length the name needs, or that the process has no package; it
+        // writes nothing but `length`.
+        let status = unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) };
+        status == ERROR_INSUFFICIENT_BUFFER
+    })
+}
+
+/// The Android app is updated by Google Play, whose policy refuses an app
+/// that downloads code of its own: it never asks GitHub for a release and
+/// never asks at its first start whether to.
+#[cfg(target_os = "android")]
+pub fn store_install() -> bool {
+    true
+}
+
+#[cfg(not(any(windows, target_os = "android")))]
+pub fn store_install() -> bool {
+    false
 }
 
 /// How the running copy was installed.
@@ -545,14 +593,9 @@ impl Installer {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn download(url: &str) -> Result<Box<dyn std::io::Read + Send>, String> {
-    use ureq::tls::{RootCerts, TlsConfig};
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(std::time::Duration::from_secs(20)))
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
+        .tls_config(crate::net::tls_config())
         .build()
         .into();
     // Redirects (GitHub sends downloads to its file host) are followed
@@ -591,14 +634,9 @@ fn download(url: &str) -> Result<Box<dyn std::io::Read + Send>, String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch() -> Result<String, String> {
-    use ureq::tls::{RootCerts, TlsConfig};
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(20)))
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
+        .tls_config(crate::net::tls_config())
         .build()
         .into();
     let mut resp = agent
@@ -626,7 +664,7 @@ mod tests {
     /// version moved to 0.5.0. Each URL ends in the file's name.
     const SAMPLE: &str = r#"{
         "tag_name": "v0.5.0",
-        "html_url": "https://github.com/igtoth/tracedraw/releases/tag/v0.5.0",
+        "html_url": "https://github.com/tracedraw/tracedraw/releases/tag/v0.5.0",
         "prerelease": false,
         "draft": false,
         "assets": [

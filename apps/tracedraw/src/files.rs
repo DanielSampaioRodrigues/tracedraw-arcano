@@ -35,11 +35,188 @@ thread_local! {
 /// True in the browser build: no file system, downloads instead of saves.
 pub const WEB: bool = cfg!(target_arch = "wasm32");
 
+/// The browser's auto-backup folder: the session markers live in the
+/// page's local storage and the backups in its IndexedDB database
+/// (`web::backups`), and [`read`], [`write_creating`],
+/// [`write_creating_with`], [`exists`], [`remove`] and [`list_dir`] reach
+/// them under this path as if they were files.
+pub const WEB_BACKUP_DIR: &str = "/backup";
+
+/// True for a path in [`WEB_BACKUP_DIR`] in the browser build.
+fn in_web_backups(path: &Path) -> bool {
+    WEB && path.starts_with(WEB_BACKUP_DIR)
+}
+
+/// True in the Android app: files come and go through the system's
+/// document picker, named by [`document_path`] (`android.rs`,
+/// docs/behavior/android.md).
+pub const ANDROID: bool = cfg!(target_os = "android");
+
+/// The folder under which a document the Android picker returned is
+/// named: `/content/<its URI, escaped>/<its display name>`. The name
+/// gives the title and the type (its extension), the URI the bytes.
+pub const DOCUMENT_ROOT: &str = "/content";
+
+/// The path naming the document at the content URI `uri` shown as
+/// `name`: `/content/<uri escaped>/<name>`, so that `file_name` and
+/// `extension` work as for any file and [`read`] and [`write`] find the
+/// URI again with [`document_uri`].
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn document_path(uri: &str, name: &str) -> PathBuf {
+    let mut escaped = String::with_capacity(uri.len());
+    for c in uri.chars() {
+        match c {
+            '%' => escaped.push_str("%25"),
+            '/' => escaped.push_str("%2F"),
+            c => escaped.push(c),
+        }
+    }
+    let name = name.replace(['/', '\\'], "_");
+    let name = if name.trim().is_empty() {
+        "document".to_string()
+    } else {
+        name
+    };
+    PathBuf::from(DOCUMENT_ROOT).join(escaped).join(name)
+}
+
+/// The content URI of a path made by [`document_path`]; `None` for any
+/// other path.
+pub fn document_uri(path: &Path) -> Option<String> {
+    let rest = path
+        .to_str()?
+        .strip_prefix(DOCUMENT_ROOT)?
+        .strip_prefix('/')?;
+    let (escaped, _name) = rest.split_once('/')?;
+    let mut uri = String::with_capacity(escaped.len());
+    let mut chars = escaped.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let code: String = chars.by_ref().take(2).collect();
+            match code.as_str() {
+                "25" => uri.push('%'),
+                "2F" => uri.push('/'),
+                other => {
+                    uri.push('%');
+                    uri.push_str(other);
+                }
+            }
+        } else {
+            uri.push(c);
+        }
+    }
+    Some(uri)
+}
+
+/// True for a path made by [`document_path`].
+pub fn is_document_path(path: &Path) -> bool {
+    document_uri(path).is_some()
+}
+
+/// A picked document's name with an extension: its own, else one for the
+/// MIME type its provider gave (a photo called "IMG_1" of type image/jpeg
+/// becomes "IMG_1.jpg"), so the editor can tell the type.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn name_with_extension(name: &str, mime: &str) -> String {
+    if Path::new(name).extension().is_some() {
+        return name.to_string();
+    }
+    let ext = match mime.trim().to_ascii_lowercase().as_str() {
+        "application/pdf" => "pdf",
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        "image/webp" => "webp",
+        "image/tiff" => "tiff",
+        "image/svg+xml" => "svg",
+        "text/plain" => "txt",
+        "text/csv" => "csv",
+        "application/json" => "json",
+        "application/postscript" => "eps",
+        _ => return name.to_string(),
+    };
+    format!("{name}.{ext}")
+}
+
+/// `name` as one file name of its own inside a folder: no folder
+/// separators or control characters, no leading dots (nothing hidden, no
+/// `..`), never empty.
+pub fn safe_file_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\') || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let clean = clean.trim().trim_start_matches('.').trim();
+    if clean.is_empty() {
+        "file".into()
+    } else {
+        clean.to_string()
+    }
+}
+
+/// The MIME type the system's save picker is told for a file with the
+/// extension `ext` (any case); a plain byte stream for the formats it
+/// does not know, which keeps the name as typed.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn mime_for_extension(ext: &str) -> &'static str {
+    match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "webp" => "image/webp",
+        "tif" | "tiff" => "image/tiff",
+        "svg" => "image/svg+xml",
+        "txt" => "text/plain",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "eps" | "ps" => "application/postscript",
+        _ => "application/octet-stream",
+    }
+}
+
+/// The folder the Save Drawing dialog starts in when the platform fixes
+/// it: the Android app's documents folder; `None` elsewhere (the last
+/// folder used, Documents or home).
+pub fn save_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        let dir = android_documents_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!("cannot create {}: {e}", dir.display());
+        }
+        return Some(dir);
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+/// Where the Android app saves drawings and exports: its own folder under
+/// the shared storage (`Android/data/<package>/files`, which file managers
+/// show), set by `android_main`; the settings folder when it is missing.
+#[cfg(target_os = "android")]
+fn android_documents_dir() -> PathBuf {
+    std::env::var_os("TRACEDRAW_DOCUMENTS_DIR")
+        .map(PathBuf::from)
+        .or_else(crate::settings::config_dir)
+        .unwrap_or_else(|| PathBuf::from("/sdcard/Download"))
+}
+
 /// The path naming the same file however it was reached (links, `.`
 /// and `..`); the absolute path when that fails (the file is gone);
 /// `path` as it is in a browser.
 pub fn canonical(path: &Path) -> PathBuf {
-    if WEB {
+    if WEB || is_document_path(path) {
         return path.to_path_buf();
     }
     std::fs::canonicalize(path)
@@ -78,6 +255,11 @@ pub fn plain_path(path: &Path) -> PathBuf {
 /// Read a whole file (or an uploaded one in a browser).
 pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let path = path.as_ref();
+    #[cfg(target_arch = "wasm32")]
+    if in_web_backups(path) {
+        return crate::web::backups::read(path)
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound));
+    }
     if WEB {
         return STORE
             .with(|s| s.borrow().get(path).cloned())
@@ -87,6 +269,10 @@ pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
                     format!("{} is not available in the browser", path.display()),
                 )
             });
+    }
+    #[cfg(target_os = "android")]
+    if let Some(uri) = document_uri(path) {
+        return crate::android::documents::read(&uri);
     }
     std::fs::read(path)
 }
@@ -98,15 +284,24 @@ pub fn read_to_string(path: impl AsRef<Path>) -> std::io::Result<String> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
 }
 
-/// Write a whole file; in a browser, download it under the path's name.
+/// Write a whole file; in a browser, download it under the path's name
+/// (or keep it in memory, under [`MEMORY_ROOT`]).
 pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
     let path = path.as_ref();
+    if in_memory(path) {
+        store(path, bytes.as_ref().to_vec());
+        return Ok(());
+    }
     if WEB {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "download".into());
         return download(&name, bytes.as_ref());
+    }
+    #[cfg(target_os = "android")]
+    if let Some(uri) = document_uri(path) {
+        return crate::android::documents::write(&uri, bytes.as_ref());
     }
     std::fs::write(path, bytes)
 }
@@ -118,7 +313,9 @@ pub fn write_with(
     fill: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let path = path.as_ref();
-    if WEB {
+    // A download, or a document the Android picker returned: gathered,
+    // then handed over whole.
+    if WEB || is_document_path(path) {
         let mut bytes = Vec::new();
         fill(&mut bytes)?;
         return write(path, bytes);
@@ -131,15 +328,21 @@ pub fn write_with(
 /// Write a file as `fill` makes it, creating its folder first
 /// (auto-backups). It is written under a `.part` name and renamed when
 /// complete, so a write cut short never leaves half a file under the
-/// real name. Nothing happens in a browser.
+/// real name. In a browser only the auto-backup folder
+/// ([`WEB_BACKUP_DIR`]) is written.
 pub fn write_creating_with(
     path: impl AsRef<Path>,
     fill: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if in_web_backups(path) {
+        let mut bytes = Vec::new();
+        fill(&mut bytes)?;
+        return write_creating(path, bytes);
+    }
     if WEB {
         return Ok(());
     }
-    let path = path.as_ref();
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -172,13 +375,28 @@ pub fn copy(from: impl AsRef<Path>, to: impl AsRef<Path>) -> std::io::Result<()>
     std::fs::copy(from, to).map(|_| ())
 }
 
-/// True when a file exists on disk (never in a browser).
+/// True when a file exists on disk (never in a browser). A document the
+/// Android picker returned counts as existing: the system holds it and
+/// asked about replacing it already.
 pub fn exists(path: impl AsRef<Path>) -> bool {
-    !WEB && path.as_ref().is_file()
+    let path = path.as_ref();
+    #[cfg(target_arch = "wasm32")]
+    if in_web_backups(path) {
+        return crate::web::backups::exists(path);
+    }
+    if WEB {
+        return false;
+    }
+    (ANDROID && is_document_path(path)) || path.is_file()
 }
 
-/// Write a file, creating its folder first (auto-backups).
+/// Write a file, creating its folder first (auto-backups). In a browser
+/// only the auto-backup folder ([`WEB_BACKUP_DIR`]) is written.
 pub fn write_creating(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    #[cfg(target_arch = "wasm32")]
+    if in_web_backups(path.as_ref()) {
+        return crate::web::backups::write(path.as_ref(), bytes.as_ref());
+    }
     if WEB {
         return Ok(());
     }
@@ -188,29 +406,290 @@ pub fn write_creating(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::i
     std::fs::write(path, bytes)
 }
 
-/// Delete a file (nothing in a browser).
+/// Delete a file (in a browser, only in the auto-backup folder and the
+/// folders kept in memory).
 pub fn remove(path: impl AsRef<Path>) -> std::io::Result<()> {
+    #[cfg(target_arch = "wasm32")]
+    if in_web_backups(path.as_ref()) {
+        crate::web::backups::remove(path.as_ref());
+        return Ok(());
+    }
+    if in_memory(path.as_ref()) {
+        forget(path.as_ref());
+    }
     if WEB {
         return Ok(());
     }
     std::fs::remove_file(path)
 }
 
-/// Choose a folder (desktop only; `None` when cancelled or in a browser).
-pub fn pick_folder() -> Option<PathBuf> {
-    #[cfg(not(target_arch = "wasm32"))]
+/// The kind of system the app runs on, where what a dialog can do
+/// depends on it (#1399).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Desktop,
+    Web,
+    Android,
+}
+
+impl Platform {
+    /// The platform of this build.
+    pub const fn current() -> Platform {
+        if WEB {
+            Platform::Web
+        } else if ANDROID {
+            Platform::Android
+        } else {
+            Platform::Desktop
+        }
+    }
+}
+
+/// The places where the desktop asks for a folder (#1399).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderUse {
+    /// The Export docker's folder: the assets are written into it.
+    ExportAssets,
+    /// File > Package: the drawing, its pictures and fonts.
+    Package,
+    /// Font Manager > Add Folder: its fonts are read.
+    FontFolder,
+    /// Print Merge's pictures folder: the pictures cells name are read.
+    MergePictures,
+    /// Picture Mosaic's library: its pictures are read.
+    MosaicLibrary,
+    /// Options > Text > Spelling, More dictionaries: Hunspell files read.
+    DictionaryFolder,
+    /// Options > Save, the backup made before saving.
+    BackupFolder,
+    /// Options > Save, the auto-backups.
+    AutoBackupFolder,
+}
+
+impl FolderUse {
+    #[cfg(test)]
+    pub const ALL: [FolderUse; 8] = [
+        FolderUse::ExportAssets,
+        FolderUse::Package,
+        FolderUse::FontFolder,
+        FolderUse::MergePictures,
+        FolderUse::MosaicLibrary,
+        FolderUse::DictionaryFolder,
+        FolderUse::BackupFolder,
+        FolderUse::AutoBackupFolder,
+    ];
+
+    /// What the folder button does in this build.
+    pub fn action(self) -> FolderAction {
+        folder_action(self, Platform::current())
+    }
+
+    /// The tip that says why the button does what it does in this build
+    /// (an i18n key), `None` on the desktop.
+    pub fn tip(self) -> Option<&'static str> {
+        folder_tip(self, Platform::current())
+    }
+}
+
+/// What a folder button does (#1399).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderAction {
+    /// The system's folder dialog ([`pick_folder`]), on the desktop.
+    PickFolder(FolderToken),
+    /// The files are written into one zip file, downloaded in a browser
+    /// and saved where the system's save picker says on Android.
+    SaveZip,
+    /// The files a folder would hold are chosen with the open picker,
+    /// several at once.
+    OpenFiles,
+    /// No folder can be chosen: the button is greyed, with this tip (an
+    /// i18n key) saying why.
+    Unavailable(&'static str),
+}
+
+/// Leave to show the system's folder dialog: only [`folder_action`] makes
+/// one, and only for the desktop, so no dialog asks for a folder in a
+/// browser or on Android, where none can be picked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderToken(());
+
+/// What the button of `place` does on `platform`. The desktop picks a
+/// folder; elsewhere a folder that is only written into becomes one zip
+/// file, a folder that is read becomes several picked files, and the
+/// backup folders, which the app writes on its own later, cannot be
+/// chosen.
+pub fn folder_action(place: FolderUse, platform: Platform) -> FolderAction {
+    use FolderAction::*;
+    use FolderUse::*;
+    match (platform, place) {
+        (Platform::Desktop, _) => PickFolder(FolderToken(())),
+        // File > Package is greyed in a browser (#1416).
+        (Platform::Web, Package) => Unavailable("package.desktop_only"),
+        (_, ExportAssets | Package) => SaveZip,
+        (_, FontFolder | MergePictures | MosaicLibrary | DictionaryFolder) => OpenFiles,
+        (Platform::Web, BackupFolder | AutoBackupFolder) => Unavailable("folder.backup_web"),
+        (Platform::Android, BackupFolder | AutoBackupFolder) => {
+            Unavailable("folder.backup_android")
+        }
+    }
+}
+
+/// The tip of the button of `place` on `platform` (an i18n key): why it
+/// writes a zip, opens files or is greyed; `None` where it picks a folder.
+pub fn folder_tip(place: FolderUse, platform: Platform) -> Option<&'static str> {
+    let web = platform == Platform::Web;
+    match folder_action(place, platform) {
+        FolderAction::PickFolder(_) => None,
+        FolderAction::SaveZip if web => Some("folder.zip_web"),
+        FolderAction::SaveZip => Some("folder.zip_android"),
+        FolderAction::OpenFiles if web => Some("folder.files_web"),
+        FolderAction::OpenFiles => Some("folder.files_android"),
+        FolderAction::Unavailable(key) => Some(key),
+    }
+}
+
+/// Choose a folder with the system's dialog (`None` when cancelled). The
+/// token comes from [`folder_action`], which gives one on the desktop only.
+pub fn pick_folder(token: FolderToken) -> Option<PathBuf> {
+    let _ = token;
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new().pick_folder()
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         None
     }
 }
 
+/// Where the browser keeps the files of [`gather`] and [`zip_written`]
+/// in memory, as if they were in folders.
+const MEMORY_ROOT: &str = "/memory";
+
+/// True for a path the browser keeps in memory ([`MEMORY_ROOT`]).
+fn in_memory(path: &Path) -> bool {
+    WEB && path.starts_with(MEMORY_ROOT)
+}
+
+/// The folder for the app's own work called `name`: under
+/// [`MEMORY_ROOT`] in a browser, in the temporary folder elsewhere.
+fn work_dir(name: &str) -> PathBuf {
+    if WEB {
+        return PathBuf::from(MEMORY_ROOT).join(name);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::temp_dir()
+            .join(format!("tracedraw-work-{}", std::process::id()))
+            .join(name)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        PathBuf::from(MEMORY_ROOT).join(name)
+    }
+}
+
+/// Empty `dir` (made when missing; in a browser, its files forgotten).
+fn clear_dir(dir: &Path) -> std::io::Result<()> {
+    if WEB {
+        STORE.with(|s| s.borrow_mut().retain(|p, _| !p.starts_with(dir)));
+        return Ok(());
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir)
+}
+
+/// Picked files put together in a folder of their own called `key`, for
+/// code that reads a folder (Print Merge's pictures, the Picture Mosaic
+/// library) where no folder can be picked (#1399): copies in the
+/// temporary folder (Android), kept in memory in a browser. The files
+/// the folder held before are gone. The folder.
+pub fn gather(key: &str, paths: &[PathBuf]) -> std::io::Result<PathBuf> {
+    let dir = work_dir(&format!("picked-{}", safe_file_name(key)));
+    clear_dir(&dir)?;
+    for path in paths {
+        let name = path
+            .file_name()
+            .map(|n| safe_file_name(&n.to_string_lossy()))
+            .unwrap_or_else(|| "file".into());
+        let bytes = read(path)?;
+        write(dir.join(name), bytes)?;
+    }
+    Ok(dir)
+}
+
+/// True for a folder [`gather`] made.
+pub fn is_gathered(dir: &Path) -> bool {
+    dir.parent() == Some(work_dir("").as_path())
+        && dir
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("picked-"))
+}
+
+/// The files `fill` writes (with [`write`]) into the folder it is given,
+/// as one zip file with each file under `top/`, in name order (#1399):
+/// where no folder can be picked, the files go where the user says as
+/// one file. The folder is gone afterwards.
+pub fn zip_written(top: &str, fill: impl FnOnce(&Path)) -> Result<Vec<u8>, String> {
+    static WORK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = WORK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let work = work_dir(&format!("zip-{n}"));
+    let top = safe_file_name(top);
+    let dir = work.join(&top);
+    clear_dir(&dir).map_err(|e| e.to_string())?;
+    fill(&dir);
+    let mut files = list_dir(&dir);
+    files.sort();
+    let entries: Result<Vec<(String, Vec<u8>)>, String> = files
+        .iter()
+        .map(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            read(p)
+                .map(|b| (format!("{top}/{name}"), b))
+                .map_err(|e| e.to_string())
+        })
+        .collect();
+    let _ = clear_dir(&work);
+    if !WEB {
+        let _ = std::fs::remove_dir_all(&work);
+    }
+    zip_entries(&entries?)
+}
+
+/// Named files as one zip file (deflated).
+pub fn zip_entries(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    use std::io::Write as _;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, data) in entries {
+        zip.start_file(name.as_str(), options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(data).map_err(|e| e.to_string())?;
+    }
+    zip.finish()
+        .map(|c| c.into_inner())
+        .map_err(|e| e.to_string())
+}
+
 /// The files directly inside a folder (not its subfolders), in no
-/// particular order; empty when it cannot be read or in a browser.
+/// particular order; empty when it cannot be read, and in a browser
+/// outside the auto-backup folder and the folders kept in memory.
 pub fn list_dir(path: impl AsRef<Path>) -> Vec<PathBuf> {
+    #[cfg(target_arch = "wasm32")]
+    if in_web_backups(path.as_ref()) {
+        return crate::web::backups::list(path.as_ref());
+    }
+    if in_memory(path.as_ref()) {
+        let dir = path.as_ref();
+        return STORE.with(|s| {
+            s.borrow()
+                .keys()
+                .filter(|p| p.parent() == Some(dir))
+                .cloned()
+                .collect()
+        });
+    }
     if WEB {
         return Vec::new();
     }
@@ -290,6 +769,14 @@ pub fn create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
         return Ok(());
     }
     std::fs::create_dir(path)
+}
+
+/// Make a folder and the folders it is in (nothing in a browser).
+pub fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path)
 }
 
 /// Rename a file or folder; one already called `to` is never replaced
@@ -427,13 +914,142 @@ pub fn forget(path: &Path) {
     });
 }
 
-/// Run the dialogs that finished since the last frame (browser). Called
-/// once per frame before the interface is drawn.
+/// Run the dialogs that finished since the last frame (browser, Android).
+/// Called once per frame before the interface is drawn.
 pub fn run_finished(app: &mut App) {
+    #[cfg(target_os = "android")]
+    android_pickers::run_answers(app);
     let jobs: Vec<(Job, PathBuf)> = FINISHED.with(|f| std::mem::take(&mut *f.borrow_mut()));
     for (job, path) in jobs {
         job(app, path.clone());
         forget(&path);
+    }
+}
+
+/// The Android document picker (Storage Access Framework): a request
+/// shows the system's picker and remembers what to do with the answer,
+/// which the activity hands back on a later frame (`android.rs`).
+#[cfg(target_os = "android")]
+mod android_pickers {
+    use super::*;
+    use crate::android::documents;
+
+    /// What a request waits to do with the picked documents.
+    enum Waiting {
+        /// Run with the first document.
+        One(Job),
+        /// Run with every document.
+        Many(Box<dyn FnOnce(&mut App, Vec<PathBuf>)>),
+        /// Keep the first document for [`take_picked`] under this key.
+        Into(String),
+    }
+
+    thread_local! {
+        static WAITING: RefCell<HashMap<i32, Waiting>> = RefCell::new(HashMap::new());
+        /// Documents other apps opened with TraceDraw, waiting for no
+        /// dialog or question to be up (#646).
+        static OPENED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn wait(request: i32, waiting: Waiting) {
+        WAITING.with(|w| {
+            w.borrow_mut().insert(request, waiting);
+        });
+    }
+
+    fn forget(request: i32) {
+        WAITING.with(|w| {
+            w.borrow_mut().remove(&request);
+        });
+    }
+
+    /// Show the picker for one document (or several) and run `then`.
+    fn pick(multiple: bool, then: Waiting) {
+        let request = documents::next_request();
+        wait(request, then);
+        if !documents::open(request, multiple) {
+            forget(request);
+        }
+    }
+
+    pub fn pick_one(then: Job) {
+        pick(false, Waiting::One(then));
+    }
+
+    pub fn pick_many(then: Box<dyn FnOnce(&mut App, Vec<PathBuf>)>) {
+        pick(true, Waiting::Many(then));
+    }
+
+    pub fn pick_into(key: String) {
+        pick(false, Waiting::Into(key));
+    }
+
+    /// Show the picker for a place to save `name` and run `then` with the
+    /// document made there.
+    pub fn save(name: &str, then: Job) {
+        let ext = Path::new(name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let request = documents::next_request();
+        wait(request, Waiting::One(then));
+        if !documents::create(request, mime_for_extension(ext), name) {
+            forget(request);
+        }
+    }
+
+    /// The paths of an answer's documents.
+    fn paths(answer: &documents::Answer) -> Vec<PathBuf> {
+        answer
+            .picked
+            .iter()
+            .map(|p| document_path(&p.uri, &name_with_extension(&p.name, &p.mime)))
+            .collect()
+    }
+
+    /// Run what the answers that arrived since the last frame were
+    /// waited for; a cancelled picker runs nothing.
+    pub fn run_answers(app: &mut App) {
+        for answer in documents::take_answers() {
+            // Documents another app opened with TraceDraw: each in a tab
+            // of its own, as a file manager's do on the desktop (#646).
+            if answer.request == documents::OPENED_ELSEWHERE {
+                let paths = paths(&answer);
+                OPENED.with(|o| o.borrow_mut().extend(paths));
+                continue;
+            }
+            let Some(waiting) = WAITING.with(|w| w.borrow_mut().remove(&answer.request)) else {
+                continue;
+            };
+            let paths = paths(&answer);
+            match waiting {
+                Waiting::One(job) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        job(app, path);
+                    }
+                }
+                Waiting::Many(job) => {
+                    if !paths.is_empty() {
+                        job(app, paths);
+                    }
+                }
+                Waiting::Into(key) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        PICKED.with(|p| {
+                            p.borrow_mut().insert(key, path);
+                        });
+                    }
+                }
+            }
+        }
+        // Like the files later starts hand over on the desktop, they wait
+        // while a dialog or a question is up or the drawings are closing
+        // (instance::open_handed_over).
+        if !app.closing_all && matches!(app.dialog, crate::ui::dialogs::Dialog::None) {
+            for path in OPENED.with(|o| std::mem::take(&mut *o.borrow_mut())) {
+                app.open_path(path);
+            }
+        }
     }
 }
 
@@ -475,6 +1091,23 @@ pub fn take_picked(key: &str) -> Option<PathBuf> {
     PICKED.with(|p| p.borrow_mut().remove(key))
 }
 
+/// Whether the file picker of a browser with this user agent, platform
+/// and number of touch points filters by the system's file types rather
+/// than by extension: on an iPhone, iPad or iPod and on Android, where
+/// files whose extension the system has no type for (`.cdr`, `.cmx`,
+/// `.tdraw` ...) can be greyed out once the page names the extensions it
+/// takes (#1311). iPadOS browsers call themselves a Mac ("MacIntel",
+/// "Macintosh") with a touch screen; Macs have no touch points. Desktop
+/// browsers match the extensions themselves and keep the filters.
+#[cfg(any(target_arch = "wasm32", test))]
+pub fn picker_filters_by_type(user_agent: &str, platform: &str, touch_points: u32) -> bool {
+    let named = ["iPhone", "iPad", "iPod"]
+        .iter()
+        .any(|d| user_agent.contains(d) || platform.starts_with(d));
+    let mac = platform == "MacIntel" || user_agent.contains("Macintosh");
+    named || (mac && touch_points > 1) || user_agent.contains("Android")
+}
+
 /// A file dialog description, the same in both builds.
 #[derive(Debug, Clone, Default)]
 pub struct Dialog {
@@ -503,7 +1136,7 @@ impl Dialog {
     /// Pick a file and run `then` with its path: at once natively, on a
     /// later frame in a browser.
     pub fn pick_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf) + 'static) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         if let Some(path) = self.native_pick() {
             then(app, path);
         }
@@ -512,12 +1145,18 @@ impl Dialog {
             let _ = app;
             self.web_pick(Box::new(then));
         }
+        // The system's document picker; `then` runs when it answers.
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            android_pickers::pick_one(Box::new(then));
+        }
     }
 
-    /// Pick one or more files and run `then` with their paths (one file in
-    /// a browser).
+    /// Pick one or more files and run `then` with their paths: at once
+    /// natively, on a later frame in a browser and on Android.
     pub fn pick_files(self, app: &mut App, then: impl FnOnce(&mut App, Vec<PathBuf>) + 'static) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             let mut d = rfd::FileDialog::new();
             for (name, exts) in &self.filters {
@@ -529,13 +1168,23 @@ impl Dialog {
             }
         }
         #[cfg(target_arch = "wasm32")]
-        self.pick_file(app, move |app, p| then(app, vec![p]));
+        {
+            let _ = app;
+            self.web_pick_many(Box::new(then));
+        }
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            android_pickers::pick_many(Box::new(then));
+        }
     }
 
     /// Pick a file and keep its path for [`take_picked`]`(key)`.
     pub fn pick_into(self, key: &str) {
         let key = key.to_string();
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(target_os = "android")]
+        android_pickers::pick_into(key);
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         if let Some(path) = self.native_pick() {
             PICKED.with(|p| {
                 p.borrow_mut().insert(key, path);
@@ -552,23 +1201,73 @@ impl Dialog {
     }
 
     /// Choose where to save and run `then` with that path; `then` writes
-    /// with [`write`]. In a browser there is no dialog: the path is
-    /// `/download/<file name>` and the write becomes a download.
-    pub fn save_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf)) {
+    /// with [`write`]. A save dialog natively, at once; in a browser there
+    /// is no dialog: the path is `/download/<file name>` and the write
+    /// becomes a download; on Android the system's picker asks where,
+    /// and `then` runs on a later frame with the document it made.
+    pub fn save_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf) + 'static) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            let name = self.suggested_name();
+            android_pickers::save(&name, Box::new(then));
+        }
+        #[cfg(not(target_os = "android"))]
         if let Some(path) = self.save_path() {
             then(app, path);
         }
     }
 
+    /// Save `bytes` where the user says ([`Dialog::save_file`]); a
+    /// failed write is told on the status line.
+    pub fn save_bytes(self, app: &mut App, bytes: impl Into<Vec<u8>>) {
+        let bytes = bytes.into();
+        self.save_file(app, move |app, path| {
+            if let Err(e) = write(&path, bytes) {
+                app.status = e.to_string();
+            }
+        });
+    }
+
+    /// The name offered for a new file: the one set, with the first
+    /// filter's extension when it has none.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    fn suggested_name(&self) -> String {
+        let name = self
+            .file_name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "drawing".into());
+        if Path::new(&name).extension().is_some() {
+            return name;
+        }
+        match self.filters.first().and_then(|(_, exts)| exts.first()) {
+            Some(ext) => format!("{name}.{ext}"),
+            None => name,
+        }
+    }
+
     /// The path to save to, or `None` when the user cancels: a save
     /// dialog natively, `/download/<file name>` in a browser (write it with
-    /// [`write`] to download it).
+    /// [`write`] to download it). On Android, where the picker answers on
+    /// a later frame (see [`Dialog::save_file`]), the few callers that
+    /// need a path at once get one in the app's own documents folder.
     pub fn save_path(self) -> Option<PathBuf> {
         if WEB {
             let name = self.file_name.unwrap_or_else(|| "download".into());
             return Some(PathBuf::from("/download").join(name));
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(target_os = "android")]
+        {
+            let name = self.suggested_name();
+            let dir = android_documents_dir();
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                log::warn!("cannot create {}: {e}", dir.display());
+            }
+            log::info!("saved without a picker to {}", dir.display());
+            return Some(dir.join(name));
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             let mut d = rfd::FileDialog::new();
             for (name, exts) in &self.filters {
@@ -584,7 +1283,7 @@ impl Dialog {
         None
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     fn native_pick(&self) -> Option<PathBuf> {
         let mut d = rfd::FileDialog::new();
         for (name, exts) in &self.filters {
@@ -594,13 +1293,59 @@ impl Dialog {
         d.pick_file()
     }
 
+    /// The browser's picker for several files: each is kept under
+    /// `/upload/<name>` and `then` runs with them all on a later frame.
+    #[cfg(target_arch = "wasm32")]
+    fn web_pick_many(self, then: Box<dyn FnOnce(&mut App, Vec<PathBuf>)>) {
+        let d = self.web_dialog();
+        wasm_bindgen_futures::spawn_local(async move {
+            let Some(handles) = d.pick_files().await else {
+                return;
+            };
+            let mut paths = Vec::new();
+            for handle in handles {
+                let path = PathBuf::from("/upload").join(handle.file_name());
+                store(&path, handle.read().await);
+                paths.push(path);
+            }
+            if paths.is_empty() {
+                return;
+            }
+            // One job for them all, under the first path; the others are
+            // forgotten once it ran.
+            let first = paths[0].clone();
+            let job: Job = Box::new(move |app: &mut App, _| {
+                let rest = paths.clone();
+                then(app, paths);
+                for p in rest.iter().skip(1) {
+                    forget(p);
+                }
+            });
+            FINISHED.with(|f| f.borrow_mut().push((job, first)));
+            crate::web::request_repaint();
+        });
+    }
+
+    /// The browser's picker with the filters, where they help.
+    #[cfg(target_arch = "wasm32")]
+    fn web_dialog(&self) -> rfd::AsyncFileDialog {
+        let mut d = rfd::AsyncFileDialog::new();
+        // On an iPhone, iPad or Android device the picker can grey out
+        // every file whose extension the system does not know, `.cdr`
+        // among them, as soon as the page names the extensions it takes:
+        // there it offers every file instead (#1311).
+        if !crate::web::picker_filters_by_type() {
+            for (name, exts) in &self.filters {
+                let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
+                d = d.add_filter(name, &exts);
+            }
+        }
+        d
+    }
+
     #[cfg(target_arch = "wasm32")]
     fn web_pick(self, then: Job) {
-        let mut d = rfd::AsyncFileDialog::new();
-        for (name, exts) in &self.filters {
-            let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
-            d = d.add_filter(name, &exts);
-        }
+        let d = self.web_dialog();
         wasm_bindgen_futures::spawn_local(async move {
             let Some(handle) = d.pick_file().await else {
                 return;
@@ -630,6 +1375,32 @@ fn download(_name: &str, _bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    /// iPhones and iPads (also iPadOS, which calls itself a Mac with a
+    /// touch screen) and Android browsers get a picker without extension
+    /// filters; Macs, Windows and Linux keep them (#1311).
+    #[test]
+    fn mobile_browsers_pick_without_extension_filters() {
+        let ipad_os = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+        assert!(picker_filters_by_type(ipad_os, "MacIntel", 5));
+        assert!(!picker_filters_by_type(ipad_os, "MacIntel", 0), "a Mac");
+        let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15";
+        assert!(picker_filters_by_type(iphone, "iPhone", 5));
+        let old_ipad = "Mozilla/5.0 (iPad; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15";
+        assert!(picker_filters_by_type(old_ipad, "iPad", 5));
+        let android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36";
+        assert!(picker_filters_by_type(android, "Linux armv8l", 5));
+        let firefox_android =
+            "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0";
+        assert!(picker_filters_by_type(firefox_android, "Linux aarch64", 5));
+        let windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36";
+        assert!(
+            !picker_filters_by_type(windows, "Win32", 10),
+            "a touch laptop"
+        );
+        let linux = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
+        assert!(!picker_filters_by_type(linux, "Linux x86_64", 0));
+    }
+
     #[test]
     fn picked_paths_are_taken_once() {
         PICKED.with(|p| {
@@ -657,6 +1428,260 @@ mod tests {
         run_finished(&mut app);
         assert_eq!(app.status, "got /upload/t.txt");
         assert!(STORE.with(|s| s.borrow().get(&path).is_none()));
+    }
+
+    /// A document the Android picker returned is named by its URI and its
+    /// display name: the name gives the title and the type, the URI comes
+    /// back whole from the path, however many slashes and percent signs
+    /// it holds (#893).
+    #[test]
+    fn a_picked_document_keeps_its_uri_and_shows_its_name() {
+        let uri = "content://com.android.externalstorage.documents/document/primary%3ADrawings%2Flogo.cdr";
+        let path = document_path(uri, "logo.cdr");
+        assert_eq!(path.file_name().unwrap(), "logo.cdr");
+        assert_eq!(path.extension().unwrap(), "cdr");
+        assert!(path.starts_with(DOCUMENT_ROOT));
+        assert!(is_document_path(&path));
+        assert_eq!(document_uri(&path).as_deref(), Some(uri));
+        assert_eq!(canonical(&path), path);
+        // A name with a slash cannot become a folder; an empty one is named.
+        assert_eq!(
+            document_path(uri, "a/b.svg").file_name().unwrap(),
+            "a_b.svg"
+        );
+        assert_eq!(document_path(uri, "  ").file_name().unwrap(), "document");
+        // Ordinary paths are not documents.
+        assert_eq!(document_uri(Path::new("/home/a/content/x")), None);
+        assert_eq!(document_uri(Path::new("/content")), None);
+        assert!(!is_document_path(Path::new("/tmp/logo.cdr")));
+    }
+
+    /// A picked document without an extension gets one from its MIME
+    /// type, and the save picker is told the type of the name it saves.
+    #[test]
+    fn names_and_mime_types_follow_each_other() {
+        assert_eq!(name_with_extension("IMG_1", "image/jpeg"), "IMG_1.jpg");
+        assert_eq!(
+            name_with_extension("report", "application/pdf"),
+            "report.pdf"
+        );
+        assert_eq!(name_with_extension("logo.cdr", ""), "logo.cdr");
+        assert_eq!(
+            name_with_extension("notes", "application/x-unknown"),
+            "notes"
+        );
+        assert_eq!(mime_for_extension("pdf"), "application/pdf");
+        assert_eq!(mime_for_extension(".SVG"), "image/svg+xml");
+        assert_eq!(mime_for_extension("tdraw"), "application/octet-stream");
+        assert_eq!(mime_for_extension("cdr"), "application/octet-stream");
+        assert_eq!(
+            Dialog::new()
+                .add_filter("PDF", &["pdf"])
+                .set_file_name("Graphic1")
+                .suggested_name(),
+            "Graphic1.pdf"
+        );
+        assert_eq!(
+            Dialog::new()
+                .add_filter("PDF", &["pdf"])
+                .set_file_name("Graphic1.pdf")
+                .suggested_name(),
+            "Graphic1.pdf"
+        );
+        assert_eq!(Dialog::new().suggested_name(), "drawing");
+    }
+
+    /// Every folder button has one behaviour per platform (#1399): the
+    /// desktop picks a folder; a browser and Android never do (no folder
+    /// can be picked there), and get a zip for folders written into, the
+    /// open picker for folders read, or a greyed button with its reason.
+    #[test]
+    fn folder_buttons_pick_a_folder_on_the_desktop_only() {
+        use FolderAction::*;
+        use FolderUse::*;
+        for place in FolderUse::ALL {
+            assert!(
+                matches!(folder_action(place, Platform::Desktop), PickFolder(_)),
+                "{place:?}"
+            );
+            assert_eq!(folder_tip(place, Platform::Desktop), None, "{place:?}");
+            for platform in [Platform::Web, Platform::Android] {
+                let action = folder_action(place, platform);
+                assert!(!matches!(action, PickFolder(_)), "{place:?} {platform:?}");
+                // Never silent: each says why it does what it does.
+                let tip = folder_tip(place, platform).expect("a tip");
+                assert!(crate::i18n::has_english(tip), "{tip}");
+                if let Unavailable(key) = action {
+                    assert_eq!(tip, key);
+                }
+            }
+        }
+        let table = |platform| {
+            FolderUse::ALL
+                .iter()
+                .map(|&p| folder_action(p, platform))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            table(Platform::Web),
+            [
+                SaveZip,
+                Unavailable("package.desktop_only"),
+                OpenFiles,
+                OpenFiles,
+                OpenFiles,
+                OpenFiles,
+                Unavailable("folder.backup_web"),
+                Unavailable("folder.backup_web"),
+            ]
+        );
+        assert_eq!(
+            table(Platform::Android),
+            [
+                SaveZip,
+                SaveZip,
+                OpenFiles,
+                OpenFiles,
+                OpenFiles,
+                OpenFiles,
+                Unavailable("folder.backup_android"),
+                Unavailable("folder.backup_android"),
+            ]
+        );
+        assert_eq!(
+            folder_tip(ExportAssets, Platform::Web),
+            Some("folder.zip_web")
+        );
+        assert_eq!(
+            folder_tip(MosaicLibrary, Platform::Android),
+            Some("folder.files_android")
+        );
+        assert_eq!(Platform::current(), Platform::Desktop);
+        assert!(matches!(FontFolder.action(), PickFolder(_)));
+    }
+
+    /// The app's sources outside this file, as (path, text).
+    fn app_sources() -> Vec<(String, String)> {
+        fn walk(dir: &Path, out: &mut Vec<(String, String)>) {
+            let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().collect();
+            entries.sort_by_key(|e| e.path());
+            for e in entries {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push((
+                        p.display().to_string(),
+                        std::fs::read_to_string(&p).unwrap(),
+                    ));
+                }
+            }
+        }
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut out = Vec::new();
+        walk(&src, &mut out);
+        out.retain(|(p, _)| !p.ends_with("files.rs"));
+        out
+    }
+
+    /// No dialog shows the folder dialog on its own: each one asks
+    /// `FolderUse::action` for the running platform, whose leave to pick
+    /// a folder (the token [`pick_folder`] takes) exists on the desktop
+    /// only. The six dialogs of #1399 and Options all go through it.
+    #[test]
+    fn no_dialog_picks_a_folder_without_asking_the_platform() {
+        let sources = app_sources();
+        for (path, text) in &sources {
+            assert!(!text.contains("pick_folder()"), "{path}");
+            assert!(!text.contains("folder_action("), "{path}");
+            assert!(!text.contains("FolderToken"), "{path}");
+            if text.contains("files::pick_folder(") {
+                assert!(text.contains(".action()"), "{path}");
+            }
+        }
+        for name in [
+            "export_docker.rs",
+            "package_dialog.rs",
+            "font_manager.rs",
+            "print_merge_docker.rs",
+            "options.rs",
+            "picture_mosaic_docker.rs",
+            "export_assets.rs",
+        ] {
+            let (_, text) = sources
+                .iter()
+                .find(|(p, _)| p.ends_with(&format!("/{name}")))
+                .expect(name);
+            assert!(text.contains("FolderUse::"), "{name}");
+        }
+    }
+
+    /// Presets, masks, scripts, macro exports and palettes are saved
+    /// through `Dialog::save_file`, which asks the system's save picker
+    /// on Android (#1402): `save_path`, which saves there without asking,
+    /// is left to Export as PDF's Browse, which Android does not show.
+    #[test]
+    fn saves_ask_where_on_android() {
+        for (path, text) in app_sources() {
+            if text.contains(".save_path()") {
+                assert!(path.ends_with("publish_pdf.rs"), "{path}");
+            }
+        }
+    }
+
+    /// Picked files gathered into a folder of their own read like any
+    /// folder (Print Merge's pictures, the Picture Mosaic library), and a
+    /// new pick replaces the files of the last (#1399).
+    #[test]
+    fn picked_files_gather_into_a_folder() {
+        let src = std::env::temp_dir().join(format!("tracedraw-gather-src-{}", std::process::id()));
+        std::fs::create_dir_all(&src).unwrap();
+        let (a, b) = (src.join("a.png"), src.join("b c.jpg"));
+        std::fs::write(&a, [1u8, 2]).unwrap();
+        std::fs::write(&b, [3u8]).unwrap();
+        let dir = gather("test pictures", &[a.clone(), b.clone()]).unwrap();
+        assert!(is_gathered(&dir), "{}", dir.display());
+        assert!(!is_gathered(&src));
+        let mut names: Vec<String> = list_dir(&dir)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.png", "b c.jpg"]);
+        assert_eq!(read(dir.join("a.png")).unwrap(), [1, 2]);
+        let again = gather("test pictures", std::slice::from_ref(&b)).unwrap();
+        assert_eq!(again, dir);
+        assert_eq!(list_dir(&dir).len(), 1);
+        assert!(gather("test pictures", &[src.join("missing.png")]).is_err());
+        let _ = std::fs::remove_dir_all(&src);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The files written into the folder `zip_written` gives come back as
+    /// one zip, each under the top folder, in name order; the folder is
+    /// gone afterwards (#1399).
+    #[test]
+    fn written_files_come_back_as_one_zip() {
+        let mut seen = PathBuf::new();
+        let zip = zip_written("Flyer", |dir| {
+            seen = dir.to_path_buf();
+            write(dir.join("b.svg"), "<svg/>").unwrap();
+            write(dir.join("a.png"), [9u8; 4]).unwrap();
+        })
+        .unwrap();
+        assert!(!seen.exists(), "{}", seen.display());
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).unwrap();
+        let names: Vec<String> = archive
+            .file_names()
+            .map(|n| n.unwrap().to_string())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(sorted, ["Flyer/a.png", "Flyer/b.svg"]);
+        let mut svg = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("Flyer/b.svg").unwrap(), &mut svg)
+            .unwrap();
+        assert_eq!(svg, "<svg/>");
     }
 
     #[test]

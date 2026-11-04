@@ -39,14 +39,30 @@ pub fn welcome_screen(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.separator();
-    ui.add_space(12.0);
-    match app.welcome_tab {
-        WelcomeTab::GetStarted => get_started(app, ui),
-        WelcomeTab::Workspace => workspace(app, ui),
-        WelcomeTab::News => news(ui),
-        WelcomeTab::Learn => learn(ui),
-        WelcomeTab::Templates => templates(app, ui),
+    // Get Started keeps its buttons in place: only its list of recent
+    // documents scrolls, in the window's remaining height (#1383).
+    if app.welcome_tab == WelcomeTab::GetStarted {
+        ui.add_space(12.0);
+        get_started(app, ui);
+        return;
     }
+    // The page of the other tabs scrolls under the tab row (a small
+    // window), with the wheel and a scroll bar (#1288); each tab keeps its
+    // own place.
+    egui::ScrollArea::vertical()
+        .id_salt(("welcome_page", format!("{:?}", app.welcome_tab)))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add_space(12.0);
+            match app.welcome_tab {
+                WelcomeTab::GetStarted => {}
+                WelcomeTab::Workspace => workspace(app, ui),
+                WelcomeTab::News => news(ui),
+                WelcomeTab::Learn => learn(ui),
+                WelcomeTab::Templates => templates(app, ui),
+            }
+            ui.add_space(12.0);
+        });
 }
 
 fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String) -> bool {
@@ -101,7 +117,7 @@ fn get_started(app: &mut App, ui: &mut Ui) {
                 ui,
                 icons::Action::New,
                 tr("welcome.new_document"),
-                "Ctrl+N".into(),
+                crate::shortcuts::shown("Ctrl+N".into()),
             ) {
                 app.request_new_document();
             }
@@ -145,10 +161,33 @@ fn get_started(app: &mut App, ui: &mut Ui) {
                 ui.label(egui::RichText::new(tr("welcome.no_recent")).color(Tokens::text_dim()));
             }
             ui.add_space(4.0);
-            for p in recent {
-                if recent_row(app, ui, &p) {
-                    app.open_path(p.clone());
-                    app.show_welcome = false;
+            // The list has a scroll area of its own, as tall as the window
+            // leaves under the heading, less the Clear button and a margin
+            // (#1383); the heading, the button and the left column stay put.
+            let clear = if recent.is_empty() {
+                0.0
+            } else {
+                ui.spacing().interact_size.y + ui.spacing().item_spacing.y
+            };
+            let height = (ui.available_height() - clear - 12.0).max(RECENT_ROW.y);
+            let mut actions = Vec::new();
+            egui::ScrollArea::vertical()
+                .id_salt("welcome_recent_list")
+                .max_height(height)
+                .auto_shrink([true, true])
+                .show(ui, |ui| {
+                    for p in &recent {
+                        actions.push((recent_row(app, ui, p), p));
+                    }
+                });
+            for (action, p) in actions {
+                match action {
+                    RecentAction::None => {}
+                    RecentAction::Open => {
+                        app.open_path(p.clone());
+                        app.show_welcome = false;
+                    }
+                    RecentAction::Remove => app.remove_recent(p),
                 }
             }
             if !app.settings.recent_files.is_empty()
@@ -163,25 +202,50 @@ fn get_started(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// What a click on a recent document's row asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecentAction {
+    None,
+    Open,
+    /// Take it off the list (the x on the row, or the row's right-click
+    /// menu), #1152.
+    Remove,
+}
+
+/// The id of the recent documents row of `path`.
+pub(crate) fn recent_row_id(path: &std::path::Path) -> egui::Id {
+    egui::Id::new(("welcome_recent_row", path))
+}
+
+/// The id of the x that takes `path` off the recent documents list.
+pub(crate) fn remove_recent_id(path: &std::path::Path) -> egui::Id {
+    egui::Id::new(("welcome_recent_remove", path))
+}
+
 /// One recent drawing: its thumbnail (a blank page when it has none), its
-/// name and folder. True when clicked; a missing file is greyed out.
-fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
-    const ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
+/// name and folder; a missing file is greyed out. While the pointer is on
+/// the row an x at its right takes it off the list, as does Remove from
+/// List in its right-click menu (#1152).
+/// The size of a recent document's row.
+const RECENT_ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
+
+fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> RecentAction {
+    const ROW: egui::Vec2 = RECENT_ROW;
     const THUMB: egui::Vec2 = egui::vec2(64.0, 48.0);
-    let exists = path.exists();
+    const X: f32 = 20.0;
+    // Asked of the disk on a worker thread: a drawing on a share that does
+    // not answer never holds the window (#1388).
+    let exists = crate::file_presence::exists(path, Some(ui.ctx()));
     let thumb = if exists {
         app.recent_thumbnail(ui.ctx(), path)
     } else {
         None
     };
-    let sense = if exists {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, resp) = ui.allocate_exact_size(ROW, sense);
+    let (rect, _) = ui.allocate_exact_size(ROW, egui::Sense::hover());
+    let resp = ui.interact(rect, recent_row_id(path), egui::Sense::click());
+    let on_row = ui.rect_contains_pointer(rect);
     let painter = ui.painter();
-    if exists && resp.hovered() {
+    if exists && on_row {
         painter.rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let frame = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), THUMB);
@@ -207,8 +271,10 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    // A document the Android picker returned has a URI, not a folder.
     let folder = path
         .parent()
+        .filter(|_| !crate::files::is_document_path(path))
         .map(|d| d.display().to_string())
         .unwrap_or_default();
     let text_x = frame.right() + 10.0;
@@ -217,21 +283,69 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
     } else {
         Tokens::text_dim()
     };
-    painter.text(
+    // The texts stop short of the x.
+    let clip =
+        egui::Rect::from_min_max(rect.min, egui::pos2(rect.right() - X - 8.0, rect.bottom()));
+    let texts = painter.with_clip_rect(clip);
+    texts.text(
         egui::pos2(text_x, frame.top() + 6.0),
         egui::Align2::LEFT_TOP,
         name,
         egui::FontId::proportional(13.0),
         color,
     );
-    painter.text(
+    texts.text(
         egui::pos2(text_x, frame.top() + 26.0),
         egui::Align2::LEFT_TOP,
         folder,
         egui::FontId::proportional(11.0),
         Tokens::text_dim(),
     );
-    resp.rich_tip(path.display().to_string()).clicked()
+    let mut action = RecentAction::None;
+    // The x shows only while the pointer is on the row; added after the
+    // row, it takes the click before the row does.
+    if on_row {
+        let xr = egui::Rect::from_center_size(
+            egui::pos2(rect.right() - X / 2.0 - 4.0, rect.center().y),
+            egui::vec2(X, X),
+        );
+        let x = ui
+            .interact(xr, remove_recent_id(path), egui::Sense::click())
+            .rich_tip(crate::ui::tips::keyed("welcome.remove_recent"));
+        let p = ui.painter();
+        if x.hovered() {
+            p.rect_filled(xr, 3.0, Tokens::border());
+        }
+        let c = xr.center();
+        let s = egui::Stroke::new(
+            1.5,
+            if x.hovered() {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            },
+        );
+        p.line_segment([c + egui::vec2(-4.0, -4.0), c + egui::vec2(4.0, 4.0)], s);
+        p.line_segment([c + egui::vec2(-4.0, 4.0), c + egui::vec2(4.0, -4.0)], s);
+        if x.clicked() {
+            action = RecentAction::Remove;
+        }
+    }
+    resp.context_menu(|ui| {
+        if ui
+            .button(tr("welcome.remove_recent"))
+            .rich_tip(crate::ui::tips::keyed("welcome.remove_recent"))
+            .clicked()
+        {
+            action = RecentAction::Remove;
+            ui.close();
+        }
+    });
+    let resp = resp.rich_tip(path.display().to_string());
+    if action == RecentAction::None && exists && resp.clicked() {
+        action = RecentAction::Open;
+    }
+    action
 }
 
 fn workspace(app: &mut App, ui: &mut Ui) {
@@ -395,4 +509,145 @@ fn templates(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One frame of the Welcome Screen in a window 1200 x 600; the top of
+    /// the New Document button's title as drawn.
+    fn run(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> Option<f32> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 600.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| welcome_screen(app, ui));
+        });
+        out.textures_delta.clear();
+        let title = tr("welcome.new_document");
+        out.shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.text() == title => Some(t.pos.y),
+            _ => None,
+        })
+    }
+
+    /// #1288: recent documents below the window are reached with the
+    /// wheel.
+    #[test]
+    fn the_recent_documents_scroll_into_view() {
+        if crate::files::WEB {
+            return;
+        }
+        let mut app = App::headless();
+        app.show_welcome = true;
+        app.welcome_tab = WelcomeTab::GetStarted;
+        let paths: Vec<std::path::PathBuf> = (0..30)
+            .map(|i| std::path::PathBuf::from(format!("/no/such/folder/drawing-{i}.tdraw")))
+            .collect();
+        app.settings.recent_files = paths.clone();
+        let ctx = crate::theme::ui_context();
+        run(&ctx, &mut app, Vec::new());
+        run(&ctx, &mut app, Vec::new());
+        let last = paths.last().expect("a path");
+        let bottom = |ctx: &egui::Context| {
+            ctx.read_response(recent_row_id(last))
+                .expect("the last row is laid out")
+                .rect
+                .bottom()
+        };
+        let before = bottom(&ctx);
+        assert!(before > 600.0, "{before}");
+        run(
+            &ctx,
+            &mut app,
+            vec![egui::Event::PointerMoved(egui::pos2(600.0, 300.0))],
+        );
+        for _ in 0..40 {
+            run(
+                &ctx,
+                &mut app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, -10.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        for _ in 0..30 {
+            run(&ctx, &mut app, Vec::new());
+        }
+        let after = bottom(&ctx);
+        assert!(after <= 600.0, "the last row ends at {after}");
+    }
+
+    /// #1383: only the list of recent documents scrolls; the New and Open
+    /// buttons and the list's heading stay where they are, and the wheel
+    /// over the buttons scrolls nothing.
+    #[test]
+    fn only_the_recent_documents_scroll() {
+        if crate::files::WEB {
+            return;
+        }
+        let mut app = App::headless();
+        app.show_welcome = true;
+        app.welcome_tab = WelcomeTab::GetStarted;
+        let paths: Vec<std::path::PathBuf> = (0..30)
+            .map(|i| std::path::PathBuf::from(format!("/no/such/folder/drawing-{i}.tdraw")))
+            .collect();
+        app.settings.recent_files = paths.clone();
+        let ctx = crate::theme::ui_context();
+        run(&ctx, &mut app, Vec::new());
+        let new_at = run(&ctx, &mut app, Vec::new()).expect("the New Document button");
+        let row = |ctx: &egui::Context, p: &std::path::Path| {
+            ctx.read_response(recent_row_id(p))
+                .expect("the row is laid out")
+                .rect
+        };
+        let first = row(&ctx, &paths[0]);
+        let wheel = |ctx: &egui::Context, app: &mut App, at: egui::Pos2| {
+            run(ctx, app, vec![egui::Event::PointerMoved(at)]);
+            let mut new_at = None;
+            for _ in 0..40 {
+                new_at = run(
+                    ctx,
+                    app,
+                    vec![egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Line,
+                        delta: egui::vec2(0.0, -10.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
+            }
+            for _ in 0..30 {
+                new_at = run(ctx, app, Vec::new());
+            }
+            new_at
+        };
+        // The wheel over the buttons moves neither them nor the list.
+        let at = wheel(&ctx, &mut app, egui::pos2(120.0, 150.0));
+        assert_eq!(at, Some(new_at));
+        assert_eq!(row(&ctx, &paths[0]), first);
+        // The wheel over the list scrolls it to its last row, inside the
+        // window, and the buttons stay.
+        let at = wheel(&ctx, &mut app, first.center());
+        assert_eq!(at, Some(new_at));
+        let last = row(&ctx, paths.last().expect("a path"));
+        assert!(
+            last.bottom() <= 600.0,
+            "the last row ends at {}",
+            last.bottom()
+        );
+        assert!(row(&ctx, &paths[0]).top() < first.top());
+        // The list starts under its heading and never above it: its clip
+        // keeps the rows off the heading.
+        assert!(first.top() > new_at - 20.0);
+    }
 }
