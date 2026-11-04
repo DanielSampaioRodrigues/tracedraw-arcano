@@ -81,6 +81,16 @@ seleção** ou **Importar arquivo**), o **Prompt** e ladrilhos de **Estilo** e
 **Inserir no desenho**, depois clique em **Gerar**. Os resultados ficam no
 painel; clique em um para inseri-lo.
 
+## O painel Assistente {#assistant}
+
+O painel [[docker.assistant]] (Janela > Painéis) é uma conversa com o serviço
+de texto configurado acima, trabalhando no desenho aberto. Peça com suas
+palavras ("centralize o título", "deixe o texto da lombada em 9 pt", "quais
+fontes este arquivo usa?"): o assistente lê o desenho e a seleção, olha a
+página, mede as fontes, roda scripts e confere o resultado, como um app de IA
+faz pelo servidor MCP. Cada mudança é um passo de Desfazer. **Parar** encerra
+depois do passo em andamento; **Nova conversa** recomeça. Ctrl+Enter envia.
+
 ## Outros comandos de IA {#other}
 
 - [[menu.bitmaps > menu.bitmaps.remove_background]] mantém o assunto de uma

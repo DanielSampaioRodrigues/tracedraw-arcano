@@ -19,6 +19,10 @@
 mod fork;
 mod ai;
 mod studio;
+mod capa;
+mod biblioteca;
+mod imposicao;
+mod assistente;
 mod ai_image;
 mod anchors;
 #[cfg(target_os = "android")]
@@ -935,7 +939,7 @@ impl eframe::App for Shell {
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         // Pictures from the image service (AI Generate).
-        if app.poll_ai_image() | app.poll_studio() {
+        if app.poll_ai_image() | app.poll_studio() | app.poll_assistente() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }

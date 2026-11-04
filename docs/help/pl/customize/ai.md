@@ -76,6 +76,16 @@ kolorów**. U dołu ustaw liczbę **Obrazów** (od 1 do 4) i opcję **Wstaw do
 rysunku**, a następnie kliknij **Generuj**. Wyniki pozostają w panelu; kliknij
 jeden z nich, aby go wstawić.
 
+## The Assistant panel {#assistant}
+
+The [[docker.assistant]] panel (Window > Panels) is a conversation with the
+text service set up above that works on the open drawing. Ask in your own
+words ("center the title", "make the spine text 9 pt", "which fonts does this
+file use?"): the assistant reads the drawing and the selection, looks at the
+page, measures fonts, runs scripts and checks the result, as an AI app does
+through the MCP server. Every change is one undo step. **Stop** ends it after
+the step under way; **New Conversation** starts over. Ctrl+Enter sends.
+
 ## Inne polecenia AI {#other}
 
 - [[menu.bitmaps > menu.bitmaps.remove_background]] zachowuje główny motyw

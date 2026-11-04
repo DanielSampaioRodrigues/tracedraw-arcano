@@ -31,6 +31,8 @@ impl TemplateState {
     pub fn new() -> Self {
         let mut list = templates::built_in();
         list.extend(templates::user_templates(user_dir()));
+        // Arcano edition: the house templates of the library's folder.
+        list.extend(templates::user_templates(crate::biblioteca::templates_dir()));
         TemplateState {
             search: String::new(),
             mine: None,

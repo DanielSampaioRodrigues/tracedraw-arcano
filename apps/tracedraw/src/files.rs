@@ -464,11 +464,14 @@ pub enum FolderUse {
     BackupFolder,
     /// Options > Save, the auto-backups.
     AutoBackupFolder,
+    /// Arcano edition: the house library's synced folder (read and
+    /// written later on its own).
+    HouseLibrary,
 }
 
 impl FolderUse {
     #[cfg(test)]
-    pub const ALL: [FolderUse; 8] = [
+    pub const ALL: [FolderUse; 9] = [
         FolderUse::ExportAssets,
         FolderUse::Package,
         FolderUse::FontFolder,
@@ -477,6 +480,7 @@ impl FolderUse {
         FolderUse::DictionaryFolder,
         FolderUse::BackupFolder,
         FolderUse::AutoBackupFolder,
+        FolderUse::HouseLibrary,
     ];
 
     /// What the folder button does in this build.
@@ -525,6 +529,7 @@ pub fn folder_action(place: FolderUse, platform: Platform) -> FolderAction {
         (Platform::Desktop, _) => PickFolder(FolderToken(())),
         // File > Package is greyed in a browser (#1416).
         (Platform::Web, Package) => Unavailable("package.desktop_only"),
+        (_, HouseLibrary) => Unavailable("library.desktop_only"),
         (_, ExportAssets | Package) => SaveZip,
         (_, FontFolder | MergePictures | MosaicLibrary | DictionaryFolder) => OpenFiles,
         (Platform::Web, BackupFolder | AutoBackupFolder) => Unavailable("folder.backup_web"),
@@ -1533,6 +1538,7 @@ mod tests {
                 OpenFiles,
                 Unavailable("folder.backup_web"),
                 Unavailable("folder.backup_web"),
+                Unavailable("library.desktop_only"),
             ]
         );
         assert_eq!(
@@ -1546,6 +1552,7 @@ mod tests {
                 OpenFiles,
                 Unavailable("folder.backup_android"),
                 Unavailable("folder.backup_android"),
+                Unavailable("library.desktop_only"),
             ]
         );
         assert_eq!(

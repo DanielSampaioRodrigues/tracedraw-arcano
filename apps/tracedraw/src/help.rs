@@ -108,6 +108,8 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::FontManager(_) => "text/fonts#font-manager",
         Dialog::PaletteEditor(_) => "color/palettes#palette-editor",
         Dialog::NewDocument(_) => "get-started/new-document",
+        Dialog::Capa(_) => "get-started/new-document",
+        Dialog::Impos(_) => "printing/booklet",
         Dialog::About => "welcome/about-and-updates#about",
         Dialog::GithubOpen(_) => "get-started/github#open",
         Dialog::GithubSave(_) => "get-started/github#save",
@@ -223,6 +225,7 @@ pub fn docker_topic(t: DockerTab) -> &'static str {
         DockerTab::Export => "web-graphics/export-docker",
         DockerTab::Comments => "objects/comments",
         DockerTab::AiGenerate => "customize/ai#generate",
+        DockerTab::Assistente => "customize/ai#assistant",
         DockerTab::Effects => "effects/effects-docker",
     }
 }

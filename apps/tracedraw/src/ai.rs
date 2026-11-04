@@ -586,7 +586,7 @@ fn retry_message(error: &str) -> String {
 
 /// The headers that carry the key (and, for the Messages API, its
 /// version), with the JSON content type.
-fn headers(prefs: &AiPrefs, key: &str) -> Vec<(String, String)> {
+pub(crate) fn headers(prefs: &AiPrefs, key: &str) -> Vec<(String, String)> {
     let key = key.trim();
     let mut headers = vec![("content-type".to_string(), "application/json".to_string())];
     match prefs.provider {

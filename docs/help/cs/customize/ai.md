@@ -76,6 +76,16 @@ Dole nastavte počet **obrázků** (1 až 4) a **Vložit do kresby** a pak
 klikněte na **Generovat**. Výsledky zůstanou v panelu; kliknutím na jeden jej
 vložíte.
 
+## The Assistant panel {#assistant}
+
+The [[docker.assistant]] panel (Window > Panels) is a conversation with the
+text service set up above that works on the open drawing. Ask in your own
+words ("center the title", "make the spine text 9 pt", "which fonts does this
+file use?"): the assistant reads the drawing and the selection, looks at the
+page, measures fonts, runs scripts and checks the result, as an AI app does
+through the MCP server. Every change is one undo step. **Stop** ends it after
+the step under way; **New Conversation** starts over. Ctrl+Enter sends.
+
 ## Další příkazy AI {#other}
 
 - [[menu.bitmaps > menu.bitmaps.remove_background]] ponechá hlavní motiv

@@ -129,10 +129,20 @@ pub struct Shelf {
     pub dragging: Option<u64>,
     /// Item thumbnails and the pixel size they were drawn at.
     pub thumbs: HashMap<u64, (u32, egui::TextureHandle)>,
+    /// Arcano edition: when the shelf file was last read or written, so
+    /// that a change another computer synced is read again (see
+    /// `biblioteca.rs`).
+    stamp: std::cell::Cell<Option<std::time::SystemTime>>,
+    /// When the file was last looked at.
+    looked: Option<web_time::Instant>,
 }
 
 /// Where the shelf is kept (desktop).
 fn path() -> Option<PathBuf> {
+    // Arcano edition: the house library's folder, when one is chosen.
+    if let Some(p) = crate::biblioteca::shelf_file() {
+        return Some(p);
+    }
     crate::settings::config_dir().map(|d| d.join("shelf.json"))
 }
 
@@ -227,6 +237,7 @@ impl Shelf {
     /// it is missing or unreadable).
     pub fn load_from(&mut self, p: &Path) {
         self.loaded = true;
+        self.stamp.set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
         let too_big = std::fs::metadata(p).is_ok_and(|m| m.len() > MAX_FILE);
         let items = if too_big {
             log::warn!("the shelf file {} is too large to read", p.display());
@@ -308,7 +319,32 @@ impl Shelf {
             .ok_or_else(|| std::io::Error::other("the shelf could not be written"))?;
         let tmp = p.with_extension("json.tmp");
         crate::files::write_creating(&tmp, bytes)?;
-        std::fs::rename(&tmp, p)
+        std::fs::rename(&tmp, p)?;
+        self.stamp.set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        Ok(())
+    }
+
+    /// Arcano edition: read the shelf again from where it is kept now.
+    pub fn reload(&mut self) {
+        self.loaded = false;
+        self.ensure_loaded();
+    }
+
+    /// Arcano edition: read the shelf file again when another computer
+    /// changed it (looked at every two seconds while the docker shows).
+    pub fn follow_file(&mut self) {
+        if cfg!(test) || crate::files::WEB {
+            return;
+        }
+        if self.looked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
+            return;
+        }
+        self.looked = Some(web_time::Instant::now());
+        let Some(p) = path() else { return };
+        let now = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+        if now.is_some() && now != self.stamp.get() && self.renaming.is_none() && self.dragging.is_none() {
+            self.load_from(&p);
+        }
     }
 
     pub fn index_of(&self, uid: u64) -> Option<usize> {
