@@ -134,7 +134,7 @@ pub struct Shelf {
     /// `biblioteca.rs`).
     stamp: std::cell::Cell<Option<std::time::SystemTime>>,
     /// When the file was last looked at.
-    looked: Option<std::time::Instant>,
+    looked: Option<web_time::Instant>,
 }
 
 /// Where the shelf is kept (desktop).
@@ -339,7 +339,7 @@ impl Shelf {
         if self.looked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
             return;
         }
-        self.looked = Some(std::time::Instant::now());
+        self.looked = Some(web_time::Instant::now());
         let Some(p) = path() else { return };
         let now = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
         if now.is_some() && now != self.stamp.get() && self.renaming.is_none() && self.dragging.is_none() {

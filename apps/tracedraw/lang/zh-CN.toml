@@ -7568,3 +7568,4 @@ assist.stopped = "已停止。" # mt
 assist.too_many = "已在 {n} 步后停止。再次提出请求以继续。" # mt
 assist.working = "正在处理..." # mt
 assist.looked = "查看了绘图" # mt
+library.desktop_only = "内部资料库需要桌面版，可在其中选择同步文件夹。" # mt

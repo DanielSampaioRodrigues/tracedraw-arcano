@@ -130,14 +130,18 @@ pub fn header(app: &mut crate::app::App, ui: &mut egui::Ui) {
     ui.label(egui::RichText::new(shown).color(crate::theme::Tokens::text_dim()))
         .rich_tip(crate::ui::tips::pair("library.where", "library.where_desc"));
     ui.horizontal_wrapped(|ui| {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        let action = crate::files::FolderUse::HouseLibrary.action();
+        let can = matches!(action, crate::files::FolderAction::PickFolder(_));
+        let tip = crate::files::FolderUse::HouseLibrary.tip().unwrap_or("library.choose_desc");
         if ui
-            .button(tr("library.choose"))
-            .rich_tip(crate::ui::tips::pair("library.choose", "library.choose_desc"))
+            .add_enabled(can, egui::Button::new(tr("library.choose")))
+            .rich_tip(crate::ui::tips::pair("library.choose", tip))
             .clicked()
         {
-            if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                app.set_library_folder(p.display().to_string());
+            if let crate::files::FolderAction::PickFolder(token) = action {
+                if let Some(p) = crate::files::pick_folder(token) {
+                    app.set_library_folder(p.display().to_string());
+                }
             }
         }
         if dir().is_some()

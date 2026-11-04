@@ -7568,3 +7568,4 @@ assist.stopped = "توقف." # mt
 assist.too_many = "توقف بعد {n} خطوة. اطلب مجددًا للمتابعة." # mt
 assist.working = "جارٍ العمل..." # mt
 assist.looked = "نظر إلى الرسم" # mt
+library.desktop_only = "تحتاج مكتبة الدار إلى نسخة سطح المكتب، حيث يمكن اختيار مجلد متزامن." # mt

@@ -7568,3 +7568,4 @@ assist.stopped = "Fermato." # mt
 assist.too_many = "Fermato dopo {n} passi. Chiedi di nuovo per continuare." # mt
 assist.working = "Al lavoro..." # mt
 assist.looked = "ha guardato il disegno" # mt
+library.desktop_only = "La libreria della casa richiede la versione desktop, dove si sceglie una cartella sincronizzata." # mt

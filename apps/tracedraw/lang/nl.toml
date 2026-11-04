@@ -7568,3 +7568,4 @@ assist.stopped = "Gestopt." # mt
 assist.too_many = "Gestopt na {n} stappen. Vraag opnieuw om door te gaan." # mt
 assist.working = "Bezig..." # mt
 assist.looked = "heeft de tekening bekeken" # mt
+library.desktop_only = "De huisbibliotheek heeft de desktopversie nodig, waar een gesynchroniseerde map kan worden gekozen." # mt

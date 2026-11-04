@@ -7568,3 +7568,4 @@ assist.stopped = "Dihentikan." # mt
 assist.too_many = "Dihentikan setelah {n} langkah. Minta lagi untuk melanjutkan." # mt
 assist.working = "Sedang bekerja..." # mt
 assist.looked = "melihat gambar" # mt
+library.desktop_only = "Pustaka bersama memerlukan versi desktop, tempat folder tersinkron dapat dipilih." # mt

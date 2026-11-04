@@ -7568,3 +7568,4 @@ assist.stopped = "Zastaveno." # mt
 assist.too_many = "Zastaveno po {n} krocích. Pro pokračování se zeptejte znovu." # mt
 assist.working = "Pracuji..." # mt
 assist.looked = "prohlédl si kresbu" # mt
+library.desktop_only = "Knihovna domu potřebuje verzi pro počítač, kde lze zvolit synchronizovanou složku." # mt

@@ -7568,3 +7568,4 @@ assist.stopped = "停止しました。" # mt
 assist.too_many = "{n} 手順で停止しました。続けるには再度依頼してください。" # mt
 assist.working = "作業中..." # mt
 assist.looked = "図面を確認しました" # mt
+library.desktop_only = "共有ライブラリにはデスクトップ版が必要です。そこで同期フォルダーを選べます。" # mt

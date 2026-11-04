@@ -7568,3 +7568,4 @@ assist.stopped = "已停止。" # mt
 assist.too_many = "已在 {n} 步後停止。再次提出要求以繼續。" # mt
 assist.working = "處理中..." # mt
 assist.looked = "查看了繪圖" # mt
+library.desktop_only = "內部資料庫需要桌面版，可在其中選擇同步資料夾。" # mt

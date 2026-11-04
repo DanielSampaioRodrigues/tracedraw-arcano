@@ -440,7 +440,7 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                         ui.label(t);
                     }
                     Linha::Ferramenta { nome, ok, resumo } => {
-                        let mark = if *ok { "\u{2713}" } else { "\u{2717}" };
+                        let mark = if *ok { "\u{00B7}" } else { "!" };
                         let line = if resumo.is_empty() { format!("{mark} {nome}") } else { format!("{mark} {nome}: {resumo}") };
                         ui.label(egui::RichText::new(line).small().color(crate::theme::Tokens::text_dim()));
                     }

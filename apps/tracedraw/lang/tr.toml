@@ -7568,3 +7568,4 @@ assist.stopped = "Durduruldu." # mt
 assist.too_many = "{n} adımdan sonra durduruldu. Devam etmek için yeniden isteyin." # mt
 assist.working = "Çalışıyor..." # mt
 assist.looked = "çizime baktı" # mt
+library.desktop_only = "Ev kütüphanesi, eşitlenen bir klasörün seçilebildiği masaüstü sürümünü gerektirir." # mt
