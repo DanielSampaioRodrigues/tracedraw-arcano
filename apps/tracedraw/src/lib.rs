@@ -21,6 +21,7 @@ mod ai;
 mod studio;
 mod capa;
 mod biblioteca;
+mod imposicao;
 mod ai_image;
 mod anchors;
 #[cfg(target_os = "android")]

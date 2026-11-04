@@ -585,6 +585,9 @@ pub struct Settings {
     /// (empty: this computer only).
     #[serde(default)]
     pub arcano_library: String,
+    /// Arcano edition: File > Imposition's last settings.
+    #[serde(default)]
+    pub imposicao: crate::imposicao::ImposPrefs,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1840,6 +1843,7 @@ impl Default for Settings {
             studio_catalog_checked: 0,
             capa: Default::default(),
             arcano_library: String::new(),
+            imposicao: Default::default(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

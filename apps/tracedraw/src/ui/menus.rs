@@ -2200,6 +2200,9 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.new_cover", "", true) {
         app.open_capa_dialog();
     }
+    if item(ui, "menu.file.imposition", "", doc) {
+        app.open_impos_dialog();
+    }
     if item(ui, "menu.file.open", "Ctrl+O", true) {
         app.open_dialog();
     }
