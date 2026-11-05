@@ -376,16 +376,15 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDial
             }
         });
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(tr("dialog.cancel")).rich_tip(tip("impos.cancel")).clicked() {
-                    *close = true;
-                }
-                if ui.button(tr("impos.create")).rich_tip(tip("impos.create")).clicked() {
-                    create = true;
-                }
-            });
-        });
+        // A row of fixed width: a layout reaching for the room left would
+        // grow the auto-sized window every frame.
+        let create_label = tr("impos.create");
+        let cancel_label = tr("dialog.cancel");
+        match crate::ui::chrome::button_row(ui, &[&create_label, &cancel_label], false) {
+            Some(0) => create = true,
+            Some(_) => *close = true,
+            None => {}
+        }
     });
     if create {
         let p = st.prefs.clone();
@@ -457,5 +456,36 @@ mod tests {
         let p = ImposPrefs { produto: Produto::Cartoes, ..ImposPrefs::default() };
         let (c, r, _) = grade(Size::new(400.0, 500.0), Size::new(210.0, 297.0), &p);
         assert_eq!(c * r, 0);
+    }
+
+    /// The window keeps its size frame after frame (a layout reaching for
+    /// the room left grew it until it left the screen).
+    #[test]
+    fn the_dialogs_keep_their_size() {
+        let mut app = crate::app::App::headless();
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        let mut widths = Vec::new();
+        let mut impos = ImposDialog { prefs: ImposPrefs::default(), preview: None };
+        let mut capa = crate::capa::CapaDialog { spec: Default::default(), tabela: false };
+        for frame in 0..12 {
+            let mut close = false;
+            let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+                let ctx = ui.ctx().clone();
+                if frame < 6 {
+                    dialog(&mut app, &ctx, &mut impos, &mut close);
+                } else {
+                    crate::capa::dialog(&mut app, &ctx, &mut capa, &mut close);
+                }
+            });
+            let rect = ctx
+                .memory(|m| m.layer_ids().find_map(|l| (l.order == egui::Order::Foreground).then(|| m.area_rect(l.id)).flatten()));
+            widths.push(rect.map(|r| r.width()).unwrap_or(0.0));
+        }
+        for w in &widths {
+            assert!(*w > 100.0 && *w < 1200.0, "{widths:?}");
+        }
+        assert!((widths[5] - widths[3]).abs() < 1.0, "{widths:?}");
+        assert!((widths[11] - widths[9]).abs() < 1.0, "{widths:?}");
     }
 }

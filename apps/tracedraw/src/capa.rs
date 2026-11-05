@@ -703,15 +703,15 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut CapaDialo
             {
                 st.tabela = !st.tabela;
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(tr("dialog.cancel")).rich_tip(tip("capa.cancel")).clicked() {
-                    *close = true;
-                }
-                if ui.button(tr("capa.create")).rich_tip(tip("capa.create")).clicked() {
-                    create = true;
-                }
-            });
         });
+        // A row of fixed width (see imposicao.rs).
+        let create_label = tr("capa.create");
+        let cancel_label = tr("dialog.cancel");
+        match crate::ui::chrome::button_row(ui, &[&create_label, &cancel_label], false) {
+            Some(0) => create = true,
+            Some(_) => *close = true,
+            None => {}
+        }
     });
     if create {
         let spec = st.spec.clone();
