@@ -1,8 +1,20 @@
 # Assistant (Arcano edition)
 
-Window > Panels > Assistant: a conversation with the text service of
-Tools > Options > AI > Service that works on the open drawing. The work
-is in `apps/tracedraw/src/assistente.rs`.
+Window > Panels > Assistant: a conversation with an AI service that
+works on the open drawing. The work is in
+`apps/tracedraw/src/assistente.rs`.
+
+- At the top, the service and its model. Every text service with a key
+  on the Keys page (Tools > Options > AI > Keys: Anthropic, OpenAI,
+  Google Gemini, Maritaca AI, DeepSeek) is offered with its models
+  (`ai::TEXT_MODELS`), and the service of Tools > Options > AI when it is
+  another one (a model on this computer, an address of the user's). The
+  choice is kept in the preferences (`arcano_assist`). Changing the
+  service carries the conversation on in plain words (tool calls are
+  kept each service's own way).
+- The conversation is shown in bubbles (the user's at the right);
+  markdown marks in replies are taken out. An empty conversation shows
+  four suggestions that fill the field.
 
 - The assistant has the MCP server's tools (`mcp.rs`, `mcp_plus.rs`):
   document and selection info, the scripting reference, scripts, select,
@@ -20,4 +32,4 @@ is in `apps/tracedraw/src/assistente.rs`.
 - Every script is one undo step, as through MCP.
 - Without AI features, a key or a model it says what is missing and
   sends nothing.
-- Ctrl+Enter sends.
+- Enter sends; Shift+Enter makes a new line.

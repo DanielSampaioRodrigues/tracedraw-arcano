@@ -49,6 +49,8 @@ pub struct Assistente {
     pub fake: Option<fn(&HttpRequest) -> HttpResult>,
     /// Requests sent (tests look at them).
     pub enviados: Vec<HttpRequest>,
+    /// The connection and key of the request under way.
+    pub conn: Option<(crate::ai::AiPrefs, String)>,
 }
 
 impl Assistente {
@@ -272,7 +274,125 @@ fn resumo(call: &Chamada, r: &Resultado) -> String {
     }
 }
 
+/// The service and model chosen in the panel, kept with the preferences.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct AssistPrefs {
+    /// The preset's key (`aipreset.anthropic`...), or `main` for the
+    /// service of Tools > Options > AI when it is none of them.
+    pub servico: String,
+    pub modelo: String,
+}
+
+/// A service the assistant can talk to: one with a key on the Keys page
+/// (Tools > Options > AI > Keys), or the main AI service.
+#[derive(Debug, Clone)]
+pub struct Conexao {
+    pub id: String,
+    pub nome: String,
+    pub prefs: crate::ai::AiPrefs,
+    pub key: String,
+    pub modelos: Vec<String>,
+}
+
+/// The services the assistant can use now: every text service with a
+/// key, then the main service when it is another one (a model on this
+/// computer, an address of the user's).
+pub fn conexoes(app: &crate::app::App) -> Vec<Conexao> {
+    use crate::ai::{AiPrefs, PRESETS, TEXT_MODELS};
+    let mut out = Vec::new();
+    for (preset, provider, endpoint) in PRESETS {
+        let Some(id) = crate::studio::provider_of_preset(preset) else {
+            continue;
+        };
+        let key = app.studio_key(id);
+        if key.trim().is_empty() {
+            continue;
+        }
+        let modelos: Vec<String> = TEXT_MODELS
+            .iter()
+            .filter(|(k, ..)| *k == preset)
+            .map(|(_, m, ..)| m.to_string())
+            .collect();
+        out.push(Conexao {
+            id: preset.to_string(),
+            nome: crate::i18n::tr(preset),
+            prefs: AiPrefs { provider, endpoint: endpoint.to_string(), ..AiPrefs::default() },
+            key,
+            modelos,
+        });
+    }
+    let main = &app.settings.ai;
+    let listed = crate::ai::preset_of(main)
+        .and_then(|i| PRESETS.get(i))
+        .is_some_and(|(k, ..)| out.iter().any(|c| c.id == *k));
+    let ready = !main.provider.needs_key() || !app.ai.key.trim().is_empty();
+    if !listed && ready && !main.model().is_empty() {
+        let nome = match crate::ai::preset_of(main).and_then(|i| PRESETS.get(i)) {
+            Some((k, ..)) => crate::i18n::tr(k),
+            None => crate::i18n::tr("assist.main_service"),
+        };
+        let mut modelos = vec![main.model()];
+        for m in crate::ai::preset_text_models(main) {
+            if !modelos.iter().any(|x| x == m) {
+                modelos.push(m.to_string());
+            }
+        }
+        out.push(Conexao { id: "main".into(), nome, prefs: main.clone(), key: app.ai.key.clone(), modelos });
+    }
+    out
+}
+
+/// The service and model in use: the chosen ones, else the first service
+/// and its first model.
+pub fn ativa(app: &crate::app::App) -> Option<(Conexao, String)> {
+    let list = conexoes(app);
+    let chosen = &app.settings.arcano_assist;
+    let c = list.iter().find(|c| c.id == chosen.servico).or(list.first())?.clone();
+    let modelo = if c.modelos.iter().any(|m| *m == chosen.modelo) {
+        chosen.modelo.clone()
+    } else {
+        c.modelos.first().cloned().unwrap_or_default()
+    };
+    Some((c, modelo))
+}
+
+/// The conversation as plain words, alternating, for another service
+/// (each kind of service keeps tool calls its own way).
+fn em_palavras(linhas: &[Linha]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    for l in linhas {
+        let (role, text) = match l {
+            Linha::Voce(t) => ("user", t),
+            Linha::Assistente(t) => ("assistant", t),
+            _ => continue,
+        };
+        match out.last_mut() {
+            Some(last) if last["role"] == role => {
+                let joined = format!("{}\n\n{}", last["content"].as_str().unwrap_or(""), text);
+                last["content"] = json!(joined);
+            }
+            _ => out.push(json!({"role": role, "content": text})),
+        }
+    }
+    // A conversation starts with the user.
+    while out.first().is_some_and(|m| m["role"] != "user") {
+        out.remove(0);
+    }
+    out
+}
+
 impl crate::app::App {
+    /// Use `servico` and `modelo` from the next message on.
+    pub fn assist_choose(&mut self, servico: String, modelo: String) {
+        let before = self.settings.arcano_assist.servico.clone();
+        if servico != before && !self.assistente.mensagens.is_empty() {
+            self.assistente.mensagens = em_palavras(&self.assistente.linhas);
+        }
+        self.settings.arcano_assist = AssistPrefs { servico, modelo };
+        self.settings.save();
+    }
+
     /// Send what the user typed.
     pub fn assist_send(&mut self) {
         if self.assistente.ocupado() {
@@ -282,15 +402,19 @@ impl crate::app::App {
         if text.is_empty() {
             return;
         }
-        let prefs = self.settings.ai.clone();
         let problem = if !self.ai_features_on() {
             Some("aiimg.off")
-        } else if prefs.provider.needs_key() && self.ai.key.trim().is_empty() {
-            Some("ai.need_key")
-        } else if prefs.model().is_empty() {
-            Some("ai.need_model")
         } else {
-            None
+            match ativa(self) {
+                None => Some("assist.no_service"),
+                Some((_, m)) if m.is_empty() => Some("ai.need_model"),
+                Some((c, m)) => {
+                    let mut prefs = c.prefs.clone();
+                    prefs.model = m;
+                    self.assistente.conn = Some((prefs, c.key.clone()));
+                    None
+                }
+            }
         };
         if let Some(k) = problem {
             self.assistente.linhas.push(Linha::Erro(crate::i18n::tr(k)));
@@ -305,7 +429,10 @@ impl crate::app::App {
     }
 
     fn assist_request(&mut self) {
-        let http = pedido(&self.settings.ai, &self.ai.key, &self.assistente.mensagens);
+        let Some((prefs, key)) = self.assistente.conn.clone() else {
+            return;
+        };
+        let http = pedido(&prefs, &key, &self.assistente.mensagens);
         let (tx, rx) = std::sync::mpsc::channel();
         match self.assistente.fake {
             Some(fake) => {
@@ -362,7 +489,10 @@ impl crate::app::App {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(crate::i18n::tr("ai.connection_lost")),
         };
         self.assistente.pending = None;
-        let provider = self.settings.ai.provider;
+        let Some((prefs, _)) = self.assistente.conn.clone() else {
+            return false;
+        };
+        let provider = prefs.provider;
         let parsed = result.and_then(|r| {
             let v: Value = serde_json::from_str(&r.body).map_err(|_| crate::i18n::tr("ai.unreadable_reply"))?;
             if !(200..300).contains(&r.status) {
@@ -403,7 +533,7 @@ impl crate::app::App {
             });
             done.push((call, r));
         }
-        let pictures = reads_pictures(&self.settings.ai);
+        let pictures = reads_pictures(&prefs);
         let answers = respostas(provider, pictures, &done);
         self.assistente.mensagens.extend(answers);
         self.assist_request();
@@ -414,83 +544,232 @@ impl crate::app::App {
     }
 }
 
-/// The panel: the conversation, then the field, Send, Stop and New.
+/// A reply's text for the panel: markdown's marks taken out (the panel
+/// shows plain text), list dashes as bullets.
+pub fn sem_marcas(text: &str) -> String {
+    text.lines()
+        .map(|l| {
+            let t = l.trim_start();
+            let indent = &l[..l.len() - t.len()];
+            let t = t.trim_start_matches('#').trim_start();
+            let t = match t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
+                Some(rest) => format!("\u{2022} {rest}"),
+                None => t.to_string(),
+            };
+            format!("{indent}{}", t.replace("**", "").replace('`', ""))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Suggestions shown on an empty conversation (i18n keys).
+const SUGESTOES: [&str; 4] = ["assist.suggest_1", "assist.suggest_2", "assist.suggest_3", "assist.suggest_4"];
+
+/// One message as a bubble: the user's at the right in the accent colour,
+/// the assistant's at the left.
+fn bolha(ui: &mut egui::Ui, text: &str, mine: bool) {
+    use crate::theme::Tokens;
+    let max = (ui.available_width() * 0.86).max(120.0);
+    let layout = if mine {
+        egui::Layout::right_to_left(egui::Align::Min)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Min)
+    };
+    ui.with_layout(layout, |ui| {
+        let (fill, color) = if mine {
+            (Tokens::ACCENT, egui::Color32::WHITE)
+        } else {
+            (Tokens::field(), Tokens::text())
+        };
+        egui::Frame::new()
+            .fill(fill)
+            .stroke(if mine { egui::Stroke::NONE } else { egui::Stroke::new(1.0, Tokens::border()) })
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(10, 7))
+            .show(ui, |ui| {
+                ui.set_max_width(max);
+                ui.vertical(|ui| {
+                    ui.add(egui::Label::new(egui::RichText::new(text).color(color)).wrap().selectable(true));
+                });
+            });
+    });
+}
+
+/// The panel: the service and model at the top, the conversation in
+/// bubbles, and the field at the bottom (Enter sends, Shift+Enter makes
+/// a new line).
 pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
     use crate::i18n::tr;
-    use crate::ui::tips::RichTip as _;
+    use crate::theme::Tokens;
+    use crate::ui::tips::{pair, RichTip as _};
     let busy = app.assistente.ocupado();
-    let service = crate::i18n::trf("assist.service", &[("model", &app.settings.ai.model())]);
-    ui.label(egui::RichText::new(service).color(crate::theme::Tokens::text_dim()))
-        .rich_tip(crate::ui::tips::pair("assist.service_tip", "assist.service_tip_desc"));
-    let bottom = 96.0;
+    let list = conexoes(app);
+    let current = ativa(app);
+
+    // The service and its model.
+    ui.horizontal_wrapped(|ui| {
+        match &current {
+            Some((c, modelo)) => {
+                let mut servico = c.id.clone();
+                ui.add_enabled_ui(!busy, |ui| {
+                    egui::ComboBox::from_id_salt("assist_service")
+                        .width(150.0)
+                        .selected_text(&c.nome)
+                        .show_ui(ui, |ui| {
+                            for o in &list {
+                                ui.selectable_value(&mut servico, o.id.clone(), &o.nome);
+                            }
+                        })
+                        .response
+                        .rich_tip(pair("assist.pick_service", "assist.pick_service_desc"));
+                });
+                if servico != c.id {
+                    let first = list.iter().find(|o| o.id == servico).and_then(|o| o.modelos.first().cloned()).unwrap_or_default();
+                    app.assist_choose(servico, first);
+                } else {
+                    let mut m = modelo.clone();
+                    ui.add_enabled_ui(!busy, |ui| {
+                        egui::ComboBox::from_id_salt("assist_model")
+                            .width(150.0)
+                            .selected_text(&m)
+                            .show_ui(ui, |ui| {
+                                for o in &c.modelos {
+                                    ui.selectable_value(&mut m, o.clone(), o);
+                                }
+                            })
+                            .response
+                            .rich_tip(pair("assist.pick_model", "assist.pick_model_desc"));
+                    });
+                    if m != *modelo {
+                        app.assist_choose(c.id.clone(), m);
+                    }
+                }
+            }
+            None => {
+                ui.label(egui::RichText::new(tr("assist.no_service")).color(Tokens::text_dim()))
+                    .rich_tip(pair("assist.service_tip", "assist.service_tip_desc"));
+            }
+        }
+        if !app.assistente.linhas.is_empty()
+            && ui
+                .add_enabled(!busy, egui::Button::new(tr("assist.new")).small())
+                .rich_tip(pair("assist.new", "assist.new_desc"))
+                .clicked()
+        {
+            app.assist_clear();
+        }
+    });
+    ui.add_space(4.0);
+
+    // The conversation.
+    let bottom = 118.0;
     egui::ScrollArea::vertical()
         .max_height((ui.available_height() - bottom).max(80.0))
         .stick_to_bottom(true)
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 8.0;
             if app.assistente.linhas.is_empty() {
-                ui.label(egui::RichText::new(tr("assist.empty")).color(crate::theme::Tokens::text_dim()));
+                ui.add_space(12.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new(tr("assist.welcome")).size(16.0).strong());
+                    ui.add(egui::Label::new(egui::RichText::new(tr("assist.empty")).color(Tokens::text_dim())).wrap());
+                });
+                ui.add_space(8.0);
+                for k in SUGESTOES {
+                    let text = tr(k);
+                    let b = egui::Button::new(egui::RichText::new(&text))
+                        .corner_radius(14)
+                        .wrap();
+                    if ui.add_enabled(!busy, b).rich_tip(pair("assist.suggest", "assist.suggest_desc")).clicked() {
+                        app.assistente.entrada = text;
+                    }
+                }
             }
             for l in &app.assistente.linhas {
                 match l {
-                    Linha::Voce(t) => {
-                        ui.label(egui::RichText::new(t).strong());
-                    }
-                    Linha::Assistente(t) => {
-                        ui.label(t);
-                    }
+                    Linha::Voce(t) => bolha(ui, t, true),
+                    Linha::Assistente(t) => bolha(ui, &sem_marcas(t), false),
                     Linha::Ferramenta { nome, ok, resumo } => {
-                        let mark = if *ok { "\u{00B7}" } else { "!" };
+                        let mark = if *ok { "\u{203A}" } else { "!" };
                         let line = if resumo.is_empty() { format!("{mark} {nome}") } else { format!("{mark} {nome}: {resumo}") };
-                        ui.label(egui::RichText::new(line).small().color(crate::theme::Tokens::text_dim()));
+                        let color = if *ok { Tokens::text_dim() } else { egui::Color32::from_rgb(220, 140, 40) };
+                        ui.horizontal(|ui| {
+                            ui.add_space(6.0);
+                            ui.add(egui::Label::new(egui::RichText::new(line).small().color(color)).truncate());
+                        });
                     }
                     Linha::Erro(t) => {
-                        ui.label(egui::RichText::new(t).color(egui::Color32::from_rgb(220, 90, 70)));
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgba_unmultiplied(220, 90, 70, 30))
+                            .corner_radius(8)
+                            .inner_margin(egui::Margin::symmetric(10, 6))
+                            .show(ui, |ui| {
+                                ui.add(egui::Label::new(egui::RichText::new(t).color(egui::Color32::from_rgb(230, 100, 80))).wrap());
+                            });
                     }
                 }
-                ui.add_space(4.0);
             }
             if busy {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(tr("assist.working"));
+                    ui.label(egui::RichText::new(tr("assist.working")).color(Tokens::text_dim()));
                 });
             }
         });
-    ui.separator();
-    let field = ui.add(
-        egui::TextEdit::multiline(&mut app.assistente.entrada)
-            .desired_rows(3)
-            .desired_width(f32::INFINITY)
-            .hint_text(tr("assist.hint")),
-    );
-    let field = field.rich_tip(crate::ui::tips::pair("assist.field", "assist.field_desc"));
-    // Ctrl+Enter sends.
-    let send_key = field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(!busy, egui::Button::new(tr("assist.send")))
-            .rich_tip(crate::ui::tips::pair("assist.send", "assist.send_desc"))
-            .clicked()
-            || (send_key && !busy)
-        {
-            app.assist_send();
-        }
-        if ui
-            .add_enabled(busy, egui::Button::new(tr("assist.stop")))
-            .rich_tip(crate::ui::tips::pair("assist.stop", "assist.stop_desc"))
-            .clicked()
-        {
-            app.assist_stop();
-        }
-        if ui
-            .button(tr("assist.new"))
-            .rich_tip(crate::ui::tips::pair("assist.new", "assist.new_desc"))
-            .clicked()
-        {
-            app.assist_clear();
-        }
-    });
+
+    // The field: Enter sends, Shift+Enter makes a new line. The Enter is
+    // taken before the field sees it.
+    let input_id = egui::Id::new("arcano_assist_input");
+    let focused = ui.memory(|m| m.has_focus(input_id));
+    let enter = focused && !busy && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+    ui.add_space(6.0);
+    egui::Frame::new()
+        .fill(Tokens::field())
+        .stroke(egui::Stroke::new(1.0, if focused { Tokens::ACCENT } else { Tokens::control_border() }))
+        .corner_radius(10)
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut app.assistente.entrada)
+                    .id(input_id)
+                    .frame(egui::Frame::NONE)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(tr("assist.hint")),
+            )
+            .rich_tip(pair("assist.field", "assist.field_desc"));
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tr("assist.keys_hint")).small().color(Tokens::text_dim()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if busy {
+                        if ui
+                            .button(tr("assist.stop"))
+                            .rich_tip(pair("assist.stop", "assist.stop_desc"))
+                            .clicked()
+                        {
+                            app.assist_stop();
+                        }
+                    } else {
+                        let ready = !app.assistente.entrada.trim().is_empty();
+                        let send = egui::Button::new(egui::RichText::new(tr("assist.send")).color(egui::Color32::WHITE))
+                            .fill(Tokens::ACCENT)
+                            .corner_radius(6);
+                        if ui
+                            .add_enabled(ready, send)
+                            .rich_tip(pair("assist.send", "assist.send_desc"))
+                            .clicked()
+                        {
+                            app.assist_send();
+                        }
+                    }
+                });
+            });
+        });
+    if enter {
+        app.assist_send();
+        ui.memory_mut(|m| m.request_focus(input_id));
+    }
     if busy {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
     }
@@ -605,5 +884,66 @@ mod tests {
         // The conversation does not end with an unanswered call.
         let last = app.assistente.mensagens.last().unwrap();
         assert_eq!(last["role"], "user");
+    }
+
+    #[test]
+    fn every_service_with_a_key_is_offered_with_its_models() {
+        let mut app = App::headless();
+        app.settings.ai_enabled = true;
+        app.studio_set_key("anthropic", "ka".into());
+        app.studio_set_key("openai", "ko".into());
+        let list = conexoes(&app);
+        let ids: Vec<&str> = list.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"aipreset.anthropic") && ids.contains(&"aipreset.openai"), "{ids:?}");
+        let claude = list.iter().find(|c| c.id == "aipreset.anthropic").unwrap();
+        assert!(claude.modelos.iter().all(|m| m.starts_with("claude-")), "{:?}", claude.modelos);
+        // The chosen one is used, with its own key and model.
+        app.assist_choose("aipreset.openai".into(), "gpt-6-luna".into());
+        fn ok(req: &HttpRequest) -> HttpResult {
+            let body: Value = serde_json::from_str(&req.body).unwrap();
+            assert_eq!(body["model"], "gpt-6-luna");
+            assert!(req.headers.iter().any(|(_, v)| v.contains("ko")));
+            let reply = json!({"choices": [{"message": {"role": "assistant", "content": "oi"}}]});
+            Ok(HttpResponse { status: 200, body: reply.to_string() })
+        }
+        app.assistente.fake = Some(ok);
+        app.assistente.entrada = "oi".into();
+        app.assist_send();
+        app.poll_assistente();
+        assert!(matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t == "oi"), "{:?}", app.assistente.linhas);
+        // Another service carries on the conversation in plain words.
+        app.assist_choose("aipreset.anthropic".into(), "claude-opus-5-5".into());
+        assert_eq!(app.assistente.mensagens.len(), 2);
+        assert_eq!(app.assistente.mensagens[0]["role"], "user");
+        assert_eq!(app.assistente.mensagens[1]["content"], "oi");
+    }
+
+    #[test]
+    fn markdown_marks_are_taken_out() {
+        assert_eq!(sem_marcas("## Pronto\n- **um**\n- `dois`"), "Pronto\n\u{2022} um\n\u{2022} dois");
+    }
+
+    /// The panel keeps the docker's width, with a conversation and a
+    /// suggestion list alike.
+    #[test]
+    fn the_panel_keeps_its_width() {
+        let mut app = App::headless();
+        ready(&mut app, Provider::Anthropic);
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 800.0));
+        let mut widths = Vec::new();
+        for frame in 0..10 {
+            if frame == 5 {
+                app.assistente.linhas.push(Linha::Voce("um pedido bem comprido ".repeat(20)));
+                app.assistente.linhas.push(Linha::Assistente("uma resposta **longa** ".repeat(30)));
+            }
+            let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+                let r = egui::Panel::right("dock").default_size(300.0).show_inside(ui, |ui| docker(&mut app, ui));
+                widths.push(r.response.rect.width());
+            });
+            o.textures_delta.clear();
+        }
+        assert!(widths.iter().all(|w| *w < 400.0), "{widths:?}");
+        assert!((widths[9] - widths[6]).abs() < 1.0, "{widths:?}");
     }
 }

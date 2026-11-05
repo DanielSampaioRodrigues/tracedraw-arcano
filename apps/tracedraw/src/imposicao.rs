@@ -277,6 +277,10 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDial
         let p = &mut st.prefs;
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
+                // A fixed column: its separator and lines would otherwise
+                // take all the room left, and the preview beside it grow
+                // the window every frame.
+                ui.set_max_width(340.0);
                 egui::Grid::new("impos_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label(tr("impos.product"));
                     ui.vertical(|ui| {
@@ -462,30 +466,42 @@ mod tests {
     /// the room left grew it until it left the screen).
     #[test]
     fn the_dialogs_keep_their_size() {
-        let mut app = crate::app::App::headless();
-        let ctx = egui::Context::default();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
-        let mut widths = Vec::new();
+        let widths = |draw: &mut dyn FnMut(&egui::Context)| -> Vec<f32> {
+            let ctx = egui::Context::default();
+            let mut out = Vec::new();
+            for _ in 0..8 {
+                let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+                    let c = ui.ctx().clone();
+                    draw(&c);
+                });
+                o.textures_delta.clear();
+                let w = ctx.memory(|m| {
+                    m.layer_ids()
+                        .filter(|l| l.order == egui::Order::Foreground)
+                        .filter_map(|l| m.area_rect(l.id))
+                        .map(|r| r.width())
+                        .fold(0.0, f32::max)
+                });
+                out.push(w);
+            }
+            out
+        };
+        let mut app = crate::app::App::headless();
         let mut impos = ImposDialog { prefs: ImposPrefs::default(), preview: None };
-        let mut capa = crate::capa::CapaDialog { spec: Default::default(), tabela: false };
-        for frame in 0..12 {
+        let a = widths(&mut |c| {
             let mut close = false;
-            let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                let ctx = ui.ctx().clone();
-                if frame < 6 {
-                    dialog(&mut app, &ctx, &mut impos, &mut close);
-                } else {
-                    crate::capa::dialog(&mut app, &ctx, &mut capa, &mut close);
-                }
-            });
-            let rect = ctx
-                .memory(|m| m.layer_ids().find_map(|l| (l.order == egui::Order::Foreground).then(|| m.area_rect(l.id)).flatten()));
-            widths.push(rect.map(|r| r.width()).unwrap_or(0.0));
+            dialog(&mut app, c, &mut impos, &mut close);
+        });
+        let mut app = crate::app::App::headless();
+        let mut capa = crate::capa::CapaDialog { spec: Default::default(), tabela: true };
+        let b = widths(&mut |c| {
+            let mut close = false;
+            crate::capa::dialog(&mut app, c, &mut capa, &mut close);
+        });
+        for w in [&a, &b] {
+            assert!(w.iter().all(|x| *x > 100.0 && *x < 1200.0), "{w:?}");
+            assert!((w[7] - w[4]).abs() < 1.0, "{w:?}");
         }
-        for w in &widths {
-            assert!(*w > 100.0 && *w < 1200.0, "{widths:?}");
-        }
-        assert!((widths[5] - widths[3]).abs() < 1.0, "{widths:?}");
-        assert!((widths[11] - widths[9]).abs() < 1.0, "{widths:?}");
     }
 }

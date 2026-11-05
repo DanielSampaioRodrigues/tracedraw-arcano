@@ -588,6 +588,9 @@ pub struct Settings {
     /// Arcano edition: File > Imposition's last settings.
     #[serde(default)]
     pub imposicao: crate::imposicao::ImposPrefs,
+    /// Arcano edition: the Assistant panel's service and model.
+    #[serde(default)]
+    pub arcano_assist: crate::assistente::AssistPrefs,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1844,6 +1847,7 @@ impl Default for Settings {
             capa: Default::default(),
             arcano_library: String::new(),
             imposicao: Default::default(),
+            arcano_assist: Default::default(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

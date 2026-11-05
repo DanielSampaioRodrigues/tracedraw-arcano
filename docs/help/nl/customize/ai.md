@@ -83,13 +83,15 @@ in te voegen.
 
 ## The Assistant panel {#assistant}
 
-The [[docker.assistant]] panel (Window > Panels) is a conversation with the
-text service set up above that works on the open drawing. Ask in your own
+The [[docker.assistant]] panel (Window > Panels) is a conversation with an AI
+service that works on the open drawing. Ask in your own
 words ("center the title", "make the spine text 9 pt", "which fonts does this
 file use?"): the assistant reads the drawing and the selection, looks at the
 page, measures fonts, runs scripts and checks the result, as an AI app does
 through the MCP server. Every change is one undo step. **Stop** ends it after
-the step under way; **New Conversation** starts over. Ctrl+Enter sends.
+the step under way; **New Conversation** starts over. Enter sends;
+Shift+Enter makes a new line. Choose the service and model at the top:
+every service with a key in the Keys page is there.
 
 ## Andere AI-opdrachten {#other}
 

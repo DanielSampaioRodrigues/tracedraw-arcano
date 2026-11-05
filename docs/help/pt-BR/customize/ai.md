@@ -83,13 +83,15 @@ painel; clique em um para inseri-lo.
 
 ## O painel Assistente {#assistant}
 
-O painel [[docker.assistant]] (Janela > Painéis) é uma conversa com o serviço
-de texto configurado acima, trabalhando no desenho aberto. Peça com suas
+O painel [[docker.assistant]] (Janela > Painéis) é uma conversa com um serviço
+de IA, trabalhando no desenho aberto. No topo, escolha o serviço e o modelo:
+aparece todo serviço com chave na página Chaves. Peça com suas
 palavras ("centralize o título", "deixe o texto da lombada em 9 pt", "quais
 fontes este arquivo usa?"): o assistente lê o desenho e a seleção, olha a
 página, mede as fontes, roda scripts e confere o resultado, como um app de IA
 faz pelo servidor MCP. Cada mudança é um passo de Desfazer. **Parar** encerra
-depois do passo em andamento; **Nova conversa** recomeça. Ctrl+Enter envia.
+depois do passo em andamento; **Nova conversa** recomeça. Enter envia;
+Shift+Enter quebra a linha.
 
 ## Outros comandos de IA {#other}
 
