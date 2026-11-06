@@ -7624,3 +7624,5 @@ tstyle.book_quote = "引文" # mt
 tstyle.book_emphasis = "強調" # mt
 tstyle.book_strong = "粗體" # mt
 tstyle.book_smallcaps = "小型大寫字母" # mt
+options.stacked_panels = "堆疊面板" # mt
+options.stacked_panels_tip = "停駐的面板在欄中上下分組排列，每組的索引標籤在頂端；關閉時：每欄一個面板，索引標籤在側邊。" # mt

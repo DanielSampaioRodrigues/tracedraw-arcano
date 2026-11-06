@@ -1221,24 +1221,13 @@ fn draw_arrange_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
 }
 
 pub(crate) fn frame(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
+    // Soft rounded boxes, no outlines: pressed in the selection tint,
+    // hovered a shade lighter than the bar.
+    let r = rect.shrink(1.0);
     if pressed {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            Stroke::new(1.0, Tokens::control_border()),
-            egui::StrokeKind::Middle,
-        );
+        ui.painter().rect_filled(r, 5.0, Tokens::tool_active());
     } else if hovered {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            Stroke::new(1.0, crate::theme::Tokens::selected_row()),
-            egui::StrokeKind::Middle,
-        );
+        ui.painter().rect_filled(r, 5.0, Tokens::tool_hover());
     }
 }
 

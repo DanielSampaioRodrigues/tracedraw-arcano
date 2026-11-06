@@ -292,6 +292,11 @@ pub struct Settings {
     /// theme's icon colour.
     #[serde(default)]
     pub colored_icons: bool,
+    /// Appearance: docked panels in groups stacked in their column, tabs
+    /// across each group's top (`ui::panel_stack`); off: one panel per
+    /// column with the tabs down its side.
+    #[serde(default = "default_true")]
+    pub stacked_panels: bool,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -654,6 +659,20 @@ pub struct DockerSetup {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub left_inner_shown: bool,
     pub floating: Vec<FloatingSetup>,
+    /// The panel groups of the stacked columns: right, left, second
+    /// right, second left.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<Vec<StackGroupSetup>>,
+}
+
+/// One group of a stacked column: its panels' name keys, the one in
+/// front and its share of the height.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct StackGroupSetup {
+    pub tabs: Vec<String>,
+    pub front: String,
+    pub weight: f32,
 }
 
 /// A floating docker as it was left: its name key, the window's top left
@@ -1803,6 +1822,8 @@ impl Default for Settings {
             center_dialogs: true,
             ui_shadows: true,
             colored_icons: false,
+            // Tests check the panels as they were; the program starts stacked.
+            stacked_panels: !cfg!(test),
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             bar_items: Default::default(),

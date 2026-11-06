@@ -456,7 +456,11 @@ impl Window {
                 Pos2::new(full.left() + EDGE, bar.bottom()),
                 Pos2::new(full.right() - EDGE, full.bottom() - EDGE),
             );
-            ui.painter().rect_filled(panel, 0.0, Tokens::panel());
+            ui.painter().rect_filled(
+                panel,
+                CornerRadius { nw: 0, ne: 0, sw: WINDOW_RADIUS, se: WINDOW_RADIUS },
+                Tokens::panel(),
+            );
             let body = Rect::from_min_max(
                 panel.min + Vec2::new(14.0, 12.0),
                 panel.max - Vec2::new(14.0, 12.0),
@@ -570,16 +574,20 @@ pub fn uncovered(screen: Rect, holes: &[Rect]) -> Vec<Rect> {
     out
 }
 
-/// The frame of every dialog window: white, a grey border and a shadow.
+/// The corner radius of dialog windows.
+const WINDOW_RADIUS: u8 = 8;
+
+/// The frame of every dialog window: the panel colour, a light border, soft corners and a shadow.
 fn window_frame() -> Frame {
     Frame::new()
-        .fill(crate::theme::Tokens::title_bar())
+        .fill(crate::theme::Tokens::panel())
         .stroke(Stroke::new(1.0, crate::theme::Tokens::window_border()))
+        .corner_radius(CornerRadius::same(WINDOW_RADIUS))
         .shadow(crate::theme::shadow(egui::epaint::Shadow {
-            offset: [0, 4],
-            blur: 16,
+            offset: [0, 8],
+            blur: 28,
             spread: 0,
-            color: Color32::from_black_alpha(60),
+            color: Color32::from_black_alpha(70),
         }))
         .inner_margin(Margin::ZERO)
 }
@@ -923,7 +931,12 @@ fn title_bar_with(
     maximized: Option<bool>,
 ) -> (bool, bool) {
     let painter = ui.painter();
-    painter.rect_filled(bar, 0.0, crate::theme::Tokens::title_bar());
+    // The bar is the window's top, rounded with it, in the body's colour.
+    painter.rect_filled(
+        bar,
+        CornerRadius { nw: WINDOW_RADIUS, ne: WINDOW_RADIUS, sw: 0, se: 0 },
+        crate::theme::Tokens::panel(),
+    );
     painter.text(
         Pos2::new(bar.left() + 12.0, bar.center().y),
         Align2::LEFT_CENTER,
@@ -939,7 +952,7 @@ fn title_bar_with(
     let resp =
         crate::ui::tips::RichTip::rich_tip(resp, crate::ui::tips::keyed("dialog.close_window"));
     let color = if resp.hovered() {
-        ui.painter().rect_filled(close, 0.0, CLOSE_HOVER);
+        ui.painter().rect_filled(close.shrink(4.0), 5.0, CLOSE_HOVER);
         Color32::WHITE
     } else {
         crate::theme::Tokens::text()
@@ -999,7 +1012,7 @@ fn title_bar_with(
     (resp.clicked(), max_clicked)
 }
 
-/// Controls inside a dialog body: square corners, grey borders, the blue
+/// Controls inside a dialog body: soft corners, grey borders, the blue
 /// border while typing, grey lists and buttons.
 pub fn form_style(ui: &mut Ui) {
     let v = ui.visuals_mut();
@@ -1009,7 +1022,7 @@ pub fn form_style(ui: &mut Ui) {
         &mut v.widgets.active,
         &mut v.widgets.open,
     ] {
-        w.corner_radius = CornerRadius::ZERO;
+        w.corner_radius = CornerRadius::same(5);
         w.expansion = 0.0;
     }
     v.widgets.inactive.bg_stroke = Stroke::new(1.0, crate::theme::Tokens::control_border());

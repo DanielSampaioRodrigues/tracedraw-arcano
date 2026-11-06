@@ -7624,3 +7624,5 @@ tstyle.book_quote = "اقتباس" # mt
 tstyle.book_emphasis = "توكيد" # mt
 tstyle.book_strong = "غامق" # mt
 tstyle.book_smallcaps = "أحرف كبيرة صغيرة" # mt
+options.stacked_panels = "لوحات مكدسة" # mt
+options.stacked_panels_tip = "اللوحات المثبتة في مجموعات بعضها تحت بعض في عمودها، ولكل مجموعة ألسنتها في أعلاها؛ عند الإيقاف: لوحة واحدة لكل عمود وألسنتها على الجانب." # mt

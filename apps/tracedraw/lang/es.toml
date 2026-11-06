@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Cita" # mt
 tstyle.book_emphasis = "Énfasis" # mt
 tstyle.book_strong = "Negrita" # mt
 tstyle.book_smallcaps = "Versalitas" # mt
+options.stacked_panels = "Paneles apilados" # mt
+options.stacked_panels_tip = "Paneles acoplados en grupos uno debajo de otro en su columna, cada grupo con sus pestañas arriba; desactivado: un panel por columna con las pestañas al lado." # mt

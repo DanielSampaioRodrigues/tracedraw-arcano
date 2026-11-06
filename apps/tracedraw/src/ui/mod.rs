@@ -4,6 +4,7 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
+pub mod panel_stack;
 pub mod ai_bar;
 pub mod ai_docker;
 pub mod ai_generate_docker;
@@ -726,6 +727,28 @@ fn docker_column(
             Panel::right(id)
         }
     };
+    if app.settings.stacked_panels {
+        let (_, _, shown) = app.docker_column(place);
+        return if shown {
+            panel(id.1)
+                .default_size(300.0)
+                .resizable(true)
+                .show_separator_line(true)
+                .frame(Frame::new().fill(crate::theme::Tokens::panel()))
+                .show(ui, |ui| panel_stack::column(app, ui, place))
+                .response
+                .rect
+        } else {
+            panel(id.0)
+                .exact_size(panel_stack::STRIP_W)
+                .resizable(false)
+                .show_separator_line(true)
+                .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
+                .show(ui, |ui| panel_stack::strip(app, ui, place))
+                .response
+                .rect
+        };
+    }
     let mut rect = panel(id.0)
         .exact_size(dockers::STRIP_W)
         .resizable(false)

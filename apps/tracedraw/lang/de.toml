@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Zitat" # mt
 tstyle.book_emphasis = "Betont" # mt
 tstyle.book_strong = "Fett" # mt
 tstyle.book_smallcaps = "Kapitälchen" # mt
+options.stacked_panels = "Gestapelte Bedienfelder" # mt
+options.stacked_panels_tip = "Angedockte Bedienfelder in Gruppen untereinander in ihrer Spalte, jede mit ihren Registerkarten oben; aus: ein Bedienfeld pro Spalte mit den Registerkarten an der Seite." # mt

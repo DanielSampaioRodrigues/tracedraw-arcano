@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Цитата" # mt
 tstyle.book_emphasis = "Выделение" # mt
 tstyle.book_strong = "Полужирный" # mt
 tstyle.book_smallcaps = "Капитель" # mt
+options.stacked_panels = "Панели стопкой" # mt
+options.stacked_panels_tip = "Закреплённые панели группами одна под другой в столбце, у каждой вкладки сверху; выкл.: одна панель на столбец, вкладки сбоку." # mt

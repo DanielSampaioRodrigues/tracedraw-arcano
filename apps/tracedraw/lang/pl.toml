@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Cytat" # mt
 tstyle.book_emphasis = "Wyróżnienie" # mt
 tstyle.book_strong = "Pogrubienie" # mt
 tstyle.book_smallcaps = "Kapitaliki" # mt
+options.stacked_panels = "Panele w stosie" # mt
+options.stacked_panels_tip = "Zadokowane panele w grupach jedna pod drugą w kolumnie, każda z kartami u góry; wyłączone: jeden panel na kolumnę z kartami z boku." # mt

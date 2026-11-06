@@ -1715,6 +1715,8 @@ pub struct App {
     pub floating_dockers: Vec<FloatingDocker>,
     /// A docker being moved by its tab or its title (see ui/dockers.rs).
     pub docker_drag: Option<DockerDrag>,
+    /// The groups of the stacked panel columns (`ui::panel_stack`).
+    pub stacks: crate::ui::panel_stack::Stacks,
     /// The default column's front tab and whether it was open, as the
     /// last frame left them: a docker of another place brought to the
     /// front through `docker_tab` is put in front there and the column
@@ -2415,8 +2417,8 @@ impl App {
             // Menus, lists and dialogs appear at once, without fading in
             // (#4).
             style.animation_time = 0.0;
-            style.spacing.item_spacing = egui::vec2(4.0, 3.0);
-            style.spacing.button_padding = egui::vec2(5.0, 2.0);
+            style.spacing.item_spacing = egui::vec2(5.0, 4.0);
+            style.spacing.button_padding = egui::vec2(7.0, 3.0);
             // Interface text at 13 px, the size labels, lists, menus and
             // the status bar use in this font;
             // headings in the bold face.
@@ -2426,10 +2428,10 @@ impl App {
                     TextStyle::Small,
                     FontId::new(11.0, FontFamily::Proportional),
                 ),
-                (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
+                (TextStyle::Body, FontId::new(12.0, FontFamily::Proportional)),
                 (
                     TextStyle::Button,
-                    FontId::new(13.0, FontFamily::Proportional),
+                    FontId::new(12.0, FontFamily::Proportional),
                 ),
                 (
                     TextStyle::Monospace,
@@ -2846,6 +2848,7 @@ impl App {
             left_inner_dockers: DockerColumn::default(),
             floating_dockers: Vec::new(),
             docker_drag: None,
+            stacks: Default::default(),
             docker_last: (DockerTab::Hints, true),
             free_transform_last: Point::ZERO,
             free_transform_mode: FreeTransformMode::Rotation,
@@ -3704,6 +3707,21 @@ impl App {
                     size: [f.size.x, f.size.y],
                 })
                 .collect(),
+            stacks: self
+                .stacks
+                .columns
+                .iter()
+                .map(|groups| {
+                    groups
+                        .iter()
+                        .map(|g| crate::settings::StackGroupSetup {
+                            tabs: g.tabs.iter().map(|t| t.key().to_string()).collect(),
+                            front: g.front.key().to_string(),
+                            weight: g.weight,
+                        })
+                        .collect()
+                })
+                .collect(),
         }
     }
 
@@ -3798,6 +3816,24 @@ impl App {
         }
         self.settle_columns();
         self.docker_last = (self.docker_tab, self.show_dockers);
+        // The stacked groups; a panel named twice or in no column is
+        // dropped by the next frame's `Stacks::follow`.
+        let mut stacks = crate::ui::panel_stack::Stacks::default();
+        for (i, groups) in setup.stacks.iter().enumerate().take(4) {
+            stacks.columns[i] = groups
+                .iter()
+                .filter_map(|g| {
+                    let tabs: Vec<DockerTab> = g.tabs.iter().filter_map(|k| by_key(k)).collect();
+                    let first = *tabs.first()?;
+                    Some(crate::ui::panel_stack::StackGroup {
+                        front: by_key(&g.front).filter(|t| tabs.contains(t)).unwrap_or(first),
+                        tabs,
+                        weight: if g.weight.is_finite() && g.weight > 0.0 { g.weight } else { 1.0 },
+                    })
+                })
+                .collect();
+        }
+        self.stacks = stacks;
     }
 
     /// A side's second column never stands alone: when the column at the

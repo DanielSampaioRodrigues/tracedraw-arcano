@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Citaat" # mt
 tstyle.book_emphasis = "Nadruk" # mt
 tstyle.book_strong = "Vet" # mt
 tstyle.book_smallcaps = "Klein kapitaal" # mt
+options.stacked_panels = "Gestapelde panelen" # mt
+options.stacked_panels_tip = "Gekoppelde panelen in groepen onder elkaar in hun kolom, elk met tabs bovenaan; uit: één paneel per kolom met tabs aan de zijkant." # mt

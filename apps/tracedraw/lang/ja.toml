@@ -7624,3 +7624,5 @@ tstyle.book_quote = "引用" # mt
 tstyle.book_emphasis = "強調" # mt
 tstyle.book_strong = "太字" # mt
 tstyle.book_smallcaps = "スモールキャップス" # mt
+options.stacked_panels = "パネルを積み重ねる" # mt
+options.stacked_panels_tip = "ドッキングしたパネルを列の中で上下に並ぶグループにし、各グループの上にタブを表示します。オフ: 列ごとに1つのパネル、タブは横。" # mt

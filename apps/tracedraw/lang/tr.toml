@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Alıntı" # mt
 tstyle.book_emphasis = "Vurgu" # mt
 tstyle.book_strong = "Kalın" # mt
 tstyle.book_smallcaps = "Küçük büyük harf" # mt
+options.stacked_panels = "Yığılmış paneller" # mt
+options.stacked_panels_tip = "Yerleşik paneller sütunda alt alta gruplar halinde, her grubun sekmeleri üstte; kapalı: sütun başına bir panel, sekmeler yanda." # mt

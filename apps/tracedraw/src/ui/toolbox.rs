@@ -552,14 +552,11 @@ fn tool_button(
     } else {
         Tokens::panel()
     };
-    ui.painter().rect_filled(rect, 0.0, bg);
-    if active {
-        ui.painter().rect_stroke(
-            rect,
-            0.0,
-            Stroke::new(1.0, Tokens::control_border()),
-            egui::StrokeKind::Inside,
-        );
+    ui.painter().rect_filled(rect, 0.0, Tokens::panel());
+    if active || resp.hovered() {
+        // A soft rounded box: the selection tint for the active tool.
+        let bg = if active { Tokens::tool_active() } else { bg };
+        ui.painter().rect_filled(rect.shrink(2.0), 6.0, bg);
     }
     // The icon's box grows with the button size (16 to 40 px), shrunk
     // with a button squeezed to fit a short column.

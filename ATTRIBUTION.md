@@ -11,7 +11,8 @@ libwebp (Copyright Google Inc., BSD 3-Clause licence, through the
 
 | Asset | Path | Author and source | License |
 |---|---|---|---|
-| Selawik Regular and Bold (interface font) | `apps/tracedraw/assets/fonts/` | Copyright 2015 Microsoft Corporation, the open-source Selawik project | SIL Open Font License 1.1, see `Selawik-OFL.txt` next to the fonts |
+| Inter Regular and SemiBold (interface font) | `apps/tracedraw/assets/fonts/` | Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) | SIL Open Font License 1.1, see `Inter-OFL.txt` next to the fonts |
+| Selawik Regular and Bold (interface font, behind Inter for the symbols it lacks) | `apps/tracedraw/assets/fonts/` | Copyright 2015 Microsoft Corporation, the open-source Selawik project | SIL Open Font License 1.1, see `Selawik-OFL.txt` next to the fonts |
 | TestSymbol (test font: Selawik Regular's "A", "B", "C" and space, renamed and re-mapped to a symbol character map at U+F020 to U+F043) | `crates/text/testdata/` | Copyright 2015 Microsoft Corporation, the open-source Selawik project | SIL Open Font License 1.1, see `apps/tracedraw/assets/fonts/Selawik-OFL.txt` |
 | Noto Sans Devanagari (test font) | `crates/text/testdata/` | Copyright 2022 The Noto Project Authors, from the notofonts collection | SIL Open Font License 1.1, see `NotoSansDevanagari-OFL.txt` next to the font |
 | Noto Sans Tamil (test font) | `crates/text/testdata/` | Copyright 2022 The Noto Project Authors (https://github.com/notofonts/tamil), from the Google Fonts collection | SIL Open Font License 1.1, see `NotoSansTamil-OFL.txt` next to the font |

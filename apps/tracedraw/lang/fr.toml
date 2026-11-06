@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Citation" # mt
 tstyle.book_emphasis = "Emphase" # mt
 tstyle.book_strong = "Gras" # mt
 tstyle.book_smallcaps = "Petites capitales" # mt
+options.stacked_panels = "Panneaux empilés" # mt
+options.stacked_panels_tip = "Panneaux ancrés en groupes les uns sous les autres dans leur colonne, chacun avec ses onglets en haut ; désactivé : un panneau par colonne, onglets sur le côté." # mt

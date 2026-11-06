@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Citace" # mt
 tstyle.book_emphasis = "Zdůraznění" # mt
 tstyle.book_strong = "Tučné" # mt
 tstyle.book_smallcaps = "Kapitálky" # mt
+options.stacked_panels = "Skládané panely" # mt
+options.stacked_panels_tip = "Ukotvené panely ve skupinách pod sebou ve sloupci, každá se záložkami nahoře; vypnuto: jeden panel na sloupec se záložkami po straně." # mt

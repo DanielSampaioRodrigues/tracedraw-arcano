@@ -7624,3 +7624,5 @@ tstyle.book_quote = "উদ্ধৃতি" # mt
 tstyle.book_emphasis = "জোর" # mt
 tstyle.book_strong = "বোল্ড" # mt
 tstyle.book_smallcaps = "স্মল ক্যাপস" # mt
+options.stacked_panels = "স্তূপ করা প্যানেল" # mt
+options.stacked_panels_tip = "ডক করা প্যানেল কলামে একটির নিচে আরেকটি গ্রুপে, প্রতিটির ট্যাব উপরে; বন্ধ থাকলে: প্রতি কলামে একটি প্যানেল, ট্যাব পাশে।" # mt

@@ -7624,3 +7624,5 @@ tstyle.book_quote = "Kutipan" # mt
 tstyle.book_emphasis = "Penekanan" # mt
 tstyle.book_strong = "Tebal" # mt
 tstyle.book_smallcaps = "Kapital kecil" # mt
+options.stacked_panels = "Panel bertumpuk" # mt
+options.stacked_panels_tip = "Panel tertambat dalam grup bertumpuk di kolomnya, tiap grup dengan tab di atas; mati: satu panel per kolom dengan tab di samping." # mt

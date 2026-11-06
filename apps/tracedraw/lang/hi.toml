@@ -7624,3 +7624,5 @@ tstyle.book_quote = "उद्धरण" # mt
 tstyle.book_emphasis = "ज़ोर" # mt
 tstyle.book_strong = "बोल्ड" # mt
 tstyle.book_smallcaps = "स्मॉल कैप्स" # mt
+options.stacked_panels = "स्टैक किए पैनल" # mt
+options.stacked_panels_tip = "डॉक किए पैनल अपने कॉलम में एक के नीचे एक समूहों में, हर समूह के टैब ऊपर; बंद: हर कॉलम में एक पैनल, टैब किनारे पर।" # mt

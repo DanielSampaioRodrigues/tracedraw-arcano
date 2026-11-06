@@ -7624,3 +7624,5 @@ tstyle.book_quote = "引文" # mt
 tstyle.book_emphasis = "强调" # mt
 tstyle.book_strong = "粗体" # mt
 tstyle.book_smallcaps = "小型大写字母" # mt
+options.stacked_panels = "堆叠面板" # mt
+options.stacked_panels_tip = "停靠的面板在列中上下分组排列，每组的选项卡在顶部；关闭时：每列一个面板，选项卡在侧边。" # mt

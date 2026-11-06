@@ -287,155 +287,155 @@ struct Palette {
 }
 
 const LIGHT: Palette = Palette {
-    panel: rgb(0xF4F4F4),
-    menu_bar: rgb(0xD8D8D8),
-    panel_dark: rgb(0xE1E1E1),
-    border: rgb(0xD8D8D8),
-    icon_off: rgb(0xC8C8C8),
+    panel: rgb(0xF7F7F8),
+    menu_bar: rgb(0xEEEFF1),
+    panel_dark: rgb(0xEEEFF1),
+    border: rgb(0xE2E3E6),
+    icon_off: rgb(0xBEC0C5),
     text: rgb(0x1E1E1E),
-    text_dim: rgb(0x6E6E6E),
-    page_shadow: rgb(0xBFBFBF),
-    page_border: rgb(0xAAAAAA),
-    ruler_bg: rgb(0xF4F4F4),
-    tool_active: rgb(0xCCE4F7),
-    tool_hover: rgb(0xE5F1FB),
-    icon: rgb(0x2A2A2A),
-    button: rgb(0xE1E1E1),
-    control_border: rgb(0xADADAD),
-    slider_rail: rgb(0xC4C4C4),
+    text_dim: rgb(0x6B6E75),
+    page_shadow: rgb(0xCDCFD4),
+    page_border: rgb(0xC6C8CD),
+    ruler_bg: rgb(0xF7F7F8),
+    tool_active: rgb(0xD7E9FB),
+    tool_hover: rgb(0xE8E9EC),
+    icon: rgb(0x2B2D31),
+    button: rgb(0xEDEEF0),
+    control_border: rgb(0xD4D6DA),
+    slider_rail: rgb(0xD4D6DA),
     field: rgb(0xFFFFFF),
     menu: rgb(0xFFFFFF),
-    menu_gutter: rgb(0xF4F4F4),
-    menu_hover: rgb(0xE0F0FF),
-    menu_hover_line: rgb(0x00ADFE),
-    menu_text_off: rgb(0xC8C8C8),
-    title_bar: rgb(0xFFFFFF),
-    window_border: rgb(0xB2B2B2),
-    selected_row: rgb(0xCCE8FF),
-    hovered_row: rgb(0xE5F3FF),
-    selected_row_line: rgb(0x99D1FF),
-    control_fill: rgb(0xEAEAEA),
-    tab_strip: rgb(0xEAEAEA),
-    tab: rgb(0xD8D8D8),
-    tab_active: rgb(0xCEE3FF),
-    ruler_tick: rgb(0x8C8C8C),
-    ruler_label: rgb(0x767676),
-    ruler_marker: rgb(0x0B0B0B),
-    desktop: rgb(0xFFFFFF),
+    menu_gutter: rgb(0xFFFFFF),
+    menu_hover: rgb(0xE5F1FC),
+    menu_hover_line: rgb(0xE5F1FC),
+    menu_text_off: rgb(0xB6B8BD),
+    title_bar: rgb(0xF7F7F8),
+    window_border: rgb(0xD4D6DA),
+    selected_row: rgb(0xD7E9FB),
+    hovered_row: rgb(0xEEF0F3),
+    selected_row_line: rgb(0xD7E9FB),
+    control_fill: rgb(0xF1F2F4),
+    tab_strip: rgb(0xEEEFF1),
+    tab: rgb(0xEEEFF1),
+    tab_active: rgb(0xFFFFFF),
+    ruler_tick: rgb(0x9B9EA4),
+    ruler_label: rgb(0x7A7D84),
+    ruler_marker: rgb(0x1D1E21),
+    desktop: rgb(0xE6E7EA),
 };
 
 const MEDIUM_LIGHT: Palette = Palette {
-    panel: rgb(0xDCDCDC),
-    menu_bar: rgb(0xC8C8C8),
-    panel_dark: rgb(0xCDCDCD),
-    border: rgb(0xBDBDBD),
-    icon_off: rgb(0xA6A6A6),
-    text: rgb(0x1A1A1A),
-    text_dim: rgb(0x595959),
-    page_shadow: rgb(0x9E9E9E),
-    page_border: rgb(0x8C8C8C),
-    ruler_bg: rgb(0xDCDCDC),
-    tool_active: rgb(0xB5D3EC),
-    tool_hover: rgb(0xCADFF0),
-    icon: rgb(0x262626),
-    button: rgb(0xCBCBCB),
-    control_border: rgb(0x969696),
-    slider_rail: rgb(0xAEAEAE),
-    field: rgb(0xF2F2F2),
-    menu: rgb(0xE4E4E4),
-    menu_gutter: rgb(0xD6D6D6),
-    menu_hover: rgb(0xB9D9F2),
-    menu_hover_line: rgb(0x7DB8E6),
-    menu_text_off: rgb(0x8F8F8F),
-    title_bar: rgb(0xEDEDED),
-    window_border: rgb(0x868686),
-    selected_row: rgb(0xB9D9F2),
-    hovered_row: rgb(0xD0E6F6),
-    selected_row_line: rgb(0x7DB8E6),
-    control_fill: rgb(0xD2D2D2),
-    tab_strip: rgb(0xD0D0D0),
-    tab: rgb(0xC0C0C0),
-    tab_active: rgb(0xB5D3EC),
-    ruler_tick: rgb(0x707070),
-    ruler_label: rgb(0x5A5A5A),
-    ruler_marker: rgb(0x0B0B0B),
-    desktop: rgb(0xFFFFFF),
+    panel: rgb(0xE6E7EA),
+    menu_bar: rgb(0xDCDDE1),
+    panel_dark: rgb(0xDCDDE1),
+    border: rgb(0xCFD1D5),
+    icon_off: rgb(0xAAADB3),
+    text: rgb(0x1E1E1E),
+    text_dim: rgb(0x60636A),
+    page_shadow: rgb(0xB9BCC2),
+    page_border: rgb(0xB3B6BC),
+    ruler_bg: rgb(0xE6E7EA),
+    tool_active: rgb(0xC9DFF6),
+    tool_hover: rgb(0xD6D8DC),
+    icon: rgb(0x2B2D31),
+    button: rgb(0xDCDDE1),
+    control_border: rgb(0xC2C5CA),
+    slider_rail: rgb(0xC2C5CA),
+    field: rgb(0xF7F7F8),
+    menu: rgb(0xF4F5F6),
+    menu_gutter: rgb(0xF4F5F6),
+    menu_hover: rgb(0xD9E9FA),
+    menu_hover_line: rgb(0xD9E9FA),
+    menu_text_off: rgb(0xA5A8AE),
+    title_bar: rgb(0xE6E7EA),
+    window_border: rgb(0xC2C5CA),
+    selected_row: rgb(0xC9DFF6),
+    hovered_row: rgb(0xDDDFE3),
+    selected_row_line: rgb(0xC9DFF6),
+    control_fill: rgb(0xDEE0E3),
+    tab_strip: rgb(0xDCDDE1),
+    tab: rgb(0xDCDDE1),
+    tab_active: rgb(0xF4F5F6),
+    ruler_tick: rgb(0x8C8F95),
+    ruler_label: rgb(0x6E7178),
+    ruler_marker: rgb(0x1D1E21),
+    desktop: rgb(0xD3D5D9),
 };
 
 const MEDIUM_DARK: Palette = Palette {
-    panel: rgb(0x535353),
-    menu_bar: rgb(0x474747),
-    panel_dark: rgb(0x4A4A4A),
-    border: rgb(0x3D3D3D),
-    icon_off: rgb(0x7C7C7C),
-    text: rgb(0xEAEAEA),
-    text_dim: rgb(0xB0B0B0),
-    page_shadow: rgb(0x2E2E2E),
-    page_border: rgb(0x2A2A2A),
-    ruler_bg: rgb(0x535353),
-    tool_active: rgb(0x2C5A80),
-    tool_hover: rgb(0x3A566C),
-    icon: rgb(0xE4E4E4),
-    button: rgb(0x656565),
-    control_border: rgb(0x7E7E7E),
-    slider_rail: rgb(0x6E6E6E),
-    field: rgb(0x3F3F3F),
-    menu: rgb(0x4B4B4B),
-    menu_gutter: rgb(0x444444),
-    menu_hover: rgb(0x2C5A80),
-    menu_hover_line: rgb(0x3E78A8),
-    menu_text_off: rgb(0x8A8A8A),
-    title_bar: rgb(0x474747),
-    window_border: rgb(0x2E2E2E),
-    selected_row: rgb(0x2C5A80),
-    hovered_row: rgb(0x3A566C),
-    selected_row_line: rgb(0x3E78A8),
-    control_fill: rgb(0x5E5E5E),
-    tab_strip: rgb(0x4A4A4A),
-    tab: rgb(0x5C5C5C),
-    tab_active: rgb(0x2C5A80),
-    ruler_tick: rgb(0xA8A8A8),
-    ruler_label: rgb(0xC0C0C0),
-    ruler_marker: rgb(0xF0F0F0),
-    desktop: rgb(0x5E5E5E),
+    panel: rgb(0x3A3B3F),
+    menu_bar: rgb(0x303135),
+    panel_dark: rgb(0x333438),
+    border: rgb(0x48494E),
+    icon_off: rgb(0x6C6E74),
+    text: rgb(0xEDEDED),
+    text_dim: rgb(0xA8ABB1),
+    page_shadow: rgb(0x232427),
+    page_border: rgb(0x26272A),
+    ruler_bg: rgb(0x333438),
+    tool_active: rgb(0x2F6296),
+    tool_hover: rgb(0x47484D),
+    icon: rgb(0xE2E3E6),
+    button: rgb(0x46474C),
+    control_border: rgb(0x55565C),
+    slider_rail: rgb(0x55565C),
+    field: rgb(0x2E2F33),
+    menu: rgb(0x3A3B3F),
+    menu_gutter: rgb(0x3A3B3F),
+    menu_hover: rgb(0x2F6296),
+    menu_hover_line: rgb(0x2F6296),
+    menu_text_off: rgb(0x74767C),
+    title_bar: rgb(0x333438),
+    window_border: rgb(0x505157),
+    selected_row: rgb(0x2C5785),
+    hovered_row: rgb(0x44454A),
+    selected_row_line: rgb(0x2C5785),
+    control_fill: rgb(0x414246),
+    tab_strip: rgb(0x2E2F33),
+    tab: rgb(0x3A3B3F),
+    tab_active: rgb(0x46474C),
+    ruler_tick: rgb(0x7B7E84),
+    ruler_label: rgb(0xA8ABB1),
+    ruler_marker: rgb(0xEDEEF0),
+    desktop: rgb(0x28292C),
 };
 
 const DARK: Palette = Palette {
-    panel: rgb(0x2B2B2B),
-    menu_bar: rgb(0x1F1F1F),
-    panel_dark: rgb(0x252525),
-    border: rgb(0x1A1A1A),
-    icon_off: rgb(0x5A5A5A),
-    text: rgb(0xE0E0E0),
-    text_dim: rgb(0x9A9A9A),
-    page_shadow: rgb(0x1A1A1A),
-    page_border: rgb(0x111111),
-    ruler_bg: rgb(0x2B2B2B),
-    tool_active: rgb(0x2A5C8A),
-    tool_hover: rgb(0x3A3A3A),
-    icon: rgb(0xD8D8D8),
-    button: rgb(0x3A3A3A),
-    control_border: rgb(0x505050),
-    slider_rail: rgb(0x4A4A4A),
-    field: rgb(0x1E1E1E),
-    menu: rgb(0x2B2B2B),
-    menu_gutter: rgb(0x262626),
-    menu_hover: rgb(0x2A5C8A),
-    menu_hover_line: rgb(0x3D7AB8),
-    menu_text_off: rgb(0x6A6A6A),
-    title_bar: rgb(0x1F1F1F),
-    window_border: rgb(0x0F0F0F),
-    selected_row: rgb(0x2A5C8A),
-    hovered_row: rgb(0x353535),
-    selected_row_line: rgb(0x3D7AB8),
-    control_fill: rgb(0x333333),
-    tab_strip: rgb(0x252525),
-    tab: rgb(0x333333),
-    tab_active: rgb(0x2A5C8A),
-    ruler_tick: rgb(0x8A8A8A),
-    ruler_label: rgb(0xA8A8A8),
-    ruler_marker: rgb(0xF0F0F0),
-    desktop: rgb(0x3D3D3D),
+    panel: rgb(0x2E2F33),
+    menu_bar: rgb(0x26272B),
+    panel_dark: rgb(0x28292D),
+    border: rgb(0x3B3C41),
+    icon_off: rgb(0x5C5E63),
+    text: rgb(0xE8E8E8),
+    text_dim: rgb(0x9DA0A6),
+    page_shadow: rgb(0x101113),
+    page_border: rgb(0x141518),
+    ruler_bg: rgb(0x28292D),
+    tool_active: rgb(0x285A8C),
+    tool_hover: rgb(0x3C3D42),
+    icon: rgb(0xD9DADD),
+    button: rgb(0x3C3D42),
+    control_border: rgb(0x48494F),
+    slider_rail: rgb(0x48494F),
+    field: rgb(0x222327),
+    menu: rgb(0x2E2F33),
+    menu_gutter: rgb(0x2E2F33),
+    menu_hover: rgb(0x285A8C),
+    menu_hover_line: rgb(0x285A8C),
+    menu_text_off: rgb(0x66686D),
+    title_bar: rgb(0x28292D),
+    window_border: rgb(0x48494F),
+    selected_row: rgb(0x24476B),
+    hovered_row: rgb(0x37383D),
+    selected_row_line: rgb(0x24476B),
+    control_fill: rgb(0x35363A),
+    tab_strip: rgb(0x26272B),
+    tab: rgb(0x2E2F33),
+    tab_active: rgb(0x3C3D42),
+    ruler_tick: rgb(0x6B6E74),
+    ruler_label: rgb(0x9DA0A6),
+    ruler_marker: rgb(0xE8E9EB),
+    desktop: rgb(0x1C1D20),
 };
 
 pub struct Tokens;
@@ -512,7 +512,7 @@ tokens!(
 
 impl Tokens {
     /// Accents, the page and the selection stay the same in every theme.
-    pub const ACCENT: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
+    pub const ACCENT: Color32 = Color32::from_rgb(0x0C, 0x8C, 0xE9);
     pub const PAGE: Color32 = Color32::WHITE;
     /// Screen offset of the page shadow, pixels.
     pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
@@ -724,20 +724,31 @@ pub fn visuals() -> Visuals {
         v.hyperlink_color = col(c.hot_light);
         v.warn_fg_color = col(c.hot_light);
     }
-    v.widgets.noninteractive.corner_radius = 2.0.into();
-    v.widgets.inactive.corner_radius = 2.0.into();
-    v.widgets.hovered.corner_radius = 2.0.into();
-    v.widgets.active.corner_radius = 2.0.into();
-    v.window_corner_radius = 2.0.into();
-    v.menu_corner_radius = 2.0.into();
+    // Soft corners: controls 5 px, windows and menus 8 px.
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        w.corner_radius = 5.0.into();
+    }
+    v.window_corner_radius = 8.0.into();
+    v.menu_corner_radius = 8.0.into();
+    // Lines between parts drawn in the light border colour, never black.
+    v.window_stroke = egui::Stroke::new(1.0, Tokens::window_border());
     v
 }
 
-/// The interface font, bundled (SIL Open Font License, see
-/// `assets/fonts/Selawik-OFL.txt`): regular for text, bold for headings and
+/// The interface font, bundled: Inter (SIL Open Font License, see
+/// `assets/fonts/Inter-OFL.txt`), with Selawik (`Selawik-OFL.txt`) behind it: regular for text, bold for headings and
 /// emphasis. Scripts it lacks fall back to egui's fonts and the system's.
-const UI_REGULAR: &[u8] = include_bytes!("../assets/fonts/Selawik-Regular.ttf");
-const UI_BOLD: &[u8] = include_bytes!("../assets/fonts/Selawik-Bold.ttf");
+const UI_REGULAR: &[u8] = include_bytes!("../assets/fonts/Inter-Regular.ttf");
+const UI_BOLD: &[u8] = include_bytes!("../assets/fonts/Inter-SemiBold.ttf");
+/// The earlier interface font, kept behind Inter for the symbols it lacks.
+const UI_FALLBACK: &[u8] = include_bytes!("../assets/fonts/Selawik-Regular.ttf");
+const UI_FALLBACK_BOLD: &[u8] = include_bytes!("../assets/fonts/Selawik-Bold.ttf");
 
 /// The font family name of the bold interface font.
 pub const BOLD: &str = "ui-bold";
@@ -872,6 +883,14 @@ pub fn bundled_font_definitions() -> egui::FontDefinitions {
         "ui-bold".into(),
         std::sync::Arc::new(egui::FontData::from_static(UI_BOLD)),
     );
+    defs.font_data.insert(
+        "ui-fallback".into(),
+        std::sync::Arc::new(egui::FontData::from_static(UI_FALLBACK)),
+    );
+    defs.font_data.insert(
+        "ui-fallback-bold".into(),
+        std::sync::Arc::new(egui::FontData::from_static(UI_FALLBACK_BOLD)),
+    );
     let defaults = defs
         .families
         .get(&egui::FontFamily::Proportional)
@@ -879,8 +898,9 @@ pub fn bundled_font_definitions() -> egui::FontDefinitions {
         .unwrap_or_default();
     if let Some(list) = defs.families.get_mut(&egui::FontFamily::Proportional) {
         list.insert(0, "ui-regular".into());
+        list.insert(1, "ui-fallback".into());
     }
-    let mut bold = vec!["ui-bold".to_string()];
+    let mut bold = vec!["ui-bold".to_string(), "ui-fallback-bold".to_string()];
     bold.extend(defaults);
     defs.families
         .insert(egui::FontFamily::Name(BOLD.into()), bold);
